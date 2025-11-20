@@ -39,7 +39,8 @@ impl Model {
     fn new(_config_path: String) -> PyResult<Self> {
         Ok(Model {
             inner: ThermalModel::new(10),
-            surrogates: SurrogateManager::new().map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
+            surrogates: SurrogateManager::new()
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
         })
     }
 
@@ -81,7 +82,8 @@ impl BatchOracle {
     fn new() -> PyResult<Self> {
         Ok(BatchOracle {
             base_model: ThermalModel::new(10), // The "template" building
-            surrogates: SurrogateManager::new().map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
+            surrogates: SurrogateManager::new()
+                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
         })
     }
 
@@ -153,7 +155,7 @@ mod tests {
     fn test_apply_parameters() {
         let mut model = ThermalModel::new(10);
         let params = vec![1.5, 22.0];
-        
+
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
         assert_eq!(model.hvac_setpoint, 22.0);
@@ -163,10 +165,10 @@ mod tests {
     fn test_solve_timesteps() {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
-        
+
         model.apply_parameters(&vec![1.5, 21.0]);
         let energy = model.solve_timesteps(8760, &surrogates, false);
-        
+
         assert!(energy > 0.0, "Energy should be positive");
     }
 
@@ -174,10 +176,10 @@ mod tests {
     fn test_solve_timesteps_with_surrogates() {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
-        
+
         model.apply_parameters(&vec![1.5, 21.0]);
         let energy = model.solve_timesteps(8760, &surrogates, true);
-        
+
         assert!(energy > 0.0, "Energy should be positive");
     }
 }

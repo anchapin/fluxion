@@ -31,15 +31,16 @@ ndarray = { version = "0.15", default-features = false, features = ["std"] }
 rayon = "1.10"
 
 # AI / Machine Learning Integration
-# Pinned to stable version that avoids pulp v0.18.22 SIMD assertion issues
-ort = { version = "1.20", features = ["load-dynamic", "copy-dylibs"] }
+# Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io
+ort = { version = "2.0.0-rc.10", features = ["load-dynamic", "copy-dylibs"] }
 
 # Python Interop
 pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize", "abi3"], optional = true }
 
 [profile.release]
+opt-level = 3
 lto = true
 codegen-units = 1
+split-debuginfo = "packed"
+strip = true
 
-# Ensure Python is properly linked during test compilation
-[profile.test]

@@ -4,8 +4,8 @@
 # Ensure PyO3 can find Python during test compilation
 # The PYO3_PYTHON environment variable should be set at runtime,
 # but we can provide sensible defaults here if needed.
-# Use all available cores for parallel compilation
-jobs = 0
+# Use reasonable defaults for parallel compilation
+jobs = -1
 
 [profile.test]
 # Test profile inherits from dev but we can override if needed
