@@ -156,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_solve_timesteps_energy_conservation() {
-        let mut model = ThermalModel::new(10);
+        let model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Analytical baseline (no AI)
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_solve_timesteps_with_surrogates() {
-        let mut model = ThermalModel::new(10);
+        let model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Surrogate-based prediction

@@ -34,4 +34,4 @@ jobs:
       - name: Test Python import
         run: |
           pip install --find-links ./target/wheels fluxion
-          python -c "import fluxion; print('✓ Fluxion module loaded successfully')"
+          python -c "import fluxion; print('[OK] Fluxion module loaded successfully')"
