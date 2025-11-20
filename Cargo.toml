@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine."
+repository = "https://github.com/anchapin/fluxion"
+license = "OTHER"
 
 [lib]
 name = "fluxion"
