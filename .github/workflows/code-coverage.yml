@@ -18,10 +18,13 @@ jobs:
         run: cargo install cargo-tarpaulin
       
       - name: Generate coverage
-        # cargo-tarpaulin can fail on certain SIMD-heavy dependencies (like pulp with complex numbers).
-        # Use continue-on-error and the --out option to generate reports despite instrumentation issues.
+        # cargo-tarpaulin can fail on certain SIMD-heavy dependencies (like pulp).
+        # These cause compile-time assertion panics during instrumentation.
+        # Use --ignore-panics to skip them. Set continue-on-error to ensure the workflow
+        # completes even if coverage collection has issues.
         # Increased timeout to account for slower instrumented builds.
-        run: cargo tarpaulin --lib --out Xml --timeout 600 --skip-clean 2>&1 || true
+        continue-on-error: true
+        run: cargo tarpaulin --lib --out Xml --timeout 600 --skip-clean --ignore-panics --verbose 2>&1 | tee tarpaulin.log
       
       - name: Upload to codecov
         uses: codecov/codecov-action@v3
