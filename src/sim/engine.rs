@@ -1,8 +1,18 @@
 use rayon::prelude::*;
 use crate::ai::surrogate::SurrogateManager;
 
-/// Represents a simplified Thermal Network (RC Network).
-/// We derive Clone so we can replicate the base model for batch processing.
+/// Represents a simplified thermal network (RC Network) for building energy modeling.
+///
+/// This is the core physics engine. It models heat transfer through building zones using
+/// resistor-capacitor network approximations. The struct is cloneable to enable batch processing
+/// where each parallel thread gets its own instance with independent parameters.
+///
+/// # Fields
+/// * `num_zones` - Number of thermal zones in the building
+/// * `temperatures` - Current temperature of each zone (°C)
+/// * `loads` - Current thermal loads (W/m²) from environment and internal sources
+/// * `window_u_value` - Thermal transmittance of windows (W/m²K) - optimization variable
+/// * `hvac_setpoint` - HVAC system setpoint temperature (°C) - optimization variable
 #[derive(Clone)]
 pub struct ThermalModel {
     pub num_zones: usize,
@@ -14,6 +24,15 @@ pub struct ThermalModel {
 }
 
 impl ThermalModel {
+    /// Create a new ThermalModel with specified number of thermal zones.
+    /// 
+    /// # Arguments
+    /// * `num_zones` - Number of thermal zones to model
+    /// 
+    /// # Defaults
+    /// - All zones initialized to 20°C
+    /// - Window U-value: 2.5 W/m²K (typical for double-glazed windows)
+    /// - HVAC setpoint: 21°C
     pub fn new(num_zones: usize) -> Self {
         ThermalModel {
             num_zones,
@@ -24,15 +43,31 @@ impl ThermalModel {
         }
     }
 
-    /// Updates the model parameters based on a "gene" vector from the optimizer.
-    /// params[0] -> Window U-Value
-    /// params[1] -> HVAC Setpoint
+    /// Updates model parameters based on a gene vector from an optimizer.
+    ///
+    /// This method maps optimization variables (genes) to physical parameters of the thermal model.
+    /// 
+    /// # Arguments
+    /// * `params` - Parameter vector from optimizer:
+    ///   - `params[0]`: Window U-value (W/m²K, range: 0.5-3.0)
+    ///   - `params[1]`: HVAC setpoint (°C, range: 19-24)
     pub fn apply_parameters(&mut self, params: &[f64]) {
         if params.len() >= 1 { self.window_u_value = params[0]; }
         if params.len() >= 2 { self.hvac_setpoint = params[1]; }
     }
 
-    /// The core physics loop.
+    /// Core physics simulation loop for annual building energy performance.
+    ///
+    /// Simulates hourly thermal dynamics of the building, computing cumulative energy consumption.
+    /// Can use either analytical load calculations (exact) or neural network surrogates (fast).
+    ///
+    /// # Arguments
+    /// * `steps` - Number of hourly timesteps (typically 8760 for 1 year)
+    /// * `surrogates` - Reference to SurrogateManager for load predictions
+    /// * `use_ai` - If true, use neural surrogates; if false, use analytical calculations
+    ///
+    /// # Returns
+    /// Cumulative annual energy use intensity (dimensionless, normalized)
     pub fn solve_timesteps(&mut self, steps: usize, surrogates: &SurrogateManager, use_ai: bool) -> f64 {
         let mut total_energy = 0.0;
 
@@ -66,6 +101,10 @@ impl ThermalModel {
         total_energy
     }
 
+    /// Calculate analytical thermal loads without neural surrogates.
+    ///
+    /// This is a simplified analytical model for baseline load prediction.
+    /// In production, this would incorporate weather data, solar radiation, infiltration, etc.
     fn calc_analytical_loads(&mut self) {
         for load in self.loads.iter_mut() {
             *load = 0.5; 
