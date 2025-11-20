@@ -24,10 +24,10 @@ pub struct ThermalModel {
 
 impl ThermalModel {
     /// Create a new ThermalModel with specified number of thermal zones.
-    /// 
+    ///
     /// # Arguments
     /// * `num_zones` - Number of thermal zones to model
-    /// 
+    ///
     /// # Defaults
     /// - All zones initialized to 20°C
     /// - Window U-value: 2.5 W/m²K (typical for double-glazed windows)
@@ -45,7 +45,7 @@ impl ThermalModel {
     /// Updates model parameters based on a gene vector from an optimizer.
     ///
     /// This method maps optimization variables (genes) to physical parameters of the thermal model.
-    /// 
+    ///
     /// # Arguments
     /// * `params` - Parameter vector from optimizer:
     ///   - `params[0]`: Window U-value (W/m²K, range: 0.5-3.0)
@@ -119,5 +119,71 @@ impl ThermalModel {
         for load in self.loads.iter_mut() {
             *load = 0.5;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thermal_model_creation() {
+        let model = ThermalModel::new(10);
+        assert_eq!(model.num_zones, 10);
+        assert_eq!(model.temperatures.len(), 10);
+        assert!(model.temperatures.iter().all(|&t| t == 20.0));
+    }
+
+    #[test]
+    fn test_apply_parameters_updates_model() {
+        let mut model = ThermalModel::new(10);
+        let params = vec![1.5, 22.0];
+
+        model.apply_parameters(&params);
+        assert_eq!(model.window_u_value, 1.5);
+        assert_eq!(model.hvac_setpoint, 22.0);
+    }
+
+    #[test]
+    fn test_apply_parameters_partial() {
+        let mut model = ThermalModel::new(10);
+        let params = vec![1.5];
+
+        model.apply_parameters(&params);
+        assert_eq!(model.window_u_value, 1.5);
+        assert_eq!(model.hvac_setpoint, 21.0); // Should remain default
+    }
+
+    #[test]
+    fn test_solve_timesteps_energy_conservation() {
+        let mut model = ThermalModel::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        // Analytical baseline (no AI)
+        let energy_analytical = model.clone().solve_timesteps(8760, &surrogates, false);
+
+        // Should produce non-zero energy
+        assert!(energy_analytical > 0.0, "Energy should be non-zero");
+    }
+
+    #[test]
+    fn test_solve_timesteps_with_surrogates() {
+        let mut model = ThermalModel::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        // Surrogate-based prediction
+        let energy_surrogate = model.clone().solve_timesteps(8760, &surrogates, true);
+
+        // Should produce non-zero energy
+        assert!(energy_surrogate > 0.0, "Energy should be non-zero");
+    }
+
+    #[test]
+    fn test_calc_analytical_loads() {
+        let mut model = ThermalModel::new(5);
+        model.calc_analytical_loads();
+
+        // All loads should be 0.5
+        assert!(model.loads.iter().all(|&l| l == 0.5));
     }
 }

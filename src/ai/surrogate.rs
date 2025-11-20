@@ -1,5 +1,3 @@
-use pyo3::prelude::*;
-
 /// Manages pre-trained neural network models for fast load predictions.
 ///
 /// This module bridges between the physics engine and AI surrogates. Rather than computing
@@ -11,9 +9,10 @@ use pyo3::prelude::*;
 /// - Convert temperature vectors to tensors
 /// - Execute session.run() for batch load predictions
 /// - Apply physics constraints to maintain energy balance
+#[derive(Clone, Default)]
 pub struct SurrogateManager {
     // In a real app, this would hold the ONNX session
-    // session: Session, 
+    // session: Session,
     /// Flag indicating if a trained model has been loaded
     pub model_loaded: bool,
 }
@@ -23,10 +22,10 @@ impl SurrogateManager {
     ///
     /// Currently a placeholder. In production, this would initialize ONNX Runtime
     /// and load a pre-trained model from disk.
-    pub fn new() -> PyResult<Self> {
+    pub fn new() -> pyo3::PyResult<Self> {
         // Initialize ONNX Runtime environment
         // let env = Environment::builder().with_name("Fluxion_ORT").build()?;
-        
+
         Ok(SurrogateManager {
             model_loaded: false,
         })
@@ -56,7 +55,27 @@ impl SurrogateManager {
         // 1. Convert inputs to Tensor
         // 2. Run session.run()
         // 3. Extract outputs
-        
+
         vec![0.0; current_temps.len()]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_surrogate_manager_creation() {
+        let manager = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        assert!(!manager.model_loaded);
+    }
+
+    #[test]
+    fn test_surrogate_predict_loads_mock() {
+        let manager = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        let temps = vec![20.0, 21.0, 22.0];
+        let loads = manager.predict_loads(&temps);
+        assert_eq!(loads.len(), 3);
+        assert!(loads.iter().all(|&l| l == 1.2));
     }
 }
