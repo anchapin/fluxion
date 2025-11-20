@@ -11,6 +11,11 @@ license = "OTHER"
 name = "fluxion"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = []
+# Feature flag to enable Python bindings (disabled by default for pure Rust testing)
+python-bindings = ["dep:pyo3"]
+
 [dependencies]
 # Core Logic
 serde = { version = "1.0", features = ["derive"] }
@@ -19,17 +24,18 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Numerical & Math
-faer = "0.19"
-ndarray = "0.15"
+faer = { version = "0.19", default-features = false, features = ["std"] }
+ndarray = { version = "0.15", default-features = false, features = ["std"] }
 
 # Parallelism
 rayon = "1.10"
 
 # AI / Machine Learning Integration
-ort = { version = "2.0.0-rc.2", features = ["load-dynamic", "copy-dylibs"] }
+# Pinned to stable version that avoids pulp v0.18.22 SIMD assertion issues
+ort = { version = "1.20", features = ["load-dynamic", "copy-dylibs"] }
 
 # Python Interop
-pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize"] }
+pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize", "abi3"], optional = true }
 
 [profile.release]
 lto = true
