@@ -26,7 +26,7 @@ ndarray = "0.15"
 rayon = "1.10"
 
 # AI / Machine Learning Integration
-ort = { version = "2.0.0-rc.2", features = ["load-dynamic"] }
+ort = { version = "2.0.0-rc.2", features = ["load-dynamic", "copy-dylibs"] }
 
 # Python Interop
 pyo3 = { version = "0.21", features = ["extension-module"] }

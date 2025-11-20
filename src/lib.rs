@@ -160,9 +160,7 @@ mod tests {
     fn test_batch_oracle_with_surrogates() {
         let oracle = BatchOracle::new().expect("Failed to create BatchOracle");
 
-        let pop: Vec<Vec<f64>> = (0..5)
-            .map(|i| vec![0.5 + (i as f64 * 0.2), 21.0])
-            .collect();
+        let pop: Vec<Vec<f64>> = (0..5).map(|i| vec![0.5 + (i as f64 * 0.2), 21.0]).collect();
         let results = oracle.evaluate_population(pop, true).unwrap();
         assert_eq!(results.len(), 5);
         assert!(results.iter().all(|&e| e > 0.0));
