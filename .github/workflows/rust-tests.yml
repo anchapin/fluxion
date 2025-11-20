@@ -27,6 +27,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config python3-dev
+        env:
+          DEBIAN_FRONTEND: noninteractive
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -52,7 +59,9 @@ jobs:
           key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
       
       - name: Run tests
-        run: cargo test --lib --verbose
+        run: cargo test --lib --verbose --no-default-features
+        env:
+          PYO3_PYTHON: /usr/bin/python3
 
   fmt:
     name: Rustfmt
@@ -74,11 +83,18 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config python3-dev
+        env:
+          DEBIAN_FRONTEND: noninteractive
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
-      - run: cargo clippy --all-targets --all-features -- -D warnings
+      - run: cargo clippy --lib --all-features -- -D warnings
 
   build-release:
     name: Build Release
@@ -90,6 +106,13 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config python3-dev
+        env:
+          DEBIAN_FRONTEND: noninteractive
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
       
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --release --verbose

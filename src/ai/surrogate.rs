@@ -22,7 +22,7 @@ impl SurrogateManager {
     ///
     /// Currently a placeholder. In production, this would initialize ONNX Runtime
     /// and load a pre-trained model from disk.
-    pub fn new() -> pyo3::PyResult<Self> {
+    pub fn new() -> Result<Self, String> {
         // Initialize ONNX Runtime environment
         // let env = Environment::builder().with_name("Fluxion_ORT").build()?;
 
