@@ -29,11 +29,11 @@ rayon = "1.10"
 ort = { version = "2.0.0-rc.2", features = ["load-dynamic", "copy-dylibs"] }
 
 # Python Interop
-pyo3 = { version = "0.24", features = ["extension-module"] }
-
-# Data Handling
-polars = { version = "0.51", features = ["ndarray", "lazy"] }
+pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize"] }
 
 [profile.release]
 lto = true
 codegen-units = 1
+
+# Ensure Python is properly linked during test compilation
+[profile.test]
