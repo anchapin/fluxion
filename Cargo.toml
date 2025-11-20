@@ -29,10 +29,10 @@ rayon = "1.10"
 ort = { version = "2.0.0-rc.2", features = ["load-dynamic", "copy-dylibs"] }
 
 # Python Interop
-pyo3 = { version = "0.21", features = ["extension-module"] }
+pyo3 = { version = "0.24", features = ["extension-module"] }
 
 # Data Handling
-polars = { version = "0.38", features = ["ndarray", "lazy"] }
+polars = { version = "0.51", features = ["ndarray", "lazy"] }
 
 [profile.release]
 lto = true
