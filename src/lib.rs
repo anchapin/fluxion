@@ -40,7 +40,7 @@ impl Model {
         Ok(Model {
             inner: ThermalModel::new(10),
             surrogates: SurrogateManager::new()
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
     }
 
@@ -83,7 +83,7 @@ impl BatchOracle {
         Ok(BatchOracle {
             base_model: ThermalModel::new(10), // The "template" building
             surrogates: SurrogateManager::new()
-                .map_err(|e| pyo3::exceptions::PyRuntimeError::new_err(e))?,
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
     }
 
