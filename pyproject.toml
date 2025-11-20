@@ -1,0 +1,11 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "fluxion"
+version = "0.1.0"
+description = "AI-Accelerated Building Energy Modeling engine"
+requires-python = ">=3.10"
+authors = [{name = "Alex Chapin", email = "a.n.chapin@gmail.com"}]
+license = {text = "Apache-2.0"}

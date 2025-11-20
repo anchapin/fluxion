@@ -1,0 +1,134 @@
+# Fluxion Pre-Commit Hooks Configuration
+# 
+# Installation:
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit install --hook-stage commit-msg
+#
+# Usage:
+#   git commit -m "..."                    # Runs hooks automatically
+#   pre-commit run --all-files             # Manual run on all files
+#   pre-commit run cargo-fmt --all-files   # Run specific hook
+#   git commit --no-verify                 # Skip hooks (not recommended)
+
+repos:
+  # ============================================================================
+  # RUST CODE QUALITY & SAFETY
+  # ============================================================================
+  - repo: https://github.com/doublify/pre-commit-rust
+    rev: v1.0
+    hooks:
+      # Format code consistently per project standards
+      - id: fmt
+        name: "cargo fmt"
+        description: "Format Rust code with cargo fmt"
+        
+      # Catch common Rust mistakes, performance issues, and unnecessary allocations
+      - id: clippy
+        name: "cargo clippy"
+        description: "Lint Rust code with clippy (performance-critical for Fluxion)"
+        args: ["--all-targets", "--all-features", "--", "-D", "warnings"]
+        
+      # Fast type/borrow checking without full compilation
+      - id: cargo-check
+        name: "cargo check"
+        description: "Type-check Rust code"
+        args: ["--all-targets", "--all-features"]
+        
+      # Validate physics engine, parameter mappings, batch oracle parallelism
+      - id: cargo-test
+        name: "cargo test"
+        description: "Run unit tests (physics validation, energy conservation)"
+        args: ["--lib"]
+
+  # ============================================================================
+  # PYTHON CODE QUALITY
+  # ============================================================================
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        name: "black"
+        description: "Format Python code (test scripts, integration harnesses)"
+        language: python
+        types: [python]
+        require_serial: true
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.8
+    hooks:
+      - id: ruff
+        name: "ruff"
+        description: "Lint Python code (test scripts, DA integration)"
+        args: ["check", "--fix"]
+        types: [python]
+
+  # ============================================================================
+  # COMMIT MESSAGE HYGIENE
+  # ============================================================================
+  - repo: https://github.com/compilerla/conventional-pre-commit
+    rev: v3.0.0
+    hooks:
+      - id: conventional-pre-commit
+        name: "Conventional Commit"
+        description: |
+          Enforce conventional commit format for traceability.
+          Scopes: surrogate, engine, batch-oracle, physics, perf, test, docs, chore
+        stages: [commit-msg]
+        args:
+          - --force-scope
+          - --scope-regex=^(surrogate|engine|batch-oracle|physics|perf|test|docs|chore|ci)$
+
+  # ============================================================================
+  # PHYSICS & NUMERICAL CORRECTNESS (Fluxion-Specific)
+  # ============================================================================
+  - repo: local
+    hooks:
+      - id: batch-oracle-pattern
+        name: "BatchOracle Pattern Compliance"
+        description: |
+          Ensure evaluate_population uses rayon correctly (no nested par_iter).
+          Catches: thread-pool exhaustion, sequential evaluation, throughput regressions.
+        entry: bash .githooks/batch-oracle-check.sh
+        language: system
+        types: [rust]
+        pass_filenames: true
+        stages: [commit]
+
+      - id: rust-doc-check
+        name: "Rust Doc Comments"
+        description: |
+          Enforce doc comments on public API.
+          Prevents undocumented surrogates, physics changes, and parameter mappings.
+        entry: python3 .githooks/rust-doc-check.py
+        language: system
+        types: [rust]
+        pass_filenames: true
+        stages: [commit]
+
+  # ============================================================================
+  # SECURITY: DEPENDENCY AUDIT
+  # ============================================================================
+      - id: cargo-audit
+        name: "Cargo Audit"
+        description: "Scan Rust dependencies for known vulnerabilities (critical for ONNX/quantum integration)"
+        entry: cargo audit
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [commit]
+
+  # ============================================================================
+  # PERFORMANCE: OPTIONAL BASELINE CHECK
+  # ============================================================================
+      - id: perf-baseline-optional
+        name: "Performance Baseline (Optional)"
+        description: |
+          Smoke test: BatchOracle throughput must exceed 100μs/config (10k+/sec).
+          Run with: pre-commit run --hook-stage manual
+          Catches: unnecessary clones, allocation in hot path, missing rayon, FFI overhead.
+        entry: python3 .githooks/perf-baseline.py
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [manual]
