@@ -1,8 +1,8 @@
 use pyo3::prelude::*;
 use rayon::prelude::*;
 
-pub mod sim;
 pub mod ai;
+pub mod sim;
 
 use sim::engine::ThermalModel;
 use ai::surrogate::SurrogateManager;

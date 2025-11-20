@@ -1,4 +1,3 @@
-use rayon::prelude::*;
 use crate::ai::surrogate::SurrogateManager;
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
@@ -52,8 +51,12 @@ impl ThermalModel {
     ///   - `params[0]`: Window U-value (W/m²K, range: 0.5-3.0)
     ///   - `params[1]`: HVAC setpoint (°C, range: 19-24)
     pub fn apply_parameters(&mut self, params: &[f64]) {
-        if params.len() >= 1 { self.window_u_value = params[0]; }
-        if params.len() >= 2 { self.hvac_setpoint = params[1]; }
+        if !params.is_empty() {
+            self.window_u_value = params[0];
+        }
+        if params.len() >= 2 {
+            self.hvac_setpoint = params[1];
+        }
     }
 
     /// Core physics simulation loop for annual building energy performance.
@@ -68,7 +71,12 @@ impl ThermalModel {
     ///
     /// # Returns
     /// Cumulative annual energy use intensity (dimensionless, normalized)
-    pub fn solve_timesteps(&mut self, steps: usize, surrogates: &SurrogateManager, use_ai: bool) -> f64 {
+    pub fn solve_timesteps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        use_ai: bool,
+    ) -> f64 {
         let mut total_energy = 0.0;
 
         for _t in 0..steps {
@@ -85,19 +93,21 @@ impl ThermalModel {
             for i in 0..self.num_zones {
                 let load = self.loads[i];
                 // Heat transfer logic influenced by U-value
-                let conduction_loss = (self.temperatures[i] - 0.0) * self.window_u_value * 0.1; 
+                let conduction_loss = (self.temperatures[i] - 0.0) * self.window_u_value * 0.1;
                 self.temperatures[i] += (load - conduction_loss) * 0.1;
             }
 
             // Energy calculation (simplified)
             // Energy = proportional to gap between temp and setpoint
-            let energy_step: f64 = self.temperatures.iter()
+            let energy_step: f64 = self
+                .temperatures
+                .iter()
                 .map(|t| (t - self.hvac_setpoint).abs())
                 .sum();
-            
+
             total_energy += energy_step;
         }
-        
+
         total_energy
     }
 
@@ -107,7 +117,7 @@ impl ThermalModel {
     /// In production, this would incorporate weather data, solar radiation, infiltration, etc.
     fn calc_analytical_loads(&mut self) {
         for load in self.loads.iter_mut() {
-            *load = 0.5; 
+            *load = 0.5;
         }
     }
 }

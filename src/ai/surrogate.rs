@@ -49,7 +49,7 @@ impl SurrogateManager {
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
         if !self.model_loaded {
             // Mock return if no model is loaded
-            return vec![1.2; current_temps.len()]; 
+            return vec![1.2; current_temps.len()];
         }
 
         // TODO:
