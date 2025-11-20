@@ -36,7 +36,7 @@ for filepath in sys.argv[1:]:
             has_doc = False
             if i > 0:
                 prev_line = lines[i - 1]
-                if re.match(r"^\s*///", prev_line) or re.match(r"^\s*#\[allow", prev_line):
+                if re.match(r"^\s*///", prev_line):
                     has_doc = True
             
             if not has_doc:

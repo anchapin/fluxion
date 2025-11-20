@@ -19,7 +19,7 @@ import os
 release_lib = "target/release/libfluxion.so"
 if not os.path.exists(release_lib):
     print("ℹ Release build not found; skipping perf check")
-    print(f"  Build with: cargo build --release && maturin develop --release")
+    print("  Build with: cargo build --release && maturin develop --release")
     sys.exit(0)
 
 try:
