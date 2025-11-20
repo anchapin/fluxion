@@ -1,4 +1,3 @@
-````markdown
 # Fluxion: AI-Accelerated Building Energy Engine
 
 **Fluxion** is a next-generation Building Energy Modeling (BEM) engine. It is designed to be differentiable, quantum-ready, and exponentially faster than legacy monolithic tools by utilizing a hybrid Neuro-Symbolic architecture.
@@ -58,4 +57,3 @@ results = oracle.evaluate_population(population, use_surrogates=True)
 
 print(f"Best Performance: {min(results)}")
 ```
-````

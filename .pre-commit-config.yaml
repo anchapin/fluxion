@@ -74,10 +74,14 @@ repos:
         description: |
           Enforce conventional commit format for traceability.
           Scopes: surrogate, engine, batch-oracle, physics, perf, test, docs, chore
+          Examples:
+            ✓ feat(surrogate): integrate ONNX runtime session initialization
+            ✓ perf(engine): reduce memory allocations in solve_timesteps inner loop
+            ✗ updated code
         stages: [commit-msg]
         args:
           - --force-scope
-          - --scope-regex=^(surrogate|engine|batch-oracle|physics|perf|test|docs|chore|ci)$
+          - --scope-regex=^(surrogate|engine|batch-oracle|physics|perf|test|docs|chore)$
 
   # ============================================================================
   # PHYSICS & NUMERICAL CORRECTNESS (Fluxion-Specific)
@@ -95,10 +99,14 @@ repos:
         pass_filenames: true
         stages: [commit]
 
+  # ============================================================================
+  # DOCUMENTATION: RUST API COMMENTS
+  # ============================================================================
       - id: rust-doc-check
         name: "Rust Doc Comments"
         description: |
           Enforce doc comments on public API.
+          Public functions must have /// comments for clarity.
           Prevents undocumented surrogates, physics changes, and parameter mappings.
         entry: python3 .githooks/rust-doc-check.py
         language: system

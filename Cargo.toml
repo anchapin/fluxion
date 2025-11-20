@@ -2,10 +2,8 @@
 name = "fluxion"
 version = "0.1.0"
 edition = "2021"
-authors = ["Alex Chapin <a.n.chapin@gmail.com>"]
-description = "AI-Accelerated Building Energy Modeling engine with Neuro-Symbolic hybrid architecture"
-license = "Apache-2.0"
-repository = "https://github.com/anchapin/fluxion"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+description = "A differentiable, AI-accelerated Building Energy Modeling engine."
 
 [lib]
 name = "fluxion"
