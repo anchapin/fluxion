@@ -18,9 +18,9 @@ jobs:
         run: cargo install cargo-tarpaulin
       
       - name: Generate coverage
-        # cargo-tarpaulin has issues instrumenting SIMD-heavy dependencies (pulp, ndarray, faer).
-        # These cause compile-time assertion panics due to size mismatches in SIMD code (__m256d vs Complex<f64>).
-        # Solution: Use --ignore-panics to skip panics during instrumentation compilation.
+        env:
+          # This is the critical fix for x86 CI runners
+          RUSTFLAGS: "-C target-feature=-avx,-avx2"
         run: |
           cargo tarpaulin \
             --timeout 600 \
