@@ -37,6 +37,7 @@ ort = { version = "2.0.0-rc.10", features = ["load-dynamic", "copy-dylibs"] }
 
 # Python Interop
 pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize", "abi3"], optional = true }
+crossbeam = "0.8.4"
 
 [profile.release]
 opt-level = 3
