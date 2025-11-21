@@ -7,8 +7,9 @@
 ///
 /// In production this wraps an ONNX runtime session; in tests it returns
 /// deterministic mock values when no model is loaded.
+/// This struct is cloneable for parallel evaluation across population vectors.
 #[derive(Clone, Default)]
-/// Manager for surrogate thermal load predictions.
+/// Surrogate manager for thermal load predictions.
 pub struct SurrogateManager {
     /// Whether a trained model has been loaded.
     pub model_loaded: bool,
