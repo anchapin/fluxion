@@ -24,7 +24,7 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # Numerical & Math
-faer = { version = "0.19", default-features = false, features = ["std"] }
+faer = { version = "0.23.2", default-features = false, features = ["std"] }
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
 
