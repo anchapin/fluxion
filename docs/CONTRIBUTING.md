@@ -141,10 +141,10 @@ If you hit an error you can't resolve locally, capture the `act` output and open
 - Add doc comments to public functions/structs:
   ```rust
   /// Predicts thermal loads using the neural network surrogate.
-  /// 
+  ///
   /// # Arguments
   /// * `current_temps` - Zone temperatures in Celsius
-  /// 
+  ///
   /// # Returns
   /// Vector of predicted loads (W/m²) per zone
   pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> { ... }

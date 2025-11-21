@@ -11,9 +11,9 @@ This catches silent performance regressions:
   - FFI overhead issues
 """
 
-import time
-import sys
 import os
+import sys
+import time
 
 # Only run if release build exists
 release_lib = "target/release/libfluxion.so"
@@ -31,21 +31,21 @@ except ImportError:
 
 try:
     oracle = BatchOracle()
-    
+
     # Test with 100 configs (representative batch)
     population = [[1.5, 21.0] for _ in range(100)]
-    
+
     # Warm-up run (JIT, caching)
     _ = oracle.evaluate_population(population, False)
-    
+
     # Actual benchmark
     start = time.perf_counter()
     results = oracle.evaluate_population(population, False)
     elapsed = time.perf_counter() - start
-    
+
     time_per_config_ms = (elapsed * 1000) / 100
     throughput_per_sec = 1000 / time_per_config_ms
-    
+
     # Targets: <0.1ms per config (10,000+ configs/sec)
     # Warning threshold: >1ms (regression indicator)
     if time_per_config_ms > 1.0:
@@ -66,5 +66,6 @@ try:
 except Exception as e:
     print(f"⚠ Perf check error: {e}")
     import traceback
+
     traceback.print_exc()
     sys.exit(0)

@@ -1,82 +1,64 @@
-/// Manages pre-trained neural network models for fast load predictions.
+//! Surrogate manager for fast thermal load predictions.
+//!
+//! Placeholder `SurrogateManager` used by the physics engine for tests and
+//! early development. Returns mock predictions when no model is loaded.
+
+/// Manager that provides fast (mock or neural) thermal-load predictions.
 ///
-/// This module bridges between the physics engine and AI surrogates. Rather than computing
-/// expensive CFD or ray-tracing calculations, neural networks approximate thermal loads,
-/// enabling 100x speedup with minimal accuracy loss (when physics-informed).
-///
-/// # Future Implementation
-/// - Load ONNX model files from `assets/`
-/// - Convert temperature vectors to tensors
-/// - Execute session.run() for batch load predictions
-/// - Apply physics constraints to maintain energy balance
+/// In production this wraps an ONNX runtime session; in tests it returns
+/// deterministic mock values when no model is loaded.
+/// This struct is cloneable for parallel evaluation across population vectors.
 #[derive(Clone, Default)]
+/// Surrogate manager for thermal load predictions.
 pub struct SurrogateManager {
-    // In a real app, this would hold the ONNX session
-    // session: Session,
-    /// Flag indicating if a trained model has been loaded
+    /// Whether a trained model has been loaded.
     pub model_loaded: bool,
 }
 
 impl SurrogateManager {
-    /// Create a new SurrogateManager instance.
-    ///
-    /// Currently a placeholder. In production, this would initialize ONNX Runtime
-    /// and load a pre-trained model from disk.
+    /// Construct a new `SurrogateManager`.
     pub fn new() -> Result<Self, String> {
-        // Initialize ONNX Runtime environment
-        // let env = Environment::builder().with_name("Fluxion_ORT").build()?;
-
         Ok(SurrogateManager {
             model_loaded: false,
         })
     }
 
-    /// Predict thermal loads using neural network surrogate model.
-    ///
-    /// This function replaces expensive computational methods (CFD, detailed ray-tracing)
-    /// with fast neural network inference. Provides ~100x speedup over analytical calculations.
+    /// Predict thermal loads for each zone given current temperatures.
     ///
     /// # Arguments
-    /// * `current_temps` - Current zone temperatures (°C)
+    /// * `current_temps` - Slice of current zone temperatures in degrees Celsius (`&[f64]`)
     ///
     /// # Returns
-    /// Predicted thermal loads (W/m²) for each zone
+    /// * `Vec<f64>` - Predicted thermal loads (W/m²) for each zone
     ///
-    /// # Note
-    /// Currently returns mock predictions (1.2 W/m² per zone). In production, this calls
-    /// ONNX Runtime with a trained physics-informed neural network.
+    /// Returns a mock constant (1.2 W/m² per zone) when no model is loaded.
+    ///
+    /// # Panics
+    /// Panics if a model is marked as loaded but ONNX inference is not implemented.
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
         if !self.model_loaded {
-            // Mock return if no model is loaded
             return vec![1.2; current_temps.len()];
         }
 
-        // TODO:
-        // 1. Convert inputs to Tensor
-        // 2. Run session.run()
-        // 3. Extract outputs
-
-        vec![0.0; current_temps.len()]
+        panic!("ONNX inference path is not implemented. SurrogateManager.model_loaded is true, but inference cannot be performed. Please implement ONNX inference before using this feature.");
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::ai::surrogate::SurrogateManager;
 
     #[test]
-    fn test_surrogate_manager_creation() {
-        let manager = SurrogateManager::new().expect("Failed to create SurrogateManager");
-        assert!(!manager.model_loaded);
+    fn creation() {
+        let m = SurrogateManager::new().unwrap();
+        assert!(!m.model_loaded);
     }
 
     #[test]
-    fn test_surrogate_predict_loads_mock() {
-        let manager = SurrogateManager::new().expect("Failed to create SurrogateManager");
-        let temps = vec![20.0, 21.0, 22.0];
-        let loads = manager.predict_loads(&temps);
-        assert_eq!(loads.len(), 3);
-        const EPSILON: f64 = 1e-9;
-        assert!(loads.iter().all(|&l| (l - 1.2).abs() < EPSILON));
+    fn predict_mock() {
+        let m = SurrogateManager::new().unwrap();
+        let temps = [20.0, 21.0, 22.0];
+        let loads = m.predict_loads(&temps);
+        assert_eq!(loads, vec![1.2, 1.2, 1.2]);
     }
 }

@@ -24,7 +24,7 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-      
+
       - name: Run tests
         run: cargo test --lib --verbose --no-default-features
         env:

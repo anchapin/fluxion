@@ -26,6 +26,41 @@ pip install maturin
 maturin develop
 ```
 
+### Development Setup (recommended)
+
+Follow these steps on macOS / zsh to create an isolated Python environment, install developer tools, enable `pre-commit` hooks, and build the Python bindings. This project requires Python `3.10+` (see `pyproject.toml`).
+
+```bash
+# 1) Create & activate a venv
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2) Upgrade pip
+python -m pip install --upgrade pip
+
+# 3) Install development dependencies (linters, test tools, build helpers)
+pip install -r requirements-dev.txt
+
+# 4) Install and enable pre-commit hooks
+pip install pre-commit
+pre-commit install                # normal hooks
+pre-commit install --hook-type commit-msg -f  # commit-msg hook (force replace existing hooks if needed)
+
+# 5) Run hooks once across the repo (optional but recommended)
+pre-commit run --all-files
+
+# 6) Build & install Python bindings for local development
+maturin develop
+```
+
+Optional minimal install
+
+If you only need `maturin` for quick builds or one-off development (and don't want to install all dev tools), install it separately:
+
+```bash
+python -m pip install 'maturin>=1.0,<2.0'
+```
+
 ## 🌳 Contributing & Branching
 
 **Development Workflow**:

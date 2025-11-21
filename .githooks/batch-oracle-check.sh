@@ -9,7 +9,7 @@ for file in "$@"; do
   if [[ ! "$file" =~ lib\.rs$ ]]; then
     continue
   fi
-  
+
   # Check for nested rayon par_iter (would cause thread-pool exhaustion)
   if grep -q "par_iter" "$file"; then
     # Extract lines within evaluate_population function and count par_iter only there
@@ -31,7 +31,7 @@ for file in "$@"; do
       fi
     fi
   fi
-  
+
   # Verify evaluate_population actually uses rayon
   if grep -q "fn evaluate_population" "$file"; then
     # Increase the search range to 300 lines after the function definition

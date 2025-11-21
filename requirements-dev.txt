@@ -1,0 +1,15 @@
+# Development requirements for Fluxion (install inside the project's venv)
+
+# Core tools
+maturin>=1.0,<2.0
+numpy
+pytest
+
+# Optional extras (recommended for development)
+# Uncomment or install individually if you use these tools
+# mypy          # static type checking
+# ruff          # fast linter + formatter
+# black         # code formatter
+# isort         # import sorting
+# pre-commit    # git hooks
+# tox           # test automation across environments
