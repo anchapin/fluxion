@@ -1,0 +1,19 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "fluxion"
+version = "0.1.0"
+requires-python = ">=3.10"
+authors = [{name = "Dr. Aris Thorne", email = "aris.thorne@fluxion.org"}]
+description = "A differentiable, AI-accelerated Building Energy Modeling engine."
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Implementation :: PyPy",
+]
+
+[tool.maturin]
+python-source = "src"
+features = ["python-bindings", "pyo3/extension-module"]

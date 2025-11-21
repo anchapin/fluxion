@@ -1,0 +1,22 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+
+jobs:
+  audit:
+    name: Cargo Audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-env
+      - uses: Swatinem/rust-cache@v2
+      - name: Run cargo audit
+        run: |
+          cargo install cargo-audit
+          cargo audit
