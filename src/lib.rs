@@ -2,9 +2,9 @@ pub mod ai;
 pub mod sim;
 
 #[cfg(feature = "python-bindings")]
-use rayon::prelude::ParallelIterator;
-#[cfg(feature = "python-bindings")]
 use rayon::iter::IntoParallelRefIterator;
+#[cfg(feature = "python-bindings")]
+use rayon::prelude::ParallelIterator;
 
 #[cfg(feature = "python-bindings")]
 use ai::surrogate::SurrogateManager;
@@ -12,7 +12,12 @@ use ai::surrogate::SurrogateManager;
 use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
-use pyo3::{prelude::{pyclass, PyModule}, pymethods, PyResult, Python, pymodule, Bound, types::PyModuleMethods};
+use pyo3::{
+    prelude::{pyclass, PyModule},
+    pymethods, pymodule,
+    types::PyModuleMethods,
+    Bound, PyResult, Python,
+};
 
 // When not using python-bindings feature, we still need these for tests
 #[cfg(not(feature = "python-bindings"))]
