@@ -4,12 +4,16 @@
 //! or returns mock predictions during development/testing. It uses `Mutex` for
 //! thread-safe interior mutability (required by ORT Session::run which needs &mut).
 
-use std::sync::{Arc, Mutex};
 use ort::execution_providers::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider, OpenVINOExecutionProvider,
-    ExecutionProvider,
+    CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
+    OpenVINOExecutionProvider,
 };
+use std::sync::{Arc, Mutex};
 
+/// Defines the inference backend to be used for the ONNX Runtime session.
+///
+/// This enum allows specifying different execution providers for
+/// model inference, such as CPU, CUDA, CoreML, DirectML, and OpenVINO.
 #[derive(Clone, Debug, Copy, Default)]
 pub enum InferenceBackend {
     #[default]
@@ -62,7 +66,11 @@ impl SurrogateManager {
     }
 
     /// Register an ONNX model file to be used by the surrogate manager with a specific backend.
-    pub fn with_gpu_backend(path: &str, backend: InferenceBackend, device_id: usize) -> Result<Self, String> {
+    pub fn with_gpu_backend(
+        path: &str,
+        backend: InferenceBackend,
+        device_id: usize,
+    ) -> Result<Self, String> {
         use ort::session::Session;
         use std::path::Path;
 
@@ -71,31 +79,33 @@ impl SurrogateManager {
         }
 
         // Initialize and build ONNX session
-        let mut builder = Session::builder()
-            .map_err(|e| format!("Failed to create session builder: {}", e))?;
+        let mut builder =
+            Session::builder().map_err(|e| format!("Failed to create session builder: {}", e))?;
 
         // Configure execution provider based on backend
         match backend {
             InferenceBackend::CUDA => {
-                let ep = CUDAExecutionProvider::default()
-                    .with_device_id(device_id as i32);
-                builder = builder.with_execution_providers([ep.build()])
-                     .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
+                let ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
+                builder = builder
+                    .with_execution_providers([ep.build()])
+                    .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
             }
             InferenceBackend::CoreML => {
                 let ep = CoreMLExecutionProvider::default();
-                builder = builder.with_execution_providers([ep.build()])
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add CoreML execution provider: {}", e))?;
             }
             InferenceBackend::DirectML => {
-                let ep = DirectMLExecutionProvider::default()
-                     .with_device_id(device_id as i32);
-                builder = builder.with_execution_providers([ep.build()])
+                let ep = DirectMLExecutionProvider::default().with_device_id(device_id as i32);
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
             }
-             InferenceBackend::OpenVINO => {
+            InferenceBackend::OpenVINO => {
                 let ep = OpenVINOExecutionProvider::default();
-                builder = builder.with_execution_providers([ep.build()])
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add OpenVINO execution provider: {}", e))?;
             }
             InferenceBackend::CPU => {
@@ -103,7 +113,8 @@ impl SurrogateManager {
             }
         }
 
-        let session = builder.commit_from_file(path)
+        let session = builder
+            .commit_from_file(path)
             .map_err(|e| format!("Failed to load ONNX model: {}", e))?;
 
         Ok(SurrogateManager {
@@ -200,7 +211,7 @@ impl SurrogateManager {
     /// * `Vec<Vec<f64>>` - A vector of result vectors, one for each input.
     pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
         if !self.model_loaded || batch_temps.is_empty() {
-             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
         }
 
         if let Some(ref session_cell) = self.session {
@@ -219,22 +230,25 @@ impl SurrogateManager {
             }
 
             // Flatten input
-            let flattened: Vec<f32> = batch_temps.iter().flat_map(|v| v.iter().map(|&x| x as f32)).collect();
+            let flattened: Vec<f32> = batch_temps
+                .iter()
+                .flat_map(|v| v.iter().map(|&x| x as f32))
+                .collect();
             let input_arr = match Array2::from_shape_vec((batch_size, input_size), flattened) {
                 Ok(arr) => arr,
                 Err(e) => {
-                     eprintln!("Failed to reshape array: {}; using mock loads", e);
-                     return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                    eprintln!("Failed to reshape array: {}; using mock loads", e);
+                    return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
                 }
             };
 
-             match session_cell.lock() {
+            match session_cell.lock() {
                 Ok(mut session) => {
                     let tensor_ref = match TensorRef::from_array_view(&input_arr) {
                         Ok(t) => t,
                         Err(e) => {
-                             eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            eprintln!("Failed to create tensor ref: {}; using mock loads", e);
+                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
                         }
                     };
 
@@ -245,7 +259,8 @@ impl SurrogateManager {
                                     Ok(array_view) => {
                                         // Expected shape: (batch_size, output_size)
                                         // We need to reconstruct Vec<Vec<f64>>
-                                        let result_iter = array_view.iter().copied().map(|x| x as f64);
+                                        let result_iter =
+                                            array_view.iter().copied().map(|x| x as f64);
                                         let results: Vec<f64> = result_iter.collect();
                                         let output_size = results.len() / batch_size;
 
@@ -256,15 +271,18 @@ impl SurrogateManager {
                                         return batch_results;
                                     }
                                     Err(e) => {
-                                         eprintln!("Failed to extract tensor: {}; using mock loads", e);
+                                        eprintln!(
+                                            "Failed to extract tensor: {}; using mock loads",
+                                            e
+                                        );
                                     }
                                 }
                             }
                             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
                         }
                         Err(e) => {
-                             eprintln!("ONNX inference error: {}; using mock loads", e);
-                             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            eprintln!("ONNX inference error: {}; using mock loads", e);
+                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
                         }
                     }
                 }
@@ -272,23 +290,23 @@ impl SurrogateManager {
                     eprintln!("Could not lock ORT session; using mock loads");
                     return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
                 }
-             }
-        } else {
-             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+            }
         }
+        // Fallback default
+        batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::ai::surrogate::{SurrogateManager, InferenceBackend};
+    use crate::ai::surrogate::{InferenceBackend, SurrogateManager};
 
     #[test]
     fn creation() {
         let m = SurrogateManager::new().unwrap();
         assert!(!m.model_loaded);
         match m.backend {
-            InferenceBackend::CPU => {},
+            InferenceBackend::CPU => {}
             _ => panic!("Default backend should be CPU"),
         }
     }
@@ -304,10 +322,7 @@ mod tests {
     #[test]
     fn predict_mock_batched() {
         let m = SurrogateManager::new().unwrap();
-        let batch = vec![
-            vec![20.0, 21.0],
-            vec![22.0, 23.0]
-        ];
+        let batch = vec![vec![20.0, 21.0], vec![22.0, 23.0]];
         let loads = m.predict_loads_batched(&batch);
         assert_eq!(loads.len(), 2);
         assert_eq!(loads[0], vec![1.2, 1.2]);
@@ -326,8 +341,9 @@ mod tests {
 
     #[test]
     fn load_onnx_gpu_backend_file_check() {
-        let result = SurrogateManager::with_gpu_backend("/nonexistent.onnx", InferenceBackend::CUDA, 0);
-         match result {
+        let result =
+            SurrogateManager::with_gpu_backend("/nonexistent.onnx", InferenceBackend::CUDA, 0);
+        match result {
             Err(e) => assert!(e.contains("not found")),
             Ok(_) => panic!("Expected error for nonexistent file"),
         }

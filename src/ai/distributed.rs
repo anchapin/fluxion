@@ -1,7 +1,7 @@
-use crate::ai::surrogate::{SurrogateManager, InferenceBackend};
+use crate::ai::surrogate::{InferenceBackend, SurrogateManager};
 use crossbeam::queue::SegQueue;
-use std::sync::Arc;
 use rayon::prelude::*;
+use std::sync::Arc;
 
 /// Manages multiple SurrogateManagers, typically one per GPU device.
 pub struct DistributedSurrogateManager {
@@ -16,7 +16,11 @@ impl DistributedSurrogateManager {
     /// * `model_path` - Path to the ONNX model.
     /// * `backend` - Inference backend to use (e.g., CUDA).
     /// * `device_ids` - List of device IDs to use (e.g., [0, 1] for 2 GPUs).
-    pub fn new(model_path: &str, backend: InferenceBackend, device_ids: &[usize]) -> Result<Self, String> {
+    pub fn new(
+        model_path: &str,
+        backend: InferenceBackend,
+        device_ids: &[usize],
+    ) -> Result<Self, String> {
         let mut managers = Vec::new();
         let queue = Arc::new(SegQueue::new());
 
@@ -30,10 +34,7 @@ impl DistributedSurrogateManager {
             return Err("No devices specified".to_string());
         }
 
-        Ok(DistributedSurrogateManager {
-            managers,
-            queue,
-        })
+        Ok(DistributedSurrogateManager { managers, queue })
     }
 
     /// Evaluate a population using distributed inference.
@@ -50,7 +51,7 @@ impl DistributedSurrogateManager {
         // Determine batch size per device or chunk size
         let num_devices = self.managers.len();
         if num_devices == 0 {
-             return Err("No inference managers available".to_string());
+            return Err("No inference managers available".to_string());
         }
 
         // Simple parallel iteration using rayon
@@ -60,7 +61,7 @@ impl DistributedSurrogateManager {
         // Approach: Chunk the population and process each chunk in parallel using rayon.
         // Inside the map, acquire a manager from the queue, use it, and return it.
 
-        let chunk_size = (population.len() + num_devices - 1) / num_devices;
+        let chunk_size = population.len().div_ceil(num_devices);
 
         // We use par_chunks if we had a slice, but we have Vec<Vec<f64>>.
         // We can use par_iter, but we want to batch.
@@ -70,7 +71,8 @@ impl DistributedSurrogateManager {
         // or extensive cloning if we want to return a new Vec.
         // But we can use par_chunks on slice.
 
-        let results: Result<Vec<Vec<Vec<f64>>>, String> = population.par_chunks(chunk_size)
+        let results: Result<Vec<Vec<Vec<f64>>>, String> = population
+            .par_chunks(chunk_size)
             .map(|chunk| {
                 // Acquire a manager index
                 let manager_idx = loop {
