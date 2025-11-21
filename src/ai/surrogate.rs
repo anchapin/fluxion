@@ -162,4 +162,37 @@ mod tests {
             Ok(_) => panic!("Expected error for nonexistent file"),
         }
     }
+
+    #[test]
+    fn predict_loads_with_empty_temps() {
+        let m = SurrogateManager::new().unwrap();
+        let temps: [f64; 0] = [];
+        let loads = m.predict_loads(&temps);
+        assert_eq!(loads.len(), 0);
+    }
+
+    #[test]
+    fn predict_loads_with_many_zones() {
+        let m = SurrogateManager::new().unwrap();
+        let temps: Vec<f64> = (0..100).map(|i| 20.0 + (i as f64 * 0.1)).collect();
+        let loads = m.predict_loads(&temps);
+        assert_eq!(loads.len(), 100);
+        assert!(loads.iter().all(|&x| x == 1.2));
+    }
+
+    #[test]
+    fn model_path_optional() {
+        let m = SurrogateManager::new().unwrap();
+        assert_eq!(m.model_path, None);
+        assert!(!m.model_loaded);
+        assert!(m.session.is_none());
+    }
+
+    #[test]
+    fn surrogate_manager_clone() {
+        let m1 = SurrogateManager::new().unwrap();
+        let m2 = m1.clone();
+        assert_eq!(m2.model_loaded, m1.model_loaded);
+        assert_eq!(m2.model_path, m1.model_path);
+    }
 }

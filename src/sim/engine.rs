@@ -311,4 +311,102 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_apply_parameters_boundary_values() {
+        let mut model = ThermalModel::new(10);
+
+        // Test minimum boundary
+        model.apply_parameters(&vec![0.5, 19.0]);
+        assert_eq!(model.window_u_value, 0.5);
+        assert_eq!(model.hvac_setpoint, 19.0);
+
+        // Test maximum boundary
+        model.apply_parameters(&vec![3.0, 24.0]);
+        assert_eq!(model.window_u_value, 3.0);
+        assert_eq!(model.hvac_setpoint, 24.0);
+    }
+
+    #[test]
+    fn test_apply_parameters_extra_values() {
+        let mut model = ThermalModel::new(10);
+        let params = vec![1.5, 22.0, 1000.0, 999.0];
+
+        // Should only use first two elements
+        model.apply_parameters(&params);
+        assert_eq!(model.window_u_value, 1.5);
+        assert_eq!(model.hvac_setpoint, 22.0);
+    }
+
+    #[test]
+    fn test_thermal_model_zones() {
+        let model_5 = ThermalModel::new(5);
+        assert_eq!(model_5.num_zones, 5);
+        assert_eq!(model_5.temperatures.len(), 5);
+        assert_eq!(model_5.loads.len(), 5);
+
+        let model_20 = ThermalModel::new(20);
+        assert_eq!(model_20.num_zones, 20);
+        assert_eq!(model_20.temperatures.len(), 20);
+        assert_eq!(model_20.loads.len(), 20);
+    }
+
+    #[test]
+    fn test_solve_timesteps_zero_steps() {
+        let mut model = ThermalModel::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        model.apply_parameters(&vec![1.5, 21.0]);
+        let energy = model.solve_timesteps(0, &surrogates, false);
+
+        // Zero steps should result in zero energy
+        assert_eq!(energy, 0.0);
+    }
+
+    #[test]
+    fn test_solve_timesteps_short_and_long() {
+        let mut model = ThermalModel::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        model.apply_parameters(&vec![1.5, 21.0]);
+
+        // Short simulation
+        let energy_short = model.clone().solve_timesteps(168, &surrogates, false);
+        assert!(energy_short > 0.0);
+
+        // Long simulation (5 years)
+        let energy_long = model.solve_timesteps(8760 * 5, &surrogates, false);
+        assert!(energy_long > 0.0);
+        // 5-year should be roughly 5x the annual (with some variation)
+        assert!(energy_long > energy_short);
+    }
+
+    #[test]
+    fn test_calc_analytical_loads_mutation() {
+        let mut model = ThermalModel::new(10);
+
+        model.calc_analytical_loads();
+
+        // All loads should be 0.5
+        for &load in model.loads.iter() {
+            assert_eq!(load, 0.5);
+        }
+    }
+
+    #[test]
+    fn test_parameters_affect_energy() {
+        let mut model1 = ThermalModel::new(10);
+        let mut model2 = ThermalModel::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        // Two different parameter sets
+        model1.apply_parameters(&vec![0.5, 19.0]); // Better insulation, lower setpoint
+        model2.apply_parameters(&vec![3.0, 24.0]); // Worse insulation, higher setpoint
+
+        let energy1 = model1.solve_timesteps(8760, &surrogates, false);
+        let energy2 = model2.solve_timesteps(8760, &surrogates, false);
+
+        // Different parameters should give different energy results
+        assert_ne!(energy1, energy2);
+    }
 }
