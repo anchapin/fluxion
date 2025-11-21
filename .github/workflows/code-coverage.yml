@@ -18,16 +18,26 @@ jobs:
         run: cargo install cargo-tarpaulin
       
       - name: Generate coverage
-        # cargo-tarpaulin can fail on certain SIMD-heavy dependencies (like pulp).
+        # cargo-tarpaulin has issues instrumenting SIMD-heavy dependencies (pulp, ndarray, faer).
         # These cause compile-time assertion panics during instrumentation.
-        # Note: --exclude only works with --workspace, not --lib, so we use --ignore-panics instead.
-        # Set continue-on-error to ensure the workflow completes even if coverage collection has issues.
+        # We exclude these external dependencies and focus on coverage of our fluxion code.
         # Increased timeout to account for slower instrumented builds.
-        continue-on-error: true
-        run: cargo tarpaulin --lib --out Xml --timeout 600 --skip-clean --ignore-panics --verbose 2>&1 | tee tarpaulin.log
+        run: |
+          cargo tarpaulin --lib --out Xml --timeout 600 --skip-clean \
+            --exclude-files "target/*" \
+            --ignore-panics \
+            --verbose 2>&1 | tee tarpaulin.log
+          
+          # Check for compilation errors in the log
+          if grep -q "error\[E[0-9]\+\]\|Failed to compile" tarpaulin.log; then
+            echo "Compilation errors detected in tarpaulin output"
+            exit 1
+          fi
       
       - name: Upload to codecov
+        # Only upload if coverage XML was successfully generated
+        if: success()
         uses: codecov/codecov-action@v3
         with:
           files: ./cobertura.xml
-          fail_ci_if_error: false
+          fail_ci_if_error: true
