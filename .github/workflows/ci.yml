@@ -39,12 +39,31 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Install build deps
+      - name: Install Rust
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Create virtual environment and install deps
         run: |
+          python -m venv venv
+          source venv/bin/activate
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install maturin
       - name: Build and install Python bindings
-        run: maturin develop --release
+        run: |
+          source venv/bin/activate
+          maturin develop --release
       - name: Run pytest
-        run: pytest -q
+        run: |
+          source venv/bin/activate
+          pytest -q
