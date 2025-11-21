@@ -124,14 +124,16 @@ impl ThermalModel {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::ThermalModel;
+    use crate::ai::surrogate::SurrogateManager;
 
     #[test]
     fn test_thermal_model_creation() {
         let model = ThermalModel::new(10);
         assert_eq!(model.num_zones, 10);
         assert_eq!(model.temperatures.len(), 10);
-        assert!(model.temperatures.iter().all(|&t| t == 20.0));
+        const EPSILON: f64 = 1e-9;
+        assert!(model.temperatures.iter().all(|&t| (t - 20.0).abs() < EPSILON));
     }
 
     #[test]
@@ -184,6 +186,7 @@ mod tests {
         model.calc_analytical_loads();
 
         // All loads should be 0.5
-        assert!(model.loads.iter().all(|&l| l == 0.5));
+        const EPSILON: f64 = 1e-9;
+        assert!(model.loads.iter().all(|&l| (l - 0.5).abs() < EPSILON));
     }
 }

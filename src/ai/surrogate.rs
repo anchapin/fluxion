@@ -76,6 +76,7 @@ mod tests {
         let temps = vec![20.0, 21.0, 22.0];
         let loads = manager.predict_loads(&temps);
         assert_eq!(loads.len(), 3);
-        assert!(loads.iter().all(|&l| l == 1.2));
+        const EPSILON: f64 = 1e-9;
+        assert!(loads.iter().all(|&l| (l - 1.2).abs() < EPSILON));
     }
 }

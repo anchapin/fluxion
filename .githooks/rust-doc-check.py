@@ -42,7 +42,7 @@ for filepath in sys.argv[1:]:
             if not has_doc:
                 print(f"❌ {filepath}:{i+1}: Public item missing doc comment")
                 print(f"   {line.strip()}")
-                print(f"   ✓ Add doc comment: /// Your documentation here")
+                print("   ✓ Add doc comment: /// Your documentation here")
                 exit_code = 1
         
         i += 1

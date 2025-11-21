@@ -1,7 +1,8 @@
-use rayon::prelude::*;
-
 pub mod ai;
 pub mod sim;
+
+#[cfg(feature = "python-bindings")]
+use rayon::prelude::ParallelIterator;
 
 #[cfg(feature = "python-bindings")]
 use ai::surrogate::SurrogateManager;
@@ -9,12 +10,14 @@ use ai::surrogate::SurrogateManager;
 use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
-use pyo3::prelude::*;
+use pyo3::{prelude::pyclass, pymethods, PyResult, Python, exceptions};
 
 // When not using python-bindings feature, we still need these for tests
 #[cfg(not(feature = "python-bindings"))]
+#[allow(unused_imports)]
 use ai::surrogate::SurrogateManager;
 #[cfg(not(feature = "python-bindings"))]
+#[allow(unused_imports)]
 use sim::engine::ThermalModel;
 
 /// Standard Single-Building Model for detailed building energy analysis.
