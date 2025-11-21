@@ -35,10 +35,10 @@ jobs:
           fi
       
       - name: Upload to codecov
-        # Only upload if coverage XML was successfully generated
-        if: success()
+      # Only upload if success AND we are NOT running locally in ACT
+        if: success() && !env.ACT
         uses: codecov/codecov-action@v3
         with:
-          files: ./cobertura.xml
+          files: ./tarpaulin.xml
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
