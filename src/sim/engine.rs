@@ -133,7 +133,10 @@ mod tests {
         assert_eq!(model.num_zones, 10);
         assert_eq!(model.temperatures.len(), 10);
         const EPSILON: f64 = 1e-9;
-        assert!(model.temperatures.iter().all(|&t| (t - 20.0).abs() < EPSILON));
+        assert!(model
+            .temperatures
+            .iter()
+            .all(|&t| (t - 20.0).abs() < EPSILON));
     }
 
     #[test]
