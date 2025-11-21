@@ -25,7 +25,9 @@ jobs:
         run: |
           cargo tarpaulin --lib --out Xml --timeout 600 --skip-clean \
             --exclude-files "target/*" \
-            --ignore-panics \
+            --exclude pulp \
+            --exclude ndarray \
+            --exclude faer \
             --verbose 2>&1 | tee tarpaulin.log
           
           # Check for compilation errors in the log
