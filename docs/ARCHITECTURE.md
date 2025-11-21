@@ -179,13 +179,13 @@ mod tests {
     fn test_thermal_model_energy_conservation() {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().unwrap();
-        
+
         // Analytical baseline (no AI)
         let energy_analytical = model.clone().solve_timesteps(8760, &surrogates, false);
-        
+
         // Surrogate prediction (should be close)
         model.solve_timesteps(8760, &surrogates, true);
-        
+
         // Verify energy conservation within tolerance
         assert!(energy_analytical.abs() > 0.0, "Energy should be non-zero");
     }
@@ -194,7 +194,7 @@ mod tests {
     fn test_apply_parameters_updates_model() {
         let mut model = ThermalModel::new(10);
         let params = vec![1.5, 22.0];
-        
+
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
         assert_eq!(model.hvac_setpoint, 22.0);
@@ -207,14 +207,14 @@ mod tests {
 #[test]
 fn test_batch_oracle_population_scaling() {
     let oracle = BatchOracle::new().unwrap();
-    
+
     // Small population: 100 candidates
     let small_pop: Vec<Vec<f64>> = (0..100)
         .map(|i| vec![0.5 + (i as f64 * 0.01), 21.0])
         .collect();
     let small_results = oracle.evaluate_population(small_pop, false).unwrap();
     assert_eq!(small_results.len(), 100);
-    
+
     // Larger population: 1000 candidates (tests FFI overhead)
     let large_pop: Vec<Vec<f64>> = (0..1000)
         .map(|i| vec![0.5 + (i as f64 * 0.001), 21.0])
@@ -247,10 +247,10 @@ cargo test -- --test-threads=1
 - **Documentation**: Add doc comments to public functions/structs:
   ```rust
   /// Predicts thermal loads using the neural network surrogate.
-  /// 
+  ///
   /// # Arguments
   /// * `current_temps` - Zone temperatures in Celsius
-  /// 
+  ///
   /// # Returns
   /// Vector of predicted loads (W/m²) per zone
   pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> { ... }

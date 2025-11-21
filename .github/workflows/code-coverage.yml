@@ -13,10 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
-      
+
       - name: Install tarpaulin
         run: cargo install cargo-tarpaulin
-      
+
       - name: Generate coverage
         env:
           # Keep the Nuclear Option for x86
@@ -25,16 +25,16 @@ jobs:
         run: |
           # This ensures the step fails if tarpaulin fails, even with the pipe
           set -o pipefail
-          
+
           cargo tarpaulin \
             --timeout 600 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
             2>&1 | tee tarpaulin.log
-          
+
           # Verify coverage XML was generated
-          ls -la cobertura.xml      
+          ls -la cobertura.xml
       - name: Upload to codecov
         if: success() && !env.ACT
         uses: codecov/codecov-action@v3

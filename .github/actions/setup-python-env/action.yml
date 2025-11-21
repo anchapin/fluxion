@@ -14,7 +14,7 @@ runs:
       uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.python-version }}
-    
+
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
       shell: bash

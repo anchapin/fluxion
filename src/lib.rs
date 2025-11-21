@@ -153,7 +153,8 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 // Tests for core physics engine (no Python bindings required)
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::ai::surrogate::SurrogateManager;
+    use crate::sim::engine::ThermalModel;
 
     #[test]
     fn test_thermal_model_creation() {
