@@ -20,19 +20,15 @@ jobs:
       - name: Generate coverage
         # cargo-tarpaulin has issues instrumenting SIMD-heavy dependencies (pulp, ndarray, faer).
         # These cause compile-time assertion panics during instrumentation.
-        # We exclude these external dependencies and focus on coverage of our fluxion code.
+        # We focus on coverage of our fluxion code (--lib only).
         # Increased timeout to account for slower instrumented builds.
         run: |
           cargo tarpaulin --lib --out Xml --timeout 600 --skip-clean \
-            --exclude-files "target/*" \
-            --exclude pulp \
-            --exclude ndarray \
-            --exclude faer \
             --verbose 2>&1 | tee tarpaulin.log
           
           # Check for compilation errors in the log
-          if grep -q "error\[E[0-9]\+\]\|Failed to compile" tarpaulin.log; then
-            echo "Compilation errors detected in tarpaulin output"
+          if grep -q "error\[E[0-9]\+\]\|error:" tarpaulin.log; then
+            echo "Errors detected in tarpaulin output"
             exit 1
           fi
       
