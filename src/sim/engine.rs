@@ -13,7 +13,6 @@ use crate::ai::surrogate::SurrogateManager;
 /// * `window_u_value` - Thermal transmittance of windows (W/m²K) - optimization variable
 /// * `hvac_setpoint` - HVAC system setpoint temperature (°C) - optimization variable
 #[derive(Clone)]
-/// Core thermal network model for building energy simulation.
 pub struct ThermalModel {
     pub num_zones: usize,
     pub temperatures: Vec<f64>,

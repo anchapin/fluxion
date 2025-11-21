@@ -32,12 +32,22 @@ for filepath in sys.argv[1:]:
                 i += 1
                 continue
 
-            # Check if previous line is a doc comment
+            # Check if there is a doc comment before this pub item
+            # Walk backwards skipping attributes like #[derive(...)]
             has_doc = False
-            if i > 0:
-                prev_line = lines[i - 1]
-                if re.match(r"^\s*///", prev_line):
+            j = i - 1
+            while j >= 0:
+                check_line = lines[j]
+                # Stop if we hit a doc comment
+                if re.match(r"^\s*///", check_line):
                     has_doc = True
+                    break
+                # Skip attributes and empty lines
+                if re.match(r"^\s*#\[", check_line) or re.match(r"^\s*$", check_line):
+                    j -= 1
+                    continue
+                # Stop if we hit anything else (previous item, impl block, etc.)
+                break
 
             if not has_doc:
                 print(f"❌ {filepath}:{i + 1}: Public item missing doc comment")
