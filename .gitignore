@@ -77,3 +77,4 @@ Thumbs.db
 .env
 .env.local
 *.copilotmd
+cobertura.xml
