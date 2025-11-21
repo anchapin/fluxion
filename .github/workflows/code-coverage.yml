@@ -19,23 +19,22 @@ jobs:
       
       - name: Generate coverage
         env:
-          # FIX 1: "Nuclear Option" for x86-64.
-          # We set RUSTFLAGS here, but if this fails again, we will use the config file.
-          # This tells the compiler: "Pretend you are a generic 64-bit CPU with NO special features."
+          # Keep the Nuclear Option for x86
           RUSTFLAGS: "-C target-cpu=x86-64"
+        shell: bash
         run: |
-          # We explicitly name the output file to avoid confusion
+          # This ensures the step fails if tarpaulin fails, even with the pipe
+          set -o pipefail
+          
           cargo tarpaulin \
             --timeout 600 \
             --out Xml \
             --output-dir ./ \
-            --out-name cobertura \
             --ignore-panics \
             2>&1 | tee tarpaulin.log
           
-          # Verify the file exists (debug step)
-          ls -la cobertura.xml
-      
+          # Verify coverage XML was generated
+          ls -la cobertura.xml      
       - name: Upload to codecov
         if: success() && !env.ACT
         uses: codecov/codecov-action@v3
