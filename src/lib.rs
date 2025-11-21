@@ -68,6 +68,17 @@ impl Model {
             .inner
             .solve_timesteps(steps, &self.surrogates, use_surrogates))
     }
+
+    /// Register an ONNX surrogate model for this `Model` instance.
+    fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
+        match SurrogateManager::load_onnx(&model_path) {
+            Ok(manager) => {
+                self.surrogates = manager;
+                Ok(())
+            }
+            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
+        }
+    }
 }
 
 /// High-throughput parallel oracle for quantum and genetic algorithm optimization.
@@ -139,6 +150,18 @@ impl BatchOracle {
             .collect();
 
         Ok(results)
+    }
+
+    /// Register an ONNX surrogate model for the oracle. This replaces the internal
+    /// `SurrogateManager` with one pointing at the provided model file.
+    fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
+        match SurrogateManager::load_onnx(&model_path) {
+            Ok(manager) => {
+                self.surrogates = manager;
+                Ok(())
+            }
+            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
+        }
     }
 }
 

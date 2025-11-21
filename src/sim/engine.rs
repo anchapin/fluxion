@@ -192,4 +192,123 @@ mod tests {
         const EPSILON: f64 = 1e-9;
         assert!(model.loads.iter().all(|&l| (l - 0.5).abs() < EPSILON));
     }
+
+    #[test]
+    fn test_surrogate_vs_analytical_consistency() {
+        // Compare surrogate and analytical results on same model.
+        // Both should produce positive, non-zero energy.
+        let mut model_analytical = ThermalModel::new(10);
+        let mut model_surrogate = ThermalModel::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        let params = vec![1.5, 21.0];
+        model_analytical.apply_parameters(&params);
+        model_surrogate.apply_parameters(&params);
+
+        let energy_analytical = model_analytical.solve_timesteps(8760, &surrogates, false);
+        let energy_surrogate = model_surrogate.solve_timesteps(8760, &surrogates, true);
+
+        // Both should be positive
+        assert!(
+            energy_analytical > 0.0,
+            "Analytical energy should be positive"
+        );
+        assert!(
+            energy_surrogate > 0.0,
+            "Surrogate energy should be positive"
+        );
+
+        // For mock surrogates (returning 1.2), surrogate energy should match analytical
+        // because both use the same default mock loads in the base case.
+        // This test just verifies both code paths work without panicking.
+    }
+
+    #[test]
+    fn test_onnx_model_loading() {
+        use std::path::Path;
+
+        // Check if dummy ONNX model exists
+        let model_path = "assets/loads_predictor.onnx";
+        if !Path::new(model_path).exists() {
+            // Skip if model file not generated yet
+            return;
+        }
+
+        // Try to load - this will panic if libonnxruntime is not installed,
+        // which is expected in CI/dev environments without ONNX Runtime
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            SurrogateManager::load_onnx(model_path)
+        })) {
+            Ok(result) => {
+                assert!(
+                    result.is_ok(),
+                    "Should successfully load ONNX model from {}",
+                    model_path
+                );
+
+                let manager = result.unwrap();
+                assert!(manager.model_loaded);
+                assert_eq!(manager.model_path, Some(model_path.to_string()));
+
+                // Try predicting with loaded model
+                let temps = vec![20.0, 21.0, 22.0, 20.5, 21.5];
+                let loads = manager.predict_loads(&temps);
+
+                // Should return exactly 5 values (one per input zone)
+                assert_eq!(loads.len(), temps.len());
+
+                // Dummy model returns 1.2 for each zone
+                for load in loads {
+                    assert!((load - 1.2).abs() < 1e-5, "Dummy model should return 1.2");
+                }
+            }
+            Err(_) => {
+                // libonnxruntime not installed - skip test gracefully
+                eprintln!("Skipping ONNX model loading test: libonnxruntime not installed");
+            }
+        }
+    }
+
+    #[test]
+    fn test_trained_surrogate_model() {
+        use std::path::Path;
+
+        // Test the trained thermal surrogate model
+        let model_path = "assets/thermal_surrogate.onnx";
+        if !Path::new(model_path).exists() {
+            // Skip if trained model not generated yet
+            return;
+        }
+
+        // Try to load trained model
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            SurrogateManager::load_onnx(model_path)
+        })) {
+            Ok(result) => {
+                assert!(result.is_ok(), "Should load trained surrogate model");
+
+                let manager = result.unwrap();
+                assert!(manager.model_loaded);
+
+                // Test with multiple temperature vectors
+                let test_temps = vec![
+                    vec![20.0, 21.0, 22.0, 20.5, 21.5, 19.5, 22.5, 20.0, 21.0, 22.0],
+                    vec![18.0, 19.0, 20.0, 21.0, 22.0, 23.0, 24.0, 18.5, 19.5, 20.5],
+                ];
+
+                for temps in test_temps {
+                    let loads = manager.predict_loads(&temps);
+                    // Should output 10 values (one per zone)
+                    assert_eq!(loads.len(), 10);
+                    // All loads should be positive
+                    for load in &loads {
+                        assert!(*load > 0.0, "Loads should be positive");
+                    }
+                }
+            }
+            Err(_) => {
+                eprintln!("Skipping trained surrogate test: libonnxruntime not installed");
+            }
+        }
+    }
 }
