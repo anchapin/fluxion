@@ -25,14 +25,22 @@ impl SurrogateManager {
 
     /// Predict thermal loads for each zone given current temperatures.
     ///
-    /// Returns a mock constant when no model is loaded.
+    /// # Arguments
+    /// * `current_temps` - Slice of current zone temperatures in degrees Celsius (`&[f64]`)
+    ///
+    /// # Returns
+    /// * `Vec<f64>` - Predicted thermal loads (W/m²) for each zone
+    ///
+    /// Returns a mock constant (1.2 W/m² per zone) when no model is loaded.
+    ///
+    /// # Panics
+    /// Panics if a model is marked as loaded but ONNX inference is not implemented.
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
         if !self.model_loaded {
             return vec![1.2; current_temps.len()];
         }
 
-        // Placeholder for ONNX inference path.
-        vec![0.0; current_temps.len()]
+        panic!("ONNX inference path is not implemented. SurrogateManager.model_loaded is true, but inference cannot be performed. Please implement ONNX inference before using this feature.");
     }
 }
 
