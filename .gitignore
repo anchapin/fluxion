@@ -62,6 +62,7 @@ tmp/
 .pytest_cache/
 .coverage
 htmlcov/
+*.profraw
 
 # Logs
 logs/

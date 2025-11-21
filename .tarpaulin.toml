@@ -2,26 +2,10 @@
 # This config avoids SIMD-related compilation issues with deps like pulp
 
 # Run coverage only on library tests (not binaries or examples)
-run-types = "Lib"
-
-# Exclude SIMD-heavy dependencies that cause compile-time assertion panics
-# when instrumented by tarpaulin on certain architectures (e.g., aarch64)
-exclude-packages = [
-    "pulp",
-    "ndarray", 
-    "faer",
-    "num-complex",
-    "blas-src",
-    "lapack-src",
-    "blas",
-    "lapack"
-]
+run-types = ["Lib"]
 
 # Output XML for codecov integration
 out = ["Xml"]
 
 # Timeout for instrumented builds (slower than normal builds)
 timeout = 600
-
-# Enable verbose output for debugging
-verbose = true
