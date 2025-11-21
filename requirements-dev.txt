@@ -3,6 +3,7 @@
 # Core tools
 maturin>=1.0,<2.0
 numpy
+onnx
 pytest
 
 # Optional extras (recommended for development)

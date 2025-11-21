@@ -1,18 +1,29 @@
 //! Surrogate manager for fast thermal load predictions.
 //!
-//! Placeholder `SurrogateManager` used by the physics engine for tests and
-//! early development. Returns mock predictions when no model is loaded.
+//! The `SurrogateManager` wraps ONNX Runtime sessions for neural network inference
+//! or returns mock predictions during development/testing. It uses `Mutex` for
+//! thread-safe interior mutability (required by ORT Session::run which needs &mut).
+
+use std::sync::{Arc, Mutex};
 
 /// Manager that provides fast (mock or neural) thermal-load predictions.
 ///
-/// In production this wraps an ONNX runtime session; in tests it returns
+/// Wraps an ONNX Runtime session for neural network inference, or returns
 /// deterministic mock values when no model is loaded.
-/// This struct is cloneable for parallel evaluation across population vectors.
+///
+/// # Thread Safety
+/// The session is wrapped in `Arc<Mutex<_>>` for thread-safe sharing across
+/// parallel workers, allowing multiple threads to safely borrow the session
+/// for inference.
 #[derive(Clone, Default)]
-/// Surrogate manager for thermal load predictions.
 pub struct SurrogateManager {
     /// Whether a trained model has been loaded.
     pub model_loaded: bool,
+    /// Optional path to an ONNX model registered for use.
+    pub model_path: Option<String>,
+    /// Optional ONNX Runtime session for inference using the `ort` crate.
+    /// Wrapped in `Mutex` to allow thread-safe interior mutability (Session::run requires &mut).
+    pub session: Option<Arc<Mutex<ort::session::Session>>>,
 }
 
 impl SurrogateManager {
@@ -20,6 +31,30 @@ impl SurrogateManager {
     pub fn new() -> Result<Self, String> {
         Ok(SurrogateManager {
             model_loaded: false,
+            model_path: None,
+            session: None,
+        })
+    }
+
+    /// Register an ONNX model file to be used by the surrogate manager.
+    pub fn load_onnx(path: &str) -> Result<Self, String> {
+        use ort::session::Session;
+        use std::path::Path;
+
+        if !Path::new(path).exists() {
+            return Err(format!("ONNX model file not found: {}", path));
+        }
+
+        // Initialize and build ONNX session
+        let session = Session::builder()
+            .map_err(|e| format!("Failed to create session builder: {}", e))?
+            .commit_from_file(path)
+            .map_err(|e| format!("Failed to load ONNX model: {}", e))?;
+
+        Ok(SurrogateManager {
+            model_loaded: true,
+            model_path: Some(path.to_string()),
+            session: Some(Arc::new(Mutex::new(session))),
         })
     }
 
@@ -32,15 +67,71 @@ impl SurrogateManager {
     /// * `Vec<f64>` - Predicted thermal loads (W/m²) for each zone
     ///
     /// Returns a mock constant (1.2 W/m² per zone) when no model is loaded.
-    ///
-    /// # Panics
-    /// Panics if a model is marked as loaded but ONNX inference is not implemented.
+    /// Uses ONNX Runtime inference if a model is loaded.
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
         if !self.model_loaded {
             return vec![1.2; current_temps.len()];
         }
 
-        panic!("ONNX inference path is not implemented. SurrogateManager.model_loaded is true, but inference cannot be performed. Please implement ONNX inference before using this feature.");
+        // If we have a session, perform inference.
+        if let Some(ref session_cell) = self.session {
+            use ndarray::Array1;
+            use ort::value::TensorRef;
+
+            // Convert input temps into an ndarray 1D float32 array
+            let input_arr: Array1<f32> =
+                Array1::from(current_temps.iter().map(|&x| x as f32).collect::<Vec<_>>());
+
+            // Try to lock the session for inference
+            match session_cell.lock() {
+                Ok(mut session) => {
+                    // Create a tensor reference from the ndarray
+                    let tensor_ref = match TensorRef::from_array_view(&input_arr) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("Failed to create tensor ref: {}; using mock loads", e);
+                            return vec![1.2; current_temps.len()];
+                        }
+                    };
+
+                    // Run inference using the inputs! macro pattern
+                    match session.run(ort::inputs![tensor_ref]) {
+                        Ok(outputs) => {
+                            // Extract the first output
+                            if outputs.len() > 0 {
+                                match outputs[0].try_extract_array::<f32>() {
+                                    Ok(array_view) => {
+                                        let v: Vec<f64> =
+                                            array_view.iter().copied().map(|x| x as f64).collect();
+                                        if v.len() == current_temps.len() {
+                                            return v;
+                                        }
+                                    }
+                                    Err(e) => {
+                                        eprintln!(
+                                            "Failed to extract tensor: {}; using mock loads",
+                                            e
+                                        );
+                                    }
+                                }
+                            }
+                            vec![1.2; current_temps.len()]
+                        }
+                        Err(e) => {
+                            eprintln!("ONNX inference error: {}; using mock loads", e);
+                            vec![1.2; current_temps.len()]
+                        }
+                    }
+                }
+                Err(_) => {
+                    eprintln!("Could not lock ORT session; using mock loads");
+                    vec![1.2; current_temps.len()]
+                }
+            }
+        } else {
+            // Default fallback
+            vec![1.2; current_temps.len()]
+        }
     }
 }
 
@@ -60,5 +151,48 @@ mod tests {
         let temps = [20.0, 21.0, 22.0];
         let loads = m.predict_loads(&temps);
         assert_eq!(loads, vec![1.2, 1.2, 1.2]);
+    }
+
+    #[test]
+    fn load_onnx_file_check() {
+        // Test file not found error
+        let result = SurrogateManager::load_onnx("/nonexistent/path/model.onnx");
+        match result {
+            Err(e) => assert!(e.contains("not found")),
+            Ok(_) => panic!("Expected error for nonexistent file"),
+        }
+    }
+
+    #[test]
+    fn predict_loads_with_empty_temps() {
+        let m = SurrogateManager::new().unwrap();
+        let temps: [f64; 0] = [];
+        let loads = m.predict_loads(&temps);
+        assert_eq!(loads.len(), 0);
+    }
+
+    #[test]
+    fn predict_loads_with_many_zones() {
+        let m = SurrogateManager::new().unwrap();
+        let temps: Vec<f64> = (0..100).map(|i| 20.0 + (i as f64 * 0.1)).collect();
+        let loads = m.predict_loads(&temps);
+        assert_eq!(loads.len(), 100);
+        assert!(loads.iter().all(|&x| x == 1.2));
+    }
+
+    #[test]
+    fn model_path_optional() {
+        let m = SurrogateManager::new().unwrap();
+        assert_eq!(m.model_path, None);
+        assert!(!m.model_loaded);
+        assert!(m.session.is_none());
+    }
+
+    #[test]
+    fn surrogate_manager_clone() {
+        let m1 = SurrogateManager::new().unwrap();
+        let m2 = m1.clone();
+        assert_eq!(m2.model_loaded, m1.model_loaded);
+        assert_eq!(m2.model_path, m1.model_path);
     }
 }

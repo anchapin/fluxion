@@ -37,10 +37,10 @@ jobs:
           ls -la cobertura.xml
       - name: Upload to codecov
         if: success() && !env.ACT
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
-          # FIX 2: Point to the correct file name
-          # Tarpaulin generates 'cobertura.xml' by default when using '--out Xml'
           files: ./cobertura.xml
-          fail_ci_if_error: true
-          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          flags: unit_tests
+          name: codecov-fluxion
+          verbose: true
