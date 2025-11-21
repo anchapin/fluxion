@@ -25,7 +25,8 @@ thiserror = "1.0"
 
 # Numerical & Math
 faer = { version = "0.19", default-features = false, features = ["std"] }
-ndarray = { version = "0.15", default-features = false, features = ["std"] }
+# ndarray with serde but no blas/lapack (pulp dependency causes tarpaulin compile errors on aarch64)
+ndarray = { version = "0.15", default-features = false, features = ["std", "serde"] }
 
 # Parallelism
 rayon = "1.10"

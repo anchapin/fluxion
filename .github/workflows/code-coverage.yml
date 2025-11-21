@@ -24,8 +24,10 @@ jobs:
         # - Specifies run-types = "Lib" (avoids --lib/--exclude conflict)
         # - Excludes problematic dependencies from instrumentation
         # - Sets appropriate timeout for instrumented builds
+        # 
+        # Also disable optional features in build to avoid pulling in BLAS/LAPACK:
         run: |
-          cargo tarpaulin 2>&1 | tee tarpaulin.log
+          cargo tarpaulin --no-default-features 2>&1 | tee tarpaulin.log
           
           # Check for compilation errors in the log
           if grep -q "error\[E[0-9]\+\]\|error:" tarpaulin.log; then
