@@ -105,7 +105,6 @@ impl DistributedSurrogateManager {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
     fn test_distributed_mock() {
