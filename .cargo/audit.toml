@@ -1,5 +1,0 @@
-# Audit configuration for Fluxion
-
-[advisories]
-# Make unmaintained warnings informational (non-blocking)
-informational_warnings = ["unmaintained"]

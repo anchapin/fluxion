@@ -2,46 +2,18 @@
 name = "fluxion"
 version = "0.1.0"
 edition = "2021"
-authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "A differentiable, AI-accelerated Building Energy Modeling engine."
-repository = "https://github.com/anchapin/fluxion"
-license = "OTHER"
+
+[dependencies]
+rayon = "1.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+pyo3 = { version = "0.21", features = ["extension-module"] }
 
 [lib]
 name = "fluxion"
-crate-type = ["cdylib", "rlib"]
-
-[features]
-default = []
-# Feature flag to enable Python bindings (disabled by default for pure Rust testing)
-python-bindings = ["dep:pyo3"]
-
-[dependencies]
-# Core Logic
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-anyhow = "1.0"
-thiserror = "1.0"
-
-# Numerical & Math
-faer = { version = "0.23.2", default-features = false, features = ["std"] }
-# ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
-ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
-
-# Parallelism
-rayon = "1.10"
-
-# AI / Machine Learning Integration
-# Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io
-ort = { version = "2.0.0-rc.10", features = ["load-dynamic", "copy-dylibs"] }
-
-# Python Interop
-pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize", "abi3"], optional = true }
-crossbeam = "0.8.4"
+crate-type = ["cdylib"]
 
 [profile.release]
 opt-level = 3
 lto = true
 codegen-units = 1
-split-debuginfo = "packed"
-strip = true
