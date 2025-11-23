@@ -1,4 +1,5 @@
 pub mod ai;
+pub mod physics;
 pub mod sim;
 
 #[cfg(feature = "python-bindings")]
