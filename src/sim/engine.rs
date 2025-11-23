@@ -13,7 +13,7 @@ impl ThermalModel {
     pub fn new(num_zones: usize) -> Self {
         ThermalModel {
             num_zones,
-            temperatures: vec![21.0; num_zones],
+            temperatures: vec![20.0; num_zones], // Start slightly below setpoint
             loads: vec![0.0; num_zones],
             window_u_value: 2.0,
             hvac_setpoint: 21.0,

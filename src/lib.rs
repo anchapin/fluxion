@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 
 mod ai;
+pub mod physics;
 mod sim;
 
 use sim::engine::ThermalModel;
