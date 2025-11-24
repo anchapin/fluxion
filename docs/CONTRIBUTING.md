@@ -253,6 +253,34 @@ See `docs/Fluxion_PRD.md` for:
 - AI surrogate integration (SurrogateManager)
 - API reference
 
+## Training AI Surrogates
+
+### Development Workflow
+Surrogate model development is an iterative process. The typical workflow is:
+1.  **Generate synthetic data**: Use the analytical `fluxion` model (or the standalone generator in `tools/train_surrogate.py`) to create ground truth data.
+2.  **Train neural network**: Run `train_surrogate.py` to train a PyTorch model.
+3.  **Validate**: Check metrics (MAE, R²) against the analytical model on a held-out test set.
+4.  **Export to ONNX**: The script automatically exports the best model.
+5.  **Integrate**: Move the ONNX file to the appropriate location for the Rust `SurrogateManager`.
+
+### Testing Surrogates
+- **Accuracy**: Ensure MAE is within acceptable bounds (e.g., <5% error).
+- **Speed**: Verify that inference speed meets performance targets (<100ms for 8760 timesteps).
+- **Test Suite**: Add surrogate tests to the test suite to prevent regression.
+
+### Model Versioning
+- Track model versions and training configurations (e.g., in `assets/model_metrics.json`).
+- **Do not commit large model files** to git. Use the `models/` directory (which is gitignored) or a separate model registry.
+
+### Integration Guidelines
+- Models must be in ONNX format.
+- The Rust `SurrogateManager` (`src/ai/surrogate.rs`) is responsible for loading and running the model.
+- Ensure the ONNX model's input/output shapes match what the Rust code expects.
+
+### Performance Benchmarking
+- Benchmark surrogate performance against the critical metrics mentioned in "Performance Considerations".
+- Ensure that enabling surrogates provides the expected throughput boost (target: 10,000+ configs/sec).
+
 ## Performance Considerations
 
 ### Critical Metrics
