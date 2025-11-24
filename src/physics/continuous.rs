@@ -1,4 +1,4 @@
-use num_traits::{Zero};
+use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};
 
 /// Defines a continuous scalar field over a 2D domain.

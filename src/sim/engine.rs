@@ -410,12 +410,12 @@ mod tests {
         let mut model = ThermalModel::new(10);
 
         // Test minimum boundary
-        model.apply_parameters(&vec![0.5, 19.0]);
+        model.apply_parameters(&[0.5, 19.0]);
         assert_eq!(model.window_u_value, 0.5);
         assert_eq!(model.hvac_setpoint, 19.0);
 
         // Test maximum boundary
-        model.apply_parameters(&vec![3.0, 24.0]);
+        model.apply_parameters(&[3.0, 24.0]);
         assert_eq!(model.window_u_value, 3.0);
         assert_eq!(model.hvac_setpoint, 24.0);
     }
@@ -449,7 +449,7 @@ mod tests {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&vec![1.5, 21.0]);
+        model.apply_parameters(&[1.5, 21.0]);
         let energy = model.solve_timesteps(0, &surrogates, false);
 
         // Zero steps should result in zero energy
@@ -461,7 +461,7 @@ mod tests {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&vec![1.5, 21.0]);
+        model.apply_parameters(&[1.5, 21.0]);
 
         // Short simulation
         let energy_short = model.clone().solve_timesteps(168, &surrogates, false);
@@ -493,8 +493,8 @@ mod tests {
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Two different parameter sets
-        model1.apply_parameters(&vec![0.5, 19.0]); // Better insulation, lower setpoint
-        model2.apply_parameters(&vec![3.0, 24.0]); // Worse insulation, higher setpoint
+        model1.apply_parameters(&[0.5, 19.0]); // Better insulation, lower setpoint
+        model2.apply_parameters(&[3.0, 24.0]); // Worse insulation, higher setpoint
 
         let energy1 = model1.solve_timesteps(8760, &surrogates, false);
         let energy2 = model2.solve_timesteps(8760, &surrogates, false);

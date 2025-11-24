@@ -204,7 +204,7 @@ mod tests {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&vec![1.5, 21.0]);
+        model.apply_parameters(&[1.5, 21.0]);
         let energy = model.solve_timesteps(8760, &surrogates, false);
 
         assert!(energy > 0.0, "Energy should be positive");
@@ -215,7 +215,7 @@ mod tests {
         let mut model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&vec![1.5, 21.0]);
+        model.apply_parameters(&[1.5, 21.0]);
         let energy = model.solve_timesteps(8760, &surrogates, true);
 
         assert!(energy > 0.0, "Energy should be positive");

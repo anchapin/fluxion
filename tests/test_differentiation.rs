@@ -1,5 +1,4 @@
 use fluxion::ai::neural_field::NeuralScalarField;
-use fluxion::physics::continuous::ContinuousField;
 use fluxion::sim::components::WallSurface;
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};
@@ -53,7 +52,10 @@ impl Mul<f64> for Dual {
 // Implement Zero
 impl Zero for Dual {
     fn zero() -> Self {
-        Dual { val: 0.0, grad: 0.0 }
+        Dual {
+            val: 0.0,
+            grad: 0.0,
+        }
     }
 
     fn is_zero(&self) -> bool {
