@@ -1,7 +1,9 @@
 use crate::physics::continuous::ContinuousField;
 use ndarray::ArrayD;
+use num_traits::Zero;
 use ort::{session::Session, value::Value};
 use std::f64::consts::PI;
+use std::ops::{Add, AddAssign, Mul};
 use std::path::Path;
 
 /// A continuous scalar field defined by a set of weights for a Fourier basis.
@@ -16,17 +18,17 @@ use std::path::Path;
 /// The 2D basis is the product of these 1D bases.
 /// The weights vector corresponds to the flattened tensor product.
 #[derive(Debug, Clone)]
-pub struct NeuralScalarField {
-    weights: Vec<f64>,
+pub struct NeuralScalarField<T> {
+    weights: Vec<T>,
     order: usize,
 }
 
-impl NeuralScalarField {
+impl<T> NeuralScalarField<T> {
     /// Creates a new NeuralScalarField from a vector of weights.
     /// The length of weights must be perfect square, and (sqrt(len) - 1) % 2 == 0.
     /// Number of 1D terms = 1 + 2 * order.
     /// Total weights = (1 + 2 * order)^2.
-    pub fn new(weights: Vec<f64>) -> Result<Self, String> {
+    pub fn new(weights: Vec<T>) -> Result<Self, String> {
         let len = weights.len();
         let side = (len as f64).sqrt() as usize;
         if side * side != len {
@@ -78,7 +80,9 @@ impl NeuralScalarField {
         }
         values
     }
+}
 
+impl NeuralScalarField<f64> {
     /// Loads an ONNX model, runs it with the provided input, and creates a NeuralScalarField
     /// from the output weights.
     ///
@@ -108,35 +112,40 @@ impl NeuralScalarField {
     }
 }
 
-impl ContinuousField for NeuralScalarField {
-    fn at(&self, u: f64, v: f64) -> f64 {
+impl<T> ContinuousField<T> for NeuralScalarField<T>
+where
+    T: Add<Output = T> + AddAssign + Mul<f64, Output = T> + Zero + Clone,
+{
+    fn at(&self, u: f64, v: f64) -> T {
         let u_basis = Self::evaluate_basis_1d(u, self.order);
         let v_basis = Self::evaluate_basis_1d(v, self.order);
         // same as v_basis.len()
 
-        let mut sum = 0.0;
+        let mut sum = T::zero();
         let mut idx = 0;
 
         // The weights are flattened in row-major order
         for u_val in &u_basis {
             for v_val in &v_basis {
-                sum += self.weights[idx] * u_val * v_val;
+                let term = self.weights[idx].clone() * (*u_val * *v_val);
+                sum += term;
                 idx += 1;
             }
         }
         sum
     }
 
-    fn integrate(&self, min_u: f64, max_u: f64, min_v: f64, max_v: f64) -> f64 {
+    fn integrate(&self, min_u: f64, max_u: f64, min_v: f64, max_v: f64) -> T {
         let u_int = Self::integrate_basis_1d(min_u, max_u, self.order);
         let v_int = Self::integrate_basis_1d(min_v, max_v, self.order);
 
-        let mut sum = 0.0;
+        let mut sum = T::zero();
         let mut idx = 0;
 
         for u_val in &u_int {
             for v_val in &v_int {
-                sum += self.weights[idx] * u_val * v_val;
+                let term = self.weights[idx].clone() * (*u_val * *v_val);
+                sum += term;
                 idx += 1;
             }
         }

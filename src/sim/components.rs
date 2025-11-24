@@ -1,4 +1,6 @@
 use crate::physics::continuous::ContinuousField;
+use num_traits::Zero;
+use std::ops::{Add, AddAssign, Mul};
 
 /// Represents a wall surface in a thermal zone.
 #[derive(Clone, Debug)]
@@ -20,18 +22,13 @@ impl WallSurface {
     ///
     /// The field is assumed to be defined over the normalized domain [0, 1] x [0, 1].
     /// The integration result (total value over normalized domain) is scaled by the area.
-    pub fn calculate_heat_gain(&self, field: &impl ContinuousField) -> f64 {
+    pub fn calculate_heat_gain<T>(&self, field: &impl ContinuousField<T>) -> T
+    where
+        T: Add<Output = T> + AddAssign + Mul<f64, Output = T> + Zero + Clone,
+    {
         // Integrate the field over the normalized domain [0, 1] x [0, 1]
-        // If the field represents W/m², the integral over normalized domain represents the average flux * 1.0?
-        // Wait, if the field is defined on [0,1]x[0,1], we treat it as a mapping from the physical surface.
-        // Usually, Integral(Flux dA) = Total Heat.
-        // If the field returns Flux (W/m²) at normalized coordinates (u,v):
-        // Integral(Flux(u,v) * dA) = Integral(Flux(u,v) * |J| du dv).
-        // For a rectangular surface of area A mapped to [0,1]x[0,1], |J| = A.
-        // So Total Heat = A * Integral_{0}^{1} Integral_{0}^{1} Flux(u,v) du dv.
-
         let integral = field.integrate(0.0, 1.0, 0.0, 1.0);
-        self.area * integral
+        integral * self.area
     }
 }
 

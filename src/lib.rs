@@ -28,6 +28,9 @@ use ai::surrogate::SurrogateManager;
 #[allow(unused_imports)]
 use sim::engine::ThermalModel;
 
+// Re-export things for easier access in other modules
+// pub use ai::tensor_wrapper::TorchScalar; // REMOVED
+
 /// Standard Single-Building Model for detailed building energy analysis.
 ///
 /// Use this class when you need detailed simulation of a single building configuration,
