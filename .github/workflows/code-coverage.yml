@@ -1,0 +1,46 @@
+name: Code Coverage
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-env
+
+      - name: Install tarpaulin
+        run: cargo install cargo-tarpaulin
+
+      - name: Generate coverage
+        env:
+          # Keep the Nuclear Option for x86
+          RUSTFLAGS: "-C target-cpu=x86-64"
+        shell: bash
+        run: |
+          # This ensures the step fails if tarpaulin fails, even with the pipe
+          set -o pipefail
+
+          cargo tarpaulin \
+            --timeout 600 \
+            --out Xml \
+            --output-dir ./ \
+            --ignore-panics \
+            2>&1 | tee tarpaulin.log
+
+          # Verify coverage XML was generated
+          ls -la cobertura.xml
+      - name: Upload to codecov
+        if: success() && !env.ACT
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./cobertura.xml
+          fail_ci_if_error: false
+          flags: unit_tests
+          name: codecov-fluxion
+          verbose: true
