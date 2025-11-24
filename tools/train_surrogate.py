@@ -2,232 +2,241 @@
 """
 Phase 4: Surrogate Model Training
 
-This script generates synthetic training data from the Fluxion analytical engine
-and trains a neural network surrogate model that predicts thermal loads.
+This script trains a neural network surrogate model that predicts thermal loads.
+It can generate synthetic training data using a simplified analytical model
+or load existing data from a file.
 
 The trained model is exported to ONNX format for integration with Fluxion.
-
-Requirements:
-    pip install torch numpy onnx
-
-Generated outputs:
-    - assets/training_data.npz: Training and test data (NumPy arrays)
-    - assets/thermal_surrogate.onnx: Trained model in ONNX format
-    - assets/model_metrics.json: Validation metrics
 """
 
 import argparse
 import json
+import logging
+import sys
 from pathlib import Path
+from typing import Dict, List, Tuple
 
 import numpy as np
+import pandas as pd
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+logger = logging.getLogger(__name__)
 
 
-def generate_synthetic_data(n_samples: int = 500, seed: int = 42) -> tuple:
+def generate_synthetic_data(
+    n_samples: int = 5000, n_zones: int = 10, seed: int = 42
+) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Generate synthetic training data by simulating thermal dynamics.
-
-    This is a simplified standalone simulation. In production, this would call
-    the Rust Fluxion engine via Python FFI for higher fidelity data.
+    Generate synthetic training data using a simplified thermal physics model.
 
     Args:
-        n_samples: Number of synthetic samples to generate
-        seed: Random seed for reproducibility
+        n_samples: Number of samples to generate
+        n_zones: Number of thermal zones
+        seed: Random seed
 
     Returns:
-        Tuple of (X_train, y_train, X_test, y_test) as numpy arrays
+        Tuple of (X, y) numpy arrays
     """
-
-    def thermal_simulation(u_value: float, hvac_setpoint: float, steps: int = 8760):
-        """Simplified thermal RC network simulation."""
-        zones = 10
-        temps = np.full(zones, 20.0, dtype=np.float32)
-        energy = 0.0
-
-        for _ in range(steps):
-            # Simple constant loads (physics model)
-            loads = np.full(zones, 0.5, dtype=np.float32)
-
-            # Thermal network state update
-            for i in range(zones):
-                conduction_loss = (temps[i] - 0.0) * u_value * 0.1
-                temp_change = (loads[i] - conduction_loss) * 0.1
-                temps[i] += temp_change
-
-            energy += np.sum(np.abs(temps - hvac_setpoint))
-
-        return energy, temps.copy(), loads
-
-    print(f"Generating {n_samples} synthetic training samples...")
-
+    logger.info(f"Generating {n_samples} synthetic samples for {n_zones} zones...")
     np.random.seed(seed)
+
     X_data = []
     y_data = []
 
-    for i in range(n_samples):
+    # Simplified physics simulation
+    # In a real scenario, this would call the Rust engine
+    for _ in tqdm(range(n_samples), desc="Generating Data"):
+        # Inputs: U-value, HVAC Setpoint, Outdoor Temp
         u_value = np.random.uniform(0.5, 3.0)
         hvac_setpoint = np.random.uniform(19.0, 24.0)
+        outdoor_temp = np.random.uniform(-10.0, 35.0)
 
-        energy, final_temps, loads = thermal_simulation(u_value, hvac_setpoint)
+        # Features: [u_value, hvac_setpoint, outdoor_temp] + current_temps
+        # (simplified to mean)
+        # For simplicity in this mock generator, we just use global params
+        features = [u_value, hvac_setpoint, outdoor_temp]
 
-        X_data.append([u_value, hvac_setpoint])
-        y_data.append(final_temps)
+        # Outputs: Thermal load for each zone
+        # Physics approximation: Load ~ U * Area * (T_out - T_in)
+        # We add some random variation per zone to simulate different geometries
+        loads = []
+        for z in range(n_zones):
+            zone_factor = 1.0 + np.sin(z) * 0.2  # Variation
+            delta_t = outdoor_temp - hvac_setpoint
+            load = u_value * zone_factor * delta_t * -1.0  # Heating/Cooling load
+            # Add noise
+            load += np.random.normal(0, 0.1)
+            loads.append(load)
 
-        if (i + 1) % 100 == 0:
-            print(f"  Generated {i + 1}/{n_samples} samples")
+        X_data.append(features)
+        y_data.append(loads)
 
-    X_data = np.array(X_data, dtype=np.float32)
-    y_data = np.array(y_data, dtype=np.float32)
+    return np.array(X_data, dtype=np.float32), np.array(y_data, dtype=np.float32)
 
-    # Split into train/test
-    split_idx = int(0.8 * len(X_data))
-    X_train, X_test = X_data[:split_idx], X_data[split_idx:]
-    y_train, y_test = y_data[:split_idx], y_data[split_idx:]
 
-    print(f"Training set: {X_train.shape[0]} samples")
-    print(f"Test set: {X_test.shape[0]} samples")
-    print(f"Input features: {X_train.shape[1]} (u_value, hvac_setpoint)")
-    print(f"Output zones: {y_train.shape[1]}")
+def load_data(file_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """Load data from .npz or .csv file."""
+    path = Path(file_path)
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
 
-    return X_train, y_train, X_test, y_test
+    logger.info(f"Loading data from {path}...")
+    if path.suffix == ".npz":
+        data = np.load(path)
+        return data["X"].astype(np.float32), data["y"].astype(np.float32)
+    elif path.suffix == ".csv":
+        df = pd.read_csv(path)
+        # Assume last N columns are targets, rest are features
+        # This is brittle, expecting specific format, but sufficient for prototype
+        target_cols = [c for c in df.columns if "load" in c or "target" in c]
+        feature_cols = [c for c in df.columns if c not in target_cols]
+
+        X = df[feature_cols].values.astype(np.float32)
+        y = df[target_cols].values.astype(np.float32)
+        return X, y
+    else:
+        raise ValueError("Unsupported file format. Use .npz or .csv")
+
+
+class SurrogateModel(nn.Module):
+    def __init__(self, input_dim: int, output_dim: int, hidden_dims: List[int]):
+        super().__init__()
+        layers = []
+        prev_dim = input_dim
+
+        for hidden_dim in hidden_dims:
+            layers.append(nn.Linear(prev_dim, hidden_dim))
+            layers.append(nn.ReLU())
+            layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.Dropout(0.1))
+            prev_dim = hidden_dim
+
+        layers.append(nn.Linear(prev_dim, output_dim))
+        self.net = nn.Sequential(*layers)
+
+    def forward(self, x):
+        return self.net(x)
 
 
 def train_model(
-    X_train: np.ndarray,
-    y_train: np.ndarray,
-    X_test: np.ndarray,
-    y_test: np.ndarray,
-    epochs: int = 50,
-) -> dict:
-    """
-    Train a neural network surrogate model.
+    X: np.ndarray,
+    y: np.ndarray,
+    epochs: int,
+    batch_size: int,
+    learning_rate: float,
+    hidden_dims: List[int],
+    output_dir: Path,
+    seed: int,
+):
+    """Train the PyTorch model."""
+    torch.manual_seed(seed)
 
-    Args:
-        X_train, y_train: Training data
-        X_test, y_test: Test data
-        epochs: Number of training epochs
+    # Split data
+    split_idx = int(0.8 * len(X))
+    X_train, X_val = X[:split_idx], X[split_idx:]
+    y_train, y_val = y[:split_idx], y[split_idx:]
 
-    Returns:
-        Dictionary with trained model and metrics
-    """
-    try:
-        import torch
-        import torch.nn as nn
-        import torch.optim as optim
-        from torch.utils.data import DataLoader, TensorDataset
-    except ImportError:
-        print("ERROR: PyTorch not installed. Install with: pip install torch")
-        raise
-
-    print(f"\nTraining neural network for {epochs} epochs...")
-
-    # Create PyTorch tensors
+    # Tensors
     X_train_t = torch.from_numpy(X_train)
     y_train_t = torch.from_numpy(y_train)
-    X_test_t = torch.from_numpy(X_test)
-    y_test_t = torch.from_numpy(y_test)
+    X_val_t = torch.from_numpy(X_val)
+    y_val_t = torch.from_numpy(y_val)
 
-    # Dataset and dataloader
+    # Dataloader
     dataset = TensorDataset(X_train_t, y_train_t)
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
 
-    # Define model architecture
-    class ThermalSurrogate(nn.Module):
-        def __init__(self, input_dim=2, output_dim=10):
-            super().__init__()
-            self.net = nn.Sequential(
-                nn.Linear(input_dim, 64),
-                nn.ReLU(),
-                nn.Linear(64, 64),
-                nn.ReLU(),
-                nn.Linear(64, output_dim),
-            )
+    # Model
+    input_dim = X.shape[1]
+    output_dim = y.shape[1]
+    model = SurrogateModel(input_dim, output_dim, hidden_dims)
 
-        def forward(self, x):
-            return self.net(x)
-
-    model = ThermalSurrogate(input_dim=X_train.shape[1], output_dim=y_train.shape[1])
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, "min", patience=5, factor=0.5
+    )
     criterion = nn.MSELoss()
 
-    # Training loop
-    train_losses = []
+    logger.info(
+        f"Model Architecture: Input={input_dim} -> {hidden_dims} -> Output={output_dim}"
+    )
+    logger.info("Starting training...")
+
+    best_val_loss = float("inf")
+    history: Dict[str, List[float]] = {"loss": [], "val_loss": []}
 
     for epoch in range(epochs):
+        model.train()
         epoch_loss = 0.0
-        for X_batch, y_batch in dataloader:
+
+        for batch_X, batch_y in loader:
             optimizer.zero_grad()
-            y_pred = model(X_batch)
-            loss = criterion(y_pred, y_batch)
+            pred = model(batch_X)
+            loss = criterion(pred, batch_y)
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
 
-        avg_loss = epoch_loss / len(dataloader)
-        train_losses.append(avg_loss)
+        avg_loss = epoch_loss / len(loader)
+
+        # Validation
+        model.eval()
+        with torch.no_grad():
+            val_pred = model(X_val_t)
+            val_loss = criterion(val_pred, y_val_t).item()
+
+        scheduler.step(val_loss)
+        history["loss"].append(avg_loss)
+        history["val_loss"].append(val_loss)
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            torch.save(model.state_dict(), output_dir / "best_model.pt")
 
         if (epoch + 1) % 10 == 0:
-            print(f"  Epoch {epoch + 1:3d}/{epochs}: loss={avg_loss:.6f}")
+            logger.info(
+                f"Epoch {epoch + 1}/{epochs} - "
+                f"Loss: {avg_loss:.6f} - Val Loss: {val_loss:.6f}"
+            )
 
-    print(f"Final training loss: {train_losses[-1]:.6f}")
+    # Load best model
+    model.load_state_dict(torch.load(output_dir / "best_model.pt"))
+    logger.info(f"Training complete. Best Val Loss: {best_val_loss:.6f}")
 
-    # Evaluate on test set
-    print("\nEvaluating on test set...")
+    # Evaluation Metrics
     model.eval()
     with torch.no_grad():
-        y_pred = model(X_test_t).numpy()
+        test_pred = model(X_val_t).numpy()
 
-    mse = np.mean((y_test - y_pred) ** 2)
-    rmse = np.sqrt(mse)
-    mae = np.mean(np.abs(y_test - y_pred))
-    max_error = np.max(np.abs(y_test - y_pred))
+    mse = np.mean((y_val - test_pred) ** 2)
+    mae = np.mean(np.abs(y_val - test_pred))
+    r2 = 1 - (np.sum((y_val - test_pred) ** 2) / np.sum((y_val - np.mean(y_val)) ** 2))
 
-    print(f"Test metrics:")
-    print(f"  MSE:  {mse:.6f}")
-    print(f"  RMSE: {rmse:.6f}")
-    print(f"  MAE:  {mae:.6f}")
-    print(f"  Max:  {max_error:.6f}")
+    metrics = {"mse": float(mse), "mae": float(mae), "r2": float(r2)}
+    logger.info(f"Validation Metrics: MAE={mae:.4f}, R2={r2:.4f}")
 
-    # Per-zone analysis
-    print(f"\nPer-zone MAE:")
-    zone_maes = []
-    for zone in range(y_test.shape[1]):
-        zone_mae = np.mean(np.abs(y_test[:, zone] - y_pred[:, zone]))
-        zone_maes.append(zone_mae)
-        if zone < 5:
-            print(f"  Zone {zone}: {zone_mae:.6f}")
-    if y_test.shape[1] > 5:
-        print(f"  ...")
+    with open(output_dir / "metrics.json", "w") as f:
+        json.dump(metrics, f, indent=2)
 
-    return {
-        "model": model,
-        "metrics": {
-            "train_final_loss": float(train_losses[-1]),
-            "test_mse": float(mse),
-            "test_rmse": float(rmse),
-            "test_mae": float(mae),
-            "test_max_error": float(max_error),
-            "per_zone_mae": [float(z) for z in zone_maes],
-        },
-    }
+    return model, metrics
 
 
-def export_onnx(
-    model, X_sample: np.ndarray, output_path: str = "assets/thermal_surrogate.onnx"
-):
-    """Export PyTorch model to ONNX format."""
-    try:
-        import torch
-    except ImportError:
-        print("ERROR: PyTorch not installed")
-        raise
+def export_onnx(model: nn.Module, sample_input: np.ndarray, output_path: Path):
+    """Export to ONNX."""
+    logger.info(f"Exporting to {output_path}...")
+    model.eval()
+    dummy_input = torch.from_numpy(sample_input[:1])
 
-    print(f"\nExporting model to ONNX...")
-
-    # Create dummy input for export
-    dummy_input = torch.from_numpy(X_sample[:1].astype(np.float32))
-
-    # Export
     torch.onnx.export(
         model,
         dummy_input,
@@ -235,106 +244,94 @@ def export_onnx(
         input_names=["input"],
         output_names=["output"],
         dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
-        opset_version=12,
-        verbose=False,
+        opset_version=17,
     )
-
-    file_size = Path(output_path).stat().st_size
-    print(f"✓ Exported to {output_path} ({file_size} bytes)")
-
-    return output_path
+    logger.info("Export successful.")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train thermal surrogate model")
+    parser = argparse.ArgumentParser(description="Train AI Surrogate Model")
+
+    # Data Args
     parser.add_argument(
-        "--samples", type=int, default=500, help="Number of training samples"
+        "--input-file", type=str, help="Path to training data (.npz or .csv)"
     )
-    parser.add_argument("--epochs", type=int, default=50, help="Training epochs")
     parser.add_argument(
-        "--output", default="assets/thermal_surrogate.onnx", help="Output ONNX path"
+        "--num-samples",
+        type=int,
+        default=10000,
+        help="Samples to generate if no input file",
     )
+    parser.add_argument(
+        "--num-zones", type=int, default=10, help="Number of zones (output dim)"
+    )
+
+    # Training Args
+    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
+    parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
+    parser.add_argument(
+        "--learning-rate", type=float, default=0.001, help="Learning rate"
+    )
+    parser.add_argument(
+        "--hidden-dims",
+        type=int,
+        nargs="+",
+        default=[64, 64],
+        help="Hidden layer dimensions",
+    )
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
+
+    # Output Args
+    parser.add_argument(
+        "--output-dir", type=str, default="models", help="Output directory"
+    )
+
     args = parser.parse_args()
 
-    print("=" * 70)
-    print("Phase 4: Thermal Surrogate Model Training")
-    print("=" * 70)
+    # Setup output
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Generate data
-    X_train, y_train, X_test, y_test = generate_synthetic_data(args.samples)
+    # Get Data
+    if args.input_file:
+        X, y = load_data(args.input_file)
+    else:
+        X, y = generate_synthetic_data(args.num_samples, args.num_zones, args.seed)
+        # Save generated data
+        np.savez(output_dir / "generated_data.npz", X=X, y=y)
 
-    # Save training data
-    np.savez(
-        "assets/training_data.npz",
-        X_train=X_train,
-        y_train=y_train,
-        X_test=X_test,
-        y_test=y_test,
+    # Train
+    model, metrics = train_model(
+        X,
+        y,
+        epochs=args.epochs,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        hidden_dims=args.hidden_dims,
+        output_dir=output_dir,
+        seed=args.seed,
     )
-    print("\n✓ Saved training data to assets/training_data.npz")
 
-    # Train model
+    # Export
+    export_onnx(model, X, output_dir / "surrogate.onnx")
+
+    # Plotting (Simple)
     try:
-        result = train_model(X_train, y_train, X_test, y_test, epochs=args.epochs)
-        model = result["model"]
-        metrics = result["metrics"]
+        import matplotlib.pyplot as plt
 
-        # Export ONNX
-        export_onnx(model, X_train, args.output)
+        model.eval()
+        with torch.no_grad():
+            pred = model(torch.from_numpy(X[:100])).numpy()
 
-        # Save metrics
-        metrics_file = "assets/model_metrics.json"
-        with open(metrics_file, "w") as f:
-            json.dump(metrics, f, indent=2)
-        print(f"✓ Saved metrics to {metrics_file}")
-
+        plt.figure(figsize=(10, 5))
+        plt.plot(y[:100, 0], label="Actual")
+        plt.plot(pred[:, 0], label="Predicted")
+        plt.title("Actual vs Predicted (Zone 0)")
+        plt.legend()
+        plt.savefig(output_dir / "prediction_plot.png")
+        logger.info("Saved plot to prediction_plot.png")
     except ImportError:
-        print("\n" + "=" * 70)
-        print("PyTorch not available - creating dummy model instead")
-        print("=" * 70)
-
-        import onnx
-        from onnx import TensorProto, helper
-
-        zones = 10
-        input_node = helper.make_tensor_value_info(
-            "input", TensorProto.FLOAT, [None, 2]
-        )
-        output_node = helper.make_tensor_value_info(
-            "output", TensorProto.FLOAT, [None, zones]
-        )
-
-        const_vals = np.array([2.0] * zones, dtype=np.float32)
-        const_tensor = helper.make_tensor(
-            "const_output", TensorProto.FLOAT, [zones], const_vals
-        )
-
-        const_node = helper.make_node(
-            "Constant", inputs=[], outputs=["output"], value=const_tensor
-        )
-
-        graph = helper.make_graph(
-            [const_node],
-            "thermal_surrogate",
-            [input_node],
-            [output_node],
-            [const_tensor],
-        )
-
-        model_proto = helper.make_model(graph)
-        model_proto.opset_import[0].version = 12
-
-        onnx.save(model_proto, args.output)
-        file_size = Path(args.output).stat().st_size
-        print(f"✓ Created dummy model: {args.output} ({file_size} bytes)")
-
-    print("\n" + "=" * 70)
-    print("✓ Phase 4 Complete: Model trained and ready for integration")
-    print("=" * 70)
-    print("\nNext steps:")
-    print("  1. Run Rust tests: cargo test")
-    print("  2. Run validation: python3 examples/validate_surrogate.py")
-    print("  3. Build Python bindings: maturin develop")
+        logger.warning("Matplotlib not installed, skipping plots")
 
 
 if __name__ == "__main__":

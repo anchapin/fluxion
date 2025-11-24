@@ -2,15 +2,23 @@
 
 # Core tools
 maturin>=1.0,<2.0
-numpy
-onnx
 pytest
 
-# Optional extras (recommended for development)
-# Uncomment or install individually if you use these tools
-# mypy          # static type checking
-# ruff          # fast linter + formatter
-# black         # code formatter
-# isort         # import sorting
-# pre-commit    # git hooks
-# tox           # test automation across environments
+# Core ML Framework
+torch>=2.0.0
+onnx>=1.14.0
+onnxruntime>=1.15.0
+onnxscript
+
+# Data Processing
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+
+# Visualization
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# Utilities
+tqdm>=4.65.0
+pyyaml>=6.0
