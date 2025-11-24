@@ -1,4 +1,6 @@
 use crate::ai::surrogate::SurrogateManager;
+use crate::physics::continuous::ConstantField;
+use crate::sim::components::WallSurface;
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
 ///
@@ -10,6 +12,7 @@ use crate::ai::surrogate::SurrogateManager;
 /// * `num_zones` - Number of thermal zones in the building
 /// * `temperatures` - Current temperature of each zone (°C)
 /// * `loads` - Current thermal loads (W/m²) from environment and internal sources
+/// * `surfaces` - List of wall surfaces for each zone (Vec of Vec of WallSurface)
 /// * `window_u_value` - Thermal transmittance of windows (W/m²K) - optimization variable
 /// * `hvac_setpoint` - HVAC system setpoint temperature (°C) - optimization variable
 #[derive(Clone)]
@@ -17,6 +20,7 @@ pub struct ThermalModel {
     pub num_zones: usize,
     pub temperatures: Vec<f64>,
     pub loads: Vec<f64>,
+    pub surfaces: Vec<Vec<WallSurface>>,
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
@@ -32,11 +36,23 @@ impl ThermalModel {
     /// - All zones initialized to 20°C
     /// - Window U-value: 2.5 W/m²K (typical for double-glazed windows)
     /// - HVAC setpoint: 21°C
+    /// - Surfaces: 4 walls of 10m² each per zone (default)
     pub fn new(num_zones: usize) -> Self {
+        // Initialize default surfaces: 4 walls of 10m² each per zone
+        let mut surfaces = Vec::with_capacity(num_zones);
+        for _ in 0..num_zones {
+            let mut zone_surfaces = Vec::new();
+            for _ in 0..4 {
+                zone_surfaces.push(WallSurface::new(10.0, 2.5)); // 10m², U=2.5 (default)
+            }
+            surfaces.push(zone_surfaces);
+        }
+
         ThermalModel {
             num_zones,
             temperatures: vec![20.0; num_zones], // Initialize at 20°C
             loads: vec![0.0; num_zones],
+            surfaces,
             window_u_value: 2.5, // Default U-value
             hvac_setpoint: 21.0, // Default setpoint
         }
@@ -53,6 +69,12 @@ impl ThermalModel {
     pub fn apply_parameters(&mut self, params: &[f64]) {
         if !params.is_empty() {
             self.window_u_value = params[0];
+            // Update surface U-values as well (simplified for now - applying to all surfaces)
+            for zone_surfaces in &mut self.surfaces {
+                for surface in zone_surfaces {
+                    surface.u_value = self.window_u_value;
+                }
+            }
         }
         if params.len() >= 2 {
             self.hvac_setpoint = params[1];
@@ -91,10 +113,72 @@ impl ThermalModel {
             // In a batch scenario, this inner loop runs inside a single thread of the Rayon pool
             // We avoid nested parallelism here to prevent thread-pool exhaustion
             for i in 0..self.num_zones {
-                let load = self.loads[i];
+                // Determine load from surfaces using ContinuousField integration
+                // The 'load' from SurrogateManager or analytical model currently represents
+                // a flux or source term (W/m²). We treat this as a constant field over the surface for now.
+                // In the future, this field will be spatially varying (predicted by AI).
+
+                // Get the base load (W/m²) predicted for this zone
+                let predicted_load_flux = self.loads[i];
+
+                // Create a ContinuousField wrapper for this load
+                let field = ConstantField { value: predicted_load_flux };
+
+                // Calculate total heat gain from all surfaces in this zone
+                let mut total_surface_heat_gain = 0.0;
+                if i < self.surfaces.len() {
+                    for surface in &self.surfaces[i] {
+                         total_surface_heat_gain += surface.calculate_heat_gain(&field);
+                    }
+                }
+
+                // Note: The original logic treated 'load' as a direct term in the temperature update.
+                // Original: self.temperatures[i] += (load - conduction_loss) * 0.1;
+                // where load was presumably total load or flux scaled implicitly.
+                // If load was W/m², and we didn't multiply by area, it was unit-inconsistent or assumed specific scaling.
+                //
+                // Let's assume the new physics engine should use the total watts.
+                // The temperature update equation: dT/dt = (Q_gain - Q_loss) / C_thermal
+                // The original code: temperature += (load - conduction_loss) * 0.1
+                // This implies 0.1 includes (dt / C_thermal).
+                //
+                // If 'load' (W/m²) was used directly, and we now calculate total Watts (W),
+                // we should scale it to be consistent with previous behavior or update the physics.
+                // Previous behavior: load (approx 0.5 - 1.2)
+                // New behavior: total_surface_heat_gain = Area (4 * 10 = 40) * load (0.5 - 1.2) = 20 - 48.
+                // This is ~40x larger.
+                //
+                // To maintain behavior of the *simulation* while changing the *structure*,
+                // we should normalize by total area if the original 'load' was intended as W/m² acting on an implicit area
+                // that matched the capacitance scaling.
+                //
+                // However, the original code `load - conduction_loss` mixed units.
+                // `conduction_loss = (temp - 0) * u_value * 0.1`.
+                // U-value is W/m²K. Temp is K. So this is W/m².
+                // So the original equation was in flux units (W/m²).
+                //
+                // So if calculate_heat_gain returns Watts (W), we should divide by total area to get W/m² back
+                // to plug into the existing simplified equation.
+
+                let total_area: f64 = if i < self.surfaces.len() {
+                    self.surfaces[i].iter().map(|s| s.area).sum()
+                } else {
+                    1.0 // Avoid division by zero
+                };
+
+                let load_flux = if total_area > 0.0 {
+                    total_surface_heat_gain / total_area
+                } else {
+                    0.0
+                };
+
                 // Heat transfer logic influenced by U-value
+                // Note: conduction_loss uses window_u_value.
+                // In the new model, surfaces have u_values. We should probably use those.
+                // But for now, we keep the original logic structure but use the load calculated from fields.
+
                 let conduction_loss = (self.temperatures[i] - 0.0) * self.window_u_value * 0.1;
-                self.temperatures[i] += (load - conduction_loss) * 0.1;
+                self.temperatures[i] += (load_flux - conduction_loss) * 0.1;
             }
 
             // Energy calculation (simplified)
@@ -132,6 +216,10 @@ mod tests {
         let model = ThermalModel::new(10);
         assert_eq!(model.num_zones, 10);
         assert_eq!(model.temperatures.len(), 10);
+        // Check surfaces created
+        assert_eq!(model.surfaces.len(), 10);
+        assert_eq!(model.surfaces[0].len(), 4);
+
         const EPSILON: f64 = 1e-9;
         assert!(model
             .temperatures
@@ -147,6 +235,9 @@ mod tests {
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
         assert_eq!(model.hvac_setpoint, 22.0);
+
+        // Check surface updates
+        assert_eq!(model.surfaces[0][0].u_value, 1.5);
     }
 
     #[test]
