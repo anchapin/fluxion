@@ -1,16 +1,16 @@
-import unittest
 import os
 import shutil
 import sys
-from unittest.mock import MagicMock, patch
+import unittest
+from unittest.mock import patch
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from tools.data_gen import geometry, simulation, weather, main
+from tools.data_gen import geometry, simulation, weather
+
 
 class TestDataGen(unittest.TestCase):
-
     def setUp(self):
         self.test_dir = "test_output"
         if os.path.exists(self.test_dir):
@@ -31,8 +31,10 @@ class TestDataGen(unittest.TestCase):
             self.assertEqual(mock_retrieve.call_count, len(weather.WEATHER_FILES))
 
             # Verify file check logic (create a dummy file)
-            dummy_file = os.path.join(self.test_dir, list(weather.WEATHER_FILES.keys())[0])
-            with open(dummy_file, 'w') as f:
+            dummy_file = os.path.join(
+                self.test_dir, list(weather.WEATHER_FILES.keys())[0]
+            )
+            with open(dummy_file, "w") as f:
                 f.write("dummy")
 
             mock_retrieve.reset_mock()
@@ -43,13 +45,15 @@ class TestDataGen(unittest.TestCase):
     def test_geometry_creation_mock(self):
         """Test geometry creation using the MockOpenStudio."""
         # Force the module to use MockOpenStudio
-        # Since we can't easily un-import, we rely on the fact that openstudio isn't installed here.
+        # Since we can't easily un-import, we rely on the fact that openstudio
+        # isn't installed here.
         model = geometry.create_shoebox_model(width=10, length=10, height=3)
         self.assertIsInstance(model, geometry.MockOpenStudio.model.Model)
 
     @patch("subprocess.run")
     def test_simulation_run_mock(self, mock_subprocess):
-        """Test simulation execution flow (mocking subprocess for 'real' run attempt, but we expect MockModel bypass)."""
+        """Test simulation execution flow (mocking subprocess for 'real' run attempt,
+        but we expect MockModel bypass)."""
         model = geometry.create_shoebox_model()
         weather_path = os.path.join(self.test_dir, "test.epw")
 
@@ -58,11 +62,16 @@ class TestDataGen(unittest.TestCase):
         self.assertTrue(success)
 
         # Verify dummy outputs were created
-        self.assertTrue(os.path.exists(os.path.join(self.test_dir, "run1", "eplusout.sql")))
-        self.assertTrue(os.path.exists(os.path.join(self.test_dir, "run1", "eplusout.csv")))
+        self.assertTrue(
+            os.path.exists(os.path.join(self.test_dir, "run1", "eplusout.sql"))
+        )
+        self.assertTrue(
+            os.path.exists(os.path.join(self.test_dir, "run1", "eplusout.csv"))
+        )
 
         # Subprocess should NOT be called because it was a mock model
         mock_subprocess.assert_not_called()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

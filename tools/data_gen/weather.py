@@ -2,9 +2,9 @@
 Weather file management utilities.
 """
 
+import logging
 import os
 import urllib.request
-import logging
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 # Using the EnergyPlus/Weatherdata repository for reliable downloads
 BASE_URL = "https://github.com/NREL/EnergyPlus/raw/develop/weather"
 # Fallback to a known stable URL or specific repo if needed.
-# For now, let's use the official EnergyPlus auxiliary repo or just direct links to a few TMY3 files.
+# For now, let's use the official EnergyPlus auxiliary repo or just direct links
+# to a few TMY3 files.
 # Actually, the most reliable source is usually the DOE or a dedicated repo.
 # Let's use a few hardcoded URLs for MVP.
 
@@ -22,6 +23,7 @@ WEATHER_FILES = {
     "USA_CA_San.Francisco.Intl.AP.724940_TMY3.epw": "https://raw.githubusercontent.com/NREL/EnergyPlus/develop/weather/USA_CA_San.Francisco.Intl.AP.724940_TMY3.epw",
     "USA_FL_Miami.Intl.AP.722020_TMY3.epw": "https://raw.githubusercontent.com/NREL/EnergyPlus/develop/weather/USA_FL_Miami.Intl.AP.722020_TMY3.epw",
 }
+
 
 def download_standard_files(output_dir: str):
     """
@@ -44,6 +46,7 @@ def download_standard_files(output_dir: str):
         except Exception as e:
             logger.error(f"Failed to download {name}: {e}")
 
+
 def get_weather_file_path(output_dir: str, name: str) -> str:
     """
     Get the full path to a weather file, ensuring it exists.
@@ -59,4 +62,6 @@ def get_weather_file_path(output_dir: str, name: str) -> str:
         if os.path.exists(path):
             return path
 
-    raise FileNotFoundError(f"Weather file {name} not found in {output_dir} and could not be downloaded.")
+    raise FileNotFoundError(
+        f"Weather file {name} not found in {output_dir} and could not be downloaded."
+    )

@@ -19,8 +19,8 @@ try:
     import fluxion
 except Exception as e:
     raise SystemExit(
-        "Failed to import `fluxion`. Build & install the Python bindings first: `maturin develop`\n"
-        + f"Original error: {e}"
+        "Failed to import `fluxion`. Build & install the Python bindings first: "
+        "`maturin develop`\n" + f"Original error: {e}"
     )
 
 
