@@ -30,6 +30,10 @@ impl ContinuousField for ConstantField {
     fn at(&self, _u: f64, _v: f64) -> f64 {
         self.value
     }
+
+    fn integrate(&self, min_u: f64, max_u: f64, min_v: f64, max_v: f64) -> f64 {
+        self.value * (max_u - min_u) * (max_v - min_v)
+    }
 }
 
 #[cfg(test)]
