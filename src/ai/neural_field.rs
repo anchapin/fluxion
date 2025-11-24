@@ -1,7 +1,7 @@
 use crate::physics::continuous::ContinuousField;
-use std::f64::consts::PI;
-use ort::{session::Session, value::Value};
 use ndarray::ArrayD;
+use ort::{session::Session, value::Value};
+use std::f64::consts::PI;
 use std::path::Path;
 
 /// A continuous scalar field defined by a set of weights for a Fourier basis.
@@ -33,10 +33,13 @@ impl NeuralScalarField {
             return Err(format!("Weights length {} must be a perfect square", len));
         }
         if side == 0 {
-             return Err("Weights cannot be empty".to_string());
+            return Err("Weights cannot be empty".to_string());
         }
-        if (side - 1) % 2 != 0 {
-            return Err(format!("Invalid number of terms per dimension: {}. Must be odd (1 + 2*order)", side));
+        if !(side - 1).is_multiple_of(2) {
+            return Err(format!(
+                "Invalid number of terms per dimension: {}. Must be odd (1 + 2*order)",
+                side
+            ));
         }
         let order = (side - 1) / 2;
         Ok(Self { weights, order })
@@ -80,9 +83,11 @@ impl NeuralScalarField {
     /// from the output weights.
     ///
     /// The model must have a single output tensor that can be flattened to a vector of f64 (or f32).
-    pub fn from_onnx<P: AsRef<Path>>(model_path: P, input: ArrayD<f32>) -> Result<Self, Box<dyn std::error::Error>> {
-        let mut session = Session::builder()?
-            .commit_from_file(model_path)?;
+    pub fn from_onnx<P: AsRef<Path>>(
+        model_path: P,
+        input: ArrayD<f32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        let mut session = Session::builder()?.commit_from_file(model_path)?;
 
         let input_tensor = Value::from_array(input)?;
         let outputs = session.run(ort::inputs![input_tensor])?;
@@ -92,11 +97,11 @@ impl NeuralScalarField {
 
         // Try to extract as f32 (common for ONNX) or f64
         let weights: Vec<f64> = if let Ok((_, data)) = output_tensor.try_extract_tensor::<f32>() {
-             data.iter().map(|&x| x as f64).collect()
+            data.iter().map(|&x| x as f64).collect()
         } else if let Ok((_, data)) = output_tensor.try_extract_tensor::<f64>() {
-             data.iter().cloned().collect()
+            data.to_vec()
         } else {
-             return Err("Output tensor data type must be f32 or f64".into());
+            return Err("Output tensor data type must be f32 or f64".into());
         };
 
         Ok(Self::new(weights)?)
@@ -107,16 +112,14 @@ impl ContinuousField for NeuralScalarField {
     fn at(&self, u: f64, v: f64) -> f64 {
         let u_basis = Self::evaluate_basis_1d(u, self.order);
         let v_basis = Self::evaluate_basis_1d(v, self.order);
-        let num_terms = u_basis.len(); // same as v_basis.len()
+        // same as v_basis.len()
 
         let mut sum = 0.0;
         let mut idx = 0;
 
         // The weights are flattened in row-major order
-        for i in 0..num_terms {
-            let u_val = u_basis[i];
-            for j in 0..num_terms {
-                let v_val = v_basis[j];
+        for u_val in &u_basis {
+            for v_val in &v_basis {
                 sum += self.weights[idx] * u_val * v_val;
                 idx += 1;
             }
@@ -127,15 +130,12 @@ impl ContinuousField for NeuralScalarField {
     fn integrate(&self, min_u: f64, max_u: f64, min_v: f64, max_v: f64) -> f64 {
         let u_int = Self::integrate_basis_1d(min_u, max_u, self.order);
         let v_int = Self::integrate_basis_1d(min_v, max_v, self.order);
-        let num_terms = u_int.len();
 
         let mut sum = 0.0;
         let mut idx = 0;
 
-        for i in 0..num_terms {
-            let u_val = u_int[i];
-            for j in 0..num_terms {
-                let v_val = v_int[j];
+        for u_val in &u_int {
+            for v_val in &v_int {
                 sum += self.weights[idx] * u_val * v_val;
                 idx += 1;
             }
