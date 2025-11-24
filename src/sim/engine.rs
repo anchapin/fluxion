@@ -122,13 +122,15 @@ impl ThermalModel {
                 let predicted_load_flux = self.loads[i];
 
                 // Create a ContinuousField wrapper for this load
-                let field = ConstantField { value: predicted_load_flux };
+                let field = ConstantField {
+                    value: predicted_load_flux,
+                };
 
                 // Calculate total heat gain from all surfaces in this zone
                 let mut total_surface_heat_gain = 0.0;
                 if i < self.surfaces.len() {
                     for surface in &self.surfaces[i] {
-                         total_surface_heat_gain += surface.calculate_heat_gain(&field);
+                        total_surface_heat_gain += surface.calculate_heat_gain(&field);
                     }
                 }
 

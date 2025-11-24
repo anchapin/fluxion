@@ -7,7 +7,8 @@ def test_run_oracle_if_available():
     except Exception:
         pytest.skip("fluxion Python bindings not available; skip example test")
 
-    # Create an oracle and run a very small population to validate API and non-zero outputs
+    # Create an oracle and run a very small population to validate API and
+    # non-zero outputs
     oracle = fluxion.BatchOracle()
     pop = [[1.5, 21.0], [2.0, 22.0]]
     results = oracle.evaluate_population(pop, False)

@@ -3,11 +3,12 @@ Simulation execution engine.
 Handles running OpenStudio/EnergyPlus workflows.
 """
 
+import logging
 import os
 import shutil
-import logging
 import subprocess
 from pathlib import Path
+
 from . import geometry
 
 logger = logging.getLogger(__name__)
@@ -18,11 +19,9 @@ try:
 except ImportError:
     openstudio = None
 
+
 def run_simulation(
-    model,
-    weather_file_path: str,
-    output_dir: str,
-    run_name: str = "run"
+    model, weather_file_path: str, output_dir: str, run_name: str = "run"
 ):
     """
     Run an OpenStudio simulation.
@@ -53,14 +52,17 @@ def run_simulation(
         return True
 
     # If we have real OpenStudio, we need to convert OSM -> IDF and run EnergyPlus.
-    # The easiest way programmatically with OpenStudio python bindings is using the WorkflowJSON
+    # The easiest way programmatically with OpenStudio python bindings is using
+    # the WorkflowJSON
     # and the OSW (OpenStudio Workflow) format, or manually forwarding it.
 
     # Simple approach: Use OpenStudio CLI if available in path, or Python bindings.
-    # Python bindings for running simulation can be complex (RunManager is deprecated in older versions,
+    # Python bindings for running simulation can be complex (RunManager is
+    # deprecated in older versions,
     # Workflow is newer).
 
-    # Let's try the `openstudio` CLI command if available, as it's the standard way to run OSW.
+    # Let's try the `openstudio` CLI command if available, as it's the standard
+    # way to run OSW.
     # But we have the model object in memory.
 
     # Alternative: Translate to IDF and run `energyplus` CLI.
@@ -77,12 +79,7 @@ def run_simulation(
         # Assume `energyplus` is in PATH.
         # Command: energyplus -w <weather> -d <output_dir> <idf>
 
-        cmd = [
-            "energyplus",
-            "-w", weather_file_path,
-            "-d", run_dir,
-            idf_path
-        ]
+        cmd = ["energyplus", "-w", weather_file_path, "-d", run_dir, idf_path]
 
         logger.info(f"Running EnergyPlus: {' '.join(cmd)}")
         result = subprocess.run(cmd, capture_output=True, text=True)

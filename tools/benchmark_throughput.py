@@ -1,13 +1,15 @@
 import argparse
-import time
 import json
 import os
+import time
+
 import numpy as np
 import onnxruntime as ort
-import subprocess
-import sys
 
-def benchmark_throughput(model_path: str, batch_sizes: list[int], backends: list[str], output_file: str):
+
+def benchmark_throughput(
+    model_path: str, batch_sizes: list[int], backends: list[str], output_file: str
+):
     """
     Run comprehensive throughput benchmarks.
     """
@@ -15,15 +17,11 @@ def benchmark_throughput(model_path: str, batch_sizes: list[int], backends: list
         print(f"Error: Model not found at {model_path}")
         return
 
-    results = {
-        "model": model_path,
-        "timestamp": time.time(),
-        "benchmarks": []
-    }
+    results: dict = {"model": model_path, "timestamp": time.time(), "benchmarks": []}
 
     # Inspect model
     try:
-        sess = ort.InferenceSession(model_path, providers=['CPUExecutionProvider'])
+        sess = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
         input_name = sess.get_inputs()[0].name
         input_shape = sess.get_inputs()[0].shape
 
@@ -41,16 +39,16 @@ def benchmark_throughput(model_path: str, batch_sizes: list[int], backends: list
 
     for backend in backends:
         provider = None
-        if backend.lower() == 'cpu':
-            provider = 'CPUExecutionProvider'
-        elif backend.lower() == 'cuda':
-            provider = 'CUDAExecutionProvider'
-        elif backend.lower() == 'coreml':
-            provider = 'CoreMLExecutionProvider'
-        elif backend.lower() == 'directml':
-            provider = 'DirectMLExecutionProvider'
-        elif backend.lower() == 'openvino':
-            provider = 'OpenVINOExecutionProvider'
+        if backend.lower() == "cpu":
+            provider = "CPUExecutionProvider"
+        elif backend.lower() == "cuda":
+            provider = "CUDAExecutionProvider"
+        elif backend.lower() == "coreml":
+            provider = "CoreMLExecutionProvider"
+        elif backend.lower() == "directml":
+            provider = "DirectMLExecutionProvider"
+        elif backend.lower() == "openvino":
+            provider = "OpenVINOExecutionProvider"
 
         if not provider:
             print(f"Unknown backend: {backend}")
@@ -79,7 +77,9 @@ def benchmark_throughput(model_path: str, batch_sizes: list[int], backends: list
                 sess.run(None, {input_name: X})
 
             # Benchmark
-            iterations = max(10, 10000 // batch_size) # Adjust iterations based on batch size
+            iterations = max(
+                10, 10000 // batch_size
+            )  # Adjust iterations based on batch size
             start_time = time.time()
             for _ in range(iterations):
                 sess.run(None, {input_name: X})
@@ -90,29 +90,43 @@ def benchmark_throughput(model_path: str, batch_sizes: list[int], backends: list
 
             print(f"    Throughput: {throughput:.2f} samples/sec")
 
-            results["benchmarks"].append({
-                "backend": backend,
-                "batch_size": batch_size,
-                "throughput": throughput,
-                "latency_ms": (duration / iterations) * 1000
-            })
+            results["benchmarks"].append(
+                {
+                    "backend": backend,
+                    "batch_size": batch_size,
+                    "throughput": throughput,
+                    "latency_ms": (duration / iterations) * 1000,
+                }
+            )
 
     # Save results
     if output_file:
-        with open(output_file, 'w') as f:
+        with open(output_file, "w") as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to {output_file}")
 
+
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Comprehensive inference throughput benchmark.')
-    parser.add_argument('--model', type=str, required=True, help='Path to ONNX model')
-    parser.add_argument('--batch-sizes', type=str, default="1,10,100,1000,10000", help='Comma-separated batch sizes')
-    parser.add_argument('--backends', type=str, default="cpu,cuda", help='Comma-separated backends')
-    parser.add_argument('--output', type=str, default="benchmark_results.json", help='Output JSON file')
+    parser = argparse.ArgumentParser(
+        description="Comprehensive inference throughput benchmark."
+    )
+    parser.add_argument("--model", type=str, required=True, help="Path to ONNX model")
+    parser.add_argument(
+        "--batch-sizes",
+        type=str,
+        default="1,10,100,1000,10000",
+        help="Comma-separated batch sizes",
+    )
+    parser.add_argument(
+        "--backends", type=str, default="cpu,cuda", help="Comma-separated backends"
+    )
+    parser.add_argument(
+        "--output", type=str, default="benchmark_results.json", help="Output JSON file"
+    )
 
     args = parser.parse_args()
 
-    batch_sizes = [int(x) for x in args.batch_sizes.split(',')]
-    backends = args.backends.split(',')
+    batch_sizes = [int(x) for x in args.batch_sizes.split(",")]
+    backends = args.backends.split(",")
 
     benchmark_throughput(args.model, batch_sizes, backends, args.output)

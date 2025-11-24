@@ -4,7 +4,8 @@ This script creates a tiny ONNX model that ignores inputs and outputs a constant
 It requires `onnx` and `numpy` to be installed in the target Python environment.
 
 Usage:
-    python tools/generate_dummy_surrogate.py --zones 10 --out examples/dummy_surrogate.onnx
+    python tools/generate_dummy_surrogate.py --zones 10 \\
+        --out examples/dummy_surrogate.onnx
 """
 
 import argparse

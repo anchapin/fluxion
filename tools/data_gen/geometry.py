@@ -14,30 +14,36 @@ try:
 except ImportError:
     openstudio = None
 
+
 class MockOpenStudio:
     """
     A minimal mock of the OpenStudio API for testing in environments
     without the full library installed.
     """
+
     class model:
         class Model:
             def __init__(self):
                 self.objects = []
+
             def save(self, path, overwrite):
                 logger.info(f"[MOCK] Saving model to {path}")
                 return True
+
             def getThermalZones(self):
                 return [MockOpenStudio.model.ThermalZone()]
 
         class ThermalZone:
             def __init__(self, model=None):
                 pass
+
             def addToNode(self, node):
                 pass
 
         class Space:
             def __init__(self, model):
                 pass
+
             def setThermalZone(self, zone):
                 pass
 
@@ -45,43 +51,64 @@ class MockOpenStudio:
             def __init__(self, vertices, model):
                 self.vertices = vertices
                 pass
+
             def setSpace(self, space):
                 pass
+
             def setSurfaceType(self, type):
                 pass
+
             def setOutsideBoundaryCondition(self, bc):
                 pass
+
             def setSunExposure(self, exp):
                 pass
+
             def setWindExposure(self, exp):
                 pass
+
             def setConstruction(self, c):
                 pass
 
         class SubSurface:
             def __init__(self, vertices, model):
                 pass
+
             def setSurface(self, surface):
                 pass
+
             def setConstruction(self, c):
                 pass
 
         class Material:
             def __init__(self, model):
                 pass
-            def setThickness(self, v): pass
-            def setConductivity(self, v): pass
-            def setDensity(self, v): pass
-            def setSpecificHeat(self, v): pass
+
+            def setThickness(self, v):
+                pass
+
+            def setConductivity(self, v):
+                pass
+
+            def setDensity(self, v):
+                pass
+
+            def setSpecificHeat(self, v):
+                pass
 
         class Construction:
             def __init__(self, model):
                 pass
-            def insertLayer(self, idx, mat): pass
+
+            def insertLayer(self, idx, mat):
+                pass
 
         class OutputVariable:
-            def __init__(self, var, model): pass
-            def setReportingFrequency(self, freq): pass
+            def __init__(self, var, model):
+                pass
+
+            def setReportingFrequency(self, freq):
+                pass
 
     class Point3d:
         def __init__(self, x, y, z):
@@ -91,6 +118,7 @@ class MockOpenStudio:
         def __init__(self, points):
             self.points = points
 
+
 def ensure_openstudio():
     """Returns the openstudio module or a mock if allowed."""
     if openstudio:
@@ -98,19 +126,21 @@ def ensure_openstudio():
     logger.warning("OpenStudio not found. Using Mock object.")
     return MockOpenStudio()
 
+
 def create_default_construction(os_api, model, name="Default Construction"):
     """
     Creates a simple concrete construction.
     """
     mat = os_api.model.Material(model)
-    mat.setThickness(0.2) # 20cm
-    mat.setConductivity(1.8) # Concrete
+    mat.setThickness(0.2)  # 20cm
+    mat.setConductivity(1.8)  # Concrete
     mat.setDensity(2400.0)
     mat.setSpecificHeat(880.0)
 
     construction = os_api.model.Construction(model)
     construction.insertLayer(0, mat)
     return construction
+
 
 def create_window_construction(os_api, model):
     """
@@ -122,16 +152,18 @@ def create_window_construction(os_api, model):
     # Let's stick to Material for generic robustness or use standard if known.
     # OpenStudio usually has SimpleGlazing.
 
-    # We'll use a standard Material but with glass-like properties for now to be safe with the mock.
+    # We'll use a standard Material but with glass-like properties for now to be
+    # safe with the mock.
     mat = os_api.model.Material(model)
     mat.setThickness(0.006)
-    mat.setConductivity(0.9) # Glass
+    mat.setConductivity(0.9)  # Glass
     mat.setDensity(2500)
     mat.setSpecificHeat(840)
 
     construction = os_api.model.Construction(model)
     construction.insertLayer(0, mat)
     return construction
+
 
 def add_outputs(os_api, model):
     """
@@ -142,16 +174,23 @@ def add_outputs(os_api, model):
     var1.setReportingFrequency("Hourly")
 
     # Zone Ideal Loads Zone Total Heating Energy
-    var2 = os_api.model.OutputVariable("Zone Ideal Loads Zone Total Heating Energy", model)
+    var2 = os_api.model.OutputVariable(
+        "Zone Ideal Loads Zone Total Heating Energy", model
+    )
     var2.setReportingFrequency("Hourly")
 
     # Zone Ideal Loads Zone Total Cooling Energy
-    var3 = os_api.model.OutputVariable("Zone Ideal Loads Zone Total Cooling Energy", model)
+    var3 = os_api.model.OutputVariable(
+        "Zone Ideal Loads Zone Total Cooling Energy", model
+    )
     var3.setReportingFrequency("Hourly")
 
     # Surface Outside Face Incident Solar Radiation Amount per Area
-    var4 = os_api.model.OutputVariable("Surface Outside Face Incident Solar Radiation Amount per Area", model)
+    var4 = os_api.model.OutputVariable(
+        "Surface Outside Face Incident Solar Radiation Amount per Area", model
+    )
     var4.setReportingFrequency("Hourly")
+
 
 def create_shoebox_model(
     width: float = 10.0,
@@ -159,7 +198,7 @@ def create_shoebox_model(
     height: float = 3.5,
     wwr: float = 0.4,
     orientation_degrees: float = 0.0,
-    insulation_r_value: float = None # Placeholder for future material logic
+    insulation_r_value: float | None = None,  # Placeholder for future material logic
 ):
     """
     Generates an OpenStudio Model (.osm) for a simple rectangular building.
@@ -179,7 +218,7 @@ def create_shoebox_model(
     try:
         thermal_zone.setUseIdealAirLoads(True)
     except AttributeError:
-        pass # Mock object might not have this method yet, or old OS version
+        pass  # Mock object might not have this method yet, or old OS version
 
     # Create Space
     space = os_api.model.Space(model)
@@ -237,6 +276,7 @@ def create_shoebox_model(
 
     return model
 
+
 def make_wall(os_api, model, space, p_start, p_end, height, wwr, wall_const, win_const):
     w_pts = [
         os_api.Point3d(p_end[0], p_end[1], 0),
@@ -256,7 +296,7 @@ def make_wall(os_api, model, space, p_start, p_end, height, wwr, wall_const, win
     if wwr > 0.01:
         dx = p_end[0] - p_start[0]
         dy = p_end[1] - p_start[1]
-        length = math.sqrt(dx*dx + dy*dy)
+        length = math.sqrt(dx * dx + dy * dy)
 
         ratio = math.sqrt(wwr)
         win_w = length * ratio
