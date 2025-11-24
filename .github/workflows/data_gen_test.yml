@@ -1,0 +1,59 @@
+name: Data Generation Tool Integration Test
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-data-gen:
+    runs-on: ubuntu-latest
+    container:
+      image: nrel/openstudio:latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Python Dependencies
+      run: |
+        # The NREL image has python installed, but we might need pip or specific libs
+        # Check python version
+        python3 --version
+        # Install anything extra if needed (e.g. numpy if we used it)
+        # apt-get update && apt-get install -y python3-pip
+        # pip3 install numpy
+
+    - name: Run Tool in Mock Mode (Unit Tests)
+      run: |
+        python3 tools/tests/test_data_gen.py
+
+    - name: Run Tool Integration Test (Real Simulation)
+      # This step utilizes the fact that we are inside the nrel/openstudio container
+      # which has `openstudio` python bindings and `energyplus` in PATH.
+      run: |
+        # 1. Download Weather
+        python3 tools/data_gen/main.py download-weather --out assets/weather
+
+        # 2. Generate Data (Small run)
+        python3 tools/data_gen/main.py generate \
+          --out test_results \
+          --weather-dir assets/weather \
+          --count 2 \
+          --width-min 10 --width-max 10 \
+          --length-min 10 --length-max 10 \
+          --wwr-min 0.3 --wwr-max 0.3 \
+          --height 3.0
+
+        # 3. Verify Outputs
+        if [ ! -f "test_results/sim_0000/eplusout.sql" ]; then
+          echo "Error: Simulation 0 output not found!"
+          exit 1
+        fi
+
+        if [ ! -f "test_results/sim_0001/eplusout.sql" ]; then
+          echo "Error: Simulation 1 output not found!"
+          exit 1
+        fi
+
+        echo "Integration test successful: Output files generated."
