@@ -18,7 +18,7 @@ from onnx import TensorProto, helper
 def build_constant_model(zones: int):
     # Model has a single input (temperatures) of shape [zones] and outputs a constant
     # vector of length `zones` with value 1.2
-    input = helper.make_tensor_value_info("input", TensorProto.FLOAT, [zones])
+    input = helper.make_tensor_value_info("input", TensorProto.FLOAT, [None, zones])
     output = helper.make_tensor_value_info("output", TensorProto.FLOAT, [zones])
 
     const_name = "const_loads"
@@ -42,7 +42,11 @@ def build_constant_model(zones: int):
         initializer=[],
     )
 
-    model = helper.make_model(graph)
+    model = helper.make_model(
+        graph,
+        opset_imports=[helper.make_opsetid("", 11)],
+        ir_version=7,  # Compatible with opset 11
+    )
     return model
 
 
