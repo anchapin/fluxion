@@ -25,9 +25,18 @@ def benchmark_throughput(
         input_name = sess.get_inputs()[0].name
         input_shape = sess.get_inputs()[0].shape
 
-        input_dim = 2
-        if len(input_shape) == 2 and isinstance(input_shape[1], int):
-            input_dim = input_shape[1]
+        # Determine the feature dimension (last dimension)
+        # Handle cases like (None, N) for dynamic batch size, or (N,) for 1D input
+        if input_shape and isinstance(input_shape[-1], int):
+            input_dim = input_shape[-1]
+        else:
+            # Fallback for truly dynamic or unexpected shapes, assume 10 for dummy model
+            # This should ideally be handled more robustly by inspecting the model.
+            print(
+                "Warning: Could not determine input dimension from model shape. "
+                "Assuming 10."
+            )
+            input_dim = 10
 
         print(f"Model input dim: {input_dim}")
     except Exception as e:

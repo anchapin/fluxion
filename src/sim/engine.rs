@@ -335,8 +335,9 @@ mod tests {
             Ok(result) => {
                 assert!(
                     result.is_ok(),
-                    "Should successfully load ONNX model from {}",
-                    model_path
+                    "Should successfully load ONNX model from {}: {:?}",
+                    model_path,
+                    result.err()
                 );
 
                 let manager = result.unwrap();

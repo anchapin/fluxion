@@ -33,7 +33,7 @@ pub enum InferenceBackend {
 /// The session is wrapped in `Arc<Mutex<_>>` for thread-safe sharing across
 /// parallel workers, allowing multiple threads to safely borrow the session
 /// for inference.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct SurrogateManager {
     /// Whether a trained model has been loaded.
     pub model_loaded: bool,
@@ -143,12 +143,21 @@ impl SurrogateManager {
 
         // If we have a session, perform inference.
         if let Some(ref session_cell) = self.session {
-            use ndarray::Array1;
+            use ndarray::Array2;
             use ort::value::TensorRef;
 
-            // Convert input temps into an ndarray 1D float32 array
-            let input_arr: Array1<f32> =
-                Array1::from(current_temps.iter().map(|&x| x as f32).collect::<Vec<_>>());
+            // Convert input temps into an ndarray 2D float32 array (1, N)
+            let n_input = current_temps.len();
+            let input_arr = match Array2::from_shape_vec(
+                (1, n_input),
+                current_temps.iter().map(|&x| x as f32).collect(),
+            ) {
+                Ok(arr) => arr,
+                Err(e) => {
+                    eprintln!("Failed to reshape array: {}; using mock loads", e);
+                    return vec![1.2; n_input];
+                }
+            };
 
             // Try to lock the session for inference
             match session_cell.lock() {
@@ -158,7 +167,7 @@ impl SurrogateManager {
                         Ok(t) => t,
                         Err(e) => {
                             eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                            return vec![1.2; current_temps.len()];
+                            return vec![1.2; n_input];
                         }
                     };
 
@@ -171,7 +180,7 @@ impl SurrogateManager {
                                     Ok(array_view) => {
                                         let v: Vec<f64> =
                                             array_view.iter().copied().map(|x| x as f64).collect();
-                                        if v.len() == current_temps.len() {
+                                        if v.len() == n_input {
                                             return v;
                                         }
                                     }
@@ -381,5 +390,75 @@ mod tests {
         assert_eq!(m2.model_loaded, m1.model_loaded);
         assert_eq!(m2.model_path, m1.model_path);
         // Can't easily check backend equality without PartialEq on enum, but it's Copy
+    }
+
+    #[test]
+    fn predict_onnx_real_model() {
+        // This test relies on tests_tmp_dummy.onnx being present and being a model that does y = x + 10 (approx)
+        // with 2 inputs.
+        let path = "tests_tmp_dummy.onnx";
+        if !std::path::Path::new(path).exists() {
+            // Skip if file doesn't exist (e.g. in CI environment without the file generated)
+            // But for this task, we expect it to exist.
+            panic!("tests_tmp_dummy.onnx not found. Run generate_dummy_model.py first.");
+        }
+
+        let m = SurrogateManager::load_onnx(path).expect("Failed to load model");
+
+        // The dummy model is trained on 2 inputs.
+        let temps = [20.0, 21.0];
+        let loads = m.predict_loads(&temps);
+
+        // If it returns 1.2, then inference failed or model not loaded
+        assert_ne!(loads[0], 1.2, "Returned mock value 1.2, inference failed");
+
+        let tolerance = 0.1;
+        assert!(
+            (loads[0] - 30.0).abs() < tolerance,
+            "Expected ~30.0, got {}",
+            loads[0]
+        );
+        assert!(
+            (loads[1] - 31.0).abs() < tolerance,
+            "Expected ~31.0, got {}",
+            loads[1]
+        );
+    }
+
+    #[test]
+    fn predict_onnx_real_model_batched() {
+        let path = "tests_tmp_dummy.onnx";
+        if !std::path::Path::new(path).exists() {
+            panic!("tests_tmp_dummy.onnx not found.");
+        }
+        let m = SurrogateManager::load_onnx(path).expect("Failed to load model");
+
+        let batch = vec![vec![20.0, 21.0], vec![50.0, 60.0]];
+        let loads = m.predict_loads_batched(&batch);
+
+        // Expected: [[30, 31], [60, 70]]
+        assert_ne!(loads[0][0], 1.2);
+
+        let tolerance = 0.1;
+        assert!(
+            (loads[0][0] - 30.0).abs() < tolerance,
+            "Expected 30.0, got {}",
+            loads[0][0]
+        );
+        assert!(
+            (loads[0][1] - 31.0).abs() < tolerance,
+            "Expected 31.0, got {}",
+            loads[0][1]
+        );
+        assert!(
+            (loads[1][0] - 60.0).abs() < tolerance,
+            "Expected 60.0, got {}",
+            loads[1][0]
+        );
+        assert!(
+            (loads[1][1] - 70.0).abs() < tolerance,
+            "Expected 70.0, got {}",
+            loads[1][1]
+        );
     }
 }
