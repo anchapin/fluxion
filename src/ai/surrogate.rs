@@ -413,15 +413,23 @@ mod tests {
         assert_ne!(loads[0], 1.2, "Returned mock value 1.2, inference failed");
 
         let tolerance = 0.1;
-        assert!((loads[0] - 30.0).abs() < tolerance, "Expected ~30.0, got {}", loads[0]);
-        assert!((loads[1] - 31.0).abs() < tolerance, "Expected ~31.0, got {}", loads[1]);
+        assert!(
+            (loads[0] - 30.0).abs() < tolerance,
+            "Expected ~30.0, got {}",
+            loads[0]
+        );
+        assert!(
+            (loads[1] - 31.0).abs() < tolerance,
+            "Expected ~31.0, got {}",
+            loads[1]
+        );
     }
 
     #[test]
     fn predict_onnx_real_model_batched() {
         let path = "tests_tmp_dummy.onnx";
         if !std::path::Path::new(path).exists() {
-             panic!("tests_tmp_dummy.onnx not found.");
+            panic!("tests_tmp_dummy.onnx not found.");
         }
         let m = SurrogateManager::load_onnx(path).expect("Failed to load model");
 
@@ -432,9 +440,25 @@ mod tests {
         assert_ne!(loads[0][0], 1.2);
 
         let tolerance = 0.1;
-        assert!((loads[0][0] - 30.0).abs() < tolerance, "Expected 30.0, got {}", loads[0][0]);
-        assert!((loads[0][1] - 31.0).abs() < tolerance, "Expected 31.0, got {}", loads[0][1]);
-        assert!((loads[1][0] - 60.0).abs() < tolerance, "Expected 60.0, got {}", loads[1][0]);
-        assert!((loads[1][1] - 70.0).abs() < tolerance, "Expected 70.0, got {}", loads[1][1]);
+        assert!(
+            (loads[0][0] - 30.0).abs() < tolerance,
+            "Expected 30.0, got {}",
+            loads[0][0]
+        );
+        assert!(
+            (loads[0][1] - 31.0).abs() < tolerance,
+            "Expected 31.0, got {}",
+            loads[0][1]
+        );
+        assert!(
+            (loads[1][0] - 60.0).abs() < tolerance,
+            "Expected 60.0, got {}",
+            loads[1][0]
+        );
+        assert!(
+            (loads[1][1] - 70.0).abs() < tolerance,
+            "Expected 70.0, got {}",
+            loads[1][1]
+        );
     }
 }
