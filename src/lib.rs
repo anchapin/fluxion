@@ -237,14 +237,14 @@ mod tests {
         // Ideally we want to test with the pool active.
         let model_path = "tests_tmp_dummy.onnx";
         let surrogates = if Path::new(model_path).exists() {
-             SurrogateManager::load_onnx(model_path).expect("Failed to load dummy model")
+            SurrogateManager::load_onnx(model_path).expect("Failed to load dummy model")
         } else {
-             // Even with mock, the code path goes through predict_loads.
-             // But if model_loaded is false, it returns early.
-             // We need model_loaded=true to test the pool.
-             // If no file, we can't easily test the pool without mocking Session.
-             // But we know tests_tmp_dummy.onnx exists in this env.
-             panic!("tests_tmp_dummy.onnx not found. Run generation script or ai tests first.");
+            // Even with mock, the code path goes through predict_loads.
+            // But if model_loaded is false, it returns early.
+            // We need model_loaded=true to test the pool.
+            // If no file, we can't easily test the pool without mocking Session.
+            // But we know tests_tmp_dummy.onnx exists in this env.
+            panic!("tests_tmp_dummy.onnx not found. Run generation script or ai tests first.");
         };
 
         // Create a large population

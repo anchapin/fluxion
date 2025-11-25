@@ -58,7 +58,12 @@ pub struct SessionPool {
 }
 
 impl SessionPool {
-    fn new(model_path: String, backend: InferenceBackend, device_id: usize, initial_session: ort::session::Session) -> Self {
+    fn new(
+        model_path: String,
+        backend: InferenceBackend,
+        device_id: usize,
+        initial_session: ort::session::Session,
+    ) -> Self {
         SessionPool {
             sessions: Mutex::new(vec![initial_session]),
             model_path,
@@ -81,11 +86,12 @@ impl SessionPool {
 
         // Create a new session if pool is empty
         // We do this outside the lock to allow other threads to access the pool
-        Self::create_session(&self.model_path, self.backend, self.device_id)
-            .map(|session| SessionGuard {
+        Self::create_session(&self.model_path, self.backend, self.device_id).map(|session| {
+            SessionGuard {
                 pool: self,
                 session: Some(session),
-            })
+            }
+        })
     }
 
     fn return_session(&self, session: ort::session::Session) {
@@ -93,37 +99,46 @@ impl SessionPool {
         sessions.push(session);
     }
 
-    fn create_session(path: &str, backend: InferenceBackend, device_id: usize) -> Result<ort::session::Session, String> {
+    fn create_session(
+        path: &str,
+        backend: InferenceBackend,
+        device_id: usize,
+    ) -> Result<ort::session::Session, String> {
         use ort::session::Session;
 
-        let mut builder = Session::builder()
-            .map_err(|e| format!("Failed to create session builder: {}", e))?;
+        let mut builder =
+            Session::builder().map_err(|e| format!("Failed to create session builder: {}", e))?;
 
         match backend {
             InferenceBackend::CUDA => {
                 let ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
-                builder = builder.with_execution_providers([ep.build()])
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
             }
             InferenceBackend::CoreML => {
                 let ep = CoreMLExecutionProvider::default();
-                builder = builder.with_execution_providers([ep.build()])
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add CoreML execution provider: {}", e))?;
             }
             InferenceBackend::DirectML => {
                 let ep = DirectMLExecutionProvider::default().with_device_id(device_id as i32);
-                builder = builder.with_execution_providers([ep.build()])
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add DirectML execution provider: {}", e))?;
             }
             InferenceBackend::OpenVINO => {
                 let ep = OpenVINOExecutionProvider::default();
-                builder = builder.with_execution_providers([ep.build()])
+                builder = builder
+                    .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add OpenVINO execution provider: {}", e))?;
             }
             InferenceBackend::CPU => {}
         }
 
-        builder.commit_from_file(path)
+        builder
+            .commit_from_file(path)
             .map_err(|e| format!("Failed to load ONNX model: {}", e))
     }
 }
@@ -358,17 +373,17 @@ impl SurrogateManager {
                                     }
                                 }
                             }
-                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
                         }
                         Err(e) => {
                             eprintln!("ONNX inference error: {}; using mock loads", e);
-                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
                         }
                     }
                 }
                 Err(_) => {
                     eprintln!("Could not acquire ORT session; using mock loads");
-                    return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                    batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
                 }
             }
         } else {
