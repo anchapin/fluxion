@@ -31,26 +31,39 @@ Fluxion uses a **two-class** PyO3 API pattern critical to understand:
 
 ### Thermal Network (`src/sim/engine.rs`)
 
-**ThermalModel** is the physics backbone:
+**ThermalModel** is the physics backbone, now implementing an **ISO 13790-compliant 5R1C Thermal Network** using **Continuous Tensor Abstraction (CTA)**.
 
 ```rust
 pub struct ThermalModel {
     pub num_zones: usize,
-    pub temperatures: Vec<f64>,
-    pub loads: Vec<f64>,
-    pub window_u_value: f64,      // Design variable
-    pub hvac_setpoint: f64,        // Design variable
+    // State variables (CTA VectorFields)
+    pub temperatures: VectorField,       // Zone air temperatures
+    pub mass_temperatures: VectorField,  // Thermal mass temperatures
+    pub loads: VectorField,              // Total thermal loads (Watts)
+
+    // Design variables
+    pub window_u_value: f64,
+    pub hvac_setpoint: f64,
+
+    // 5R1C Parameters (CTA VectorFields)
+    pub h_tr_em: VectorField, // Transmission: Exterior -> Mass
+    pub h_tr_ms: VectorField, // Transmission: Mass -> Surface
+    pub h_tr_is: VectorField, // Transmission: Surface -> Interior
+    pub h_tr_w: VectorField,  // Transmission: Exterior -> Interior (Windows)
+    pub h_ve: VectorField,    // Ventilation: Exterior -> Interior
 }
 ```
 
 **Key Methods**:
-- `apply_parameters(params: &[f64])`: Maps gene vector to model state
-  - `params[0]` → `window_u_value` (building envelope quality)
-  - `params[1]` → `hvac_setpoint` (comfort/energy trade-off)
+- `apply_parameters(params: &[f64])`: Maps gene vector to model state and broadcasts 5R1C conductances to `VectorField`.
+  - `params[0]` → `window_u_value` (updates `h_tr_w`, `h_tr_em`)
+  - `params[1]` → `hvac_setpoint`
 - `solve_timesteps(steps, surrogates, use_ai)`: Core physics loop
-  - If `use_ai=true`: queries `SurrogateManager` for thermal loads (fast approximation)
-  - If `use_ai=false`: computes analytical loads (slower but validated)
-  - Returns cumulative energy consumption
+  - Uses **CTA operations** (element-wise `+`, `*`, `/`) for vector-accelerated solving of the 5R1C algebraic system.
+  - Calculates `Ti_free` (free-floating temp), determines HVAC demand, and solves `Ti_act` and `Tm_next`.
+  - If `use_ai=true`: queries `SurrogateManager` for loads.
+  - If `use_ai=false`: computes analytical loads.
+  - Returns cumulative energy consumption.
 
 **Important**: `ThermalModel` is `Clone`—this enables the batch parallel pattern (each thread gets a copy to mutate).
 
