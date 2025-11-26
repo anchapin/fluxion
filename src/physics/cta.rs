@@ -51,7 +51,6 @@ where
     fn constant_like(&self, value: T) -> Self;
 }
 
-
 /// A basic CPU-based implementation of ContinuousTensor using Vec<f64>.
 /// Represents a 1D Tensor (Vector).
 #[derive(Debug, Clone, PartialEq)]
@@ -179,7 +178,8 @@ impl ContinuousTensor<f64> for VectorField {
         for (i, slot) in grad_data.iter_mut().enumerate().take(self.data.len() - 1) {
             *slot = self.data[i + 1] - self.data[i];
         }
-        grad_data[self.data.len() - 1] = self.data[self.data.len() - 1] - self.data[self.data.len() - 2];
+        grad_data[self.data.len() - 1] =
+            self.data[self.data.len() - 1] - self.data[self.data.len() - 2];
         VectorField::new(grad_data)
     }
 

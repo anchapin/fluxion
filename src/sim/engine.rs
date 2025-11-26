@@ -25,8 +25,8 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
     // New fields for 5R1C model
-    pub mass_temperatures: T,   // Tm (Mass temperature)
-    pub thermal_capacitance: T, // Cm (J/K)
+    pub mass_temperatures: T,     // Tm (Mass temperature)
+    pub thermal_capacitance: T,   // Cm (J/K)
     pub hvac_cooling_capacity: T, // Watts
     pub hvac_heating_capacity: T, // Watts
 
@@ -104,12 +104,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     surface.u_value = self.window_u_value;
                 }
             }
-            self.h_tr_w = self
-                .temperatures
-                .constant_like(self.window_u_value * 10.0);
-            self.h_tr_em = self
-                .temperatures
-                .constant_like(self.window_u_value * 30.0);
+            self.h_tr_w = self.temperatures.constant_like(self.window_u_value * 10.0);
+            self.h_tr_em = self.temperatures.constant_like(self.window_u_value * 30.0);
         }
         if params.len() >= 2 {
             self.hvac_setpoint = params[1];
@@ -135,7 +131,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_req = t_err.zip_with(sensitivity, |err, sens| -err / sens);
 
         // Apply heating/cooling capacities
-        q_req.zip_with(&self.hvac_heating_capacity, |q, cap| q.min(cap))
+        q_req
+            .zip_with(&self.hvac_heating_capacity, |q, cap| q.min(cap))
             .zip_with(&self.hvac_cooling_capacity, |q, cap| q.max(-cap))
     }
 

@@ -8,9 +8,9 @@ use rayon::iter::IntoParallelRefIterator;
 use rayon::prelude::ParallelIterator;
 
 #[cfg(feature = "python-bindings")]
-use ai::surrogate::SurrogateManager;
-#[cfg(feature = "python-bindings")]
 use crate::physics::cta::VectorField;
+#[cfg(feature = "python-bindings")]
+use ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]
 use sim::engine::ThermalModel;
 
