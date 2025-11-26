@@ -166,20 +166,40 @@ impl ContinuousTensor<f64> for VectorField {
     }
 
     fn integrate(&self) -> f64 {
-        self.data.iter().sum()
+        // Trapezoidal rule for 1D field with uniform spacing (dx=1)
+        let n = self.data.len();
+        if n == 0 {
+            return 0.0;
+        }
+        if n == 1 {
+            return self.data[0];
+        }
+        let mut sum = 0.0;
+        for i in 0..n - 1 {
+            sum += 0.5 * (self.data[i] + self.data[i + 1]);
+        }
+        sum
     }
 
     fn gradient(&self) -> Self {
-        if self.data.len() < 2 {
-            return VectorField::from_scalar(0.0, self.data.len());
+        // Central differences for interior points, forward/backward for boundaries
+        let n = self.data.len();
+        if n == 0 {
+            return VectorField::new(vec![]);
+        }
+        if n == 1 {
+            return VectorField::from_scalar(0.0, 1);
         }
 
-        let mut grad_data = vec![0.0; self.data.len()];
-        for (i, slot) in grad_data.iter_mut().enumerate().take(self.data.len() - 1) {
-            *slot = self.data[i + 1] - self.data[i];
+        let mut grad_data = vec![0.0; n];
+        // Forward difference for first element
+        grad_data[0] = self.data[1] - self.data[0];
+        // Central differences for interior
+        for i in 1..n - 1 {
+            grad_data[i] = 0.5 * (self.data[i + 1] - self.data[i - 1]);
         }
-        grad_data[self.data.len() - 1] =
-            self.data[self.data.len() - 1] - self.data[self.data.len() - 2];
+        // Backward difference for last element
+        grad_data[n - 1] = self.data[n - 1] - self.data[n - 2];
         VectorField::new(grad_data)
     }
 
