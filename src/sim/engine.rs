@@ -24,9 +24,17 @@ pub struct ThermalModel {
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
     // New fields for 5R1C model
-    pub thermal_capacitance: Vec<f64>,   // J/K
+    pub mass_temperatures: Vec<f64>,     // Tm (Mass temperature)
+    pub thermal_capacitance: Vec<f64>,   // Cm (J/K)
     pub hvac_cooling_capacity: Vec<f64>, // Watts
     pub hvac_heating_capacity: Vec<f64>, // Watts
+
+    // 5R1C Conductances (W/K)
+    pub h_tr_em: Vec<f64>, // Transmission: Exterior -> Mass
+    pub h_tr_ms: Vec<f64>, // Transmission: Mass -> Surface
+    pub h_tr_is: Vec<f64>, // Transmission: Surface -> Interior
+    pub h_tr_w: Vec<f64>,  // Transmission: Exterior -> Interior (Windows)
+    pub h_ve: Vec<f64>,    // Ventilation: Exterior -> Interior
 }
 
 impl ThermalModel {
@@ -54,6 +62,7 @@ impl ThermalModel {
         ThermalModel {
             num_zones,
             temperatures: vec![20.0; num_zones], // Initialize at 20°C
+            mass_temperatures: vec![20.0; num_zones], // Initialize Tm at 20°C
             loads: vec![0.0; num_zones],
             surfaces,
             window_u_value: 2.5,                            // Default U-value
@@ -61,6 +70,18 @@ impl ThermalModel {
             thermal_capacitance: vec![10e6; num_zones],     // Default capacitance: 10 MJ/K per zone
             hvac_cooling_capacity: vec![5000.0; num_zones], // Default: 5kW cooling per zone
             hvac_heating_capacity: vec![5000.0; num_zones], // Default: 5kW heating per zone
+
+            // Initialize 5R1C conductances (Defaults for 40m² surface/zone)
+            // H_tr_w: Window transmission (approx 2.5 * 10m²)
+            h_tr_w: vec![25.0; num_zones],
+            // H_tr_em: Opaque transmission (Exterior -> Mass)
+            h_tr_em: vec![50.0; num_zones],
+            // H_tr_ms: Mass -> Surface (High coupling)
+            h_tr_ms: vec![1000.0; num_zones],
+            // H_tr_is: Surface -> Interior (High coupling)
+            h_tr_is: vec![200.0; num_zones],
+            // H_ve: Ventilation (Exterior -> Interior)
+            h_ve: vec![10.0; num_zones],
         }
     }
 
@@ -80,6 +101,13 @@ impl ThermalModel {
                 for surface in zone_surfaces {
                     surface.u_value = self.window_u_value;
                 }
+            }
+
+            // Update 5R1C conductances based on new U-value
+            // Assuming 10m² window and 30m² opaque wall per zone (Total 40m²)
+            for i in 0..self.num_zones {
+                self.h_tr_w[i] = self.window_u_value * 10.0;
+                self.h_tr_em[i] = self.window_u_value * 30.0;
             }
         }
         if params.len() >= 2 {
@@ -117,51 +145,89 @@ impl ThermalModel {
             }
 
             // 2. Solve Thermal Network (5R1C)
-            // Pre-calculate outdoor temperature for this timestep, as it's the same for all zones
+            // Pre-calculate outdoor temperature for this timestep
             let hour_of_day = t % 24;
             let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
             let outdoor_temp = 10.0 + 10.0 * daily_cycle;
 
             for i in 0..self.num_zones {
-                // A) Calculate Total Conductive Heat Gain/Loss (from surfaces)
-                // This represents heat transfer through walls, windows, etc.
-                let mut total_conductive_gain = 0.0;
-                if i < self.surfaces.len() {
-                    for surface in &self.surfaces[i] {
-                        // Q = U * A * (T_out - T_in)
-                        total_conductive_gain +=
-                            surface.u_value * surface.area * (outdoor_temp - self.temperatures[i]);
-                    }
-                }
+                // 5R1C Parameters
+                let h_tr_em = self.h_tr_em[i];
+                let h_tr_ms = self.h_tr_ms[i];
+                let h_tr_is = self.h_tr_is[i];
+                let h_tr_w = self.h_tr_w[i];
+                let h_ve = self.h_ve[i];
+                let c_m = self.thermal_capacitance[i];
 
-                // B) Get Solar & Internal Gains
-                // The `loads` field now represents Q_solar + Q_internal (in Watts)
-                let solar_and_internal_gains = self.loads[i];
+                // Split loads (Solar + Internal)
+                // Assumption: 50% to Air node, 50% to Surface node
+                let phi_tot = self.loads[i];
+                let phi_ia = 0.5 * phi_tot;
+                let phi_st = 0.5 * phi_tot;
+                let phi_m = 0.0; // Assume no direct gain to mass for now
 
-                // C) Calculate HVAC System Output
-                let temp_diff = self.hvac_setpoint - self.temperatures[i];
+                // Current State
+                let t_m_prev = self.mass_temperatures[i];
+                let t_e = outdoor_temp;
+
+                // --- Step 1: Calculate Ti_free (No HVAC) ---
+                // H_ext = H_tr_w + H_ve
+                let h_ext = h_tr_w + h_ve;
+
+                // Denominator for Ti equation
+                let den = h_tr_ms * h_tr_is + h_tr_ms * h_ext + h_tr_is * h_ext;
+
+                // Numerator terms
+                let num_tm = h_tr_ms * h_tr_is * t_m_prev;
+                let num_phi_st = h_tr_is * phi_st;
+                let num_rest = (h_tr_ms + h_tr_is) * (h_ext * t_e + phi_ia);
+
+                let t_i_free = (num_tm + num_phi_st + num_rest) / den;
+
+                // --- Step 2: HVAC Calculation ---
                 let mut hvac_output = 0.0;
-                if temp_diff > 0.0 {
-                    // Heating needed
-                    hvac_output = temp_diff.abs().min(self.hvac_heating_capacity[i]);
-                } else if temp_diff < 0.0 {
-                    // Cooling needed
-                    hvac_output = -temp_diff.abs().min(self.hvac_cooling_capacity[i]);
+                let t_set = self.hvac_setpoint;
+
+                // Sensitivity: Change in Ti per unit Heat input to Ti
+                let sensitivity = (h_tr_ms + h_tr_is) / den;
+
+                if t_i_free < t_set {
+                    // Heating Required
+                    let t_diff = t_set - t_i_free;
+                    let q_req = t_diff / sensitivity;
+                    hvac_output = q_req.min(self.hvac_heating_capacity[i]);
+                } else if t_i_free > t_set {
+                    // Cooling Required (Single setpoint logic)
+                    let t_diff = t_i_free - t_set;
+                    let q_req = t_diff / sensitivity;
+                    hvac_output = -1.0 * q_req.min(self.hvac_cooling_capacity[i]);
                 }
 
-                // D) Total Heat Flow (Watts)
-                // Sum of all heat gains and losses
-                let total_heat_flow =
-                    total_conductive_gain + solar_and_internal_gains + hvac_output;
+                // --- Step 3: Calculate Actual Temperatures ---
+                let phi_ia_act = phi_ia + hvac_output;
 
-                // E) Update Zone Temperature using Euler method
-                // dT/dt = Q_total / C
-                // T_new = T_old + (dT/dt) * dt
-                let temp_delta = (total_heat_flow / self.thermal_capacitance[i]) * dt;
-                self.temperatures[i] += temp_delta;
+                // Re-calculate Ti with actual HVAC output
+                let num_rest_act = (h_tr_ms + h_tr_is) * (h_ext * t_e + phi_ia_act);
+                let t_i_act = (num_tm + num_phi_st + num_rest_act) / den;
 
-                // F) Accumulate HVAC energy consumption for this step
-                total_energy += hvac_output.abs() * dt; // Energy in Joules
+                // Calculate Ts
+                // Ts = (H_tr_ms * Tm + H_tr_is * Ti + Phi_st) / (H_tr_ms + H_tr_is)
+                let t_s_act =
+                    (h_tr_ms * t_m_prev + h_tr_is * t_i_act + phi_st) / (h_tr_ms + h_tr_is);
+
+                // --- Step 4: Update Mass Temperature (Euler) ---
+                // Cm * dTm/dt = H_tr_em * (Te - Tm) + H_tr_ms * (Ts - Tm) + Phi_m
+                let q_m_net = h_tr_em * (t_e - t_m_prev) + h_tr_ms * (t_s_act - t_m_prev) + phi_m;
+                let dt_m = (q_m_net / c_m) * dt;
+
+                let t_m_new = t_m_prev + dt_m;
+
+                // Update State
+                self.temperatures[i] = t_i_act;
+                self.mass_temperatures[i] = t_m_new;
+
+                // Accumulate Energy (Joules -> kWh at end)
+                total_energy += hvac_output.abs() * dt;
             }
         }
 
