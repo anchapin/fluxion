@@ -179,8 +179,7 @@ impl ThermalModel {
 
         let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * t_m_prev.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
-        let num_rest =
-            term_rest_1.clone() * ((h_ext.clone() * t_e.clone()) + phi_ia.clone());
+        let num_rest = term_rest_1.clone() * ((h_ext.clone() * t_e.clone()) + phi_ia.clone());
         let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest) / den.clone();
 
         // 3. HVAC Calculation
@@ -571,8 +570,7 @@ mod tests {
             // H_ms_is is the equivalent conductance of the mass-to-surface and surface-to-air resistors
             let h_ms_is = 1.0 / (1.0 / h_tr_ms + 1.0 / h_tr_is);
             let t_m_steady_state_heating =
-                (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating)
-                    / (h_tr_em + h_ms_is);
+                (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating) / (h_tr_em + h_ms_is);
 
             model.hvac_setpoint = setpoint_heating;
             model.temperatures = VectorField::from_scalar(setpoint_heating, 1);
@@ -599,8 +597,7 @@ mod tests {
 
             // Calculate steady-state mass temp for cooling scenario
             let t_m_steady_state_cooling =
-                (h_tr_em * outdoor_temp_cooling + h_ms_is * setpoint_cooling)
-                    / (h_tr_em + h_ms_is);
+                (h_tr_em * outdoor_temp_cooling + h_ms_is * setpoint_cooling) / (h_tr_em + h_ms_is);
 
             model.hvac_setpoint = setpoint_cooling;
             model.temperatures = VectorField::from_scalar(setpoint_cooling, 1);
