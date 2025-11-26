@@ -1,5 +1,5 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::cta::VectorField;
+use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::components::WallSurface;
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
@@ -16,29 +16,29 @@ use crate::sim::components::WallSurface;
 /// * `window_u_value` - Thermal transmittance of windows (W/m²K) - optimization variable
 /// * `hvac_setpoint` - HVAC system setpoint temperature (°C) - optimization variable
 #[derive(Clone)]
-pub struct ThermalModel {
+pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub num_zones: usize,
-    pub temperatures: VectorField,
-    pub loads: VectorField,
+    pub temperatures: T,
+    pub loads: T,
     pub surfaces: Vec<Vec<WallSurface>>,
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
     // New fields for 5R1C model
-    pub mass_temperatures: VectorField,   // Tm (Mass temperature)
-    pub thermal_capacitance: VectorField, // Cm (J/K)
-    pub hvac_cooling_capacity: VectorField, // Watts
-    pub hvac_heating_capacity: VectorField, // Watts
+    pub mass_temperatures: T,   // Tm (Mass temperature)
+    pub thermal_capacitance: T, // Cm (J/K)
+    pub hvac_cooling_capacity: T, // Watts
+    pub hvac_heating_capacity: T, // Watts
 
     // 5R1C Conductances (W/K)
-    pub h_tr_em: VectorField, // Transmission: Exterior -> Mass
-    pub h_tr_ms: VectorField, // Transmission: Mass -> Surface
-    pub h_tr_is: VectorField, // Transmission: Surface -> Interior
-    pub h_tr_w: VectorField,  // Transmission: Exterior -> Interior (Windows)
-    pub h_ve: VectorField,    // Ventilation: Exterior -> Interior
+    pub h_tr_em: T, // Transmission: Exterior -> Mass
+    pub h_tr_ms: T, // Transmission: Mass -> Surface
+    pub h_tr_is: T, // Transmission: Surface -> Interior
+    pub h_tr_w: T,  // Transmission: Exterior -> Interior (Windows)
+    pub h_ve: T,    // Ventilation: Exterior -> Interior
 }
 
-impl ThermalModel {
+impl ThermalModel<VectorField> {
     /// Create a new ThermalModel with specified number of thermal zones.
     ///
     /// # Arguments
@@ -85,7 +85,9 @@ impl ThermalModel {
             h_ve: VectorField::from_scalar(10.0, num_zones),
         }
     }
+}
 
+impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
     /// Updates model parameters based on a gene vector from an optimizer.
     ///
     /// This method maps optimization variables (genes) to physical parameters of the thermal model.
@@ -97,22 +99,44 @@ impl ThermalModel {
     pub fn apply_parameters(&mut self, params: &[f64]) {
         if !params.is_empty() {
             self.window_u_value = params[0];
-            // Update surface U-values as well (simplified for now - applying to all surfaces)
             for zone_surfaces in &mut self.surfaces {
                 for surface in zone_surfaces {
                     surface.u_value = self.window_u_value;
                 }
             }
-
-            // Update 5R1C conductances based on new U-value
-            // Assuming 10m² window and 30m² opaque wall per zone (Total 40m²)
-            // CTA: Use scalar broadcast instead of loop
-            self.h_tr_w = VectorField::from_scalar(self.window_u_value * 10.0, self.num_zones);
-            self.h_tr_em = VectorField::from_scalar(self.window_u_value * 30.0, self.num_zones);
+            self.h_tr_w = self
+                .temperatures
+                .constant_like(self.window_u_value * 10.0);
+            self.h_tr_em = self
+                .temperatures
+                .constant_like(self.window_u_value * 30.0);
         }
         if params.len() >= 2 {
             self.hvac_setpoint = params[1];
         }
+    }
+
+    /// Calculates HVAC power demand based on free-floating temperature and setpoint.
+    ///
+    /// This function implements the core logic for HVAC power calculation using CTA,
+    /// making it reusable and simplifying the main simulation loop.
+    ///
+    /// # Arguments
+    /// * `t_i_free` - The free-floating indoor temperature tensor (i.e., without HVAC).
+    /// * `sensitivity` - A tensor representing how much 1W of HVAC power changes the indoor temperature.
+    ///
+    /// # Returns
+    /// A tensor representing the HVAC power (heating is positive, cooling is negative).
+    fn hvac_power_demand(&self, t_i_free: &T, sensitivity: &T) -> T {
+        let t_set = self.hvac_setpoint;
+        let t_err = t_i_free.map(|t| t - t_set); // Error from setpoint
+
+        // Required power to correct the error.
+        let q_req = t_err.zip_with(sensitivity, |err, sens| -err / sens);
+
+        // Apply heating/cooling capacities
+        q_req.zip_with(&self.hvac_heating_capacity, |q, cap| q.min(cap))
+            .zip_with(&self.hvac_cooling_capacity, |q, cap| q.max(-cap))
     }
 
     /// Core physics simulation loop for annual building energy performance.
@@ -133,14 +157,14 @@ impl ThermalModel {
         surrogates: &SurrogateManager,
         use_ai: bool,
     ) -> f64 {
-        let mut total_energy = 0.0;
-        for t in 0..steps {
-            let hour_of_day = t % 24;
-            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-            let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-            total_energy += self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true);
-        }
-        total_energy
+        (0..steps)
+            .map(|t| {
+                let hour_of_day = t % 24;
+                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true)
+            })
+            .sum()
     }
 
     /// Solves a single timestep of the thermal simulation.
@@ -157,87 +181,66 @@ impl ThermalModel {
     ) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
-        // 1. Calculate External Loads (Solar, etc.)
+        // 1. Calculate External Loads
         if use_ai {
-            let pred = surrogates.predict_loads(self.temperatures.as_slice());
-            self.loads = VectorField::new(pred);
+            let pred = surrogates.predict_loads(self.temperatures.as_ref());
+            self.loads = T::from(VectorField::new(pred));
         } else {
             self.calc_analytical_loads(timestep, use_analytical_gains);
         }
 
-        // 2. Solve Thermal Network (5R1C) with CTA
-        let t_e = VectorField::from_scalar(outdoor_temp, self.num_zones);
+        // 2. Solve Thermal Network
+        let t_e = self.temperatures.constant_like(outdoor_temp);
         let phi_ia = self.loads.clone() * 0.5;
         let phi_st = self.loads.clone() * 0.5;
-        let t_m_prev = self.mass_temperatures.clone();
 
+        // Simplified 5R1C calculation using CTA
         let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
-        let den = (self.h_tr_ms.clone() * self.h_tr_is.clone())
-            + (self.h_tr_ms.clone() * h_ext.clone())
-            + (self.h_tr_is.clone() * h_ext.clone());
+        let den = self.h_tr_ms.clone() * self.h_tr_is.clone()
+            + self.h_tr_ms.clone() * h_ext.clone()
+            + self.h_tr_is.clone() * h_ext.clone();
         let term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
 
-        let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * t_m_prev.clone();
+        let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
-        let num_rest = term_rest_1.clone() * ((h_ext.clone() * t_e.clone()) + phi_ia.clone());
-        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest) / den.clone();
+        let num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia.clone());
+        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest.clone()) / den.clone();
 
         // 3. HVAC Calculation
-        let t_set = self.hvac_setpoint;
         let sensitivity = (self.h_tr_ms.clone() + self.h_tr_is.clone()) / den.clone();
-        let mut hvac_output_data = Vec::with_capacity(self.num_zones);
-
-        for i in 0..self.num_zones {
-            let val_free = t_i_free[i];
-            let sens = sensitivity[i];
-            let mut out = 0.0;
-
-            if val_free < t_set {
-                let q_req = (t_set - val_free) / sens;
-                out = q_req.min(self.hvac_heating_capacity[i]);
-            } else if val_free > t_set {
-                let q_req = (val_free - t_set) / sens;
-                out = -q_req.min(self.hvac_cooling_capacity[i]);
-            }
-            hvac_output_data.push(out);
-        }
-        let hvac_output = VectorField::new(hvac_output_data);
-        let hvac_energy_for_step = hvac_output.as_slice().iter().map(|o| o.abs()).sum::<f64>() * dt;
+        let hvac_output = self.hvac_power_demand(&t_i_free, &sensitivity);
+        let hvac_energy_for_step = hvac_output.map(|o| o.abs()).integrate() * dt;
 
         // 4. Update Temperatures
         let phi_ia_act = phi_ia + hvac_output;
-        let num_rest_act = term_rest_1 * ((h_ext.clone() * t_e.clone()) + phi_ia_act);
-        let t_i_act = (num_tm + num_phi_st + num_rest_act) / den.clone();
+        let num_rest_act = term_rest_1 * (h_ext * t_e.clone() + phi_ia_act);
+        let t_i_act = (num_tm + num_phi_st.clone() + num_rest_act) / den.clone();
 
-        let ts_num = (self.h_tr_ms.clone() * t_m_prev.clone())
-            + (self.h_tr_is.clone() * t_i_act.clone())
+        let ts_num = self.h_tr_ms.clone() * self.mass_temperatures.clone()
+            + self.h_tr_is.clone() * t_i_act.clone()
             + phi_st;
         let ts_den = self.h_tr_ms.clone() + self.h_tr_is.clone();
         let t_s_act = ts_num / ts_den;
 
-        let term_1 = self.h_tr_em.clone() * (t_e - t_m_prev.clone());
-        let term_2 = self.h_tr_ms.clone() * (t_s_act - t_m_prev.clone());
-        let q_m_net = term_1 + term_2;
+        let q_m_net = self.h_tr_em.clone() * (t_e - self.mass_temperatures.clone())
+            + self.h_tr_ms.clone() * (t_s_act - self.mass_temperatures.clone());
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
-        let t_m_new = t_m_prev + dt_m;
-
+        self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
         self.temperatures = t_i_act;
-        self.mass_temperatures = t_m_new;
 
         hvac_energy_for_step / 3.6e6 // Return kWh
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
     fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
-        let mut total_gain = 0.0;
-        if use_analytical_gains {
+        let total_gain = if use_analytical_gains {
             let hour_of_day = timestep % 24;
             let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-            let solar_gain = (1000.0 * daily_cycle).max(0.0);
-            let internal_gains = 100.0;
-            total_gain = solar_gain + internal_gains;
-        }
-        self.loads = VectorField::from_scalar(total_gain, self.num_zones);
+            (1000.0 * daily_cycle).max(0.0) + 100.0
+        } else {
+            0.0
+        };
+        self.loads = self.temperatures.constant_like(total_gain);
     }
 }
 
@@ -245,10 +248,11 @@ impl ThermalModel {
 mod tests {
     use super::ThermalModel;
     use crate::ai::surrogate::SurrogateManager;
+    use crate::physics::cta::VectorField;
 
     #[test]
     fn test_thermal_model_creation() {
-        let model = ThermalModel::new(10);
+        let model = ThermalModel::<VectorField>::new(10);
         assert_eq!(model.num_zones, 10);
         assert_eq!(model.temperatures.len(), 10);
         // Check surfaces created
@@ -264,7 +268,7 @@ mod tests {
 
     #[test]
     fn test_apply_parameters_updates_model() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5, 22.0];
 
         model.apply_parameters(&params);
@@ -277,7 +281,7 @@ mod tests {
 
     #[test]
     fn test_apply_parameters_partial() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5];
 
         model.apply_parameters(&params);
@@ -287,7 +291,7 @@ mod tests {
 
     #[test]
     fn test_solve_timesteps_with_surrogates() {
-        let model = ThermalModel::new(10);
+        let model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Surrogate-based prediction
@@ -299,7 +303,7 @@ mod tests {
 
     #[test]
     fn test_calc_analytical_loads() {
-        let mut model = ThermalModel::new(5);
+        let mut model = ThermalModel::<VectorField>::new(5);
         model.calc_analytical_loads(12, true); // noon
 
         // Check if loads are calculated
@@ -408,7 +412,7 @@ mod tests {
 
     #[test]
     fn test_apply_parameters_boundary_values() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
 
         // Test minimum boundary
         model.apply_parameters(&[0.5, 19.0]);
@@ -423,7 +427,7 @@ mod tests {
 
     #[test]
     fn test_apply_parameters_extra_values() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5, 22.0, 1000.0, 999.0];
 
         // Should only use first two elements
@@ -434,12 +438,12 @@ mod tests {
 
     #[test]
     fn test_thermal_model_zones() {
-        let model_5 = ThermalModel::new(5);
+        let model_5 = ThermalModel::<VectorField>::new(5);
         assert_eq!(model_5.num_zones, 5);
         assert_eq!(model_5.temperatures.len(), 5);
         assert_eq!(model_5.loads.len(), 5);
 
-        let model_20 = ThermalModel::new(20);
+        let model_20 = ThermalModel::<VectorField>::new(20);
         assert_eq!(model_20.num_zones, 20);
         assert_eq!(model_20.temperatures.len(), 20);
         assert_eq!(model_20.loads.len(), 20);
@@ -447,7 +451,7 @@ mod tests {
 
     #[test]
     fn test_solve_timesteps_zero_steps() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         model.apply_parameters(&[1.5, 21.0]);
@@ -459,7 +463,7 @@ mod tests {
 
     #[test]
     fn test_solve_timesteps_short_and_long() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         model.apply_parameters(&[1.5, 21.0]);
@@ -477,7 +481,7 @@ mod tests {
 
     #[test]
     fn test_calc_analytical_loads_mutation() {
-        let mut model = ThermalModel::new(10);
+        let mut model = ThermalModel::<VectorField>::new(10);
 
         model.calc_analytical_loads(0, true);
 
@@ -489,8 +493,8 @@ mod tests {
 
     #[test]
     fn test_parameters_affect_energy() {
-        let mut model1 = ThermalModel::new(10);
-        let mut model2 = ThermalModel::new(10);
+        let mut model1 = ThermalModel::<VectorField>::new(10);
+        let mut model2 = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Two different parameter sets
@@ -506,7 +510,7 @@ mod tests {
 
     #[test]
     fn test_thermal_lag() {
-        let mut model = ThermalModel::new(1);
+        let mut model = ThermalModel::<VectorField>::new(1);
         model.hvac_setpoint = 999.0; // effectively disable HVAC
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
@@ -549,7 +553,7 @@ mod tests {
         #[test]
         fn steady_state_heat_transfer_matches_analytical() {
             // --- Common setup ---
-            let mut model = ThermalModel::new(1);
+            let mut model = ThermalModel::<VectorField>::new(1);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             let h_tr_em = model.h_tr_em[0];
@@ -621,7 +625,7 @@ mod tests {
 
         #[test]
         fn zero_load_when_no_temperature_difference() {
-            let mut model = ThermalModel::new(1);
+            let mut model = ThermalModel::<VectorField>::new(1);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             let outdoor_temp = 20.0;
