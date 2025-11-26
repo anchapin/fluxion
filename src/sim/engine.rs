@@ -208,7 +208,7 @@ impl ThermalModel {
                     out = q_req.min(heating_cap_slice[i]);
                 } else if val_free > t_set {
                     let q_req = (val_free - t_set) / sens;
-                    out = -1.0 * q_req.min(cooling_cap_slice[i]);
+                    out = -q_req.min(cooling_cap_slice[i]);
                 }
                 hvac_output_data.push(out);
                 total_energy += out.abs() * dt;

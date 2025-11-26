@@ -51,6 +51,11 @@ impl VectorField {
         self.data.len()
     }
 
+    /// Returns true if the field has no elements.
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
     /// Get a reference to the underlying data slice.
     pub fn as_slice(&self) -> &[f64] {
         &self.data
@@ -172,5 +177,16 @@ mod tests {
 
         let scaled = v1 * 2.0;
         assert_eq!(scaled.data, vec![2.0, 4.0, 6.0]);
+    }
+
+    #[test]
+    fn test_is_empty() {
+        let v_empty = VectorField::new(vec![]);
+        assert!(v_empty.is_empty());
+        assert_eq!(v_empty.len(), 0);
+
+        let v_non_empty = VectorField::new(vec![1.0]);
+        assert!(!v_non_empty.is_empty());
+        assert_eq!(v_non_empty.len(), 1);
     }
 }
