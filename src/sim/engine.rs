@@ -24,7 +24,7 @@ pub struct ThermalModel {
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
     // New fields for 5R1C model
-    pub thermal_capacitance: Vec<f64>, // J/K
+    pub thermal_capacitance: Vec<f64>,   // J/K
     pub hvac_cooling_capacity: Vec<f64>, // Watts
     pub hvac_heating_capacity: Vec<f64>, // Watts
 }
@@ -56,9 +56,9 @@ impl ThermalModel {
             temperatures: vec![20.0; num_zones], // Initialize at 20°C
             loads: vec![0.0; num_zones],
             surfaces,
-            window_u_value: 2.5, // Default U-value
-            hvac_setpoint: 21.0, // Default setpoint
-            thermal_capacitance: vec![10e6; num_zones], // Default capacitance: 10 MJ/K per zone
+            window_u_value: 2.5,                            // Default U-value
+            hvac_setpoint: 21.0,                            // Default setpoint
+            thermal_capacitance: vec![10e6; num_zones],     // Default capacitance: 10 MJ/K per zone
             hvac_cooling_capacity: vec![5000.0; num_zones], // Default: 5kW cooling per zone
             hvac_heating_capacity: vec![5000.0; num_zones], // Default: 5kW heating per zone
         }
