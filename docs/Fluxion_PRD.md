@@ -57,11 +57,24 @@ graph TD
 | **AI Integration** | **ONNX Runtime (ort)** to execute models trained in PyTorch/TensorFlow. |
 | **Python API** | **PyO3** bindings exposing BatchOracle for zero-copy numpy interaction. |
 | **Auto-Diff** | **dfdx** (Future Phase) for gradient-based sensitivity analysis. |
+| **Tensor Abstraction** | **CTA** (Continuous Tensor Abstraction) for unified N-dimensional tensor operations. |
 
 #### **3.3 User Stories**
 
 * **The Quantum Researcher:** "I need to evaluate 10,000 design candidates per second to feed a D-Wave annealer. I pass a NumPy array to Fluxion, and it utilizes all my CPU cores to return results instantly."
 * **The Engineer:** "I want to validate a single building design against ASHRAE 140\. I use the detailed Model class to inspect hourly temperatures."
+
+#### **3.4 Continuous Tensor Abstraction (CTA)**
+
+To ensure long-term maintainability and performance, the project mandates the adoption of the **Continuous Tensor Abstraction (CTA)** for all core tensor operations.
+
+*   **Integration:** Mandate CTA adoption for core tensor operations across the physics and AI modules.
+*   **Code Reduction:** Target **>30% LOC decrease** in tensor-heavy modules by replacing verbose loops with CTA primitives.
+*   **Performance:** Achieve **<10% overhead** compared to raw `ndarray` or `vec` baseline implementations.
+*   **Maintainability:** Enhance code clarity and readability through high-level CTA abstractions.
+*   **Scalability:** Ensure CTA supports **N-dimensional tensors** to handle complex multi-zone and multi-physics scenarios.
+*   **Testability:** Develop a comprehensive suite of CTA-specific unit tests to guarantee numerical stability.
+*   **Documentation:** Provide complete API documentation and usage examples for the CTA module.
 
 ### **4\. Technology Stack**
 
@@ -69,6 +82,7 @@ graph TD
 * **Parallelism:** rayon (CPU Threading)
 * **ML Inference:** ort (ONNX Runtime bindings)
 * **Linear Algebra:** ndarray (Matrix operations)
+* **Tensor Abstraction:** CTA (Custom Continuous Tensor Abstraction)
 * **Bindings:** pyo3 (Python extension), maturin (Build system)
 
 ### **5\. Roadmap**

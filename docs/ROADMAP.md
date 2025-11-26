@@ -9,12 +9,46 @@ This document outlines the planned future development of Fluxion beyond Phase 4 
 | Phase | Focus | Timeline | Key Goals |
 |-------|-------|----------|-----------|
 | **1-4** | ✅ Complete | Done | ONNX integration, training pipeline |
+| **4.5** | **Core Refactoring** | **1-2 weeks** | **CTA Integration**, >30% LOC reduction |
 | **5** | Production Validation | 2-3 weeks | Real data calibration, ASHRAE 140 |
 | **6** | Hardware Acceleration | 2-3 weeks | GPU inference, quantization |
 | **7** | Uncertainty Quantification | 3-4 weeks | Bayesian networks, confidence bounds |
 | **8** | Physics Constraints | 2-3 weeks | Energy balance, PINNs |
 | **9** | Advanced Features | 3-4 weeks | Online learning, ensemble methods |
 | **10** | Production Deployment | 2-3 weeks | Docker, benchmarking, documentation |
+
+---
+
+## Phase 4.5: Core Refactoring & CTA (1-2 weeks)
+
+**Objective**: Modernize the core physics engine by integrating **Continuous Tensor Abstraction (CTA)** to reduce technical debt, improve maintainability, and prepare for N-dimensional scaling.
+
+### 4.5.1 CTA Implementation
+- **Goal**: Create a unified interface for tensor operations that abstracts away the underlying storage (Vec, ndarray, or future GPU buffers).
+- **Key Requirements**:
+  - Support N-dimensional tensors.
+  - **<10% Performance Overhead** vs raw implementation.
+  - Comprehensive unit test suite.
+
+```rust
+// src/physics/cta.rs
+pub trait ContinuousTensor<T> {
+    fn integrate(&self, domain: Domain) -> T;
+    fn gradient(&self) -> Self;
+    fn map<F>(&self, f: F) -> Self where F: Fn(T) -> T;
+}
+```
+
+### 4.5.2 Codebase Refactoring
+- **Target**: **>30% LOC reduction** in `src/physics` and `src/sim` modules.
+- **Action**: Replace verbose manual loops and array indexing with high-level CTA combinators.
+- **Priority**: High. This refactoring is a prerequisite for complex physics in Phase 8.
+
+### 4.5.3 Deliverables
+- [ ] CTA Module (`src/physics/cta.rs`) implemented and tested.
+- [ ] Core Thermal Solver refactored to use CTA.
+- [ ] Benchmarks proving <10% overhead.
+- [ ] API Documentation for CTA.
 
 ---
 
