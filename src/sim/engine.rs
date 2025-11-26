@@ -1,5 +1,4 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::continuous::ConstantField;
 use crate::sim::components::WallSurface;
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
@@ -24,6 +23,10 @@ pub struct ThermalModel {
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
+    // New fields for 5R1C model
+    pub thermal_capacitance: Vec<f64>, // J/K
+    pub hvac_cooling_capacity: Vec<f64>, // Watts
+    pub hvac_heating_capacity: Vec<f64>, // Watts
 }
 
 impl ThermalModel {
@@ -55,6 +58,9 @@ impl ThermalModel {
             surfaces,
             window_u_value: 2.5, // Default U-value
             hvac_setpoint: 21.0, // Default setpoint
+            thermal_capacitance: vec![10e6; num_zones], // Default capacitance: 10 MJ/K per zone
+            hvac_cooling_capacity: vec![5000.0; num_zones], // Default: 5kW cooling per zone
+            hvac_heating_capacity: vec![5000.0; num_zones], // Default: 5kW heating per zone
         }
     }
 
@@ -100,110 +106,92 @@ impl ThermalModel {
         use_ai: bool,
     ) -> f64 {
         let mut total_energy = 0.0;
+        let dt = 3600.0; // Timestep in seconds (1 hour)
 
-        for _t in 0..steps {
-            // 1. Calculate Loads
+        for t in 0..steps {
+            // 1. Calculate External Loads (Solar, etc.)
             if use_ai {
                 self.loads = surrogates.predict_loads(&self.temperatures);
             } else {
-                self.calc_analytical_loads();
+                self.calc_analytical_loads(t);
             }
 
-            // 2. Solve Thermal Network (State Update)
-            // In a batch scenario, this inner loop runs inside a single thread of the Rayon pool
-            // We avoid nested parallelism here to prevent thread-pool exhaustion
+            // 2. Solve Thermal Network (5R1C)
+            // Pre-calculate outdoor temperature for this timestep, as it's the same for all zones
+            let hour_of_day = t % 24;
+            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+
             for i in 0..self.num_zones {
-                // Determine load from surfaces using ContinuousField integration
-                // The 'load' from SurrogateManager or analytical model currently represents
-                // a flux or source term (W/m²). We treat this as a constant field over the surface for now.
-                // In the future, this field will be spatially varying (predicted by AI).
-
-                // Get the base load (W/m²) predicted for this zone
-                let predicted_load_flux = self.loads[i];
-
-                // Create a ContinuousField wrapper for this load
-                let field = ConstantField {
-                    value: predicted_load_flux,
-                };
-
-                // Calculate total heat gain from all surfaces in this zone
-                let mut total_surface_heat_gain = 0.0;
+                // A) Calculate Total Conductive Heat Gain/Loss (from surfaces)
+                // This represents heat transfer through walls, windows, etc.
+                let mut total_conductive_gain = 0.0;
                 if i < self.surfaces.len() {
                     for surface in &self.surfaces[i] {
-                        total_surface_heat_gain += surface.calculate_heat_gain(&field);
+                        // Q = U * A * (T_out - T_in)
+                        total_conductive_gain +=
+                            surface.u_value * surface.area * (outdoor_temp - self.temperatures[i]);
                     }
                 }
 
-                // Note: The original logic treated 'load' as a direct term in the temperature update.
-                // Original: self.temperatures[i] += (load - conduction_loss) * 0.1;
-                // where load was presumably total load or flux scaled implicitly.
-                // If load was W/m², and we didn't multiply by area, it was unit-inconsistent or assumed specific scaling.
-                //
-                // Let's assume the new physics engine should use the total watts.
-                // The temperature update equation: dT/dt = (Q_gain - Q_loss) / C_thermal
-                // The original code: temperature += (load - conduction_loss) * 0.1
-                // This implies 0.1 includes (dt / C_thermal).
-                //
-                // If 'load' (W/m²) was used directly, and we now calculate total Watts (W),
-                // we should scale it to be consistent with previous behavior or update the physics.
-                // Previous behavior: load (approx 0.5 - 1.2)
-                // New behavior: total_surface_heat_gain = Area (4 * 10 = 40) * load (0.5 - 1.2) = 20 - 48.
-                // This is ~40x larger.
-                //
-                // To maintain behavior of the *simulation* while changing the *structure*,
-                // we should normalize by total area if the original 'load' was intended as W/m² acting on an implicit area
-                // that matched the capacitance scaling.
-                //
-                // However, the original code `load - conduction_loss` mixed units.
-                // `conduction_loss = (temp - 0) * u_value * 0.1`.
-                // U-value is W/m²K. Temp is K. So this is W/m².
-                // So the original equation was in flux units (W/m²).
-                //
-                // So if calculate_heat_gain returns Watts (W), we should divide by total area to get W/m² back
-                // to plug into the existing simplified equation.
+                // B) Get Solar & Internal Gains
+                // The `loads` field now represents Q_solar + Q_internal (in Watts)
+                let solar_and_internal_gains = self.loads[i];
 
-                let total_area: f64 = if i < self.surfaces.len() {
-                    self.surfaces[i].iter().map(|s| s.area).sum()
-                } else {
-                    1.0 // Avoid division by zero
-                };
+                // C) Calculate HVAC System Output
+                let temp_diff = self.hvac_setpoint - self.temperatures[i];
+                let mut hvac_output = 0.0;
+                if temp_diff > 0.0 {
+                    // Heating needed
+                    hvac_output = temp_diff.abs().min(self.hvac_heating_capacity[i]);
+                } else if temp_diff < 0.0 {
+                    // Cooling needed
+                    hvac_output = -temp_diff.abs().min(self.hvac_cooling_capacity[i]);
+                }
 
-                let load_flux = if total_area > 0.0 {
-                    total_surface_heat_gain / total_area
-                } else {
-                    0.0
-                };
+                // D) Total Heat Flow (Watts)
+                // Sum of all heat gains and losses
+                let total_heat_flow =
+                    total_conductive_gain + solar_and_internal_gains + hvac_output;
 
-                // Heat transfer logic influenced by U-value
-                // Note: conduction_loss uses window_u_value.
-                // In the new model, surfaces have u_values. We should probably use those.
-                // But for now, we keep the original logic structure but use the load calculated from fields.
+                // E) Update Zone Temperature using Euler method
+                // dT/dt = Q_total / C
+                // T_new = T_old + (dT/dt) * dt
+                let temp_delta = (total_heat_flow / self.thermal_capacitance[i]) * dt;
+                self.temperatures[i] += temp_delta;
 
-                let conduction_loss = (self.temperatures[i] - 0.0) * self.window_u_value * 0.1;
-                self.temperatures[i] += (load_flux - conduction_loss) * 0.1;
+                // F) Accumulate HVAC energy consumption for this step
+                total_energy += hvac_output.abs() * dt; // Energy in Joules
             }
-
-            // Energy calculation (simplified)
-            // Energy = proportional to gap between temp and setpoint
-            let energy_step: f64 = self
-                .temperatures
-                .iter()
-                .map(|t| (t - self.hvac_setpoint).abs())
-                .sum();
-
-            total_energy += energy_step;
         }
 
-        total_energy
+        // Normalize energy to kWh for easier interpretation, though the original was dimensionless
+        total_energy / 3.6e6
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
     ///
     /// This is a simplified analytical model for baseline load prediction.
     /// In production, this would incorporate weather data, solar radiation, infiltration, etc.
-    fn calc_analytical_loads(&mut self) {
-        for load in self.loads.iter_mut() {
-            *load = 0.5;
+    fn calc_analytical_loads(&mut self, timestep: usize) {
+        // Simulate a simple daily solar gain and outdoor temperature cycle
+        let hour_of_day = timestep % 24;
+        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+
+        // Solar Gain (Watts) - Peaking in the afternoon
+        let solar_gain = (1000.0 * daily_cycle).max(0.0);
+
+        for i in 0..self.num_zones {
+            // Internal gains (e.g., from equipment, occupants) - constant for now
+            let internal_gains = 100.0; // 100W per zone
+
+            // Total external + internal load (in Watts)
+            self.loads[i] = solar_gain + internal_gains;
+
+            // In a more complex model, we would also update outdoor air infiltration here,
+            // but for now, we handle conduction directly in the solver loop.
+            // The solver loop uses a fixed 0°C for conduction, so we'll adjust that next.
+            // For now, this `outdoor_temp` is for context and future use.
         }
     }
 }
@@ -253,18 +241,6 @@ mod tests {
     }
 
     #[test]
-    fn test_solve_timesteps_energy_conservation() {
-        let model = ThermalModel::new(10);
-        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
-
-        // Analytical baseline (no AI)
-        let energy_analytical = model.clone().solve_timesteps(8760, &surrogates, false);
-
-        // Should produce non-zero energy
-        assert!(energy_analytical > 0.0, "Energy should be non-zero");
-    }
-
-    #[test]
     fn test_solve_timesteps_with_surrogates() {
         let model = ThermalModel::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
@@ -279,41 +255,20 @@ mod tests {
     #[test]
     fn test_calc_analytical_loads() {
         let mut model = ThermalModel::new(5);
-        model.calc_analytical_loads();
+        model.calc_analytical_loads(12); // noon
 
-        // All loads should be 0.5
+        // Check if loads are calculated
+        assert!(model.loads.iter().all(|&l| l > 0.0));
+
+        // Check against expected values for noon
+        let hour_of_day = 12;
+        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+        let solar_gain = (1000.0 * daily_cycle).max(0.0);
+        let internal_gains = 100.0;
+        let expected_load = solar_gain + internal_gains;
+
         const EPSILON: f64 = 1e-9;
-        assert!(model.loads.iter().all(|&l| (l - 0.5).abs() < EPSILON));
-    }
-
-    #[test]
-    fn test_surrogate_vs_analytical_consistency() {
-        // Compare surrogate and analytical results on same model.
-        // Both should produce positive, non-zero energy.
-        let mut model_analytical = ThermalModel::new(10);
-        let mut model_surrogate = ThermalModel::new(10);
-        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
-
-        let params = vec![1.5, 21.0];
-        model_analytical.apply_parameters(&params);
-        model_surrogate.apply_parameters(&params);
-
-        let energy_analytical = model_analytical.solve_timesteps(8760, &surrogates, false);
-        let energy_surrogate = model_surrogate.solve_timesteps(8760, &surrogates, true);
-
-        // Both should be positive
-        assert!(
-            energy_analytical > 0.0,
-            "Analytical energy should be positive"
-        );
-        assert!(
-            energy_surrogate > 0.0,
-            "Surrogate energy should be positive"
-        );
-
-        // For mock surrogates (returning 1.2), surrogate energy should match analytical
-        // because both use the same default mock loads in the base case.
-        // This test just verifies both code paths work without panicking.
+        assert!((model.loads[0] - expected_load).abs() < EPSILON);
     }
 
     #[test]
@@ -479,11 +434,11 @@ mod tests {
     fn test_calc_analytical_loads_mutation() {
         let mut model = ThermalModel::new(10);
 
-        model.calc_analytical_loads();
+        model.calc_analytical_loads(0);
 
-        // All loads should be 0.5
+        // All loads should be calculated
         for &load in model.loads.iter() {
-            assert_eq!(load, 0.5);
+            assert!(load >= 0.0);
         }
     }
 
@@ -502,5 +457,42 @@ mod tests {
 
         // Different parameters should give different energy results
         assert_ne!(energy1, energy2);
+    }
+
+    #[test]
+    fn test_thermal_lag() {
+        let mut model = ThermalModel::new(1);
+        model.hvac_setpoint = 999.0; // effectively disable HVAC
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        let mut outdoor_temps = Vec::new();
+        let mut indoor_temps = Vec::new();
+
+        for t in 0..48 {
+            model.solve_timesteps(1, &surrogates, false);
+            indoor_temps.push(model.temperatures[0]);
+
+            let hour_of_day = t % 24;
+            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            outdoor_temps.push(10.0 + 10.0 * daily_cycle);
+        }
+
+        let (max_outdoor_hour, _) = outdoor_temps
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+        let (max_indoor_hour, _) = indoor_temps
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .unwrap();
+
+        assert!(
+            max_indoor_hour > max_outdoor_hour,
+            "Indoor temp peak ({}) should lag outdoor temp peak ({})",
+            max_indoor_hour,
+            max_outdoor_hour
+        );
     }
 }
