@@ -39,50 +39,76 @@ pub struct SurrogateManager {
     pub model_loaded: bool,
     /// Optional path to an ONNX model registered for use.
     pub model_path: Option<String>,
-    /// Optional ONNX Runtime session for inference using the `ort` crate.
-    /// Wrapped in `Mutex` to allow thread-safe interior mutability (Session::run requires &mut).
-    pub session: Option<Arc<Mutex<ort::session::Session>>>,
+    /// Optional session pool for concurrent inference.
+    /// Wrapped in `Arc` for sharing across clones.
+    pub session_pool: Option<Arc<SessionPool>>,
     /// The backend used for inference.
     pub backend: InferenceBackend,
     /// The device ID (e.g. GPU index).
     pub device_id: usize,
 }
 
-impl SurrogateManager {
-    /// Construct a new `SurrogateManager`.
-    pub fn new() -> Result<Self, String> {
-        Ok(SurrogateManager {
-            model_loaded: false,
-            model_path: None,
-            session: None,
-            backend: InferenceBackend::CPU,
-            device_id: 0,
+/// A pool of ONNX sessions to allow concurrent inference.
+#[derive(Debug)]
+pub struct SessionPool {
+    sessions: Mutex<Vec<ort::session::Session>>,
+    model_path: String,
+    backend: InferenceBackend,
+    device_id: usize,
+}
+
+impl SessionPool {
+    fn new(
+        model_path: String,
+        backend: InferenceBackend,
+        device_id: usize,
+        initial_session: ort::session::Session,
+    ) -> Self {
+        SessionPool {
+            sessions: Mutex::new(vec![initial_session]),
+            model_path,
+            backend,
+            device_id,
+        }
+    }
+
+    fn get_or_create_session(&self) -> Result<SessionGuard<'_>, String> {
+        // Try to get an existing session
+        {
+            let mut sessions = self.sessions.lock().unwrap();
+            if let Some(session) = sessions.pop() {
+                return Ok(SessionGuard {
+                    pool: self,
+                    session: Some(session),
+                });
+            }
+        }
+
+        // Create a new session if pool is empty
+        // We do this outside the lock to allow other threads to access the pool
+        Self::create_session(&self.model_path, self.backend, self.device_id).map(|session| {
+            SessionGuard {
+                pool: self,
+                session: Some(session),
+            }
         })
     }
 
-    /// Register an ONNX model file to be used by the surrogate manager using the default CPU backend.
-    pub fn load_onnx(path: &str) -> Result<Self, String> {
-        Self::with_gpu_backend(path, InferenceBackend::CPU, 0)
+    fn return_session(&self, session: ort::session::Session) {
+        let mut sessions = self.sessions.lock().unwrap();
+        sessions.push(session);
     }
 
-    /// Register an ONNX model file to be used by the surrogate manager with a specific backend.
-    pub fn with_gpu_backend(
+    fn create_session(
         path: &str,
         backend: InferenceBackend,
         device_id: usize,
-    ) -> Result<Self, String> {
+    ) -> Result<ort::session::Session, String> {
         use ort::session::Session;
-        use std::path::Path;
 
-        if !Path::new(path).exists() {
-            return Err(format!("ONNX model file not found: {}", path));
-        }
-
-        // Initialize and build ONNX session
         let mut builder =
             Session::builder().map_err(|e| format!("Failed to create session builder: {}", e))?;
 
-        // Configure execution provider based on backend
         match backend {
             InferenceBackend::CUDA => {
                 let ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
@@ -108,19 +134,79 @@ impl SurrogateManager {
                     .with_execution_providers([ep.build()])
                     .map_err(|e| format!("Failed to add OpenVINO execution provider: {}", e))?;
             }
-            InferenceBackend::CPU => {
-                // Default behavior, no specific provider needed as CPU is fallback/default
-            }
+            InferenceBackend::CPU => {}
         }
 
-        let session = builder
+        builder
             .commit_from_file(path)
-            .map_err(|e| format!("Failed to load ONNX model: {}", e))?;
+            .map_err(|e| format!("Failed to load ONNX model: {}", e))
+    }
+}
+
+/// Guard that returns the session to the pool when dropped.
+struct SessionGuard<'a> {
+    pool: &'a SessionPool,
+    session: Option<ort::session::Session>,
+}
+
+impl<'a> Drop for SessionGuard<'a> {
+    fn drop(&mut self) {
+        if let Some(session) = self.session.take() {
+            self.pool.return_session(session);
+        }
+    }
+}
+
+impl<'a> std::ops::Deref for SessionGuard<'a> {
+    type Target = ort::session::Session;
+    fn deref(&self) -> &Self::Target {
+        self.session.as_ref().unwrap()
+    }
+}
+
+impl<'a> std::ops::DerefMut for SessionGuard<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.session.as_mut().unwrap()
+    }
+}
+
+impl SurrogateManager {
+    /// Construct a new `SurrogateManager`.
+    pub fn new() -> Result<Self, String> {
+        Ok(SurrogateManager {
+            model_loaded: false,
+            model_path: None,
+            session_pool: None,
+            backend: InferenceBackend::CPU,
+            device_id: 0,
+        })
+    }
+
+    /// Register an ONNX model file to be used by the surrogate manager using the default CPU backend.
+    pub fn load_onnx(path: &str) -> Result<Self, String> {
+        Self::with_gpu_backend(path, InferenceBackend::CPU, 0)
+    }
+
+    /// Register an ONNX model file to be used by the surrogate manager with a specific backend.
+    pub fn with_gpu_backend(
+        path: &str,
+        backend: InferenceBackend,
+        device_id: usize,
+    ) -> Result<Self, String> {
+        use std::path::Path;
+
+        if !Path::new(path).exists() {
+            return Err(format!("ONNX model file not found: {}", path));
+        }
+
+        // Create initial session
+        let session = SessionPool::create_session(path, backend, device_id)?;
+        let pool = SessionPool::new(path.to_string(), backend, device_id, session);
 
         Ok(SurrogateManager {
             model_loaded: true,
             model_path: Some(path.to_string()),
-            session: Some(Arc::new(Mutex::new(session))),
+            session_pool: Some(Arc::new(pool)),
             backend,
             device_id,
         })
@@ -141,8 +227,8 @@ impl SurrogateManager {
             return vec![1.2; current_temps.len()];
         }
 
-        // If we have a session, perform inference.
-        if let Some(ref session_cell) = self.session {
+        // If we have a session pool, acquire a session and perform inference.
+        if let Some(ref pool) = self.session_pool {
             use ndarray::Array2;
             use ort::value::TensorRef;
 
@@ -159,9 +245,9 @@ impl SurrogateManager {
                 }
             };
 
-            // Try to lock the session for inference
-            match session_cell.lock() {
-                Ok(mut session) => {
+            // Try to acquire a session from the pool
+            match pool.get_or_create_session() {
+                Ok(mut session_guard) => {
                     // Create a tensor reference from the ndarray
                     let tensor_ref = match TensorRef::from_array_view(&input_arr) {
                         Ok(t) => t,
@@ -172,7 +258,7 @@ impl SurrogateManager {
                     };
 
                     // Run inference using the inputs! macro pattern
-                    match session.run(ort::inputs![tensor_ref]) {
+                    match session_guard.run(ort::inputs![tensor_ref]) {
                         Ok(outputs) => {
                             // Extract the first output
                             if outputs.len() > 0 {
@@ -201,7 +287,7 @@ impl SurrogateManager {
                     }
                 }
                 Err(_) => {
-                    eprintln!("Could not lock ORT session; using mock loads");
+                    eprintln!("Could not acquire ORT session; using mock loads");
                     vec![1.2; current_temps.len()]
                 }
             }
@@ -223,7 +309,7 @@ impl SurrogateManager {
             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
         }
 
-        if let Some(ref session_cell) = self.session {
+        if let Some(ref pool) = self.session_pool {
             use ndarray::Array2;
             use ort::value::TensorRef;
 
@@ -251,8 +337,8 @@ impl SurrogateManager {
                 }
             };
 
-            match session_cell.lock() {
-                Ok(mut session) => {
+            match pool.get_or_create_session() {
+                Ok(mut session_guard) => {
                     let tensor_ref = match TensorRef::from_array_view(&input_arr) {
                         Ok(t) => t,
                         Err(e) => {
@@ -261,7 +347,7 @@ impl SurrogateManager {
                         }
                     };
 
-                    match session.run(ort::inputs![tensor_ref]) {
+                    match session_guard.run(ort::inputs![tensor_ref]) {
                         Ok(outputs) => {
                             if outputs.len() > 0 {
                                 match outputs[0].try_extract_array::<f32>() {
@@ -287,22 +373,22 @@ impl SurrogateManager {
                                     }
                                 }
                             }
-                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
                         }
                         Err(e) => {
                             eprintln!("ONNX inference error: {}; using mock loads", e);
-                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
                         }
                     }
                 }
                 Err(_) => {
-                    eprintln!("Could not lock ORT session; using mock loads");
-                    return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                    eprintln!("Could not acquire ORT session; using mock loads");
+                    batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
                 }
             }
+        } else {
+            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
         }
-        // Fallback default
-        batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
     }
 }
 
@@ -380,7 +466,7 @@ mod tests {
         let m = SurrogateManager::new().unwrap();
         assert_eq!(m.model_path, None);
         assert!(!m.model_loaded);
-        assert!(m.session.is_none());
+        assert!(m.session_pool.is_none());
     }
 
     #[test]

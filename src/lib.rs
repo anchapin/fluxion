@@ -220,4 +220,80 @@ mod tests {
 
         assert!(energy > 0.0, "Energy should be positive");
     }
+
+    #[test]
+    fn test_parallel_execution_speedup() {
+        use rayon::prelude::*;
+        use std::path::Path;
+
+        // Verify Send + Sync for ThermalModel (required for parallel execution)
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<ThermalModel>();
+
+        let base_model = ThermalModel::new(10);
+
+        // Try to load a real model if available (created by other tests)
+        // otherwise fall back to mock (but verify parallel mechanism either way)
+        // Ideally we want to test with the pool active.
+        let model_path = "tests_tmp_dummy.onnx";
+        let surrogates = if Path::new(model_path).exists() {
+            SurrogateManager::load_onnx(model_path).expect("Failed to load dummy model")
+        } else {
+            // Even with mock, the code path goes through predict_loads.
+            // But if model_loaded is false, it returns early.
+            // We need model_loaded=true to test the pool.
+            // If no file, we can't easily test the pool without mocking Session.
+            // But we know tests_tmp_dummy.onnx exists in this env.
+            panic!("tests_tmp_dummy.onnx not found. Run generation script or ai tests first.");
+        };
+
+        // Create a large population
+        let population_size = 2000;
+        let population: Vec<Vec<f64>> = (0..population_size).map(|_| vec![1.5, 22.0]).collect();
+
+        // Sequential execution (using standard iter)
+        let start_seq = std::time::Instant::now();
+        let _results_seq: Vec<f64> = population
+            .iter()
+            .map(|params| {
+                let mut instance = base_model.clone();
+                instance.apply_parameters(params);
+                // Use surrogates to test session pool contention/parallelism
+                instance.solve_timesteps(100, &surrogates, true)
+            })
+            .collect();
+        let duration_seq = start_seq.elapsed();
+
+        // Parallel execution (using rayon par_iter)
+        let start_par = std::time::Instant::now();
+        let _results_par: Vec<f64> = population
+            .par_iter()
+            .map(|params| {
+                let mut instance = base_model.clone();
+                instance.apply_parameters(params);
+                instance.solve_timesteps(100, &surrogates, true)
+            })
+            .collect();
+        let duration_par = start_par.elapsed();
+
+        println!("Sequential time: {:?}", duration_seq);
+        println!("Parallel time: {:?}", duration_par);
+
+        // On a multi-core machine, parallel should be faster.
+        let num_threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(1);
+
+        if num_threads > 1 {
+            // We expect significant speedup, but CI environments can be noisy.
+            // Just asserting it's faster is a good baseline.
+            assert!(
+                duration_par < duration_seq,
+                "Parallel execution should be faster than sequential on {} threads. Seq: {:?}, Par: {:?}",
+                num_threads,
+                duration_seq,
+                duration_par
+            );
+        }
+    }
 }
