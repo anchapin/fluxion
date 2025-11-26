@@ -117,10 +117,10 @@ impl BatchOracle {
         let u_value = params[Self::U_VALUE_INDEX];
         let setpoint = params[Self::SETPOINT_INDEX];
 
-        if u_value < Self::MIN_U_VALUE || u_value > Self::MAX_U_VALUE {
+        if !(Self::MIN_U_VALUE..=Self::MAX_U_VALUE).contains(&u_value) {
             return Err(format!("U-value out of range: {}", u_value));
         }
-        if setpoint < Self::MIN_SETPOINT || setpoint > Self::MAX_SETPOINT {
+        if !(Self::MIN_SETPOINT..=Self::MAX_SETPOINT).contains(&setpoint) {
             return Err(format!("Setpoint out of range: {}", setpoint));
         }
         Ok(())

@@ -584,7 +584,7 @@ mod tests {
 
             let relative_error = (energy_watts - analytical_load).abs() / analytical_load;
             assert!(
-                relative_error < 0.01,
+                relative_error < 0.00001,
                 "Heating: Analytical vs. Simulated load mismatch. Analytical: {:.2}, Simulated: {:.2}, Rel Error: {:.5}%",
                 analytical_load,
                 energy_watts,
