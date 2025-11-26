@@ -1,11 +1,10 @@
 name: Data Generation Tool Integration Test
 
-on:
-  push:
-    branches: [ main ]
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [ main ]
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-data-gen:
@@ -14,7 +13,7 @@ jobs:
       image: nrel/openstudio:latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Install Python Dependencies
       run: |

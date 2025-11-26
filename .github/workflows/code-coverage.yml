@@ -1,11 +1,10 @@
 name: Code Coverage
 
-on:
-  push:
-    branches: [ develop, main ]
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [ develop, main ]
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   coverage:

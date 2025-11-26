@@ -1,13 +1,13 @@
 name: Security Audit
 
 on:
-  push:
-    branches: [ develop, main ]
-  pull_request:
-    types: [opened, synchronize, reopened]
-    branches: [ develop, main ]
+  [push, pull_request]
   schedule:
     - cron: '0 0 * * 0'  # Weekly on Sunday
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   audit:
