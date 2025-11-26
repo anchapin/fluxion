@@ -134,150 +134,111 @@ impl ThermalModel {
         use_ai: bool,
     ) -> f64 {
         let mut total_energy = 0.0;
-        let dt = 3600.0; // Timestep in seconds (1 hour)
-
         for t in 0..steps {
-            // 1. Calculate External Loads (Solar, etc.)
-            if use_ai {
-                let pred = surrogates.predict_loads(self.temperatures.as_slice());
-                self.loads = VectorField::new(pred);
-            } else {
-                self.calc_analytical_loads(t);
-            }
-
-            // 2. Solve Thermal Network (5R1C) with CTA
-            // Pre-calculate outdoor temperature for this timestep
             let hour_of_day = t % 24;
             let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
             let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-            let t_e = VectorField::from_scalar(outdoor_temp, self.num_zones);
+            total_energy += self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true);
+        }
+        total_energy
+    }
 
-            // Split loads (Solar + Internal)
-            // Assumption: 50% to Air node, 50% to Surface node
-            let phi_ia = self.loads.clone() * 0.5;
-            let phi_st = self.loads.clone() * 0.5;
-            // phi_m is zero
+    /// Solves a single timestep of the thermal simulation.
+    ///
+    /// # Returns
+    /// HVAC energy consumption for the timestep in kWh.
+    pub fn solve_single_step(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        use_ai: bool,
+        surrogates: &SurrogateManager,
+        use_analytical_gains: bool,
+    ) -> f64 {
+        let dt = 3600.0; // Timestep in seconds (1 hour)
 
-            // Current State
-            let t_m_prev = self.mass_temperatures.clone();
-
-            // --- Step 1: Calculate Ti_free (No HVAC) ---
-            // H_ext = H_tr_w + H_ve
-            let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
-
-            // Denominator for Ti equation
-            // Den = H_tr_ms * H_tr_is + H_tr_ms * H_ext + H_tr_is * H_ext
-            let den = (self.h_tr_ms.clone() * self.h_tr_is.clone())
-                + (self.h_tr_ms.clone() * h_ext.clone())
-                + (self.h_tr_is.clone() * h_ext.clone());
-
-            // Numerator terms
-            // Num_tm = H_tr_ms * H_tr_is * Tm
-            let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * t_m_prev.clone();
-            // Num_phi_st = H_tr_is * Phi_st
-            let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
-            // Num_rest = (H_tr_ms + H_tr_is) * (H_ext * Te + Phi_ia)
-            let term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
-            let term_rest_2 = (h_ext.clone() * t_e.clone()) + phi_ia.clone();
-            let num_rest = term_rest_1.clone() * term_rest_2;
-
-            let t_i_free = (num_tm + num_phi_st + num_rest) / den.clone();
-
-            // --- Step 2: HVAC Calculation ---
-            // This step involves conditional logic (if T < Setpoint) which is tricky in pure vector ops
-            // without a "where" or "mask" primitive. We'll iterate for the logic but use vector data.
-            // Future CTA improvement: Add .where(mask, other)
-
-            let t_set = self.hvac_setpoint;
-            let sensitivity = (self.h_tr_ms.clone() + self.h_tr_is.clone()) / den.clone();
-
-            // We'll compute HVAC output vector manually for now
-            let mut hvac_output_data = Vec::with_capacity(self.num_zones);
-            let t_i_free_slice = t_i_free.as_slice();
-            let sensitivity_slice = sensitivity.as_slice();
-            let heating_cap_slice = self.hvac_heating_capacity.as_slice();
-            let cooling_cap_slice = self.hvac_cooling_capacity.as_slice();
-
-            for i in 0..self.num_zones {
-                let val_free = t_i_free_slice[i];
-                let sens = sensitivity_slice[i];
-                let mut out = 0.0;
-
-                if val_free < t_set {
-                    let q_req = (t_set - val_free) / sens;
-                    out = q_req.min(heating_cap_slice[i]);
-                } else if val_free > t_set {
-                    let q_req = (val_free - t_set) / sens;
-                    out = -q_req.min(cooling_cap_slice[i]);
-                }
-                hvac_output_data.push(out);
-                total_energy += out.abs() * dt;
-            }
-            let hvac_output = VectorField::new(hvac_output_data);
-
-            // --- Step 3: Calculate Actual Temperatures ---
-            let phi_ia_act = phi_ia + hvac_output.clone();
-
-            // Re-calculate Ti with actual HVAC output
-            // Num_rest_act = (H_tr_ms + H_tr_is) * (H_ext * Te + Phi_ia_act)
-            let num_rest_act = term_rest_1 * ((h_ext.clone() * t_e.clone()) + phi_ia_act);
-
-            // Ti_act logic same as Ti_free but with new Num_rest
-            let num_tm_2 = self.h_tr_ms.clone() * self.h_tr_is.clone() * t_m_prev.clone();
-            let num_phi_st_2 = self.h_tr_is.clone() * phi_st.clone();
-
-            let t_i_act = (num_tm_2 + num_phi_st_2 + num_rest_act) / den.clone();
-
-            // Calculate Ts
-            // Ts = (H_tr_ms * Tm + H_tr_is * Ti + Phi_st) / (H_tr_ms + H_tr_is)
-            let ts_num = (self.h_tr_ms.clone() * t_m_prev.clone())
-                + (self.h_tr_is.clone() * t_i_act.clone())
-                + phi_st.clone();
-            let ts_den = self.h_tr_ms.clone() + self.h_tr_is.clone();
-            let t_s_act = ts_num / ts_den;
-
-            // --- Step 4: Update Mass Temperature (Euler) ---
-            // Cm * dTm/dt = H_tr_em * (Te - Tm) + H_tr_ms * (Ts - Tm) + Phi_m
-            // Phi_m is 0
-            let term_1 = self.h_tr_em.clone() * (t_e - t_m_prev.clone());
-            let term_2 = self.h_tr_ms.clone() * (t_s_act - t_m_prev.clone());
-            let q_m_net = term_1 + term_2;
-
-            let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
-
-            let t_m_new = t_m_prev + dt_m;
-
-            // Update State
-            self.temperatures = t_i_act;
-            self.mass_temperatures = t_m_new;
+        // 1. Calculate External Loads (Solar, etc.)
+        if use_ai {
+            let pred = surrogates.predict_loads(self.temperatures.as_slice());
+            self.loads = VectorField::new(pred);
+        } else {
+            self.calc_analytical_loads(timestep, use_analytical_gains);
         }
 
-        // Normalize energy to kWh for easier interpretation, though the original was dimensionless
-        total_energy / 3.6e6
+        // 2. Solve Thermal Network (5R1C) with CTA
+        let t_e = VectorField::from_scalar(outdoor_temp, self.num_zones);
+        let phi_ia = self.loads.clone() * 0.5;
+        let phi_st = self.loads.clone() * 0.5;
+        let t_m_prev = self.mass_temperatures.clone();
+
+        let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
+        let den = (self.h_tr_ms.clone() * self.h_tr_is.clone())
+            + (self.h_tr_ms.clone() * h_ext.clone())
+            + (self.h_tr_is.clone() * h_ext.clone());
+        let term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
+
+        let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * t_m_prev.clone();
+        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        let num_rest =
+            term_rest_1.clone() * ((h_ext.clone() * t_e.clone()) + phi_ia.clone());
+        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest) / den.clone();
+
+        // 3. HVAC Calculation
+        let t_set = self.hvac_setpoint;
+        let sensitivity = (self.h_tr_ms.clone() + self.h_tr_is.clone()) / den.clone();
+        let mut hvac_output_data = Vec::with_capacity(self.num_zones);
+
+        for i in 0..self.num_zones {
+            let val_free = t_i_free[i];
+            let sens = sensitivity[i];
+            let mut out = 0.0;
+
+            if val_free < t_set {
+                let q_req = (t_set - val_free) / sens;
+                out = q_req.min(self.hvac_heating_capacity[i]);
+            } else if val_free > t_set {
+                let q_req = (val_free - t_set) / sens;
+                out = -q_req.min(self.hvac_cooling_capacity[i]);
+            }
+            hvac_output_data.push(out);
+        }
+        let hvac_output = VectorField::new(hvac_output_data);
+        let hvac_energy_for_step = hvac_output.as_slice().iter().map(|o| o.abs()).sum::<f64>() * dt;
+
+        // 4. Update Temperatures
+        let phi_ia_act = phi_ia + hvac_output;
+        let num_rest_act = term_rest_1 * ((h_ext.clone() * t_e.clone()) + phi_ia_act);
+        let t_i_act = (num_tm + num_phi_st + num_rest_act) / den.clone();
+
+        let ts_num = (self.h_tr_ms.clone() * t_m_prev.clone())
+            + (self.h_tr_is.clone() * t_i_act.clone())
+            + phi_st;
+        let ts_den = self.h_tr_ms.clone() + self.h_tr_is.clone();
+        let t_s_act = ts_num / ts_den;
+
+        let term_1 = self.h_tr_em.clone() * (t_e - t_m_prev.clone());
+        let term_2 = self.h_tr_ms.clone() * (t_s_act - t_m_prev.clone());
+        let q_m_net = term_1 + term_2;
+        let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
+        let t_m_new = t_m_prev + dt_m;
+
+        self.temperatures = t_i_act;
+        self.mass_temperatures = t_m_new;
+
+        hvac_energy_for_step / 3.6e6 // Return kWh
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
-    ///
-    /// This is a simplified analytical model for baseline load prediction.
-    /// In production, this would incorporate weather data, solar radiation, infiltration, etc.
-    fn calc_analytical_loads(&mut self, timestep: usize) {
-        // Simulate a simple daily solar gain and outdoor temperature cycle
-        let hour_of_day = timestep % 24;
-        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-
-        // Solar Gain (Watts) - Peaking in the afternoon
-        let solar_gain = (1000.0 * daily_cycle).max(0.0);
-        let internal_gains = 100.0; // 100W per zone
-
-        let total_gain = solar_gain + internal_gains;
-
-        // Update loads vector (CTA)
+    fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
+        let mut total_gain = 0.0;
+        if use_analytical_gains {
+            let hour_of_day = timestep % 24;
+            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            let solar_gain = (1000.0 * daily_cycle).max(0.0);
+            let internal_gains = 100.0;
+            total_gain = solar_gain + internal_gains;
+        }
         self.loads = VectorField::from_scalar(total_gain, self.num_zones);
-
-        // In a more complex model, we would also update outdoor air infiltration here,
-        // but for now, we handle conduction directly in the solver loop.
-        // The solver loop uses a fixed 0°C for conduction, so we'll adjust that next.
-        // For now, this `outdoor_temp` is for context and future use.
     }
 }
 
@@ -340,7 +301,7 @@ mod tests {
     #[test]
     fn test_calc_analytical_loads() {
         let mut model = ThermalModel::new(5);
-        model.calc_analytical_loads(12); // noon
+        model.calc_analytical_loads(12, true); // noon
 
         // Check if loads are calculated
         assert!(model.loads.iter().all(|&l| l > 0.0));
@@ -519,7 +480,7 @@ mod tests {
     fn test_calc_analytical_loads_mutation() {
         let mut model = ThermalModel::new(10);
 
-        model.calc_analytical_loads(0);
+        model.calc_analytical_loads(0, true);
 
         // All loads should be calculated
         for &load in model.loads.iter() {
@@ -579,5 +540,105 @@ mod tests {
             max_indoor_hour,
             max_outdoor_hour
         );
+    }
+
+    mod validation {
+        use super::*;
+        use crate::ai::surrogate::SurrogateManager;
+        use crate::physics::cta::VectorField;
+
+        #[test]
+        fn steady_state_heat_transfer_matches_analytical() {
+            // --- Common setup ---
+            let mut model = ThermalModel::new(1);
+            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+            let h_tr_em = model.h_tr_em[0];
+            let h_tr_ms = model.h_tr_ms[0];
+            let h_tr_is = model.h_tr_is[0];
+            let h_tr_w = model.h_tr_w[0];
+            let h_ve = model.h_ve[0];
+
+            // U_opaque is the equivalent conductance for the opaque envelope components (3 resistors in series)
+            let u_opaque = 1.0 / (1.0 / h_tr_em + 1.0 / h_tr_ms + 1.0 / h_tr_is);
+            let h_total = u_opaque + h_tr_w + h_ve;
+
+            // --- Test Heating ---
+            let outdoor_temp_heating = 10.0; // °C
+            let setpoint_heating = 20.0; // °C
+
+            // To achieve steady-state, mass temp must be at its equilibrium value, not the air temp
+            // H_ms_is is the equivalent conductance of the mass-to-surface and surface-to-air resistors
+            let h_ms_is = 1.0 / (1.0 / h_tr_ms + 1.0 / h_tr_is);
+            let t_m_steady_state_heating =
+                (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating)
+                    / (h_tr_em + h_ms_is);
+
+            model.hvac_setpoint = setpoint_heating;
+            model.temperatures = VectorField::from_scalar(setpoint_heating, 1);
+            model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_heating, 1);
+
+            let energy_kwh =
+                model.solve_single_step(0, outdoor_temp_heating, false, &surrogates, false);
+            let energy_watts = energy_kwh * 1000.0;
+
+            let analytical_load = h_total * (setpoint_heating - outdoor_temp_heating);
+
+            let relative_error = (energy_watts - analytical_load).abs() / analytical_load;
+            assert!(
+                relative_error < 0.01,
+                "Heating: Analytical vs. Simulated load mismatch. Analytical: {:.2}, Simulated: {:.2}, Rel Error: {:.5}%",
+                analytical_load,
+                energy_watts,
+                relative_error * 100.0
+            );
+
+            // --- Test Cooling ---
+            let outdoor_temp_cooling = 30.0; // °C
+            let setpoint_cooling = 22.0; // °C
+
+            // Calculate steady-state mass temp for cooling scenario
+            let t_m_steady_state_cooling =
+                (h_tr_em * outdoor_temp_cooling + h_ms_is * setpoint_cooling)
+                    / (h_tr_em + h_ms_is);
+
+            model.hvac_setpoint = setpoint_cooling;
+            model.temperatures = VectorField::from_scalar(setpoint_cooling, 1);
+            model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_cooling, 1);
+
+            let energy_kwh_cool =
+                model.solve_single_step(0, outdoor_temp_cooling, false, &surrogates, false);
+            let energy_watts_cool = energy_kwh_cool * 1000.0;
+            let analytical_load_cool = h_total * (outdoor_temp_cooling - setpoint_cooling);
+
+            let relative_error_cool =
+                (energy_watts_cool - analytical_load_cool).abs() / analytical_load_cool;
+            assert!(
+                relative_error_cool < 0.01,
+                "Cooling: Analytical vs. Simulated load mismatch. Analytical: {:.2}, Simulated: {:.2}, Rel Error: {:.5}%",
+                analytical_load_cool,
+                energy_watts_cool,
+                relative_error_cool * 100.0
+            );
+        }
+
+        #[test]
+        fn zero_load_when_no_temperature_difference() {
+            let mut model = ThermalModel::new(1);
+            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+            let outdoor_temp = 20.0;
+            let setpoint = 20.0;
+            model.hvac_setpoint = setpoint;
+            model.temperatures = VectorField::from_scalar(setpoint, 1);
+            model.mass_temperatures = VectorField::from_scalar(setpoint, 1);
+
+            let energy_kwh = model.solve_single_step(0, outdoor_temp, false, &surrogates, false);
+
+            assert!(
+                energy_kwh.abs() < 1e-9,
+                "HVAC load should be zero when outdoor and setpoint temperatures are equal."
+            );
+        }
     }
 }
