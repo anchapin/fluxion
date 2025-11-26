@@ -1,4 +1,3 @@
-````markdown
 # Contributing to Fluxion
 
 Thank you for your interest in contributing to Fluxion! This document provides guidelines and instructions for contributing to the project.
@@ -65,6 +64,69 @@ cargo fmt && cargo clippy
 cargo test
 ```
 
+### Running CI locally with `act`
+
+- **Purpose:** Run GitHub Actions workflows locally using the `act` CLI to reproduce CI jobs (useful for fast iterations and debugging).
+- **Install:** Follow `act` installation instructions: https://github.com/nektos/act#installation
+- **Example (macOS on Apple Silicon / ARM):**
+
+```bash
+act -j coverage \
+  -W .github/workflows/code-coverage.yml \
+  --container-architecture linux/arm64 \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest
+```
+
+- **Notes:**
+  - Use `--container-architecture linux/arm64` on Apple Silicon (M1/M2) to match the ARM environment.
+  - The `-P ubuntu-latest=...` mapping sets the docker image `act` will use for the `ubuntu-latest` runner label; the `catthehacker/ubuntu:act-latest` image is commonly used and includes required tooling.
+  - If you run into permission or sandboxing issues, ensure Docker Desktop is running and you have enough resources allocated.
+  - For other jobs replace `-j coverage` with the job id from the workflow file or omit `-j` to run the default workflow.
+
+#### Running Other Jobs
+
+- **Run a different job by id:** find the job id under `jobs:` in the workflow YAML and pass it with `-j`:
+
+```bash
+act -j lint \
+  -W .github/workflows/ci.yml \
+  --container-architecture linux/arm64 \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest
+```
+
+- **Run the entire workflow (all jobs):** omit `-j` and specify the workflow file:
+
+```bash
+act -W .github/workflows/code-coverage.yml \
+  --container-architecture linux/arm64 \
+  -P ubuntu-latest=catthehacker/ubuntu:act-latest
+```
+
+- **Provide an event payload:** simulate a specific event (e.g., `push`) with `-e` and a JSON file:
+
+```bash
+act -e tests/fixtures/push-event.json -W .github/workflows/ci.yml
+```
+
+- **Pass secrets and environment variables:** use `-s NAME=VALUE` for secrets or `--env-file .env` for environment variables:
+
+```bash
+act -j coverage -s GITHUB_TOKEN=ghp_xxx --env-file .secrets.env -W .github/workflows/code-coverage.yml
+```
+
+#### Troubleshooting `act`
+
+- **Docker not running / connection errors:** ensure Docker Desktop is running and responsive. Restart Docker if mounts or networking fail.
+- **Image/platform mismatches on Apple Silicon:** prefer `--container-architecture linux/arm64` and an ARM-compatible image (`-P ubuntu-latest=catthehacker/ubuntu:act-latest`). If an image is missing for ARM, pre-pull or choose an image that supports `linux/arm64`.
+- **Permission / volume mount issues on macOS:** some actions rely on bind mounts that require Docker permissions — try enabling `--privileged` (note: increases privileges) or adjust Docker Desktop file sharing settings.
+- **Slow or resource-heavy workflows:** increase Docker Desktop resources (CPUs, memory) or limit concurrent jobs. For heavy builds prefer running in the real CI runner.
+- **Missing secrets or auth failures:** `act` does not automatically provide GitHub secrets. Supply required secrets with `-s` or `--env-file`, or create an `.actrc`/`.secrets.env` used locally.
+- **Actions that rely on GitHub-hosted services (e.g., `actions/cache`, `setup-remote-docker`) may behave differently locally:** treat `act` as a debugging tool — final verification should still run in GitHub Actions.
+- **Verbose logs:** add `-v` or `--verbose` to `act` to see more output and help diagnose failures.
+
+If you hit an error you can't resolve locally, capture the `act` output and open an issue or include it in your PR so maintainers can reproduce it.
+
+
 ## Code Style & Quality
 
 ### Formatting
@@ -79,10 +141,10 @@ cargo test
 - Add doc comments to public functions/structs:
   ```rust
   /// Predicts thermal loads using the neural network surrogate.
-  /// 
+  ///
   /// # Arguments
   /// * `current_temps` - Zone temperatures in Celsius
-  /// 
+  ///
   /// # Returns
   /// Vector of predicted loads (W/m²) per zone
   pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> { ... }
@@ -191,6 +253,34 @@ See `docs/Fluxion_PRD.md` for:
 - AI surrogate integration (SurrogateManager)
 - API reference
 
+## Training AI Surrogates
+
+### Development Workflow
+Surrogate model development is an iterative process. The typical workflow is:
+1.  **Generate synthetic data**: Use the analytical `fluxion` model (or the standalone generator in `tools/train_surrogate.py`) to create ground truth data.
+2.  **Train neural network**: Run `train_surrogate.py` to train a PyTorch model.
+3.  **Validate**: Check metrics (MAE, R²) against the analytical model on a held-out test set.
+4.  **Export to ONNX**: The script automatically exports the best model.
+5.  **Integrate**: Move the ONNX file to the appropriate location for the Rust `SurrogateManager`.
+
+### Testing Surrogates
+- **Accuracy**: Ensure MAE is within acceptable bounds (e.g., <5% error).
+- **Speed**: Verify that inference speed meets performance targets (<100ms for 8760 timesteps).
+- **Test Suite**: Add surrogate tests to the test suite to prevent regression.
+
+### Model Versioning
+- Track model versions and training configurations (e.g., in `assets/model_metrics.json`).
+- **Do not commit large model files** to git. Use the `models/` directory (which is gitignored) or a separate model registry.
+
+### Integration Guidelines
+- Models must be in ONNX format.
+- The Rust `SurrogateManager` (`src/ai/surrogate.rs`) is responsible for loading and running the model.
+- Ensure the ONNX model's input/output shapes match what the Rust code expects.
+
+### Performance Benchmarking
+- Benchmark surrogate performance against the critical metrics mentioned in "Performance Considerations".
+- Ensure that enabling surrogates provides the expected throughput boost (target: 10,000+ configs/sec).
+
 ## Performance Considerations
 
 ### Critical Metrics
@@ -214,4 +304,3 @@ See `docs/Fluxion_PRD.md` for:
 By contributing, you agree that your contributions will be licensed under the Apache License 2.0.
 
 Thank you for contributing to Fluxion!
-````
