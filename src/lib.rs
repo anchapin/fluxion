@@ -98,6 +98,36 @@ struct BatchOracle {
 }
 
 #[cfg(feature = "python-bindings")]
+impl BatchOracle {
+    // Physical constraints for optimization parameters
+    const MIN_U_VALUE: f64 = 0.1; // Minimum realistic U-value (W/m²K)
+    const MAX_U_VALUE: f64 = 5.0; // Maximum realistic U-value
+    const MIN_SETPOINT: f64 = 15.0; // Min HVAC setpoint (°C)
+    const MAX_SETPOINT: f64 = 30.0; // Max HVAC setpoint (°C)
+
+    // Parameter indices
+    const U_VALUE_INDEX: usize = 0;
+    const SETPOINT_INDEX: usize = 1;
+
+    /// Validates a parameter vector against physical constraints.
+    fn validate_parameters(params: &[f64]) -> Result<(), String> {
+        if params.len() < 2 {
+            return Err("Parameter vector must have at least 2 elements.".to_string());
+        }
+        let u_value = params[Self::U_VALUE_INDEX];
+        let setpoint = params[Self::SETPOINT_INDEX];
+
+        if u_value < Self::MIN_U_VALUE || u_value > Self::MAX_U_VALUE {
+            return Err(format!("U-value out of range: {}", u_value));
+        }
+        if setpoint < Self::MIN_SETPOINT || setpoint > Self::MAX_SETPOINT {
+            return Err(format!("Setpoint out of range: {}", setpoint));
+        }
+        Ok(())
+    }
+}
+
+#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl BatchOracle {
     /// Create a new BatchOracle instance.
@@ -142,6 +172,10 @@ impl BatchOracle {
         let results: Vec<f64> = population
             .par_iter()
             .map(|params| {
+                if Self::validate_parameters(params).is_err() {
+                    return f64::NAN;
+                }
+
                 // Light clone of the base model state
                 let mut instance = self.base_model.clone();
 
@@ -182,6 +216,30 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 mod tests {
     use crate::ai::surrogate::SurrogateManager;
     use crate::sim::engine::ThermalModel;
+
+    #[cfg(feature = "python-bindings")]
+    use crate::BatchOracle;
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_batch_oracle_validation() {
+        let oracle = BatchOracle::new().unwrap();
+        let population = vec![
+            vec![1.5, 22.0],  // Valid
+            vec![-1.0, 22.0], // Invalid U-value
+            vec![1.5, 500.0], // Invalid setpoint
+            vec![0.05, 22.0], // Invalid U-value (too low)
+            vec![1.5, 10.0],  // Invalid setpoint (too low)
+        ];
+
+        let results = oracle.evaluate_population(population, false).unwrap();
+
+        assert!(results[0].is_finite());
+        assert!(results[1].is_nan());
+        assert!(results[2].is_nan());
+        assert!(results[3].is_nan());
+        assert!(results[4].is_nan());
+    }
 
     #[test]
     fn test_thermal_model_creation() {
