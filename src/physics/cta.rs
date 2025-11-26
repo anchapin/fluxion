@@ -176,8 +176,8 @@ impl ContinuousTensor<f64> for VectorField {
         }
 
         let mut grad_data = vec![0.0; self.data.len()];
-        for i in 0..self.data.len() - 1 {
-            grad_data[i] = self.data[i + 1] - self.data[i];
+        for (i, slot) in grad_data.iter_mut().enumerate().take(self.data.len() - 1) {
+            *slot = self.data[i + 1] - self.data[i];
         }
         grad_data[self.data.len() - 1] = self.data[self.data.len() - 1] - self.data[self.data.len() - 2];
         VectorField::new(grad_data)
