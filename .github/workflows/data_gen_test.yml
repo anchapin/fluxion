@@ -10,7 +10,7 @@ jobs:
   test-data-gen:
     runs-on: ubuntu-latest
     container:
-      image: nrel/openstudio:latest
+      image: nrel/openstudio:develop
 
     steps:
     - uses: actions/checkout@v4
