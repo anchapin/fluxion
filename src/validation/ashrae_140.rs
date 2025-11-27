@@ -1,28 +1,33 @@
-use std::collections::HashMap;
-use crate::sim::engine::ThermalModel;
-use crate::physics::cta::VectorField;
 use crate::ai::surrogate::SurrogateManager;
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
+use std::collections::HashMap;
 
+/// Validator for ASHRAE 140 standard cases.
 pub struct ASHRAE140Validator {
     buildings: HashMap<String, ASHRAE140Building>,
 }
 
+/// Represents a building case in ASHRAE 140.
 pub struct ASHRAE140Building {
     pub name: String,
     pub baseline_energy: f64, // kWh/year (Heating + Cooling)
     pub baseline_temps: Vec<f64>,
 }
 
+/// Report containing validation results.
 #[derive(Default)]
 pub struct ValidationReport {
-    pub results: Vec<(String, f64)>,  // (building_id, error)
+    pub results: Vec<(String, f64)>, // (building_id, error)
 }
 
 impl ValidationReport {
+    /// Adds a validation result to the report.
     pub fn add_result(&mut self, building_id: &str, error: f64) {
         self.results.push((building_id.to_string(), error));
     }
 
+    /// Calculates the Mean Absolute Error (MAE) of the validation results.
     pub fn mae(&self) -> f64 {
         if self.results.is_empty() {
             return 0.0;
@@ -30,6 +35,7 @@ impl ValidationReport {
         self.results.iter().map(|(_, e)| e).sum::<f64>() / self.results.len() as f64
     }
 
+    /// Prints a summary of the validation report to stdout.
     pub fn print_summary(&self) {
         println!("Validation Report:");
         println!("  MAE: {:.4}", self.mae());
@@ -39,7 +45,14 @@ impl ValidationReport {
     }
 }
 
+impl Default for ASHRAE140Validator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ASHRAE140Validator {
+    /// Creates a new ASHRAE 140 validator with default cases (e.g., Case 600).
     pub fn new() -> Self {
         let mut buildings = HashMap::new();
 
@@ -54,14 +67,13 @@ impl ASHRAE140Validator {
                 name: "Case600".to_string(),
                 baseline_energy: 12000.0,
                 baseline_temps: vec![], // Placeholder
-            }
+            },
         );
 
-        Self {
-            buildings,
-        }
+        Self { buildings }
     }
 
+    /// Validates the analytical engine against the ASHRAE 140 cases.
     pub fn validate_analytical_engine(&mut self) -> ValidationReport {
         let mut report = ValidationReport::default();
 
