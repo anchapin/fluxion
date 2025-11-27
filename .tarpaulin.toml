@@ -11,4 +11,4 @@ timeout = "600s"
 
 # Force a generic CPU target to avoid CI-specific CPU feature parsing.
 # Use an array of strings for rustflags to match tarpaulin's expected TOML types.
-rustflags = ["-C", "target-cpu=x86-64"]
+rustflags = "-C target-cpu=x86-64"

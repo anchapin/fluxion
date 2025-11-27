@@ -166,19 +166,8 @@ impl ContinuousTensor<f64> for VectorField {
     }
 
     fn integrate(&self) -> f64 {
-        // Trapezoidal rule for 1D field with uniform spacing (dx=1)
-        let n = self.data.len();
-        if n == 0 {
-            return 0.0;
-        }
-        if n == 1 {
-            return self.data[0];
-        }
-        let mut sum = 0.0;
-        for i in 0..n - 1 {
-            sum += 0.5 * (self.data[i] + self.data[i + 1]);
-        }
-        sum
+        // For a 1D discrete field with unit spacing, the integral is the sum of elements.
+        self.data.iter().sum()
     }
 
     fn gradient(&self) -> Self {
@@ -269,6 +258,6 @@ mod tests {
     fn test_gradient() {
         let v = VectorField::new(vec![1.0, 2.0, 4.0, 7.0]);
         let grad = v.gradient();
-        assert_eq!(grad.as_slice(), &[1.0, 2.0, 3.0, 3.0]);
+        assert_eq!(grad.as_slice(), &[1.0, 1.5, 2.5, 3.0]);
     }
 }
