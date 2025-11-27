@@ -1,5 +1,5 @@
 use criterion::{criterion_group, criterion_main, Criterion};
-use fluxion::physics::cta::VectorField;
+use fluxion::physics::cta::{ContinuousTensor, VectorField};
 use fluxion::physics::nd_array::NDArrayField;
 
 fn bench_map_vector(c: &mut Criterion) {

@@ -43,6 +43,10 @@ num-traits = "0.2.19"
 [dev-dependencies]
 criterion = "0.5"
 
+[[bench]]
+name = "cta_bench"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
