@@ -40,6 +40,13 @@ pyo3 = { version = "0.24", features = ["extension-module", "auto-initialize", "a
 crossbeam = "0.8.4"
 num-traits = "0.2.19"
 
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "cta_bench"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
