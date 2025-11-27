@@ -184,8 +184,8 @@ impl ContinuousTensor<f64> for VectorField {
         // Forward difference for first element
         grad_data[0] = self.data[1] - self.data[0];
         // Central differences for interior
-        for i in 1..n - 1 {
-            grad_data[i] = 0.5 * (self.data[i + 1] - self.data[i - 1]);
+        for (grad, window) in grad_data[1..n - 1].iter_mut().zip(self.data.windows(3)) {
+            *grad = 0.5 * (window[2] - window[0]);
         }
         // Backward difference for last element
         grad_data[n - 1] = self.data[n - 1] - self.data[n - 2];
