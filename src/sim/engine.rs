@@ -1,5 +1,6 @@
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::nd_array::NDArrayField;
 use crate::sim::components::WallSurface;
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
@@ -62,18 +63,32 @@ impl ThermalModel<VectorField> {
     /// - Ceiling Height: 3.0 m
     /// - Window Ratio: 0.15
     pub fn new(num_zones: usize) -> Self {
+        Self::init(num_zones, VectorField::from_scalar)
+    }
+}
+
+impl ThermalModel<NDArrayField> {
+    /// Create a new ThermalModel using NDArray backend.
+    pub fn new_ndarray(num_zones: usize) -> Self {
+        Self::init(num_zones, |v, n| NDArrayField::from_shape_vec(vec![n], vec![v; n]))
+    }
+}
+
+impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
+    /// Internal helper to initialize a ThermalModel using a tensor factory function.
+    fn init(num_zones: usize, from_scalar: impl Fn(f64, usize) -> T) -> Self {
         // Initialize default physical parameters
-        let zone_area: f64 = 20.0;
-        let ceiling_height: f64 = 3.0;
-        let aspect_ratio: f64 = 1.0;
-        let window_ratio: f64 = 0.15;
+        let zone_area_val: f64 = 20.0;
+        let ceiling_height_val: f64 = 3.0;
+        let aspect_ratio_val: f64 = 1.0;
+        let window_ratio_val: f64 = 0.15;
 
         // Calculate geometry for initial surfaces
-        let width = (zone_area * aspect_ratio).sqrt();
-        let depth = zone_area / width;
+        let width = (zone_area_val * aspect_ratio_val).sqrt();
+        let depth = zone_area_val / width;
         let perimeter = 2.0 * (width + depth);
-        let gross_wall_area = perimeter * ceiling_height;
-        let window_area = gross_wall_area * window_ratio;
+        let gross_wall_area = perimeter * ceiling_height_val;
+        let window_area = gross_wall_area * window_ratio_val;
         // Divide by 4 for per-wall properties in surfaces list
         let win_area_per_side = window_area / 4.0;
 
@@ -89,40 +104,38 @@ impl ThermalModel<VectorField> {
 
         let mut model = ThermalModel {
             num_zones,
-            temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize at 20°C
-            mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
-            loads: VectorField::from_scalar(0.0, num_zones),
+            temperatures: from_scalar(20.0, num_zones), // Initialize at 20°C
+            mass_temperatures: from_scalar(20.0, num_zones), // Initialize Tm at 20°C
+            loads: from_scalar(0.0, num_zones),
             surfaces,
             window_u_value: 2.5, // Default U-value
             hvac_setpoint: 21.0, // Default setpoint
 
             // Physical Constants Defaults
-            zone_area: VectorField::from_scalar(zone_area, num_zones),
-            ceiling_height: VectorField::from_scalar(ceiling_height, num_zones),
-            air_density: VectorField::from_scalar(1.2, num_zones),
-            heat_capacity: VectorField::from_scalar(1005.0, num_zones),
-            window_ratio: VectorField::from_scalar(window_ratio, num_zones),
-            aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
-            infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
+            zone_area: from_scalar(zone_area_val, num_zones),
+            ceiling_height: from_scalar(ceiling_height_val, num_zones),
+            air_density: from_scalar(1.2, num_zones),
+            heat_capacity: from_scalar(1005.0, num_zones),
+            window_ratio: from_scalar(window_ratio_val, num_zones),
+            aspect_ratio: from_scalar(aspect_ratio_val, num_zones),
+            infiltration_rate: from_scalar(0.5, num_zones), // 0.5 ACH
 
             // Placeholders (will be updated by update_derived_parameters)
-            thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
-            hvac_cooling_capacity: VectorField::from_scalar(5000.0, num_zones), // Default: 5kW cooling per zone
-            hvac_heating_capacity: VectorField::from_scalar(5000.0, num_zones), // Default: 5kW heating per zone
+            thermal_capacitance: from_scalar(1.0, num_zones),
+            hvac_cooling_capacity: from_scalar(5000.0, num_zones), // Default: 5kW cooling per zone
+            hvac_heating_capacity: from_scalar(5000.0, num_zones), // Default: 5kW heating per zone
 
-            h_tr_w: VectorField::from_scalar(0.0, num_zones),
-            h_tr_em: VectorField::from_scalar(0.0, num_zones),
-            h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
-            h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
-            h_ve: VectorField::from_scalar(0.0, num_zones),
+            h_tr_w: from_scalar(0.0, num_zones),
+            h_tr_em: from_scalar(0.0, num_zones),
+            h_tr_ms: from_scalar(1000.0, num_zones), // Fixed coupling
+            h_tr_is: from_scalar(200.0, num_zones),  // Fixed coupling
+            h_ve: from_scalar(0.0, num_zones),
         };
 
         model.update_derived_parameters();
         model
     }
-}
 
-impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
     /// Updates derived physical parameters based on geometry and constants.
     fn update_derived_parameters(&mut self) {
         // Geometry Calculations
@@ -546,6 +559,24 @@ mod tests {
         assert_eq!(model_20.num_zones, 20);
         assert_eq!(model_20.temperatures.len(), 20);
         assert_eq!(model_20.loads.len(), 20);
+    }
+
+    #[test]
+    fn test_thermal_model_ndarray() {
+        use crate::physics::nd_array::NDArrayField;
+
+        // Test creation with NDArray backend
+        let model = ThermalModel::<NDArrayField>::new_ndarray(5);
+        assert_eq!(model.num_zones, 5);
+        assert_eq!(model.temperatures.len(), 5);
+
+        // Test basic property access to verify struct layout and logic
+        assert!((model.temperatures.as_slice()[0] - 20.0).abs() < 1e-9);
+
+        // Test parameter application
+        let mut model = model;
+        model.apply_parameters(&[1.5, 22.0]);
+        assert_eq!(model.window_u_value, 1.5);
     }
 
     #[test]
