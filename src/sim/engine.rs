@@ -26,12 +26,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub hvac_setpoint: f64,
 
     // Physical Constants (Per Zone)
-    pub zone_area: T,       // Floor Area (m²)
-    pub ceiling_height: T,  // Ceiling Height (m)
-    pub air_density: T,     // Air Density (kg/m³)
-    pub heat_capacity: T,   // Specific Heat Capacity of Air (J/kg·K)
-    pub window_ratio: T,    // Window-to-Wall Ratio (0.0-1.0)
-    pub aspect_ratio: T,    // Zone Aspect Ratio (Length/Width)
+    pub zone_area: T,         // Floor Area (m²)
+    pub ceiling_height: T,    // Ceiling Height (m)
+    pub air_density: T,       // Air Density (kg/m³)
+    pub heat_capacity: T,     // Specific Heat Capacity of Air (J/kg·K)
+    pub window_ratio: T,      // Window-to-Wall Ratio (0.0-1.0)
+    pub aspect_ratio: T,      // Zone Aspect Ratio (Length/Width)
     pub infiltration_rate: T, // Infiltration Rate (ACH)
 
     // New fields for 5R1C model
@@ -125,8 +125,10 @@ impl ThermalModel<VectorField> {
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
     /// Updates derived physical parameters based on geometry and constants.
     fn update_derived_parameters(&mut self) {
-         // Geometry Calculations
-        let width = self.zone_area.zip_with(&self.aspect_ratio, |a, ar| (a * ar).sqrt());
+        // Geometry Calculations
+        let width = self
+            .zone_area
+            .zip_with(&self.aspect_ratio, |a, ar| (a * ar).sqrt());
         let depth = self.zone_area.zip_with(&width, |a, w| a / w);
         let perimeter = (width.clone() + depth) * 2.0;
         let gross_wall_area = perimeter * self.ceiling_height.clone();
