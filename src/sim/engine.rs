@@ -24,9 +24,19 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
     pub hvac_setpoint: f64,
+
+    // Physical Constants (Per Zone)
+    pub zone_area: T,       // Floor Area (m²)
+    pub ceiling_height: T,  // Ceiling Height (m)
+    pub air_density: T,     // Air Density (kg/m³)
+    pub heat_capacity: T,   // Specific Heat Capacity of Air (J/kg·K)
+    pub window_ratio: T,    // Window-to-Wall Ratio (0.0-1.0)
+    pub aspect_ratio: T,    // Zone Aspect Ratio (Length/Width)
+    pub infiltration_rate: T, // Infiltration Rate (ACH)
+
     // New fields for 5R1C model
     pub mass_temperatures: T,     // Tm (Mass temperature)
-    pub thermal_capacitance: T,   // Cm (J/K)
+    pub thermal_capacitance: T,   // Cm (J/K) - Includes Air + Structure
     pub hvac_cooling_capacity: T, // Watts
     pub hvac_heating_capacity: T, // Watts
 
@@ -48,19 +58,36 @@ impl ThermalModel<VectorField> {
     /// - All zones initialized to 20°C
     /// - Window U-value: 2.5 W/m²K (typical for double-glazed windows)
     /// - HVAC setpoint: 21°C
-    /// - Surfaces: 4 walls of 10m² each per zone (default)
+    /// - Zone Area: 20 m²
+    /// - Ceiling Height: 3.0 m
+    /// - Window Ratio: 0.15
     pub fn new(num_zones: usize) -> Self {
-        // Initialize default surfaces: 4 walls of 10m² each per zone
+        // Initialize default physical parameters
+        let zone_area: f64 = 20.0;
+        let ceiling_height: f64 = 3.0;
+        let aspect_ratio: f64 = 1.0;
+        let window_ratio: f64 = 0.15;
+
+        // Calculate geometry for initial surfaces
+        let width = (zone_area * aspect_ratio).sqrt();
+        let depth = zone_area / width;
+        let perimeter = 2.0 * (width + depth);
+        let gross_wall_area = perimeter * ceiling_height;
+        let window_area = gross_wall_area * window_ratio;
+        // Divide by 4 for per-wall properties in surfaces list
+        let win_area_per_side = window_area / 4.0;
+
+        // Initialize default surfaces: 4 walls
         let mut surfaces = Vec::with_capacity(num_zones);
         for _ in 0..num_zones {
             let mut zone_surfaces = Vec::new();
             for _ in 0..4 {
-                zone_surfaces.push(WallSurface::new(10.0, 2.5)); // 10m², U=2.5 (default)
+                zone_surfaces.push(WallSurface::new(win_area_per_side, 2.5));
             }
             surfaces.push(zone_surfaces);
         }
 
-        ThermalModel {
+        let mut model = ThermalModel {
             num_zones,
             temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize at 20°C
             mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
@@ -68,26 +95,71 @@ impl ThermalModel<VectorField> {
             surfaces,
             window_u_value: 2.5, // Default U-value
             hvac_setpoint: 21.0, // Default setpoint
-            thermal_capacitance: VectorField::from_scalar(10e6, num_zones), // Default capacitance: 10 MJ/K per zone
+
+            // Physical Constants Defaults
+            zone_area: VectorField::from_scalar(zone_area, num_zones),
+            ceiling_height: VectorField::from_scalar(ceiling_height, num_zones),
+            air_density: VectorField::from_scalar(1.2, num_zones),
+            heat_capacity: VectorField::from_scalar(1005.0, num_zones),
+            window_ratio: VectorField::from_scalar(window_ratio, num_zones),
+            aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
+            infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
+
+            // Placeholders (will be updated by update_derived_parameters)
+            thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
             hvac_cooling_capacity: VectorField::from_scalar(5000.0, num_zones), // Default: 5kW cooling per zone
             hvac_heating_capacity: VectorField::from_scalar(5000.0, num_zones), // Default: 5kW heating per zone
 
-            // Initialize 5R1C conductances (Defaults for 40m² surface/zone)
-            // H_tr_w: Window transmission (approx 2.5 * 10m²)
-            h_tr_w: VectorField::from_scalar(25.0, num_zones),
-            // H_tr_em: Opaque transmission (Exterior -> Mass)
-            h_tr_em: VectorField::from_scalar(50.0, num_zones),
-            // H_tr_ms: Mass -> Surface (High coupling)
-            h_tr_ms: VectorField::from_scalar(1000.0, num_zones),
-            // H_tr_is: Surface -> Interior (High coupling)
-            h_tr_is: VectorField::from_scalar(200.0, num_zones),
-            // H_ve: Ventilation (Exterior -> Interior)
-            h_ve: VectorField::from_scalar(10.0, num_zones),
-        }
+            h_tr_w: VectorField::from_scalar(0.0, num_zones),
+            h_tr_em: VectorField::from_scalar(0.0, num_zones),
+            h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
+            h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
+            h_ve: VectorField::from_scalar(0.0, num_zones),
+        };
+
+        model.update_derived_parameters();
+        model
     }
 }
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
+    /// Updates derived physical parameters based on geometry and constants.
+    fn update_derived_parameters(&mut self) {
+         // Geometry Calculations
+        let width = self.zone_area.zip_with(&self.aspect_ratio, |a, ar| (a * ar).sqrt());
+        let depth = self.zone_area.zip_with(&width, |a, w| a / w);
+        let perimeter = (width.clone() + depth) * 2.0;
+        let gross_wall_area = perimeter * self.ceiling_height.clone();
+
+        let window_area = gross_wall_area.clone() * self.window_ratio.clone();
+        // Opaque area: Gross - Window + Roof (Assume Roof = Floor Area)
+        // Note: For 5R1C, h_tr_em typically represents the opaque envelope conductance.
+        let opaque_wall_area = gross_wall_area.zip_with(&window_area, |g, w| g - w);
+        let total_opaque_area = opaque_wall_area + self.zone_area.clone();
+
+        let volume = self.zone_area.clone() * self.ceiling_height.clone();
+
+        // Update Conductances
+        // h_tr_w = U_win * Window Area
+        self.h_tr_w = window_area * self.window_u_value;
+
+        // h_tr_em = U_opaque * Opaque Area
+        // We use a fixed reference U-value for opaque surfaces (e.g. 0.5 W/m²K)
+        // In a full model this might be another parameter.
+        self.h_tr_em = total_opaque_area * 0.5;
+
+        // Ventilation
+        // h_ve = (infiltration_rate * volume * density * cp) / 3600
+        // infiltration_rate is in ACH (1/hr)
+        let air_cap = volume * self.air_density.clone() * self.heat_capacity.clone();
+        self.h_ve = (air_cap.clone() * self.infiltration_rate.clone()) / 3600.0;
+
+        // Thermal Capacitance (Air + Structure)
+        // Structure assumption: 200 kJ/m²K per m² floor area
+        let structure_cap = self.zone_area.clone() * 200_000.0;
+        self.thermal_capacitance = air_cap + structure_cap;
+    }
+
     /// Updates model parameters based on a gene vector from an optimizer.
     ///
     /// This method maps optimization variables (genes) to physical parameters of the thermal model.
@@ -99,17 +171,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     pub fn apply_parameters(&mut self, params: &[f64]) {
         if !params.is_empty() {
             self.window_u_value = params[0];
+            // Surfaces update for metadata/consistency
             for zone_surfaces in &mut self.surfaces {
                 for surface in zone_surfaces {
                     surface.u_value = self.window_u_value;
                 }
             }
-            self.h_tr_w = self.temperatures.constant_like(self.window_u_value * 10.0);
-            self.h_tr_em = self.temperatures.constant_like(self.window_u_value * 30.0);
         }
         if params.len() >= 2 {
             self.hvac_setpoint = params[1];
         }
+
+        // Recalculate derived conductances (h_tr_w, etc.) using new U-values and fixed geometry
+        self.update_derived_parameters();
     }
 
     /// Calculates HVAC power demand based on free-floating temperature and setpoint.
@@ -147,21 +221,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// * `use_ai` - If true, use neural surrogates; if false, use analytical calculations
     ///
     /// # Returns
-    /// Cumulative annual energy use intensity (dimensionless, normalized)
+    /// Cumulative annual energy use intensity (EUI) in kWh/m²/year.
     pub fn solve_timesteps(
         &mut self,
         steps: usize,
         surrogates: &SurrogateManager,
         use_ai: bool,
     ) -> f64 {
-        (0..steps)
+        let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
                 let hour_of_day = t % 24;
                 let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                 self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true)
             })
-            .sum()
+            .sum();
+
+        // Normalize by total floor area to get EUI
+        let total_area = self.zone_area.integrate();
+        if total_area > 0.0 {
+            total_energy_kwh / total_area
+        } else {
+            0.0
+        }
     }
 
     /// Solves a single timestep of the thermal simulation.
@@ -186,10 +268,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             self.calc_analytical_loads(timestep, use_analytical_gains);
         }
 
+        // Convert loads (W/m²) to Watts
+        let loads_watts = self.loads.clone() * self.zone_area.clone();
+
         // 2. Solve Thermal Network
         let t_e = self.temperatures.constant_like(outdoor_temp);
-        let phi_ia = self.loads.clone() * 0.5;
-        let phi_st = self.loads.clone() * 0.5;
+        // Distribute internal gains (50% air, 50% surface)
+        let phi_ia = loads_watts.clone() * 0.5;
+        let phi_st = loads_watts.clone() * 0.5;
 
         // Simplified 5R1C calculation using CTA
         let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
@@ -233,7 +319,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let total_gain = if use_analytical_gains {
             let hour_of_day = timestep % 24;
             let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-            (1000.0 * daily_cycle).max(0.0) + 100.0
+            (50.0 * daily_cycle).max(0.0) + 10.0 // Adjusted for W/m² (lower values than Watts)
         } else {
             0.0
         };
@@ -261,6 +347,15 @@ mod tests {
             .temperatures
             .iter()
             .all(|&t| (t - 20.0).abs() < EPSILON));
+
+        // Check derived constants
+        // Zone Area 20m2.
+        assert!((model.zone_area[0] - 20.0).abs() < EPSILON);
+        // h_tr_w should be derived.
+        // Gross Wall = P * H. P = 4*sqrt(20) = 17.888. H=3. Gross=53.66.
+        // Win Area = 53.66 * 0.15 = 8.05.
+        // h_tr_w = 2.5 * 8.05 = 20.125.
+        assert!(model.h_tr_w[0] > 19.0 && model.h_tr_w[0] < 21.0);
     }
 
     #[test]
@@ -274,6 +369,11 @@ mod tests {
 
         // Check surface updates
         assert_eq!(model.surfaces[0][0].u_value, 1.5);
+
+        // Check conductance update
+        // With U=1.5, h_tr_w should be lower than initial U=2.5.
+        // Approx 1.5/2.5 * 20.125 = 12.075
+        assert!(model.h_tr_w[0] > 11.0 && model.h_tr_w[0] < 13.0);
     }
 
     #[test]
@@ -309,8 +409,8 @@ mod tests {
         // Check against expected values for noon
         let hour_of_day = 12;
         let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-        let solar_gain = (1000.0 * daily_cycle).max(0.0);
-        let internal_gains = 100.0;
+        let solar_gain = (50.0 * daily_cycle).max(0.0);
+        let internal_gains = 10.0;
         let expected_load = solar_gain + internal_gains;
 
         const EPSILON: f64 = 1e-9;
