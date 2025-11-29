@@ -15,7 +15,7 @@ def benchmark_throughput(
     """
     if not os.path.exists(model_path):
         print(f"Error: Model not found at {model_path}")
-        return
+        return {}
 
     results: dict = {"model": model_path, "timestamp": time.time(), "benchmarks": []}
 
@@ -113,6 +113,8 @@ def benchmark_throughput(
         with open(output_file, "w") as f:
             json.dump(results, f, indent=2)
         print(f"Results saved to {output_file}")
+
+    return results
 
 
 if __name__ == "__main__":
