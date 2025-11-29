@@ -1,8 +1,6 @@
 # Tarpaulin configuration for code coverage
-# SIMD-related compilation issues are handled via CLI flags in the workflow
-
-[coverage]
 # Run coverage only on library code (not binaries or examples)
+[coverage]
 run-types = ["Lib"]
 
 # Output XML for codecov integration
@@ -11,6 +9,6 @@ out = ["Xml"]
 # Timeout for instrumented builds (slower than normal builds)
 timeout = "600s"
 
-# This forces the generic CPU architecture for every run,
-# preventing the AVX crash on CI servers.
+# Force a generic CPU target to avoid CI-specific CPU feature parsing.
+# Use an array of strings for rustflags to match tarpaulin's expected TOML types.
 rustflags = "-C target-cpu=x86-64"

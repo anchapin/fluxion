@@ -1,28 +1,53 @@
-use std::ops::{Add, Div, Index, Mul, Sub};
+use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 
 /// The Continuous Tensor Abstraction (CTA) trait.
 ///
 /// This trait defines the interface for tensor operations in Fluxion, abstracting
 /// over underlying storage (CPU Vec, GPU Buffer, etc.) and dimensionality.
+///
+/// It is designed to be generic over the element type `T` and to support
+/// common operations in physics simulations like element-wise maps, reductions,
+/// and differential operators.
 pub trait ContinuousTensor<T>:
-    Add<Output = Self> + Sub<Output = Self> + Mul<Output = Self> + Div<Output = Self> + Sized + Clone
+    // Basic arithmetic operations
+    Add<Output = Self>
+    + Sub<Output = Self>
+    + Mul<Output = Self>
+    + Div<Output = Self>
+    + Mul<f64, Output = Self>
+    + Div<f64, Output = Self>
+    // Required for many internal operations
+    + Sized
+    + Clone
+where
+    T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T> + AddAssign + Default,
 {
-    /// Apply a function element-wise.
+    /// Applies a function element-wise to the tensor.
     fn map<F>(&self, f: F) -> Self
     where
         F: Fn(T) -> T;
 
-    /// Combine two tensors element-wise with a function.
+    /// Combines two tensors element-wise using a binary function.
     fn zip_with<F>(&self, other: &Self, f: F) -> Self
     where
         F: Fn(T, T) -> T;
 
-    /// Reduce the tensor to a single value.
+    /// Reduces the tensor to a single value using a binary function.
     fn reduce<F>(&self, init: T, f: F) -> T
     where
         F: Fn(T, T) -> T;
 
-    /// Create a new tensor of the same shape with a constant value.
+    /// Computes the integral of the tensor field.
+    /// The exact meaning of "integral" depends on the tensor's dimensionality.
+    /// For a 1D VectorField, this is equivalent to a sum.
+    fn integrate(&self) -> T;
+
+    /// Computes the gradient of the tensor field.
+    /// The result is a new tensor representing the rate of change.
+    /// The exact implementation will vary (e.g., finite differences for grids).
+    fn gradient(&self) -> Self;
+
+    /// Creates a new tensor of the same shape and size, filled with a constant value.
     fn constant_like(&self, value: T) -> Self;
 }
 
@@ -140,6 +165,33 @@ impl ContinuousTensor<f64> for VectorField {
         self.data.iter().copied().fold(init, f)
     }
 
+    fn integrate(&self) -> f64 {
+        // For a 1D discrete field with unit spacing, the integral is the sum of elements.
+        self.data.iter().sum()
+    }
+
+    fn gradient(&self) -> Self {
+        // Central differences for interior points, forward/backward for boundaries
+        let n = self.data.len();
+        if n == 0 {
+            return VectorField::new(vec![]);
+        }
+        if n == 1 {
+            return VectorField::from_scalar(0.0, 1);
+        }
+
+        let mut grad_data = vec![0.0; n];
+        // Forward difference for first element
+        grad_data[0] = self.data[1] - self.data[0];
+        // Central differences for interior
+        for (grad, window) in grad_data[1..n - 1].iter_mut().zip(self.data.windows(3)) {
+            *grad = 0.5 * (window[2] - window[0]);
+        }
+        // Backward difference for last element
+        grad_data[n - 1] = self.data[n - 1] - self.data[n - 2];
+        VectorField::new(grad_data)
+    }
+
     fn constant_like(&self, value: f64) -> Self {
         VectorField::from_scalar(value, self.len())
     }
@@ -157,6 +209,12 @@ impl Div<f64> for VectorField {
     type Output = Self;
     fn div(self, rhs: f64) -> Self {
         self.map(|x| x / rhs)
+    }
+}
+
+impl AsRef<[f64]> for VectorField {
+    fn as_ref(&self) -> &[f64] {
+        &self.data
     }
 }
 
@@ -188,5 +246,18 @@ mod tests {
         let v_non_empty = VectorField::new(vec![1.0]);
         assert!(!v_non_empty.is_empty());
         assert_eq!(v_non_empty.len(), 1);
+    }
+
+    #[test]
+    fn test_integrate() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(v.integrate(), 10.0);
+    }
+
+    #[test]
+    fn test_gradient() {
+        let v = VectorField::new(vec![1.0, 2.0, 4.0, 7.0]);
+        let grad = v.gradient();
+        assert_eq!(grad.as_slice(), &[1.0, 1.5, 2.5, 3.0]);
     }
 }

@@ -10,6 +10,10 @@ inputs:
     description: 'Rust components to install (e.g., rustfmt,clippy)'
     required: false
     default: ''
+  cache:
+    description: 'Enable pip caching'
+    required: false
+    default: 'true'
 
 runs:
   using: composite
@@ -17,15 +21,20 @@ runs:
     - uses: actions/checkout@v4
 
     - name: Create pip cache directory
+      if: inputs.cache == 'true'
       shell: bash
       run: |
-        mkdir -p ~/.cache/pip
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          mkdir -p ~/AppData/Local/pip/Cache
+        else
+          mkdir -p ~/.cache/pip
+        fi
 
     - name: Set up Python ${{ inputs.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.python-version }}
-        cache: 'pip'
+        cache: ${{ inputs.cache == 'true' && 'pip' || '' }}
         cache-dependency-path: 'requirements-dev.txt'
 
     - name: Install system dependencies (Linux)
