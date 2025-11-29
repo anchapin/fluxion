@@ -47,49 +47,53 @@ impl Index<usize> for NDArrayField {
 impl Add for NDArrayField {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
+        let shape = self.shape();
         let v: Vec<f64> = self
             .as_slice()
             .iter()
             .zip(rhs.as_slice().iter())
             .map(|(a, b)| a + b)
             .collect();
-        NDArrayField::from_shape_vec(vec![v.len()], v)
+        NDArrayField::from_shape_vec(shape, v)
     }
 }
 impl Sub for NDArrayField {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
+        let shape = self.shape();
         let v: Vec<f64> = self
             .as_slice()
             .iter()
             .zip(rhs.as_slice().iter())
             .map(|(a, b)| a - b)
             .collect();
-        NDArrayField::from_shape_vec(vec![v.len()], v)
+        NDArrayField::from_shape_vec(shape, v)
     }
 }
 impl Mul for NDArrayField {
     type Output = Self;
     fn mul(self, rhs: Self) -> Self {
+        let shape = self.shape();
         let v: Vec<f64> = self
             .as_slice()
             .iter()
             .zip(rhs.as_slice().iter())
             .map(|(a, b)| a * b)
             .collect();
-        NDArrayField::from_shape_vec(vec![v.len()], v)
+        NDArrayField::from_shape_vec(shape, v)
     }
 }
 impl Div for NDArrayField {
     type Output = Self;
     fn div(self, rhs: Self) -> Self {
+        let shape = self.shape();
         let v: Vec<f64> = self
             .as_slice()
             .iter()
             .zip(rhs.as_slice().iter())
             .map(|(a, b)| a / b)
             .collect();
-        NDArrayField::from_shape_vec(vec![v.len()], v)
+        NDArrayField::from_shape_vec(shape, v)
     }
 }
 
@@ -98,7 +102,7 @@ impl Mul<f64> for NDArrayField {
     type Output = Self;
     fn mul(self, rhs: f64) -> Self {
         NDArrayField::from_shape_vec(
-            vec![self.len()],
+            self.shape(),
             self.as_slice().iter().map(|x| x * rhs).collect(),
         )
     }
@@ -107,7 +111,7 @@ impl Div<f64> for NDArrayField {
     type Output = Self;
     fn div(self, rhs: f64) -> Self {
         NDArrayField::from_shape_vec(
-            vec![self.len()],
+            self.shape(),
             self.as_slice().iter().map(|x| x / rhs).collect(),
         )
     }
@@ -119,7 +123,7 @@ impl ContinuousTensor<f64> for NDArrayField {
         F: Fn(f64) -> f64,
     {
         let v: Vec<f64> = self.as_slice().iter().copied().map(f).collect();
-        NDArrayField::from_shape_vec(vec![v.len()], v)
+        NDArrayField::from_shape_vec(self.shape(), v)
     }
 
     fn zip_with<F>(&self, other: &Self, f: F) -> Self
@@ -127,13 +131,14 @@ impl ContinuousTensor<f64> for NDArrayField {
         F: Fn(f64, f64) -> f64,
     {
         assert_eq!(self.len(), other.len(), "Tensor dimension mismatch");
+        // Note: For stricter shape checking, we should assert_eq!(self.shape(), other.shape());
         let v: Vec<f64> = self
             .as_slice()
             .iter()
             .zip(other.as_slice().iter())
             .map(|(&a, &b)| f(a, b))
             .collect();
-        NDArrayField::from_shape_vec(vec![v.len()], v)
+        NDArrayField::from_shape_vec(self.shape(), v)
     }
 
     fn reduce<F>(&self, init: f64, f: F) -> f64
@@ -175,7 +180,7 @@ impl ContinuousTensor<f64> for NDArrayField {
             g[i] = 0.5 * (s[i + 1] - s[i - 1]);
         }
         g[n - 1] = s[n - 1] - s[n - 2];
-        NDArrayField::from_shape_vec(vec![n], g)
+        NDArrayField::from_shape_vec(self.shape(), g)
     }
 
     fn constant_like(&self, value: f64) -> Self {
@@ -200,5 +205,23 @@ mod tests {
         let n: NDArrayField = v.into();
         assert_eq!(n.len(), 3);
         assert_eq!(n.as_slice(), &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_ndarray_map_preserves_shape() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let tensor = NDArrayField::from_shape_vec(vec![2, 3], data);
+        assert_eq!(tensor.shape(), vec![2, 3]);
+        let mapped = tensor.map(|x| x * 2.0);
+        assert_eq!(mapped.shape(), vec![2, 3]);
+    }
+
+    #[test]
+    fn test_ndarray_add_preserves_shape() {
+        let data = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let t1 = NDArrayField::from_shape_vec(vec![2, 3], data.clone());
+        let t2 = NDArrayField::from_shape_vec(vec![2, 3], data);
+        let sum = t1 + t2;
+        assert_eq!(sum.shape(), vec![2, 3]);
     }
 }
