@@ -1,5 +1,5 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::cta::VectorField;
+use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::engine::ThermalModel;
 use std::collections::HashMap;
 
@@ -109,7 +109,11 @@ impl ASHRAE140Validator {
                 model.apply_parameters(&params);
 
                 // Run simulation (Annual = 8760 steps)
-                let analytical_energy = model.solve_timesteps(8760, &surrogates, false);
+                let analytical_eui = model.solve_timesteps(8760, &surrogates, false);
+
+                // Convert EUI (kWh/m²/yr) back to Total Energy (kWh) for comparison with baseline
+                let total_area = model.zone_area.integrate();
+                let analytical_energy = analytical_eui * total_area;
 
                 // Calculate error (Absolute difference in kWh)
                 let error = (building.baseline_energy - analytical_energy).abs();
