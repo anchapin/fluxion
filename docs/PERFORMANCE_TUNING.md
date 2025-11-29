@@ -20,10 +20,10 @@ Batching is critical for maximizing GPU utilization.
 *   **Medium Batches (100-1000)**: Good balance between latency and throughput.
 *   **Large Batches (10000+)**: Highest throughput. Recommended for population-based optimization (Genetic Algorithms, Particle Swarm).
 
-Use `tools/benchmark_throughput.py` to find the optimal batch size for your hardware:
+Use `tools/benchmark_throughput_gpu.py` to find the optimal crossover point where GPU outperforms CPU (typically >1000 samples):
 
 ```bash
-python tools/benchmark_throughput.py --model assets/thermal_surrogate.onnx --batch-sizes 100,1000,10000 --backends cuda
+python tools/benchmark_throughput_gpu.py --model assets/thermal_surrogate.onnx
 ```
 
 ### 2. Model Quantization
