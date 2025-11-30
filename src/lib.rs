@@ -39,16 +39,16 @@ use sim::engine::ThermalModel;
 #[cfg(feature = "python-bindings")]
 #[derive(Clone)]
 enum BackendModel {
-    Vector(ThermalModel<VectorField>),
-    NDArray(ThermalModel<NDArrayField>),
+    Vector(Box<ThermalModel<VectorField>>),
+    NDArray(Box<ThermalModel<NDArrayField>>),
 }
 
 #[cfg(feature = "python-bindings")]
 impl BackendModel {
     fn apply_parameters(&mut self, params: &[f64]) {
         match self {
-            BackendModel::Vector(m) => m.apply_parameters(params),
-            BackendModel::NDArray(m) => m.apply_parameters(params),
+            BackendModel::Vector(m) => m.as_mut().apply_parameters(params),
+            BackendModel::NDArray(m) => m.as_mut().apply_parameters(params),
         }
     }
 
@@ -59,8 +59,8 @@ impl BackendModel {
         use_ai: bool,
     ) -> f64 {
         match self {
-            BackendModel::Vector(m) => m.solve_timesteps(steps, surrogates, use_ai),
-            BackendModel::NDArray(m) => m.solve_timesteps(steps, surrogates, use_ai),
+            BackendModel::Vector(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
+            BackendModel::NDArray(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
         }
     }
 }
@@ -88,9 +88,11 @@ impl Model {
     #[pyo3(signature = (_config_path, shape = None))]
     fn new(_config_path: String, shape: Option<Vec<usize>>) -> PyResult<Self> {
         let inner = if let Some(s) = shape {
-            BackendModel::NDArray(ThermalModel::<NDArrayField>::new_ndarray_with_shape(s))
+            BackendModel::NDArray(Box::new(
+                ThermalModel::<NDArrayField>::new_ndarray_with_shape(s),
+            ))
         } else {
-            BackendModel::Vector(ThermalModel::<VectorField>::new(10))
+            BackendModel::Vector(Box::new(ThermalModel::<VectorField>::new(10)))
         };
         Ok(Model {
             inner,
@@ -181,9 +183,11 @@ impl BatchOracle {
     #[pyo3(signature = (shape = None))]
     fn new(shape: Option<Vec<usize>>) -> PyResult<Self> {
         let base_model = if let Some(s) = shape {
-            BackendModel::NDArray(ThermalModel::<NDArrayField>::new_ndarray_with_shape(s))
+            BackendModel::NDArray(Box::new(
+                ThermalModel::<NDArrayField>::new_ndarray_with_shape(s),
+            ))
         } else {
-            BackendModel::Vector(ThermalModel::<VectorField>::new(10))
+            BackendModel::Vector(Box::new(ThermalModel::<VectorField>::new(10)))
         };
         Ok(BatchOracle {
             base_model,

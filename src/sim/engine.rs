@@ -288,7 +288,7 @@ impl<T: ContinuousTensor<f64> + AsRef<[f64]>> ThermalModel<T> {
         // 1. Calculate External Loads
         if use_ai {
             let pred = surrogates.predict_loads(self.temperatures.as_ref());
-            self.loads = self.temperatures.from_data_like(pred);
+            self.loads = self.temperatures.new_with_data(pred);
         } else {
             self.calc_analytical_loads(timestep, use_analytical_gains);
         }
