@@ -11,6 +11,8 @@ use rayon::prelude::ParallelIterator;
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::VectorField;
 #[cfg(feature = "python-bindings")]
+use crate::physics::nd_array::NDArrayField;
+#[cfg(feature = "python-bindings")]
 use ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]
 use sim::engine::ThermalModel;
@@ -34,6 +36,35 @@ use sim::engine::ThermalModel;
 // Re-export things for easier access in other modules
 // pub use ai::tensor_wrapper::TorchScalar; // REMOVED
 
+#[cfg(feature = "python-bindings")]
+#[derive(Clone)]
+enum BackendModel {
+    Vector(Box<ThermalModel<VectorField>>),
+    NDArray(Box<ThermalModel<NDArrayField>>),
+}
+
+#[cfg(feature = "python-bindings")]
+impl BackendModel {
+    fn apply_parameters(&mut self, params: &[f64]) {
+        match self {
+            BackendModel::Vector(m) => m.as_mut().apply_parameters(params),
+            BackendModel::NDArray(m) => m.as_mut().apply_parameters(params),
+        }
+    }
+
+    fn solve_timesteps(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        use_ai: bool,
+    ) -> f64 {
+        match self {
+            BackendModel::Vector(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
+            BackendModel::NDArray(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
+        }
+    }
+}
+
 /// Standard Single-Building Model for detailed building energy analysis.
 ///
 /// Use this class when you need detailed simulation of a single building configuration,
@@ -41,7 +72,7 @@ use sim::engine::ThermalModel;
 #[cfg(feature = "python-bindings")]
 #[pyclass]
 struct Model {
-    inner: ThermalModel<VectorField>,
+    inner: BackendModel,
     surrogates: SurrogateManager,
 }
 
@@ -52,10 +83,19 @@ impl Model {
     ///
     /// # Arguments
     /// * `_config_path` - Path to building configuration file
+    /// * `shape` - Optional shape for NDArray backend (e.g., [10, 10]). If None, uses Vector backend with 10 zones.
     #[new]
-    fn new(_config_path: String) -> PyResult<Self> {
+    #[pyo3(signature = (_config_path, shape = None))]
+    fn new(_config_path: String, shape: Option<Vec<usize>>) -> PyResult<Self> {
+        let inner = if let Some(s) = shape {
+            BackendModel::NDArray(Box::new(
+                ThermalModel::<NDArrayField>::new_ndarray_with_shape(s),
+            ))
+        } else {
+            BackendModel::Vector(Box::new(ThermalModel::<VectorField>::new(10)))
+        };
         Ok(Model {
-            inner: ThermalModel::<VectorField>::new(10),
+            inner,
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
@@ -96,7 +136,7 @@ impl Model {
 #[cfg(feature = "python-bindings")]
 #[pyclass]
 struct BatchOracle {
-    base_model: ThermalModel<VectorField>,
+    base_model: BackendModel,
     surrogates: SurrogateManager,
 }
 
@@ -136,10 +176,21 @@ impl BatchOracle {
     /// Create a new BatchOracle instance.
     ///
     /// Initializes the base thermal model template and surrogate manager.
+    ///
+    /// # Arguments
+    /// * `shape` - Optional shape for NDArray backend.
     #[new]
-    fn new() -> PyResult<Self> {
+    #[pyo3(signature = (shape = None))]
+    fn new(shape: Option<Vec<usize>>) -> PyResult<Self> {
+        let base_model = if let Some(s) = shape {
+            BackendModel::NDArray(Box::new(
+                ThermalModel::<NDArrayField>::new_ndarray_with_shape(s),
+            ))
+        } else {
+            BackendModel::Vector(Box::new(ThermalModel::<VectorField>::new(10)))
+        };
         Ok(BatchOracle {
-            base_model: ThermalModel::<VectorField>::new(10), // The "template" building
+            base_model,
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
@@ -227,7 +278,7 @@ mod tests {
     #[cfg(feature = "python-bindings")]
     #[test]
     fn test_batch_oracle_validation() {
-        let oracle = BatchOracle::new().unwrap();
+        let oracle = BatchOracle::new(None).unwrap();
         let population = vec![
             vec![1.5, 22.0],  // Valid
             vec![-1.0, 22.0], // Invalid U-value
@@ -243,6 +294,21 @@ mod tests {
         assert!(results[2].is_nan());
         assert!(results[3].is_nan());
         assert!(results[4].is_nan());
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_model_ndarray_backend() {
+        use crate::Model;
+        // Instantiate model with NDArray backend (10x10 grid)
+        let mut model = Model::new("config.json".to_string(), Some(vec![10, 10])).unwrap();
+
+        // Run simulation
+        let result = model.simulate(1, false).unwrap();
+
+        // Verify result is valid
+        assert!(result > 0.0);
+        assert!(result.is_finite());
     }
 
     #[test]
