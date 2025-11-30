@@ -45,10 +45,10 @@ pub trait ContinuousTensor<T> {
 - **Priority**: High. This refactoring is a prerequisite for complex physics in Phase 8.
 
 ### 4.5.3 Deliverables
-- [ ] CTA Module (`src/physics/cta.rs`) implemented and tested.
-- [ ] Core Thermal Solver refactored to use CTA.
-- [ ] Benchmarks proving <10% overhead.
-- [ ] API Documentation for CTA.
+- [x] CTA Module (`src/physics/cta.rs`) implemented and tested.
+- [x] Core Thermal Solver refactored to use CTA.
+- [x] Benchmarks proving <10% overhead.
+- [x] API Documentation for CTA.
 
 ---
 
