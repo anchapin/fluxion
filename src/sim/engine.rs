@@ -70,7 +70,9 @@ impl ThermalModel<VectorField> {
 impl ThermalModel<NDArrayField> {
     /// Create a new ThermalModel using NDArray backend.
     pub fn new_ndarray(num_zones: usize) -> Self {
-        Self::init(num_zones, |v, n| NDArrayField::from_shape_vec(vec![n], vec![v; n]))
+        Self::init(num_zones, |v, n| {
+            NDArrayField::from_shape_vec(vec![n], vec![v; n])
+        })
     }
 }
 
