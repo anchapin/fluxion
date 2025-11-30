@@ -60,6 +60,10 @@ def main():
     gen_parser.add_argument("--height", type=float, default=3.5)
     gen_parser.add_argument("--wwr-min", type=float, default=0.1)
     gen_parser.add_argument("--wwr-max", type=float, default=0.8)
+    gen_parser.add_argument("--u-value-min", type=float, default=0.5)
+    gen_parser.add_argument("--u-value-max", type=float, default=3.0)
+    gen_parser.add_argument("--setpoint-min", type=float, default=19.0)
+    gen_parser.add_argument("--setpoint-max", type=float, default=24.0)
 
     args = parser.parse_args()
 
@@ -101,9 +105,23 @@ def main():
             length_val = random.uniform(args.length_min, args.length_max)
             wwr = random.uniform(args.wwr_min, args.wwr_max)
             orient = random.uniform(0, 360)
+            u_value = random.uniform(args.u_value_min, args.u_value_max)
+            setpoint = random.uniform(args.setpoint_min, args.setpoint_max)
+
+            params = {
+                "width": w,
+                "length": length_val,
+                "height": args.height,
+                "wwr": wwr,
+                "orientation": orient,
+                "u_value": u_value,
+                "hvac_setpoint": setpoint,
+                "weather_file": os.path.basename(epw_path),
+            }
 
             logger.info(
-                f"  Params: {w=:.2f}, {length_val=:.2f}, {wwr=:.2f}, {orient=:.1f}"
+                f"  Params: {w=:.2f}, {length_val=:.2f}, {wwr=:.2f}, {orient=:.1f}, "
+                f"{u_value=:.2f}, {setpoint=:.1f}"
             )
 
             # Create Model
@@ -113,6 +131,8 @@ def main():
                 height=args.height,
                 wwr=wwr,
                 orientation_degrees=orient,
+                window_u_value=u_value,
+                hvac_setpoint=setpoint,
             )
 
             # Run Simulation
@@ -121,6 +141,7 @@ def main():
                 weather_file_path=epw_path,
                 output_dir=args.out,
                 run_name=run_id,
+                params=params,
             )
 
             if success:

@@ -37,7 +37,7 @@ def generate_synthetic_data(
     n_samples: int = 5000, n_zones: int = 10, seed: int = 42
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Generate synthetic training data using a simplified thermal physics model.
+    (Legacy) Generate synthetic training data using a simplified thermal physics model.
 
     Args:
         n_samples: Number of samples to generate
@@ -47,6 +47,9 @@ def generate_synthetic_data(
     Returns:
         Tuple of (X, y) numpy arrays
     """
+    logger.warning(
+        "Using legacy synthetic data generator. Consider using tools/data_gen artifacts."
+    )
     logger.info(f"Generating {n_samples} synthetic samples for {n_zones} zones...")
     np.random.seed(seed)
 
@@ -84,11 +87,94 @@ def generate_synthetic_data(
     return np.array(X_data, dtype=np.float32), np.array(y_data, dtype=np.float32)
 
 
+def load_data_from_synthetic_dir(directory: Path) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Load data from the directory structure produced by tools/data_gen.
+    Expects subdirectories with simulation_params.json and eplusout.csv.
+    """
+    X_list = []
+    y_list = []
+
+    sim_dirs = sorted([d for d in directory.iterdir() if d.is_dir()])
+    logger.info(f"Found {len(sim_dirs)} simulation directories in {directory}")
+
+    for sim_dir in tqdm(sim_dirs, desc="Loading Data"):
+        params_path = sim_dir / "simulation_params.json"
+        csv_path = sim_dir / "eplusout.csv"
+
+        if not params_path.exists() or not csv_path.exists():
+            continue
+
+        with open(params_path) as f:
+            params = json.load(f)
+
+        # Extract constant features
+        u_value = float(params.get("u_value", 2.5))
+        setpoint = float(params.get("hvac_setpoint", 21.0))
+        width = float(params.get("width", 10.0))
+        length = float(params.get("length", 10.0))
+        area = width * length
+
+        # Read time-series data
+        df = pd.read_csv(csv_path)
+
+        # Mapping columns (EnergyPlus names are long, need to be careful)
+        # Using simple string matching for robustness
+        try:
+            col_outdoor = next(c for c in df.columns if "Outdoor Air Drybulb" in c)
+            col_heating = next(c for c in df.columns if "Total Heating Energy" in c)
+            col_cooling = next(c for c in df.columns if "Total Cooling Energy" in c)
+        except StopIteration:
+            logger.warning(f"Skipping {sim_dir}: Could not find expected columns")
+            continue
+
+        outdoor_temps = df[col_outdoor].values
+        heating_energy = df[col_heating].values  # Joules
+        cooling_energy = df[col_cooling].values  # Joules
+
+        # Calculate Load (W/m2)
+        # Load (W) = Energy (J) / 3600s
+        # Net Load: Heating (positive) - Cooling (negative)
+        net_energy = heating_energy - cooling_energy
+        net_power_watts = net_energy / 3600.0
+        load_per_area = net_power_watts / area
+
+        # Create samples
+        # Features: [u_value, setpoint, outdoor_temp]
+        n_steps = len(df)
+
+        # Broadcast constants
+        u_vec = np.full(n_steps, u_value)
+        set_vec = np.full(n_steps, setpoint)
+
+        # Stack features
+        # Shape: (N, 3)
+        features = np.column_stack((u_vec, set_vec, outdoor_temps))
+
+        # Targets
+        # Shape: (N, 1)
+        targets = load_per_area.reshape(-1, 1)
+
+        X_list.append(features)
+        y_list.append(targets)
+
+    if not X_list:
+        raise ValueError("No valid data found in directory")
+
+    X = np.vstack(X_list)
+    y = np.vstack(y_list)
+
+    return X.astype(np.float32), y.astype(np.float32)
+
+
 def load_data(file_path: str) -> Tuple[np.ndarray, np.ndarray]:
-    """Load data from .npz or .csv file."""
+    """Load data from .npz, .csv file, or data_gen directory."""
     path = Path(file_path)
     if not path.exists():
         raise FileNotFoundError(f"{path} not found")
+
+    if path.is_dir():
+        return load_data_from_synthetic_dir(path)
 
     logger.info(f"Loading data from {path}...")
     if path.suffix == ".npz":
@@ -254,7 +340,9 @@ def main():
 
     # Data Args
     parser.add_argument(
-        "--input-file", type=str, help="Path to training data (.npz or .csv)"
+        "--input-file",
+        type=str,
+        help="Path to training data (.npz, .csv, or directory)",
     )
     parser.add_argument(
         "--num-samples",
