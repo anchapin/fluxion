@@ -283,8 +283,6 @@ impl<T: ContinuousTensor<f64> + AsRef<[f64]>> ThermalModel<T> {
         surrogates: &SurrogateManager,
         use_analytical_gains: bool,
     ) -> f64 {
-        let dt = 3600.0; // Timestep in seconds (1 hour)
-
         // 1. Calculate External Loads
         if use_ai {
             let pred = surrogates.predict_loads(self.temperatures.as_ref());
@@ -292,6 +290,19 @@ impl<T: ContinuousTensor<f64> + AsRef<[f64]>> ThermalModel<T> {
         } else {
             self.calc_analytical_loads(timestep, use_analytical_gains);
         }
+
+        self.step_physics(outdoor_temp)
+    }
+
+    /// Performs the physics update for a single timestep using current loads and state.
+    ///
+    /// # Arguments
+    /// * `outdoor_temp` - Outdoor temperature in °C.
+    ///
+    /// # Returns
+    /// HVAC energy consumption for the timestep in kWh.
+    pub fn step_physics(&mut self, outdoor_temp: f64) -> f64 {
+        let dt = 3600.0; // Timestep in seconds (1 hour)
 
         // Convert loads (W/m²) to Watts
         let loads_watts = self.loads.clone() * self.zone_area.clone();
@@ -340,7 +351,7 @@ impl<T: ContinuousTensor<f64> + AsRef<[f64]>> ThermalModel<T> {
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
-    fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
+    pub fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
         let total_gain = if use_analytical_gains {
             let hour_of_day = timestep % 24;
             let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
