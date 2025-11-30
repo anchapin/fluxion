@@ -49,6 +49,10 @@ where
 
     /// Creates a new tensor of the same shape and size, filled with a constant value.
     fn constant_like(&self, value: T) -> Self;
+
+    /// Creates a new tensor of the same shape and size, filled with the provided data.
+    /// The data vector must have the same length as the tensor.
+    fn from_data_like(&self, data: Vec<T>) -> Self;
 }
 
 /// A basic CPU-based implementation of ContinuousTensor using Vec<f64>.
@@ -194,6 +198,11 @@ impl ContinuousTensor<f64> for VectorField {
 
     fn constant_like(&self, value: f64) -> Self {
         VectorField::from_scalar(value, self.len())
+    }
+
+    fn from_data_like(&self, data: Vec<f64>) -> Self {
+        assert_eq!(data.len(), self.len(), "Data length mismatch");
+        VectorField::new(data)
     }
 }
 

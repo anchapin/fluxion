@@ -186,6 +186,11 @@ impl ContinuousTensor<f64> for NDArrayField {
     fn constant_like(&self, value: f64) -> Self {
         NDArrayField::from_shape_vec(self.shape(), vec![value; self.len()])
     }
+
+    fn from_data_like(&self, data: Vec<f64>) -> Self {
+        assert_eq!(data.len(), self.len(), "Data length mismatch");
+        NDArrayField::from_shape_vec(self.shape(), data)
+    }
 }
 
 impl From<crate::physics::cta::VectorField> for NDArrayField {

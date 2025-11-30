@@ -74,9 +74,17 @@ impl ThermalModel<NDArrayField> {
             NDArrayField::from_shape_vec(vec![n], vec![v; n])
         })
     }
+
+    /// Create a new ThermalModel using NDArray backend with a specific N-dimensional shape.
+    pub fn new_ndarray_with_shape(shape: Vec<usize>) -> Self {
+        let num_zones = shape.iter().product();
+        Self::init(num_zones, move |v, _n| {
+            NDArrayField::from_shape_vec(shape.clone(), vec![v; num_zones])
+        })
+    }
 }
 
-impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
+impl<T: ContinuousTensor<f64> + AsRef<[f64]>> ThermalModel<T> {
     /// Internal helper to initialize a ThermalModel using a tensor factory function.
     fn init(num_zones: usize, from_scalar: impl Fn(f64, usize) -> T) -> Self {
         // Initialize default physical parameters
@@ -280,7 +288,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // 1. Calculate External Loads
         if use_ai {
             let pred = surrogates.predict_loads(self.temperatures.as_ref());
-            self.loads = T::from(VectorField::new(pred));
+            self.loads = self.temperatures.from_data_like(pred);
         } else {
             self.calc_analytical_loads(timestep, use_analytical_gains);
         }
