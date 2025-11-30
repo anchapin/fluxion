@@ -194,6 +194,12 @@ impl From<crate::physics::cta::VectorField> for NDArrayField {
     }
 }
 
+impl AsRef<[f64]> for NDArrayField {
+    fn as_ref(&self) -> &[f64] {
+        self.as_slice()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
