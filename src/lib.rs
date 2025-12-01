@@ -2,8 +2,6 @@ pub mod ai;
 pub mod physics;
 pub mod sim;
 pub mod validation;
-
-
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "python-bindings")]
@@ -282,19 +280,17 @@ impl BatchOracle {
 
             if use_surrogates {
                 // Collect inputs for the entire population
-                let batch_inputs: Vec<&[f64]> = active_instances
-                    .iter()
-                    .map(|(_, m)| m.as_ref())
-                    .collect();
+                let batch_inputs: Vec<&[f64]> =
+                    active_instances.iter().map(|(_, m)| m.as_ref()).collect();
 
                 // Run batched inference once
                 let batch_loads = self.surrogates.predict_loads_batched(&batch_inputs);
 
                 // Update physics in parallel
                 active_instances
-                    .par_iter_mut()
-                    .zip(active_energies.par_iter_mut())
-                    .zip(batch_loads.par_iter())
+                    .iter_mut()
+                    .zip(active_energies.iter_mut())
+                    .zip(batch_loads.iter())
                     .for_each(|(((_, model), energy), loads)| {
                         model.set_loads(loads);
                         *energy += model.step_physics(outdoor_temp);
@@ -302,8 +298,8 @@ impl BatchOracle {
             } else {
                 // Analytical loads + Physics in parallel
                 active_instances
-                    .par_iter_mut()
-                    .zip(active_energies.par_iter_mut())
+                    .iter_mut()
+                    .zip(active_energies.iter_mut())
                     .for_each(|((_, model), energy)| {
                         model.calc_analytical_loads(t, true);
                         *energy += model.step_physics(outdoor_temp);
@@ -382,10 +378,7 @@ mod tests {
     #[test]
     fn test_batch_oracle_surrogates() {
         let oracle = BatchOracle::new(None).unwrap();
-        let population = vec![
-            vec![1.5, 22.0],
-            vec![2.0, 21.0],
-        ];
+        let population = vec![vec![1.5, 22.0], vec![2.0, 21.0]];
 
         // This exercises the batched loop path with mock surrogates
         let results = oracle.evaluate_population(population, true).unwrap();
