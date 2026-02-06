@@ -2,14 +2,8 @@ pub mod ai;
 pub mod physics;
 pub mod sim;
 pub mod validation;
-
 #[cfg(feature = "python-bindings")]
-use rayon::iter::IntoParallelRefIterator;
-#[cfg(feature = "python-bindings")]
-use rayon::prelude::ParallelIterator;
-
-#[cfg(feature = "python-bindings")]
-use crate::physics::cta::VectorField;
+use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "python-bindings")]
 use crate::physics::nd_array::NDArrayField;
 #[cfg(feature = "python-bindings")]
@@ -61,6 +55,44 @@ impl BackendModel {
         match self {
             BackendModel::Vector(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
             BackendModel::NDArray(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
+        }
+    }
+
+    fn set_loads(&mut self, loads: &[f64]) {
+        match self {
+            BackendModel::Vector(m) => m.loads = m.temperatures.new_with_data(loads.to_vec()),
+            BackendModel::NDArray(m) => m.loads = m.temperatures.new_with_data(loads.to_vec()),
+        }
+    }
+
+    fn step_physics(&mut self, outdoor_temp: f64) -> f64 {
+        match self {
+            BackendModel::Vector(m) => m.step_physics(outdoor_temp),
+            BackendModel::NDArray(m) => m.step_physics(outdoor_temp),
+        }
+    }
+
+    fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
+        match self {
+            BackendModel::Vector(m) => m.calc_analytical_loads(timestep, use_analytical_gains),
+            BackendModel::NDArray(m) => m.calc_analytical_loads(timestep, use_analytical_gains),
+        }
+    }
+
+    fn get_total_area(&self) -> f64 {
+        match self {
+            BackendModel::Vector(m) => m.zone_area.integrate(),
+            BackendModel::NDArray(m) => m.zone_area.integrate(),
+        }
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+impl AsRef<[f64]> for BackendModel {
+    fn as_ref(&self) -> &[f64] {
+        match self {
+            BackendModel::Vector(m) => m.temperatures.as_slice(),
+            BackendModel::NDArray(m) => m.temperatures.as_slice(),
         }
     }
 }
@@ -219,29 +251,75 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
+        use rayon::prelude::*;
+
         // 1. Cross the Python-Rust boundary ONCE with all data.
 
-        // 2. Use Rayon to parallelize the simulation of each candidate.
-        // This scales linearly with CPU cores.
-        let results: Vec<f64> = population
+        // 2. Initialize all models in parallel
+        let mut active_instances: Vec<(usize, BackendModel)> = population
             .par_iter()
-            .map(|params| {
+            .enumerate()
+            .filter_map(|(i, params)| {
                 if Self::validate_parameters(params).is_err() {
-                    return f64::NAN;
+                    return None;
                 }
-
-                // Light clone of the base model state
                 let mut instance = self.base_model.clone();
-
-                // Apply the specific genes (window ratio, setpoints, etc.)
                 instance.apply_parameters(params);
-
-                // Run the physics engine
-                instance.solve_timesteps(8760, &self.surrogates, use_surrogates)
+                Some((i, instance))
             })
             .collect();
 
-        Ok(results)
+        // 3. Prepare accumulators for energy
+        let mut active_energies = vec![0.0; active_instances.len()];
+
+        // 4. Time loop (0..8760) - "Outer Loop" Pattern for Batched Inference
+        for t in 0..8760 {
+            let hour_of_day = t % 24;
+            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+
+            if use_surrogates {
+                // Collect inputs for the entire population
+                let batch_inputs: Vec<&[f64]> =
+                    active_instances.iter().map(|(_, m)| m.as_ref()).collect();
+
+                // Run batched inference once
+                let batch_loads = self.surrogates.predict_loads_batched(&batch_inputs);
+
+                // Update physics in parallel
+                active_instances
+                    .iter_mut()
+                    .zip(active_energies.iter_mut())
+                    .zip(batch_loads.iter())
+                    .for_each(|(((_, model), energy), loads)| {
+                        model.set_loads(loads);
+                        *energy += model.step_physics(outdoor_temp);
+                    });
+            } else {
+                // Analytical loads + Physics in parallel
+                active_instances
+                    .iter_mut()
+                    .zip(active_energies.iter_mut())
+                    .for_each(|((_, model), energy)| {
+                        model.calc_analytical_loads(t, true);
+                        *energy += model.step_physics(outdoor_temp);
+                    });
+            }
+        }
+
+        // 5. Finalize results (Calculate EUI)
+        let mut final_results = vec![f64::NAN; population.len()];
+
+        for ((idx, model), energy_kwh) in active_instances.iter().zip(active_energies.iter()) {
+            let area = model.get_total_area();
+            if area > 0.0 {
+                final_results[*idx] = energy_kwh / area;
+            } else {
+                final_results[*idx] = 0.0;
+            }
+        }
+
+        Ok(final_results)
     }
 
     /// Register an ONNX surrogate model for the oracle. This replaces the internal
@@ -294,6 +372,22 @@ mod tests {
         assert!(results[2].is_nan());
         assert!(results[3].is_nan());
         assert!(results[4].is_nan());
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_batch_oracle_surrogates() {
+        let oracle = BatchOracle::new(None).unwrap();
+        let population = vec![vec![1.5, 22.0], vec![2.0, 21.0]];
+
+        // This exercises the batched loop path with mock surrogates
+        let results = oracle.evaluate_population(population, true).unwrap();
+
+        assert_eq!(results.len(), 2);
+        assert!(results[0].is_finite());
+        assert!(results[0] > 0.0);
+        assert!(results[1].is_finite());
+        assert!(results[1] > 0.0);
     }
 
     #[cfg(feature = "python-bindings")]

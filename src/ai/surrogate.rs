@@ -300,13 +300,16 @@ impl SurrogateManager {
     /// Predict thermal loads for a batch of inputs.
     ///
     /// # Arguments
-    /// * `batch_temps` - Slice of input vectors, where each vector represents zone temperatures.
+    /// * `batch_temps` - Slice of input vectors (or slice-like), where each element represents zone temperatures.
     ///
     /// # Returns
     /// * `Vec<Vec<f64>>` - A vector of result vectors, one for each input.
-    pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    pub fn predict_loads_batched<T: AsRef<[f64]>>(&self, batch_temps: &[T]) -> Vec<Vec<f64>> {
         if !self.model_loaded || batch_temps.is_empty() {
-            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+            return batch_temps
+                .iter()
+                .map(|t| vec![1.2; t.as_ref().len()])
+                .collect();
         }
 
         if let Some(ref pool) = self.session_pool {
@@ -314,26 +317,32 @@ impl SurrogateManager {
             use ort::value::TensorRef;
 
             let batch_size = batch_temps.len();
-            let input_size = batch_temps[0].len();
+            let input_size = batch_temps[0].as_ref().len();
 
             // Check consistency
             for t in batch_temps {
-                if t.len() != input_size {
+                if t.as_ref().len() != input_size {
                     eprintln!("Inconsistent input sizes in batch; falling back to mock");
-                    return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                    return batch_temps
+                        .iter()
+                        .map(|t| vec![1.2; t.as_ref().len()])
+                        .collect();
                 }
             }
 
             // Flatten input
             let flattened: Vec<f32> = batch_temps
                 .iter()
-                .flat_map(|v| v.iter().map(|&x| x as f32))
+                .flat_map(|v| v.as_ref().iter().map(|&x| x as f32))
                 .collect();
             let input_arr = match Array2::from_shape_vec((batch_size, input_size), flattened) {
                 Ok(arr) => arr,
                 Err(e) => {
                     eprintln!("Failed to reshape array: {}; using mock loads", e);
-                    return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                    return batch_temps
+                        .iter()
+                        .map(|t| vec![1.2; t.as_ref().len()])
+                        .collect();
                 }
             };
 
@@ -343,7 +352,10 @@ impl SurrogateManager {
                         Ok(t) => t,
                         Err(e) => {
                             eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            return batch_temps
+                                .iter()
+                                .map(|t| vec![1.2; t.as_ref().len()])
+                                .collect();
                         }
                     };
 
@@ -373,21 +385,33 @@ impl SurrogateManager {
                                     }
                                 }
                             }
-                            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
+                            batch_temps
+                                .iter()
+                                .map(|t| vec![1.2; t.as_ref().len()])
+                                .collect()
                         }
                         Err(e) => {
                             eprintln!("ONNX inference error: {}; using mock loads", e);
-                            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
+                            batch_temps
+                                .iter()
+                                .map(|t| vec![1.2; t.as_ref().len()])
+                                .collect()
                         }
                     }
                 }
                 Err(_) => {
                     eprintln!("Could not acquire ORT session; using mock loads");
-                    batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
+                    batch_temps
+                        .iter()
+                        .map(|t| vec![1.2; t.as_ref().len()])
+                        .collect()
                 }
             }
         } else {
-            batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
+            batch_temps
+                .iter()
+                .map(|t| vec![1.2; t.as_ref().len()])
+                .collect()
         }
     }
 }
