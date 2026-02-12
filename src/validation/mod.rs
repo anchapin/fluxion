@@ -1,4 +1,28 @@
 pub mod ashrae_140;
+pub mod ashrae_140_cases;
+
+// Re-export common types for easier access
+pub use ashrae_140::{
+    ASHRAE140Validator,
+    ASHRAE140Building,
+    ValidationReport,
+};
+
+pub use ashrae_140_cases::{
+    ASHRAE140Case,
+    CaseSpec,
+    CaseBuilder,
+    ConstructionType,
+    Orientation,
+    WindowArea,
+    ShadingDevice,
+    ShadingType,
+    InternalLoads,
+    HvacSchedule,
+    NightVentilation,
+    GeometrySpec,
+    ConstructionSpec,
+};
 
 #[cfg(test)]
 mod tests {
