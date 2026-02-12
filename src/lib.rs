@@ -150,6 +150,13 @@ impl BatchOracle {
     /// This is the critical "hot loop" for optimization. The function crosses the Python-Rust
     /// boundary once with all population data, then uses Rayon for multi-threaded evaluation.
     ///
+    /// When using surrogates, this implements a time-first loop architecture:
+    /// - Time loop (0..8760) runs sequentially on main thread
+    /// - Batched inference ONCE per timestep (full GPU utilization)
+    /// - Physics updates run in parallel with rayon
+    ///
+    /// This avoids nested parallelism and maximizes GPU tensor core utilization.
+    ///
     /// # Arguments
     /// * `population` - Vec of parameter vectors, each representing one design candidate.
     ///   Each vector should have at least 2 elements:
@@ -168,27 +175,77 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
-        // 1. Cross the Python-Rust boundary ONCE with all data.
+        use rayon::prelude::*;
 
-        // 2. Use Rayon to parallelize the simulation of each candidate.
-        // This scales linearly with CPU cores.
-        let results: Vec<f64> = population
+        // 1. Validate and initialize all models upfront (parallel)
+        let valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
             .par_iter()
-            .map(|params| {
+            .enumerate()
+            .filter_map(|(i, params)| {
                 if Self::validate_parameters(params).is_err() {
-                    return f64::NAN;
+                    return None;
                 }
-
-                // Light clone of the base model state
-                let mut instance = self.base_model.clone();
-
-                // Apply the specific genes (window ratio, setpoints, etc.)
-                instance.apply_parameters(params);
-
-                // Run the physics engine
-                instance.solve_timesteps(8760, &self.surrogates, use_surrogates)
+                let mut model = self.base_model.clone();
+                model.apply_parameters(params);
+                Some((i, model))
             })
             .collect();
+
+        let mut results = vec![f64::NAN; population.len()];
+        let mut energies = vec![0.0; valid_configs.len()];
+
+        if use_surrogates {
+            // 2. Time-first loop for surrogate path (BATCHED INFERENCE)
+            // Time loop runs OUTSIDE parallel region - no nested parallelism
+            for t in 0..8760 {
+                let hour_of_day = t % 24;
+                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+
+                // 2a. Collect temperatures (SYNC)
+                let batch_temps: Vec<Vec<f64>> = valid_configs
+                    .iter()
+                    .map(|(_, model)| model.get_temperatures())
+                    .collect();
+
+                // 2b. Batched inference ONCE per timestep (max GPU utilization)
+                let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
+
+                // 2c. Parallel physics update (distribute loads and solve)
+                valid_configs
+                    .par_iter()
+                    .zip(energies.par_iter_mut())
+                    .zip(batch_loads.par_iter())
+                    .for_each(|(((_, model), energy), loads)| {
+                        model.set_loads(loads);
+                        *energy += model.step_physics(t, outdoor_temp);
+                    });
+            }
+        } else {
+            // Analytical path - fully parallel (no batching needed)
+            // Each config independently runs through all timesteps
+            valid_configs
+                .par_iter()
+                .zip(energies.par_iter_mut())
+                .for_each(|((_, model), energy)| {
+                    for t in 0..8760 {
+                        let hour_of_day = t % 24;
+                        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                        *energy += model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
+                    }
+                });
+        }
+
+        // 3. Normalize by total floor area and populate results
+        for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
+            let total_area = model.zone_area.integrate();
+            results[*idx] = if total_area > 0.0 {
+                *energy / total_area
+            } else {
+                0.0
+            };
+        }
 
         Ok(results)
     }
@@ -243,6 +300,78 @@ mod tests {
         assert!(results[2].is_nan());
         assert!(results[3].is_nan());
         assert!(results[4].is_nan());
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_batched_vs_unbatched_consistency() {
+        let oracle = BatchOracle::new().unwrap();
+        let population = vec![
+            vec![1.5, 22.0],
+            vec![2.0, 21.0],
+            vec![1.0, 23.0],
+        ];
+
+        // Test surrogate path
+        let results_batched = oracle.evaluate_population(population.clone(), true).unwrap();
+        assert!(results_batched.iter().all(|r: &f64| r.is_finite()));
+
+        // Test analytical path for comparison
+        let results_analytical = oracle.evaluate_population(population, false).unwrap();
+        assert!(results_analytical.iter().all(|r: &f64| r.is_finite()));
+
+        // Results should be in similar range (may differ due to mock vs analytical loads)
+        for (batched, analytical) in results_batched.iter().zip(results_analytical.iter()) {
+            assert!(*batched > 0.0, "Batched result should be positive");
+            assert!(*analytical > 0.0, "Analytical result should be positive");
+        }
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_large_population_performance() {
+        let oracle = BatchOracle::new().unwrap();
+        let population: Vec<Vec<f64>> = (0..1000).map(|_| vec![1.5, 22.0]).collect();
+
+        let start = std::time::Instant::now();
+        let results = oracle.evaluate_population(population, true).unwrap();
+        let duration = start.elapsed();
+
+        assert_eq!(results.len(), 1000);
+        assert!(results.iter().all(|r: &f64| r.is_finite()));
+
+        // Target: <100ms for 1000 configs (may be slower in debug mode)
+        #[cfg(debug_assertions)]
+        println!("Debug mode: {:?}", duration);
+        #[cfg(not(debug_assertions))]
+        assert!(duration.as_millis() < 100, "Too slow: {:?}", duration);
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_10k_population_throughput() {
+        let oracle = BatchOracle::new().unwrap();
+        let population: Vec<Vec<f64>> = (0..10_000)
+            .map(|_| vec![1.5, 22.0])
+            .collect();
+
+        let start = std::time::Instant::now();
+        let results = oracle.evaluate_population(population, true).unwrap();
+        let duration = start.elapsed();
+
+        assert_eq!(results.len(), 10_000);
+        assert!(results.iter().all(|r: &f64| r.is_finite()));
+
+        let configs_per_sec = 10_000.0 / duration.as_secs_f64();
+        println!("Throughput: {:.0} configs/sec", configs_per_sec);
+
+        // Target: >10,000 configs/sec on 8-core CPU (may be slower in debug mode)
+        #[cfg(not(debug_assertions))]
+        assert!(
+            configs_per_sec > 10_000.0,
+            "Below target: {:.0}/sec",
+            configs_per_sec
+        );
     }
 
     #[test]

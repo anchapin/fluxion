@@ -248,27 +248,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         }
     }
 
-    /// Solves a single timestep of the thermal simulation.
+    /// Extract current temperatures for batched inference.
+    ///
+    /// # Returns
+    /// Vector of current zone temperatures in degrees Celsius.
+    pub fn get_temperatures(&self) -> Vec<f64> {
+        self.temperatures.as_ref().to_vec()
+    }
+
+    /// Apply pre-computed loads from batched inference.
+    ///
+    /// # Arguments
+    /// * `loads` - Thermal loads (W/m²) for each zone
+    pub fn set_loads(&mut self, loads: &[f64]) {
+        self.loads = T::from(VectorField::new(loads.to_vec()));
+    }
+
+    /// Solve physics for one timestep (assumes loads already set).
+    ///
+    /// This method performs only the physics calculation portion of solve_single_step,
+    /// assuming that loads have already been set via set_loads() or calculated externally.
+    /// This enables batched inference: collect all temperatures, run one batched prediction,
+    /// distribute loads, then call this method in parallel.
+    ///
+    /// # Arguments
+    /// * `timestep` - Current timestep index
+    /// * `outdoor_temp` - Outdoor air temperature (°C)
     ///
     /// # Returns
     /// HVAC energy consumption for the timestep in kWh.
-    pub fn solve_single_step(
-        &mut self,
-        timestep: usize,
-        outdoor_temp: f64,
-        use_ai: bool,
-        surrogates: &SurrogateManager,
-        use_analytical_gains: bool,
-    ) -> f64 {
+    pub fn step_physics(&mut self, _timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
-
-        // 1. Calculate External Loads
-        if use_ai {
-            let pred = surrogates.predict_loads(self.temperatures.as_ref());
-            self.loads = T::from(VectorField::new(pred));
-        } else {
-            self.calc_analytical_loads(timestep, use_analytical_gains);
-        }
 
         // Convert loads (W/m²) to Watts
         let loads_watts = self.loads.clone() * self.zone_area.clone();
@@ -314,6 +324,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.temperatures = t_i_act;
 
         hvac_energy_for_step / 3.6e6 // Return kWh
+    }
+
+    /// Solves a single timestep of the thermal simulation.
+    ///
+    /// # Returns
+    /// HVAC energy consumption for the timestep in kWh.
+    pub fn solve_single_step(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        use_ai: bool,
+        surrogates: &SurrogateManager,
+        use_analytical_gains: bool,
+    ) -> f64 {
+        // 1. Calculate External Loads
+        if use_ai {
+            let pred = surrogates.predict_loads(self.temperatures.as_ref());
+            self.loads = T::from(VectorField::new(pred));
+        } else {
+            self.calc_analytical_loads(timestep, use_analytical_gains);
+        }
+
+        // 2. Call step_physics
+        self.step_physics(timestep, outdoor_temp)
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
@@ -398,6 +432,46 @@ mod tests {
 
         // Should produce non-zero energy
         assert!(energy_surrogate > 0.0, "Energy should be non-zero");
+    }
+
+    #[test]
+    fn test_step_physics_with_precomputed_loads() {
+        let mut model = ThermalModel::<VectorField>::new(10);
+        model.apply_parameters(&[1.5, 21.0]);
+        let test_loads = vec![5.0; 10];
+        model.set_loads(&test_loads);
+
+        let energy = model.step_physics(0, 20.0);
+        assert!(energy > 0.0);
+        assert_eq!(model.loads.as_ref(), test_loads.as_slice());
+    }
+
+    #[test]
+    fn test_get_temperatures() {
+        let model = ThermalModel::<VectorField>::new(10);
+        let temps = model.get_temperatures();
+        assert_eq!(temps.len(), 10);
+        assert!(temps.iter().all(|&t| (t - 20.0).abs() < 1e-9));
+    }
+
+    #[test]
+    fn test_step_physics_consistency_with_solve_single_step() {
+        let mut model1 = ThermalModel::<VectorField>::new(10);
+        let mut model2 = ThermalModel::<VectorField>::new(10);
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+        model1.apply_parameters(&[1.5, 21.0]);
+        model2.apply_parameters(&[1.5, 21.0]);
+
+        // Using solve_single_step with use_ai=false (analytical loads)
+        let energy1 = model1.solve_single_step(0, 20.0, false, &surrogates, true);
+
+        // Using set_loads + step_physics manually
+        model2.calc_analytical_loads(0, true);
+        let energy2 = model2.step_physics(0, 20.0);
+
+        // Results should be identical
+        assert!((energy1 - energy2).abs() < 1e-9, "Energy mismatch: {} vs {}", energy1, energy2);
     }
 
     #[test]

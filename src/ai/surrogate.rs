@@ -248,8 +248,10 @@ impl SurrogateManager {
             // Try to acquire a session from the pool
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    // Create a tensor reference from the ndarray
-                    let tensor_ref = match TensorRef::from_array_view(&input_arr) {
+                    // Create a tensor reference using (shape, data) tuple format
+                    let shape = input_arr.shape();
+                    let data: &[f32] = input_arr.as_slice().unwrap();
+                    let tensor_ref = match TensorRef::from_array_view((shape, data)) {
                         Ok(t) => t,
                         Err(e) => {
                             eprintln!("Failed to create tensor ref: {}; using mock loads", e);
@@ -339,7 +341,10 @@ impl SurrogateManager {
 
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    let tensor_ref = match TensorRef::from_array_view(&input_arr) {
+                    // Create a tensor reference using (shape, data) tuple format
+                    let shape = input_arr.shape();
+                    let data: &[f32] = input_arr.as_slice().unwrap();
+                    let tensor_ref = match TensorRef::from_array_view((shape, data)) {
                         Ok(t) => t,
                         Err(e) => {
                             eprintln!("Failed to create tensor ref: {}; using mock loads", e);
