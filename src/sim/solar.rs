@@ -126,10 +126,7 @@ pub fn calculate_solar_position(
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
 
     // Calculate day of year
-    let mut day_of_year: i32 = 0;
-    for m in 0..(month - 1) as usize {
-        day_of_year += days_in_month[m];
-    }
+    let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
     day_of_year += day as i32;
     if is_leap_year && month > 2 {
         day_of_year += 1;
@@ -465,6 +462,7 @@ pub fn calculate_window_solar_gain(
 }
 
 /// Calculate hourly solar radiation for a building facade.
+#[allow(clippy::too_many_arguments)]
 ///
 /// This is a convenience function that combines solar position calculation
 /// with surface irradiance and window solar gain calculations.
