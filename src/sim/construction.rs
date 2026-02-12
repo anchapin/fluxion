@@ -120,7 +120,12 @@ impl ConstructionLayer {
     ///
     /// let layer = ConstructionLayer::new(0.04, 12.0, 840.0, 0.066);
     /// ```
-    pub fn new(conductivity: f64, density: f64, specific_heat: f64, thickness: f64) -> Self {
+    pub fn new(
+        conductivity: f64,
+        density: f64,
+        specific_heat: f64,
+        thickness: f64,
+    ) -> Self {
         assert!(conductivity > 0.0, "Conductivity must be positive");
         assert!(density > 0.0, "Density must be positive");
         assert!(specific_heat > 0.0, "Specific heat must be positive");
@@ -164,14 +169,8 @@ impl ConstructionLayer {
         assert!(density > 0.0, "Density must be positive");
         assert!(specific_heat > 0.0, "Specific heat must be positive");
         assert!(thickness > 0.0, "Thickness must be positive");
-        assert!(
-            (0.0..=1.0).contains(&emissivity),
-            "Emissivity must be in [0, 1]"
-        );
-        assert!(
-            (0.0..=1.0).contains(&absorptance),
-            "Absorptance must be in [0, 1]"
-        );
+        assert!((0.0..=1.0).contains(&emissivity), "Emissivity must be in [0, 1]");
+        assert!((0.0..=1.0).contains(&absorptance), "Absorptance must be in [0, 1]");
 
         Self {
             conductivity,
@@ -249,10 +248,7 @@ impl Construction {
     /// let wall = Construction::new(layers);
     /// ```
     pub fn new(layers: Vec<ConstructionLayer>) -> Self {
-        assert!(
-            !layers.is_empty(),
-            "Construction must have at least one layer"
-        );
+        assert!(!layers.is_empty(), "Construction must have at least one layer");
         Self { layers }
     }
 
@@ -544,8 +540,9 @@ mod tests {
 
     #[test]
     fn test_construction_layer_with_custom_surface_properties() {
-        let layer =
-            ConstructionLayer::with_surface_properties(0.04, 12.0, 840.0, 0.066, 0.85, 0.65);
+        let layer = ConstructionLayer::with_surface_properties(
+            0.04, 12.0, 840.0, 0.066, 0.85, 0.65,
+        );
 
         assert_eq!(layer.emissivity, 0.85);
         assert_eq!(layer.absorptance, 0.65);
@@ -623,7 +620,8 @@ mod tests {
         // R_total = 0.120627 + 0.075 + 1.65 + 0.064286 + 0.04 = 1.949913
         let r_total = construction.r_value_total(None);
 
-        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 25.0;
+        let expected_r =
+            1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 25.0;
         assert!((r_total - expected_r).abs() < EPSILON);
 
         // Check that U = 1/R
@@ -789,7 +787,9 @@ mod tests {
         // Fiberglass: 12 × 0.066 × 840 = 665.28
         // Siding: 500 × 0.009 × 1300 = 5850
         // Total: 9576 + 665.28 + 5850 = 16091.28 J/m²K
-        let expected_c = 950.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected_c = 950.0 * 0.012 * 840.0
+            + 12.0 * 0.066 * 840.0
+            + 500.0 * 0.009 * 1300.0;
         assert!((c_per_area - expected_c).abs() < EPSILON);
     }
 
