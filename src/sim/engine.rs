@@ -373,12 +373,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// distribute loads, then call this method in parallel.
     ///
     /// # Arguments
-    /// * `timestep` - Current timestep index (used for ground temperature)
+    /// * `timestep` - Current timestep index
     /// * `outdoor_temp` - Outdoor air temperature (°C)
     ///
     /// # Returns
     /// HVAC energy consumption for the timestep in kWh.
-    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+    pub fn step_physics(&mut self, _timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
         // Convert loads (W/m²) to Watts
@@ -442,16 +442,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
     /// Solves a single timestep of the thermal simulation.
     ///
-    /// # Arguments
-    ///
-    /// * `timestep` - Current timestep index (used for ground temperature)
-    /// * `outdoor_temp` - Outdoor air temperature (°C)
-    /// * `use_ai` - Whether to use neural surrogates for load prediction
-    /// * `surrogates` - SurrogateManager for load predictions
-    /// * `use_analytical_gains` - Whether to calculate analytical internal gains
-    ///
     /// # Returns
-    ///
     /// HVAC energy consumption for the timestep in kWh.
     pub fn solve_single_step(
         &mut self,
@@ -469,7 +460,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             self.calc_analytical_loads(timestep, use_analytical_gains);
         }
 
-        // 2. Call step_physics (pass timestep for ground temperature)
+        // 2. Call step_physics
         self.step_physics(timestep, outdoor_temp)
     }
 
@@ -667,12 +658,7 @@ mod tests {
         let energy2 = model2.step_physics(0, 20.0);
 
         // Results should be identical
-        assert!(
-            (energy1 - energy2).abs() < 1e-9,
-            "Energy mismatch: {} vs {}",
-            energy1,
-            energy2
-        );
+        assert!((energy1 - energy2).abs() < 1e-9, "Energy mismatch: {} vs {}", energy1, energy2);
     }
 
     #[test]
