@@ -2,6 +2,7 @@ pub mod ai;
 pub mod physics;
 pub mod sim;
 pub mod validation;
+pub mod weather;
 
 #[cfg(feature = "python-bindings")]
 use rayon::iter::IntoParallelRefIterator;
