@@ -2,6 +2,19 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::components::WallSurface;
 
+/// HVAC operation mode for dual setpoint control.
+///
+/// The HVAC system operates in three modes based on zone temperature:
+/// - `Heating`: Zone temperature is below heating setpoint
+/// - `Cooling`: Zone temperature is above cooling setpoint
+/// - `Off`: Zone temperature is within the deadband (between heating and cooling setpoints)
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HVACMode {
+    Heating,
+    Cooling,
+    Off,
+}
+
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
 ///
 /// This is the core physics engine. It models heat transfer through building zones using
@@ -14,7 +27,8 @@ use crate::sim::components::WallSurface;
 /// * `loads` - Current thermal loads (W/m²) from environment and internal sources
 /// * `surfaces` - List of wall surfaces for each zone (Vec of Vec of WallSurface)
 /// * `window_u_value` - Thermal transmittance of windows (W/m²K) - optimization variable
-/// * `hvac_setpoint` - HVAC system setpoint temperature (°C) - optimization variable
+/// * `heating_setpoint` - HVAC heating setpoint temperature (°C) - heat when below this
+/// * `cooling_setpoint` - HVAC cooling setpoint temperature (°C) - cool when above this
 #[derive(Clone)]
 pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub num_zones: usize,
@@ -23,7 +37,8 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub surfaces: Vec<Vec<WallSurface>>,
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
-    pub hvac_setpoint: f64,
+    pub heating_setpoint: f64,
+    pub cooling_setpoint: f64,
 
     // Physical Constants (Per Zone)
     pub zone_area: T,         // Floor Area (m²)
@@ -57,7 +72,8 @@ impl ThermalModel<VectorField> {
     /// # Defaults
     /// - All zones initialized to 20°C
     /// - Window U-value: 2.5 W/m²K (typical for double-glazed windows)
-    /// - HVAC setpoint: 21°C
+    /// - Heating setpoint: 20°C (per ASHRAE 140 specification)
+    /// - Cooling setpoint: 27°C (per ASHRAE 140 specification)
     /// - Zone Area: 20 m²
     /// - Ceiling Height: 3.0 m
     /// - Window Ratio: 0.15
@@ -94,7 +110,8 @@ impl ThermalModel<VectorField> {
             loads: VectorField::from_scalar(0.0, num_zones),
             surfaces,
             window_u_value: 2.5, // Default U-value
-            hvac_setpoint: 21.0, // Default setpoint
+            heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
+            cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
 
             // Physical Constants Defaults
             zone_area: VectorField::from_scalar(zone_area, num_zones),
@@ -169,7 +186,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Arguments
     /// * `params` - Parameter vector from optimizer:
     ///   - `params[0]`: Window U-value (W/m²K, range: 0.5-3.0)
-    ///   - `params[1]`: HVAC setpoint (°C, range: 19-24)
+    ///   - `params[1]`: Heating setpoint (°C, range: 15-25)
+    ///   - `params[2]`: Cooling setpoint (°C, range: 22-32)
+    ///
+    /// # Notes
+    /// - If heating_setpoint >= cooling_setpoint, the values will be swapped to maintain valid deadband.
     pub fn apply_parameters(&mut self, params: &[f64]) {
         if !params.is_empty() {
             self.window_u_value = params[0];
@@ -181,17 +202,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             }
         }
         if params.len() >= 2 {
-            self.hvac_setpoint = params[1];
+            self.heating_setpoint = params[1];
+        }
+        if params.len() >= 3 {
+            self.cooling_setpoint = params[2];
+
+            // Ensure heating < cooling for valid deadband
+            if self.heating_setpoint >= self.cooling_setpoint {
+                std::mem::swap(&mut self.heating_setpoint, &mut self.cooling_setpoint);
+            }
         }
 
         // Recalculate derived conductances (h_tr_w, etc.) using new U-values and fixed geometry
         self.update_derived_parameters();
     }
 
-    /// Calculates HVAC power demand based on free-floating temperature and setpoint.
+    /// Calculates HVAC power demand based on free-floating temperature and dual setpoints.
     ///
     /// This function implements the core logic for HVAC power calculation using CTA,
     /// making it reusable and simplifying the main simulation loop.
+    ///
+    /// # Deadband Control
+    /// - If T_air < heating_setpoint: Enable heating (positive power)
+    /// - If T_air > cooling_setpoint: Enable cooling (negative power)
+    /// - Otherwise: HVAC off (deadband zone, zero power)
     ///
     /// # Arguments
     /// * `t_i_free` - The free-floating indoor temperature tensor (i.e., without HVAC).
@@ -200,16 +234,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, t_i_free: &T, sensitivity: &T) -> T {
-        let t_set = self.hvac_setpoint;
-        let t_err = t_i_free.map(|t| t - t_set); // Error from setpoint
+        t_i_free.zip_with(sensitivity, |t, sens| {
+            // Determine HVAC mode based on temperature and setpoints
+            let mode = if t < self.heating_setpoint {
+                HVACMode::Heating
+            } else if t > self.cooling_setpoint {
+                HVACMode::Cooling
+            } else {
+                HVACMode::Off
+            };
 
-        // Required power to correct the error.
-        let q_req = t_err.zip_with(sensitivity, |err, sens| -err / sens);
-
-        // Apply heating/cooling capacities
-        q_req
-            .zip_with(&self.hvac_heating_capacity, |q, cap| q.min(cap))
-            .zip_with(&self.hvac_cooling_capacity, |q, cap| q.max(-cap))
+            match mode {
+                HVACMode::Heating => {
+                    // Calculate heating demand
+                    let t_err = self.heating_setpoint - t;
+                    let q_req = t_err / sens;
+                    q_req.min(self.hvac_heating_capacity[0]) // Apply heating capacity limit
+                }
+                HVACMode::Cooling => {
+                    // Calculate cooling demand
+                    let t_err = t - self.cooling_setpoint;
+                    let q_req = -t_err / sens; // Negative for cooling
+                    q_req.max(-self.hvac_cooling_capacity[0]) // Apply cooling capacity limit
+                }
+                HVACMode::Off => {
+                    // Deadband zone - no HVAC
+                    0.0
+                }
+            }
+        })
     }
 
     /// Core physics simulation loop for annual building energy performance.
@@ -363,11 +416,12 @@ mod tests {
     #[test]
     fn test_apply_parameters_updates_model() {
         let mut model = ThermalModel::<VectorField>::new(10);
-        let params = vec![1.5, 22.0];
+        let params = vec![1.5, 20.0, 27.0];
 
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.hvac_setpoint, 22.0);
+        assert_eq!(model.heating_setpoint, 20.0);
+        assert_eq!(model.cooling_setpoint, 27.0);
 
         // Check surface updates
         assert_eq!(model.surfaces[0][0].u_value, 1.5);
@@ -385,7 +439,20 @@ mod tests {
 
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.hvac_setpoint, 21.0); // Should remain default
+        assert_eq!(model.heating_setpoint, 20.0); // Should remain default
+        assert_eq!(model.cooling_setpoint, 27.0); // Should remain default
+    }
+
+    #[test]
+    fn test_apply_parameters_swap_setpoints() {
+        let mut model = ThermalModel::<VectorField>::new(10);
+        let params = vec![1.5, 27.0, 20.0]; // Invalid: heating > cooling
+
+        model.apply_parameters(&params);
+        // Should swap to maintain valid deadband
+        assert_eq!(model.window_u_value, 1.5);
+        assert_eq!(model.heating_setpoint, 20.0); // Swapped
+        assert_eq!(model.cooling_setpoint, 27.0); // Swapped
     }
 
     #[test]
@@ -514,25 +581,28 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
 
         // Test minimum boundary
-        model.apply_parameters(&[0.5, 19.0]);
+        model.apply_parameters(&[0.5, 15.0, 22.0]);
         assert_eq!(model.window_u_value, 0.5);
-        assert_eq!(model.hvac_setpoint, 19.0);
+        assert_eq!(model.heating_setpoint, 15.0);
+        assert_eq!(model.cooling_setpoint, 22.0);
 
         // Test maximum boundary
-        model.apply_parameters(&[3.0, 24.0]);
+        model.apply_parameters(&[3.0, 25.0, 32.0]);
         assert_eq!(model.window_u_value, 3.0);
-        assert_eq!(model.hvac_setpoint, 24.0);
+        assert_eq!(model.heating_setpoint, 25.0);
+        assert_eq!(model.cooling_setpoint, 32.0);
     }
 
     #[test]
     fn test_apply_parameters_extra_values() {
         let mut model = ThermalModel::<VectorField>::new(10);
-        let params = vec![1.5, 22.0, 1000.0, 999.0];
+        let params = vec![1.5, 20.0, 27.0, 1000.0, 999.0];
 
-        // Should only use first two elements
+        // Should only use first three elements
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.hvac_setpoint, 22.0);
+        assert_eq!(model.heating_setpoint, 20.0);
+        assert_eq!(model.cooling_setpoint, 27.0);
     }
 
     #[test]
@@ -553,7 +623,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&[1.5, 21.0]);
+        model.apply_parameters(&[1.5, 20.0, 27.0]);
         let energy = model.solve_timesteps(0, &surrogates, false);
 
         // Zero steps should result in zero energy
@@ -565,7 +635,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&[1.5, 21.0]);
+        model.apply_parameters(&[1.5, 20.0, 27.0]);
 
         // Short simulation
         let energy_short = model.clone().solve_timesteps(168, &surrogates, false);
@@ -597,8 +667,8 @@ mod tests {
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Two different parameter sets
-        model1.apply_parameters(&[0.5, 19.0]); // Better insulation, lower setpoint
-        model2.apply_parameters(&[3.0, 24.0]); // Worse insulation, higher setpoint
+        model1.apply_parameters(&[0.5, 15.0, 22.0]); // Better insulation, lower setpoints
+        model2.apply_parameters(&[3.0, 25.0, 32.0]); // Worse insulation, higher setpoints
 
         let energy1 = model1.solve_timesteps(8760, &surrogates, false);
         let energy2 = model2.solve_timesteps(8760, &surrogates, false);
@@ -610,7 +680,9 @@ mod tests {
     #[test]
     fn test_thermal_lag() {
         let mut model = ThermalModel::<VectorField>::new(1);
-        model.hvac_setpoint = 999.0; // effectively disable HVAC
+        // Disable HVAC by setting cooling very high and heating very low
+        model.heating_setpoint = -100.0;
+        model.cooling_setpoint = 1000.0;
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         let mut outdoor_temps = Vec::new();
@@ -675,7 +747,8 @@ mod tests {
             let t_m_steady_state_heating =
                 (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating) / (h_tr_em + h_ms_is);
 
-            model.hvac_setpoint = setpoint_heating;
+            model.heating_setpoint = setpoint_heating;
+            model.cooling_setpoint = 100.0; // Disable cooling
             model.temperatures = VectorField::from_scalar(setpoint_heating, 1);
             model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_heating, 1);
 
@@ -702,7 +775,8 @@ mod tests {
             let t_m_steady_state_cooling =
                 (h_tr_em * outdoor_temp_cooling + h_ms_is * setpoint_cooling) / (h_tr_em + h_ms_is);
 
-            model.hvac_setpoint = setpoint_cooling;
+            model.heating_setpoint = -100.0; // Disable heating
+            model.cooling_setpoint = setpoint_cooling;
             model.temperatures = VectorField::from_scalar(setpoint_cooling, 1);
             model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_cooling, 1);
 
@@ -728,16 +802,58 @@ mod tests {
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             let outdoor_temp = 20.0;
-            let setpoint = 20.0;
-            model.hvac_setpoint = setpoint;
-            model.temperatures = VectorField::from_scalar(setpoint, 1);
-            model.mass_temperatures = VectorField::from_scalar(setpoint, 1);
+            model.heating_setpoint = 18.0; // Below outdoor temp - cooling needed
+            model.cooling_setpoint = 22.0; // Above outdoor temp - heating needed
+            model.temperatures = VectorField::from_scalar(20.0, 1);
+            model.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
+            // With temp in deadband (18 < 20 < 22), HVAC should be off
             let energy_kwh = model.solve_single_step(0, outdoor_temp, false, &surrogates, false);
 
             assert!(
                 energy_kwh.abs() < 1e-9,
-                "HVAC load should be zero when outdoor and setpoint temperatures are equal."
+                "HVAC load should be zero when temperature is in deadband."
+            );
+        }
+
+        #[test]
+        fn deadband_heating_cooling() {
+            let mut model = ThermalModel::<VectorField>::new(1);
+            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+            model.heating_setpoint = 20.0;
+            model.cooling_setpoint = 27.0;
+            model.temperatures = VectorField::from_scalar(20.0, 1);
+            model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+            model.loads = VectorField::from_scalar(0.0, 1);
+
+            // Test cold outdoor temp - should heat
+            let outdoor_temp_cold = 10.0;
+            let energy_heating = model.solve_single_step(0, outdoor_temp_cold, false, &surrogates, false);
+
+            // Test hot outdoor temp - should cool
+            model.temperatures = VectorField::from_scalar(27.0, 1);
+            model.mass_temperatures = VectorField::from_scalar(27.0, 1);
+            let outdoor_temp_hot = 35.0;
+            let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, false, &surrogates, false);
+
+            // Test comfortable outdoor temp - should be in deadband
+            model.temperatures = VectorField::from_scalar(23.5, 1);
+            model.mass_temperatures = VectorField::from_scalar(23.5, 1);
+            let outdoor_temp_comfortable = 23.5;
+            let energy_deadband = model.solve_single_step(0, outdoor_temp_comfortable, false, &surrogates, false);
+
+            assert!(
+                energy_heating > 0.0,
+                "Should use heating when outdoor temp is below setpoint."
+            );
+            assert!(
+                energy_cooling > 0.0,
+                "Should use cooling when outdoor temp is above setpoint."
+            );
+            assert!(
+                energy_deadband.abs() < 1e-9,
+                "HVAC should be off when temperature is in deadband."
             );
         }
     }
