@@ -11,12 +11,7 @@ pub use validation::{
 };
 
 #[cfg(feature = "python-bindings")]
-use rayon::iter::IntoParallelRefIterator;
-#[cfg(feature = "python-bindings")]
-use rayon::prelude::ParallelIterator;
-
-#[cfg(feature = "python-bindings")]
-use crate::physics::cta::VectorField;
+use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "python-bindings")]
 use ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]

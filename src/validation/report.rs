@@ -1001,9 +1001,7 @@ impl ValidationSuite {
             let mut case_data: HashMap<String, BenchmarkData> = HashMap::new();
 
             for result in &self.results {
-                let benchmark = case_data
-                    .entry(result.case_id.clone())
-                    .or_default();
+                let benchmark = case_data.entry(result.case_id.clone()).or_default();
 
                 // Populate based on metric type
                 match result.metric {

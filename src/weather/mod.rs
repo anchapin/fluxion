@@ -377,10 +377,10 @@ mod tests {
         assert_eq!(weather.month(), 1); // January
 
         let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 744);
-        assert_eq!(weather.month(), 2); // February (approx)
+        assert_eq!(weather.month(), 2); // February (approx, day 31 / 30 = 1, + 1 = 2)
 
-        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7344); // Hour 306 * 24
-        assert_eq!(weather.month(), 11); // November (approx)
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7344); // Day 306
+        assert_eq!(weather.month(), 11); // November (306 / 30 = 10, + 1 = 11)
     }
 
     #[test]
