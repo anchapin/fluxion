@@ -8,11 +8,9 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::VectorField;
 use crate::sim::construction::Assemblies;
 use crate::sim::engine::ThermalModel;
-use crate::sim::solar::{
-    calculate_hourly_solar, SurfaceOrientation, WindowProperties,
-};
-use crate::weather::WeatherSource;
+use crate::sim::solar::{calculate_hourly_solar, SurfaceOrientation, WindowProperties};
 use crate::weather::denver::DenverTmyWeather;
+use crate::weather::WeatherSource;
 
 /// Result structure for Case 600 simulation.
 #[derive(Debug, Clone)]
@@ -90,7 +88,7 @@ impl Case600Model {
         let ceiling_height = 2.7;
         let width = 8.0;
         let depth = 6.0;
-        let perimeter = 2.0 * (width + depth);
+        let _perimeter = 2.0 * (width + depth);
 
         // Set zone area and ceiling height
         model.zone_area = VectorField::from_scalar(floor_area, 1);
@@ -113,9 +111,9 @@ impl Case600Model {
         let floor_assembly = Assemblies::insulated_floor();
 
         // Calculate U-values with default wind speed (25 m/s → ~21 W/m²K film coefficient)
-        let u_wall = wall_assembly.u_value(None);
+        let _u_wall = wall_assembly.u_value(None);
         let u_roof = roof_assembly.u_value(None);
-        let u_floor = floor_assembly.u_value(None);
+        let _u_floor = floor_assembly.u_value(None);
 
         // Update 5R1C conductances based on construction U-values
         // h_tr_em: Exterior → Mass (roof)
@@ -169,8 +167,8 @@ impl Case600Model {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts = 0.0;
-        let mut peak_cooling_watts = 0.0;
+        let mut peak_heating_watts: f64 = 0.0;
+        let mut peak_cooling_watts: f64 = 0.0;
 
         let mut hourly_temps = Vec::with_capacity(STEPS);
         let mut hourly_solar = Vec::with_capacity(STEPS);
@@ -199,9 +197,9 @@ impl Case600Model {
 
             // Calculate solar gain through south window
             let (_, _, solar_gain_watts) = calculate_hourly_solar(
-                39.7392,  // Denver latitude (°N)
-                -104.9903, // Denver longitude (°W)
-                2024,       // Year
+                39.7392,                       // Denver latitude (°N)
+                -104.9903,                     // Denver longitude (°W)
+                2024,                          // Year
                 (day_of_year as u32) / 30 + 1, // Approximate month
                 day_of_year as u32,
                 hour_of_day as f64 + 0.5, // Mid-hour
@@ -225,20 +223,18 @@ impl Case600Model {
             self.model.set_loads(&[load_per_area]);
 
             // Solve physics for this hour
-            let hvac_energy_joules =
-                self.model.step_physics(step, dry_bulb);
+            let hvac_energy_joules = self.model.step_physics(step, dry_bulb);
 
             // Classify heating vs cooling
             let hvac_energy_watts = hvac_energy_joules / 3600.0; // J → W (per hour)
             if hvac_energy_watts > 0.0 {
                 // Heating
                 annual_heating_joules += hvac_energy_joules;
-                peak_heating_watts = (peak_heating_watts as f64).max(hvac_energy_watts);
+                peak_heating_watts = peak_heating_watts.max(hvac_energy_watts);
             } else {
                 // Cooling
                 annual_cooling_joules += hvac_energy_joules.abs();
-                peak_cooling_watts =
-                    (peak_cooling_watts as f64).max(hvac_energy_watts.abs());
+                peak_cooling_watts = peak_cooling_watts.max(hvac_energy_watts.abs());
             }
 
             // Store indoor temperature
@@ -297,8 +293,16 @@ mod tests {
         assert!(result.peak_cooling_kw > 0.0);
 
         // Verify temperature range is reasonable
-        let min_temp = result.hourly_temperatures.iter().cloned().fold(f64::INFINITY, f64::min);
-        let max_temp = result.hourly_temperatures.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let min_temp = result
+            .hourly_temperatures
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
+        let max_temp = result
+            .hourly_temperatures
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
         assert!(min_temp < 30.0, "Min temperature should be below 30°C");
         assert!(max_temp > 15.0, "Max temperature should be above 15°C");
     }
