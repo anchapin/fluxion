@@ -96,7 +96,10 @@ impl NeuralScalarField<f64> {
         // Convert ndarray to shape+vec to bypass version mismatch
         // OwnedTensorArrayData requires Vec<T>, not &[T]
         let shape: Vec<i64> = input.shape().iter().map(|&x| x as i64).collect();
-        let input_vec = input.as_slice().ok_or("Input array is not contiguous")?.to_vec();
+        let input_vec = input
+            .as_slice()
+            .ok_or("Input array is not contiguous")?
+            .to_vec();
 
         let input_tensor = Value::from_array((shape, input_vec))?;
         let outputs = session.run(ort::inputs![input_tensor])?;

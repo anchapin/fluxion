@@ -229,7 +229,6 @@ impl SurrogateManager {
 
         // If we have a session pool, acquire a session and perform inference.
         if let Some(ref pool) = self.session_pool {
-
             use ort::value::TensorRef;
 
             // Convert input temps into an ndarray 2D float32 array (1, N)
@@ -242,13 +241,14 @@ impl SurrogateManager {
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
                     // Create a tensor reference from the flat data and shape
-                    let tensor_ref = match TensorRef::from_array_view((input_shape, input_data.as_slice())) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                            return vec![1.2; n_input];
-                        }
-                    };
+                    let tensor_ref =
+                        match TensorRef::from_array_view((input_shape, input_data.as_slice())) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                eprintln!("Failed to create tensor ref: {}; using mock loads", e);
+                                return vec![1.2; n_input];
+                            }
+                        };
 
                     // Run inference using the inputs! macro pattern
                     match session_guard.run(ort::inputs![tensor_ref]) {
@@ -303,7 +303,6 @@ impl SurrogateManager {
         }
 
         if let Some(ref pool) = self.session_pool {
-
             use ort::value::TensorRef;
 
             let batch_size = batch_temps.len();
@@ -326,13 +325,14 @@ impl SurrogateManager {
 
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    let tensor_ref = match TensorRef::from_array_view((input_shape, flattened.as_slice())) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
-                        }
-                    };
+                    let tensor_ref =
+                        match TensorRef::from_array_view((input_shape, flattened.as_slice())) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                eprintln!("Failed to create tensor ref: {}; using mock loads", e);
+                                return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                            }
+                        };
 
                     match session_guard.run(ort::inputs![tensor_ref]) {
                         Ok(outputs) => {

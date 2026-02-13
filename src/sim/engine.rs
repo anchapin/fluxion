@@ -363,7 +363,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         hvac_energy_for_step / 3.6e6 // Return kWh
     }
-
 }
 
 #[cfg(test)]
