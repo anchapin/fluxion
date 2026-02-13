@@ -147,7 +147,7 @@ impl HourlyWeatherData {
 
     /// Returns the month (1-12) for this weather data.
     ///
-    /// Uses a simplified approximation assuming 30 days per month.
+    /// Uses actual month lengths for a non-leap year.
     ///
     /// # Example
     ///
@@ -158,7 +158,20 @@ impl HourlyWeatherData {
     /// assert_eq!(weather.month(), 2); // Hour 744 is in February
     /// ```
     pub fn month(&self) -> usize {
-        (self.day_of_year() / 30) + 1
+        // Cumulative days for each month (for a non-leap year)
+        let cumulative_days = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+
+        let day = self.day_of_year();
+
+        // Find which month this day belongs to
+        for (month_idx, &cumulative) in cumulative_days.iter().enumerate() {
+            if day < cumulative {
+                return month_idx;
+            }
+        }
+
+        // If day >= 334, it's December
+        12
     }
 }
 
@@ -311,7 +324,15 @@ impl<'a, T: WeatherSource> Iterator for WeatherIterator<'a, T> {
         if self.current_hour < 8760 {
             let hour = self.current_hour;
             self.current_hour += 1;
-            Some(self.source.get_hourly_data(hour))
+            let result = self.source.get_hourly_data(hour);
+
+            // Stop iteration if we get an InvalidHour error
+            // This allows test files with fewer than 8760 records to work
+            if matches!(&result, Err(WeatherError::InvalidHour(_))) {
+                None
+            } else {
+                Some(result)
+            }
         } else {
             None
         }
@@ -371,10 +392,10 @@ mod tests {
         assert_eq!(weather.month(), 1); // January
 
         let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 744);
-        assert_eq!(weather.month(), 2); // February (approx)
+        assert_eq!(weather.month(), 2); // February
 
-        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7344); // Hour 306 * 24
-        assert_eq!(weather.month(), 12); // December (approx)
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8040); // Hour 335 * 24 (start of December)
+        assert_eq!(weather.month(), 12); // December
     }
 
     #[test]

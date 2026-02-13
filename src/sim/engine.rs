@@ -91,8 +91,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             infiltration_rate: self.infiltration_rate.clone(),
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
-            hvac_cooling_capacity: self.hvac_cooling_capacity.clone(),
-            hvac_heating_capacity: self.hvac_heating_capacity.clone(),
+            hvac_cooling_capacity: self.hvac_cooling_capacity,
+            hvac_heating_capacity: self.hvac_heating_capacity,
             h_tr_w: self.h_tr_w.clone(),
             h_tr_em: self.h_tr_em.clone(),
             h_tr_ms: self.h_tr_ms.clone(),
@@ -423,16 +423,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         let t_i_act = (num_tm + num_phi_st.clone() + num_rest_act) / den.clone();
 
-        let ts_num = self.h_tr_ms.clone() * self.mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_act.clone()
-            + phi_st;
-        let ts_den = self.h_tr_ms.clone() + self.h_tr_is.clone();
-        let t_s_act = ts_num / ts_den;
-
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
+        // Calculate free-running surface temperature for mass update
+        // This prevents HVAC energy from being stored in thermal mass
+        let ts_num_free = self.h_tr_ms.clone() * self.mass_temperatures.clone()
+            + self.h_tr_is.clone() * t_i_free.clone()
+            + phi_st.clone();
+        let t_s_free = ts_num_free / (self.h_tr_ms.clone() + self.h_tr_is.clone());
+
         let q_m_net = self.h_tr_em.clone() * (t_e - self.mass_temperatures.clone())
-            + self.h_tr_ms.clone() * (t_s_act - self.mass_temperatures.clone());
+            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone());
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
         self.temperatures = t_i_act;
@@ -516,7 +517,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         diffusivity: f64,
     ) {
         self.ground_temperature = Box::new(DynamicGroundTemperature::new(
-            t_mean, t_amplitude, depth, diffusivity,
+            t_mean,
+            t_amplitude,
+            depth,
+            diffusivity,
         ));
     }
 
@@ -926,8 +930,10 @@ mod tests {
         assert!(
             lag_hours >= 0,
             "Indoor/outdoor peak times should differ: indoor at {} ({}°C), outdoor at {} ({}°C)",
-            max_indoor_hour_steady + 24, max_indoor_temp,
-            max_outdoor_hour_steady + 24, max_outdoor_temp
+            max_indoor_hour_steady + 24,
+            max_indoor_temp,
+            max_outdoor_hour_steady + 24,
+            max_outdoor_temp
         );
     }
 
@@ -1133,7 +1139,6 @@ mod tests {
 
         #[test]
         fn test_with_custom_ground_temperature() {
-
             let mut model = ThermalModel::<VectorField>::new(1);
 
             // Set custom ground temperature

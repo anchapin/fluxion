@@ -195,7 +195,7 @@ impl BatchOracle {
         use rayon::prelude::*;
 
         // 1. Validate and initialize all models upfront (parallel)
-        let valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
+        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
             .par_iter()
             .enumerate()
             .filter_map(|(i, params)| {
@@ -230,7 +230,7 @@ impl BatchOracle {
 
                 // 2c. Parallel physics update (distribute loads and solve)
                 valid_configs
-                    .par_iter()
+                    .par_iter_mut()
                     .zip(energies.par_iter_mut())
                     .zip(batch_loads.par_iter())
                     .for_each(|(((_, model), energy), loads)| {
@@ -242,7 +242,7 @@ impl BatchOracle {
             // Analytical path - fully parallel (no batching needed)
             // Each config independently runs through all timesteps
             valid_configs
-                .par_iter()
+                .par_iter_mut()
                 .zip(energies.par_iter_mut())
                 .for_each(|((_, model), energy)| {
                     for t in 0..8760 {

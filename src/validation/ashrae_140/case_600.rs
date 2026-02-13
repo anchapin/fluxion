@@ -131,6 +131,10 @@ impl Case600Model {
         let h_window = model.window_u_value * window_area;
         model.h_tr_w = VectorField::from_scalar(h_window, 1);
 
+        // Floor conductance (to ground)
+        let h_floor = _u_floor * floor_area;
+        model.h_tr_floor = VectorField::from_scalar(h_floor, 1);
+
         // Ventilation conductance
         // Q_vent = ACH * Volume / 3600 (m³/s)
         // h_ve = ρ_air * cp_air * Q_vent
@@ -223,22 +227,26 @@ impl Case600Model {
             self.model.set_loads(&[load_per_area]);
 
             // Solve physics for this hour
-            let hvac_energy_joules = self.model.step_physics(step, dry_bulb);
+            let hvac_energy_kwh = self.model.step_physics(step, dry_bulb);
+            let hvac_energy_joules = hvac_energy_kwh * 3.6e6; // kWh → J
 
-            // Classify heating vs cooling
-            let hvac_energy_watts = hvac_energy_joules / 3600.0; // J → W (per hour)
-            if hvac_energy_watts > 0.0 {
+            // Classify heating vs cooling based on outdoor temperature
+            // If outdoor temp is below heating setpoint, assume heating is needed
+            // If outdoor temp is above cooling setpoint, assume cooling is needed
+            let hvac_power_w = hvac_energy_joules / 3600.0; // J → W (per hour)
+            if dry_bulb < self.model.heating_setpoint {
                 // Heating
                 annual_heating_joules += hvac_energy_joules;
-                peak_heating_watts = peak_heating_watts.max(hvac_energy_watts);
-            } else {
+                peak_heating_watts = peak_heating_watts.max(hvac_power_w);
+            } else if dry_bulb > self.model.cooling_setpoint {
                 // Cooling
-                annual_cooling_joules += hvac_energy_joules.abs();
-                peak_cooling_watts = peak_cooling_watts.max(hvac_energy_watts.abs());
+                annual_cooling_joules += hvac_energy_joules;
+                peak_cooling_watts = peak_cooling_watts.max(hvac_power_w);
             }
 
             // Store indoor temperature
-            hourly_temps.push(self.model.get_temperatures()[0]);
+            let indoor_temp = self.model.get_temperatures()[0];
+            hourly_temps.push(indoor_temp);
         }
 
         // Convert Joules to MWh

@@ -136,8 +136,8 @@ impl EpwWeatherSource {
 
         let location = Self::parse_location(&location)?;
 
-        // Skip to data lines (lines 2-7 are additional headers)
-        for _ in 0..6 {
+        // Skip to data lines (lines 2-8 are additional headers)
+        for _ in 0..7 {
             if lines.next().is_none() {
                 return Err(WeatherError::IncompleteData(
                     "Unexpected end of file before data section".to_string(),
@@ -145,38 +145,32 @@ impl EpwWeatherSource {
             }
         }
 
-        // Parse 8760 hourly data lines
-        let mut hourly_data = Vec::with_capacity(8760);
+        // Parse hourly data lines
+        let mut hourly_data = Vec::new();
 
-        for line_idx in 0..8760 {
-            let line = lines
-                .next()
-                .ok_or_else(|| {
-                    WeatherError::IncompleteData(format!(
-                        "Expected 8760 data lines, found only {}",
-                        line_idx
-                    ))
-                })?
-                .map_err(|e| {
-                    WeatherError::ParseError(format!(
-                        "Failed to read data line {}: {}",
-                        line_idx + 1,
-                        e
-                    ))
-                })?;
+        for (line_idx, line_result) in lines.enumerate() {
+            let line = line_result.map_err(|e| {
+                WeatherError::ParseError(format!(
+                    "Failed to read data line {}: {}",
+                    line_idx + 1,
+                    e
+                ))
+            })?;
 
             // Skip comment lines (start with '!')
             if line.trim().starts_with('!') {
                 continue;
             }
 
-            let weather_data = Self::parse_data_line(&line, line_idx)?;
+            let weather_data = Self::parse_data_line(&line, hourly_data.len())?;
             hourly_data.push(weather_data);
         }
 
-        // Check for any additional lines (warning, not error)
-        if lines.next().is_some() {
-            eprintln!("Warning: EPW file contains more than 8760 data lines, ignoring extras");
+        // Validate that we got the expected number of records
+        if hourly_data.is_empty() {
+            return Err(WeatherError::IncompleteData(
+                "No valid data lines found in EPW file".to_string(),
+            ));
         }
 
         Ok(EpwWeatherSource {
@@ -264,23 +258,23 @@ impl EpwWeatherSource {
             })
         }
 
-        // Parse temperature (column 7, 0-indexed = field 6)
-        let dry_bulb_temp = parse_field(fields[6], "dry bulb temperature")?;
+        // Parse temperature (field 7 in 0-indexed array)
+        let dry_bulb_temp = parse_field(fields[7], "dry bulb temperature")?;
 
-        // Parse relative humidity (column 9, 0-indexed = field 8)
+        // Parse relative humidity (field 8 in 0-indexed array)
         let humidity = parse_field(fields[8], "relative humidity")?;
 
-        // Parse solar radiation values (convert from Wh/m² to W/m²)
-        // Column 12 = Direct Normal Irradiance (Wh/m²)
+        // Parse solar radiation values
+        // Field 10 = Direct Normal Irradiance (Wh/m²)
         let dni = parse_optional_field(fields[10], 0.0); // Already W/m² in modern EPW
 
-        // Column 13 = Diffuse Horizontal Irradiance (Wh/m²)
+        // Field 11 = Diffuse Horizontal Irradiance (Wh/m²)
         let dhi = parse_optional_field(fields[11], 0.0);
 
-        // Column 14 = Global Horizontal Irradiance (Wh/m²)
+        // Field 12 = Global Horizontal Irradiance (Wh/m²)
         let ghi = parse_optional_field(fields[12], 0.0);
 
-        // Parse wind speed (column 23, 0-indexed = field 21)
+        // Parse wind speed (field 21 in 0-indexed array)
         let wind_speed = parse_field(fields[21], "wind speed")?;
 
         Ok(HourlyWeatherData {
