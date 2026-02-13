@@ -128,10 +128,16 @@ impl BatchOracle {
             return Err(format!("U-value out of range: {}", u_value));
         }
         if !(Self::MIN_HEATING_SETPOINT..=Self::MAX_HEATING_SETPOINT).contains(&heating_setpoint) {
-            return Err(format!("Heating setpoint out of range: {}", heating_setpoint));
+            return Err(format!(
+                "Heating setpoint out of range: {}",
+                heating_setpoint
+            ));
         }
         if !(Self::MIN_COOLING_SETPOINT..=Self::MAX_COOLING_SETPOINT).contains(&cooling_setpoint) {
-            return Err(format!("Cooling setpoint out of range: {}", cooling_setpoint));
+            return Err(format!(
+                "Cooling setpoint out of range: {}",
+                cooling_setpoint
+            ));
         }
         // Validate that heating < cooling (deadband must exist)
         if heating_setpoint >= cooling_setpoint {
@@ -330,7 +336,9 @@ mod tests {
 
         // Create a large population
         let population_size = 2000;
-        let population: Vec<Vec<f64>> = (0..population_size).map(|_| vec![1.5, 20.0, 27.0]).collect();
+        let population: Vec<Vec<f64>> = (0..population_size)
+            .map(|_| vec![1.5, 20.0, 27.0])
+            .collect();
 
         // Sequential execution (using standard iter)
         let start_seq = std::time::Instant::now();

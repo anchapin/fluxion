@@ -40,6 +40,10 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub heating_setpoint: f64,
     pub cooling_setpoint: f64,
 
+    // HVAC capacity limits (building-wide design parameters)
+    pub hvac_heating_capacity: f64, // Watts - maximum heating power
+    pub hvac_cooling_capacity: f64, // Watts - maximum cooling power
+
     // Physical Constants (Per Zone)
     pub zone_area: T,         // Floor Area (m²)
     pub ceiling_height: T,    // Ceiling Height (m)
@@ -50,10 +54,8 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub infiltration_rate: T, // Infiltration Rate (ACH)
 
     // New fields for 5R1C model
-    pub mass_temperatures: T,     // Tm (Mass temperature)
-    pub thermal_capacitance: T,   // Cm (J/K) - Includes Air + Structure
-    pub hvac_cooling_capacity: T, // Watts
-    pub hvac_heating_capacity: T, // Watts
+    pub mass_temperatures: T,   // Tm (Mass temperature)
+    pub thermal_capacitance: T, // Cm (J/K) - Includes Air + Structure
 
     // 5R1C Conductances (W/K)
     pub h_tr_em: T, // Transmission: Exterior -> Mass
@@ -109,9 +111,11 @@ impl ThermalModel<VectorField> {
             mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
             loads: VectorField::from_scalar(0.0, num_zones),
             surfaces,
-            window_u_value: 2.5, // Default U-value
-            heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
-            cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
+            window_u_value: 2.5,           // Default U-value
+            heating_setpoint: 20.0,        // Default heating setpoint (ASHRAE 140)
+            cooling_setpoint: 27.0,        // Default cooling setpoint (ASHRAE 140)
+            hvac_heating_capacity: 5000.0, // Default: 5kW heating
+            hvac_cooling_capacity: 5000.0, // Default: 5kW cooling
 
             // Physical Constants Defaults
             zone_area: VectorField::from_scalar(zone_area, num_zones),
@@ -124,8 +128,6 @@ impl ThermalModel<VectorField> {
 
             // Placeholders (will be updated by update_derived_parameters)
             thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
-            hvac_cooling_capacity: VectorField::from_scalar(5000.0, num_zones), // Default: 5kW cooling per zone
-            hvac_heating_capacity: VectorField::from_scalar(5000.0, num_zones), // Default: 5kW heating per zone
 
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
@@ -249,13 +251,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     // Calculate heating demand
                     let t_err = self.heating_setpoint - t;
                     let q_req = t_err / sens;
-                    q_req.min(self.hvac_heating_capacity[0]) // Apply heating capacity limit
+                    q_req.min(self.hvac_heating_capacity) // Apply heating capacity limit
                 }
                 HVACMode::Cooling => {
                     // Calculate cooling demand
                     let t_err = t - self.cooling_setpoint;
                     let q_req = -t_err / sens; // Negative for cooling
-                    q_req.max(-self.hvac_cooling_capacity[0]) // Apply cooling capacity limit
+                    q_req.max(-self.hvac_cooling_capacity) // Apply cooling capacity limit
                 }
                 HVACMode::Off => {
                     // Deadband zone - no HVAC
@@ -829,19 +831,22 @@ mod tests {
 
             // Test cold outdoor temp - should heat
             let outdoor_temp_cold = 10.0;
-            let energy_heating = model.solve_single_step(0, outdoor_temp_cold, false, &surrogates, false);
+            let energy_heating =
+                model.solve_single_step(0, outdoor_temp_cold, false, &surrogates, false);
 
             // Test hot outdoor temp - should cool
             model.temperatures = VectorField::from_scalar(27.0, 1);
             model.mass_temperatures = VectorField::from_scalar(27.0, 1);
             let outdoor_temp_hot = 35.0;
-            let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, false, &surrogates, false);
+            let energy_cooling =
+                model.solve_single_step(0, outdoor_temp_hot, false, &surrogates, false);
 
             // Test comfortable outdoor temp - should be in deadband
             model.temperatures = VectorField::from_scalar(23.5, 1);
             model.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let outdoor_temp_comfortable = 23.5;
-            let energy_deadband = model.solve_single_step(0, outdoor_temp_comfortable, false, &surrogates, false);
+            let energy_deadband =
+                model.solve_single_step(0, outdoor_temp_comfortable, false, &surrogates, false);
 
             assert!(
                 energy_heating > 0.0,
