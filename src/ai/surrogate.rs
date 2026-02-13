@@ -236,16 +236,16 @@ impl SurrogateManager {
             // Try to acquire a session from the pool
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    // Create a tensor reference using (shape, data) tuple format
-                    let shape = input_arr.shape();
-                    let data: &[f32] = input_arr.as_slice().unwrap();
-                    let tensor_ref = match TensorRef::from_array_view((shape, data)) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                            return vec![1.2; n_input];
-                        }
-                    };
+                    // Create a tensor from owned data using the tuple format (shape, data)
+                    // This is compatible with ort 2.0.0-rc.11
+                    let input_tensor =
+                        match ort::value::Value::from_array(([1, n_input], input_data)) {
+                            Ok(t) => t,
+                            Err(e) => {
+                                eprintln!("Failed to create input tensor: {}; using mock loads", e);
+                                return vec![1.2; n_input];
+                            }
+                        };
 
                     // Run inference using the inputs! macro pattern
                     match session_guard.run(ort::inputs![input_tensor]) {
@@ -319,10 +319,12 @@ impl SurrogateManager {
 
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    // Create a tensor reference using (shape, data) tuple format
-                    let shape = input_arr.shape();
-                    let data: &[f32] = input_arr.as_slice().unwrap();
-                    let tensor_ref = match TensorRef::from_array_view((shape, data)) {
+                    // Create tensor from owned data using the tuple format (shape, data)
+                    // This is compatible with ort 2.0.0-rc.11
+                    let input_tensor = match ort::value::Value::from_array((
+                        vec![batch_size, input_size],
+                        flattened,
+                    )) {
                         Ok(t) => t,
                         Err(e) => {
                             eprintln!("Failed to create input tensor: {}; using mock loads", e);
