@@ -230,12 +230,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         surrogates: &SurrogateManager,
         use_ai: bool,
     ) -> f64 {
+        // Precompute daily cycle values to avoid repeated sin() calls in the hot loop
+        let mut daily_temps = [0.0; 24];
+        let mut daily_loads = [0.0; 24];
+
+        for h in 0..24 {
+            let daily_cycle = (h as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            daily_temps[h] = 10.0 + 10.0 * daily_cycle;
+            // Analytical load calculation logic: (50 * cycle).max(0) + 10
+            daily_loads[h] = (50.0 * daily_cycle).max(0.0) + 10.0;
+        }
+
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
                 let hour_of_day = t % 24;
-                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true)
+                // Use precomputed values
+                let outdoor_temp = daily_temps[hour_of_day];
+                // If not using AI, use analytical loads; otherwise use 0.0 (ignored by solve_step_internal anyway)
+                let load_intensity = if !use_ai { daily_loads[hour_of_day] } else { 0.0 };
+
+                self.solve_step_internal(outdoor_temp, load_intensity, use_ai, surrogates)
             })
             .sum();
 
@@ -260,6 +274,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         surrogates: &SurrogateManager,
         use_analytical_gains: bool,
     ) -> f64 {
+        let analytical_load_intensity = if !use_ai && use_analytical_gains {
+            let hour_of_day = timestep % 24;
+            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            (50.0 * daily_cycle).max(0.0) + 10.0
+        } else {
+            0.0
+        };
+
+        self.solve_step_internal(outdoor_temp, analytical_load_intensity, use_ai, surrogates)
+    }
+
+    /// Internal optimized method for solving a timestep.
+    ///
+    /// Takes precomputed values to avoid redundant calculations in tight loops.
+    fn solve_step_internal(
+        &mut self,
+        outdoor_temp: f64,
+        load_intensity: f64, // Precomputed or calculated load (W/m²)
+        use_ai: bool,
+        surrogates: &SurrogateManager,
+    ) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
         // 1. Calculate External Loads
@@ -267,7 +302,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             let pred = surrogates.predict_loads(self.temperatures.as_ref());
             self.loads = T::from(VectorField::new(pred));
         } else {
-            self.calc_analytical_loads(timestep, use_analytical_gains);
+            // Use provided load intensity directly
+            self.loads = self.temperatures.constant_like(load_intensity);
         }
 
         // Convert loads (W/m²) to Watts
@@ -317,6 +353,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
+    #[allow(dead_code)]
     fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
         let total_gain = if use_analytical_gains {
             let hour_of_day = timestep % 24;
