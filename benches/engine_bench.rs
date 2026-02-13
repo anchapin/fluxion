@@ -13,10 +13,10 @@ fn bench_solve_timesteps(c: &mut Criterion) {
 
     c.bench_function("solve_timesteps_1year_10zones", |b| {
         b.iter(|| {
-             // 8760 steps = 1 year
-             // We clone to reset state? No, solve_timesteps continues from current state.
-             // It's fine to continue simulation.
-             model.solve_timesteps(8760, &surrogates, false);
+            // 8760 steps = 1 year
+            // We clone to reset state? No, solve_timesteps continues from current state.
+            // It's fine to continue simulation.
+            model.solve_timesteps(8760, &surrogates, false);
         })
     });
 }
