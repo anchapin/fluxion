@@ -130,7 +130,9 @@ impl EpwWeatherSource {
         let location = lines
             .next()
             .ok_or_else(|| WeatherError::IncompleteData("Missing location header".to_string()))?
-            .map_err(|e| WeatherError::ParseError(format!("Failed to read location header: {}", e)))?;
+            .map_err(|e| {
+                WeatherError::ParseError(format!("Failed to read location header: {}", e))
+            })?;
 
         let location = Self::parse_location(&location)?;
 
@@ -156,7 +158,11 @@ impl EpwWeatherSource {
                     ))
                 })?
                 .map_err(|e| {
-                    WeatherError::ParseError(format!("Failed to read data line {}: {}", line_idx + 1, e))
+                    WeatherError::ParseError(format!(
+                        "Failed to read data line {}: {}",
+                        line_idx + 1,
+                        e
+                    ))
                 })?;
 
             // Skip comment lines (start with '!')
@@ -351,7 +357,8 @@ mod tests {
     /// Creates a minimal valid EPW file for testing.
     fn create_test_epw() -> String {
         // Location header: Denver, CO
-        let location_line = "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005";
+        let location_line =
+            "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005";
 
         // Additional headers (design conditions, periods)
         let design_conditions = "DESIGN CONDITIONS,0";
@@ -385,7 +392,8 @@ mod tests {
 
     #[test]
     fn test_parse_location() {
-        let location_line = "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005";
+        let location_line =
+            "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005";
 
         let result = EpwWeatherSource::parse_location(location_line).unwrap();
         assert_eq!(result, Some("Denver, CO".to_string()));
@@ -543,10 +551,7 @@ mod tests {
     fn test_parse_comment_lines() {
         let mut epw_content = create_test_epw();
         // Add a comment line between data lines
-        epw_content = epw_content.replace(
-            "\n1991,1,1,2,0",
-            "\n! This is a comment\n1991,1,1,2,0",
-        );
+        epw_content = epw_content.replace("\n1991,1,1,2,0", "\n! This is a comment\n1991,1,1,2,0");
 
         let cursor = Cursor::new(epw_content);
         let source = EpwWeatherSource::parse(cursor).unwrap();

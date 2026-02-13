@@ -101,7 +101,7 @@ impl DenverTmyWeather {
         let daily_temp = 9.0 * hour_angle.cos();
 
         // Add some randomness for realism
-        let temp_noise = ((hour as f64 * 0.1).sin() * 0.5).max(-2.0).min(2.0);
+        let temp_noise = ((hour as f64 * 0.1).sin() * 0.5).clamp(-2.0, 2.0);
 
         let dry_bulb_temp = seasonal_temp + daily_temp + temp_noise;
 
@@ -151,9 +151,9 @@ impl DenverTmyWeather {
         let daily_wind = 0.5 * (hour_angle - PI / 2.0).cos();
 
         // Gusts and variations
-        let wind_noise = ((hour as f64 * 0.05).sin() * 0.5).max(-1.0).min(1.0);
+        let wind_noise = ((hour as f64 * 0.05).sin() * 0.5).clamp(-1.0, 1.0);
 
-        let wind_speed = (seasonal_wind + daily_wind + wind_noise).max(0.5).min(10.0);
+        let wind_speed = (seasonal_wind + daily_wind + wind_noise).clamp(0.5, 10.0);
 
         // === HUMIDITY ===
         // Denver is semi-arid
@@ -164,7 +164,7 @@ impl DenverTmyWeather {
         // Cooler at night = higher relative humidity
         let daily_humidity = 5.0 * hour_angle.cos();
 
-        let humidity = (seasonal_humidity + daily_humidity).max(10.0).min(95.0);
+        let humidity = (seasonal_humidity + daily_humidity).clamp(10.0, 95.0);
 
         HourlyWeatherData {
             dry_bulb_temp,
@@ -321,10 +321,10 @@ mod tests {
         // Pick a day in spring (April 15, day 105)
         let day = 105 * 24;
 
-        let dawn = weather.get_hourly_data(day + 6).unwrap();  // 6 AM
+        let dawn = weather.get_hourly_data(day + 6).unwrap(); // 6 AM
         let noon = weather.get_hourly_data(day + 12).unwrap(); // 12 PM
         let evening = weather.get_hourly_data(day + 18).unwrap(); // 6 PM
-        let midnight = weather.get_hourly_data(day).unwrap();    // 12 AM
+        let midnight = weather.get_hourly_data(day).unwrap(); // 12 AM
 
         // Noon should be warmest, midnight coolest
         assert!(noon.dry_bulb_temp > dawn.dry_bulb_temp);
@@ -348,7 +348,10 @@ mod tests {
 
         // Winter: lower solar than summer
         let winter_noon = weather.get_hourly_data(10 * 24 + 12).unwrap();
-        assert!(winter_noon.ghi < summer_noon.ghi, "Winter solar should be lower");
+        assert!(
+            winter_noon.ghi < summer_noon.ghi,
+            "Winter solar should be lower"
+        );
     }
 
     #[test]

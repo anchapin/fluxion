@@ -181,7 +181,9 @@ pub enum WeatherError {
 impl fmt::Display for WeatherError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            WeatherError::InvalidHour(hour) => write!(f, "Invalid hour index: {} (must be 0-8759)", hour),
+            WeatherError::InvalidHour(hour) => {
+                write!(f, "Invalid hour index: {} (must be 0-8759)", hour)
+            }
             WeatherError::IncompleteData(msg) => write!(f, "Incomplete weather data: {}", msg),
             WeatherError::ParseError(msg) => write!(f, "Parse error: {}", msg),
             WeatherError::IoError(msg) => write!(f, "IO error: {}", msg),
@@ -283,7 +285,7 @@ pub trait WeatherSource {
     ///
     /// println!("Maximum temperature: {}°C", max_temp);
     /// ```
-    fn iter_hours(&self) -> WeatherIterator<Self>
+    fn iter_hours(&self) -> WeatherIterator<'_, Self>
     where
         Self: Sized,
     {
@@ -322,9 +324,7 @@ mod tests {
 
     #[test]
     fn test_hourly_weather_data_creation() {
-        let weather = HourlyWeatherData::new(
-            20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100,
-        );
+        let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
 
         assert_eq!(weather.dry_bulb_temp, 20.0);
         assert_eq!(weather.dni, 800.0);
