@@ -516,7 +516,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         diffusivity: f64,
     ) {
         self.ground_temperature = Box::new(DynamicGroundTemperature::new(
-            t_mean, t_amplitude, depth, diffusivity,
+            t_mean,
+            t_amplitude,
+            depth,
+            diffusivity,
         ));
     }
 
@@ -926,8 +929,10 @@ mod tests {
         assert!(
             lag_hours >= 0,
             "Indoor/outdoor peak times should differ: indoor at {} ({}°C), outdoor at {} ({}°C)",
-            max_indoor_hour_steady + 24, max_indoor_temp,
-            max_outdoor_hour_steady + 24, max_outdoor_temp
+            max_indoor_hour_steady + 24,
+            max_indoor_temp,
+            max_outdoor_hour_steady + 24,
+            max_outdoor_temp
         );
     }
 
@@ -1133,7 +1138,6 @@ mod tests {
 
         #[test]
         fn test_with_custom_ground_temperature() {
-
             let mut model = ThermalModel::<VectorField>::new(1);
 
             // Set custom ground temperature

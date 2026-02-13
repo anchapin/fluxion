@@ -311,7 +311,13 @@ impl<'a, T: WeatherSource> Iterator for WeatherIterator<'a, T> {
         if self.current_hour < 8760 {
             let hour = self.current_hour;
             self.current_hour += 1;
-            Some(self.source.get_hourly_data(hour))
+            let result = self.source.get_hourly_data(hour);
+            // Stop iteration if we get an InvalidHour error
+            if matches!(result, Err(WeatherError::InvalidHour(_))) {
+                None
+            } else {
+                Some(result)
+            }
         } else {
             None
         }
@@ -374,7 +380,7 @@ mod tests {
         assert_eq!(weather.month(), 2); // February (approx)
 
         let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7344); // Hour 306 * 24
-        assert_eq!(weather.month(), 12); // December (approx)
+        assert_eq!(weather.month(), 11); // November (approx)
     }
 
     #[test]

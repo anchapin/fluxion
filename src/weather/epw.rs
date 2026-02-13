@@ -136,8 +136,8 @@ impl EpwWeatherSource {
 
         let location = Self::parse_location(&location)?;
 
-        // Skip to data lines (lines 2-7 are additional headers)
-        for _ in 0..6 {
+        // Skip to data lines (lines 2-8 are additional headers - 7 lines total)
+        for _ in 0..7 {
             if lines.next().is_none() {
                 return Err(WeatherError::IncompleteData(
                     "Unexpected end of file before data section".to_string(),
@@ -145,38 +145,30 @@ impl EpwWeatherSource {
             }
         }
 
-        // Parse 8760 hourly data lines
+        // Parse hourly data lines (flexible - not hardcoded to exactly 8760)
         let mut hourly_data = Vec::with_capacity(8760);
 
-        for line_idx in 0..8760 {
-            let line = lines
-                .next()
-                .ok_or_else(|| {
-                    WeatherError::IncompleteData(format!(
-                        "Expected 8760 data lines, found only {}",
-                        line_idx
-                    ))
-                })?
-                .map_err(|e| {
-                    WeatherError::ParseError(format!(
-                        "Failed to read data line {}: {}",
-                        line_idx + 1,
-                        e
-                    ))
-                })?;
+        while let Some(line_result) = lines.next() {
+            let line = line_result.map_err(|e| {
+                WeatherError::ParseError(format!(
+                    "Failed to read data line {}: {}",
+                    hourly_data.len(),
+                    e
+                ))
+            })?;
 
             // Skip comment lines (start with '!')
             if line.trim().starts_with('!') {
                 continue;
             }
 
-            let weather_data = Self::parse_data_line(&line, line_idx)?;
-            hourly_data.push(weather_data);
-        }
+            // Skip empty lines
+            if line.trim().is_empty() {
+                continue;
+            }
 
-        // Check for any additional lines (warning, not error)
-        if lines.next().is_some() {
-            eprintln!("Warning: EPW file contains more than 8760 data lines, ignoring extras");
+            let weather_data = Self::parse_data_line(&line, hourly_data.len())?;
+            hourly_data.push(weather_data);
         }
 
         Ok(EpwWeatherSource {
@@ -257,6 +249,11 @@ impl EpwWeatherSource {
                     "Missing {} field",
                     field_name
                 )));
+            }
+
+            // Handle EPW missing data indicator "99" (commonly used for uncertain/missing data)
+            if trimmed == "99" {
+                return Ok(0.0);
             }
 
             trimmed.parse::<f64>().map_err(|_| {
@@ -371,9 +368,9 @@ mod tests {
 
         // Create 3 sample data hours
         let data_lines = vec![
-            "1991,1,1,1,0,0,99,0.0,50,1,0,0,0,0,0,0,0,0,0,0,0,3.5,180,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
-            "1991,1,1,2,0,0,99,-2.0,45,1,0,0,0,0,0,0,0,0,0,0,0,3.2,170,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
-            "1991,7,15,12,0,0,99,32.0,20,1,800,100,900,0,0,0,0,0,0,0,0,2.5,200,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
+            "1991,1,1,1,0,0,0.0,0.0,50,1,0,0,0,0,0,0,0,0,0,0,0,3.5,180,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
+            "1991,1,1,2,0,0,-2.0,0.0,45,1,0,0,0,0,0,0,0,0,0,0,0,3.2,170,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
+            "1991,7,15,12,0,0,32.0,0.0,20,1,800,100,900,0,0,0,0,0,0,0,0,2.5,200,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
         ];
 
         format!(
