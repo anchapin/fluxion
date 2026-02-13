@@ -1,8 +1,9 @@
 pub mod ashrae_140;
 pub mod ashrae_140_cases;
+pub mod ashrae_140_validator;
 
 // Re-export common types for easier access
-pub use ashrae_140::{ASHRAE140Building, ASHRAE140Validator, ValidationReport};
+pub use ashrae_140_validator::{ASHRAE140Building, ASHRAE140Validator, ValidationReport};
 
 pub use ashrae_140_cases::{
     ASHRAE140Case, CaseBuilder, CaseSpec, ConstructionSpec, ConstructionType, GeometrySpec,
@@ -12,7 +13,7 @@ pub use ashrae_140_cases::{
 
 #[cfg(test)]
 mod tests {
-    use super::ashrae_140::ASHRAE140Validator;
+    use super::ashrae_140_validator::ASHRAE140Validator;
 
     #[test]
     fn test_ashrae_140_validation() {
