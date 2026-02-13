@@ -258,9 +258,11 @@ impl BatchOracle {
                 .for_each(|((_, model), energy)| {
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
-                        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        let daily_cycle =
+                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
+                        *energy +=
+                            model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
                     }
                 });
         }
@@ -334,14 +336,12 @@ mod tests {
     #[test]
     fn test_batched_vs_unbatched_consistency() {
         let oracle = BatchOracle::new().unwrap();
-        let population = vec![
-            vec![1.5, 22.0],
-            vec![2.0, 21.0],
-            vec![1.0, 23.0],
-        ];
+        let population = vec![vec![1.5, 22.0], vec![2.0, 21.0], vec![1.0, 23.0]];
 
         // Test surrogate path
-        let results_batched = oracle.evaluate_population(population.clone(), true).unwrap();
+        let results_batched = oracle
+            .evaluate_population(population.clone(), true)
+            .unwrap();
         assert!(results_batched.iter().all(|r: &f64| r.is_finite()));
 
         // Test analytical path for comparison
@@ -379,9 +379,7 @@ mod tests {
     #[test]
     fn test_10k_population_throughput() {
         let oracle = BatchOracle::new().unwrap();
-        let population: Vec<Vec<f64>> = (0..10_000)
-            .map(|_| vec![1.5, 22.0])
-            .collect();
+        let population: Vec<Vec<f64>> = (0..10_000).map(|_| vec![1.5, 22.0]).collect();
 
         let start = std::time::Instant::now();
         let results = oracle.evaluate_population(population, true).unwrap();

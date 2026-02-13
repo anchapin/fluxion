@@ -3,11 +3,11 @@ pub mod benchmark;
 pub mod report;
 
 // Re-export commonly used types
+pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
 pub use report::{
-    BenchmarkData, MetricType, ReferenceProgram, ValidationResult, ValidationReport,
-    ValidationStatus,
+    BenchmarkData, MetricType, ReferenceProgram, ValidationReport, ValidationResult,
+    ValidationStatus, ValidationSuite,
 };
-pub use benchmark::{get_all_benchmark_data, get_benchmark_data, get_all_case_ids};
 
 #[cfg(test)]
 mod tests {

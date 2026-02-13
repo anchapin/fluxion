@@ -19,17 +19,17 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     data.insert(
         "600".to_string(),
         BenchmarkData {
-            annual_heating_min: 4.30,  // MWh
+            annual_heating_min: 4.30, // MWh
             annual_heating_max: 5.71,
-            annual_cooling_min: 6.14,  // MWh
+            annual_cooling_min: 6.14, // MWh
             annual_cooling_max: 8.45,
-            peak_heating_min: 4.20,    // kW
+            peak_heating_min: 4.20, // kW
             peak_heating_max: 5.60,
-            peak_cooling_min: 2.90,    // kW
+            peak_cooling_min: 2.90, // kW
             peak_cooling_max: 3.90,
             min_free_float_min: -18.8, // °C
             min_free_float_max: -15.6,
-            max_free_float_min: 64.9,  // °C
+            max_free_float_min: 64.9, // °C
             max_free_float_max: 75.1,
         },
     );

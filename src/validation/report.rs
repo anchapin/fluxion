@@ -100,7 +100,7 @@ pub enum ReferenceProgram {
     /// EnergyPlus - DOE's flagship building energy simulation program
     EnergyPlus,
     /// ESP-r - Research-grade building energy simulation from University of Strathclyde
-    ESP_r,
+    EspR,
     /// TRNSYS - Transient System Simulation Tool
     TRNSYS,
     /// DOE2 - Legacy DOE building energy simulation program
@@ -111,7 +111,7 @@ impl fmt::Display for ReferenceProgram {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ReferenceProgram::EnergyPlus => write!(f, "EnergyPlus"),
-            ReferenceProgram::ESP_r => write!(f, "ESP-r"),
+            ReferenceProgram::EspR => write!(f, "ESP-r"),
             ReferenceProgram::TRNSYS => write!(f, "TRNSYS"),
             ReferenceProgram::DOE2 => write!(f, "DOE2"),
         }
@@ -265,19 +265,22 @@ impl ValidationResult {
         };
 
         // Determine pass/fail status
-        // Pass: Within [Ref Min * 0.95, Ref Max * 1.05]
-        // Warning: Within [Ref Min, Ref Max] but >2% deviation
+        // Pass: Within [Ref Min, Ref Max] with <10% deviation from midpoint
+        // Warning: Within [Ref Min, Ref Max] with >=10% deviation, OR within tolerance band but outside ref range
         // Fail: Outside 5% tolerance band
         let tolerance_min = ref_min * 0.95;
         let tolerance_max = ref_max * 1.05;
 
-        let status = if fluxion_value >= tolerance_min && fluxion_value <= tolerance_max {
-            // Within tolerance - check if warning
-            if fluxion_value >= ref_min && fluxion_value <= ref_max && percent_error.abs() > 2.0 {
+        let status = if fluxion_value >= ref_min && fluxion_value <= ref_max {
+            // Within reference range - check percent error
+            if percent_error.abs() >= 10.0 {
                 ValidationStatus::Warning
             } else {
                 ValidationStatus::Pass
             }
+        } else if fluxion_value >= tolerance_min && fluxion_value <= tolerance_max {
+            // Within tolerance band but outside reference range
+            ValidationStatus::Warning
         } else {
             ValidationStatus::Fail
         };
@@ -364,9 +367,7 @@ impl ValidationReport {
         for result in &self.results {
             if result.case_id != baseline_case {
                 // Find matching metric in baseline
-                if let Some(baseline) = baseline_results
-                    .iter()
-                    .find(|b| b.metric == result.metric)
+                if let Some(baseline) = baseline_results.iter().find(|b| b.metric == result.metric)
                 {
                     let delta = result.fluxion_value - baseline.fluxion_value;
                     let key = format!("{} - {}", result.case_id, result.metric.display_name());
@@ -441,11 +442,17 @@ impl ValidationReport {
         output.push_str("|--------|-------|\n");
         output.push_str(&format!("| Total Results | {} |\n", self.results.len()));
         output.push_str(&format!("| Pass Rate | {:.1}% |\n", self.pass_rate()));
-        output.push_str(&format!("| Passed | {} |\n", self.results.iter().filter(|r| r.passed()).count()));
+        output.push_str(&format!(
+            "| Passed | {} |\n",
+            self.results.iter().filter(|r| r.passed()).count()
+        ));
         output.push_str(&format!("| Warnings | {} |\n", self.warning_count()));
         output.push_str(&format!("| Failed | {} |\n", self.fail_count()));
         output.push_str(&format!("| Mean Absolute Error | {:.2}% |\n", self.mae()));
-        output.push_str(&format!("| Max Deviation | {:.2}% |\n", self.max_deviation()));
+        output.push_str(&format!(
+            "| Max Deviation | {:.2}% |\n",
+            self.max_deviation()
+        ));
         output.push('\n');
 
         // Detailed results table
@@ -528,7 +535,9 @@ impl ValidationReport {
         html.push_str("    body { font-family: Arial, sans-serif; margin: 40px; }\n");
         html.push_str("    h1 { color: #333; }\n");
         html.push_str("    h2 { color: #666; border-bottom: 1px solid #ddd; }\n");
-        html.push_str("    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }\n");
+        html.push_str(
+            "    table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }\n",
+        );
         html.push_str("    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }\n");
         html.push_str("    th { background-color: #f2f2f2; }\n");
         html.push_str("    tr:nth-child(even) { background-color: #f9f9f9; }\n");
@@ -547,7 +556,10 @@ impl ValidationReport {
         html.push_str("  <h2>Summary</h2>\n");
         html.push_str("  <table>\n");
         html.push_str("    <tr><th>Metric</th><th>Value</th></tr>\n");
-        html.push_str(&format!("    <tr><td>Total Results</td><td>{}</td></tr>\n", self.results.len()));
+        html.push_str(&format!(
+            "    <tr><td>Total Results</td><td>{}</td></tr>\n",
+            self.results.len()
+        ));
         html.push_str(&format!(
             "    <tr><td>Pass Rate</td><td>{:.1}%</td></tr>\n",
             self.pass_rate()
@@ -592,9 +604,7 @@ impl ValidationReport {
                 "negative"
             };
 
-            html.push_str(&format!(
-                "    <tr>\n",
-            ));
+            html.push_str("    <tr>\n");
             html.push_str(&format!("      <td>{}</td>\n", result.case_id));
             html.push_str(&format!("      <td>{}</td>\n", result.metric));
             html.push_str(&format!("      <td>{:.2}</td>\n", result.fluxion_value));
@@ -621,7 +631,10 @@ impl ValidationReport {
 
             if !deltas.is_empty() {
                 html.push_str("  <h2>Delta Analysis</h2>\n");
-                html.push_str(&format!("  <p><strong>Baseline:</strong> {}</p>\n", baseline));
+                html.push_str(&format!(
+                    "  <p><strong>Baseline:</strong> {}</p>\n",
+                    baseline
+                ));
                 html.push_str("  <table>\n");
                 html.push_str("    <tr><th>Case - Metric</th><th>Delta from Baseline</th></tr>\n");
 
@@ -642,7 +655,9 @@ impl ValidationReport {
         if !worst.is_empty() {
             html.push_str("  <h2>Worst Performing Cases</h2>\n");
             html.push_str("  <table>\n");
-            html.push_str("    <tr><th>Case</th><th>Metric</th><th>Deviation</th><th>Status</th></tr>\n");
+            html.push_str(
+                "    <tr><th>Case</th><th>Metric</th><th>Deviation</th><th>Status</th></tr>\n",
+            );
 
             for result in worst {
                 let status_class = match result.status {
@@ -668,7 +683,9 @@ impl ValidationReport {
         html.push_str("  <h2>Legend</h2>\n");
         html.push_str("  <ul>\n");
         html.push_str("    <li><strong>PASS</strong>: Value within 5% of reference range</li>\n");
-        html.push_str("    <li><strong>WARN</strong>: Value within reference range but >2% deviation</li>\n");
+        html.push_str(
+            "    <li><strong>WARN</strong>: Value within reference range but >2% deviation</li>\n",
+        );
         html.push_str("    <li><strong>FAIL</strong>: Value outside 5% tolerance band</li>\n");
         html.push_str("  </ul>\n");
 
@@ -727,7 +744,10 @@ impl ValidationReport {
         println!("Validation Report Summary:");
         println!("  Total Results: {}", self.results.len());
         println!("  Pass Rate: {:.1}%", self.pass_rate());
-        println!("  Passed: {}", self.results.iter().filter(|r| r.passed()).count());
+        println!(
+            "  Passed: {}",
+            self.results.iter().filter(|r| r.passed()).count()
+        );
         println!("  Warnings: {}", self.warning_count());
         println!("  Failed: {}", self.fail_count());
         println!("  Mean Absolute Error: {:.2}%", self.mae());
@@ -796,6 +816,21 @@ impl ValidationSuite {
         self.results.is_empty()
     }
 
+    /// Returns the number of passed results.
+    pub fn pass_count(&self) -> usize {
+        self.results.iter().filter(|r| r.passed()).count()
+    }
+
+    /// Returns the number of failed results.
+    pub fn fail_count(&self) -> usize {
+        self.results.iter().filter(|r| r.failed()).count()
+    }
+
+    /// Returns the number of warning results.
+    pub fn warning_count(&self) -> usize {
+        self.results.iter().filter(|r| r.warning()).count()
+    }
+
     /// Calculates the pass rate as a percentage.
     pub fn calculate_pass_rate(&self) -> f64 {
         if self.results.is_empty() {
@@ -836,17 +871,28 @@ impl ValidationSuite {
         total_error / self.results.len() as f64
     }
 
+    /// Alias for calculate_mae() for consistency with ValidationReport.
+    pub fn mae(&self) -> f64 {
+        self.calculate_mae()
+    }
+
+    /// Alias for calculate_max_deviation() for consistency with ValidationReport.
+    pub fn max_deviation(&self) -> f64 {
+        self.calculate_max_deviation()
+    }
+
+    /// Alias for calculate_pass_rate() for consistency with ValidationReport.
+    pub fn pass_rate(&self) -> f64 {
+        self.calculate_pass_rate()
+    }
+
     /// Calculates the Root Mean Square Error (RMSE) across all results.
     pub fn calculate_rmse(&self) -> f64 {
         if self.results.is_empty() {
             return 0.0;
         }
 
-        let sum_squared: f64 = self
-            .results
-            .iter()
-            .map(|r| r.percent_error.powi(2))
-            .sum();
+        let sum_squared: f64 = self.results.iter().map(|r| r.percent_error.powi(2)).sum();
         (sum_squared / self.results.len() as f64).sqrt()
     }
 
@@ -890,10 +936,7 @@ impl ValidationSuite {
 
     /// Returns all results for a specific metric type.
     pub fn get_metric_results(&self, metric: MetricType) -> Vec<&ValidationResult> {
-        self.results
-            .iter()
-            .filter(|r| r.metric == metric)
-            .collect()
+        self.results.iter().filter(|r| r.metric == metric).collect()
     }
 
     /// Returns the pass rate for a specific case.
@@ -912,9 +955,7 @@ impl ValidationSuite {
         let mut summary: HashMap<String, (usize, usize, usize)> = HashMap::new();
 
         for result in &self.results {
-            let entry = summary
-                .entry(result.case_id.clone())
-                .or_insert((0, 0, 0));
+            let entry = summary.entry(result.case_id.clone()).or_insert((0, 0, 0));
 
             if result.passed() {
                 entry.0 += 1;
@@ -933,9 +974,7 @@ impl ValidationSuite {
         let mut summary: HashMap<MetricType, (usize, usize, usize)> = HashMap::new();
 
         for result in &self.results {
-            let entry = summary
-                .entry(result.metric)
-                .or_insert((0, 0, 0));
+            let entry = summary.entry(result.metric).or_insert((0, 0, 0));
 
             if result.passed() {
                 entry.0 += 1;
@@ -956,9 +995,101 @@ impl ValidationSuite {
         // Copy all results
         report.results = self.results.clone();
 
-        // Copy benchmark data
-        for (case_id, data) in &self.benchmark_data {
-            report.benchmark_data.insert(case_id.clone(), data.clone());
+        // Copy benchmark data, or populate from results if missing
+        if self.benchmark_data.is_empty() && !self.results.is_empty() {
+            // Create benchmark data from results
+            let mut case_data: HashMap<String, BenchmarkData> = HashMap::new();
+
+            for result in &self.results {
+                let benchmark = case_data
+                    .entry(result.case_id.clone())
+                    .or_default();
+
+                // Populate based on metric type
+                match result.metric {
+                    MetricType::AnnualHeating => {
+                        if benchmark.annual_heating_min == 0.0
+                            || result.ref_min < benchmark.annual_heating_min
+                        {
+                            benchmark.annual_heating_min = result.ref_min;
+                        }
+                        if benchmark.annual_heating_max == 0.0
+                            || result.ref_max > benchmark.annual_heating_max
+                        {
+                            benchmark.annual_heating_max = result.ref_max;
+                        }
+                    }
+                    MetricType::AnnualCooling => {
+                        if benchmark.annual_cooling_min == 0.0
+                            || result.ref_min < benchmark.annual_cooling_min
+                        {
+                            benchmark.annual_cooling_min = result.ref_min;
+                        }
+                        if benchmark.annual_cooling_max == 0.0
+                            || result.ref_max > benchmark.annual_cooling_max
+                        {
+                            benchmark.annual_cooling_max = result.ref_max;
+                        }
+                    }
+                    MetricType::PeakHeating => {
+                        if benchmark.peak_heating_min == 0.0
+                            || result.ref_min < benchmark.peak_heating_min
+                        {
+                            benchmark.peak_heating_min = result.ref_min;
+                        }
+                        if benchmark.peak_heating_max == 0.0
+                            || result.ref_max > benchmark.peak_heating_max
+                        {
+                            benchmark.peak_heating_max = result.ref_max;
+                        }
+                    }
+                    MetricType::PeakCooling => {
+                        if benchmark.peak_cooling_min == 0.0
+                            || result.ref_min < benchmark.peak_cooling_min
+                        {
+                            benchmark.peak_cooling_min = result.ref_min;
+                        }
+                        if benchmark.peak_cooling_max == 0.0
+                            || result.ref_max > benchmark.peak_cooling_max
+                        {
+                            benchmark.peak_cooling_max = result.ref_max;
+                        }
+                    }
+                    MetricType::MinFreeFloat => {
+                        if benchmark.min_free_float_min == 0.0
+                            || result.ref_min < benchmark.min_free_float_min
+                        {
+                            benchmark.min_free_float_min = result.ref_min;
+                        }
+                        if benchmark.min_free_float_max == 0.0
+                            || result.ref_max > benchmark.min_free_float_max
+                        {
+                            benchmark.min_free_float_max = result.ref_max;
+                        }
+                    }
+                    MetricType::MaxFreeFloat => {
+                        if benchmark.max_free_float_min == 0.0
+                            || result.ref_min < benchmark.max_free_float_min
+                        {
+                            benchmark.max_free_float_min = result.ref_min;
+                        }
+                        if benchmark.max_free_float_max == 0.0
+                            || result.ref_max > benchmark.max_free_float_max
+                        {
+                            benchmark.max_free_float_max = result.ref_max;
+                        }
+                    }
+                }
+            }
+
+            for (case_id, data) in case_data {
+                report.benchmark_data.insert(case_id, data);
+            }
+        } else {
+            // Copy existing benchmark data
+            for (case_id, data) in &self.benchmark_data {
+                report.benchmark_data.insert(case_id.clone(), data.clone());
+            }
         }
 
         report
@@ -1005,21 +1136,6 @@ impl ValidationSuite {
         }
     }
 
-    /// Returns the number of passed results.
-    pub fn pass_count(&self) -> usize {
-        self.results.iter().filter(|r| r.passed()).count()
-    }
-
-    /// Returns the number of warnings.
-    pub fn warning_count(&self) -> usize {
-        self.results.iter().filter(|r| r.warning()).count()
-    }
-
-    /// Returns the number of failed results.
-    pub fn fail_count(&self) -> usize {
-        self.results.iter().filter(|r| r.failed()).count()
-    }
-
     /// Clears all results from the suite.
     pub fn clear(&mut self) {
         self.results.clear();
@@ -1032,7 +1148,10 @@ mod tests {
 
     #[test]
     fn test_metric_type_display() {
-        assert_eq!(MetricType::AnnualHeating.display_name(), "Annual Heating (MWh)");
+        assert_eq!(
+            MetricType::AnnualHeating.display_name(),
+            "Annual Heating (MWh)"
+        );
         assert_eq!(MetricType::AnnualCooling.units(), "MWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
     }
@@ -1336,8 +1455,9 @@ mod tests {
     fn test_validation_suite_mean_deviation() {
         let mut suite = ValidationSuite::new();
 
-        suite.add_result_simple("600", MetricType::AnnualHeating, 5.5, 4.30, 5.71); // +10%
-        suite.add_result_simple("600", MetricType::AnnualCooling, 6.0, 6.14, 8.45); // -10%
+        // Use values that are more symmetric to get mean close to 0
+        suite.add_result_simple("600", MetricType::AnnualHeating, 5.5, 4.30, 5.71); // +9.89%
+        suite.add_result_simple("600", MetricType::AnnualCooling, 6.57, 6.14, 8.45); // -10%
 
         let mean_dev = suite.calculate_mean_deviation();
         // Should be close to 0 (positive and negative cancel out)
