@@ -53,6 +53,10 @@ use std::f64::consts::PI;
 ///     fn ground_temperature(&self, _hour_of_year: usize) -> f64 {
 ///         self.temp
 ///     }
+///
+///     fn clone_box(&self) -> Box<dyn GroundTemperature> {
+///         Box::new(SimpleGround { temp: self.temp })
+///     }
 /// }
 /// ```
 pub trait GroundTemperature: Send + Sync {

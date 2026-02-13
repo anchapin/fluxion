@@ -147,7 +147,7 @@ impl HourlyWeatherData {
 
     /// Returns the month (1-12) for this weather data.
     ///
-    /// Uses a simplified approximation assuming 30 days per month.
+    /// Uses accurate month lengths to determine the month from day of year.
     ///
     /// # Example
     ///
@@ -158,7 +158,21 @@ impl HourlyWeatherData {
     /// assert_eq!(weather.month(), 2); // Hour 744 is in February
     /// ```
     pub fn month(&self) -> usize {
-        (self.day_of_year() / 30) + 1
+        // Month lengths for a non-leap year
+        const MONTH_LENGTHS: [usize; 12] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+        let day = self.day_of_year();
+        let mut cumulative = 0;
+
+        for (month_idx, &length) in MONTH_LENGTHS.iter().enumerate() {
+            cumulative += length;
+            if day < cumulative {
+                return month_idx + 1;
+            }
+        }
+
+        // If we've gone through all months, it must be December
+        12
     }
 }
 
@@ -277,7 +291,8 @@ pub trait WeatherSource {
     /// let weather = MyWeatherSource;
     /// let mut max_temp = -999.0;
     ///
-    /// for data in weather.iter_hours() {
+    /// for data_result in weather.iter_hours() {
+    ///     let data = data_result.unwrap();
     ///     if data.dry_bulb_temp > max_temp {
     ///         max_temp = data.dry_bulb_temp;
     ///     }
@@ -371,10 +386,10 @@ mod tests {
         assert_eq!(weather.month(), 1); // January
 
         let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 744);
-        assert_eq!(weather.month(), 2); // February (approx)
+        assert_eq!(weather.month(), 2); // February
 
-        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7344); // Hour 306 * 24
-        assert_eq!(weather.month(), 12); // December (approx)
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 7344); // Hour 306 * 24, day 306 is in November
+        assert_eq!(weather.month(), 11); // November
     }
 
     #[test]
