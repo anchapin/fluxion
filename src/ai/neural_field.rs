@@ -93,15 +93,12 @@ impl NeuralScalarField<f64> {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut session = Session::builder()?.commit_from_file(model_path)?;
 
-        // Convert ndarray to shape+vec to bypass version mismatch
-        // OwnedTensorArrayData requires Vec<T>, not &[T]
-        let shape: Vec<i64> = input.shape().iter().map(|&x| x as i64).collect();
-        let input_vec = input
-            .as_slice()
-            .ok_or("Input array is not contiguous")?
-            .to_vec();
+        // Convert dynamic-dim array to a flat vector for ONNX Runtime
+        let shape: Vec<usize> = input.shape().to_vec();
+        let (data, _offset) = input.into_raw_vec_and_offset();
 
-        let input_tensor = Value::from_array((shape, input_vec))?;
+        // Create tensor from shape and data using the tuple format supported by rc.11
+        let input_tensor = Value::from_array((shape, data))?;
         let outputs = session.run(ort::inputs![input_tensor])?;
 
         // Assuming the first output is the weights

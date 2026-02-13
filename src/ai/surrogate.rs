@@ -229,29 +229,26 @@ impl SurrogateManager {
 
         // If we have a session pool, acquire a session and perform inference.
         if let Some(ref pool) = self.session_pool {
-            use ort::value::TensorRef;
-
-            // Convert input temps into an ndarray 2D float32 array (1, N)
-            let n_input = current_temps.len();
-            // Use a flat vector for creation to bypass ndarray version mismatch
+            // Convert input temps to f32
             let input_data: Vec<f32> = current_temps.iter().map(|&x| x as f32).collect();
-            let input_shape = vec![1, n_input as i64];
+            let n_input = input_data.len();
 
             // Try to acquire a session from the pool
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    // Create a tensor reference from the flat data and shape
-                    let tensor_ref =
-                        match TensorRef::from_array_view((input_shape, input_data.as_slice())) {
+                    // Create a tensor from owned data using the tuple format (shape, data)
+                    // This is compatible with ort 2.0.0-rc.11
+                    let input_tensor =
+                        match ort::value::Value::from_array(([1, n_input], input_data)) {
                             Ok(t) => t,
                             Err(e) => {
-                                eprintln!("Failed to create tensor ref: {}; using mock loads", e);
+                                eprintln!("Failed to create input tensor: {}; using mock loads", e);
                                 return vec![1.2; n_input];
                             }
                         };
 
                     // Run inference using the inputs! macro pattern
-                    match session_guard.run(ort::inputs![tensor_ref]) {
+                    match session_guard.run(ort::inputs![input_tensor]) {
                         Ok(outputs) => {
                             // Extract the first output
                             if outputs.len() > 0 {
@@ -303,8 +300,6 @@ impl SurrogateManager {
         }
 
         if let Some(ref pool) = self.session_pool {
-            use ort::value::TensorRef;
-
             let batch_size = batch_temps.len();
             let input_size = batch_temps[0].len();
 
@@ -321,20 +316,23 @@ impl SurrogateManager {
                 .iter()
                 .flat_map(|v| v.iter().map(|&x| x as f32))
                 .collect();
-            let input_shape = vec![batch_size as i64, input_size as i64];
 
             match pool.get_or_create_session() {
                 Ok(mut session_guard) => {
-                    let tensor_ref =
-                        match TensorRef::from_array_view((input_shape, flattened.as_slice())) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                eprintln!("Failed to create tensor ref: {}; using mock loads", e);
-                                return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
-                            }
-                        };
+                    // Create tensor from owned data using the tuple format (shape, data)
+                    // This is compatible with ort 2.0.0-rc.11
+                    let input_tensor = match ort::value::Value::from_array((
+                        vec![batch_size, input_size],
+                        flattened,
+                    )) {
+                        Ok(t) => t,
+                        Err(e) => {
+                            eprintln!("Failed to create input tensor: {}; using mock loads", e);
+                            return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
+                        }
+                    };
 
-                    match session_guard.run(ort::inputs![tensor_ref]) {
+                    match session_guard.run(ort::inputs![input_tensor]) {
                         Ok(outputs) => {
                             if outputs.len() > 0 {
                                 match outputs[0].try_extract_array::<f32>() {

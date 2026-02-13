@@ -106,26 +106,46 @@ impl BatchOracle {
     // Physical constraints for optimization parameters
     const MIN_U_VALUE: f64 = 0.1; // Minimum realistic U-value (W/m²K)
     const MAX_U_VALUE: f64 = 5.0; // Maximum realistic U-value
-    const MIN_SETPOINT: f64 = 15.0; // Min HVAC setpoint (°C)
-    const MAX_SETPOINT: f64 = 30.0; // Max HVAC setpoint (°C)
+    const MIN_HEATING_SETPOINT: f64 = 15.0; // Min heating setpoint (°C)
+    const MAX_HEATING_SETPOINT: f64 = 25.0; // Max heating setpoint (°C)
+    const MIN_COOLING_SETPOINT: f64 = 22.0; // Min cooling setpoint (°C)
+    const MAX_COOLING_SETPOINT: f64 = 32.0; // Max cooling setpoint (°C)
 
     // Parameter indices
     const U_VALUE_INDEX: usize = 0;
-    const SETPOINT_INDEX: usize = 1;
+    const HEATING_SETPOINT_INDEX: usize = 1;
+    const COOLING_SETPOINT_INDEX: usize = 2;
 
     /// Validates a parameter vector against physical constraints.
     fn validate_parameters(params: &[f64]) -> Result<(), String> {
-        if params.len() < 2 {
-            return Err("Parameter vector must have at least 2 elements.".to_string());
+        if params.len() < 3 {
+            return Err("Parameter vector must have at least 3 elements.".to_string());
         }
         let u_value = params[Self::U_VALUE_INDEX];
-        let setpoint = params[Self::SETPOINT_INDEX];
+        let heating_setpoint = params[Self::HEATING_SETPOINT_INDEX];
+        let cooling_setpoint = params[Self::COOLING_SETPOINT_INDEX];
 
         if !(Self::MIN_U_VALUE..=Self::MAX_U_VALUE).contains(&u_value) {
             return Err(format!("U-value out of range: {}", u_value));
         }
-        if !(Self::MIN_SETPOINT..=Self::MAX_SETPOINT).contains(&setpoint) {
-            return Err(format!("Setpoint out of range: {}", setpoint));
+        if !(Self::MIN_HEATING_SETPOINT..=Self::MAX_HEATING_SETPOINT).contains(&heating_setpoint) {
+            return Err(format!(
+                "Heating setpoint out of range: {}",
+                heating_setpoint
+            ));
+        }
+        if !(Self::MIN_COOLING_SETPOINT..=Self::MAX_COOLING_SETPOINT).contains(&cooling_setpoint) {
+            return Err(format!(
+                "Cooling setpoint out of range: {}",
+                cooling_setpoint
+            ));
+        }
+        // Validate that heating < cooling (deadband must exist)
+        if heating_setpoint >= cooling_setpoint {
+            return Err(format!(
+                "Heating setpoint ({}) must be less than cooling setpoint ({})",
+                heating_setpoint, cooling_setpoint
+            ));
         }
         Ok(())
     }
@@ -153,9 +173,10 @@ impl BatchOracle {
     ///
     /// # Arguments
     /// * `population` - Vec of parameter vectors, each representing one design candidate.
-    ///   Each vector should have at least 2 elements:
-    ///   - `[0]`: Window U-value (W/m²K, range: 0.5-3.0)
-    ///   - `[1]`: HVAC setpoint (°C, range: 19-24)
+    ///   Each vector should have at least 3 elements:
+    ///   - `[0]`: Window U-value (W/m²K, range: 0.1-5.0)
+    ///   - `[1]`: Heating setpoint (°C, range: 15-25)
+    ///   - `[2]`: Cooling setpoint (°C, range: 22-32)
     /// * `use_surrogates` - If true, use neural network surrogates for faster (~100x) evaluation;
     ///   if false, use physics-based analytical calculations (slower but exact)
     ///
@@ -230,11 +251,11 @@ mod tests {
     fn test_batch_oracle_validation() {
         let oracle = BatchOracle::new().unwrap();
         let population = vec![
-            vec![1.5, 22.0],  // Valid
-            vec![-1.0, 22.0], // Invalid U-value
-            vec![1.5, 500.0], // Invalid setpoint
-            vec![0.05, 22.0], // Invalid U-value (too low)
-            vec![1.5, 10.0],  // Invalid setpoint (too low)
+            vec![1.5, 20.0, 27.0],  // Valid
+            vec![-1.0, 20.0, 27.0], // Invalid U-value
+            vec![1.5, 500.0, 27.0], // Invalid heating setpoint
+            vec![1.5, 20.0, 10.0],  // Invalid cooling setpoint
+            vec![1.5, 27.0, 20.0],  // Invalid: heating >= cooling
         ];
 
         let results = oracle.evaluate_population(population, false).unwrap();
@@ -255,11 +276,12 @@ mod tests {
     #[test]
     fn test_apply_parameters() {
         let mut model = ThermalModel::<VectorField>::new(10);
-        let params = vec![1.5, 22.0];
+        let params = vec![1.5, 20.0, 27.0];
 
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.hvac_setpoint, 22.0);
+        assert_eq!(model.heating_setpoint, 20.0);
+        assert_eq!(model.cooling_setpoint, 27.0);
     }
 
     #[test]
@@ -267,7 +289,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&[1.5, 21.0]);
+        model.apply_parameters(&[1.5, 20.0, 27.0]);
         let energy = model.solve_timesteps(8760, &surrogates, false);
 
         assert!(energy > 0.0, "Energy should be positive");
@@ -278,7 +300,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&[1.5, 21.0]);
+        model.apply_parameters(&[1.5, 20.0, 27.0]);
         let energy = model.solve_timesteps(8760, &surrogates, true);
 
         assert!(energy > 0.0, "Energy should be positive");
@@ -315,7 +337,9 @@ mod tests {
 
         // Create a large population
         let population_size = 2000;
-        let population: Vec<Vec<f64>> = (0..population_size).map(|_| vec![1.5, 22.0]).collect();
+        let population: Vec<Vec<f64>> = (0..population_size)
+            .map(|_| vec![1.5, 20.0, 27.0])
+            .collect();
 
         // Sequential execution (using standard iter)
         let start_seq = std::time::Instant::now();
