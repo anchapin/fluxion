@@ -4,6 +4,12 @@ pub mod sim;
 pub mod validation;
 pub mod weather;
 
+// Re-export validation types for easier access
+pub use validation::{
+    BenchmarkData, MetricType, ReferenceProgram, ValidationReport, ValidationResult,
+    ValidationStatus, ValidationSuite,
+};
+
 #[cfg(feature = "python-bindings")]
 use rayon::iter::IntoParallelRefIterator;
 #[cfg(feature = "python-bindings")]
