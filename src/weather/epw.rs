@@ -150,7 +150,7 @@ impl EpwWeatherSource {
         // Parse hourly data lines (variable number, typically 8760)
         let mut hourly_data = Vec::new();
 
-        while let Some(line_result) = lines.next() {
+        for line_result in lines {
             let line = line_result.map_err(|e| {
                 WeatherError::ParseError(format!("Failed to read data line: {}", e))
             })?;
