@@ -48,6 +48,10 @@ tempfile = "3.10"
 name = "cta_bench"
 harness = false
 
+[[bench]]
+name = "engine_bench"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
