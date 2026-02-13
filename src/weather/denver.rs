@@ -92,13 +92,14 @@ impl DenverTmyWeather {
         let hour_angle = ((hour_of_day as f64 - 12.0) / 24.0) * 2.0 * PI;
 
         // === TEMPERATURE ===
-        // Denver annual average: ~10°C, amplitude ~13°C
-        // Winter minimum: -5°C (January), Summer maximum: 25°C (July)
-        let seasonal_temp = 10.0 - 13.0 * day_angle.cos();
+        // Denver annual average: ~10°C, amplitude ~15°C
+        // Winter minimum: -7°C (January), Summer maximum: 28°C (July)
+        let seasonal_temp = 10.0 - 15.0 * day_angle.cos();
 
-        // Daily temperature variation: 8-10°C amplitude
-        // Coldest at ~4am, warmest at ~3pm
-        let daily_temp = 9.0 * hour_angle.cos();
+        // Daily temperature variation: 6-8°C amplitude
+        // Coldest at ~4am, warmest at ~3pm (hour 15)
+        // Shift hour angle by -3 hours (π/4 radians) to peak at 3pm
+        let daily_temp = 7.0 * (hour_angle - PI / 4.0).cos();
 
         // Add some randomness for realism
         let temp_noise = ((hour as f64 * 0.1).sin() * 0.5).clamp(-2.0, 2.0);
@@ -108,7 +109,10 @@ impl DenverTmyWeather {
         // === SOLAR RADIATION ===
         // Denver latitude: 39.83°N = 0.695 radians
         let latitude = 39.83 * PI / 180.0;
-        let declination = 23.45 * PI / 180.0 * day_angle.sin();
+        // Solar declination: use offset so max occurs at summer solstice (day ~172)
+        // Offset of -80 days aligns with March equinox at day 80
+        let declination_angle = day_angle - (80.0 / 365.0) * 2.0 * PI;
+        let declination = 23.45 * PI / 180.0 * declination_angle.sin();
 
         // Solar hour angle at sunrise/sunset
         let _sunset_angle = (-latitude.tan() * declination.tan()).acos();
@@ -121,11 +125,13 @@ impl DenverTmyWeather {
         // Solar elevation for DNI (only positive when sun is above horizon)
         let dni = if elevation > 0.0 {
             // Maximum DNI at Denver altitude (high altitude = less atmosphere)
-            // ~1000 W/m² at solar noon on clear days
-            let max_dni = 1000.0;
+            // Denver at 1655m has ~15% less atmosphere than sea level
+            // Sea level max: ~1000 W/m², Denver max: ~1100 W/m²
+            let max_dni = 1100.0;
             // Atmospheric extinction: varies with elevation angle
+            // At 1655m, clearer skies mean higher transmittance
             let air_mass = 1.0 / elevation.sin().max(0.1);
-            let clear_sky = max_dni * (0.7_f64.powf(air_mass));
+            let clear_sky = max_dni * (0.85_f64.powf(air_mass));
             clear_sky.max(0.0)
         } else {
             0.0
