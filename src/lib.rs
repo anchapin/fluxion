@@ -5,12 +5,7 @@ pub mod validation;
 pub mod weather;
 
 #[cfg(feature = "python-bindings")]
-use rayon::iter::IntoParallelRefIterator;
-#[cfg(feature = "python-bindings")]
-use rayon::prelude::ParallelIterator;
-
-#[cfg(feature = "python-bindings")]
-use crate::physics::cta::VectorField;
+use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "python-bindings")]
 use ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]
@@ -200,7 +195,7 @@ impl BatchOracle {
         use rayon::prelude::*;
 
         // 1. Validate and initialize all models upfront (parallel)
-        let valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
+        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
             .par_iter()
             .enumerate()
             .filter_map(|(i, params)| {
@@ -235,7 +230,7 @@ impl BatchOracle {
 
                 // 2c. Parallel physics update (distribute loads and solve)
                 valid_configs
-                    .par_iter()
+                    .par_iter_mut()
                     .zip(energies.par_iter_mut())
                     .zip(batch_loads.par_iter())
                     .for_each(|(((_, model), energy), loads)| {
@@ -247,14 +242,16 @@ impl BatchOracle {
             // Analytical path - fully parallel (no batching needed)
             // Each config independently runs through all timesteps
             valid_configs
-                .par_iter()
+                .par_iter_mut()
                 .zip(energies.par_iter_mut())
                 .for_each(|((_, model), energy)| {
                     for t in 0..8760 {
                         let hour_of_day = t % 24;
-                        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        let daily_cycle =
+                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
+                        *energy +=
+                            model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
                     }
                 });
         }
@@ -328,14 +325,12 @@ mod tests {
     #[test]
     fn test_batched_vs_unbatched_consistency() {
         let oracle = BatchOracle::new().unwrap();
-        let population = vec![
-            vec![1.5, 22.0],
-            vec![2.0, 21.0],
-            vec![1.0, 23.0],
-        ];
+        let population = vec![vec![1.5, 22.0], vec![2.0, 21.0], vec![1.0, 23.0]];
 
         // Test surrogate path
-        let results_batched = oracle.evaluate_population(population.clone(), true).unwrap();
+        let results_batched = oracle
+            .evaluate_population(population.clone(), true)
+            .unwrap();
         assert!(results_batched.iter().all(|r: &f64| r.is_finite()));
 
         // Test analytical path for comparison
@@ -373,9 +368,7 @@ mod tests {
     #[test]
     fn test_10k_population_throughput() {
         let oracle = BatchOracle::new().unwrap();
-        let population: Vec<Vec<f64>> = (0..10_000)
-            .map(|_| vec![1.5, 22.0])
-            .collect();
+        let population: Vec<Vec<f64>> = (0..10_000).map(|_| vec![1.5, 22.0]).collect();
 
         let start = std::time::Instant::now();
         let results = oracle.evaluate_population(population, true).unwrap();

@@ -91,8 +91,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             infiltration_rate: self.infiltration_rate.clone(),
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
-            hvac_cooling_capacity: self.hvac_cooling_capacity.clone(),
-            hvac_heating_capacity: self.hvac_heating_capacity.clone(),
+            hvac_cooling_capacity: self.hvac_cooling_capacity,
+            hvac_heating_capacity: self.hvac_heating_capacity,
             h_tr_w: self.h_tr_w.clone(),
             h_tr_em: self.h_tr_em.clone(),
             h_tr_ms: self.h_tr_ms.clone(),
@@ -378,7 +378,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// # Returns
     /// HVAC energy consumption for the timestep in kWh.
-    pub fn step_physics(&mut self, _timestep: usize, outdoor_temp: f64) -> f64 {
+    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
         // Convert loads (W/m²) to Watts
@@ -507,7 +507,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         diffusivity: f64,
     ) {
         self.ground_temperature = Box::new(DynamicGroundTemperature::new(
-            t_mean, t_amplitude, depth, diffusivity,
+            t_mean,
+            t_amplitude,
+            depth,
+            diffusivity,
         ));
     }
 
@@ -658,7 +661,12 @@ mod tests {
         let energy2 = model2.step_physics(0, 20.0);
 
         // Results should be identical
-        assert!((energy1 - energy2).abs() < 1e-9, "Energy mismatch: {} vs {}", energy1, energy2);
+        assert!(
+            (energy1 - energy2).abs() < 1e-9,
+            "Energy mismatch: {} vs {}",
+            energy1,
+            energy2
+        );
     }
 
     #[test]
@@ -912,8 +920,10 @@ mod tests {
         assert!(
             lag_hours >= 0,
             "Indoor/outdoor peak times should differ: indoor at {} ({}°C), outdoor at {} ({}°C)",
-            max_indoor_hour_steady + 24, max_indoor_temp,
-            max_outdoor_hour_steady + 24, max_outdoor_temp
+            max_indoor_hour_steady + 24,
+            max_indoor_temp,
+            max_outdoor_hour_steady + 24,
+            max_outdoor_temp
         );
     }
 
@@ -1119,7 +1129,6 @@ mod tests {
 
         #[test]
         fn test_with_custom_ground_temperature() {
-
             let mut model = ThermalModel::<VectorField>::new(1);
 
             // Set custom ground temperature

@@ -31,7 +31,7 @@
 //!     .unwrap();
 //! ```
 
-use crate::sim::construction::{Construction, Assemblies};
+use crate::sim::construction::{Assemblies, Construction};
 use serde::{Deserialize, Serialize};
 
 /// Window specification with U-value, SHGC, and optical properties.
@@ -227,36 +227,60 @@ impl ASHRAE140Case {
     /// Returns a human-readable description of the test case.
     pub fn description(&self) -> String {
         match self {
-            ASHRAE140Case::Case600 => "Low mass baseline - standard construction with south windows".to_string(),
+            ASHRAE140Case::Case600 => {
+                "Low mass baseline - standard construction with south windows".to_string()
+            }
             ASHRAE140Case::Case610 => "Low mass with south shading (1m overhang)".to_string(),
             ASHRAE140Case::Case620 => "Low mass with east/west windows (6m² each)".to_string(),
-            ASHRAE140Case::Case630 => "Low mass with east/west shading (overhang + fins)".to_string(),
+            ASHRAE140Case::Case630 => {
+                "Low mass with east/west shading (overhang + fins)".to_string()
+            }
             ASHRAE140Case::Case640 => "Low mass with thermostat setback (overnight)".to_string(),
             ASHRAE140Case::Case650 => "Low mass with night ventilation (no heating)".to_string(),
             ASHRAE140Case::Case600FF => "Low mass free-floating (no HVAC)".to_string(),
             ASHRAE140Case::Case650FF => "Low mass free-floating with night ventilation".to_string(),
-            ASHRAE140Case::Case900 => "High mass baseline - concrete construction with south windows".to_string(),
+            ASHRAE140Case::Case900 => {
+                "High mass baseline - concrete construction with south windows".to_string()
+            }
             ASHRAE140Case::Case910 => "High mass with south shading (1m overhang)".to_string(),
             ASHRAE140Case::Case920 => "High mass with east/west windows (6m² each)".to_string(),
-            ASHRAE140Case::Case930 => "High mass with east/west shading (overhang + fins)".to_string(),
+            ASHRAE140Case::Case930 => {
+                "High mass with east/west shading (overhang + fins)".to_string()
+            }
             ASHRAE140Case::Case940 => "High mass with thermostat setback (overnight)".to_string(),
             ASHRAE140Case::Case950 => "High mass with night ventilation (no heating)".to_string(),
             ASHRAE140Case::Case900FF => "High mass free-floating (no HVAC)".to_string(),
-            ASHRAE140Case::Case950FF => "High mass free-floating with night ventilation".to_string(),
-            ASHRAE140Case::Case960 => "Sunspace - 2-zone building (back-zone + sunspace)".to_string(),
-            ASHRAE140Case::Case195 => "Solid conduction - no windows, no infiltration, no loads".to_string(),
+            ASHRAE140Case::Case950FF => {
+                "High mass free-floating with night ventilation".to_string()
+            }
+            ASHRAE140Case::Case960 => {
+                "Sunspace - 2-zone building (back-zone + sunspace)".to_string()
+            }
+            ASHRAE140Case::Case195 => {
+                "Solid conduction - no windows, no infiltration, no loads".to_string()
+            }
         }
     }
 
     /// Returns the construction type (low mass vs high mass).
     pub fn construction_type(&self) -> ConstructionType {
         match self {
-            ASHRAE140Case::Case600 | ASHRAE140Case::Case610 | ASHRAE140Case::Case620 |
-            ASHRAE140Case::Case630 | ASHRAE140Case::Case640 | ASHRAE140Case::Case650 |
-            ASHRAE140Case::Case600FF | ASHRAE140Case::Case650FF => ConstructionType::LowMass,
-            ASHRAE140Case::Case900 | ASHRAE140Case::Case910 | ASHRAE140Case::Case920 |
-            ASHRAE140Case::Case930 | ASHRAE140Case::Case940 | ASHRAE140Case::Case950 |
-            ASHRAE140Case::Case900FF | ASHRAE140Case::Case950FF => ConstructionType::HighMass,
+            ASHRAE140Case::Case600
+            | ASHRAE140Case::Case610
+            | ASHRAE140Case::Case620
+            | ASHRAE140Case::Case630
+            | ASHRAE140Case::Case640
+            | ASHRAE140Case::Case650
+            | ASHRAE140Case::Case600FF
+            | ASHRAE140Case::Case650FF => ConstructionType::LowMass,
+            ASHRAE140Case::Case900
+            | ASHRAE140Case::Case910
+            | ASHRAE140Case::Case920
+            | ASHRAE140Case::Case930
+            | ASHRAE140Case::Case940
+            | ASHRAE140Case::Case950
+            | ASHRAE140Case::Case900FF
+            | ASHRAE140Case::Case950FF => ConstructionType::HighMass,
             ASHRAE140Case::Case960 => ConstructionType::Special,
             ASHRAE140Case::Case195 => ConstructionType::Special,
         }
@@ -266,8 +290,10 @@ impl ASHRAE140Case {
     pub fn is_free_floating(&self) -> bool {
         matches!(
             self,
-            ASHRAE140Case::Case600FF | ASHRAE140Case::Case650FF |
-            ASHRAE140Case::Case900FF | ASHRAE140Case::Case950FF
+            ASHRAE140Case::Case600FF
+                | ASHRAE140Case::Case650FF
+                | ASHRAE140Case::Case900FF
+                | ASHRAE140Case::Case950FF
         )
     }
 
@@ -354,7 +380,7 @@ impl WindowArea {
         WindowArea {
             area,
             orientation,
-            height: 2.0,      // Default height (Case 600 windows are 2m tall)
+            height: 2.0,       // Default height (Case 600 windows are 2m tall)
             width: area / 2.0, // Default width derived from area
             sill_height: 0.2,  // Default offset from floor (Case 600 has 0.2m sill)
             left_offset: 0.5,  // Default offset from left edge
@@ -664,7 +690,7 @@ impl NightVentilation {
     /// Creates the ASHRAE 140 Case 650 night ventilation specification.
     pub fn case_650() -> Self {
         NightVentilation {
-            fan_capacity: 1703.16, // standard m³/h (from ASHRAE 140 spec)
+            fan_capacity: 1703.16,    // standard m³/h (from ASHRAE 140 spec)
             operating_hours: (18, 7), // 18:00 to 07:00 (wraps midnight)
             adds_heat: false,
         }
@@ -735,7 +761,11 @@ pub struct GeometrySpec {
 impl GeometrySpec {
     /// Creates a new geometry specification.
     pub fn new(width: f64, depth: f64, height: f64) -> Self {
-        GeometrySpec { width, depth, height }
+        GeometrySpec {
+            width,
+            depth,
+            height,
+        }
     }
 
     /// Returns the floor area in square meters (m²).
@@ -832,7 +862,9 @@ impl CaseSpec {
         if !self.hvac.is_free_floating() {
             // Allow heating == cooling for bang-bang control (Case 195)
             if self.hvac.heating_setpoint > self.hvac.cooling_setpoint {
-                return Err("Heating setpoint must be less than or equal to cooling setpoint".to_string());
+                return Err(
+                    "Heating setpoint must be less than or equal to cooling setpoint".to_string(),
+                );
             }
             if self.hvac.efficiency <= 0.0 || self.hvac.efficiency > 1.0 {
                 return Err("HVAC efficiency must be in (0, 1]".to_string());
@@ -875,8 +907,7 @@ impl CaseSpec {
 
     /// Returns true if this case has shading devices.
     pub fn has_shading(&self) -> bool {
-        self.shading.is_some() &&
-            self.shading.as_ref().unwrap().shading_type != ShadingType::None
+        self.shading.is_some() && self.shading.as_ref().unwrap().shading_type != ShadingType::None
     }
 }
 
@@ -972,7 +1003,12 @@ impl CaseBuilder {
     }
 
     /// Sets custom construction assemblies.
-    pub fn with_construction(mut self, wall: Construction, roof: Construction, floor: Construction) -> Self {
+    pub fn with_construction(
+        mut self,
+        wall: Construction,
+        roof: Construction,
+        floor: Construction,
+    ) -> Self {
         self.construction = Some(ConstructionSpec::new(wall, roof, floor));
         self
     }
@@ -991,8 +1027,10 @@ impl CaseBuilder {
 
     /// Adds east and west windows with equal area.
     pub fn with_ew_windows(mut self, each_area: f64) -> Self {
-        self.windows.push(WindowArea::new(each_area, Orientation::East));
-        self.windows.push(WindowArea::new(each_area, Orientation::West));
+        self.windows
+            .push(WindowArea::new(each_area, Orientation::East));
+        self.windows
+            .push(WindowArea::new(each_area, Orientation::West));
         self
     }
 
@@ -1056,8 +1094,9 @@ impl CaseBuilder {
     /// Ok(CaseSpec) if validation passes, Err(String) if validation fails.
     pub fn build(self) -> Result<CaseSpec, String> {
         // Use default construction if not specified
-        let construction = self.construction.unwrap_or_else(|| {
-            match self.construction_type {
+        let construction = self
+            .construction
+            .unwrap_or_else(|| match self.construction_type {
                 ConstructionType::LowMass => ConstructionSpec::new(
                     Assemblies::low_mass_wall(),
                     Assemblies::low_mass_roof(),
@@ -1073,8 +1112,7 @@ impl CaseBuilder {
                     Assemblies::low_mass_roof(),
                     Assemblies::insulated_floor(),
                 ),
-            }
-        });
+            });
 
         let spec = CaseSpec {
             case_id: self.case_id.unwrap_or_else(|| "custom".to_string()),
@@ -1103,7 +1141,9 @@ impl CaseBuilder {
     pub fn case_600_baseline() -> CaseSpec {
         Self::new()
             .with_case_id("600".to_string())
-            .with_description("Low mass baseline - standard construction with south windows".to_string())
+            .with_description(
+                "Low mass baseline - standard construction with south windows".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
@@ -1243,7 +1283,9 @@ impl CaseBuilder {
     pub fn case_900_baseline() -> CaseSpec {
         Self::new()
             .with_case_id("900".to_string())
-            .with_description("High mass baseline - concrete construction with south windows".to_string())
+            .with_description(
+                "High mass baseline - concrete construction with south windows".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
             .with_south_window(12.0)
@@ -1400,7 +1442,9 @@ impl CaseBuilder {
     pub fn case_195_solid_conduction() -> CaseSpec {
         Self::new()
             .with_case_id("195".to_string())
-            .with_description("Solid conduction - no windows, no infiltration, no loads".to_string())
+            .with_description(
+                "Solid conduction - no windows, no infiltration, no loads".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_window_properties(WindowSpec::double_clear_glass())
@@ -1431,9 +1475,18 @@ mod tests {
         assert!(ASHRAE140Case::Case960.description().contains("sunspace"));
 
         // Test construction types
-        assert_eq!(ASHRAE140Case::Case600.construction_type(), ConstructionType::LowMass);
-        assert_eq!(ASHRAE140Case::Case900.construction_type(), ConstructionType::HighMass);
-        assert_eq!(ASHRAE140Case::Case960.construction_type(), ConstructionType::Special);
+        assert_eq!(
+            ASHRAE140Case::Case600.construction_type(),
+            ConstructionType::LowMass
+        );
+        assert_eq!(
+            ASHRAE140Case::Case900.construction_type(),
+            ConstructionType::HighMass
+        );
+        assert_eq!(
+            ASHRAE140Case::Case960.construction_type(),
+            ConstructionType::Special
+        );
 
         // Test free-floating detection
         assert!(ASHRAE140Case::Case600FF.is_free_floating());
@@ -1533,7 +1586,7 @@ mod tests {
         assert_eq!(geo.height, 2.7);
         assert_eq!(geo.floor_area(), 48.0);
         assert!((geo.volume() - 129.6).abs() < 1e-10); // Account for floating point
-        assert_eq!(geo.wall_area(), 75.6);
+        assert!((geo.wall_area() - 75.6).abs() < 1e-10); // Account for floating point
         assert_eq!(geo.roof_area(), 48.0);
     }
 
@@ -1637,7 +1690,11 @@ mod tests {
 
         // Verify all validate
         for case in cases {
-            assert!(case.validate().is_ok(), "Case {} should validate", case.case_id);
+            assert!(
+                case.validate().is_ok(),
+                "Case {} should validate",
+                case.case_id
+            );
         }
     }
 
@@ -1663,7 +1720,10 @@ mod tests {
         let high_mass = ASHRAE140Case::Case900.spec();
 
         // Both should have the same geometry
-        assert_eq!(low_mass.geometry.floor_area(), high_mass.geometry.floor_area());
+        assert_eq!(
+            low_mass.geometry.floor_area(),
+            high_mass.geometry.floor_area()
+        );
 
         // But different construction U-values
         assert_ne!(
