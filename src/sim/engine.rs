@@ -1081,7 +1081,7 @@ mod tests {
 
     mod ground_boundary {
         use super::*;
-        use crate::sim::boundary::{ConstantGroundTemperature, DynamicGroundTemperature};
+        use crate::sim::boundary::ConstantGroundTemperature;
 
         #[test]
         fn test_default_ground_temperature() {
@@ -1133,7 +1133,6 @@ mod tests {
 
         #[test]
         fn test_with_custom_ground_temperature() {
-            use crate::sim::boundary::GroundTemperature;
 
             let mut model = ThermalModel::<VectorField>::new(1);
 
