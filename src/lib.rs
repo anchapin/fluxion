@@ -516,3 +516,7 @@ mod tests {
         }
     }
 }
+
+
+// Re-export ASHRAE 140 validation models
+pub use validation::ashrae_140::{Case600Model, SimulationResult};

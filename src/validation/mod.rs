@@ -1,8 +1,9 @@
 pub mod ashrae_140;
+pub mod ashrae_140_cases;
 
 #[cfg(test)]
 mod tests {
-    use super::ashrae_140::ASHRAE140Validator;
+    use super::ashrae_140_cases::ASHRAE140Validator;
 
     #[test]
     fn test_ashrae_140_validation() {
