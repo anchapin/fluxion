@@ -8,7 +8,8 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::VectorField;
 use crate::sim::construction::Assemblies;
 use crate::sim::engine::ThermalModel;
-use crate::sim::solar::{calculate_hourly_solar, SurfaceOrientation, WindowProperties};
+use crate::sim::components::Orientation;
+use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 
@@ -183,7 +184,7 @@ impl Case600Model {
         // Window properties for Case 600
         let window_area = 12.0; // m²
         let window = WindowProperties::double_clear(window_area);
-        let window_orientation = SurfaceOrientation::South;
+        let window_orientation = Orientation::South;
 
         // Ground temperature (constant 10°C per ASHRAE 140)
         let _ground_temp = 10.0;
