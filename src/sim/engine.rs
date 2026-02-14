@@ -4,6 +4,20 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
+use std::sync::OnceLock;
+
+static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
+
+/// Returns a precomputed array of 24 sine values for the daily cycle.
+fn get_daily_cycle() -> &'static [f64; 24] {
+    DAILY_CYCLE.get_or_init(|| {
+        let mut arr = [0.0; 24];
+        for (h, val) in arr.iter_mut().enumerate() {
+            *val = (h as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+        }
+        arr
+    })
+}
 
 /// HVAC operation mode for dual setpoint control.
 ///
@@ -331,10 +345,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         surrogates: &SurrogateManager,
         use_ai: bool,
     ) -> f64 {
+        let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
                 let hour_of_day = t % 24;
-                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                let daily_cycle = cycle[hour_of_day];
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                 self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true)
             })
@@ -478,7 +493,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
         let total_gain = if use_analytical_gains {
             let hour_of_day = timestep % 24;
-            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            let daily_cycle = get_daily_cycle()[hour_of_day];
             (50.0 * daily_cycle).max(0.0) + 10.0 // Adjusted for W/m² (lower values than Watts)
         } else {
             0.0
