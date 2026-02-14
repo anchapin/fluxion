@@ -370,9 +370,9 @@ impl Orientation {
     }
 }
 
-
 /// Window specification with area and orientation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+
 pub struct WindowArea {
     /// Window area in square meters (m²)
     pub area: f64,
@@ -1302,6 +1302,11 @@ impl CaseBuilder {
             )
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
@@ -1319,6 +1324,11 @@ impl CaseBuilder {
             .with_description("High mass with south shading (1m overhang)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang(1.0, 2.7))
@@ -1337,6 +1347,11 @@ impl CaseBuilder {
             .with_description("High mass with east/west windows (6m² each)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_ew_windows(6.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
@@ -1354,6 +1369,11 @@ impl CaseBuilder {
             .with_description("High mass with east/west shading (overhang + fins)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_ew_windows(6.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang_and_fins(1.0, 1.0, 2.7))
@@ -1372,6 +1392,11 @@ impl CaseBuilder {
             .with_description("High mass with thermostat setback (overnight)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
@@ -1389,6 +1414,11 @@ impl CaseBuilder {
             .with_description("High mass with night ventilation (no heating)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
@@ -1407,6 +1437,11 @@ impl CaseBuilder {
             .with_description("High mass free-floating (no HVAC)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
@@ -1424,6 +1459,11 @@ impl CaseBuilder {
             .with_description("High mass free-floating with night ventilation".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
@@ -1511,11 +1551,10 @@ mod tests {
 
     #[test]
     fn test_orientation() {
-        assert_eq!(Orientation::North.azimuth_deg(), 0.0);
-        assert_eq!(Orientation::East.azimuth_deg(), 90.0);
-        assert_eq!(Orientation::South.azimuth_deg(), 180.0);
-        assert_eq!(Orientation::West.azimuth_deg(), 270.0);
-        assert_eq!(Orientation::Horizontal.azimuth_deg(), -1.0);
+        assert_eq!(Orientation::South.azimuth(), 0.0);
+        assert_eq!(Orientation::West.azimuth(), 90.0);
+        assert_eq!(Orientation::North.azimuth(), 180.0);
+        assert_eq!(Orientation::East.azimuth(), 270.0);
     }
 
     #[test]

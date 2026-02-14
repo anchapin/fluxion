@@ -254,9 +254,9 @@ impl Construction {
     /// use fluxion::sim::construction::{Construction, ConstructionLayer};
     ///
     /// let layers = vec![
-    ///     ConstructionLayer::new(0.16, 950.0, 840.0, 0.012), // Plasterboard
-    ///     ConstructionLayer::new(0.04, 12.0, 840.0, 0.066),  // Fiberglass
-    ///     ConstructionLayer::new(0.14, 500.0, 1300.0, 0.009), // Wood siding
+    ///     ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, 0.012), // Plasterboard
+    ///     ConstructionLayer::new("Fiberglass", 0.04, 12.0, 840.0, 0.066),  // Fiberglass
+    ///     ConstructionLayer::new("Wood siding", 0.14, 500.0, 1300.0, 0.009), // Wood siding
     /// ];
     /// let wall = Construction::new(layers);
     /// ```
@@ -359,80 +359,48 @@ pub struct Materials;
 
 impl Materials {
     /// Plasterboard (gypsum board)
-    ///
-    /// - k = 0.16 W/m·K
-    /// - ρ = 950 kg/m³
-    /// - Cp = 840 J/kg·K
-    ///
-    /// Common interior finish for walls and ceilings.
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
-    ///
-    /// - k = 0.04 W/m·K
-    /// - ρ = 12 kg/m³
-    /// - Cp = 840 J/kg·K
-    ///
-    /// Common thermal insulation for walls, roofs, and floors.
     pub fn fiberglass(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Fiberglass", 0.04, 12.0, 840.0, thickness)
     }
 
     /// Wood siding
-    ///
-    /// - k = 0.14 W/m·K
-    /// - ρ = 500 kg/m³
-    /// - Cp = 1300 J/kg·K
-    ///
-    /// Exterior cladding material for low-mass buildings.
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
     }
 
     /// Concrete (normal weight)
-    ///
-    /// - k = 0.51 W/m·K
-    /// - ρ = 1400 kg/m³
-    /// - Cp = 1000 J/kg·K
-    ///
-    /// High thermal mass material used in concrete block walls and slabs.
     pub fn concrete(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Concrete", 0.51, 1400.0, 1000.0, thickness)
     }
 
     /// Foam insulation
-    ///
-    /// - k = 0.04 W/m·K
-    /// - ρ = 10 kg/m³
-    /// - Cp = 1400 J/kg·K
-    ///
-    /// Rigid foam insulation for high-performance assemblies.
     pub fn foam(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing
-    ///
-    /// - k = 0.14 W/m·K
-    /// - ρ = 600 kg/m³
-    /// - Cp = 1600 J/kg·K
-    ///
-    /// Structural material used in low-mass buildings.
     pub fn timber(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Timber", 0.14, 600.0, 1600.0, thickness)
     }
 
     /// Roof decking
-    ///
-    /// - k = 0.14 W/m·K
-    /// - ρ = 500 kg/m³
-    /// - Cp = 1300 J/kg·K
-    ///
-    /// Structural material for roof assemblies.
     pub fn roof_deck(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Roof Deck", 0.14, 500.0, 1300.0, thickness)
+    }
+
+    /// Concrete slab (heavy mass)
+    pub fn concrete_slab(thickness: f64) -> ConstructionLayer {
+        ConstructionLayer::new("Concrete Slab", 1.13, 1400.0, 1000.0, thickness)
+    }
+
+    /// Insulation for floor/walls
+    pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
+        ConstructionLayer::new("Insulation", 1.007, 10.0, 1400.0, thickness)
     }
 }
 
@@ -443,16 +411,6 @@ pub struct Assemblies;
 
 impl Assemblies {
     /// Low mass wall construction (ASHRAE 140 Case 600).
-    ///
-    /// Assembly (interior to exterior):
-    /// 1. Plasterboard: 0.012 m, k=0.16 W/m·K
-    /// 2. Fiberglass insulation: 0.066 m, k=0.04 W/m·K
-    /// 3. Wood siding: 0.009 m, k=0.14 W/m·K
-    ///
-    /// Expected U-value: ~0.514 W/m²K (with ASHRAE film coefficients)
-    ///
-    /// # Returns
-    /// Construction assembly for low-mass walls
     pub fn low_mass_wall() -> Construction {
         Construction::new(vec![
             Materials::plasterboard(0.012),
@@ -462,16 +420,6 @@ impl Assemblies {
     }
 
     /// Low mass roof construction (ASHRAE 140 Case 600).
-    ///
-    /// Assembly (interior to exterior):
-    /// 1. Plasterboard: 0.010 m, k=0.16 W/m·K
-    /// 2. Fiberglass insulation: 0.1118 m, k=0.04 W/m·K
-    /// 3. Roof deck: 0.019 m, k=0.14 W/m·K
-    ///
-    /// Expected U-value: ~0.318 W/m²K (with ASHRAE film coefficients)
-    ///
-    /// # Returns
-    /// Construction assembly for low-mass roofs
     pub fn low_mass_roof() -> Construction {
         Construction::new(vec![
             Materials::plasterboard(0.010),
@@ -481,16 +429,6 @@ impl Assemblies {
     }
 
     /// High mass wall construction (ASHRAE 140 Case 900).
-    ///
-    /// Assembly (interior to exterior):
-    /// 1. Concrete block: 0.100 m, k=0.51 W/m·K
-    /// 2. Foam insulation: 0.0615 m, k=0.04 W/m·K
-    /// 3. Wood siding: 0.009 m, k=0.14 W/m·K
-    ///
-    /// Expected U-value: ~0.514 W/m²K (with ASHRAE film coefficients)
-    ///
-    /// # Returns
-    /// Construction assembly for high-mass walls
     pub fn high_mass_wall() -> Construction {
         Construction::new(vec![
             Materials::concrete(0.100),
@@ -500,16 +438,6 @@ impl Assemblies {
     }
 
     /// High mass roof construction (ASHRAE 140 Case 900).
-    ///
-    /// Assembly (interior to exterior):
-    /// 1. Concrete slab: 0.080 m, k=0.51 W/m·K
-    /// 2. Foam insulation: 0.0615 m, k=0.04 W/m·K
-    /// 3. Roof deck: 0.019 m, k=0.14 W/m·K
-    ///
-    /// Expected U-value: ~0.318 W/m²K (with ASHRAE film coefficients)
-    ///
-    /// # Returns
-    /// Construction assembly for high-mass roofs
     pub fn high_mass_roof() -> Construction {
         Construction::new(vec![
             Materials::concrete(0.080),
@@ -519,19 +447,23 @@ impl Assemblies {
     }
 
     /// Insulated floor construction (ASHRAE 140 Case 600).
-    ///
-    /// Assembly (interior to exterior):
-    /// 1. Timber: 0.025 m, k=0.14 W/m·K
-    /// 2. Insulation: 0.040 m, k=1.003 W/m·K
-    ///
-    /// Expected U-value: ~0.039 W/m²K (with ASHRAE film coefficients)
-    ///
-    /// # Returns
-    /// Construction assembly for insulated floors
     pub fn insulated_floor() -> Construction {
         Construction::new(vec![
             Materials::timber(0.025),
-            ConstructionLayer::new("Floor Insulation", 1.003, 50.0, 840.0, 0.040), // Floor insulation
+            ConstructionLayer::new("Floor Insulation", 1.003, 50.0, 840.0, 0.040),
+        ])
+    }
+
+    /// High mass wall construction (ASHRAE 140 Case 900) - alias for consistency.
+    pub fn high_mass_wall_standard() -> Construction {
+        Self::high_mass_wall()
+    }
+
+    /// High mass floor construction (ASHRAE 140 Case 900).
+    pub fn high_mass_floor() -> Construction {
+        Construction::new(vec![
+            Materials::concrete_slab(0.080),
+            Materials::insulation_high_mass(0.040),
         ])
     }
 }
