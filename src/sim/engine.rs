@@ -141,6 +141,25 @@ impl ThermalModel<VectorField> {
         model.cooling_setpoint = spec.hvac.cooling_setpoint;
         model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
 
+        // Update surfaces based on spec window areas
+        let mut surfaces = Vec::with_capacity(num_zones);
+        let orientations = [
+            crate::validation::ashrae_140_cases::Orientation::South,
+            crate::validation::ashrae_140_cases::Orientation::West,
+            crate::validation::ashrae_140_cases::Orientation::North,
+            crate::validation::ashrae_140_cases::Orientation::East,
+        ];
+
+        for _ in 0..num_zones {
+            let mut zone_surfaces = Vec::new();
+            for &orientation in &orientations {
+                let win_area = spec.window_area_by_orientation(orientation);
+                zone_surfaces.push(WallSurface::new(win_area, spec.window_properties.u_value, orientation));
+            }
+            surfaces.push(zone_surfaces);
+        }
+        model.surfaces = surfaces;
+
         // Update conductances based on spec
         model.h_tr_w = VectorField::from_scalar(
             total_window_area * spec.window_properties.u_value,
@@ -149,8 +168,7 @@ impl ThermalModel<VectorField> {
 
         // h_ve = (ACH * Volume * rho * cp) / 3600
         let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
-        model.h_ve =
-            VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
+        model.h_ve = VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
 
         // h_tr_floor
         model.h_tr_floor = VectorField::from_scalar(
@@ -219,12 +237,19 @@ impl ThermalModel<VectorField> {
         // Divide by 4 for per-wall properties in surfaces list
         let win_area_per_side = window_area / 4.0;
 
-        // Initialize default surfaces: 4 walls
+        // Initialize default surfaces: 4 walls (S, W, N, E)
         let mut surfaces = Vec::with_capacity(num_zones);
+        let orientations = [
+            crate::validation::ashrae_140_cases::Orientation::South,
+            crate::validation::ashrae_140_cases::Orientation::West,
+            crate::validation::ashrae_140_cases::Orientation::North,
+            crate::validation::ashrae_140_cases::Orientation::East,
+        ];
+
         for _ in 0..num_zones {
             let mut zone_surfaces = Vec::new();
-            for _ in 0..4 {
-                zone_surfaces.push(WallSurface::new(win_area_per_side, 2.5));
+            for &orientation in &orientations {
+                zone_surfaces.push(WallSurface::new(win_area_per_side, 2.5, orientation));
             }
             surfaces.push(zone_surfaces);
         }
