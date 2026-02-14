@@ -1,6 +1,7 @@
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::engine::ThermalModel;
+use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::benchmark;
 use crate::validation::report::{BenchmarkReport, MetricType};
 
@@ -35,13 +36,9 @@ impl ASHRAE140Validator {
 
         // Case 600
         if let Some(data) = benchmark_data.get("600") {
-            // Setup Case 600 Model
-            let mut model = ThermalModel::<VectorField>::new(1);
-
-            // Configure Model for Case 600 (Approximation)
-            // Case 600: U=3.0, Setpoint=21.0 (Simplified)
-            let params = vec![3.0, 21.0];
-            model.apply_parameters(&params);
+            // Setup Case 600 Model using Specification
+            let spec = ASHRAE140Case::Case600.spec();
+            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
             // Run simulation (Annual = 8760 steps)
             let analytical_eui = model.solve_timesteps(8760, &surrogates, false);
