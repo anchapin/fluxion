@@ -12,8 +12,8 @@ static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
 fn get_daily_cycle() -> &'static [f64; 24] {
     DAILY_CYCLE.get_or_init(|| {
         let mut arr = [0.0; 24];
-        for h in 0..24 {
-            arr[h] = (h as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+        for (h, val) in arr.iter_mut().enumerate() {
+            *val = (h as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
         }
         arr
     })
