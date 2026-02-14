@@ -35,6 +35,7 @@ use std::f64::consts::PI;
 ///
 /// ```
 /// use fluxion::weather::denver::DenverTmyWeather;
+/// use fluxion::weather::WeatherSource;
 ///
 /// let weather = DenverTmyWeather::default();
 ///

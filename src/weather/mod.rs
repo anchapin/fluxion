@@ -291,6 +291,7 @@ pub trait WeatherSource {
     /// let mut max_temp = -999.0;
     ///
     /// for data in weather.iter_hours() {
+    ///     let data = data.unwrap();
     ///     if data.dry_bulb_temp > max_temp {
     ///         max_temp = data.dry_bulb_temp;
     ///     }

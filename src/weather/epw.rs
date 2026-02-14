@@ -54,6 +54,7 @@ fn parse_optional_field(field: &str, default: f64) -> f64 {
 ///
 /// ```no_run
 /// use fluxion::weather::epw::EpwWeatherSource;
+/// use fluxion::weather::WeatherSource;
 ///
 /// // Load an EPW file
 /// let weather = EpwWeatherSource::from_file("path/to/weather.epw")
@@ -97,6 +98,7 @@ impl EpwWeatherSource {
     ///
     /// ```no_run
     /// use fluxion::weather::epw::EpwWeatherSource;
+    /// use fluxion::weather::WeatherSource;
     ///
     /// let weather = EpwWeatherSource::from_file("weather.epw")
     ///     .expect("Failed to load weather file");
