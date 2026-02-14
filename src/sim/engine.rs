@@ -4,6 +4,8 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
+use crate::validation::ashrae_140_cases::CaseSpec;
+use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
@@ -119,6 +121,74 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
 }
 
 impl ThermalModel<VectorField> {
+    /// Create a new ThermalModel from an ASHRAE 140 case specification.
+    pub fn from_spec(spec: &CaseSpec) -> Self {
+        let num_zones = spec.num_zones;
+        let mut model = ThermalModel::new(num_zones);
+
+        let floor_area = spec.geometry.floor_area();
+        let volume = spec.geometry.volume();
+        let wall_area = spec.geometry.wall_area();
+        let total_window_area = spec.total_window_area();
+
+        model.num_zones = num_zones;
+        model.zone_area = VectorField::from_scalar(floor_area, num_zones);
+        model.ceiling_height = VectorField::from_scalar(spec.geometry.height, num_zones);
+        model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
+        model.window_u_value = spec.window_properties.u_value;
+
+        model.heating_setpoint = spec.hvac.heating_setpoint;
+        model.cooling_setpoint = spec.hvac.cooling_setpoint;
+        model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
+
+        // Update conductances based on spec
+        model.h_tr_w = VectorField::from_scalar(
+            total_window_area * spec.window_properties.u_value,
+            num_zones,
+        );
+
+        // h_ve = (ACH * Volume * rho * cp) / 3600
+        let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
+        model.h_ve = VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
+
+        // h_tr_floor
+        model.h_tr_floor = VectorField::from_scalar(
+            spec.construction.floor.u_value(None) * floor_area,
+            num_zones,
+        );
+
+        // ISO 13790 5R1C Mapping
+        let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
+        let h_is = 3.45; // W/m²K
+        let h_ms = 9.1; // W/m²K
+
+        model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
+        model.h_tr_ms = VectorField::from_scalar(h_ms * area_tot, num_zones);
+
+        // h_tr_em = Opaque conductance (Walls + Roof)
+        let wall_u = spec.construction.wall.u_value(None);
+        let roof_u = spec.construction.roof.u_value(None);
+        let opaque_wall_area = wall_area - total_window_area;
+        let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u;
+
+        model.h_tr_em = VectorField::from_scalar(h_tr_op, num_zones);
+
+        // Thermal Capacitance (Air + Structure)
+        let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
+        let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * floor_area;
+        let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * floor_area;
+        model.thermal_capacitance =
+            VectorField::from_scalar(wall_cap + roof_cap + floor_cap + air_cap, num_zones);
+
+        // Internal loads
+        if let Some(loads) = spec.internal_loads {
+            let load_per_m2 = loads.total_load / floor_area;
+            model.loads = VectorField::from_scalar(load_per_m2, num_zones);
+        }
+
+        model
+    }
+
     /// Create a new ThermalModel with specified number of thermal zones.
     ///
     /// # Arguments
@@ -329,6 +399,48 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
     /// Core physics simulation loop for annual building energy performance.
     ///
+    /// Simulates hourly thermal dynamics using batched inference with a coordinator.
+    ///
+    /// This method implements the worker side of the coordinator-worker pattern.
+    /// At each timestep, it sends its current temperature state to the coordinator,
+    /// waits for the predicted loads, and then completes the physics calculation.
+    pub fn solve_timesteps_batched(
+        &mut self,
+        steps: usize,
+        tx: Sender<Vec<f64>>,
+        rx: Receiver<Vec<f64>>,
+    ) -> f64 {
+        let cycle = get_daily_cycle();
+        let total_energy_kwh: f64 = (0..steps)
+            .map(|t| {
+                let hour_of_day = t % 24;
+                let daily_cycle = cycle[hour_of_day];
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+
+                // 1. Send current state to coordinator
+                let temps = self.get_temperatures();
+                tx.send(temps).expect("Failed to send state to coordinator");
+
+                // 2. Receive predicted loads from coordinator
+                let loads = rx
+                    .recv()
+                    .expect("Failed to receive loads from coordinator");
+                self.set_loads(&loads);
+
+                // 3. Solve physics for this timestep
+                self.step_physics(t, outdoor_temp)
+            })
+            .sum();
+
+        // Normalize by total floor area to get EUI
+        let total_area = self.zone_area.integrate();
+        if total_area > 0.0 {
+            total_energy_kwh / total_area
+        } else {
+            0.0
+        }
+    }
+
     /// Simulates hourly thermal dynamics of the building, computing cumulative energy consumption.
     /// Can use either analytical load calculations (exact) or neural network surrogates (fast).
     ///
