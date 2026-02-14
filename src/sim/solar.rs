@@ -126,10 +126,7 @@ pub fn calculate_solar_position(
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
 
     // Calculate day of year
-    let mut day_of_year: i32 = 0;
-    for m in 0..(month - 1) as usize {
-        day_of_year += days_in_month[m];
-    }
+    let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
     day_of_year += day as i32;
     if is_leap_year && month > 2 {
         day_of_year += 1;
@@ -140,26 +137,23 @@ pub fn calculate_solar_position(
     // Fractional year γ in radians
     // γ = 2π * (day_of_year - 1 + (hour - 12) / 24) / 365 (or 366 for leap year)
     let day_of_year_f = day_of_year as f64;
-    let gamma = 2.0 * std::f64::consts::PI * (day_of_year_f - 1.0 + (hour - 12.0) / 24.0) / days_in_year as f64;
+    let gamma = 2.0 * std::f64::consts::PI * (day_of_year_f - 1.0 + (hour - 12.0) / 24.0)
+        / days_in_year as f64;
 
     // Equation of time (in minutes)
     // eqtime = 229.18 * (0.000075 + 0.001868*cos(γ) - 0.032077*sin(γ)
     //              - 0.014615*cos(2γ) - 0.040849*sin(2γ))
-    let eqtime_minutes = 229.18 * (
-        0.000075
-        + 0.001868 * gamma.cos()
-        - 0.032077 * gamma.sin()
-        - 0.014615 * (2.0 * gamma).cos()
-        - 0.040849 * (2.0 * gamma).sin()
-    );
+    let eqtime_minutes = 229.18
+        * (0.000075 + 0.001868 * gamma.cos()
+            - 0.032077 * gamma.sin()
+            - 0.014615 * (2.0 * gamma).cos()
+            - 0.040849 * (2.0 * gamma).sin());
 
     // Solar declination (in radians)
     // decl = 0.006918 - 0.399912*cos(γ) + 0.070257*sin(γ)
     //       - 0.006758*cos(2γ) + 0.000907*sin(2γ)
     //       - 0.002697*cos(3γ) + 0.00148*sin(3γ)
-    let decl_rad = 0.006918
-        - 0.399912 * gamma.cos()
-        + 0.070257 * gamma.sin()
+    let decl_rad = 0.006918 - 0.399912 * gamma.cos() + 0.070257 * gamma.sin()
         - 0.006758 * (2.0 * gamma).cos()
         + 0.000907 * (2.0 * gamma).sin()
         - 0.002697 * (3.0 * gamma).cos()
@@ -195,7 +189,8 @@ pub fn calculate_solar_position(
     // But we need to adjust based on hour angle sign
     let zenith_rad = zenith.to_radians();
     let sin_az = -decl_rad.cos() * lat_rad.sin() * ha_rad.sin();
-    let cos_az = -lat_rad.sin() * zenith_rad.cos() - decl_rad.sin() * lat_rad.cos() * zenith_rad.sin();
+    let cos_az =
+        -lat_rad.sin() * zenith_rad.cos() - decl_rad.sin() * lat_rad.cos() * zenith_rad.sin();
 
     let mut az = sin_az.atan2(cos_az).to_degrees();
 
@@ -338,9 +333,7 @@ pub fn calculate_surface_irradiance(
     }
 
     // Calculate GHI if not provided
-    let ghi = ghi.unwrap_or_else(|| {
-        dni * sun_pos.altitude_deg.to_radians().sin() + dhi
-    });
+    let ghi = ghi.unwrap_or_else(|| dni * sun_pos.altitude_deg.to_radians().sin() + dhi);
 
     // Surface geometry
     let surface_tilt = orientation.tilt_deg().to_radians();
@@ -465,6 +458,7 @@ pub fn calculate_window_solar_gain(
 }
 
 /// Calculate hourly solar radiation for a building facade.
+#[allow(clippy::too_many_arguments)]
 ///
 /// This is a convenience function that combines solar position calculation
 /// with surface irradiance and window solar gain calculations.
@@ -526,15 +520,24 @@ mod tests {
         // Summer solstice 2024, solar noon (approximately 19:00 UTC for Denver)
         let sun_pos = calculate_solar_position(lat, lon, 2024, 6, 21, 19.0);
 
-        eprintln!("Summer solstice noon - Altitude: {:.2}°, Azimuth: {:.2}°, Zenith: {:.2}°",
-                 sun_pos.altitude_deg, sun_pos.azimuth_deg, sun_pos.zenith_deg);
+        eprintln!(
+            "Summer solstice noon - Altitude: {:.2}°, Azimuth: {:.2}°, Zenith: {:.2}°",
+            sun_pos.altitude_deg, sun_pos.azimuth_deg, sun_pos.zenith_deg
+        );
 
         // Sun should be high in the sky
-        assert!(sun_pos.altitude_deg > 70.0, "Summer noon altitude should be high, got {:.2}°", sun_pos.altitude_deg);
+        assert!(
+            sun_pos.altitude_deg > 70.0,
+            "Summer noon altitude should be high, got {:.2}°",
+            sun_pos.altitude_deg
+        );
         assert!(sun_pos.altitude_deg < 90.0, "Altitude cannot exceed 90°");
 
         // Zenith should be small (close to overhead)
-        assert!(sun_pos.zenith_deg < 20.0, "Summer noon zenith should be small");
+        assert!(
+            sun_pos.zenith_deg < 20.0,
+            "Summer noon zenith should be small"
+        );
     }
 
     #[test]
@@ -566,9 +569,18 @@ mod tests {
         let sun_pos = calculate_solar_position(39.7392, -104.9903, 2024, 6, 21, 7.0);
 
         // Sun should be below horizon (before sunrise)
-        assert!(sun_pos.altitude_deg < 0.0, "Early morning altitude should be negative");
-        assert!(sun_pos.zenith_deg > 90.0, "Early morning zenith should be > 90°");
-        assert!(!sun_pos.is_above_horizon(), "is_above_horizon should return false");
+        assert!(
+            sun_pos.altitude_deg < 0.0,
+            "Early morning altitude should be negative"
+        );
+        assert!(
+            sun_pos.zenith_deg > 90.0,
+            "Early morning zenith should be > 90°"
+        );
+        assert!(
+            !sun_pos.is_above_horizon(),
+            "is_above_horizon should return false"
+        );
     }
 
     #[test]
@@ -586,7 +598,10 @@ mod tests {
         // For a 70° altitude sun on a vertical south surface, incidence angle is ~46°
         // cos(46°) ≈ 0.69, but our calculation gives a different geometry
         // The key is that it's positive (not zero, which would mean sun is behind surface)
-        assert!(cos_incidence > 0.0, "Incidence should be positive for sun-facing surface");
+        assert!(
+            cos_incidence > 0.0,
+            "Incidence should be positive for sun-facing surface"
+        );
         assert!(cos_incidence <= 1.0, "Cosine cannot exceed 1.0");
     }
 
@@ -603,7 +618,10 @@ mod tests {
         let cos_incidence = sun_pos.incidence_cosine(90.0, 0.0);
 
         // Should be zero (sun behind the surface)
-        assert!(cos_incidence == 0.0, "Incidence should be zero when sun is behind surface");
+        assert!(
+            cos_incidence == 0.0,
+            "Incidence should be zero when sun is behind surface"
+        );
     }
 
     #[test]
@@ -619,7 +637,10 @@ mod tests {
         let cos_incidence = sun_pos.incidence_cosine(0.0, 0.0);
 
         // Should be very high
-        assert!(cos_incidence > 0.95, "Incidence should be near 1.0 for horizontal surface with high sun");
+        assert!(
+            cos_incidence > 0.95,
+            "Incidence should be near 1.0 for horizontal surface with high sun"
+        );
     }
 
     #[test]
@@ -635,19 +656,22 @@ mod tests {
         let dhi = 100.0; // W/m²
 
         // South-facing vertical wall
-        let irradiance = calculate_surface_irradiance(
-            &sun_pos,
-            dni,
-            dhi,
-            None,
-            SurfaceOrientation::South,
-            0.2,
-        );
+        let irradiance =
+            calculate_surface_irradiance(&sun_pos, dni, dhi, None, SurfaceOrientation::South, 0.2);
 
         // Beam should be dominant
-        assert!(irradiance.beam_wm2 > 0.0, "Beam radiation should be positive");
-        assert!(irradiance.beam_wm2 > irradiance.diffuse_wm2, "Beam should dominate over diffuse");
-        assert!(irradiance.total_wm2 > 0.0, "Total irradiance should be positive");
+        assert!(
+            irradiance.beam_wm2 > 0.0,
+            "Beam radiation should be positive"
+        );
+        assert!(
+            irradiance.beam_wm2 > irradiance.diffuse_wm2,
+            "Beam should dominate over diffuse"
+        );
+        assert!(
+            irradiance.total_wm2 > 0.0,
+            "Total irradiance should be positive"
+        );
     }
 
     #[test]
@@ -694,19 +718,19 @@ mod tests {
         let dni = 800.0;
         let dhi = 100.0;
 
-        let irradiance = calculate_surface_irradiance(
-            &sun_pos,
-            dni,
-            dhi,
-            None,
-            SurfaceOrientation::South,
-            0.2,
-        );
+        let irradiance =
+            calculate_surface_irradiance(&sun_pos, dni, dhi, None, SurfaceOrientation::South, 0.2);
 
         // Should return zero irradiance
         assert_eq!(irradiance.beam_wm2, 0.0, "Beam should be zero at night");
-        assert_eq!(irradiance.diffuse_wm2, 0.0, "Diffuse should be zero at night");
-        assert_eq!(irradiance.ground_reflected_wm2, 0.0, "Ground reflection should be zero at night");
+        assert_eq!(
+            irradiance.diffuse_wm2, 0.0,
+            "Diffuse should be zero at night"
+        );
+        assert_eq!(
+            irradiance.ground_reflected_wm2, 0.0,
+            "Ground reflection should be zero at night"
+        );
         assert_eq!(irradiance.total_wm2, 0.0, "Total should be zero at night");
     }
 
@@ -722,12 +746,8 @@ mod tests {
 
         let window = WindowProperties::double_clear(2.0); // 2 m² window
 
-        let solar_gain = calculate_window_solar_gain(
-            &irradiance,
-            &window,
-            &sun_pos,
-            SurfaceOrientation::South,
-        );
+        let solar_gain =
+            calculate_window_solar_gain(&irradiance, &window, &sun_pos, SurfaceOrientation::South);
 
         // Solar gain should be positive
         assert!(solar_gain > 0.0, "Solar gain should be positive");
@@ -770,8 +790,14 @@ mod tests {
         let window = WindowProperties::double_clear(1.0);
 
         let (sun_pos, irradiance, gain) = calculate_hourly_solar(
-            lat, lon, 2024, 6, 21, 19.0, // Summer solstice solar noon
-            800.0, 100.0, // DNI, DHI
+            lat,
+            lon,
+            2024,
+            6,
+            21,
+            19.0, // Summer solstice solar noon
+            800.0,
+            100.0, // DNI, DHI
             &window,
             SurfaceOrientation::South,
             Some(0.2), // Ground reflectance
@@ -822,7 +848,10 @@ mod tests {
             dni,
             dhi,
             None,
-            SurfaceOrientation::Custom { tilt_deg: 90.0, azimuth_deg: 180.0 },
+            SurfaceOrientation::Custom {
+                tilt_deg: 90.0,
+                azimuth_deg: 180.0,
+            },
             0.1, // Dark surface
         );
 
@@ -831,7 +860,10 @@ mod tests {
             dni,
             dhi,
             None,
-            SurfaceOrientation::Custom { tilt_deg: 90.0, azimuth_deg: 180.0 },
+            SurfaceOrientation::Custom {
+                tilt_deg: 90.0,
+                azimuth_deg: 180.0,
+            },
             0.6, // Snow
         );
 

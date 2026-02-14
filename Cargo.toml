@@ -42,9 +42,14 @@ num-traits = "0.2.19"
 
 [dev-dependencies]
 criterion = "0.5"
+tempfile = "3.10"
 
 [[bench]]
 name = "cta_bench"
+harness = false
+
+[[bench]]
+name = "engine_bench"
 harness = false
 
 [profile.release]
