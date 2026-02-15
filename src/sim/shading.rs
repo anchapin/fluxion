@@ -3,7 +3,7 @@
 //! This module provides tools for calculating the shaded area of windows
 //! due to external shading devices like overhangs and fins.
 
-use crate::validation::ashrae_140_cases::{Orientation, WindowArea};
+use crate::validation::ashrae_140_cases::WindowArea;
 use serde::{Deserialize, Serialize};
 
 /// Represents a horizontal overhang shading device.
@@ -140,6 +140,7 @@ fn calculate_fin_shadow_area(
 
 #[cfg(test)]
 mod tests {
+    use crate::validation::ashrae_140_cases::Orientation;
     use super::*;
     use std::f64::consts::PI;
 
