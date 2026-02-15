@@ -10,7 +10,7 @@ pub use ashrae_140_validator::ASHRAE140Validator;
 pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
     ASHRAE140Case, CaseBuilder, CaseSpec, ConstructionSpec, ConstructionType, GeometrySpec,
-    HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
+    HVACSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
 };
 pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
 pub use report::{

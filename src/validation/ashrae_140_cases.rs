@@ -32,6 +32,7 @@
 //! ```
 
 use crate::sim::construction::{Assemblies, Construction};
+pub use crate::sim::schedule::HVACSchedule;
 use serde::{Deserialize, Serialize};
 
 /// Window specification with U-value, SHGC, and optical properties.
@@ -528,153 +529,6 @@ impl InternalLoads {
     }
 }
 
-/// HVAC schedule specification.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HvacSchedule {
-    /// Heating setpoint (°C) when HVAC is enabled
-    pub heating_setpoint: f64,
-    /// Cooling setpoint (°C) when HVAC is enabled
-    pub cooling_setpoint: f64,
-    /// Operating hours (start_hour, end_hour) when HVAC is active
-    pub operating_hours: (u8, u8),
-    /// Night setback setpoint (°C), if applicable
-    pub setback_setpoint: Option<f64>,
-    /// Setback hours (start_hour, end_hour), if applicable
-    pub setback_hours: Option<(u8, u8)>,
-    /// HVAC efficiency (0.0 to 1.0, where 1.0 = 100% efficient)
-    pub efficiency: f64,
-}
-
-impl HvacSchedule {
-    /// Creates a constant HVAC schedule (no setback).
-    ///
-    /// # Arguments
-    /// * `heating_setpoint` - Heating temperature setpoint in °C
-    /// * `cooling_setpoint` - Cooling temperature setpoint in °C
-    pub fn constant(heating_setpoint: f64, cooling_setpoint: f64) -> Self {
-        HvacSchedule {
-            heating_setpoint,
-            cooling_setpoint,
-            operating_hours: (0, 24),
-            setback_setpoint: None,
-            setback_hours: None,
-            efficiency: 1.0,
-        }
-    }
-
-    /// Creates an HVAC schedule with setback.
-    ///
-    /// # Arguments
-    /// * `heating_setpoint` - Normal heating setpoint in °C
-    /// * `cooling_setpoint` - Cooling setpoint in °C
-    /// * `setback_setpoint` - Reduced heating setpoint during setback period in °C
-    /// * `setback_start` - Hour when setback starts (0-23)
-    /// * `setback_end` - Hour when setback ends (0-23)
-    pub fn with_setback(
-        heating_setpoint: f64,
-        cooling_setpoint: f64,
-        setback_setpoint: f64,
-        setback_start: u8,
-        setback_end: u8,
-    ) -> Self {
-        HvacSchedule {
-            heating_setpoint,
-            cooling_setpoint,
-            operating_hours: (0, 24),
-            setback_setpoint: Some(setback_setpoint),
-            setback_hours: Some((setback_start, setback_end)),
-            efficiency: 1.0,
-        }
-    }
-
-    /// Creates an HVAC schedule with operating hours restriction.
-    ///
-    /// # Arguments
-    /// * `heating_setpoint` - Heating setpoint in °C
-    /// * `cooling_setpoint` - Cooling setpoint in °C
-    /// * `operating_start` - Hour when HVAC turns on (0-23)
-    /// * `operating_end` - Hour when HVAC turns off (0-23)
-    pub fn with_operating_hours(
-        heating_setpoint: f64,
-        cooling_setpoint: f64,
-        operating_start: u8,
-        operating_end: u8,
-    ) -> Self {
-        HvacSchedule {
-            heating_setpoint,
-            cooling_setpoint,
-            operating_hours: (operating_start, operating_end),
-            setback_setpoint: None,
-            setback_hours: None,
-            efficiency: 1.0,
-        }
-    }
-
-    /// Creates a free-floating schedule (no HVAC control).
-    pub fn free_floating() -> Self {
-        HvacSchedule {
-            heating_setpoint: 0.0,
-            cooling_setpoint: 0.0,
-            operating_hours: (0, 0),
-            setback_setpoint: None,
-            setback_hours: None,
-            efficiency: 0.0,
-        }
-    }
-
-    /// Returns true if HVAC is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.efficiency > 0.0 && self.operating_hours != (0, 0)
-    }
-
-    /// Returns true if this is a free-floating schedule.
-    pub fn is_free_floating(&self) -> bool {
-        !self.is_enabled()
-    }
-
-    /// Gets the heating setpoint for a given hour.
-    pub fn heating_setpoint_at_hour(&self, hour: u8) -> Option<f64> {
-        if !self.is_enabled() {
-            return None;
-        }
-
-        let current_setpoint = if let Some((setback_start, setback_end)) = self.setback_hours {
-            if setback_start <= hour || hour < setback_end {
-                // During setback period
-                self.setback_setpoint.unwrap_or(self.heating_setpoint)
-            } else {
-                // Normal period
-                self.heating_setpoint
-            }
-        } else {
-            self.heating_setpoint
-        };
-
-        // Check if HVAC is operating at this hour
-        let (start, end) = self.operating_hours;
-        if start <= hour || hour < end {
-            return Some(current_setpoint);
-        }
-
-        None
-    }
-
-    /// Gets the cooling setpoint for a given hour.
-    pub fn cooling_setpoint_at_hour(&self, hour: u8) -> Option<f64> {
-        if !self.is_enabled() {
-            return None;
-        }
-
-        // Check if HVAC is operating at this hour
-        let (start, end) = self.operating_hours;
-        if start <= hour || hour < end {
-            return Some(self.cooling_setpoint);
-        }
-
-        None
-    }
-}
-
 /// Night ventilation specification.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct NightVentilation {
@@ -749,7 +603,7 @@ pub struct CaseSpec {
     pub internal_loads: Option<InternalLoads>,
 
     /// HVAC control schedule
-    pub hvac: HvacSchedule,
+    pub hvac: HVACSchedule,
 
     /// Night ventilation (if applicable)
     pub night_ventilation: Option<NightVentilation>,
@@ -873,15 +727,14 @@ impl CaseSpec {
         }
 
         // Check HVAC schedule
-        if !self.hvac.is_free_floating() {
-            // Allow heating == cooling for bang-bang control (Case 195)
-            if self.hvac.heating_setpoint > self.hvac.cooling_setpoint {
-                return Err(
-                    "Heating setpoint must be less than or equal to cooling setpoint".to_string(),
-                );
-            }
-            if self.hvac.efficiency <= 0.0 || self.hvac.efficiency > 1.0 {
-                return Err("HVAC efficiency must be in (0, 1]".to_string());
+        if !self.hvac.heating.values.iter().all(|&s| s == 0.0) || !self.hvac.cooling.values.iter().all(|&s| s == 0.0) {
+            for i in 0..24 {
+                if self.hvac.heating_setpoint(i) > self.hvac.cooling_setpoint(i) {
+                    return Err(format!(
+                        "Hour {}: Heating setpoint ({}) must be less than or equal to cooling setpoint ({})",
+                        i, self.hvac.heating_setpoint(i), self.hvac.cooling_setpoint(i)
+                    ));
+                }
             }
         }
 
@@ -954,7 +807,7 @@ pub struct CaseBuilder {
     window_properties: WindowSpec,
     shading: Option<ShadingDevice>,
     internal_loads: Option<InternalLoads>,
-    hvac: HvacSchedule,
+    hvac: HVACSchedule,
     night_ventilation: Option<NightVentilation>,
     infiltration_ach: f64,
     num_zones: usize,
@@ -979,7 +832,7 @@ impl CaseBuilder {
             window_properties: WindowSpec::double_clear_glass(),
             shading: None,
             internal_loads: None,
-            hvac: HvacSchedule::constant(20.0, 27.0),
+            hvac: HVACSchedule::constant_schedule(20.0, 27.0),
             night_ventilation: None,
             infiltration_ach: 0.5,
             num_zones: 1,
@@ -1067,20 +920,20 @@ impl CaseBuilder {
     }
 
     /// Sets HVAC schedule.
-    pub fn with_hvac(mut self, hvac: HvacSchedule) -> Self {
+    pub fn with_hvac(mut self, hvac: HVACSchedule) -> Self {
         self.hvac = hvac;
         self
     }
 
     /// Sets HVAC setpoints (heating, cooling).
     pub fn with_hvac_setpoints(mut self, heating: f64, cooling: f64) -> Self {
-        self.hvac = HvacSchedule::constant(heating, cooling);
+        self.hvac = HVACSchedule::constant_schedule(heating, cooling);
         self
     }
 
     /// Sets HVAC with setback.
     pub fn with_hvac_setback(mut self, heating: f64, cooling: f64, setback: f64) -> Self {
-        self.hvac = HvacSchedule::with_setback(heating, cooling, setback, 23, 7);
+        self.hvac = HVACSchedule::setback_schedule(heating, setback, cooling, 23, 7);
         self
     }
 
@@ -1250,7 +1103,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HVACSchedule::with_operating_hours(20.0, 27.0, 7, 18))
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1268,7 +1121,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
             .build()
@@ -1285,7 +1138,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1422,7 +1275,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HVACSchedule::with_operating_hours(20.0, 27.0, 7, 18))
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1445,7 +1298,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
             .build()
@@ -1467,7 +1320,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1605,20 +1458,17 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule() {
-        let constant = HvacSchedule::constant(20.0, 27.0);
-        assert!(constant.is_enabled());
-        assert!(!constant.is_free_floating());
-        assert_eq!(constant.heating_setpoint_at_hour(12), Some(20.0));
-        assert_eq!(constant.cooling_setpoint_at_hour(12), Some(27.0));
+        let constant = HVACSchedule::constant_schedule(20.0, 27.0);
+        assert_eq!(constant.heating_setpoint(12), 20.0);
+        assert_eq!(constant.cooling_setpoint(12), 27.0);
 
-        let setback = HvacSchedule::with_setback(20.0, 27.0, 10.0, 23, 7);
-        assert_eq!(setback.heating_setpoint_at_hour(0), Some(10.0)); // During setback
-        assert_eq!(setback.heating_setpoint_at_hour(12), Some(20.0)); // Normal period
+        let setback = HVACSchedule::setback_schedule(20.0, 10.0, 27.0, 23, 7);
+        assert_eq!(setback.heating_setpoint(0), 10.0); // During setback
+        assert_eq!(setback.heating_setpoint(12), 20.0); // Normal period
 
-        let free_floating = HvacSchedule::free_floating();
-        assert!(!free_floating.is_enabled());
-        assert!(free_floating.is_free_floating());
-        assert_eq!(free_floating.heating_setpoint_at_hour(12), None);
+        let free_floating = HVACSchedule::free_floating();
+        assert_eq!(free_floating.heating_setpoint(12), -100.0);
+        assert_eq!(free_floating.cooling_setpoint(12), 100.0);
     }
 
     #[test]
@@ -1657,7 +1507,7 @@ mod tests {
         assert!(invalid_spec.validate().is_err());
 
         // Test invalid HVAC setpoints
-        let invalid_hvac = HvacSchedule::constant(25.0, 20.0); // Heating > cooling
+        let invalid_hvac = HVACSchedule::constant_schedule(25.0, 20.0); // Heating > cooling
         let invalid_spec2 = CaseSpec {
             hvac: invalid_hvac,
             ..spec.clone()
@@ -1672,12 +1522,8 @@ mod tests {
         assert_eq!(spec.total_window_area(), 12.0);
         assert_eq!(spec.window_area_by_orientation(Orientation::South), 12.0);
         assert_eq!(spec.window_area_by_orientation(Orientation::North), 0.0);
-        assert!(!spec.is_free_floating());
         assert!(!spec.has_night_ventilation());
         assert!(!spec.has_shading());
-
-        let ff_spec = CaseBuilder::case_600ff();
-        assert!(ff_spec.is_free_floating());
 
         let vent_spec = CaseBuilder::case_650_night_vent();
         assert!(vent_spec.has_night_ventilation());
