@@ -156,7 +156,7 @@ impl ThermalModel<VectorField> {
             let floor_area = geo.floor_area();
             let volume = geo.volume();
             let wall_area = geo.wall_area();
-            
+
             zone_areas[z] = floor_area;
             ceiling_heights[z] = geo.height;
 
@@ -169,7 +169,7 @@ impl ThermalModel<VectorField> {
                     .filter(|w| w.orientation == orientation)
                     .map(|w| w.area)
                     .sum();
-                
+
                 total_win_area += win_area;
                 zone_surfaces.push(WallSurface::new(
                     win_area,

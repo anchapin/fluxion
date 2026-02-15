@@ -922,13 +922,13 @@ impl CaseSpec {
         }
 
         for hvac in &self.hvac {
-            if !hvac.is_free_floating() {
-                if hvac.heating_setpoint > hvac.cooling_setpoint {
+            if !hvac.is_free_floating()
+                && hvac.heating_setpoint > hvac.cooling_setpoint {
                     return Err(
-                        "Heating setpoint must be less than or equal to cooling setpoint".to_string(),
+                        "Heating setpoint must be less than or equal to cooling setpoint"
+                            .to_string(),
                     );
                 }
-            }
         }
 
         Ok(())
@@ -1060,8 +1060,15 @@ impl CaseBuilder {
     }
 
     /// Adds a common wall between two zones.
-    pub fn with_common_wall(mut self, zone_a: usize, zone_b: usize, area: f64, construction: Construction) -> Self {
-        self.common_walls.push(CommonWall::new(zone_a, zone_b, area, construction));
+    pub fn with_common_wall(
+        mut self,
+        zone_a: usize,
+        zone_b: usize,
+        area: f64,
+        construction: Construction,
+    ) -> Self {
+        self.common_walls
+            .push(CommonWall::new(zone_a, zone_b, area, construction));
         self
     }
 
@@ -1090,14 +1097,23 @@ impl CaseBuilder {
 
     /// Adds a window to the first zone.
     pub fn with_window(mut self, area: f64, orientation: Orientation) -> Self {
-        if self.windows.is_empty() { self.windows.push(Vec::new()); }
+        if self.windows.is_empty() {
+            self.windows.push(Vec::new());
+        }
         self.windows[0].push(WindowArea::new(area, orientation));
         self
     }
 
     /// Adds a window to a specific zone.
-    pub fn with_zone_window(mut self, zone_idx: usize, area: f64, orientation: Orientation) -> Self {
-        while self.windows.len() <= zone_idx { self.windows.push(Vec::new()); }
+    pub fn with_zone_window(
+        mut self,
+        zone_idx: usize,
+        area: f64,
+        orientation: Orientation,
+    ) -> Self {
+        while self.windows.len() <= zone_idx {
+            self.windows.push(Vec::new());
+        }
         self.windows[zone_idx].push(WindowArea::new(area, orientation));
         self
     }
@@ -1127,21 +1143,29 @@ impl CaseBuilder {
 
     /// Sets internal loads for the first zone.
     pub fn with_internal_loads(mut self, loads: InternalLoads) -> Self {
-        if self.internal_loads.is_empty() { self.internal_loads.push(Some(loads)); }
-        else { self.internal_loads[0] = Some(loads); }
+        if self.internal_loads.is_empty() {
+            self.internal_loads.push(Some(loads));
+        } else {
+            self.internal_loads[0] = Some(loads);
+        }
         self
     }
 
     /// Sets HVAC schedule for the first zone.
     pub fn with_hvac(mut self, hvac: HvacSchedule) -> Self {
-        if self.hvac.is_empty() { self.hvac.push(hvac); }
-        else { self.hvac[0] = hvac; }
+        if self.hvac.is_empty() {
+            self.hvac.push(hvac);
+        } else {
+            self.hvac[0] = hvac;
+        }
         self
     }
 
     /// Sets HVAC schedule for a specific zone.
     pub fn with_zone_hvac(mut self, zone_idx: usize, hvac: HvacSchedule) -> Self {
-        while self.hvac.len() <= zone_idx { self.hvac.push(HvacSchedule::constant(20.0, 27.0)); }
+        while self.hvac.len() <= zone_idx {
+            self.hvac.push(HvacSchedule::constant(20.0, 27.0));
+        }
         self.hvac[zone_idx] = hvac;
         self
     }
@@ -1178,15 +1202,25 @@ impl CaseBuilder {
     pub fn build(mut self) -> Result<CaseSpec, String> {
         // Ensure vectors have correct length for num_zones
         if self.num_zones == 1 && self.geometry.is_empty() {
-             return Err("Geometry must be specified".to_string());
+            return Err("Geometry must be specified".to_string());
         }
-        
-        while self.geometry.len() < self.num_zones {
-            return Err(format!("Only {} zone geometries provided for {} zones", self.geometry.len(), self.num_zones));
+
+        if self.geometry.len() < self.num_zones {
+            return Err(format!(
+                "Only {} zone geometries provided for {} zones",
+                self.geometry.len(),
+                self.num_zones
+            ));
         }
-        while self.windows.len() < self.num_zones { self.windows.push(Vec::new()); }
-        while self.internal_loads.len() < self.num_zones { self.internal_loads.push(None); }
-        while self.hvac.len() < self.num_zones { self.hvac.push(HvacSchedule::constant(20.0, 27.0)); }
+        while self.windows.len() < self.num_zones {
+            self.windows.push(Vec::new());
+        }
+        while self.internal_loads.len() < self.num_zones {
+            self.internal_loads.push(None);
+        }
+        while self.hvac.len() < self.num_zones {
+            self.hvac.push(HvacSchedule::constant(20.0, 27.0));
+        }
 
         // Use default construction if not specified
         let construction = self
