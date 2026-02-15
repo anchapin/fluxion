@@ -1,5 +1,6 @@
 use fluxion::ai::neural_field::NeuralScalarField;
 use fluxion::sim::components::WallSurface;
+use fluxion::validation::ashrae_140_cases::Orientation;
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};
 
@@ -77,7 +78,7 @@ fn test_backpropagation_through_integration() {
     let field = NeuralScalarField::new(weights).unwrap();
 
     // 3. Define Surface
-    let surface = WallSurface::new(2.0, 0.5); // Area = 2.0
+    let surface = WallSurface::new(2.0, 0.5, Orientation::South); // Area = 2.0
 
     // 4. Calculate Heat Gain
     // Heat Gain = Area * Integral(Field)
@@ -118,7 +119,7 @@ fn test_complex_field_gradient() {
 
     // Integral of sin(pi*u)*1 over [0,1]x[0,1] is 2/pi.
     // Area = 1.0
-    let surface = WallSurface::new(1.0, 0.5);
+    let surface = WallSurface::new(1.0, 0.5, Orientation::South);
 
     let heat_gain = surface.calculate_heat_gain(&field);
 
