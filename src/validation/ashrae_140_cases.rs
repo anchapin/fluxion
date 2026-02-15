@@ -32,7 +32,6 @@
 //! ```
 
 use crate::sim::construction::{Assemblies, Construction};
-use crate::sim::components::Orientation;
 use serde::{Deserialize, Serialize};
 
 /// Window specification with U-value, SHGC, and optical properties.
@@ -371,10 +370,9 @@ impl Orientation {
     }
 }
 
-
-
 /// Window specification with area and orientation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+
 pub struct WindowArea {
     /// Window area in square meters (m²)
     pub area: f64,

@@ -154,7 +154,11 @@ impl ThermalModel<VectorField> {
             let mut zone_surfaces = Vec::new();
             for &orientation in &orientations {
                 let win_area = spec.window_area_by_orientation(orientation);
-                zone_surfaces.push(WallSurface::new(win_area, spec.window_properties.u_value, orientation));
+                zone_surfaces.push(WallSurface::new(
+                    win_area,
+                    spec.window_properties.u_value,
+                    orientation,
+                ));
             }
             surfaces.push(zone_surfaces);
         }
@@ -168,7 +172,8 @@ impl ThermalModel<VectorField> {
 
         // h_ve = (ACH * Volume * rho * cp) / 3600
         let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
-        model.h_ve = VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
+        model.h_ve =
+            VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
 
         // h_tr_floor
         model.h_tr_floor = VectorField::from_scalar(

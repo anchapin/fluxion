@@ -3,48 +3,7 @@ use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
 
-/// Orientation for surfaces and windows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum Orientation {
-    North,
-    East,
-    South,
-    West,
-    Up,   // Roof
-    Down, // Floor
-}
-
-impl Orientation {
-    /// Returns the azimuth angle in degrees (0° = South, ASHRAE Standard).
-    /// Note: ASHRAE 140 uses South=0, West=90, North=180, East=270.
-    pub fn azimuth(&self) -> f64 {
-        match self {
-            Orientation::South => 0.0,
-            Orientation::West => 90.0,
-            Orientation::North => 180.0,
-            Orientation::East => 270.0,
-            Orientation::Up | Orientation::Down => 0.0, // Not applicable for horizontal
-        }
-    }
-
-    /// Returns the cosine of the azimuth angle.
-    pub fn cosine_azimuth(&self) -> f64 {
-        (self.azimuth().to_radians()).cos()
-    }
-
-    /// Returns the sine of the azimuth angle.
-    pub fn sine_azimuth(&self) -> f64 {
-        (self.azimuth().to_radians()).sin()
-    }
-
-    /// Returns true if the orientation is a vertical wall (N/E/S/W).
-    pub fn is_wall(&self) -> bool {
-        matches!(
-            self,
-            Orientation::North | Orientation::East | Orientation::South | Orientation::West
-        )
-    }
-}
+use crate::validation::ashrae_140_cases::Orientation;
 
 /// Represents a wall surface in a thermal zone.
 #[derive(Clone, Debug)]

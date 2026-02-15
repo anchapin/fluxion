@@ -3,7 +3,7 @@
 //! This module implements solar position calculations and surface insolation models
 //! for ASHRAE 140 validation and general building energy simulation.
 
-use crate::sim::components::Orientation;
+use crate::validation::ashrae_140_cases::Orientation;
 
 /// Sun position in the sky at a given time and location.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -54,7 +54,9 @@ pub fn calculate_solar_position(
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
     day_of_year += day as i32;
-    if is_leap_year && month > 2 { day_of_year += 1; }
+    if is_leap_year && month > 2 {
+        day_of_year += 1;
+    }
 
     let days_in_year = if is_leap_year { 366 } else { 365 };
     let day_of_year_f = day_of_year as f64;
@@ -86,11 +88,14 @@ pub fn calculate_solar_position(
 
     let zenith_rad = zenith.to_radians();
     let sin_az = -decl_rad.cos() * lat_rad.sin() * ha_rad.sin();
-    let cos_az = -lat_rad.sin() * zenith_rad.cos() - decl_rad.sin() * lat_rad.cos() * zenith_rad.sin();
+    let cos_az =
+        -lat_rad.sin() * zenith_rad.cos() - decl_rad.sin() * lat_rad.cos() * zenith_rad.sin();
 
     let mut az = sin_az.atan2(cos_az).to_degrees();
     az = (az + 180.0) % 360.0;
-    if az < 0.0 { az += 360.0; }
+    if az < 0.0 {
+        az += 360.0;
+    }
 
     SolarPosition {
         altitude_deg: elev,
@@ -156,14 +161,14 @@ pub fn calculate_surface_irradiance(
 
     let ghi = ghi.unwrap_or_else(|| dni * sun_pos.altitude_deg.to_radians().sin() + dhi);
     let (tilt_deg, azimuth_deg) = orientation_to_angles(orientation);
-    
+
     let incidence_cos = sun_pos.incidence_cosine(tilt_deg, azimuth_deg);
     let beam = dni * incidence_cos;
-    
+
     let surface_tilt = tilt_deg.to_radians();
     let aniso_factor = (1.0 + surface_tilt.cos()) / 2.0;
     let diffuse = dhi * aniso_factor;
-    
+
     let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
     let ground_reflected = ghi * ground_reflectance * ground_factor;
 
@@ -179,7 +184,11 @@ pub struct WindowProperties {
 
 impl WindowProperties {
     pub fn new(area: f64, shgc: f64, normal_transmittance: f64) -> Self {
-        WindowProperties { area, shgc, normal_transmittance }
+        WindowProperties {
+            area,
+            shgc,
+            normal_transmittance,
+        }
     }
 
     pub fn double_clear(area: f64) -> Self {
@@ -215,7 +224,7 @@ pub fn calculate_window_solar_gain(
     };
 
     let diffuse_transmittance = window.normal_transmittance * 0.85;
-    let total_transmitted_wm2 = irradiance.beam_wm2 * beam_transmittance 
+    let total_transmitted_wm2 = irradiance.beam_wm2 * beam_transmittance
         + (irradiance.diffuse_wm2 + irradiance.ground_reflected_wm2) * diffuse_transmittance;
 
     window.area * total_transmitted_wm2 * window.shgc
@@ -260,8 +269,13 @@ mod tests {
 
     #[test]
     fn test_surface_irradiance() {
-        let sun_pos = SolarPosition { altitude_deg: 45.0, azimuth_deg: 180.0, zenith_deg: 45.0 };
-        let irr = calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+        let sun_pos = SolarPosition {
+            altitude_deg: 45.0,
+            azimuth_deg: 180.0,
+            zenith_deg: 45.0,
+        };
+        let irr =
+            calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
         assert!(irr.total_wm2 > 0.0);
     }
 }

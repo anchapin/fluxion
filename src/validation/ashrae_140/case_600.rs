@@ -8,8 +8,8 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::VectorField;
 use crate::sim::construction::Assemblies;
 use crate::sim::engine::ThermalModel;
-use crate::sim::components::Orientation;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
+use crate::validation::ashrae_140_cases::Orientation;
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 
