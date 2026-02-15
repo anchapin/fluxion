@@ -211,6 +211,9 @@ impl Case600Model {
                 dni,
                 dhi,
                 &window,
+                None, // No window geometry details
+                None, // No overhang
+                &[],  // No fins
                 window_orientation,
                 Some(0.2), // Ground reflectance (typical grass)
             );

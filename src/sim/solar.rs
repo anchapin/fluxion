@@ -3,7 +3,8 @@
 //! This module implements solar position calculations and surface insolation models
 //! for ASHRAE 140 validation and general building energy simulation.
 
-use crate::validation::ashrae_140_cases::Orientation;
+use crate::sim::shading::{calculate_shaded_fraction, LocalSolarPosition, Overhang, ShadeFin};
+use crate::validation::ashrae_140_cases::{Orientation, WindowArea};
 
 /// Sun position in the sky at a given time and location.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -204,6 +205,9 @@ impl WindowProperties {
 pub fn calculate_window_solar_gain(
     irradiance: &SurfaceIrradiance,
     window: &WindowProperties,
+    geometry: Option<&WindowArea>,
+    overhang: Option<&Overhang>,
+    fins: &[ShadeFin],
     sun_pos: &SolarPosition,
     orientation: Orientation,
 ) -> f64 {
@@ -211,9 +215,24 @@ pub fn calculate_window_solar_gain(
         return 0.0;
     }
 
-    let (tilt_deg, azimuth_deg) = orientation_to_angles(orientation);
-    let incidence_cos = sun_pos.incidence_cosine(tilt_deg, azimuth_deg);
+    let (tilt_deg, surface_azimuth_deg) = orientation_to_angles(orientation);
+    let incidence_cos = sun_pos.incidence_cosine(tilt_deg, surface_azimuth_deg);
     let incidence_angle = incidence_cos.acos().to_degrees();
+
+    // Calculate shaded fraction for beam radiation
+    let mut shaded_fraction = 0.0;
+    if let Some(geom) = geometry {
+        let mut rel_az = sun_pos.azimuth_deg - surface_azimuth_deg;
+        while rel_az > 180.0 { rel_az -= 360.0; }
+        while rel_az <= -180.0 { rel_az += 360.0; }
+        
+        let local_solar = LocalSolarPosition {
+            altitude: sun_pos.altitude_deg.to_radians(),
+            relative_azimuth: rel_az.to_radians(),
+        };
+        
+        shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar);
+    }
 
     let beam_transmittance = if incidence_angle <= 0.0 {
         window.normal_transmittance
@@ -225,7 +244,15 @@ pub fn calculate_window_solar_gain(
     };
 
     let diffuse_transmittance = window.normal_transmittance * 0.85;
-    let total_transmitted_wm2 = irradiance.beam_wm2 * beam_transmittance
+    
+    // Apply shading to beam component
+    let effective_beam = irradiance.beam_wm2 * (1.0 - shaded_fraction);
+    
+    // For ASHRAE 140 simplified cases, diffuse shading is often handled 
+    // by a constant factor or ignored for overhangs. 
+    // Here we only apply shading to the beam component as requested.
+    
+    let total_transmitted_wm2 = effective_beam * beam_transmittance
         + (irradiance.diffuse_wm2 + irradiance.ground_reflected_wm2) * diffuse_transmittance;
 
     window.area * total_transmitted_wm2 * window.shgc
@@ -241,6 +268,9 @@ pub fn calculate_hourly_solar(
     dni: f64,
     dhi: f64,
     window: &WindowProperties,
+    geometry: Option<&WindowArea>,
+    overhang: Option<&Overhang>,
+    fins: &[ShadeFin],
     orientation: Orientation,
     ground_reflectance: Option<f64>,
 ) -> (SolarPosition, SurfaceIrradiance, f64) {
@@ -253,7 +283,15 @@ pub fn calculate_hourly_solar(
         orientation,
         ground_reflectance.unwrap_or(0.2),
     );
-    let solar_gain = calculate_window_solar_gain(&irradiance, window, &sun_pos, orientation);
+    let solar_gain = calculate_window_solar_gain(
+        &irradiance,
+        window,
+        geometry,
+        overhang,
+        fins,
+        &sun_pos,
+        orientation,
+    );
 
     (sun_pos, irradiance, solar_gain)
 }

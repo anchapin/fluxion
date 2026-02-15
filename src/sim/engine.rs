@@ -4,7 +4,8 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
-use crate::validation::ashrae_140_cases::CaseSpec;
+use crate::sim::shading::{Overhang, ShadeFin, Side};
+use crate::validation::ashrae_140_cases::{CaseSpec, ShadingType};
 use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
 
@@ -154,11 +155,46 @@ impl ThermalModel<VectorField> {
             let mut zone_surfaces = Vec::new();
             for &orientation in &orientations {
                 let win_area = spec.window_area_by_orientation(orientation);
-                zone_surfaces.push(WallSurface::new(
+                let mut surface = WallSurface::new(
                     win_area,
                     spec.window_properties.u_value,
                     orientation,
-                ));
+                );
+
+                // Add shading if applicable to this orientation
+                if let Some(shading) = &spec.shading {
+                    match shading.shading_type {
+                        ShadingType::Overhang | ShadingType::OverhangAndFins => {
+                            // In ASHRAE 140, overhangs are typically on the same orientation as windows
+                            if win_area > 0.0 {
+                                surface.overhang = Some(Overhang {
+                                    depth: shading.overhang_depth,
+                                    distance_above: 0.0, // Default for ASHRAE 140
+                                    extension: 10.0,     // "Infinite"
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                    match shading.shading_type {
+                        ShadingType::Fins | ShadingType::OverhangAndFins => {
+                            if win_area > 0.0 {
+                                surface.fins.push(ShadeFin {
+                                    depth: shading.fin_width,
+                                    distance_from_edge: 0.0,
+                                    side: Side::Left,
+                                });
+                                surface.fins.push(ShadeFin {
+                                    depth: shading.fin_width,
+                                    distance_from_edge: 0.0,
+                                    side: Side::Right,
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                zone_surfaces.push(surface);
             }
             surfaces.push(zone_surfaces);
         }
