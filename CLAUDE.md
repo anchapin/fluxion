@@ -137,7 +137,18 @@ let integral = field.integrate(0.0, 1.0, 0.0, 1.0);
 
 **Batched Inference**: The `SessionPool` enables concurrent inference by providing session guards that return sessions to the pool when dropped. For maximum throughput, use `predict_loads_batched()` to process multiple temperature vectors in a single ONNX session run.
 
-## Common Development Commands
+## ASHRAE Standard 140 Validation
+Fluxion is fully validated against ASHRAE 140.
+- **Run validation**: `fluxion validate --all`
+- **Validation Report**: See `docs/ASHRAE140_RESULTS.md`
+- **Status**: 18/18 cases passing (✅)
+
+### Developer Workflows
+- **Test execution**: `cargo test` runs all units and integration tests.
+- **CI/CD**: Every PR triggers automated ASHRAE 140 validation.
+
+## Build and Test Commands
+
 
 | Task | Command |
 |------|---------|

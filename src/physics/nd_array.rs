@@ -186,6 +186,14 @@ impl ContinuousTensor<f64> for NDArrayField {
     fn constant_like(&self, value: f64) -> Self {
         NDArrayField::from_shape_vec(self.shape(), vec![value; self.len()])
     }
+
+    fn elementwise_min(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.min(b))
+    }
+
+    fn elementwise_max(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.max(b))
+    }
 }
 
 impl From<crate::physics::cta::VectorField> for NDArrayField {

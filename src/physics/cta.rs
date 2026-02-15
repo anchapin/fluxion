@@ -49,6 +49,12 @@ where
 
     /// Creates a new tensor of the same shape and size, filled with a constant value.
     fn constant_like(&self, value: T) -> Self;
+
+    /// Computes the element-wise minimum of two tensors.
+    fn elementwise_min(&self, other: &Self) -> Self;
+
+    /// Computes the element-wise maximum of two tensors.
+    fn elementwise_max(&self, other: &Self) -> Self;
 }
 
 /// A basic CPU-based implementation of ContinuousTensor using Vec<f64>.
@@ -194,6 +200,14 @@ impl ContinuousTensor<f64> for VectorField {
 
     fn constant_like(&self, value: f64) -> Self {
         VectorField::from_scalar(value, self.len())
+    }
+
+    fn elementwise_min(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.min(b))
+    }
+
+    fn elementwise_max(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.max(b))
     }
 }
 
