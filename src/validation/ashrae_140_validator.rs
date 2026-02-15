@@ -28,16 +28,29 @@ impl ASHRAE140Validator {
         let benchmark_data = benchmark::get_all_benchmark_data();
         let weather = DenverTmyWeather::new();
 
-        // Cases to validate
+        // Cases to validate - all 18 ASHRAE 140 cases
         let cases = vec![
+            // Low mass cases (600 series)
             ASHRAE140Case::Case600,
             ASHRAE140Case::Case610,
             ASHRAE140Case::Case620,
             ASHRAE140Case::Case630,
+            ASHRAE140Case::Case640,
+            ASHRAE140Case::Case650,
+            ASHRAE140Case::Case600FF,
+            ASHRAE140Case::Case650FF,
+            // High mass cases (900 series)
             ASHRAE140Case::Case900,
             ASHRAE140Case::Case910,
             ASHRAE140Case::Case920,
             ASHRAE140Case::Case930,
+            ASHRAE140Case::Case940,
+            ASHRAE140Case::Case950,
+            ASHRAE140Case::Case900FF,
+            ASHRAE140Case::Case950FF,
+            // Special cases
+            ASHRAE140Case::Case960,
+            ASHRAE140Case::Case195,
         ];
 
         for case in cases {
