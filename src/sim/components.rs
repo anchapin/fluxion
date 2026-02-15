@@ -1,6 +1,9 @@
 use crate::physics::continuous::ContinuousField;
 use num_traits::Zero;
+use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
+
+use crate::validation::ashrae_140_cases::Orientation;
 
 /// Represents a wall surface in a thermal zone.
 #[derive(Clone, Debug)]
@@ -9,12 +12,18 @@ pub struct WallSurface {
     pub area: f64,
     /// Thermal transmittance of the surface (W/m²K).
     pub u_value: f64,
+    /// Orientation of the surface.
+    pub orientation: Orientation,
 }
 
 impl WallSurface {
     /// Create a new WallSurface.
-    pub fn new(area: f64, u_value: f64) -> Self {
-        WallSurface { area, u_value }
+    pub fn new(area: f64, u_value: f64, orientation: Orientation) -> Self {
+        WallSurface {
+            area,
+            u_value,
+            orientation,
+        }
     }
 
     /// Calculate heat gain for this surface given a continuous field representing
@@ -39,7 +48,7 @@ mod tests {
 
     #[test]
     fn test_heat_gain_constant() {
-        let surface = WallSurface::new(10.0, 0.5);
+        let surface = WallSurface::new(10.0, 0.5, Orientation::South);
         let field = ConstantField { value: 2.0 }; // 2.0 W/m²
 
         // Total heat = 10.0 m² * 2.0 W/m² * 1.0 (integral over unit square) = 20.0 W
