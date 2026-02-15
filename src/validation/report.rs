@@ -1195,7 +1195,12 @@ impl DeltaReport {
         for d in &self.deltas {
             output.push_str(&format!(
                 "| {} vs {} | {} | {:.2} | {:.2} | {:+.2}% |\n",
-                d.case_id, d.baseline_id, d.metric, d.fluxion_delta, d.reference_delta, d.deviation_percent
+                d.case_id,
+                d.baseline_id,
+                d.metric,
+                d.fluxion_delta,
+                d.reference_delta,
+                d.deviation_percent
             ));
         }
 
