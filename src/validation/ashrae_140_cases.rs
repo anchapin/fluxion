@@ -727,7 +727,9 @@ impl CaseSpec {
         }
 
         // Check HVAC schedule
-        if !self.hvac.heating.values.iter().all(|&s| s == 0.0) || !self.hvac.cooling.values.iter().all(|&s| s == 0.0) {
+        if !self.hvac.heating.values.iter().all(|&s| s == 0.0)
+            || !self.hvac.cooling.values.iter().all(|&s| s == 0.0)
+        {
             for i in 0..24 {
                 if self.hvac.heating_setpoint(i) > self.hvac.cooling_setpoint(i) {
                     return Err(format!(

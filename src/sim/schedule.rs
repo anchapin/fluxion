@@ -150,8 +150,8 @@ impl HVACSchedule {
 
     /// Returns true if this schedule represents a free-floating state (no HVAC control).
     pub fn is_free_floating(&self) -> bool {
-        self.heating.values.iter().all(|&s| s <= -100.0) && 
-        self.cooling.values.iter().all(|&s| s >= 100.0)
+        self.heating.values.iter().all(|&s| s <= -100.0)
+            && self.cooling.values.iter().all(|&s| s >= 100.0)
     }
 
     /// Returns the heating setpoint for a given hour.

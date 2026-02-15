@@ -272,9 +272,9 @@ impl ThermalModel<VectorField> {
             mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
             loads: VectorField::from_scalar(0.0, num_zones),
             surfaces,
-            window_u_value: 2.5,           // Default U-value
-            heating_setpoint: 20.0,        // Default heating setpoint (ASHRAE 140)
-            cooling_setpoint: 27.0,        // Default cooling setpoint (ASHRAE 140)
+            window_u_value: 2.5,    // Default U-value
+            heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
+            cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
             heating_schedule: DailySchedule::constant(20.0),
             cooling_schedule: DailySchedule::constant(27.0),
             hvac_heating_capacity: 5000.0, // Default: 5kW heating
@@ -1222,14 +1222,15 @@ mod tests {
 
         #[test]
         fn deadband_heating_cooling() {
-                    let mut model = ThermalModel::<VectorField>::new(1);
-                    let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
-            
-                    model.heating_setpoint = 20.0;
-                    model.heating_schedule = DailySchedule::constant(20.0);
-                    model.cooling_setpoint = 27.0;
-                    model.cooling_schedule = DailySchedule::constant(27.0);
-                    model.temperatures = VectorField::from_scalar(20.0, 1);            model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+            let mut model = ThermalModel::<VectorField>::new(1);
+            let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+            model.heating_setpoint = 20.0;
+            model.heating_schedule = DailySchedule::constant(20.0);
+            model.cooling_setpoint = 27.0;
+            model.cooling_schedule = DailySchedule::constant(27.0);
+            model.temperatures = VectorField::from_scalar(20.0, 1);
+            model.mass_temperatures = VectorField::from_scalar(20.0, 1);
             model.loads = VectorField::from_scalar(0.0, 1);
 
             // Test cold outdoor temp - should heat

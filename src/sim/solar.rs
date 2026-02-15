@@ -230,7 +230,7 @@ pub fn calculate_window_solar_gain(
 
     window.area * total_transmitted_wm2 * window.shgc
 }
-
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_hourly_solar(
     latitude_deg: f64,
     longitude_deg: f64,
