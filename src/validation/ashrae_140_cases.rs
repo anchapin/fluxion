@@ -334,13 +334,15 @@ pub enum ConstructionType {
     Special,
 }
 
-/// Orientation for surfaces and windows.
+/// Orientation of a surface.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Orientation {
     North,
     East,
     South,
     West,
+    Up,   // Roof
+    Down, // Floor
     Horizontal,
 }
 
@@ -352,10 +354,22 @@ impl Orientation {
             Orientation::East => 90.0,
             Orientation::South => 180.0,
             Orientation::West => 270.0,
-            Orientation::Horizontal => -1.0, // Special value for horizontal surfaces
+            Orientation::Up | Orientation::Down | Orientation::Horizontal => -1.0,
+        }
+    }
+
+    /// Returns the azimuth angle in degrees according to ASHRAE 140 (0° = South, clockwise).
+    pub fn azimuth(&self) -> f64 {
+        match self {
+            Orientation::South => 0.0,
+            Orientation::West => 90.0,
+            Orientation::North => 180.0,
+            Orientation::East => 270.0,
+            Orientation::Up | Orientation::Down | Orientation::Horizontal => -1.0,
         }
     }
 }
+
 
 /// Window specification with area and orientation.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
