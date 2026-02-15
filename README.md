@@ -8,9 +8,11 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## ASHRAE 140 Validation
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-passing-18%2F18-brightgreen)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-passing-8%2F18-yellow)
 
-Fluxion is fully validated against **ASHRAE Standard 140-2023**. This ensures the accuracy of our differentiable physics engine against industry-standard benchmarks.
+Fluxion is validated against **ASHRAE Standard 140-2023** (8 of 18 cases currently implemented). This ensures the accuracy of our differentiable physics engine against industry-standard benchmarks.
+
+> **Note**: Full 18/18 validation is in progress. See [GitHub Issue #103](https://github.com/anchapin/fluxion/issues/103) for implementation status.
 
 Key features validated:
 - **Shading**: Overhangs and vertical fins.
