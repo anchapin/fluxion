@@ -31,7 +31,7 @@
 //!     .unwrap();
 //! ```
 
-use crate::sim::components::Orientation;
+use crate::validation::ashrae_140_cases::Orientation;
 use crate::sim::construction::{Assemblies, Construction};
 use serde::{Deserialize, Serialize};
 
