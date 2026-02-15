@@ -1494,6 +1494,25 @@ impl CaseBuilder {
 
     /// Case 195 - Solid conduction (no windows, no infiltration, no loads).
     pub fn case_195_solid_conduction() -> CaseSpec {
+        let mut wall = Assemblies::low_mass_wall();
+        // Set low absorptance/emissivity for Case 195 (as per spec)
+        for layer in &mut wall.layers {
+            layer.absorptance = 0.1;
+            layer.emissivity = 0.1;
+        }
+
+        let mut roof = Assemblies::low_mass_roof();
+        for layer in &mut roof.layers {
+            layer.absorptance = 0.1;
+            layer.emissivity = 0.1;
+        }
+
+        let mut floor = Assemblies::insulated_floor();
+        for layer in &mut floor.layers {
+            layer.absorptance = 0.1;
+            layer.emissivity = 0.1;
+        }
+
         Self::new()
             .with_case_id("195".to_string())
             .with_description(
@@ -1501,6 +1520,7 @@ impl CaseBuilder {
             )
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
+            .with_construction(wall, roof, floor)
             .with_window_properties(WindowSpec::double_clear_glass())
             // No windows - this is a solid conduction problem
             .with_internal_loads(InternalLoads::new(0.0, 0.6, 0.4)) // No internal loads
