@@ -557,8 +557,9 @@ mod tests {
 
     #[test]
     fn test_construction_layer_with_custom_surface_properties() {
-        let layer =
-            ConstructionLayer::with_surface_properties("Test", 0.04, 12.0, 840.0, 0.066, 0.85, 0.65);
+        let layer = ConstructionLayer::with_surface_properties(
+            "Test", 0.04, 12.0, 840.0, 0.066, 0.85, 0.65,
+        );
 
         assert_eq!(layer.name, "Test");
         assert_eq!(layer.emissivity, 0.85);
