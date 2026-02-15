@@ -301,6 +301,16 @@ impl ValidationResult {
         format!("{:+.2}%", self.percent_error)
     }
 
+    /// Returns true if the value is within the reference range.
+    pub fn is_within_range(&self) -> bool {
+        self.fluxion_value >= self.ref_min && self.fluxion_value <= self.ref_max
+    }
+
+    /// Returns the deviation from the reference range center as a percentage.
+    pub fn deviation_percent(&self) -> f64 {
+        self.percent_error
+    }
+
     /// Returns true if this result passed validation.
     pub fn passed(&self) -> bool {
         self.status == ValidationStatus::Pass
@@ -1140,9 +1150,95 @@ impl ValidationSuite {
     }
 }
 
+/// Analysis of differences between test cases (e.g., variant vs. baseline).
+#[derive(Debug, Clone)]
+pub struct DeltaResult {
+    /// Case being analyzed (the variant)
+    pub case_id: String,
+    /// Baseline case for comparison
+    pub baseline_id: String,
+    /// Metric type
+    pub metric: MetricType,
+    /// Absolute difference in Fluxion values
+    pub fluxion_delta: f64,
+    /// Absolute difference in reference midpoint values
+    pub reference_delta: f64,
+    /// Percent deviation of Fluxion delta from reference delta
+    pub deviation_percent: f64,
+}
+
+/// Report containing delta analysis for multiple case variants.
+#[derive(Debug, Clone, Default)]
+pub struct DeltaReport {
+    /// All delta analysis results
+    pub deltas: Vec<DeltaResult>,
+}
+
+impl DeltaReport {
+    /// Creates a new empty delta report.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds a delta analysis result.
+    pub fn add_delta(&mut self, delta: DeltaResult) {
+        self.deltas.push(delta);
+    }
+
+    /// Generates a Markdown table for the delta analysis.
+    pub fn to_markdown(&self) -> String {
+        let mut output = String::new();
+        output.push_str("## Delta Analysis\n\n");
+        output.push_str("| Case vs Baseline | Metric | Fluxion Δ | Ref Δ | Deviation |\n");
+        output.push_str("|------------------|--------|-----------|-------|-----------|\n");
+
+        for d in &self.deltas {
+            output.push_str(&format!(
+                "| {} vs {} | {} | {:.2} | {:.2} | {:+.2}% |\n",
+                d.case_id,
+                d.baseline_id,
+                d.metric,
+                d.fluxion_delta,
+                d.reference_delta,
+                d.deviation_percent
+            ));
+        }
+
+        output
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_validation_result_new_methods() {
+        let result = ValidationResult::new("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        assert!(result.is_within_range());
+        assert!((result.deviation_percent() - (-0.0999)).abs() < 0.1);
+
+        let fail = ValidationResult::new("600", MetricType::AnnualHeating, 3.0, 4.30, 5.71);
+        assert!(!fail.is_within_range());
+    }
+
+    #[test]
+    fn test_delta_report() {
+        let mut report = DeltaReport::new();
+        report.add_delta(DeltaResult {
+            case_id: "610".to_string(),
+            baseline_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_delta: 0.1,
+            reference_delta: 0.08,
+            deviation_percent: 25.0,
+        });
+
+        let md = report.to_markdown();
+        assert!(md.contains("610 vs 600"));
+        assert!(md.contains("Annual Heating"));
+        assert!(md.contains("25.00%"));
+    }
 
     #[test]
     fn test_metric_type_display() {
