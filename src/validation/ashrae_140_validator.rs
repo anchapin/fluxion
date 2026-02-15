@@ -126,7 +126,9 @@ impl ASHRAE140Validator {
             }
 
             // Access first element of internal_loads Vec
-            let internal_gains = spec.internal_loads[0].as_ref().map_or(0.0, |l| l.total_load);
+            let internal_gains = spec.internal_loads[0]
+                .as_ref()
+                .map_or(0.0, |l| l.total_load);
             let total_loads = internal_gains + total_solar_gain;
 
             // Access first element of geometry Vec
