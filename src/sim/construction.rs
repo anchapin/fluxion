@@ -63,6 +63,9 @@ pub const fn interior_film_coeff() -> f64 {
 /// Each layer represents a homogeneous material with uniform thermal properties.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ConstructionLayer {
+    /// Name of the material
+    pub name: String,
+
     /// Thermal conductivity of the material (k) in W/m·K
     ///
     /// This is the rate of heat transfer through the material per unit temperature
@@ -118,15 +121,22 @@ impl ConstructionLayer {
     /// ```
     /// use fluxion::sim::construction::ConstructionLayer;
     ///
-    /// let layer = ConstructionLayer::new(0.04, 12.0, 840.0, 0.066);
+    /// let layer = ConstructionLayer::new("Fiberglass", 0.04, 12.0, 840.0, 0.066);
     /// ```
-    pub fn new(conductivity: f64, density: f64, specific_heat: f64, thickness: f64) -> Self {
+    pub fn new(
+        name: impl Into<String>,
+        conductivity: f64,
+        density: f64,
+        specific_heat: f64,
+        thickness: f64,
+    ) -> Self {
         assert!(conductivity > 0.0, "Conductivity must be positive");
         assert!(density > 0.0, "Density must be positive");
         assert!(specific_heat > 0.0, "Specific heat must be positive");
         assert!(thickness > 0.0, "Thickness must be positive");
 
         Self {
+            name: name.into(),
             conductivity,
             density,
             specific_heat,
@@ -153,6 +163,7 @@ impl ConstructionLayer {
     /// Panics if conductivity, density, specific_heat, or thickness are non-positive.
     /// Panics if emissivity or absorptance are outside the range [0.0, 1.0].
     pub fn with_surface_properties(
+        name: impl Into<String>,
         conductivity: f64,
         density: f64,
         specific_heat: f64,
@@ -174,6 +185,7 @@ impl ConstructionLayer {
         );
 
         Self {
+            name: name.into(),
             conductivity,
             density,
             specific_heat,
@@ -354,7 +366,7 @@ impl Materials {
     ///
     /// Common interior finish for walls and ceilings.
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.16, 950.0, 840.0, thickness)
+        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
@@ -365,7 +377,7 @@ impl Materials {
     ///
     /// Common thermal insulation for walls, roofs, and floors.
     pub fn fiberglass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.04, 12.0, 840.0, thickness)
+        ConstructionLayer::new("Fiberglass", 0.04, 12.0, 840.0, thickness)
     }
 
     /// Wood siding
@@ -376,7 +388,7 @@ impl Materials {
     ///
     /// Exterior cladding material for low-mass buildings.
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.14, 500.0, 1300.0, thickness)
+        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
     }
 
     /// Concrete (normal weight)
@@ -387,7 +399,7 @@ impl Materials {
     ///
     /// High thermal mass material used in concrete block walls and slabs.
     pub fn concrete(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete", 0.51, 1400.0, 1000.0, thickness)
     }
 
     /// Foam insulation
@@ -398,7 +410,7 @@ impl Materials {
     ///
     /// Rigid foam insulation for high-performance assemblies.
     pub fn foam(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing
@@ -409,7 +421,7 @@ impl Materials {
     ///
     /// Structural material used in low-mass buildings.
     pub fn timber(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.14, 600.0, 1600.0, thickness)
+        ConstructionLayer::new("Timber", 0.14, 600.0, 1600.0, thickness)
     }
 
     /// Roof decking
@@ -420,7 +432,7 @@ impl Materials {
     ///
     /// Structural material for roof assemblies.
     pub fn roof_deck(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new(0.14, 500.0, 1300.0, thickness)
+        ConstructionLayer::new("Roof Deck", 0.14, 500.0, 1300.0, thickness)
     }
 }
 
@@ -519,7 +531,7 @@ impl Assemblies {
     pub fn insulated_floor() -> Construction {
         Construction::new(vec![
             Materials::timber(0.025),
-            ConstructionLayer::new(1.003, 50.0, 840.0, 0.040), // Floor insulation
+            ConstructionLayer::new("Floor Insulation", 1.003, 50.0, 840.0, 0.040), // Floor insulation
         ])
     }
 }
@@ -532,8 +544,9 @@ mod tests {
 
     #[test]
     fn test_construction_layer_creation() {
-        let layer = ConstructionLayer::new(0.04, 12.0, 840.0, 0.066);
+        let layer = ConstructionLayer::new("Test", 0.04, 12.0, 840.0, 0.066);
 
+        assert_eq!(layer.name, "Test");
         assert_eq!(layer.conductivity, 0.04);
         assert_eq!(layer.density, 12.0);
         assert_eq!(layer.specific_heat, 840.0);
@@ -544,9 +557,11 @@ mod tests {
 
     #[test]
     fn test_construction_layer_with_custom_surface_properties() {
-        let layer =
-            ConstructionLayer::with_surface_properties(0.04, 12.0, 840.0, 0.066, 0.85, 0.65);
+        let layer = ConstructionLayer::with_surface_properties(
+            "Test", 0.04, 12.0, 840.0, 0.066, 0.85, 0.65,
+        );
 
+        assert_eq!(layer.name, "Test");
         assert_eq!(layer.emissivity, 0.85);
         assert_eq!(layer.absorptance, 0.65);
     }
@@ -554,30 +569,30 @@ mod tests {
     #[test]
     #[should_panic(expected = "Conductivity must be positive")]
     fn test_construction_layer_invalid_conductivity() {
-        ConstructionLayer::new(-0.04, 12.0, 840.0, 0.066);
+        ConstructionLayer::new("Test", -0.04, 12.0, 840.0, 0.066);
     }
 
     #[test]
     #[should_panic(expected = "Density must be positive")]
     fn test_construction_layer_invalid_density() {
-        ConstructionLayer::new(0.04, -12.0, 840.0, 0.066);
+        ConstructionLayer::new("Test", 0.04, -12.0, 840.0, 0.066);
     }
 
     #[test]
     #[should_panic(expected = "Thickness must be positive")]
     fn test_construction_layer_invalid_thickness() {
-        ConstructionLayer::new(0.04, 12.0, 840.0, 0.0);
+        ConstructionLayer::new("Test", 0.04, 12.0, 840.0, 0.0);
     }
 
     #[test]
     #[should_panic(expected = "Emissivity must be in [0, 1]")]
     fn test_construction_layer_invalid_emissivity() {
-        ConstructionLayer::with_surface_properties(0.04, 12.0, 840.0, 0.066, 1.5, 0.7);
+        ConstructionLayer::with_surface_properties("Test", 0.04, 12.0, 840.0, 0.066, 1.5, 0.7);
     }
 
     #[test]
     fn test_layer_r_value() {
-        let layer = ConstructionLayer::new(0.04, 12.0, 840.0, 0.066);
+        let layer = ConstructionLayer::new("Test", 0.04, 12.0, 840.0, 0.066);
 
         // R = δ / k = 0.066 / 0.04 = 1.65 m²K/W
         let expected_r = 0.066 / 0.04;
@@ -586,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_layer_thermal_capacitance_per_area() {
-        let layer = ConstructionLayer::new(0.04, 12.0, 840.0, 0.066);
+        let layer = ConstructionLayer::new("Test", 0.04, 12.0, 840.0, 0.066);
 
         // C/A = ρ × δ × Cp = 12.0 × 0.066 × 840.0 = 665.28 J/m²K
         let expected_c = 12.0 * 0.066 * 840.0;
@@ -596,8 +611,8 @@ mod tests {
     #[test]
     fn test_construction_creation() {
         let layers = vec![
-            ConstructionLayer::new(0.16, 950.0, 840.0, 0.012),
-            ConstructionLayer::new(0.04, 12.0, 840.0, 0.066),
+            ConstructionLayer::new("Layer 1", 0.16, 950.0, 840.0, 0.012),
+            ConstructionLayer::new("Layer 2", 0.04, 12.0, 840.0, 0.066),
         ];
         let construction = Construction::new(layers);
 

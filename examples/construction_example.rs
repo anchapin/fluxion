@@ -4,7 +4,7 @@ use fluxion::sim::construction::{
 
 fn main() {
     // Example 1: Create a custom construction layer
-    let fiberglass = ConstructionLayer::new(0.04, 12.0, 840.0, 0.066);
+    let fiberglass = ConstructionLayer::new("Fiberglass", 0.04, 12.0, 840.0, 0.066);
     println!(
         "Fiberglass layer R-value: {:.4} m²K/W",
         fiberglass.r_value()
@@ -16,9 +16,9 @@ fn main() {
 
     // Example 2: Create a custom wall construction
     let custom_wall = Construction::new(vec![
-        ConstructionLayer::new(0.16, 950.0, 840.0, 0.012), // Plasterboard
-        ConstructionLayer::new(0.04, 12.0, 840.0, 0.089),  // More insulation
-        ConstructionLayer::new(0.14, 500.0, 1300.0, 0.009), // Siding
+        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, 0.012), // Plasterboard
+        ConstructionLayer::new("Fiberglass", 0.04, 12.0, 840.0, 0.089),    // More insulation
+        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, 0.009), // Siding
     ]);
     println!("\nCustom wall construction:");
     println!("  Total thickness: {:.3} m", custom_wall.total_thickness());
