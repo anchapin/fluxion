@@ -6,6 +6,7 @@ use crate::sim::boundary::{
 use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
+use crate::sim::ventilation::{ConstantVentilation, ScheduledVentilation, VentilationSchedule};
 use crate::validation::ashrae_140_cases::{CaseSpec, ShadingType};
 use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
