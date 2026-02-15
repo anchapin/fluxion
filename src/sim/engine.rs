@@ -144,6 +144,7 @@ impl ThermalModel<VectorField> {
         let mut h_tr_em_data = vec![0.0; num_zones];
         let mut thermal_cap_data = vec![0.0; num_zones];
         let mut load_data = vec![0.0; num_zones];
+        let mut total_volume = 0.0;
 
         let orientations = [
             crate::validation::ashrae_140_cases::Orientation::South,
@@ -158,6 +159,7 @@ impl ThermalModel<VectorField> {
             let geo = &spec.geometry[z];
             let floor_area = geo.floor_area();
             let volume = geo.volume();
+            total_volume += volume;
             let wall_area = geo.wall_area();
 
             zone_areas[z] = floor_area;
@@ -237,7 +239,7 @@ impl ThermalModel<VectorField> {
 
         // Ventilation schedule
         if let Some(vent) = &spec.night_ventilation {
-            let fan_ach = vent.fan_capacity / volume;
+            let fan_ach = vent.fan_capacity / total_volume;
             let (start, end) = vent.operating_hours;
             model.ventilation_schedule = Box::new(ScheduledVentilation::night_ventilation(
                 spec.infiltration_ach,
