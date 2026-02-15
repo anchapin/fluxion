@@ -4,11 +4,12 @@
 //! validation reports, including pass/fail determination, delta analysis,
 //! and multiple export formats (Markdown, HTML, CSV).
 
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 
 /// Types of validation metrics for ASHRAE 140.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetricType {
     /// Annual heating energy consumption (MWh)
     AnnualHeating,
@@ -54,7 +55,7 @@ impl fmt::Display for MetricType {
 }
 
 /// Validation status for a single metric comparison.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ValidationStatus {
     /// Value within 5% of reference range
     Pass,
@@ -119,7 +120,7 @@ impl fmt::Display for ReferenceProgram {
 }
 
 /// Benchmark data for a single ASHRAE 140 case.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BenchmarkData {
     /// Minimum annual heating (MWh) across reference programs
     pub annual_heating_min: f64,
@@ -227,7 +228,7 @@ impl Default for BenchmarkData {
 }
 
 /// A single validation result for a specific case and metric.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationResult {
     /// Case identifier (e.g., "600", "900", "600FF")
     pub case_id: String,
@@ -339,7 +340,7 @@ impl ValidationResult {
 }
 
 /// Comprehensive validation report for ASHRAE 140 test cases.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BenchmarkReport {
     /// All validation results
     pub results: Vec<ValidationResult>,
@@ -351,6 +352,11 @@ impl BenchmarkReport {
     /// Creates a new empty validation report.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Generates a JSON report.
+    pub fn to_json(&self) -> String {
+        serde_json::to_string_pretty(self).unwrap_or_else(|_| "{}".to_string())
     }
 
     /// Adds a validation result to the report.

@@ -28,6 +28,9 @@ faer = { version = "0.23.2", default-features = false, features = ["std"] }
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
 
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
 # Parallelism
 rayon = "1.10"
 
