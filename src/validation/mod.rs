@@ -7,7 +7,7 @@ pub mod report;
 // Re-export common types
 pub use ashrae_140_validator::ASHRAE140Validator;
 
-pub use crate::sim::components::Orientation;
+pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
     ASHRAE140Case, CaseBuilder, CaseSpec, ConstructionSpec, ConstructionType, GeometrySpec,
     HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
