@@ -411,10 +411,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
         let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
-        let den = self.h_tr_ms.clone() * self.h_tr_is.clone()
-            + self.h_tr_ms.clone() * h_ext.clone()
-            + self.h_tr_is.clone() * h_ext.clone();
         let term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
+        let den = self.h_tr_ms.clone() * self.h_tr_is.clone()
+            + term_rest_1.clone() * h_ext.clone();
 
         let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
@@ -427,9 +426,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest.clone()) / den.clone();
 
         // 3. HVAC Calculation
-        let sensitivity = (self.h_tr_ms.clone() + self.h_tr_is.clone()) / den.clone();
+        let sensitivity = term_rest_1.clone() / den.clone();
         let hvac_output = self.hvac_power_demand(&t_i_free, &sensitivity);
-        let hvac_energy_for_step = hvac_output.map(|o| o.abs()).integrate() * dt;
+        let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val.abs()) * dt;
 
         // 4. Update Temperatures
         let phi_ia_act = phi_ia + hvac_output;
