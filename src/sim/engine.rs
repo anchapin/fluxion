@@ -1421,3 +1421,25 @@ mod tests {
         }
     }
 }
+
+impl ThermalModel<VectorField> {
+    /// Creates a ThermalModel from an ASHRAE 140 CaseSpec.
+    pub fn from_spec(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
+        let mut model = Self::new(spec.num_zones);
+
+        model.zone_area = VectorField::from_scalar(spec.geometry.floor_area(), spec.num_zones);
+        model.ceiling_height = VectorField::from_scalar(spec.geometry.height, spec.num_zones);
+        model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, spec.num_zones);
+
+        model.window_u_value = spec.window_properties.u_value;
+        model.heating_setpoint = spec.hvac.heating_setpoint;
+        model.cooling_setpoint = spec.hvac.cooling_setpoint;
+
+        // Update window ratio based on total window area and gross wall area
+        let window_ratio = spec.total_window_area() / spec.geometry.wall_area();
+        model.window_ratio = VectorField::from_scalar(window_ratio, spec.num_zones);
+
+        model.update_derived_parameters();
+        model
+    }
+}
