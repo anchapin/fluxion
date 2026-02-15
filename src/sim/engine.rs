@@ -149,7 +149,8 @@ impl ThermalModel<VectorField> {
 
         // h_ve = (ACH * Volume * rho * cp) / 3600
         let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
-        model.h_ve = VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
+        model.h_ve =
+            VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
 
         // h_tr_floor
         model.h_tr_floor = VectorField::from_scalar(
@@ -422,9 +423,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 tx.send(temps).expect("Failed to send state to coordinator");
 
                 // 2. Receive predicted loads from coordinator
-                let loads = rx
-                    .recv()
-                    .expect("Failed to receive loads from coordinator");
+                let loads = rx.recv().expect("Failed to receive loads from coordinator");
                 self.set_loads(&loads);
 
                 // 3. Solve physics for this timestep
