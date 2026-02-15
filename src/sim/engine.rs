@@ -581,7 +581,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // 1. Calculate Dynamic Ventilation Conductance (h_ve)
         let hour_of_day = timestep % 24;
         let ach = self.ventilation_schedule.get_ach(hour_of_day);
-        
+
         // h_ve = (ACH * Volume * rho * cp) / 3600
         let volume = self.zone_area.clone() * self.ceiling_height.clone();
         let air_cap = volume * self.air_density.clone() * self.heat_capacity.clone();

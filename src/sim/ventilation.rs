@@ -57,7 +57,12 @@ impl ScheduledVentilation {
     }
 
     /// Creates a night ventilation schedule (ON during specified range).
-    pub fn night_ventilation(base_ach: f64, fan_ach: f64, start_hour: usize, end_hour: usize) -> Self {
+    pub fn night_ventilation(
+        base_ach: f64,
+        fan_ach: f64,
+        start_hour: usize,
+        end_hour: usize,
+    ) -> Self {
         let mut vent = Self::new(base_ach, fan_ach);
         if start_hour == end_hour {
             vent.schedule = [true; 24];
