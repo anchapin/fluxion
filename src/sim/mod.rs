@@ -4,3 +4,4 @@ pub mod construction;
 pub mod engine;
 pub mod schedule;
 pub mod solar;
+pub mod ventilation;

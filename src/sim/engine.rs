@@ -4,6 +4,7 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
+use crate::sim::ventilation::{ConstantVentilation, ScheduledVentilation, VentilationSchedule};
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
@@ -88,6 +89,7 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
 
     // Inter-zone coupling (Issue #66)
     pub h_interzone: Vec<Vec<f64>>, // Matrix of inter-zone conductances (W/K)
+    pub ventilation_schedule: Box<dyn VentilationSchedule>, // Ventilation schedule
 }
 
 // Manual Clone implementation for ThermalModel
@@ -120,6 +122,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_tr_floor: self.h_tr_floor.clone(),
             ground_temperature: self.ground_temperature.clone_box(),
             h_interzone: self.h_interzone.clone(),
+            ventilation_schedule: self.ventilation_schedule.clone_box(),
         }
     }
 }
@@ -232,6 +235,20 @@ impl ThermalModel<VectorField> {
             model.h_interzone[wall.zone_b][wall.zone_a] += conductance;
         }
 
+        // Ventilation schedule
+        if let Some(vent) = &spec.night_ventilation {
+            let fan_ach = vent.fan_capacity / volume;
+            let (start, end) = vent.operating_hours;
+            model.ventilation_schedule = Box::new(ScheduledVentilation::night_ventilation(
+                spec.infiltration_ach,
+                fan_ach,
+                start as usize,
+                end as usize,
+            ));
+        } else {
+            model.ventilation_schedule = Box::new(ConstantVentilation::new(spec.infiltration_ach));
+        }
+
         model
     }
 
@@ -313,6 +330,7 @@ impl ThermalModel<VectorField> {
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             h_interzone: vec![vec![0.0; num_zones]; num_zones],
+            ventilation_schedule: Box::new(ConstantVentilation::new(0.5)),      // Default 0.5 ACH
         };
 
         model.update_derived_parameters();
@@ -559,6 +577,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// HVAC energy consumption for the timestep in kWh.
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
+
+        // 1. Calculate Dynamic Ventilation Conductance (h_ve)
+        let hour_of_day = timestep % 24;
+        let ach = self.ventilation_schedule.get_ach(hour_of_day);
+        
+        // h_ve = (ACH * Volume * rho * cp) / 3600
+        let volume = self.zone_area.clone() * self.ceiling_height.clone();
+        let air_cap = volume * self.air_density.clone() * self.heat_capacity.clone();
+        self.h_ve = (air_cap.clone() * self.temperatures.constant_like(ach)) / 3600.0;
 
         // Convert loads (W/m²) to Watts
         let loads_watts = self.loads.clone() * self.zone_area.clone();
