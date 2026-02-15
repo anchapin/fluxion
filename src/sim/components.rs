@@ -1,4 +1,5 @@
 use crate::physics::continuous::ContinuousField;
+use crate::sim::shading::{Overhang, ShadeFin};
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};
 
@@ -13,6 +14,10 @@ pub struct WallSurface {
     pub u_value: f64,
     /// Orientation of the surface.
     pub orientation: Orientation,
+    /// Optional overhang shading device.
+    pub overhang: Option<Overhang>,
+    /// List of vertical shade fins.
+    pub fins: Vec<ShadeFin>,
 }
 
 impl WallSurface {
@@ -22,7 +27,21 @@ impl WallSurface {
             area,
             u_value,
             orientation,
+            overhang: None,
+            fins: Vec::new(),
         }
+    }
+
+    /// Set an overhang for this surface.
+    pub fn with_overhang(mut self, overhang: Overhang) -> Self {
+        self.overhang = Some(overhang);
+        self
+    }
+
+    /// Add a shade fin to this surface.
+    pub fn with_fin(mut self, fin: ShadeFin) -> Self {
+        self.fins.push(fin);
+        self
     }
 
     /// Calculate heat gain for this surface given a continuous field representing
