@@ -209,38 +209,73 @@ impl BatchOracle {
             .collect();
 
         let mut results = vec![f64::NAN; population.len()];
-        let mut energies = vec![0.0; valid_configs.len()];
 
-        if use_surrogates {
-            // 2. Time-first loop for surrogate path (BATCHED INFERENCE)
-            // Time loop runs OUTSIDE parallel region - no nested parallelism
-            for t in 0..8760 {
-                let hour_of_day = t % 24;
-                let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+        if use_surrogates && !valid_configs.is_empty() {
+            // Coordinator-Worker pattern with Channels
+            let n_workers = valid_configs.len();
+            let mut coord_txs = Vec::with_capacity(n_workers);
+            let mut coord_rxs = Vec::with_capacity(n_workers);
+            let mut worker_channels = Vec::with_capacity(n_workers);
 
-                // 2a. Collect temperatures (SYNC)
-                let batch_temps: Vec<Vec<f64>> = valid_configs
-                    .iter()
-                    .map(|(_, model)| model.get_temperatures())
-                    .collect();
-
-                // 2b. Batched inference ONCE per timestep (max GPU utilization)
-                let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
-
-                // 2c. Parallel physics update (distribute loads and solve)
-                valid_configs
-                    .par_iter_mut()
-                    .zip(energies.par_iter_mut())
-                    .zip(batch_loads.par_iter())
-                    .for_each(|(((_, model), energy), loads)| {
-                        model.set_loads(loads);
-                        *energy += model.step_physics(t, outdoor_temp);
-                    });
+            for _ in 0..n_workers {
+                let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
+                let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
+                coord_rxs.push(rx_from_worker);
+                coord_txs.push(tx_to_worker);
+                worker_channels.push((tx_to_coord, rx_from_coord));
             }
-        } else {
-            // Analytical path - fully parallel (no batching needed)
-            // Each config independently runs through all timesteps
+
+            let final_worker_data = rayon::scope(|s| {
+                let (result_tx, result_rx) = crossbeam::channel::unbounded();
+
+                // Move models and channels into workers
+                for ((idx, mut model), (tx, rx)) in
+                    valid_configs.drain(..).zip(worker_channels.into_iter())
+                {
+                    let res_tx = result_tx.clone();
+                    s.spawn(move |_| {
+                        let energy = model.solve_timesteps_batched(8760, tx, rx);
+                        let _ = res_tx.send((idx, model, energy));
+                    });
+                }
+                drop(result_tx);
+
+                // Coordinator loop
+                for _t in 0..8760 {
+                    // 1. Collect temperatures from all workers
+                    let mut batch_temps = Vec::with_capacity(n_workers);
+                    for rx in &coord_rxs {
+                        batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
+                    }
+
+                    // 2. Batched inference
+                    let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
+
+                    // 3. Send loads back to workers
+                    for (tx, loads) in coord_txs.iter().zip(batch_loads) {
+                        tx.send(loads).expect("Failed to send loads to worker");
+                    }
+                }
+
+                let mut final_data = Vec::with_capacity(n_workers);
+                while let Ok(data) = result_rx.recv() {
+                    final_data.push(data);
+                }
+                final_data
+            });
+
+            // 3. Normalize and populate results
+            for (idx, model, energy) in final_worker_data {
+                let total_area = model.zone_area.integrate();
+                results[idx] = if total_area > 0.0 {
+                    energy / total_area
+                } else {
+                    0.0
+                };
+            }
+        } else if !valid_configs.is_empty() {
+            // Analytical path - fully parallel
+            let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
                 .zip(energies.par_iter_mut())
@@ -254,16 +289,15 @@ impl BatchOracle {
                             model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
                     }
                 });
-        }
 
-        // 3. Normalize by total floor area and populate results
-        for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
-            let total_area = model.zone_area.integrate();
-            results[*idx] = if total_area > 0.0 {
-                *energy / total_area
-            } else {
-                0.0
-            };
+            for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
+                let total_area = model.zone_area.integrate();
+                results[*idx] = if total_area > 0.0 {
+                    *energy / total_area
+                } else {
+                    0.0
+                };
+            }
         }
 
         Ok(results)
