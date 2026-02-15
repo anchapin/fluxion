@@ -36,6 +36,24 @@ pub enum HVACMode {
     Off,
 }
 
+/// HVAC system control mode.
+///
+/// Determines whether HVAC is actively controlling temperature or just tracking it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HvacSystemMode {
+    /// Normal HVAC operation with heating/cooling based on setpoints
+    Controlled,
+    /// Free-floating mode: no HVAC, track temperatures only
+    /// Used for ASHRAE 140 FF cases (600FF, 900FF, 650FF, 950FF)
+    FreeFloat,
+}
+
+impl Default for HvacSystemMode {
+    fn default() -> Self {
+        HvacSystemMode::Controlled
+    }
+}
+
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
 ///
 /// This is the core physics engine. It models heat transfer through building zones using
@@ -87,8 +105,14 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub h_ve: T,    // Ventilation: Exterior -> Interior
 
     // Ground boundary condition
-    pub h_tr_floor: T,                              // Floor conductance (W/K)
+    pub h_tr_floor: T, // Floor conductance (W/K)
     ground_temperature: Box<dyn GroundTemperature>, // Ground temperature model
+
+    // ASHRAE 140 specific modes
+    /// HVAC system control mode (Controlled or FreeFloat)
+    pub hvac_system_mode: HvacSystemMode,
+    /// Night ventilation schedule (if applicable)
+    pub night_ventilation_ach: Option<f64>,
 }
 
 // Manual Clone implementation for ThermalModel
@@ -122,6 +146,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_ve: self.h_ve.clone(),
             h_tr_floor: self.h_tr_floor.clone(),
             ground_temperature: self.ground_temperature.clone_box(),
+            hvac_system_mode: self.hvac_system_mode,
+            night_ventilation_ach: self.night_ventilation_ach,
         }
     }
 }
@@ -337,6 +363,8 @@ impl ThermalModel<VectorField> {
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
+            hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
+            night_ventilation_ach: None, // No night ventilation by default
         };
 
         model.update_derived_parameters();
