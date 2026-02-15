@@ -21,17 +21,21 @@ fn get_daily_cycle() -> &'static [f64; 24] {
     })
 }
 
-/// HVAC operation mode for dual setpoint control.
-///
-/// The HVAC system operates in three modes based on zone temperature:
-/// - `Heating`: Zone temperature is below heating setpoint
-/// - `Cooling`: Zone temperature is above cooling setpoint
-/// - `Off`: Zone temperature is within the deadband (between heating and cooling setpoints)
+/// HVAC operation action for dual setpoint control.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum HVACMode {
+pub enum HVACAction {
     Heating,
     Cooling,
     Off,
+}
+
+/// Simulation mode for HVAC control.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ModelMode {
+    /// Normal HVAC control based on setpoints.
+    Controlled,
+    /// No HVAC control, temperature floats naturally.
+    FreeFloat,
 }
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
@@ -88,6 +92,13 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
 
     // Inter-zone coupling (Issue #66)
     pub h_interzone: Vec<Vec<f64>>, // Matrix of inter-zone conductances (W/K)
+
+    // Mode and Tracking (Issue #65)
+    pub mode: ModelMode,
+    pub temp_min: T,
+    pub temp_max: T,
+    pub temp_sum: T,
+    pub step_count: usize,
 }
 
 // Manual Clone implementation for ThermalModel
@@ -120,6 +131,11 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_tr_floor: self.h_tr_floor.clone(),
             ground_temperature: self.ground_temperature.clone_box(),
             h_interzone: self.h_interzone.clone(),
+            mode: self.mode,
+            temp_min: self.temp_min.clone(),
+            temp_max: self.temp_max.clone(),
+            temp_sum: self.temp_sum.clone(),
+            step_count: self.step_count,
         }
     }
 }
@@ -232,6 +248,10 @@ impl ThermalModel<VectorField> {
             model.h_interzone[wall.zone_b][wall.zone_a] += conductance;
         }
 
+        if spec.is_free_floating() {
+            model.mode = ModelMode::FreeFloat;
+        }
+
         model
     }
 
@@ -313,6 +333,11 @@ impl ThermalModel<VectorField> {
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             h_interzone: vec![vec![0.0; num_zones]; num_zones],
+            mode: ModelMode::Controlled,
+            temp_min: VectorField::from_scalar(f64::INFINITY, num_zones),
+            temp_max: VectorField::from_scalar(f64::NEG_INFINITY, num_zones),
+            temp_sum: VectorField::from_scalar(0.0, num_zones),
+            step_count: 0,
         };
 
         model.update_derived_parameters();
@@ -417,33 +442,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// * `t_i_free` - The free-floating indoor temperature tensor (i.e., without HVAC).
     /// * `sensitivity` - A tensor representing how much 1W of HVAC power changes the indoor temperature.
     ///
-    /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, t_i_free: &T, sensitivity: &T) -> T {
+        if self.mode == ModelMode::FreeFloat {
+            return t_i_free.constant_like(0.0);
+        }
+
         t_i_free.zip_with(sensitivity, |t, sens| {
-            // Determine HVAC mode based on temperature and setpoints
-            let mode = if t < self.heating_setpoint {
-                HVACMode::Heating
+            // Determine HVAC action based on temperature and setpoints
+            let action = if t < self.heating_setpoint {
+                HVACAction::Heating
             } else if t > self.cooling_setpoint {
-                HVACMode::Cooling
+                HVACAction::Cooling
             } else {
-                HVACMode::Off
+                HVACAction::Off
             };
 
-            match mode {
-                HVACMode::Heating => {
+            match action {
+                HVACAction::Heating => {
                     // Calculate heating demand
                     let t_err = self.heating_setpoint - t;
                     let q_req = t_err / sens;
                     q_req.min(self.hvac_heating_capacity) // Apply heating capacity limit
                 }
-                HVACMode::Cooling => {
+                HVACAction::Cooling => {
                     // Calculate cooling demand
                     let t_err = t - self.cooling_setpoint;
                     let q_req = -t_err / sens; // Negative for cooling
                     q_req.max(-self.hvac_cooling_capacity) // Apply cooling capacity limit
                 }
-                HVACMode::Off => {
+                HVACAction::Off => {
                     // Deadband zone - no HVAC
                     0.0
                 }
@@ -627,6 +655,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
         self.temperatures = t_i_act;
+
+        // Update tracking statistics
+        self.temp_min = self.temp_min.elementwise_min(&self.temperatures);
+        self.temp_max = self.temp_max.elementwise_max(&self.temperatures);
+        self.temp_sum = self.temp_sum.clone() + self.temperatures.clone();
+        self.step_count += 1;
 
         hvac_energy_for_step / 3.6e6 // Return kWh
     }
