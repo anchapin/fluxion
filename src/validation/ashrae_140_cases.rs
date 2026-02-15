@@ -31,8 +31,8 @@
 //!     .unwrap();
 //! ```
 
-use crate::sim::construction::{Assemblies, Construction};
 use crate::sim::components::Orientation;
+use crate::sim::construction::{Assemblies, Construction};
 use serde::{Deserialize, Serialize};
 
 /// Window specification with U-value, SHGC, and optical properties.

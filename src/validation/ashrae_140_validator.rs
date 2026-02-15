@@ -59,7 +59,7 @@ impl ASHRAE140Validator {
                 data.annual_heating_min,
                 data.annual_heating_max,
             );
-            
+
             // Add benchmark data
             report.add_benchmark_data("600", data.clone());
         }
