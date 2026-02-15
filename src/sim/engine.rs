@@ -85,6 +85,9 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     // Ground boundary condition
     pub h_tr_floor: T,                              // Floor conductance (W/K)
     ground_temperature: Box<dyn GroundTemperature>, // Ground temperature model
+
+    // Inter-zone coupling (Issue #66)
+    pub h_interzone: Vec<Vec<f64>>, // Matrix of inter-zone conductances (W/K)
 }
 
 // Manual Clone implementation for ThermalModel
@@ -116,6 +119,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_ve: self.h_ve.clone(),
             h_tr_floor: self.h_tr_floor.clone(),
             ground_temperature: self.ground_temperature.clone_box(),
+            h_interzone: self.h_interzone.clone(),
         }
     }
 }
@@ -126,23 +130,18 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
-        let floor_area = spec.geometry.floor_area();
-        let volume = spec.geometry.volume();
-        let wall_area = spec.geometry.wall_area();
-        let total_window_area = spec.total_window_area();
+        let mut zone_areas = vec![0.0; num_zones];
+        let mut ceiling_heights = vec![0.0; num_zones];
+        let mut window_ratios = vec![0.0; num_zones];
+        let mut h_tr_w_data = vec![0.0; num_zones];
+        let mut h_ve_data = vec![0.0; num_zones];
+        let mut h_tr_floor_data = vec![0.0; num_zones];
+        let mut h_tr_is_data = vec![0.0; num_zones];
+        let mut h_tr_ms_data = vec![0.0; num_zones];
+        let mut h_tr_em_data = vec![0.0; num_zones];
+        let mut thermal_cap_data = vec![0.0; num_zones];
+        let mut load_data = vec![0.0; num_zones];
 
-        model.num_zones = num_zones;
-        model.zone_area = VectorField::from_scalar(floor_area, num_zones);
-        model.ceiling_height = VectorField::from_scalar(spec.geometry.height, num_zones);
-        model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
-        model.window_u_value = spec.window_properties.u_value;
-
-        model.heating_setpoint = spec.hvac.heating_setpoint;
-        model.cooling_setpoint = spec.hvac.cooling_setpoint;
-        model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
-
-        // Update surfaces based on spec window areas
-        let mut surfaces = Vec::with_capacity(num_zones);
         let orientations = [
             crate::validation::ashrae_140_cases::Orientation::South,
             crate::validation::ashrae_140_cases::Orientation::West,
@@ -150,10 +149,28 @@ impl ThermalModel<VectorField> {
             crate::validation::ashrae_140_cases::Orientation::East,
         ];
 
-        for _ in 0..num_zones {
+        let mut surfaces = Vec::with_capacity(num_zones);
+
+        for z in 0..num_zones {
+            let geo = &spec.geometry[z];
+            let floor_area = geo.floor_area();
+            let volume = geo.volume();
+            let wall_area = geo.wall_area();
+            
+            zone_areas[z] = floor_area;
+            ceiling_heights[z] = geo.height;
+
+            let mut total_win_area = 0.0;
             let mut zone_surfaces = Vec::new();
             for &orientation in &orientations {
-                let win_area = spec.window_area_by_orientation(orientation);
+                // Find window area for this orientation in this zone
+                let win_area = spec.windows[z]
+                    .iter()
+                    .filter(|w| w.orientation == orientation)
+                    .map(|w| w.area)
+                    .sum();
+                
+                total_win_area += win_area;
                 zone_surfaces.push(WallSurface::new(
                     win_area,
                     spec.window_properties.u_value,
@@ -161,53 +178,58 @@ impl ThermalModel<VectorField> {
                 ));
             }
             surfaces.push(zone_surfaces);
+
+            window_ratios[z] = total_win_area / wall_area;
+            h_tr_w_data[z] = total_win_area * spec.window_properties.u_value;
+
+            let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
+            h_ve_data[z] = (spec.infiltration_ach * air_cap) / 3600.0;
+
+            h_tr_floor_data[z] = spec.construction.floor.u_value(None) * floor_area;
+
+            let area_tot = wall_area + floor_area * 2.0;
+            h_tr_is_data[z] = 3.45 * area_tot;
+            h_tr_ms_data[z] = 9.1 * area_tot;
+
+            let wall_u = spec.construction.wall.u_value(None);
+            let roof_u = spec.construction.roof.u_value(None);
+            let opaque_wall_area = wall_area - total_win_area;
+            h_tr_em_data[z] = opaque_wall_area * wall_u + floor_area * roof_u;
+
+            let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
+            let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * floor_area;
+            let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * floor_area;
+            thermal_cap_data[z] = wall_cap + roof_cap + floor_cap + air_cap;
+
+            if let Some(loads) = spec.internal_loads[z] {
+                load_data[z] = loads.total_load / floor_area;
+            }
         }
+
+        model.num_zones = num_zones;
+        model.zone_area = VectorField::new(zone_areas);
+        model.ceiling_height = VectorField::new(ceiling_heights);
+        model.window_ratio = VectorField::new(window_ratios);
+        model.window_u_value = spec.window_properties.u_value;
         model.surfaces = surfaces;
+        model.h_tr_w = VectorField::new(h_tr_w_data);
+        model.h_ve = VectorField::new(h_ve_data);
+        model.h_tr_floor = VectorField::new(h_tr_floor_data);
+        model.h_tr_is = VectorField::new(h_tr_is_data);
+        model.h_tr_ms = VectorField::new(h_tr_ms_data);
+        model.h_tr_em = VectorField::new(h_tr_em_data);
+        model.thermal_capacitance = VectorField::new(thermal_cap_data);
+        model.loads = VectorField::new(load_data);
 
-        // Update conductances based on spec
-        model.h_tr_w = VectorField::from_scalar(
-            total_window_area * spec.window_properties.u_value,
-            num_zones,
-        );
+        // Use first zone's setpoints for legacy support fields
+        model.heating_setpoint = spec.hvac[0].heating_setpoint;
+        model.cooling_setpoint = spec.hvac[0].cooling_setpoint;
 
-        // h_ve = (ACH * Volume * rho * cp) / 3600
-        let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
-        model.h_ve =
-            VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
-
-        // h_tr_floor
-        model.h_tr_floor = VectorField::from_scalar(
-            spec.construction.floor.u_value(None) * floor_area,
-            num_zones,
-        );
-
-        // ISO 13790 5R1C Mapping
-        let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
-        let h_is = 3.45; // W/m²K
-        let h_ms = 9.1; // W/m²K
-
-        model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
-        model.h_tr_ms = VectorField::from_scalar(h_ms * area_tot, num_zones);
-
-        // h_tr_em = Opaque conductance (Walls + Roof)
-        let wall_u = spec.construction.wall.u_value(None);
-        let roof_u = spec.construction.roof.u_value(None);
-        let opaque_wall_area = wall_area - total_window_area;
-        let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u;
-
-        model.h_tr_em = VectorField::from_scalar(h_tr_op, num_zones);
-
-        // Thermal Capacitance (Air + Structure)
-        let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
-        let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * floor_area;
-        let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * floor_area;
-        model.thermal_capacitance =
-            VectorField::from_scalar(wall_cap + roof_cap + floor_cap + air_cap, num_zones);
-
-        // Internal loads
-        if let Some(loads) = spec.internal_loads {
-            let load_per_m2 = loads.total_load / floor_area;
-            model.loads = VectorField::from_scalar(load_per_m2, num_zones);
+        // Common walls coupling
+        for wall in &spec.common_walls {
+            let conductance = wall.conductance();
+            model.h_interzone[wall.zone_a][wall.zone_b] += conductance;
+            model.h_interzone[wall.zone_b][wall.zone_a] += conductance;
         }
 
         model
@@ -290,6 +312,7 @@ impl ThermalModel<VectorField> {
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
+            h_interzone: vec![vec![0.0; num_zones]; num_zones],
         };
 
         model.update_derived_parameters();
@@ -548,6 +571,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Distribute internal gains (50% air, 50% surface)
         let phi_ia = loads_watts.clone() * 0.5;
         let phi_st = loads_watts.clone() * 0.5;
+
+        // Inter-zone heat transfer (Issue #66)
+        let temps = self.temperatures.as_ref();
+        let mut q_inter_data = vec![0.0; self.num_zones];
+        for i in 0..self.num_zones {
+            for j in 0..self.num_zones {
+                if i != j {
+                    q_inter_data[i] += self.h_interzone[i][j] * (temps[j] - temps[i]);
+                }
+            }
+        }
+        let q_inter = T::from(VectorField::new(q_inter_data));
+        let phi_ia = phi_ia + q_inter;
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
