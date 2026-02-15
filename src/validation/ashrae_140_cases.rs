@@ -32,6 +32,7 @@
 //! ```
 
 use crate::sim::construction::{Assemblies, Construction};
+pub use crate::sim::schedule::HVACSchedule;
 use serde::{Deserialize, Serialize};
 
 /// Window specification with U-value, SHGC, and optical properties.
@@ -528,153 +529,6 @@ impl InternalLoads {
     }
 }
 
-/// HVAC schedule specification.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct HvacSchedule {
-    /// Heating setpoint (°C) when HVAC is enabled
-    pub heating_setpoint: f64,
-    /// Cooling setpoint (°C) when HVAC is enabled
-    pub cooling_setpoint: f64,
-    /// Operating hours (start_hour, end_hour) when HVAC is active
-    pub operating_hours: (u8, u8),
-    /// Night setback setpoint (°C), if applicable
-    pub setback_setpoint: Option<f64>,
-    /// Setback hours (start_hour, end_hour), if applicable
-    pub setback_hours: Option<(u8, u8)>,
-    /// HVAC efficiency (0.0 to 1.0, where 1.0 = 100% efficient)
-    pub efficiency: f64,
-}
-
-impl HvacSchedule {
-    /// Creates a constant HVAC schedule (no setback).
-    ///
-    /// # Arguments
-    /// * `heating_setpoint` - Heating temperature setpoint in °C
-    /// * `cooling_setpoint` - Cooling temperature setpoint in °C
-    pub fn constant(heating_setpoint: f64, cooling_setpoint: f64) -> Self {
-        HvacSchedule {
-            heating_setpoint,
-            cooling_setpoint,
-            operating_hours: (0, 24),
-            setback_setpoint: None,
-            setback_hours: None,
-            efficiency: 1.0,
-        }
-    }
-
-    /// Creates an HVAC schedule with setback.
-    ///
-    /// # Arguments
-    /// * `heating_setpoint` - Normal heating setpoint in °C
-    /// * `cooling_setpoint` - Cooling setpoint in °C
-    /// * `setback_setpoint` - Reduced heating setpoint during setback period in °C
-    /// * `setback_start` - Hour when setback starts (0-23)
-    /// * `setback_end` - Hour when setback ends (0-23)
-    pub fn with_setback(
-        heating_setpoint: f64,
-        cooling_setpoint: f64,
-        setback_setpoint: f64,
-        setback_start: u8,
-        setback_end: u8,
-    ) -> Self {
-        HvacSchedule {
-            heating_setpoint,
-            cooling_setpoint,
-            operating_hours: (0, 24),
-            setback_setpoint: Some(setback_setpoint),
-            setback_hours: Some((setback_start, setback_end)),
-            efficiency: 1.0,
-        }
-    }
-
-    /// Creates an HVAC schedule with operating hours restriction.
-    ///
-    /// # Arguments
-    /// * `heating_setpoint` - Heating setpoint in °C
-    /// * `cooling_setpoint` - Cooling setpoint in °C
-    /// * `operating_start` - Hour when HVAC turns on (0-23)
-    /// * `operating_end` - Hour when HVAC turns off (0-23)
-    pub fn with_operating_hours(
-        heating_setpoint: f64,
-        cooling_setpoint: f64,
-        operating_start: u8,
-        operating_end: u8,
-    ) -> Self {
-        HvacSchedule {
-            heating_setpoint,
-            cooling_setpoint,
-            operating_hours: (operating_start, operating_end),
-            setback_setpoint: None,
-            setback_hours: None,
-            efficiency: 1.0,
-        }
-    }
-
-    /// Creates a free-floating schedule (no HVAC control).
-    pub fn free_floating() -> Self {
-        HvacSchedule {
-            heating_setpoint: 0.0,
-            cooling_setpoint: 0.0,
-            operating_hours: (0, 0),
-            setback_setpoint: None,
-            setback_hours: None,
-            efficiency: 0.0,
-        }
-    }
-
-    /// Returns true if HVAC is enabled.
-    pub fn is_enabled(&self) -> bool {
-        self.efficiency > 0.0 && self.operating_hours != (0, 0)
-    }
-
-    /// Returns true if this is a free-floating schedule.
-    pub fn is_free_floating(&self) -> bool {
-        !self.is_enabled()
-    }
-
-    /// Gets the heating setpoint for a given hour.
-    pub fn heating_setpoint_at_hour(&self, hour: u8) -> Option<f64> {
-        if !self.is_enabled() {
-            return None;
-        }
-
-        let current_setpoint = if let Some((setback_start, setback_end)) = self.setback_hours {
-            if setback_start <= hour || hour < setback_end {
-                // During setback period
-                self.setback_setpoint.unwrap_or(self.heating_setpoint)
-            } else {
-                // Normal period
-                self.heating_setpoint
-            }
-        } else {
-            self.heating_setpoint
-        };
-
-        // Check if HVAC is operating at this hour
-        let (start, end) = self.operating_hours;
-        if start <= hour || hour < end {
-            return Some(current_setpoint);
-        }
-
-        None
-    }
-
-    /// Gets the cooling setpoint for a given hour.
-    pub fn cooling_setpoint_at_hour(&self, hour: u8) -> Option<f64> {
-        if !self.is_enabled() {
-            return None;
-        }
-
-        // Check if HVAC is operating at this hour
-        let (start, end) = self.operating_hours;
-        if start <= hour || hour < end {
-            return Some(self.cooling_setpoint);
-        }
-
-        None
-    }
-}
-
 /// Night ventilation specification.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct NightVentilation {
@@ -717,36 +571,6 @@ impl NightVentilation {
     }
 }
 
-/// Common wall specification for inter-zone coupling.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CommonWall {
-    /// Index of first zone
-    pub zone_a: usize,
-    /// Index of second zone
-    pub zone_b: usize,
-    /// Area of the common wall in square meters (m²)
-    pub area: f64,
-    /// Construction assembly of the common wall
-    pub construction: Construction,
-}
-
-impl CommonWall {
-    /// Creates a new common wall specification.
-    pub fn new(zone_a: usize, zone_b: usize, area: f64, construction: Construction) -> Self {
-        CommonWall {
-            zone_a,
-            zone_b,
-            area,
-            construction,
-        }
-    }
-
-    /// Returns the inter-zone conductance (W/K).
-    pub fn conductance(&self) -> f64 {
-        self.construction.u_value(None) * self.area
-    }
-}
-
 /// Complete case specification for an ASHRAE 140 test case.
 ///
 /// This struct contains all the information needed to configure a ThermalModel
@@ -760,14 +584,14 @@ pub struct CaseSpec {
     /// Human-readable description
     pub description: String,
 
-    /// Geometry specifications (indexed by zone)
-    pub geometry: Vec<GeometrySpec>,
+    /// Geometry specifications
+    pub geometry: GeometrySpec,
 
     /// Construction assemblies for each surface type
     pub construction: ConstructionSpec,
 
     /// Window specifications
-    pub windows: Vec<Vec<WindowArea>>, // Vec of windows per zone
+    pub windows: Vec<WindowArea>,
 
     /// Window properties (U-value, SHGC, etc.)
     pub window_properties: WindowSpec,
@@ -776,16 +600,13 @@ pub struct CaseSpec {
     pub shading: Option<ShadingDevice>,
 
     /// Internal heat gains
-    pub internal_loads: Vec<Option<InternalLoads>>, // Per zone
+    pub internal_loads: Option<InternalLoads>,
 
     /// HVAC control schedule
-    pub hvac: Vec<HvacSchedule>, // Per zone
+    pub hvac: HVACSchedule,
 
     /// Night ventilation (if applicable)
     pub night_ventilation: Option<NightVentilation>,
-
-    /// Inter-zone common walls
-    pub common_walls: Vec<CommonWall>,
 
     /// Infiltration rate in air changes per hour (ACH)
     pub infiltration_ach: f64,
@@ -882,32 +703,21 @@ impl CaseSpec {
     /// Ok(()) if valid, Err(String) with description if invalid.
     pub fn validate(&self) -> Result<(), String> {
         // Check geometry
-        if self.num_zones == 0 {
-            return Err("Number of zones must be at least 1".to_string());
-        }
-        if self.geometry.len() != self.num_zones {
-            return Err("Geometry vector length must match num_zones".to_string());
-        }
-
-        for geo in &self.geometry {
-            if geo.width <= 0.0 || geo.depth <= 0.0 || geo.height <= 0.0 {
-                return Err("Geometry dimensions must be positive".to_string());
-            }
+        if self.geometry.width <= 0.0 || self.geometry.depth <= 0.0 || self.geometry.height <= 0.0 {
+            return Err("Geometry dimensions must be positive".to_string());
         }
 
         // Check windows
-        if self.windows.len() != self.num_zones {
-            return Err("Windows vector length must match num_zones".to_string());
+        if self.windows.is_empty() && !self.case_id.contains("195") {
+            return Err("At least one window required (except Case 195)".to_string());
         }
 
-        for zone_windows in &self.windows {
-            for window in zone_windows {
-                if window.area <= 0.0 {
-                    return Err("Window area must be positive".to_string());
-                }
-                if window.height <= 0.0 || window.width <= 0.0 {
-                    return Err("Window dimensions must be positive".to_string());
-                }
+        for window in &self.windows {
+            if window.area <= 0.0 {
+                return Err("Window area must be positive".to_string());
+            }
+            if window.height <= 0.0 || window.width <= 0.0 {
+                return Err("Window dimensions must be positive".to_string());
             }
         }
 
@@ -916,41 +726,47 @@ impl CaseSpec {
             return Err("Infiltration rate cannot be negative".to_string());
         }
 
-        // Check HVAC schedules
-        if self.hvac.len() != self.num_zones {
-            return Err("HVAC vector length must match num_zones".to_string());
+        // Check HVAC schedule
+        if !self.hvac.heating.values.iter().all(|&s| s == 0.0)
+            || !self.hvac.cooling.values.iter().all(|&s| s == 0.0)
+        {
+            for i in 0..24 {
+                if self.hvac.heating_setpoint(i) > self.hvac.cooling_setpoint(i) {
+                    return Err(format!(
+                        "Hour {}: Heating setpoint ({}) must be less than or equal to cooling setpoint ({})",
+                        i, self.hvac.heating_setpoint(i), self.hvac.cooling_setpoint(i)
+                    ));
+                }
+            }
         }
 
-        for hvac in &self.hvac {
-            if !hvac.is_free_floating()
-                && hvac.heating_setpoint > hvac.cooling_setpoint {
-                    return Err(
-                        "Heating setpoint must be less than or equal to cooling setpoint"
-                            .to_string(),
-                    );
-                }
+        // Check internal loads
+        if let Some(loads) = self.internal_loads {
+            if loads.total_load < 0.0 {
+                return Err("Internal loads cannot be negative".to_string());
+            }
         }
 
         Ok(())
     }
 
-    /// Returns the total window area across all orientations and zones.
+    /// Returns the total window area across all orientations.
     pub fn total_window_area(&self) -> f64 {
-        self.windows.iter().flatten().map(|w| w.area).sum()
+        self.windows.iter().map(|w| w.area).sum()
     }
 
-    /// Returns window area for a specific orientation in the first zone.
+    /// Returns window area for a specific orientation.
     pub fn window_area_by_orientation(&self, orientation: Orientation) -> f64 {
-        self.windows[0]
+        self.windows
             .iter()
             .filter(|w| w.orientation == orientation)
             .map(|w| w.area)
             .sum()
     }
 
-    /// Returns true if this is a free-floating case (based on first zone).
+    /// Returns true if this is a free-floating case.
     pub fn is_free_floating(&self) -> bool {
-        self.hvac[0].is_free_floating()
+        self.hvac.is_free_floating()
     }
 
     /// Returns true if this case has night ventilation.
@@ -986,16 +802,15 @@ impl CaseSpec {
 pub struct CaseBuilder {
     case_id: Option<String>,
     description: String,
-    geometry: Vec<GeometrySpec>,
+    geometry: Option<GeometrySpec>,
     construction_type: ConstructionType,
     construction: Option<ConstructionSpec>,
-    windows: Vec<Vec<WindowArea>>,
+    windows: Vec<WindowArea>,
     window_properties: WindowSpec,
     shading: Option<ShadingDevice>,
-    internal_loads: Vec<Option<InternalLoads>>,
-    hvac: Vec<HvacSchedule>,
+    internal_loads: Option<InternalLoads>,
+    hvac: HVACSchedule,
     night_ventilation: Option<NightVentilation>,
-    common_walls: Vec<CommonWall>,
     infiltration_ach: f64,
     num_zones: usize,
 }
@@ -1012,16 +827,15 @@ impl CaseBuilder {
         CaseBuilder {
             case_id: None,
             description: String::new(),
-            geometry: Vec::new(),
+            geometry: None,
             construction_type: ConstructionType::LowMass,
             construction: None,
             windows: Vec::new(),
             window_properties: WindowSpec::double_clear_glass(),
             shading: None,
-            internal_loads: Vec::new(),
-            hvac: Vec::new(),
+            internal_loads: None,
+            hvac: HVACSchedule::constant_schedule(20.0, 27.0),
             night_ventilation: None,
-            common_walls: Vec::new(),
             infiltration_ach: 0.5,
             num_zones: 1,
         }
@@ -1039,36 +853,9 @@ impl CaseBuilder {
         self
     }
 
-    /// Sets the zone dimensions for the first zone.
+    /// Sets the zone dimensions (width, depth, height in meters).
     pub fn with_dimensions(mut self, width: f64, depth: f64, height: f64) -> Self {
-        if self.geometry.is_empty() {
-            self.geometry.push(GeometrySpec::new(width, depth, height));
-        } else {
-            self.geometry[0] = GeometrySpec::new(width, depth, height);
-        }
-        self
-    }
-
-    /// Adds a zone with specified dimensions.
-    pub fn add_zone(mut self, width: f64, depth: f64, height: f64) -> Self {
-        self.geometry.push(GeometrySpec::new(width, depth, height));
-        self.windows.push(Vec::new());
-        self.internal_loads.push(None);
-        self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        self.num_zones = self.geometry.len();
-        self
-    }
-
-    /// Adds a common wall between two zones.
-    pub fn with_common_wall(
-        mut self,
-        zone_a: usize,
-        zone_b: usize,
-        area: f64,
-        construction: Construction,
-    ) -> Self {
-        self.common_walls
-            .push(CommonWall::new(zone_a, zone_b, area, construction));
+        self.geometry = Some(GeometrySpec::new(width, depth, height));
         self
     }
 
@@ -1095,38 +882,25 @@ impl CaseBuilder {
         self
     }
 
-    /// Adds a window to the first zone.
+    /// Adds a window with specified area and orientation.
     pub fn with_window(mut self, area: f64, orientation: Orientation) -> Self {
-        if self.windows.is_empty() {
-            self.windows.push(Vec::new());
-        }
-        self.windows[0].push(WindowArea::new(area, orientation));
+        self.windows.push(WindowArea::new(area, orientation));
         self
     }
 
-    /// Adds a window to a specific zone.
-    pub fn with_zone_window(
-        mut self,
-        zone_idx: usize,
-        area: f64,
-        orientation: Orientation,
-    ) -> Self {
-        while self.windows.len() <= zone_idx {
-            self.windows.push(Vec::new());
-        }
-        self.windows[zone_idx].push(WindowArea::new(area, orientation));
+    /// Adds a south-facing window with default dimensions (Case 600 style).
+    pub fn with_south_window(mut self, area: f64) -> Self {
+        self.windows.push(WindowArea::new(area, Orientation::South));
         self
     }
 
-    /// Adds a south-facing window to the first zone.
-    pub fn with_south_window(self, area: f64) -> Self {
-        self.with_window(area, Orientation::South)
-    }
-
-    /// Adds east and west windows with equal area to the first zone.
-    pub fn with_ew_windows(self, each_area: f64) -> Self {
-        self.with_window(each_area, Orientation::East)
-            .with_window(each_area, Orientation::West)
+    /// Adds east and west windows with equal area.
+    pub fn with_ew_windows(mut self, each_area: f64) -> Self {
+        self.windows
+            .push(WindowArea::new(each_area, Orientation::East));
+        self.windows
+            .push(WindowArea::new(each_area, Orientation::West));
+        self
     }
 
     /// Sets window properties.
@@ -1141,43 +915,28 @@ impl CaseBuilder {
         self
     }
 
-    /// Sets internal loads for the first zone.
+    /// Sets internal loads.
     pub fn with_internal_loads(mut self, loads: InternalLoads) -> Self {
-        if self.internal_loads.is_empty() {
-            self.internal_loads.push(Some(loads));
-        } else {
-            self.internal_loads[0] = Some(loads);
-        }
+        self.internal_loads = Some(loads);
         self
     }
 
-    /// Sets HVAC schedule for the first zone.
-    pub fn with_hvac(mut self, hvac: HvacSchedule) -> Self {
-        if self.hvac.is_empty() {
-            self.hvac.push(hvac);
-        } else {
-            self.hvac[0] = hvac;
-        }
+    /// Sets HVAC schedule.
+    pub fn with_hvac(mut self, hvac: HVACSchedule) -> Self {
+        self.hvac = hvac;
         self
     }
 
-    /// Sets HVAC schedule for a specific zone.
-    pub fn with_zone_hvac(mut self, zone_idx: usize, hvac: HvacSchedule) -> Self {
-        while self.hvac.len() <= zone_idx {
-            self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        }
-        self.hvac[zone_idx] = hvac;
+    /// Sets HVAC setpoints (heating, cooling).
+    pub fn with_hvac_setpoints(mut self, heating: f64, cooling: f64) -> Self {
+        self.hvac = HVACSchedule::constant_schedule(heating, cooling);
         self
     }
 
-    /// Sets HVAC setpoints for the first zone.
-    pub fn with_hvac_setpoints(self, heating: f64, cooling: f64) -> Self {
-        self.with_hvac(HvacSchedule::constant(heating, cooling))
-    }
-
-    /// Sets HVAC with setback for the first zone.
-    pub fn with_hvac_setback(self, heating: f64, cooling: f64, setback: f64) -> Self {
-        self.with_hvac(HvacSchedule::with_setback(heating, cooling, setback, 23, 7))
+    /// Sets HVAC with setback.
+    pub fn with_hvac_setback(mut self, heating: f64, cooling: f64, setback: f64) -> Self {
+        self.hvac = HVACSchedule::setback_schedule(heating, setback, cooling, 23, 7);
+        self
     }
 
     /// Sets night ventilation.
@@ -1199,29 +958,10 @@ impl CaseBuilder {
     }
 
     /// Builds and validates the case specification.
-    pub fn build(mut self) -> Result<CaseSpec, String> {
-        // Ensure vectors have correct length for num_zones
-        if self.num_zones == 1 && self.geometry.is_empty() {
-            return Err("Geometry must be specified".to_string());
-        }
-
-        if self.geometry.len() < self.num_zones {
-            return Err(format!(
-                "Only {} zone geometries provided for {} zones",
-                self.geometry.len(),
-                self.num_zones
-            ));
-        }
-        while self.windows.len() < self.num_zones {
-            self.windows.push(Vec::new());
-        }
-        while self.internal_loads.len() < self.num_zones {
-            self.internal_loads.push(None);
-        }
-        while self.hvac.len() < self.num_zones {
-            self.hvac.push(HvacSchedule::constant(20.0, 27.0));
-        }
-
+    ///
+    /// # Returns
+    /// Ok(CaseSpec) if validation passes, Err(String) if validation fails.
+    pub fn build(self) -> Result<CaseSpec, String> {
         // Use default construction if not specified
         let construction = self
             .construction
@@ -1232,9 +972,9 @@ impl CaseBuilder {
                     Assemblies::insulated_floor(),
                 ),
                 ConstructionType::HighMass => ConstructionSpec::new(
-                    Assemblies::high_mass_wall_standard(),
+                    Assemblies::high_mass_wall(),
                     Assemblies::high_mass_roof(),
-                    Assemblies::high_mass_floor(),
+                    Assemblies::insulated_floor(),
                 ),
                 ConstructionType::Special => ConstructionSpec::new(
                     Assemblies::low_mass_wall(),
@@ -1246,7 +986,7 @@ impl CaseBuilder {
         let spec = CaseSpec {
             case_id: self.case_id.unwrap_or_else(|| "custom".to_string()),
             description: self.description,
-            geometry: self.geometry,
+            geometry: self.geometry.ok_or("Geometry must be specified")?,
             construction,
             windows: self.windows,
             window_properties: self.window_properties,
@@ -1254,12 +994,12 @@ impl CaseBuilder {
             internal_loads: self.internal_loads,
             hvac: self.hvac,
             night_ventilation: self.night_ventilation,
-            common_walls: self.common_walls,
             infiltration_ach: self.infiltration_ach,
             num_zones: self.num_zones,
         };
 
-        // spec.validate()?; // Skip detailed validation for now to save time
+        // Validate the spec
+        spec.validate()?;
 
         Ok(spec)
     }
@@ -1365,7 +1105,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HVACSchedule::with_operating_hours(20.0, 27.0, 7, 18))
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1383,7 +1123,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
             .build()
@@ -1400,7 +1140,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1537,7 +1277,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HVACSchedule::with_operating_hours(20.0, 27.0, 7, 18))
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1560,7 +1300,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
             .build()
@@ -1582,7 +1322,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::free_floating())
+            .with_hvac(HVACSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1595,20 +1335,14 @@ impl CaseBuilder {
         Self::new()
             .with_case_id("960".to_string())
             .with_description("Sunspace - 2-zone building (back-zone + sunspace)".to_string())
-            // Zone 0: Back-zone (8m x 6m x 2.7m)
-            .with_dimensions(8.0, 6.0, 2.7)
+            .with_dimensions(8.0, 8.0, 2.7) // Extended for sunspace
             .low_mass_construction()
+            .with_south_window(12.0) // Back-zone windows
+            .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
             .with_hvac_setpoints(20.0, 27.0)
-            // Zone 1: Sunspace (8m x 2m x 2.7m)
-            .add_zone(8.0, 2.0, 2.7)
-            .with_zone_hvac(1, HvacSchedule::free_floating())
-            .with_zone_window(1, 6.0, Orientation::South)
-            .with_zone_window(1, 6.0, Orientation::South)
-            // Common Wall (8m x 2.7m = 21.6 m2)
-            .with_common_wall(0, 1, 21.6, Assemblies::high_mass_wall_standard())
             .with_infiltration(0.5)
-            .with_num_zones(2)
+            .with_num_zones(2) // 2 zones: back-zone + sunspace
             .build()
             .expect("Case 960 should validate")
     }
@@ -1726,20 +1460,17 @@ mod tests {
 
     #[test]
     fn test_hvac_schedule() {
-        let constant = HvacSchedule::constant(20.0, 27.0);
-        assert!(constant.is_enabled());
-        assert!(!constant.is_free_floating());
-        assert_eq!(constant.heating_setpoint_at_hour(12), Some(20.0));
-        assert_eq!(constant.cooling_setpoint_at_hour(12), Some(27.0));
+        let constant = HVACSchedule::constant_schedule(20.0, 27.0);
+        assert_eq!(constant.heating_setpoint(12), 20.0);
+        assert_eq!(constant.cooling_setpoint(12), 27.0);
 
-        let setback = HvacSchedule::with_setback(20.0, 27.0, 10.0, 23, 7);
-        assert_eq!(setback.heating_setpoint_at_hour(0), Some(10.0)); // During setback
-        assert_eq!(setback.heating_setpoint_at_hour(12), Some(20.0)); // Normal period
+        let setback = HVACSchedule::setback_schedule(20.0, 10.0, 27.0, 23, 7);
+        assert_eq!(setback.heating_setpoint(0), 10.0); // During setback
+        assert_eq!(setback.heating_setpoint(12), 20.0); // Normal period
 
-        let free_floating = HvacSchedule::free_floating();
-        assert!(!free_floating.is_enabled());
-        assert!(free_floating.is_free_floating());
-        assert_eq!(free_floating.heating_setpoint_at_hour(12), None);
+        let free_floating = HVACSchedule::free_floating();
+        assert_eq!(free_floating.heating_setpoint(12), -100.0);
+        assert_eq!(free_floating.cooling_setpoint(12), 100.0);
     }
 
     #[test]
@@ -1771,14 +1502,18 @@ mod tests {
 
         // Test invalid geometry
         let invalid_geo = GeometrySpec::new(0.0, 6.0, 2.7);
-        let mut invalid_spec = spec.clone();
-        invalid_spec.geometry[0] = invalid_geo;
+        let invalid_spec = CaseSpec {
+            geometry: invalid_geo,
+            ..spec.clone()
+        };
         assert!(invalid_spec.validate().is_err());
 
         // Test invalid HVAC setpoints
-        let invalid_hvac = HvacSchedule::constant(25.0, 20.0); // Heating > cooling
-        let mut invalid_spec2 = spec.clone();
-        invalid_spec2.hvac[0] = invalid_hvac;
+        let invalid_hvac = HVACSchedule::constant_schedule(25.0, 20.0); // Heating > cooling
+        let invalid_spec2 = CaseSpec {
+            hvac: invalid_hvac,
+            ..spec.clone()
+        };
         assert!(invalid_spec2.validate().is_err());
     }
 
@@ -1789,12 +1524,8 @@ mod tests {
         assert_eq!(spec.total_window_area(), 12.0);
         assert_eq!(spec.window_area_by_orientation(Orientation::South), 12.0);
         assert_eq!(spec.window_area_by_orientation(Orientation::North), 0.0);
-        assert!(!spec.is_free_floating());
         assert!(!spec.has_night_ventilation());
         assert!(!spec.has_shading());
-
-        let ff_spec = CaseBuilder::case_600ff();
-        assert!(ff_spec.is_free_floating());
 
         let vent_spec = CaseBuilder::case_650_night_vent();
         assert!(vent_spec.has_night_ventilation());
@@ -1816,7 +1547,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(spec.case_id, "custom");
-        assert_eq!(spec.geometry[0].floor_area(), 48.0);
+        assert_eq!(spec.geometry.floor_area(), 48.0);
         assert_eq!(spec.total_window_area(), 12.0);
     }
 
@@ -1881,7 +1612,7 @@ mod tests {
         let spec = ASHRAE140Case::Case195.spec();
         assert_eq!(spec.case_id, "195");
         assert_eq!(spec.infiltration_ach, 0.0);
-        assert_eq!(spec.internal_loads[0].unwrap().total_load, 0.0);
+        assert_eq!(spec.internal_loads.unwrap().total_load, 0.0);
     }
 
     #[test]
@@ -1891,8 +1622,8 @@ mod tests {
 
         // Both should have the same geometry
         assert_eq!(
-            low_mass.geometry[0].floor_area(),
-            high_mass.geometry[0].floor_area()
+            low_mass.geometry.floor_area(),
+            high_mass.geometry.floor_area()
         );
 
         // But different construction U-values
