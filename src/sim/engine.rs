@@ -6,7 +6,6 @@ use crate::sim::boundary::{
 use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
-use crate::sim::ventilation::{ConstantVentilation, ScheduledVentilation, VentilationSchedule};
 use crate::validation::ashrae_140_cases::{CaseSpec, ShadingType};
 use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
@@ -133,21 +132,26 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
-        let floor_area = spec.geometry.floor_area();
-        let volume = spec.geometry.volume();
-        let wall_area = spec.geometry.wall_area();
+        // Access first element for single-zone cases
+        let geometry = &spec.geometry[0];
+        let floor_area = geometry.floor_area();
+        let volume = geometry.volume();
+        let wall_area = geometry.wall_area();
         let total_window_area = spec.total_window_area();
 
         model.num_zones = num_zones;
         model.zone_area = VectorField::from_scalar(floor_area, num_zones);
-        model.ceiling_height = VectorField::from_scalar(spec.geometry.height, num_zones);
+        model.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
         model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
         model.window_u_value = spec.window_properties.u_value;
 
-        model.heating_schedule = spec.hvac.heating.clone();
-        model.cooling_schedule = spec.hvac.cooling.clone();
-        model.heating_setpoint = spec.hvac.heating_setpoint(0); // Legacy support
-        model.cooling_setpoint = spec.hvac.cooling_setpoint(0); // Legacy support
+        // Access first HVAC schedule
+        let hvac = &spec.hvac[0];
+        // Create DailySchedule from HVAC setpoints (constant for now)
+        model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
+        model.cooling_schedule = DailySchedule::constant(hvac.cooling_setpoint);
+        model.heating_setpoint = hvac.heating_setpoint; // Direct access
+        model.cooling_setpoint = hvac.cooling_setpoint; // Direct access
         model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
 
         // Update surfaces based on spec window areas
@@ -245,8 +249,8 @@ impl ThermalModel<VectorField> {
         model.thermal_capacitance =
             VectorField::from_scalar(wall_cap + roof_cap + floor_cap + air_cap, num_zones);
 
-        // Internal loads
-        if let Some(loads) = spec.internal_loads {
+        // Internal loads - access first element
+        if let Some(ref loads) = spec.internal_loads[0] {
             let load_per_m2 = loads.total_load / floor_area;
             model.loads = VectorField::from_scalar(load_per_m2, num_zones);
         }

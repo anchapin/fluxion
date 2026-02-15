@@ -84,7 +84,8 @@ impl ASHRAE140Validator {
 
             // Calculate solar gains for all windows in the spec
             let mut total_solar_gain = 0.0;
-            for win_area in &spec.windows {
+            // spec.windows is now Vec<Vec<WindowArea>>, iterate over first zone's windows
+            for win_area in &spec.windows[0] {
                 let props = WindowProperties::new(
                     win_area.area,
                     spec.window_properties.shgc,
@@ -124,10 +125,12 @@ impl ASHRAE140Validator {
                 total_solar_gain += gain;
             }
 
-            let internal_gains = spec.internal_loads.map_or(0.0, |l| l.total_load);
+            // Access first element of internal_loads Vec
+            let internal_gains = spec.internal_loads[0].as_ref().map_or(0.0, |l| l.total_load);
             let total_loads = internal_gains + total_solar_gain;
 
-            let floor_area = spec.geometry.floor_area();
+            // Access first element of geometry Vec
+            let floor_area = spec.geometry[0].floor_area();
             model.set_loads(&[total_loads / floor_area]);
 
             let hvac_energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
