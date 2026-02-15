@@ -155,11 +155,8 @@ impl ThermalModel<VectorField> {
             let mut zone_surfaces = Vec::new();
             for &orientation in &orientations {
                 let win_area = spec.window_area_by_orientation(orientation);
-                let mut surface = WallSurface::new(
-                    win_area,
-                    spec.window_properties.u_value,
-                    orientation,
-                );
+                let mut surface =
+                    WallSurface::new(win_area, spec.window_properties.u_value, orientation);
 
                 // Add shading if applicable to this orientation
                 if let Some(shading) = &spec.shading {

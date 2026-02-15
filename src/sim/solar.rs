@@ -223,14 +223,18 @@ pub fn calculate_window_solar_gain(
     let mut shaded_fraction = 0.0;
     if let Some(geom) = geometry {
         let mut rel_az = sun_pos.azimuth_deg - surface_azimuth_deg;
-        while rel_az > 180.0 { rel_az -= 360.0; }
-        while rel_az <= -180.0 { rel_az += 360.0; }
-        
+        while rel_az > 180.0 {
+            rel_az -= 360.0;
+        }
+        while rel_az <= -180.0 {
+            rel_az += 360.0;
+        }
+
         let local_solar = LocalSolarPosition {
             altitude: sun_pos.altitude_deg.to_radians(),
             relative_azimuth: rel_az.to_radians(),
         };
-        
+
         shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar);
     }
 
@@ -244,20 +248,21 @@ pub fn calculate_window_solar_gain(
     };
 
     let diffuse_transmittance = window.normal_transmittance * 0.85;
-    
+
     // Apply shading to beam component
     let effective_beam = irradiance.beam_wm2 * (1.0 - shaded_fraction);
-    
-    // For ASHRAE 140 simplified cases, diffuse shading is often handled 
-    // by a constant factor or ignored for overhangs. 
+
+    // For ASHRAE 140 simplified cases, diffuse shading is often handled
+    // by a constant factor or ignored for overhangs.
     // Here we only apply shading to the beam component as requested.
-    
+
     let total_transmitted_wm2 = effective_beam * beam_transmittance
         + (irradiance.diffuse_wm2 + irradiance.ground_reflected_wm2) * diffuse_transmittance;
 
     window.area * total_transmitted_wm2 * window.shgc
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn calculate_hourly_solar(
     latitude_deg: f64,
     longitude_deg: f64,

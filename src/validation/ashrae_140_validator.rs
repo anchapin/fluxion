@@ -1,8 +1,7 @@
-use crate::ai::surrogate::SurrogateManager;
-use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
-use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, Orientation};
+use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use crate::validation::benchmark;
 use crate::validation::report::{BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
@@ -54,7 +53,7 @@ impl ASHRAE140Validator {
                     data.annual_heating_min,
                     data.annual_heating_max,
                 );
-                
+
                 report.add_result_simple(
                     &case_id,
                     MetricType::AnnualCooling,
@@ -82,7 +81,7 @@ impl ASHRAE140Validator {
             let day_of_year = step / 24 + 1;
 
             let weather_data = weather.get_hourly_data(step).unwrap();
-            
+
             // Calculate solar gains for all windows in the spec
             let mut total_solar_gain = 0.0;
             for win_area in &spec.windows {
@@ -91,7 +90,7 @@ impl ASHRAE140Validator {
                     spec.window_properties.shgc,
                     spec.window_properties.normal_transmittance,
                 );
-                
+
                 // Find matching surface to get shading devices
                 // This is a bit inefficient but works for validation
                 let mut overhang = None;
@@ -127,7 +126,7 @@ impl ASHRAE140Validator {
 
             let internal_gains = spec.internal_loads.map_or(0.0, |l| l.total_load);
             let total_loads = internal_gains + total_solar_gain;
-            
+
             let floor_area = spec.geometry.floor_area();
             model.set_loads(&[total_loads / floor_area]);
 
