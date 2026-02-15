@@ -140,8 +140,8 @@ fn calculate_fin_shadow_area(
 
 #[cfg(test)]
 mod tests {
-    use crate::validation::ashrae_140_cases::Orientation;
     use super::*;
+    use crate::validation::ashrae_140_cases::Orientation;
     use std::f64::consts::PI;
 
     #[test]
