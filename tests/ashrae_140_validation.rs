@@ -1,18 +1,22 @@
-use fluxion::validation::{ASHRAE140Validator, ASHRAE140Case};
 use fluxion::validation::report::ValidationStatus;
+use fluxion::validation::{ASHRAE140Case, ASHRAE140Validator};
 
 #[test]
 fn test_ashrae_140_comprehensive_validation() {
     let mut validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
-    
+
     // Check that we have results
     assert!(!report.results.is_empty());
-    
+
     // Check Case 600 specific results
-    let case_600_results: Vec<_> = report.results.iter().filter(|r| r.case_id == "600").collect();
+    let case_600_results: Vec<_> = report
+        .results
+        .iter()
+        .filter(|r| r.case_id == "600")
+        .collect();
     assert!(!case_600_results.is_empty());
-    
+
     // Verify that metrics have valid ranges and status
     for result in &report.results {
         assert!(result.ref_max >= result.ref_min);
@@ -21,10 +25,10 @@ fn test_ashrae_140_comprehensive_validation() {
             ValidationStatus::Pass | ValidationStatus::Warning | ValidationStatus::Fail => (),
         }
     }
-    
+
     // Print the report summary for visibility in test output
     report.print_summary();
-    
+
     // Ensure we can generate markdown
     let markdown = report.to_markdown();
     assert!(markdown.contains("# ASHRAE 140 Validation Report"));
@@ -34,11 +38,10 @@ fn test_ashrae_140_comprehensive_validation() {
 fn test_all_cases_instantiation() {
     // Verify all 18+ cases can be instantiated and have specs
     let case_ids = [
-        "600", "610", "620", "630", "640", "650", "600FF", "650FF",
-        "900", "910", "920", "930", "940", "950", "900FF", "950FF",
-        "960", "195"
+        "600", "610", "620", "630", "640", "650", "600FF", "650FF", "900", "910", "920", "930",
+        "940", "950", "900FF", "950FF", "960", "195",
     ];
-    
+
     for id in case_ids {
         let case = match id {
             "600" => ASHRAE140Case::Case600,
@@ -61,7 +64,7 @@ fn test_all_cases_instantiation() {
             "195" => ASHRAE140Case::Case195,
             _ => panic!("Unknown case ID"),
         };
-        
+
         let spec = case.spec();
         assert_eq!(spec.case_id, id);
         assert!(spec.validate().is_ok());
