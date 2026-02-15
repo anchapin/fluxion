@@ -295,6 +295,17 @@ impl ValidationResult {
             status,
         }
     }
+    pub fn is_pass(&self) -> bool {
+        matches!(self.status, ValidationStatus::Pass)
+    }
+
+    pub fn is_warning(&self) -> bool {
+        matches!(self.status, ValidationStatus::Warning)
+    }
+
+    pub fn is_fail(&self) -> bool {
+        matches!(self.status, ValidationStatus::Fail)
+    }
 
     /// Returns the deviation from reference range center as a string.
     pub fn deviation_string(&self) -> String {
