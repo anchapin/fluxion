@@ -36,12 +36,17 @@ fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
-        Commands::Validate { all, case, format, output_file } => {
+        Commands::Validate {
+            all: _,
+            case: _,
+            format,
+            output_file,
+        } => {
             let mut validator = ASHRAE140Validator::new();
-            
+
             // For now, we always run the analytical engine validation
             let report = validator.validate_analytical_engine();
-            
+
             let output = match format.as_str() {
                 "markdown" => report.to_markdown(),
                 "csv" => report.to_csv(),
