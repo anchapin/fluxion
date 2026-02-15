@@ -412,8 +412,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Include ground coupling through floor
         let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
         let term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
-        let den = self.h_tr_ms.clone() * self.h_tr_is.clone()
-            + term_rest_1.clone() * h_ext.clone();
+        let den = self.h_tr_ms.clone() * self.h_tr_is.clone() + term_rest_1.clone() * h_ext.clone();
 
         let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
