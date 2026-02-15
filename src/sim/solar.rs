@@ -144,6 +144,7 @@ fn orientation_to_angles(orientation: Orientation) -> (f64, f64) {
         Orientation::West => (90.0, 270.0),
         Orientation::North => (90.0, 0.0),
         Orientation::East => (90.0, 90.0),
+        Orientation::Horizontal => (0.0, 0.0),
     }
 }
 

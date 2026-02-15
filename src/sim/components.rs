@@ -1,6 +1,5 @@
 use crate::physics::continuous::ContinuousField;
 use num_traits::Zero;
-use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};
 
 use crate::validation::ashrae_140_cases::Orientation;
