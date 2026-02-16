@@ -85,7 +85,7 @@ pub trait ThermalModelTrait: Send + Sync {
     /// Calculate HVAC power demand based on current conditions.
     ///
     /// Returns heating power (positive) or cooling power (negative) in Watts.
-    fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64;
+    fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64;
 
     /// Check if the model is valid for simulation
     fn is_valid(&self) -> bool;
@@ -137,7 +137,7 @@ impl ThermalModelTrait for PhysicsThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = VectorField::new(temperatures.to_vec()).into();
+        self.inner.temperatures = VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -156,7 +156,8 @@ impl ThermalModelTrait for PhysicsThermalModel {
     ) -> f64 {
         // Use the mode to determine whether to use surrogates
         let actual_use_surrogates = use_surrogates || self.mode == ThermalModelMode::Surrogate;
-        self.inner.solve_timesteps(steps, surrogates, actual_use_surrogates)
+        self.inner
+            .solve_timesteps(steps, surrogates, actual_use_surrogates)
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {
@@ -175,7 +176,7 @@ impl ThermalModelTrait for PhysicsThermalModel {
         self.inner.cooling_setpoint
     }
 
-    fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64 {
+    fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
         // Simplified HVAC demand calculation
         let temps = self.inner.temperatures.as_ref();
         if temps.is_empty() {
@@ -256,7 +257,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = VectorField::new(temperatures.to_vec()).into();
+        self.inner.temperatures = VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -271,7 +272,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
         &mut self,
         steps: usize,
         surrogates: &SurrogateManager,
-        use_surrogates: bool,
+        _use_surrogates: bool,
     ) -> f64 {
         // Always use surrogates for this model type
         self.inner.solve_timesteps(steps, surrogates, true)
@@ -293,7 +294,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
         self.inner.cooling_setpoint
     }
 
-    fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64 {
+    fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
         let temps = self.inner.temperatures.as_ref();
         if temps.is_empty() {
             return 0.0;
@@ -388,7 +389,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
     }
 
     fn set_temperatures(&mut self, temperatures: &[f64]) {
-        self.inner.temperatures = VectorField::new(temperatures.to_vec()).into();
+        self.inner.temperatures = VectorField::new(temperatures.to_vec());
     }
 
     fn mode(&self) -> ThermalModelMode {
@@ -407,7 +408,8 @@ impl ThermalModelTrait for UnifiedThermalModel {
         _use_surrogates: bool,
     ) -> f64 {
         // Use the internal mode flag
-        self.inner.solve_timesteps(steps, surrogates, self.use_surrogates)
+        self.inner
+            .solve_timesteps(steps, surrogates, self.use_surrogates)
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {
@@ -426,7 +428,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
         self.inner.cooling_setpoint
     }
 
-    fn hvac_power_demand(&self, timestep: usize, outdoor_temp: f64) -> f64 {
+    fn hvac_power_demand(&self, timestep: usize, _outdoor_temp: f64) -> f64 {
         let temps = self.inner.temperatures.as_ref();
         if temps.is_empty() {
             return 0.0;
@@ -516,9 +518,15 @@ impl ThermalModelBuilder {
             }
             ThermalModelMode::Surrogate => {
                 if let Some(spec) = self.spec {
-                    Box::new(SurrogateThermalModel::from_spec(&spec).with_fallback(self.fallback_to_physics))
+                    Box::new(
+                        SurrogateThermalModel::from_spec(&spec)
+                            .with_fallback(self.fallback_to_physics),
+                    )
                 } else {
-                    Box::new(SurrogateThermalModel::new(self.num_zones).with_fallback(self.fallback_to_physics))
+                    Box::new(
+                        SurrogateThermalModel::new(self.num_zones)
+                            .with_fallback(self.fallback_to_physics),
+                    )
                 }
             }
             ThermalModelMode::Hybrid => {
@@ -538,7 +546,7 @@ impl ThermalModelBuilder {
         } else {
             UnifiedThermalModel::new(self.num_zones)
         };
-        
+
         // Set the mode based on configuration
         model.set_mode(self.mode);
         model
@@ -574,16 +582,16 @@ mod tests {
     #[test]
     fn test_unified_model_switching() {
         let mut model = UnifiedThermalModel::new(1);
-        
+
         // Initially in physics mode
         assert_eq!(model.mode(), ThermalModelMode::Physics);
         assert!(!model.is_using_surrogates());
-        
+
         // Switch to surrogates
         model.use_surrogates();
         assert_eq!(model.mode(), ThermalModelMode::Surrogate);
         assert!(model.is_using_surrogates());
-        
+
         // Switch back to physics
         model.use_physics();
         assert_eq!(model.mode(), ThermalModelMode::Physics);
@@ -596,7 +604,7 @@ mod tests {
             .num_zones(5)
             .mode(ThermalModelMode::Physics)
             .build();
-        
+
         assert_eq!(model.num_zones(), 5);
         assert_eq!(model.mode(), ThermalModelMode::Physics);
     }
@@ -607,7 +615,7 @@ mod tests {
             .num_zones(3)
             .use_surrogates(true)
             .build();
-        
+
         assert_eq!(model.num_zones(), 3);
         assert_eq!(model.mode(), ThermalModelMode::Surrogate);
     }
@@ -625,7 +633,7 @@ mod tests {
             .num_zones(10)
             .mode(ThermalModelMode::Hybrid)
             .build_unified();
-        
+
         assert_eq!(model.num_zones(), 10);
         assert_eq!(model.mode(), ThermalModelMode::Hybrid);
     }
