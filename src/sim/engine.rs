@@ -409,6 +409,7 @@ impl ThermalModel<VectorField> {
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
             night_ventilation_ach: None,                  // No night ventilation by default
+            solar_distribution_to_air: 0.5, // Default 50% to air
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
@@ -899,6 +900,71 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// Ground temperature (°C)
     pub fn ground_temperature_at(&self, timestep: usize) -> f64 {
         self.ground_temperature.ground_temperature(timestep)
+    }
+
+    /// Calculate the free-floating temperature (without HVAC).
+    ///
+    /// This calculates what the indoor temperature would be if no HVAC were operating,
+    /// based on the current loads and external conditions. Used for determining
+    /// whether heating or cooling energy was consumed.
+    ///
+    /// # Arguments
+    ///
+    /// * `outdoor_temp` - Outdoor air temperature (°C)
+    ///
+    /// # Returns
+    ///
+    /// Free-floating zone temperature (°C)
+    pub fn calculate_free_float_temperature(&self, outdoor_temp: f64) -> f64 {
+        // Use the same calculation as in step_physics
+        let t_e = self.temperatures.constant_like(outdoor_temp);
+        let t_g = self.ground_temperature.ground_temperature(0);
+
+        let loads_watts = self.loads.clone() * self.zone_area.clone();
+        let phi_ia = loads_watts.clone() * 0.5;
+        let phi_st = loads_watts.clone() * 0.5;
+
+        let h_ext = &self.derived_h_ext;
+        let term_rest_1 = &self.derived_term_rest_1;
+        let den = &self.derived_den;
+
+        let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
+        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+
+        // Inter-zone heat transfer
+        let num_zones = self.num_zones;
+        let h_iz_vec = self.h_tr_iz.as_ref();
+
+        let inter_zone_heat: Vec<f64> =
+            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
+                let temps = self.temperatures.as_ref();
+                let h_iz_val = h_iz_vec[0];
+                (0..num_zones)
+                    .map(|i| {
+                        let mut q_iz = 0.0;
+                        for j in 0..num_zones {
+                            if i != j {
+                                q_iz += h_iz_val * (temps[j] - temps[i]);
+                            }
+                        }
+                        q_iz
+                    })
+                    .collect()
+            } else {
+                vec![0.0; num_zones]
+            };
+
+        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
+        let phi_ia_with_iz = phi_ia + q_iz_tensor;
+
+        let num_rest = term_rest_1.clone()
+            * (h_ext.clone() * t_e.clone() + phi_ia_with_iz)
+            + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
+
+        let t_i_free = (num_tm + num_phi_st + num_rest) / den.clone();
+
+        // Return the first zone temperature
+        t_i_free.as_ref()[0]
     }
 }
 

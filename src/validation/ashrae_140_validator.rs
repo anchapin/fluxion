@@ -87,6 +87,17 @@ impl ASHRAE140Validator {
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
+        // Check if this is a free-floating case (no HVAC for zone 0)
+        let is_free_floating = spec.is_free_floating();
+        
+        // For free-floating cases, disable HVAC by setting extreme setpoints
+        if is_free_floating {
+            model.heating_setpoint = -999.0;
+            model.cooling_setpoint = 999.0;
+            model.hvac_heating_capacity = 0.0;
+            model.hvac_cooling_capacity = 0.0;
+        }
+
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
@@ -169,11 +180,23 @@ impl ASHRAE140Validator {
             let hvac_energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
             let hvac_energy_joules = hvac_energy_kwh * 3.6e6;
 
-            if weather_data.dry_bulb_temp < model.heating_setpoint {
-                annual_heating_joules += hvac_energy_joules;
-            } else if weather_data.dry_bulb_temp > model.cooling_setpoint {
-                annual_cooling_joules += hvac_energy_joules;
+            // For non-free-floating cases, categorize HVAC energy based on free-floating temperature
+            if !is_free_floating {
+                // Get the free-floating temperature BEFORE HVAC is applied
+                // This tells us whether heating or cooling is needed
+                let t_i_free = model.calculate_free_float_temperature(weather_data.dry_bulb_temp);
+
+                // Determine HVAC mode based on FREE-FLOATING temperature
+                if t_i_free < model.heating_setpoint {
+                    // Free-floating temp is below heating setpoint - HVAC was heating
+                    annual_heating_joules += hvac_energy_joules;
+                } else if t_i_free > model.cooling_setpoint {
+                    // Free-floating temp is above cooling setpoint - HVAC was cooling
+                    annual_cooling_joules += hvac_energy_joules;
+                }
+                // If free-floating temp is in deadband, no HVAC energy used
             }
+            // For free-floating cases, HVAC is disabled so no energy is added
         }
 
         CaseResults {
