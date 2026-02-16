@@ -1,3 +1,4 @@
+#![allow(clippy::approx_constant)]
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::boundary::{
@@ -390,7 +391,6 @@ impl ThermalModel<VectorField> {
 
             let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u;
 
-
             // Calculate em by subtracting other series resistances
             // R_total_op = 1/h_tr_em + 1/h_tr_ms + 1/h_tr_is
             let r_op = 1.0 / h_tr_op;
@@ -521,9 +521,9 @@ impl ThermalModel<VectorField> {
             solar_loads: VectorField::from_scalar(0.0, num_zones),
             surfaces,
             window_u_value: 2.5,    // Default U-value
-            wall_u_value: 0.512,   // Case 600 Default
-            roof_u_value: 0.318,   // Case 600 Default
-            floor_u_value: 0.039,  // Case 600 Default
+            wall_u_value: 0.512,    // Case 600 Default
+            roof_u_value: 0.318,    // Case 600 Default
+            floor_u_value: 0.039,   // Case 600 Default
             heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
             cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
             heating_schedules: vec![DailySchedule::constant(20.0); num_zones],
@@ -621,7 +621,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Thermal Capacitance (Air + Structure)
         // ISO 13790: Cm = mass_factor * A_floor
         // Low Mass: 110,000 J/m²K, High Mass: 260,000 J/m²K
-        let mass_factor = if self.mass_area_factor > 3.0 { 260_000.0 } else { 110_000.0 };
+        let mass_factor = if self.mass_area_factor > 3.0 {
+            260_000.0
+        } else {
+            110_000.0
+        };
         let structure_cap = self.zone_area.clone() * mass_factor;
         self.thermal_capacitance = air_cap + structure_cap;
 
@@ -1682,7 +1686,8 @@ mod tests {
                 (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating) / (h_tr_em + h_ms_is);
 
             model.heating_setpoint = setpoint_heating;
-            model.heating_schedules = vec![DailySchedule::constant(setpoint_heating); model.num_zones];
+            model.heating_schedules =
+                vec![DailySchedule::constant(setpoint_heating); model.num_zones];
             model.cooling_setpoint = 100.0; // Disable cooling
             model.cooling_schedules = vec![DailySchedule::constant(100.0); model.num_zones];
             model.temperatures = VectorField::from_scalar(setpoint_heating, 1);
@@ -1714,7 +1719,8 @@ mod tests {
             model.heating_setpoint = -100.0; // Disable heating
             model.heating_schedules = vec![DailySchedule::constant(-100.0); model.num_zones];
             model.cooling_setpoint = setpoint_cooling;
-            model.cooling_schedules = vec![DailySchedule::constant(setpoint_cooling); model.num_zones];
+            model.cooling_schedules =
+                vec![DailySchedule::constant(setpoint_cooling); model.num_zones];
             model.temperatures = VectorField::from_scalar(setpoint_cooling, 1);
             model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_cooling, 1);
 
@@ -1807,7 +1813,6 @@ mod tests {
         use super::*;
         use crate::sim::boundary::ConstantGroundTemperature;
         use crate::sim::schedule::DailySchedule;
-    
 
         #[test]
         fn test_default_ground_temperature() {
@@ -1988,13 +1993,17 @@ mod tests {
 
             // Disable HVAC to see natural equilibrium
             model_cold.heating_setpoint = -999.0;
-            model_cold.heating_schedules = vec![DailySchedule::constant(-999.0); model_cold.num_zones];
+            model_cold.heating_schedules =
+                vec![DailySchedule::constant(-999.0); model_cold.num_zones];
             model_cold.cooling_setpoint = 999.0;
-            model_cold.cooling_schedules = vec![DailySchedule::constant(999.0); model_cold.num_zones];
+            model_cold.cooling_schedules =
+                vec![DailySchedule::constant(999.0); model_cold.num_zones];
             model_warm.heating_setpoint = -999.0;
-            model_warm.heating_schedules = vec![DailySchedule::constant(-999.0); model_warm.num_zones];
+            model_warm.heating_schedules =
+                vec![DailySchedule::constant(-999.0); model_warm.num_zones];
             model_warm.cooling_setpoint = 999.0;
-            model_warm.cooling_schedules = vec![DailySchedule::constant(999.0); model_warm.num_zones];
+            model_warm.cooling_schedules =
+                vec![DailySchedule::constant(999.0); model_warm.num_zones];
 
             // Run for a few steps
             let outdoor_temp = 15.0;
