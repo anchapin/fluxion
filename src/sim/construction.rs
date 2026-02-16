@@ -315,6 +315,14 @@ impl Construction {
         1.0 / r_total
     }
 
+    /// Calculates the U-value for an internal partition (using two interior film coefficients).
+    pub fn u_value_internal(&self) -> f64 {
+        let h_int = interior_film_coeff();
+        let r_materials: f64 = self.layers.iter().map(|l| l.r_value()).sum();
+        let r_total = (1.0 / h_int) + r_materials + (1.0 / h_int);
+        1.0 / r_total
+    }
+
     /// Calculates the total thermal mass (capacitance) of the construction.
     ///
     /// Returns the sum of thermal capacitance per unit area for all layers.
@@ -375,7 +383,7 @@ impl Materials {
 
     /// Concrete (normal weight)
     pub fn concrete(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Concrete", 0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete", 1.13, 1400.0, 1000.0, thickness)
     }
 
     /// Foam insulation
@@ -400,7 +408,7 @@ impl Materials {
 
     /// Insulation for floor/walls
     pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Insulation", 1.007, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Insulation", 0.04, 10.0, 1400.0, thickness)
     }
 }
 
@@ -437,6 +445,11 @@ impl Assemblies {
         ])
     }
 
+    /// Simple concrete wall (for inter-zone partitions).
+    pub fn concrete_wall(thickness: f64) -> Construction {
+        Construction::new(vec![Materials::concrete(thickness)])
+    }
+
     /// High mass roof construction (ASHRAE 140 Case 900).
     pub fn high_mass_roof() -> Construction {
         Construction::new(vec![
@@ -450,7 +463,7 @@ impl Assemblies {
     pub fn insulated_floor() -> Construction {
         Construction::new(vec![
             Materials::timber(0.025),
-            ConstructionLayer::new("Floor Insulation", 1.003, 50.0, 840.0, 0.040),
+            Materials::fiberglass(1.003), // Thick insulation to achieve U=0.039
         ])
     }
 
@@ -463,7 +476,7 @@ impl Assemblies {
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
             Materials::concrete_slab(0.080),
-            Materials::insulation_high_mass(0.040),
+            Materials::insulation_high_mass(1.003), // Thick insulation to achieve U=0.039
         ])
     }
 }
@@ -657,7 +670,7 @@ mod tests {
     #[test]
     fn test_materials_concrete() {
         let layer = Materials::concrete(0.100);
-        assert_eq!(layer.conductivity, 0.51);
+        assert_eq!(layer.conductivity, 1.13);
         assert_eq!(layer.density, 1400.0);
         assert_eq!(layer.specific_heat, 1000.0);
         assert_eq!(layer.thickness, 0.100);
@@ -723,7 +736,7 @@ mod tests {
 
         // Check layer properties
         assert_eq!(floor.layers[0].thickness, 0.025); // Timber
-        assert_eq!(floor.layers[1].thickness, 0.040); // Insulation
+        assert_eq!(floor.layers[1].thickness, 1.003); // Insulation
     }
 
     #[test]

@@ -4,7 +4,6 @@
 //! that the results are within the specified reference ranges.
 
 use fluxion::validation::ASHRAE140Validator;
-use fluxion::validation::MetricType;
 
 #[test]
 fn test_ashrae_140_comprehensive() {

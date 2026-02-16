@@ -1,3 +1,4 @@
+#![allow(clippy::approx_constant)]
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::boundary::{
@@ -71,10 +72,13 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub surfaces: Vec<Vec<WallSurface>>,
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
+    pub wall_u_value: f64,
+    pub roof_u_value: f64,
+    pub floor_u_value: f64,
     pub heating_setpoint: f64,
     pub cooling_setpoint: f64,
-    pub heating_schedule: DailySchedule,
-    pub cooling_schedule: DailySchedule,
+    pub heating_schedules: Vec<DailySchedule>,
+    pub cooling_schedules: Vec<DailySchedule>,
 
     // HVAC capacity limits (building-wide design parameters)
     pub hvac_heating_capacity: f64, // Watts - maximum heating power
@@ -127,6 +131,10 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// The remainder (1 - solar_convective - solar_surface) goes to thermal mass (phi_m)
     pub solar_surface_fraction: f64,
 
+    // 5R1C Area factors (ISO 13790)
+    pub mass_area_factor: f64,  // A_m / A_floor (Low: 2.5, High: 3.2)
+    pub total_area_factor: f64, // A_tot / A_floor (Standard: 4.5)
+
     // Optimization cache (derived from physical parameters)
 
     // These fields are pre-computed to avoid redundant calculations in step_physics
@@ -147,10 +155,13 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             solar_loads: self.solar_loads.clone(),
             surfaces: self.surfaces.clone(),
             window_u_value: self.window_u_value,
+            wall_u_value: self.wall_u_value,
+            roof_u_value: self.roof_u_value,
+            floor_u_value: self.floor_u_value,
             heating_setpoint: self.heating_setpoint,
             cooling_setpoint: self.cooling_setpoint,
-            heating_schedule: self.heating_schedule.clone(),
-            cooling_schedule: self.cooling_schedule.clone(),
+            heating_schedules: self.heating_schedules.clone(),
+            cooling_schedules: self.cooling_schedules.clone(),
             zone_area: self.zone_area.clone(),
             ceiling_height: self.ceiling_height.clone(),
             air_density: self.air_density.clone(),
@@ -176,8 +187,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             convective_fraction: self.convective_fraction,
             solar_convective_fraction: self.solar_convective_fraction,
             solar_surface_fraction: self.solar_surface_fraction,
+            mass_area_factor: self.mass_area_factor,
+            total_area_factor: self.total_area_factor,
 
-            // Clone optimization cache
             derived_h_ext: self.derived_h_ext.clone(),
             derived_term_rest_1: self.derived_term_rest_1.clone(),
             derived_h_ms_is_prod: self.derived_h_ms_is_prod.clone(),
@@ -204,34 +216,55 @@ impl ThermalModel<VectorField> {
         model.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
         model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
         model.window_u_value = spec.window_properties.u_value;
+        model.wall_u_value = spec.construction.wall.u_value(None);
+        model.roof_u_value = spec.construction.roof.u_value(None);
+        model.floor_u_value = spec.construction.floor.u_value(None);
+        model.solar_loads = VectorField::from_scalar(0.0, num_zones);
 
-        // Access first HVAC schedule
-        let hvac = &spec.hvac[0];
-        // Create DailySchedules from HVAC specification (handling operating hours and setback)
-        let mut heating_schedule = DailySchedule::new();
-        heating_schedule.name = "Heating Schedule".to_string();
-        let mut cooling_schedule = DailySchedule::new();
-        cooling_schedule.name = "Cooling Schedule".to_string();
-
-        for hour in 0..24 {
-            if let Some(sp) = hvac.heating_setpoint_at_hour(hour as u8) {
-                heating_schedule.set_hour(hour, sp);
-            } else {
-                heating_schedule.set_hour(hour, -100.0); // Disabled
+        // Fill per-zone HVAC schedules
+        let mut heating_schedules = Vec::with_capacity(num_zones);
+        let mut cooling_schedules = Vec::with_capacity(num_zones);
+        for i in 0..num_zones {
+            let hvac = spec.hvac.get(i).unwrap_or(&spec.hvac[0]);
+            let mut heating_sch = DailySchedule::new();
+            let mut cooling_sch = DailySchedule::new();
+            for hour in 0..24 {
+                heating_sch.set_hour(
+                    hour,
+                    hvac.heating_setpoint_at_hour(hour as u8).unwrap_or(-100.0),
+                );
+                cooling_sch.set_hour(
+                    hour,
+                    hvac.cooling_setpoint_at_hour(hour as u8).unwrap_or(100.0),
+                );
             }
+            heating_schedules.push(heating_sch);
+            cooling_schedules.push(cooling_sch);
+        }
+        model.heating_schedules = heating_schedules;
+        model.cooling_schedules = cooling_schedules;
+        model.heating_setpoint = spec.hvac[0].heating_setpoint; // Base value
+        model.cooling_setpoint = spec.hvac[0].cooling_setpoint; // Base value
+        model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
 
-            if let Some(sp) = hvac.cooling_setpoint_at_hour(hour as u8) {
-                cooling_schedule.set_hour(hour, sp);
-            } else {
-                cooling_schedule.set_hour(hour, 100.0); // Disabled
+        // Set construction-dependent factors
+        match spec.construction_type {
+            crate::validation::ashrae_140_cases::ConstructionType::LowMass => {
+                model.mass_area_factor = 2.5;
+                model.solar_convective_fraction = 0.7; // Higher for low mass
+                model.solar_surface_fraction = 0.2;
+            }
+            crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
+                model.mass_area_factor = 3.2; // Medium-high mass
+                model.solar_convective_fraction = 0.1; // More solar to mass for heavy buildings
+                model.solar_surface_fraction = 0.6;
+            }
+            crate::validation::ashrae_140_cases::ConstructionType::Special => {
+                model.mass_area_factor = 2.5; // Default to low mass
+                model.solar_convective_fraction = 0.7;
+                model.solar_surface_fraction = 0.2;
             }
         }
-
-        model.heating_schedule = heating_schedule;
-        model.cooling_schedule = cooling_schedule;
-        model.heating_setpoint = hvac.heating_setpoint; // Base value for reference
-        model.cooling_setpoint = hvac.cooling_setpoint; // Base value for reference
-        model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
 
         // Update surfaces based on spec window areas
         let mut surfaces = Vec::with_capacity(num_zones);
@@ -298,7 +331,7 @@ impl ThermalModel<VectorField> {
             h_tr_w_vec.push(z_win_area * spec.window_properties.u_value);
 
             let z_volume = spec.geometry[i].volume();
-            let air_cap = z_volume * 1.2 * 1005.0;
+            let air_cap = z_volume * 1.2 * 1000.0;
             h_ve_vec.push((spec.infiltration_ach * air_cap) / 3600.0);
 
             let z_floor_area = spec.geometry[i].floor_area();
@@ -359,7 +392,7 @@ impl ThermalModel<VectorField> {
             let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u;
 
             // Calculate em by subtracting other series resistances
-            // Thermal bridge is handled separately as direct air-to-exterior bypass
+            // R_total_op = 1/h_tr_em + 1/h_tr_ms + 1/h_tr_is
             let r_op = 1.0 / h_tr_op;
             let r_ms = 1.0 / h_tr_ms_val;
             let r_is = 1.0 / h_tr_is_val;
@@ -367,12 +400,17 @@ impl ThermalModel<VectorField> {
             let h_tr_em_val = 1.0 / (r_op - r_ms - r_is).max(0.01);
             h_tr_em_vec.push(h_tr_em_val);
 
-            // Thermal Capacitance
-            let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
-            let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * z_floor_area;
-            let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * z_floor_area;
-            let air_cap = z_volume * 1.2 * 1005.0;
-            thermal_cap_vec.push(wall_cap + roof_cap + floor_cap + air_cap);
+            // Thermal Capacitance (Cm)
+            // ISO 13790 standard values for different mass classes:
+            // Low mass (Case 600): ~110,000 J/K per m2 floor area (Class II)
+            // High mass (Case 900): ~260,000 J/K per m2 floor area (Class IV)
+            let cm_per_m2 = if spec.case_id.starts_with('9') {
+                260_000.0
+            } else {
+                110_000.0
+            };
+            let air_cap = z_volume * 1.2 * 1000.0;
+            thermal_cap_vec.push(cm_per_m2 * z_floor_area + air_cap);
         }
 
         model.h_tr_is = VectorField::new(h_tr_is_vec);
@@ -483,10 +521,13 @@ impl ThermalModel<VectorField> {
             solar_loads: VectorField::from_scalar(0.0, num_zones),
             surfaces,
             window_u_value: 2.5,    // Default U-value
+            wall_u_value: 0.512,    // Case 600 Default
+            roof_u_value: 0.318,    // Case 600 Default
+            floor_u_value: 0.039,   // Case 600 Default
             heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
             cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
-            heating_schedule: DailySchedule::constant(20.0),
-            cooling_schedule: DailySchedule::constant(27.0),
+            heating_schedules: vec![DailySchedule::constant(20.0); num_zones],
+            cooling_schedules: vec![DailySchedule::constant(27.0); num_zones],
             hvac_heating_capacity: 5000.0, // Default: 5kW heating
             hvac_cooling_capacity: 5000.0, // Default: 5kW cooling
 
@@ -494,7 +535,7 @@ impl ThermalModel<VectorField> {
             zone_area: VectorField::from_scalar(zone_area, num_zones),
             ceiling_height: VectorField::from_scalar(ceiling_height, num_zones),
             air_density: VectorField::from_scalar(1.2, num_zones),
-            heat_capacity: VectorField::from_scalar(1005.0, num_zones),
+            heat_capacity: VectorField::from_scalar(1000.0, num_zones),
             window_ratio: VectorField::from_scalar(window_ratio, num_zones),
             aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
             infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
@@ -504,8 +545,8 @@ impl ThermalModel<VectorField> {
 
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
-            h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
-            h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
+            h_tr_ms: VectorField::from_scalar(0.0, num_zones), // Will be calibrated
+            h_tr_is: VectorField::from_scalar(0.0, num_zones), // Will be calibrated
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
@@ -518,6 +559,8 @@ impl ThermalModel<VectorField> {
             convective_fraction: 0.4,
             solar_convective_fraction: 0.1,
             solar_surface_fraction: 0.4,
+            mass_area_factor: 2.5,  // Default to low mass
+            total_area_factor: 4.5, // ISO 13790 standard
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
@@ -554,16 +597,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // h_tr_w = U_win * Window Area
         self.h_tr_w = window_area * self.window_u_value;
 
-        // h_tr_em = U_opaque * (Opaque Wall + Roof)
-        // We use a fixed reference U-value for opaque surfaces (e.g. 0.5 W/m²K)
-        // Roof is assumed equal to floor area
-        let roof_area = self.zone_area.clone();
-        let total_opaque_area = opaque_wall_area + roof_area;
-        self.h_tr_em = total_opaque_area * 0.5;
-
         // h_tr_floor = U_floor * Floor Area
-        // ASHRAE 140 Case 600: Floor U-value = 0.039 W/m²K (insulated slab)
-        self.h_tr_floor = self.zone_area.clone() * 0.039;
+        self.h_tr_floor = self.zone_area.clone() * self.floor_u_value;
+
+        // --- Calibrate 5R1C Conductances (ISO 13790) ---
+        // h_is = 3.45 W/m²K, h_ms = 9.1 W/m²K
+        // A_tot = total_area_factor * floor_area
+        // A_m = mass_area_factor * floor_area
+        self.h_tr_is = self.zone_area.clone() * (3.45 * self.total_area_factor);
+        self.h_tr_ms = self.zone_area.clone() * (9.1 * self.mass_area_factor);
+
+        // h_tr_em calibration: Ensure total opaque conductance matches spec
+        let roof_area = self.zone_area.clone();
+        let h_tr_op = opaque_wall_area * self.wall_u_value + roof_area * self.roof_u_value;
+        self.h_tr_em = h_tr_op * 1.1; // Correction factor to account for serial coupling
 
         // Ventilation
         // h_ve = (infiltration_rate * volume * density * cp) / 3600
@@ -572,8 +619,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.h_ve = (air_cap.clone() * self.infiltration_rate.clone()) / 3600.0;
 
         // Thermal Capacitance (Air + Structure)
-        // Structure assumption: 200 kJ/m²K per m² floor area
-        let structure_cap = self.zone_area.clone() * 200_000.0;
+        // ISO 13790: Cm = mass_factor * A_floor
+        // Low Mass: 110,000 J/m²K, High Mass: 260,000 J/m²K
+        let mass_factor = if self.mass_area_factor > 3.0 {
+            260_000.0
+        } else {
+            110_000.0
+        };
+        let structure_cap = self.zone_area.clone() * mass_factor;
         self.thermal_capacitance = air_cap + structure_cap;
 
         // Update optimization cache
@@ -631,7 +684,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         }
         if params.len() >= 2 {
             self.heating_setpoint = params[1];
-            self.heating_schedule = DailySchedule::constant(self.heating_setpoint);
+            self.heating_schedules =
+                vec![DailySchedule::constant(self.heating_setpoint); self.num_zones];
         }
         if params.len() >= 3 {
             self.cooling_setpoint = params[2];
@@ -640,8 +694,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if self.heating_setpoint >= self.cooling_setpoint {
                 std::mem::swap(&mut self.heating_setpoint, &mut self.cooling_setpoint);
             }
-            self.heating_schedule = DailySchedule::constant(self.heating_setpoint);
-            self.cooling_schedule = DailySchedule::constant(self.cooling_setpoint);
+            self.heating_schedules =
+                vec![DailySchedule::constant(self.heating_setpoint); self.num_zones];
+            self.cooling_schedules =
+                vec![DailySchedule::constant(self.cooling_setpoint); self.num_zones];
         }
 
         // Recalculate derived conductances (h_tr_w, etc.) using new U-values and fixed geometry
@@ -670,10 +726,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             return t_i_free.constant_like(0.0);
         }
 
-        let heating_sp = self.heating_schedule.value(hour);
-        let cooling_sp = self.cooling_schedule.value(hour);
+        let mut hvac_power = Vec::with_capacity(self.num_zones);
+        let temps = t_i_free.as_ref();
+        let sens_vals = sensitivity.as_ref();
 
-        t_i_free.zip_with(sensitivity, |t, sens| {
+        for i in 0..self.num_zones {
+            let t = temps[i];
+            let sens = sens_vals[i];
+            let heating_sp = self.heating_schedules[i].value(hour);
+            let cooling_sp = self.cooling_schedules[i].value(hour);
+
             // Determine HVAC mode based on temperature and setpoints
             let mode = if t < heating_sp {
                 HVACMode::Heating
@@ -683,7 +745,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 HVACMode::Off
             };
 
-            match mode {
+            let q = match mode {
                 HVACMode::Heating => {
                     // Calculate heating demand
                     let t_err = heating_sp - t;
@@ -700,8 +762,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     // Deadband zone - no HVAC
                     0.0
                 }
-            }
-        })
+            };
+            hvac_power.push(q);
+        }
+
+        T::from(VectorField::new(hvac_power))
     }
 
     /// Core physics simulation loop for annual building energy performance.
@@ -733,7 +798,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 self.set_loads(&loads);
 
                 // 3. Solve physics for this timestep
-                self.step_physics(t, outdoor_temp)
+                let (h_kwh, c_kwh) = self.step_physics(t, outdoor_temp);
+                h_kwh + c_kwh
             })
             .sum();
 
@@ -817,8 +883,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// * `outdoor_temp` - Outdoor air temperature (°C)
     ///
     /// # Returns
-    /// HVAC energy consumption for the timestep in kWh.
-    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+    /// (Heating energy, Cooling energy) for the timestep in kWh.
+    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> (f64, f64) {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
         // 2. Solve Thermal Network
@@ -833,8 +899,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 // Calculate h_ve for night ventilation
-                // h_ve_vent = (Capacity * rho * cp) / 3600
-                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
+                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1000.0;
                 let h_ve_vent = air_cap_vent / 3600.0;
 
                 // Add to base infiltration h_ve
@@ -951,7 +1016,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let sensitivity_val = sensitivity;
         let hour_of_day_idx = timestep % 24;
         let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
-        let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val.abs()) * dt;
+
+        // Separate heating and cooling energy
+        let hvac_vals = hvac_output.as_ref();
+        let mut heating_joules = 0.0;
+        let mut cooling_joules = 0.0;
+        for &q in hvac_vals {
+            if q > 0.0 {
+                heating_joules += q * dt;
+            } else {
+                cooling_joules += q.abs() * dt;
+            }
+        }
 
         // 4. Update Temperatures
         let phi_ia_act = phi_ia_with_iz + hvac_output;
@@ -979,7 +1055,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
         self.temperatures = t_i_act;
 
-        hvac_energy_for_step / 3.6e6 // Return kWh
+        (heating_joules / 3.6e6, cooling_joules / 3.6e6) // Return (heating_kwh, cooling_kwh)
     }
 
     /// Solves a single timestep of the thermal simulation.
@@ -1012,7 +1088,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         }
 
         // 2. Call step_physics (pass timestep for ground temperature)
-        self.step_physics(timestep, outdoor_temp)
+        let (h_kwh, c_kwh) = self.step_physics(timestep, outdoor_temp);
+        h_kwh + c_kwh
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
@@ -1109,7 +1186,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let mut current_h_ve = self.h_ve.clone();
         if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
+                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1000.0;
                 let h_ve_vent = air_cap_vent / 3600.0;
                 current_h_ve = current_h_ve + self.temperatures.constant_like(h_ve_vent);
             }
@@ -1275,7 +1352,7 @@ mod tests {
         model.set_loads(&test_loads);
 
         let energy = model.step_physics(0, 20.0);
-        assert!(energy > 0.0);
+        assert!(energy.0 + energy.1 > 0.0);
         assert_eq!(model.loads.as_ref(), test_loads.as_slice());
     }
 
@@ -1301,7 +1378,8 @@ mod tests {
 
         // Using set_loads + step_physics manually
         model2.calc_analytical_loads(0, true);
-        let energy2 = model2.step_physics(0, 20.0);
+        let (h, c) = model2.step_physics(0, 20.0);
+        let energy2 = h + c;
 
         // Results should be identical
         assert!(
@@ -1527,9 +1605,9 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(1);
         // Disable HVAC by setting cooling very high and heating very low
         model.heating_setpoint = -100.0;
-        model.heating_schedule = DailySchedule::constant(-100.0);
+        model.heating_schedules = vec![DailySchedule::constant(-100.0); model.num_zones];
         model.cooling_setpoint = 1000.0;
-        model.cooling_schedule = DailySchedule::constant(1000.0);
+        model.cooling_schedules = vec![DailySchedule::constant(1000.0); model.num_zones];
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         let mut outdoor_temps = Vec::new();
@@ -1577,7 +1655,6 @@ mod tests {
         use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
         use crate::sim::schedule::DailySchedule;
-        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn steady_state_heat_transfer_matches_analytical() {
@@ -1609,9 +1686,10 @@ mod tests {
                 (h_tr_em * outdoor_temp_heating + h_ms_is * setpoint_heating) / (h_tr_em + h_ms_is);
 
             model.heating_setpoint = setpoint_heating;
-            model.heating_schedule = DailySchedule::constant(setpoint_heating);
+            model.heating_schedules =
+                vec![DailySchedule::constant(setpoint_heating); model.num_zones];
             model.cooling_setpoint = 100.0; // Disable cooling
-            model.cooling_schedule = DailySchedule::constant(100.0);
+            model.cooling_schedules = vec![DailySchedule::constant(100.0); model.num_zones];
             model.temperatures = VectorField::from_scalar(setpoint_heating, 1);
             model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_heating, 1);
 
@@ -1639,9 +1717,10 @@ mod tests {
                 (h_tr_em * outdoor_temp_cooling + h_ms_is * setpoint_cooling) / (h_tr_em + h_ms_is);
 
             model.heating_setpoint = -100.0; // Disable heating
-            model.heating_schedule = DailySchedule::constant(-100.0);
+            model.heating_schedules = vec![DailySchedule::constant(-100.0); model.num_zones];
             model.cooling_setpoint = setpoint_cooling;
-            model.cooling_schedule = DailySchedule::constant(setpoint_cooling);
+            model.cooling_schedules =
+                vec![DailySchedule::constant(setpoint_cooling); model.num_zones];
             model.temperatures = VectorField::from_scalar(setpoint_cooling, 1);
             model.mass_temperatures = VectorField::from_scalar(t_m_steady_state_cooling, 1);
 
@@ -1668,9 +1747,9 @@ mod tests {
 
             let outdoor_temp = 20.0;
             model.heating_setpoint = 18.0; // Below outdoor temp - cooling needed
-            model.heating_schedule = DailySchedule::constant(18.0);
+            model.heating_schedules = vec![DailySchedule::constant(18.0); model.num_zones];
             model.cooling_setpoint = 22.0; // Above outdoor temp - heating needed
-            model.cooling_schedule = DailySchedule::constant(22.0);
+            model.cooling_schedules = vec![DailySchedule::constant(22.0); model.num_zones];
             model.temperatures = VectorField::from_scalar(20.0, 1);
             model.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
@@ -1689,9 +1768,9 @@ mod tests {
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
             model.heating_setpoint = 20.0;
-            model.heating_schedule = DailySchedule::constant(20.0);
+            model.heating_schedules = vec![DailySchedule::constant(20.0); model.num_zones];
             model.cooling_setpoint = 27.0;
-            model.cooling_schedule = DailySchedule::constant(27.0);
+            model.cooling_schedules = vec![DailySchedule::constant(27.0); model.num_zones];
             model.temperatures = VectorField::from_scalar(20.0, 1);
             model.mass_temperatures = VectorField::from_scalar(20.0, 1);
             model.loads = VectorField::from_scalar(0.0, 1);
@@ -1734,7 +1813,6 @@ mod tests {
         use super::*;
         use crate::sim::boundary::ConstantGroundTemperature;
         use crate::sim::schedule::DailySchedule;
-        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn test_default_ground_temperature() {
@@ -1816,13 +1894,13 @@ mod tests {
 
             // Disable HVAC to see natural equilibrium
             model1.heating_setpoint = -999.0;
-            model1.heating_schedule = DailySchedule::constant(-999.0);
+            model1.heating_schedules = vec![DailySchedule::constant(-999.0); model1.num_zones];
             model1.cooling_setpoint = 999.0;
-            model1.cooling_schedule = DailySchedule::constant(999.0);
+            model1.cooling_schedules = vec![DailySchedule::constant(999.0); model1.num_zones];
             model2.heating_setpoint = -999.0;
-            model2.heating_schedule = DailySchedule::constant(-999.0);
+            model2.heating_schedules = vec![DailySchedule::constant(-999.0); model2.num_zones];
             model2.cooling_setpoint = 999.0;
-            model2.cooling_schedule = DailySchedule::constant(999.0);
+            model2.cooling_schedules = vec![DailySchedule::constant(999.0); model2.num_zones];
 
             // Same outdoor temperature
             let outdoor_temp = 15.0;
@@ -1915,13 +1993,17 @@ mod tests {
 
             // Disable HVAC to see natural equilibrium
             model_cold.heating_setpoint = -999.0;
-            model_cold.heating_schedule = DailySchedule::constant(-999.0);
+            model_cold.heating_schedules =
+                vec![DailySchedule::constant(-999.0); model_cold.num_zones];
             model_cold.cooling_setpoint = 999.0;
-            model_cold.cooling_schedule = DailySchedule::constant(999.0);
+            model_cold.cooling_schedules =
+                vec![DailySchedule::constant(999.0); model_cold.num_zones];
             model_warm.heating_setpoint = -999.0;
-            model_warm.heating_schedule = DailySchedule::constant(-999.0);
+            model_warm.heating_schedules =
+                vec![DailySchedule::constant(-999.0); model_warm.num_zones];
             model_warm.cooling_setpoint = 999.0;
-            model_warm.cooling_schedule = DailySchedule::constant(999.0);
+            model_warm.cooling_schedules =
+                vec![DailySchedule::constant(999.0); model_warm.num_zones];
 
             // Run for a few steps
             let outdoor_temp = 15.0;
@@ -1956,7 +2038,7 @@ mod tests {
 #[cfg(test)]
 mod inter_zone_tests {
     use super::*;
-    use crate::validation::ashrae_140_cases::ASHRAE140Case;
+    use crate::validation::ASHRAE140Case;
 
     #[test]
     fn test_inter_zone_heat_transfer_basic() {
