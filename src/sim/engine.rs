@@ -278,20 +278,20 @@ impl ThermalModel<VectorField> {
         // resistance of the soil/ground.
         let floor_u = spec.construction.floor.u_value(None);
         let h_tr_floor_val = if spec.case_id.starts_with('9') {
-             // High mass cases often have higher floor coupling
-             floor_u * floor_area * 1.2 // Calibrated factor
+            // High mass cases often have higher floor coupling
+            floor_u * floor_area * 1.2 // Calibrated factor
         } else {
-             floor_u * floor_area
+            floor_u * floor_area
         };
         model.h_tr_floor = VectorField::from_scalar(h_tr_floor_val, num_zones);
 
         // ISO 13790 5R1C Mapping - CALIBRATED FOR ASHRAE 140
         let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
-        
+
         // h_is: Surface-to-air conductance. ISO 13790 standard value is 3.45 W/m²K.
-        let h_is = 3.45; 
+        let h_is = 3.45;
         model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
-        
+
         // h_ms: Mass-to-surface conductance. ISO 13790 standard value is 9.1 W/m²K.
         // It depends on the effective mass area A_m.
         // For ASHRAE 140 low-mass, A_m is approx 2.5 * floor_area.
@@ -310,7 +310,7 @@ impl ThermalModel<VectorField> {
         let roof_u = spec.construction.roof.u_value(None);
         let opaque_wall_area = wall_area - total_window_area;
         let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u;
-        
+
         let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
         model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
 
@@ -342,7 +342,7 @@ impl ThermalModel<VectorField> {
             for wall in &spec.common_walls {
                 total_conductance += wall.conductance();
             }
-            
+
             // Add convective coupling (air exchange)
             // ASHRAE 140 Case 960 specifies air exchange between zones
             if spec.case_id == "960" {
@@ -744,14 +744,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;
         let mut current_h_ve = self.h_ve.clone();
-        
+
         if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 // Calculate h_ve for night ventilation
                 // h_ve_vent = (Capacity * rho * cp) / 3600
                 let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
                 let h_ve_vent = air_cap_vent / 3600.0;
-                
+
                 // Add to base infiltration h_ve
                 current_h_ve = current_h_ve + self.temperatures.constant_like(h_ve_vent);
             }
@@ -763,9 +763,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // phi_rad_total: radiative part to be split between surface and mass
         let phi_ia = loads_watts.clone() * self.convective_fraction;
         let phi_rad_total = loads_watts.clone() * (1.0 - self.convective_fraction);
-        
+
         // Use solar_distribution_to_air to split radiative gains.
-        // In this simplified model, solar_distribution_to_air represents 
+        // In this simplified model, solar_distribution_to_air represents
         // the fraction of RADIATIVE gains that stay at the surface/air level.
         // The remainder goes to the mass node.
         let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air;
@@ -775,11 +775,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Include ground coupling through floor
         // Use pre-computed cached values to avoid redundant allocations
         let h_ext_base = &self.derived_h_ext;
-        
+
         // If h_ve changed, we need to adjust h_ext
         let h_ext = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                 &(self.h_tr_w.clone() + current_h_ve.clone())
+                &(self.h_tr_w.clone() + current_h_ve.clone())
             } else {
                 h_ext_base
             }
@@ -788,16 +788,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         };
 
         let term_rest_1 = &self.derived_term_rest_1;
-        
+
         // We need to recalculate 'den' and 'sensitivity' if h_ext changed
         let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
-             if night_vent.is_active_at_hour(hour_of_day) {
-                 let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
-                 let sens_val = term_rest_1.clone() / den_val.clone();
-                 (den_val, sens_val)
-             } else {
-                 (self.derived_den.clone(), self.derived_sensitivity.clone())
-             }
+            if night_vent.is_active_at_hour(hour_of_day) {
+                let den_val =
+                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+                let sens_val = term_rest_1.clone() / den_val.clone();
+                (den_val, sens_val)
+            } else {
+                (self.derived_den.clone(), self.derived_sensitivity.clone())
+            }
         } else {
             (self.derived_den.clone(), self.derived_sensitivity.clone())
         };
@@ -1024,7 +1025,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         let h_ext = self.h_tr_w.clone() + current_h_ve;
         let term_rest_1 = &self.derived_term_rest_1;
-        
+
         let den = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
