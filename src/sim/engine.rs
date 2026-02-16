@@ -401,14 +401,19 @@ impl ThermalModel<VectorField> {
             h_tr_em_vec.push(h_tr_em_val);
 
             // Thermal Capacitance (Cm)
-            // ISO 13790 standard values for different mass classes:
-            // Low mass (Case 600): ~110,000 J/K per m2 floor area (Class II)
-            // High mass (Case 900): ~260,000 J/K per m2 floor area (Class IV)
-            let cm_per_m2 = if spec.case_id.starts_with('9') {
-                260_000.0
-            } else {
-                110_000.0
-            };
+            // Calculate from actual construction materials for accurate ASHRAE 140 validation
+            // Low mass walls have ~16,000 J/m²K, high mass have ~150,000+ J/m²K
+            let wall_cm = spec.construction.wall.thermal_capacitance_per_area();
+            let roof_cm = spec.construction.roof.thermal_capacitance_per_area();
+            let floor_cm = spec.construction.floor.thermal_capacitance_per_area();
+            
+            // Total effective capacitance per m² of floor area
+            // Weight walls, roof, floor by their area relative to floor
+            let z_wall_area = geom.wall_area();
+            let z_roof_area = geom.roof_area();
+            let cm_per_m2 = (wall_cm * z_wall_area + roof_cm * z_roof_area + floor_cm * z_floor_area) / z_floor_area;
+            
+            // Air capacitance (small but included)
             let air_cap = z_volume * 1.2 * 1000.0;
             thermal_cap_vec.push(cm_per_m2 * z_floor_area + air_cap);
         }
