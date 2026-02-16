@@ -743,7 +743,7 @@ impl CommonWall {
 
     /// Returns the inter-zone conductance (W/K).
     pub fn conductance(&self) -> f64 {
-        self.construction.u_value(None) * self.area
+        self.construction.u_value_internal() * self.area
     }
 }
 
@@ -1535,7 +1535,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18))
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1595,16 +1595,20 @@ impl CaseBuilder {
             .with_description("Sunspace - 2-zone building (back-zone + sunspace)".to_string())
             // Zone 0: Back-zone (8m x 6m x 2.7m)
             .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
+            .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
             .with_hvac_setpoints(20.0, 27.0)
             // Zone 1: Sunspace (8m x 2m x 2.7m)
             .add_zone(8.0, 2.0, 2.7)
             .with_zone_hvac(1, HvacSchedule::free_floating())
             .with_zone_window(1, 6.0, Orientation::South)
-            .with_zone_window(1, 6.0, Orientation::South)
             // Common Wall (8m x 2.7m = 21.6 m2)
-            .with_common_wall(0, 1, 21.6, Assemblies::high_mass_wall_standard())
+            .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
             .with_infiltration(0.5)
             .with_num_zones(2)
             .build()

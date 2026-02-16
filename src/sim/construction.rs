@@ -315,6 +315,14 @@ impl Construction {
         1.0 / r_total
     }
 
+    /// Calculates the U-value for an internal partition (using two interior film coefficients).
+    pub fn u_value_internal(&self) -> f64 {
+        let h_int = interior_film_coeff();
+        let r_materials: f64 = self.layers.iter().map(|l| l.r_value()).sum();
+        let r_total = (1.0 / h_int) + r_materials + (1.0 / h_int);
+        1.0 / r_total
+    }
+
     /// Calculates the total thermal mass (capacitance) of the construction.
     ///
     /// Returns the sum of thermal capacitance per unit area for all layers.
@@ -400,7 +408,7 @@ impl Materials {
 
     /// Insulation for floor/walls
     pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Insulation", 1.007, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Insulation", 0.04, 10.0, 1400.0, thickness)
     }
 }
 
@@ -435,6 +443,11 @@ impl Assemblies {
             Materials::foam(0.0615),
             Materials::wood_siding(0.009),
         ])
+    }
+
+    /// Simple concrete wall (for inter-zone partitions).
+    pub fn concrete_wall(thickness: f64) -> Construction {
+        Construction::new(vec![Materials::concrete(thickness)])
     }
 
     /// High mass roof construction (ASHRAE 140 Case 900).
