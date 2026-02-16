@@ -389,7 +389,7 @@ impl ThermalModel<VectorField> {
         model.night_ventilation = spec.night_ventilation;
 
         // Solar gain distribution (ASHRAE 140 calibration)
-        model.solar_distribution_to_air = 0.5; // Calibrated
+        model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
         model.solar_loads = VectorField::from_scalar(0.0, num_zones);
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
