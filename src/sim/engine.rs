@@ -110,8 +110,11 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     // ASHRAE 140 specific modes
     /// HVAC system control mode (Controlled or FreeFloat)
     pub hvac_system_mode: HvacSystemMode,
-    /// Night ventilation schedule (if applicable)
-    pub night_ventilation_ach: Option<f64>,
+    /// Night ventilation specification
+    pub night_ventilation: Option<crate::validation::ashrae_140_cases::NightVentilation>,
+
+    /// Fraction of internal gains that are convective (rest is radiative to surfaces)
+    pub convective_fraction: f64,
 
     // Solar gain distribution (ASHRAE 140 calibration)
     /// Fraction of solar gains that go directly to interior air (remainder goes to thermal mass)
@@ -162,7 +165,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             ground_temperature: self.ground_temperature.clone_box(),
             h_tr_iz: self.h_tr_iz.clone(),
             hvac_system_mode: self.hvac_system_mode,
-            night_ventilation_ach: self.night_ventilation_ach,
+            night_ventilation: self.night_ventilation,
+            convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
 
             // Clone optimization cache
@@ -302,7 +306,11 @@ impl ThermalModel<VectorField> {
         if let Some(ref loads) = spec.internal_loads[0] {
             let load_per_m2 = loads.total_load / floor_area;
             model.loads = VectorField::from_scalar(load_per_m2, num_zones);
+            model.convective_fraction = loads.convective_fraction;
         }
+
+        // Night ventilation
+        model.night_ventilation = spec.night_ventilation;
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
         if num_zones > 1 && !spec.common_walls.is_empty() {
@@ -408,7 +416,8 @@ impl ThermalModel<VectorField> {
             h_tr_iz: VectorField::from_scalar(0.0, num_zones), // Inter-zone conductance (0 for single-zone)
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
-            night_ventilation_ach: None,                  // No night ventilation by default
+            night_ventilation: None,                      // No night ventilation by default
+            convective_fraction: 0.5,                     // Default 50% convective
             solar_distribution_to_air: 0.5,               // Default 50% to air
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
@@ -702,16 +711,56 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Get ground temperature at this timestep
         let t_g = self.ground_temperature.ground_temperature(timestep);
 
-        // Distribute internal gains (50% air, 50% surface)
-        let phi_ia = loads_watts.clone() * 0.5;
-        let phi_st = loads_watts.clone() * 0.5;
+        // --- Dynamic Ventilation (Night Ventilation) ---
+        let hour_of_day = (timestep % 24) as u8;
+        let mut current_h_ve = self.h_ve.clone();
+        
+        if let Some(night_vent) = &self.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                // Calculate h_ve for night ventilation
+                // h_ve_vent = (Capacity * rho * cp) / 3600
+                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
+                let h_ve_vent = air_cap_vent / 3600.0;
+                
+                // Add to base infiltration h_ve
+                current_h_ve = current_h_ve + self.temperatures.constant_like(h_ve_vent);
+            }
+        }
+
+        // Distribute internal gains based on convective fraction
+        let phi_ia = loads_watts.clone() * self.convective_fraction;
+        let phi_st = loads_watts.clone() * (1.0 - self.convective_fraction);
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
         // Use pre-computed cached values to avoid redundant allocations
-        let h_ext = &self.derived_h_ext;
+        let h_ext_base = &self.derived_h_ext;
+        
+        // If h_ve changed, we need to adjust h_ext
+        let h_ext = if let Some(night_vent) = &self.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                 &(self.h_tr_w.clone() + current_h_ve.clone())
+            } else {
+                h_ext_base
+            }
+        } else {
+            h_ext_base
+        };
+
         let term_rest_1 = &self.derived_term_rest_1;
-        let den = &self.derived_den;
+        
+        // We need to recalculate 'den' and 'sensitivity' if h_ext changed
+        let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
+             if night_vent.is_active_at_hour(hour_of_day) {
+                 let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+                 let sens_val = term_rest_1.clone() / den_val.clone();
+                 (den_val, sens_val)
+             } else {
+                 (self.derived_den.clone(), self.derived_sensitivity.clone())
+             }
+        } else {
+            (self.derived_den.clone(), self.derived_sensitivity.clone())
+        };
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
@@ -762,10 +811,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
 
         // 3. HVAC Calculation
-        // Use cached sensitivity
-        let sensitivity = &self.derived_sensitivity;
-        let hour_of_day = timestep % 24;
-        let hvac_output = self.hvac_power_demand(hour_of_day, &t_i_free, sensitivity);
+        // Use local sensitivity (might be different from cached if night vent is active)
+        let sensitivity_val = sensitivity;
+        let hour_of_day_idx = timestep % 24;
+        let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val.abs()) * dt;
 
         // 4. Update Temperatures
@@ -920,13 +969,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let t_e = self.temperatures.constant_like(outdoor_temp);
         let t_g = self.ground_temperature.ground_temperature(0);
 
-        let loads_watts = self.loads.clone() * self.zone_area.clone();
-        let phi_ia = loads_watts.clone() * 0.5;
-        let phi_st = loads_watts.clone() * 0.5;
+        // --- Dynamic Ventilation (Night Ventilation) ---
+        // Assume hour 0 for free-float calculation if no hour provided
+        let mut current_h_ve = self.h_ve.clone();
+        if let Some(night_vent) = &self.night_ventilation {
+            if night_vent.is_active_at_hour(0) {
+                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
+                let h_ve_vent = air_cap_vent / 3600.0;
+                current_h_ve = current_h_ve + self.temperatures.constant_like(h_ve_vent);
+            }
+        }
 
-        let h_ext = &self.derived_h_ext;
+        let loads_watts = self.loads.clone() * self.zone_area.clone();
+        let phi_ia = loads_watts.clone() * self.convective_fraction;
+        let phi_st = loads_watts.clone() * (1.0 - self.convective_fraction);
+
+        let h_ext = self.h_tr_w.clone() + current_h_ve;
         let term_rest_1 = &self.derived_term_rest_1;
-        let den = &self.derived_den;
+        
+        let den = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
@@ -957,10 +1018,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
         let phi_ia_with_iz = phi_ia + q_iz_tensor;
 
-        let num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia_with_iz)
+        let num_rest = term_rest_1.clone() * (h_ext * t_e + phi_ia_with_iz)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
-        let t_i_free = (num_tm + num_phi_st + num_rest) / den.clone();
+        let t_i_free = (num_tm + num_phi_st + num_rest) / den;
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]
