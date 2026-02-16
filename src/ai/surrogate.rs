@@ -8,11 +8,11 @@ use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,
 };
-use std::sync::{Arc, Mutex};
-use std::cell::RefCell;
-use rand::SeedableRng;
 use rand::rngs::StdRng;
 use rand::Rng;
+use rand::SeedableRng;
+use std::cell::RefCell;
+use std::sync::{Arc, Mutex};
 
 /// Defines the inference backend to be used for the ONNX Runtime session.
 ///
@@ -407,7 +407,7 @@ impl PredictionWithUncertainty {
             .zip(std.iter())
             .map(|(&m, &s)| m + 2.0 * s)
             .collect();
-        
+
         Self {
             mean,
             std,
@@ -446,43 +446,46 @@ impl SurrogateManager {
 
         // Run multiple forward passes with noise
         let mut all_predictions: Vec<Vec<f64>> = Vec::with_capacity(num_samples);
-        
+
         // Use mock predictions with added variance for development
         // In production with real ONNX models, this would use dropout or ensemble
         let base_prediction = self.predict_loads(current_temps);
-        
+
         // Create thread-local RNG
         thread_local! {
             static RNG: RefCell<StdRng> = RefCell::new(StdRng::from_entropy());
         }
-        
+
         for _ in 0..num_samples {
             // Add small random perturbation to simulate model uncertainty
-            let perturbed_temps: Vec<f64> = current_temps
+            let _perturbed_temps: Vec<f64> = current_temps
                 .iter()
                 .map(|&t| {
                     let noise: f64 = RNG.with(|r| {
                         let mut rng = r.borrow_mut();
                         rng.gen::<f64>() - 0.5
-                    }) * 2.0 * noise_std;
+                    }) * 2.0
+                        * noise_std;
                     t + noise
                 })
                 .collect();
-            
+
             // Get prediction (in real implementation, this would be actual forward pass)
             // For now, add variance to base prediction
-            let variance: f64 = base_prediction.iter().map(|v| v * 0.05).sum::<f64>() / base_prediction.len() as f64;
+            let variance: f64 = base_prediction.iter().map(|v| v * 0.05).sum::<f64>()
+                / base_prediction.len() as f64;
             let prediction: Vec<f64> = base_prediction
                 .iter()
                 .map(|&v| {
                     let noise = RNG.with(|r| {
                         let mut rng = r.borrow_mut();
                         rng.gen::<f64>() - 0.5
-                    }) * 2.0 * variance.sqrt();
+                    }) * 2.0
+                        * variance.sqrt();
                     v + noise
                 })
                 .collect();
-            
+
             all_predictions.push(prediction);
         }
 
@@ -539,12 +542,8 @@ impl SurrogateManager {
         };
 
         let uncertainty = self.predict_with_uncertainty(current_temps, 10, 0.5);
-        
-        uncertainty
-            .std
-            .iter()
-            .map(|&s| 2.0 * z_score * s)
-            .collect()
+
+        uncertainty.std.iter().map(|&s| 2.0 * z_score * s).collect()
     }
 }
 
