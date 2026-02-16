@@ -602,6 +602,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, hour: usize, t_i_free: &T, sensitivity: &T) -> T {
+        // Check for overall HVAC mode (Free-floating)
+        if self.hvac_system_mode == HvacSystemMode::FreeFloat {
+            return t_i_free.constant_like(0.0);
+        }
+
         let heating_sp = self.heating_schedule.value(hour);
         let cooling_sp = self.cooling_schedule.value(hour);
 
