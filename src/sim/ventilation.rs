@@ -105,4 +105,3 @@ impl VentilationSchedule for ScheduledVentilation {
 pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> f64 {
     (ach * volume * rho * cp) / 3600.0
 }
-
