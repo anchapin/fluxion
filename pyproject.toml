@@ -4,18 +4,69 @@ build-backend = "maturin"
 
 [project]
 name = "fluxion"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.10"
-authors = [{name = "Dr. Aris Thorne", email = "aris.thorne@fluxion.org"}]
+authors = [
+    {name = "Fluxion Team", email = "team@fluxion.org"},
+    {name = "Dr. Aris Thorne", email = "aris.thorne@fluxion.org"},
+]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine."
+readme = "README.md"
+license = {text = "MIT"}
+keywords = ["building-energy", "simulation", "thermal-modeling", "ASHRAE", "machine-learning", "surrogate-model"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: Implementation :: CPython",
     "Programming Language :: Python :: Implementation :: PyPy",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
+
+dependencies = [
+    "numpy>=1.24.0",
+    "onnxruntime>=1.15.0",
+    "pandas>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "maturin>=1.0,<2.0",
+    "pytest>=7.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+    "pre-commit>=3.0.0",
+]
+api = [
+    "fastapi>=0.109.0",
+    "uvicorn>=0.27.0",
+    "pydantic>=2.5.0",
+]
+all = [
+    "fluxion[dev,api]",
+]
+
+[project.urls]
+Homepage = "https://github.com/anchapin/fluxion"
+Repository = "https://github.com/anchapin/fluxion"
+Documentation = "https://fluxion.readthedocs.io"
+Issues = "https://github.com/anchapin/fluxion/issues"
+
+[project.scripts]
+fluxion = "fluxion.cli:main"
 
 [tool.maturin]
 features = ["python-bindings", "pyo3/extension-module"]
+python-source = "."
+module-name = "fluxion._fluxion"
 
 [tool.black]
 line-length = 88
@@ -32,9 +83,19 @@ extend-select = ["E", "F", "I"]
 python_version = "3.10"
 ignore_missing_imports = true
 
-[project.optional-dependencies]
-dev = [
-    "maturin>=1.0,<2.0",
-    "numpy",
-    "pytest",
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = "test_*.py"
+
+[tool.coverage.run]
+source = ["fluxion"]
+omit = ["*test*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
 ]
