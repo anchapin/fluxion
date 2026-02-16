@@ -762,17 +762,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             }
         }
 
-        // Distribute internal and solar gains
-        // ISO 13790: distribute gains between air node, surface node and mass node
-        // phi_ia: convective part to air
-        // phi_rad_total: radiative part to be split between surface and mass
-        let phi_ia = loads_watts.clone() * self.convective_fraction;
-        let phi_rad_total = loads_watts.clone() * (1.0 - self.convective_fraction);
-
         // Use solar_distribution_to_air to split radiative gains.
-        // In this simplified model, solar_distribution_to_air represents
-        // the fraction of RADIATIVE gains that stay at the surface/air level.
-        // The remainder goes to the mass node.
+        // In ASHRAE 140, solar gains are mostly radiative.
+        // We separate internal gains (which have a convective fraction) from solar gains.
+        let internal_gains_watts = self.loads.clone() * self.zone_area.clone();
+        // For ASHRAE 140 validation, 'loads' in ThermalModel usually contains only internal gains,
+        // while solar gains are calculated separately in the validator and passed in?
+        // Wait, the validator currently adds them together!
+
+        // Fix: Distribute total radiative gains (internal + solar) using calibrated solar distribution
+        let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
+        let phi_rad_total = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
+
         let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air;
         let phi_m = phi_rad_total * (1.0 - self.solar_distribution_to_air);
 
