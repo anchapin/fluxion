@@ -146,7 +146,7 @@ impl ASHRAE140Validator {
             // Calculate loads per zone (internal gains + solar)
             // For zones without internal loads specified, use first zone's value
             let mut loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-            for zone_idx in 0..num_zones {
+            for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
                 let internal_gains = spec
                     .internal_loads
                     .get(zone_idx)
@@ -160,7 +160,7 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                let total_load = internal_gains + total_solar_gain_per_zone[zone_idx];
+                let total_load = internal_gains + solar_gain;
                 loads_per_zone.push(total_load / floor_area);
             }
 
