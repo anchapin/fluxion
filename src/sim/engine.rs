@@ -227,7 +227,7 @@ impl ThermalModel<VectorField> {
                     WallSurface::new(win_area, spec.window_properties.u_value, orientation);
 
                 // Add shading if applicable to this orientation
-                if let Some(shading) = &spec.shading {
+                if let Some(shading) = &self.shading {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins => {
                             // In ASHRAE 140, overhangs are typically on the same orientation as windows
@@ -310,15 +310,15 @@ impl ThermalModel<VectorField> {
 
             let z_area_tot = z_wall_area + z_floor_area * 2.0;
 
-            // h_is
+            // h_is: Surface-to-air conductance. ASHRAE 140 standard value is approx 8.26 W/m²K (1/0.121).
             let h_is = 8.26;
             h_tr_is_vec.push(h_is * z_area_tot);
 
-            // h_ms
+            // h_ms: Mass-to-surface conductance. ISO 13790 standard value is 9.1 W/m²K.
             let h_ms = if spec.case_id.starts_with('9') {
-                12.0
+                12.0 // Increased for high-mass concrete coupling
             } else {
-                9.1
+                9.1 // Standard for low-mass
             };
             let a_m = if spec.case_id.starts_with('9') {
                 3.2 * z_floor_area
@@ -327,7 +327,7 @@ impl ThermalModel<VectorField> {
             };
             h_tr_ms_vec.push(h_ms * a_m);
 
-            // h_tr_em
+            // h_tr_em: Opaque conductance (Exterior to Mass)
             let mut opaque_wall_area = z_wall_area - z_win_area;
             for wall in &spec.common_walls {
                 if wall.zone_a == i || wall.zone_b == i {
@@ -335,9 +335,7 @@ impl ThermalModel<VectorField> {
                 }
             }
 
-            let h_tr_op = opaque_wall_area * wall_u
-                + z_floor_area * roof_u
-                + model.thermal_bridge_coefficient;
+            let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u + model.thermal_bridge_coefficient;
             let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
             h_tr_em_vec.push(h_tr_em_val.max(0.1));
 
