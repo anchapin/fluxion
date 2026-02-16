@@ -66,8 +66,8 @@ pub enum HvacSystemMode {
 pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub num_zones: usize,
     pub temperatures: T,
-    pub loads: T,
-    pub solar_loads: T,
+    pub loads: T,       // Internal loads (W/m2)
+    pub solar_loads: T, // Solar loads (W/m2)
     pub surfaces: Vec<Vec<WallSurface>>,
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
@@ -124,17 +124,18 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub convective_fraction: f64,
 
     // Solar gain distribution (ASHRAE 140 calibration)
-    /// Fraction of solar gains that go directly to interior air (remainder goes to thermal mass)
-    /// Typical values: 0.5-0.8 depending on construction type
-    /// Low-mass buildings: higher fraction to air (0.7-0.8)
-    /// High-mass buildings: lower fraction to air (0.5-0.6)
-    pub solar_distribution_to_air: f64,
+    /// Fraction of solar gains that go directly to interior air (convective)
+    pub solar_convective_fraction: f64,
+    /// Fraction of radiative solar gains that go to surfaces (phi_st)
+    /// The remainder (1 - solar_convective - solar_surface) goes to thermal mass (phi_m)
+    pub solar_surface_fraction: f64,
 
     // 5R1C Area factors (ISO 13790)
     pub mass_area_factor: f64,  // A_m / A_floor (Low: 2.5, High: 3.2)
     pub total_area_factor: f64, // A_tot / A_floor (Standard: 4.5)
 
     // Optimization cache (derived from physical parameters)
+
     // These fields are pre-computed to avoid redundant calculations in step_physics
     pub derived_h_ext: T,
     pub derived_term_rest_1: T,
@@ -183,11 +184,10 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             night_ventilation: self.night_ventilation,
             thermal_bridge_coefficient: self.thermal_bridge_coefficient,
             convective_fraction: self.convective_fraction,
-            solar_distribution_to_air: self.solar_distribution_to_air,
+            solar_convective_fraction: self.solar_convective_fraction,
+            solar_surface_fraction: self.solar_surface_fraction,
             mass_area_factor: self.mass_area_factor,
             total_area_factor: self.total_area_factor,
-
-            // Cache fields
 
             derived_h_ext: self.derived_h_ext.clone(),
             derived_term_rest_1: self.derived_term_rest_1.clone(),
@@ -250,15 +250,18 @@ impl ThermalModel<VectorField> {
         match spec.construction_type {
             crate::validation::ashrae_140_cases::ConstructionType::LowMass => {
                 model.mass_area_factor = 2.5;
-                model.solar_distribution_to_air = 0.7; // Higher for low mass
+                model.solar_convective_fraction = 0.7; // Higher for low mass
+                model.solar_surface_fraction = 0.2;
             }
             crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
                 model.mass_area_factor = 3.2; // Medium-high mass
-                model.solar_distribution_to_air = 0.1; // More solar to mass for heavy buildings
+                model.solar_convective_fraction = 0.1; // More solar to mass for heavy buildings
+                model.solar_surface_fraction = 0.6;
             }
             crate::validation::ashrae_140_cases::ConstructionType::Special => {
                 model.mass_area_factor = 2.5; // Default to low mass
-                model.solar_distribution_to_air = 0.7;
+                model.solar_convective_fraction = 0.7;
+                model.solar_surface_fraction = 0.2;
             }
         }
 
@@ -387,6 +390,7 @@ impl ThermalModel<VectorField> {
 
             let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u;
 
+
             // Calculate em by subtracting other series resistances
             // R_total_op = 1/h_tr_em + 1/h_tr_ms + 1/h_tr_is
             let r_op = 1.0 / h_tr_op;
@@ -425,9 +429,13 @@ impl ThermalModel<VectorField> {
         model.night_ventilation = spec.night_ventilation;
 
         // Solar gain distribution (ASHRAE 140 calibration)
-        model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
+        model.solar_convective_fraction = 0.1; // Small portion to air
+        model.solar_surface_fraction = 0.4; // Large portion to surfaces
+                                            // remainder (0.5) to thermal mass
+        model.solar_loads = VectorField::from_scalar(0.0, num_zones);
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
+
         if num_zones > 1 && !spec.common_walls.is_empty() {
             // Calculate inter-zone conductance from common walls
             // For Case 960: Zone 0 (back-zone) and Zone 1 (sunspace) share a common wall
@@ -549,7 +557,8 @@ impl ThermalModel<VectorField> {
             night_ventilation: None,
             thermal_bridge_coefficient: 0.0,
             convective_fraction: 0.4,
-            solar_distribution_to_air: 0.1,
+            solar_convective_fraction: 0.1,
+            solar_surface_fraction: 0.4,
             mass_area_factor: 2.5,  // Default to low mass
             total_area_factor: 4.5, // ISO 13790 standard
 
@@ -634,8 +643,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // h_ms_is_prod = h_tr_ms * h_tr_is
         self.derived_h_ms_is_prod = self.h_tr_ms.clone() * self.h_tr_is.clone();
 
-        // den = h_ms_is_prod + term_rest_1 * (h_ext_air + h_tr_floor)
-        let total_h_ext = h_ext_air + self.h_tr_floor.clone();
+        // den = h_ms_is_prod + term_rest_1 * (h_ext_air + h_tr_floor + thermal_bridge)
+        let total_h_ext = h_ext_air
+            + self.h_tr_floor.clone()
+            + self
+                .temperatures
+                .constant_like(self.thermal_bridge_coefficient);
         self.derived_den =
             self.derived_h_ms_is_prod.clone() + self.derived_term_rest_1.clone() * total_h_ext;
 
@@ -890,26 +903,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             }
         }
 
-        // Use solar_distribution_to_air to split radiative gains.
+        // Use solar distribution fractions to split gains.
         // In ASHRAE 140, solar gains are primarily radiative.
         // We separate internal gains (which have a convective fraction) from solar gains.
         let internal_gains_watts = self.loads.clone() * self.zone_area.clone();
         let solar_gains_watts = self.solar_loads.clone() * self.zone_area.clone();
 
         // 1. Internal Gains Distribution
-        // phi_ia gets convective portion of internal gains
         let phi_ia_internal = internal_gains_watts.clone() * self.convective_fraction;
-        // radiative portion goes to surfaces (phi_st)
         let phi_st_internal = internal_gains_watts * (1.0 - self.convective_fraction);
 
-        // 2. Solar Gains Distribution (100% radiative for ASHRAE 140)
-        // solar_distribution_to_air represents fraction of solar gain to surfaces (phi_st)
-        // remainder goes to thermal mass (phi_m)
-        let phi_st_solar = solar_gains_watts.clone() * self.solar_distribution_to_air;
-        let phi_m_solar = solar_gains_watts * (1.0 - self.solar_distribution_to_air);
+        // 2. Solar Gains Distribution
+        // Split among air (convective), surfaces (radiative), and thermal mass (storage)
+        let phi_ia_solar = solar_gains_watts.clone() * self.solar_convective_fraction;
+        let phi_st_solar = solar_gains_watts.clone() * self.solar_surface_fraction;
+        let phi_m_solar = solar_gains_watts
+            * (1.0 - self.solar_convective_fraction - self.solar_surface_fraction);
 
         // 3. Combine Gains
-        let phi_ia = phi_ia_internal;
+        let phi_ia = phi_ia_internal + phi_ia_solar;
         let phi_st = phi_st_internal + phi_st_solar;
         let phi_m = phi_m_solar;
 
@@ -918,24 +930,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Use pre-computed cached values to avoid redundant allocations
         let term_rest_1 = &self.derived_term_rest_1;
 
-        // If h_ve changed, we need to adjust h_ext and den
+        // If h_ve or thermal bridge changed, we need to adjust h_ext and den
         let (h_ext, den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let current_h_ext = self.h_tr_w.clone() + current_h_ve.clone();
+                let current_h_ext = self.h_tr_w.clone()
+                    + current_h_ve.clone()
+                    + self
+                        .temperatures
+                        .constant_like(self.thermal_bridge_coefficient);
                 let total_h_ext = current_h_ext.clone() + self.h_tr_floor.clone();
                 let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * total_h_ext;
                 let sens_val = term_rest_1.clone() / den_val.clone();
                 (current_h_ext, den_val, sens_val)
             } else {
                 (
-                    self.derived_h_ext.clone(),
+                    self.derived_h_ext.clone()
+                        + self
+                            .temperatures
+                            .constant_like(self.thermal_bridge_coefficient),
                     self.derived_den.clone(),
                     self.derived_sensitivity.clone(),
                 )
             }
         } else {
             (
-                self.derived_h_ext.clone(),
+                self.derived_h_ext.clone()
+                    + self
+                        .temperatures
+                        .constant_like(self.thermal_bridge_coefficient),
                 self.derived_den.clone(),
                 self.derived_sensitivity.clone(),
             )
@@ -1014,7 +1036,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
-        // Calculate surface temperature for mass update
+        // Calculate ACTUAL surface temperature for mass update
         // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
         let ts_num_act = self.h_tr_ms.clone() * self.mass_temperatures.clone()
             + self.h_tr_is.clone() * t_i_act.clone()
@@ -1172,17 +1194,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_ia_internal = internal_watts.clone() * self.convective_fraction;
         let phi_st_internal = internal_watts * (1.0 - self.convective_fraction);
 
-        let phi_st_solar = solar_watts.clone() * self.solar_distribution_to_air;
-        let _phi_m_solar = solar_watts * (1.0 - self.solar_distribution_to_air);
+        let phi_ia_solar = solar_watts.clone() * self.solar_convective_fraction;
+        let phi_st_solar = solar_watts.clone() * self.solar_surface_fraction;
+        let _phi_m_solar =
+            solar_watts * (1.0 - self.solar_convective_fraction - self.solar_surface_fraction);
 
-        let phi_ia = phi_ia_internal;
+        let phi_ia = phi_ia_internal + phi_ia_solar;
         let phi_st = phi_st_internal + phi_st_solar;
 
-        let h_ext = self.h_tr_w.clone() + current_h_ve;
+        let h_ext = self.h_tr_w.clone()
+            + current_h_ve
+            + self
+                .temperatures
+                .constant_like(self.thermal_bridge_coefficient);
         let term_rest_1 = &self.derived_term_rest_1;
 
-        let den = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * (h_ext.clone() + self.h_tr_floor.clone());
+        // Denominator must include both exterior air, thermal bridge, and ground coupling
+        let total_h_ext = h_ext.clone() + self.h_tr_floor.clone();
+        let den = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * total_h_ext;
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();

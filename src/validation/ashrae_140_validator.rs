@@ -242,6 +242,7 @@ impl ASHRAE140Validator {
             // For zones without internal loads specified, use first zone's value
             let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
             let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+
             for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
                 let internal_gains = spec
                     .internal_loads
