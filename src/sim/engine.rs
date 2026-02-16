@@ -185,7 +185,6 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
     }
 }
 
-
 impl ThermalModel<VectorField> {
     /// Create a new ThermalModel from an ASHRAE 140 case specification.
     pub fn from_spec(spec: &CaseSpec) -> Self {
@@ -355,15 +354,14 @@ impl ThermalModel<VectorField> {
                 }
             }
 
-            let h_tr_op = opaque_wall_area * wall_u
-                + z_floor_area * roof_u;
-            
+            let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u;
+
             // Calculate em by subtracting other series resistances
             // Thermal bridge is handled separately as direct air-to-exterior bypass
             let r_op = 1.0 / h_tr_op;
             let r_ms = 1.0 / h_tr_ms_val;
             let r_is = 1.0 / h_tr_is_val;
-            
+
             let h_tr_em_val = 1.0 / (r_op - r_ms - r_is).max(0.01);
             h_tr_em_vec.push(h_tr_em_val);
 
@@ -393,7 +391,6 @@ impl ThermalModel<VectorField> {
         // Solar gain distribution (ASHRAE 140 calibration)
         model.solar_distribution_to_air = 0.5; // Calibrated
         model.solar_loads = VectorField::from_scalar(0.0, num_zones);
-
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
         if num_zones > 1 && !spec.common_walls.is_empty() {
@@ -524,7 +521,6 @@ impl ThermalModel<VectorField> {
             derived_sensitivity: VectorField::from_scalar(0.0, num_zones),
         };
 
-
         model.update_derived_parameters();
         model
     }
@@ -593,14 +589,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.derived_h_ms_is_prod = self.h_tr_ms.clone() * self.h_tr_is.clone();
 
         // den = h_ms_is_prod + term_rest_1 * (h_ext_air + h_tr_floor + thermal_bridge)
-        let total_h_ext = h_ext_air + self.h_tr_floor.clone() + self.temperatures.constant_like(self.thermal_bridge_coefficient);
+        let total_h_ext = h_ext_air
+            + self.h_tr_floor.clone()
+            + self
+                .temperatures
+                .constant_like(self.thermal_bridge_coefficient);
         self.derived_den =
             self.derived_h_ms_is_prod.clone() + self.derived_term_rest_1.clone() * total_h_ext;
 
         // sensitivity = term_rest_1 / den
         self.derived_sensitivity = self.derived_term_rest_1.clone() / self.derived_den.clone();
     }
-
 
     /// Updates model parameters based on a gene vector from an optimizer.
     ///
@@ -868,21 +867,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // If h_ve or thermal bridge changed, we need to adjust h_ext and den
         let (h_ext, den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let current_h_ext = self.h_tr_w.clone() + current_h_ve.clone() + self.temperatures.constant_like(self.thermal_bridge_coefficient);
+                let current_h_ext = self.h_tr_w.clone()
+                    + current_h_ve.clone()
+                    + self
+                        .temperatures
+                        .constant_like(self.thermal_bridge_coefficient);
                 let total_h_ext = current_h_ext.clone() + self.h_tr_floor.clone();
                 let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * total_h_ext;
                 let sens_val = term_rest_1.clone() / den_val.clone();
                 (current_h_ext, den_val, sens_val)
             } else {
                 (
-                    self.derived_h_ext.clone() + self.temperatures.constant_like(self.thermal_bridge_coefficient),
+                    self.derived_h_ext.clone()
+                        + self
+                            .temperatures
+                            .constant_like(self.thermal_bridge_coefficient),
                     self.derived_den.clone(),
                     self.derived_sensitivity.clone(),
                 )
             }
         } else {
             (
-                self.derived_h_ext.clone() + self.temperatures.constant_like(self.thermal_bridge_coefficient),
+                self.derived_h_ext.clone()
+                    + self
+                        .temperatures
+                        .constant_like(self.thermal_bridge_coefficient),
                 self.derived_den.clone(),
                 self.derived_sensitivity.clone(),
             )
@@ -966,7 +975,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.temperatures = t_i_act;
 
         hvac_energy_for_step / 3.6e6 // Return kWh
-
     }
 
     /// Solves a single timestep of the thermal simulation.
@@ -1114,7 +1122,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_ia = phi_ia_internal;
         let phi_st = phi_st_internal + phi_st_solar;
 
-        let h_ext = self.h_tr_w.clone() + current_h_ve + self.temperatures.constant_like(self.thermal_bridge_coefficient);
+        let h_ext = self.h_tr_w.clone()
+            + current_h_ve
+            + self
+                .temperatures
+                .constant_like(self.thermal_bridge_coefficient);
         let term_rest_1 = &self.derived_term_rest_1;
 
         // Denominator must include both exterior air, thermal bridge, and ground coupling
@@ -1150,14 +1162,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
         let phi_ia_with_iz = phi_ia + q_iz_tensor;
 
-        let num_rest = term_rest_1.clone() * (h_ext * t_e + phi_ia_with_iz + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g));
+        let num_rest = term_rest_1.clone()
+            * (h_ext * t_e
+                + phi_ia_with_iz
+                + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g));
 
         let t_i_free = (num_tm + num_phi_st + num_rest) / den;
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]
     }
-
 }
 
 #[cfg(test)]

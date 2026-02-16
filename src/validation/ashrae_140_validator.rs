@@ -262,7 +262,6 @@ impl ASHRAE140Validator {
             model.set_loads(&internal_loads_per_zone);
             model.set_solar_loads(&solar_loads_per_zone);
 
-
             let hvac_energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
             let hvac_energy_joules = hvac_energy_kwh * 3.6e6;
 
