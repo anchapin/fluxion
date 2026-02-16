@@ -409,7 +409,7 @@ impl ThermalModel<VectorField> {
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
             night_ventilation_ach: None,                  // No night ventilation by default
-            solar_distribution_to_air: 0.5, // Default 50% to air
+            solar_distribution_to_air: 0.5,               // Default 50% to air
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
@@ -957,8 +957,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
         let phi_ia_with_iz = phi_ia + q_iz_tensor;
 
-        let num_rest = term_rest_1.clone()
-            * (h_ext.clone() * t_e.clone() + phi_ia_with_iz)
+        let num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia_with_iz)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
         let t_i_free = (num_tm + num_phi_st + num_rest) / den.clone();

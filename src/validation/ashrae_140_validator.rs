@@ -89,7 +89,7 @@ impl ASHRAE140Validator {
 
         // Check if this is a free-floating case (no HVAC for zone 0)
         let is_free_floating = spec.is_free_floating();
-        
+
         // For free-floating cases, disable HVAC by setting extreme setpoints
         if is_free_floating {
             model.heating_setpoint = -999.0;
