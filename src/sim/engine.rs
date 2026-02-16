@@ -192,7 +192,6 @@ impl ThermalModel<VectorField> {
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];
         let floor_area = geometry.floor_area();
-        let volume = geometry.volume();
         let wall_area = geometry.wall_area();
         let total_window_area = spec.total_window_area();
 
@@ -289,9 +288,9 @@ impl ThermalModel<VectorField> {
             h_tr_floor_vec.push(h_tr_floor_val);
         }
 
-        model.h_tr_w = VectorField::new(h_tr_w_vec).into();
-        model.h_ve = VectorField::new(h_ve_vec).into();
-        model.h_tr_floor = VectorField::new(h_tr_floor_vec).into();
+        model.h_tr_w = VectorField::new(h_tr_w_vec);
+        model.h_ve = VectorField::new(h_ve_vec);
+        model.h_tr_floor = VectorField::new(h_tr_floor_vec);
 
         // ISO 13790 5R1C Mapping - CALIBRATED FOR ASHRAE 140
         let mut h_tr_em_vec = Vec::with_capacity(num_zones);
@@ -348,10 +347,10 @@ impl ThermalModel<VectorField> {
             thermal_cap_vec.push(wall_cap + roof_cap + floor_cap + air_cap);
         }
 
-        model.h_tr_is = VectorField::new(h_tr_is_vec).into();
-        model.h_tr_ms = VectorField::new(h_tr_ms_vec).into();
-        model.h_tr_em = VectorField::new(h_tr_em_vec).into();
-        model.thermal_capacitance = VectorField::new(thermal_cap_vec).into();
+        model.h_tr_is = VectorField::new(h_tr_is_vec);
+        model.h_tr_ms = VectorField::new(h_tr_ms_vec);
+        model.h_tr_em = VectorField::new(h_tr_em_vec);
+        model.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
         // Internal loads - access first element
         if let Some(ref loads) = spec.internal_loads[0] {
@@ -391,7 +390,7 @@ impl ThermalModel<VectorField> {
             for i in 0..num_zones {
                 areas.push(spec.geometry[i].floor_area());
             }
-            model.zone_area = VectorField::new(areas).into();
+            model.zone_area = VectorField::new(areas);
         }
 
         model.update_optimization_cache();
