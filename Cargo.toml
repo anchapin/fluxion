@@ -58,6 +58,10 @@ harness = false
 name = "engine_bench"
 harness = false
 
+[[bench]]
+name = "cta_perf_comparison"
+harness = false
+
 [profile.release]
 opt-level = 3
 lto = true
