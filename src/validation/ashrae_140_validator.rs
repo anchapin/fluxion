@@ -28,16 +28,29 @@ impl ASHRAE140Validator {
         let benchmark_data = benchmark::get_all_benchmark_data();
         let weather = DenverTmyWeather::new();
 
-        // Cases to validate
+        // Cases to validate - all 18 ASHRAE 140 cases
         let cases = vec![
+            // Low mass cases (600 series)
             ASHRAE140Case::Case600,
             ASHRAE140Case::Case610,
             ASHRAE140Case::Case620,
             ASHRAE140Case::Case630,
+            ASHRAE140Case::Case640,
+            ASHRAE140Case::Case650,
+            ASHRAE140Case::Case600FF,
+            ASHRAE140Case::Case650FF,
+            // High mass cases (900 series)
             ASHRAE140Case::Case900,
             ASHRAE140Case::Case910,
             ASHRAE140Case::Case920,
             ASHRAE140Case::Case930,
+            ASHRAE140Case::Case940,
+            ASHRAE140Case::Case950,
+            ASHRAE140Case::Case900FF,
+            ASHRAE140Case::Case950FF,
+            // Special cases
+            ASHRAE140Case::Case960,
+            ASHRAE140Case::Case195,
         ];
 
         for case in cases {
@@ -72,6 +85,7 @@ impl ASHRAE140Validator {
     fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
         const STEPS: usize = 8760;
+        let num_zones = model.num_zones;
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
@@ -83,57 +97,74 @@ impl ASHRAE140Validator {
             let weather_data = weather.get_hourly_data(step).unwrap();
 
             // Calculate solar gains for all windows in the spec
-            let mut total_solar_gain = 0.0;
-            // spec.windows is now Vec<Vec<WindowArea>>, iterate over first zone's windows
-            for win_area in &spec.windows[0] {
-                let props = WindowProperties::new(
-                    win_area.area,
-                    spec.window_properties.shgc,
-                    spec.window_properties.normal_transmittance,
-                );
+            // For multi-zone, sum across all zones
+            let mut total_solar_gain_per_zone: Vec<f64> = vec![0.0; num_zones];
+            for (zone_idx, zone_windows) in spec.windows.iter().enumerate() {
+                if zone_idx >= num_zones {
+                    break;
+                }
+                for win_area in zone_windows {
+                    let props = WindowProperties::new(
+                        win_area.area,
+                        spec.window_properties.shgc,
+                        spec.window_properties.normal_transmittance,
+                    );
 
-                // Find matching surface to get shading devices
-                // This is a bit inefficient but works for validation
-                let mut overhang = None;
-                let mut fins = Vec::new();
-                for zone_surfaces in &model.surfaces {
-                    for surf in zone_surfaces {
-                        if surf.orientation == win_area.orientation {
-                            overhang = surf.overhang.as_ref();
-                            fins = surf.fins.clone();
-                            break;
+                    // Find matching surface to get shading devices
+                    let mut overhang = None;
+                    let mut fins = Vec::new();
+                    if let Some(zone_surfaces) = model.surfaces.get(zone_idx) {
+                        for surf in zone_surfaces {
+                            if surf.orientation == win_area.orientation {
+                                overhang = surf.overhang.as_ref();
+                                fins = surf.fins.clone();
+                                break;
+                            }
                         }
                     }
-                }
 
-                let (_, _, gain) = calculate_hourly_solar(
-                    39.7392,
-                    -104.9903,
-                    2024,
-                    (day_of_year as u32) / 30 + 1,
-                    day_of_year as u32,
-                    hour_of_day as f64 + 0.5,
-                    weather_data.dni,
-                    weather_data.dhi,
-                    &props,
-                    Some(win_area),
-                    overhang,
-                    &fins,
-                    win_area.orientation,
-                    Some(0.2),
-                );
-                total_solar_gain += gain;
+                    let (_, _, gain) = calculate_hourly_solar(
+                        39.7392,
+                        -104.9903,
+                        2024,
+                        (day_of_year as u32) / 30 + 1,
+                        day_of_year as u32,
+                        hour_of_day as f64 + 0.5,
+                        weather_data.dni,
+                        weather_data.dhi,
+                        &props,
+                        Some(win_area),
+                        overhang,
+                        &fins,
+                        win_area.orientation,
+                        Some(0.2),
+                    );
+                    total_solar_gain_per_zone[zone_idx] += gain;
+                }
             }
 
-            // Access first element of internal_loads Vec
-            let internal_gains = spec.internal_loads[0]
-                .as_ref()
-                .map_or(0.0, |l| l.total_load);
-            let total_loads = internal_gains + total_solar_gain;
+            // Calculate loads per zone (internal gains + solar)
+            // For zones without internal loads specified, use first zone's value
+            let mut loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+            for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
+                let internal_gains = spec
+                    .internal_loads
+                    .get(zone_idx)
+                    .or(spec.internal_loads.first())
+                    .and_then(|l| l.as_ref())
+                    .map_or(0.0, |l| l.total_load);
 
-            // Access first element of geometry Vec
-            let floor_area = spec.geometry[0].floor_area();
-            model.set_loads(&[total_loads / floor_area]);
+                let floor_area = spec
+                    .geometry
+                    .get(zone_idx)
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
+
+                let total_load = internal_gains + solar_gain;
+                loads_per_zone.push(total_load / floor_area);
+            }
+
+            model.set_loads(&loads_per_zone);
 
             let hvac_energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
             let hvac_energy_joules = hvac_energy_kwh * 3.6e6;
