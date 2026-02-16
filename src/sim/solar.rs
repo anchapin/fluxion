@@ -91,7 +91,7 @@ pub fn calculate_solar_position(
         -lat_rad.sin() * zenith_rad.cos() - decl_rad.sin() * lat_rad.cos() * zenith_rad.sin();
 
     let mut az = sin_az.atan2(cos_az).to_degrees();
-    // atan2 returns values in (-180, 180]. 
+    // atan2 returns values in (-180, 180].
     // Convert to [0, 360) convention (0=North, 90=East, 180=South, 270=West)
     if az < 0.0 {
         az += 360.0;
