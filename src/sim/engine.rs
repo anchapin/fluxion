@@ -449,7 +449,7 @@ impl ThermalModel<VectorField> {
             h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
-            ground_temperature: Box::new(crate::weather::mod_::ConstantGroundTemperature::new(
+            ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
                 10.0,
             )),
             h_tr_iz: VectorField::from_scalar(0.0, num_zones),
