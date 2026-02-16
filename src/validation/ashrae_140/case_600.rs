@@ -235,7 +235,7 @@ impl Case600Model {
 
             // Solve physics for this hour
             let hvac_energy_kwh = self.model.step_physics(step, dry_bulb);
-            let hvac_energy_joules = hvac_energy_kwh * 3.6e6; // kWh → J
+            let hvac_energy_joules = (hvac_energy_kwh.0 + hvac_energy_kwh.1) * 3.6e6; // kWh → J
 
             // Classify heating vs cooling based on outdoor temperature
             // If outdoor temp is below heating setpoint, assume heating is needed
