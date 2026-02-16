@@ -1,7 +1,7 @@
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
-use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
+use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, Orientation};
 use crate::validation::benchmark;
 use crate::validation::report::{BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
@@ -59,6 +59,11 @@ impl ASHRAE140Validator {
                 let spec = case.spec();
                 let results = self.simulate_case(&spec, &weather);
 
+                println!("Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2})", 
+                    case_id, 
+                    results.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+                    results.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max);
+
                 report.add_result_simple(
                     &case_id,
                     MetricType::AnnualHeating,
@@ -104,6 +109,18 @@ impl ASHRAE140Validator {
         for step in 0..STEPS {
             let hour_of_day = step % 24;
             let day_of_year = step / 24 + 1;
+            
+            // Correctly calculate month and day from day_of_year
+            let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            let mut month = 1;
+            let mut day = day_of_year;
+            for (i, &days) in days_in_month.iter().enumerate() {
+                if day <= days as usize {
+                    month = i + 1;
+                    break;
+                }
+                day -= days as usize;
+            }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
 
@@ -138,8 +155,8 @@ impl ASHRAE140Validator {
                         39.7392,
                         -104.9903,
                         2024,
-                        (day_of_year as u32) / 30 + 1,
-                        day_of_year as u32,
+                        month as u32,
+                        day as u32,
                         hour_of_day as f64 + 0.5,
                         weather_data.dni,
                         weather_data.dhi,
@@ -152,6 +169,37 @@ impl ASHRAE140Validator {
                     );
                     total_solar_gain_per_zone[zone_idx] += gain;
                 }
+                
+                // --- Opaque Solar Gains (Walls + Roof) ---
+                // ASHRAE 140 Case 600: Absorptance = 0.6
+                let alpha = 0.6;
+                let wall_area = spec.geometry[zone_idx].wall_area();
+                let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
+                let opaque_wall_area = wall_area - window_area;
+                let roof_area = spec.geometry[zone_idx].roof_area();
+                
+                // Average solar gain on opaque walls (approximate)
+                // We calculate for all 4 orientations
+                for orientation in [Orientation::South, Orientation::West, Orientation::North, Orientation::East] {
+                    let (_, irr, _) = calculate_hourly_solar(
+                        39.7392, -104.9903, 2024, month as u32, day as u32, hour_of_day as f64 + 0.5,
+                        weather_data.dni, weather_data.dhi,
+                        &WindowProperties::new(0.0, 0.0, 0.0), // No window
+                        None, None, &[], orientation, Some(0.2)
+                    );
+                    // Opaque gain = Area * irr * alpha * R_ext_total
+                    // Simplified: just add to total gain, ThermalModel will distribute it
+                    total_solar_gain_per_zone[zone_idx] += (opaque_wall_area / 4.0) * irr.total_wm2 * alpha * 0.03; // 0.1 factor for exterior film resistance
+                }
+                
+                // Roof gain
+                let (_, irr_roof, _) = calculate_hourly_solar(
+                    39.7392, -104.9903, 2024, month as u32, day as u32, hour_of_day as f64 + 0.5,
+                    weather_data.dni, weather_data.dhi,
+                    &WindowProperties::new(0.0, 0.0, 0.0),
+                    None, None, &[], Orientation::Up, Some(0.2)
+                );
+                total_solar_gain_per_zone[zone_idx] += roof_area * irr_roof.total_wm2 * alpha * 0.03;
             }
 
             // Calculate loads per zone (internal gains + solar)
@@ -184,7 +232,7 @@ impl ASHRAE140Validator {
             if !is_free_floating {
                 // Get the free-floating temperature BEFORE HVAC is applied
                 // This tells us whether heating or cooling is needed
-                let t_i_free = model.calculate_free_float_temperature(weather_data.dry_bulb_temp);
+                let t_i_free = model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
 
                 // Determine HVAC mode based on FREE-FLOATING temperature
                 if t_i_free < model.heating_setpoint {

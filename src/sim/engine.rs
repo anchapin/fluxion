@@ -286,41 +286,32 @@ impl ThermalModel<VectorField> {
         model.h_tr_floor = VectorField::from_scalar(h_tr_floor_val, num_zones);
 
         // ISO 13790 5R1C Mapping - CALIBRATED FOR ASHRAE 140
-        // The standard ISO 13790 values (3.45, 9.1) often need calibration
-        // for specific building types.
         let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
         
-        // h_is: Surface-to-air conductance. ASHRAE 140 specifies interior film 
-        // coefficient of 8.29 W/m²K. ISO 13790 uses 3.45 as a combined value.
-        // For better match with reference, we use a value closer to the film coeff.
-        let h_is = 4.5; // Calibrated from 3.45 -> 4.5 W/m²K
-
+        // h_is: Surface-to-air conductance. ISO 13790 standard value is 3.45 W/m²K.
+        let h_is = 3.45; 
         model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
         
-        // h_ms: Mass-to-surface conductance. 
-        // Standard ISO 13790 value is 9.1 W/m²K.
-        // For ASHRAE 140, 9.1 is often too low for low-mass and too high for high-mass.
-        let h_ms = match spec.case_id.starts_with('9') {
-            true => 12.0, // High mass: higher coupling to concrete
-            false => 8.0, // Low mass: lower coupling to lightweight layers
+        // h_ms: Mass-to-surface conductance. ISO 13790 standard value is 9.1 W/m²K.
+        // It depends on the effective mass area A_m.
+        // For ASHRAE 140 low-mass, A_m is approx 2.5 * floor_area.
+        // For high-mass, A_m is approx 3.0 * floor_area.
+        let a_m = if spec.case_id.starts_with('9') {
+            3.5 * floor_area
+        } else {
+            2.5 * floor_area
         };
-        model.h_tr_ms = VectorField::from_scalar(h_ms * area_tot, num_zones);
+        let h_ms = 9.1;
+        model.h_tr_ms = VectorField::from_scalar(h_ms * a_m, num_zones);
 
-        // h_tr_em = Opaque conductance (Walls + Roof)
-        // We need to account for the split between h_tr_em and h_tr_ms/h_tr_is
+        // h_tr_em = Opaque conductance (Exterior to Mass)
+        // ISO 13790: h_tr_em = 1 / (1/h_tr_op - 1/h_tr_ms)
         let wall_u = spec.construction.wall.u_value(None);
         let roof_u = spec.construction.roof.u_value(None);
         let opaque_wall_area = wall_area - total_window_area;
+        let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u;
         
-        // Total opaque conductance
-        let h_op_total = opaque_wall_area * wall_u + floor_area * roof_u;
-        
-        // In 5R1C, h_tr_em represents the exterior part of the opaque conductance.
-        // h_op_total = 1 / (1/h_tr_em + 1/h_tr_ms + 1/h_tr_is)
-        // So h_tr_em = 1 / (1/h_op_total - 1/h_tr_ms - 1/h_tr_is)
-        let r_ms_is = 1.0 / (h_ms * area_tot) + 1.0 / (h_is * area_tot);
-        let h_tr_em_val = 1.0 / ((1.0 / h_op_total) - r_ms_is);
-
+        let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
         model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
 
         // Thermal Capacitance (Air + Structure)
@@ -339,6 +330,9 @@ impl ThermalModel<VectorField> {
 
         // Night ventilation
         model.night_ventilation = spec.night_ventilation;
+
+        // Solar gain distribution (ASHRAE 140 calibration)
+        model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
         if num_zones > 1 && !spec.common_walls.is_empty() {
@@ -763,9 +757,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             }
         }
 
-        // Distribute internal gains based on convective fraction
+        // Distribute internal and solar gains
+        // ISO 13790: distribute gains between air node, surface node and mass node
+        // phi_ia: convective part to air
+        // phi_rad_total: radiative part to be split between surface and mass
         let phi_ia = loads_watts.clone() * self.convective_fraction;
-        let phi_st = loads_watts.clone() * (1.0 - self.convective_fraction);
+        let phi_rad_total = loads_watts.clone() * (1.0 - self.convective_fraction);
+        
+        // Use solar_distribution_to_air to split radiative gains.
+        // In this simplified model, solar_distribution_to_air represents 
+        // the fraction of RADIATIVE gains that stay at the surface/air level.
+        // The remainder goes to the mass node.
+        let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air;
+        let phi_m = phi_rad_total * (1.0 - self.solar_distribution_to_air);
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -872,7 +876,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let t_s_free = ts_num_free / term_rest_1.clone();
 
         let q_m_net = self.h_tr_em.clone() * (t_e - self.mass_temperatures.clone())
-            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone());
+            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone())
+            + phi_m; // Add gain directly to mass node
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
         self.temperatures = t_i_act;
@@ -989,27 +994,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
     /// Calculate the free-floating temperature (without HVAC).
     ///
-    /// This calculates what the indoor temperature would be if no HVAC were operating,
-    /// based on the current loads and external conditions. Used for determining
-    /// whether heating or cooling energy was consumed.
-    ///
     /// # Arguments
     ///
+    /// * `timestep` - Current timestep index
     /// * `outdoor_temp` - Outdoor air temperature (°C)
     ///
     /// # Returns
     ///
     /// Free-floating zone temperature (°C)
-    pub fn calculate_free_float_temperature(&self, outdoor_temp: f64) -> f64 {
+    pub fn calculate_free_float_temperature(&self, timestep: usize, outdoor_temp: f64) -> f64 {
         // Use the same calculation as in step_physics
         let t_e = self.temperatures.constant_like(outdoor_temp);
-        let t_g = self.ground_temperature.ground_temperature(0);
+        let t_g = self.ground_temperature.ground_temperature(timestep);
 
         // --- Dynamic Ventilation (Night Ventilation) ---
-        // Assume hour 0 for free-float calculation if no hour provided
+        let hour_of_day = (timestep % 24) as u8;
         let mut current_h_ve = self.h_ve.clone();
         if let Some(night_vent) = &self.night_ventilation {
-            if night_vent.is_active_at_hour(0) {
+            if night_vent.is_active_at_hour(hour_of_day) {
                 let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
                 let h_ve_vent = air_cap_vent / 3600.0;
                 current_h_ve = current_h_ve + self.temperatures.constant_like(h_ve_vent);
