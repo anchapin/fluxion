@@ -1945,7 +1945,7 @@ mod tests {
 #[cfg(test)]
 mod inter_zone_tests {
     use super::*;
-
+    use crate::validation::ASHRAE140Case;
 
     #[test]
     fn test_inter_zone_heat_transfer_basic() {
