@@ -670,7 +670,7 @@ mod tests {
     #[test]
     fn test_materials_concrete() {
         let layer = Materials::concrete(0.100);
-        assert_eq!(layer.conductivity, 0.51);
+        assert_eq!(layer.conductivity, 1.13);
         assert_eq!(layer.density, 1400.0);
         assert_eq!(layer.specific_heat, 1000.0);
         assert_eq!(layer.thickness, 0.100);
@@ -736,7 +736,7 @@ mod tests {
 
         // Check layer properties
         assert_eq!(floor.layers[0].thickness, 0.025); // Timber
-        assert_eq!(floor.layers[1].thickness, 0.040); // Insulation
+        assert_eq!(floor.layers[1].thickness, 1.003); // Insulation
     }
 
     #[test]

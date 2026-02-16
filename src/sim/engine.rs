@@ -1319,7 +1319,7 @@ mod tests {
         model.set_loads(&test_loads);
 
         let energy = model.step_physics(0, 20.0);
-        assert!(energy > 0.0);
+        assert!(energy.0 + energy.1 > 0.0);
         assert_eq!(model.loads.as_ref(), test_loads.as_slice());
     }
 
@@ -1345,7 +1345,8 @@ mod tests {
 
         // Using set_loads + step_physics manually
         model2.calc_analytical_loads(0, true);
-        let energy2 = model2.step_physics(0, 20.0);
+        let (h, c) = model2.step_physics(0, 20.0);
+        let energy2 = h + c;
 
         // Results should be identical
         assert!(
@@ -1999,7 +2000,7 @@ mod tests {
 #[cfg(test)]
 mod inter_zone_tests {
     use super::*;
-
+    use crate::validation::ASHRAE140Case;
 
     #[test]
     fn test_inter_zone_heat_transfer_basic() {
