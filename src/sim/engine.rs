@@ -112,6 +112,14 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub hvac_system_mode: HvacSystemMode,
     /// Night ventilation schedule (if applicable)
     pub night_ventilation_ach: Option<f64>,
+
+    // Optimization cache (derived from physical parameters)
+    // These fields are pre-computed to avoid redundant calculations in step_physics
+    pub derived_h_ext: T,
+    pub derived_term_rest_1: T,
+    pub derived_h_ms_is_prod: T,
+    pub derived_den: T,
+    pub derived_sensitivity: T,
 }
 
 // Manual Clone implementation for ThermalModel
@@ -148,6 +156,13 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_tr_iz: self.h_tr_iz.clone(),
             hvac_system_mode: self.hvac_system_mode,
             night_ventilation_ach: self.night_ventilation_ach,
+
+            // Clone optimization cache
+            derived_h_ext: self.derived_h_ext.clone(),
+            derived_term_rest_1: self.derived_term_rest_1.clone(),
+            derived_h_ms_is_prod: self.derived_h_ms_is_prod.clone(),
+            derived_den: self.derived_den.clone(),
+            derived_sensitivity: self.derived_sensitivity.clone(),
         }
     }
 }
@@ -300,6 +315,7 @@ impl ThermalModel<VectorField> {
             }
         }
 
+        model.update_optimization_cache();
         model
     }
 
@@ -385,6 +401,13 @@ impl ThermalModel<VectorField> {
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
             night_ventilation_ach: None,                  // No night ventilation by default
+
+            // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
+            derived_h_ext: VectorField::from_scalar(0.0, num_zones),
+            derived_term_rest_1: VectorField::from_scalar(0.0, num_zones),
+            derived_h_ms_is_prod: VectorField::from_scalar(0.0, num_zones),
+            derived_den: VectorField::from_scalar(0.0, num_zones),
+            derived_sensitivity: VectorField::from_scalar(0.0, num_zones),
         };
 
         model.update_derived_parameters();
@@ -435,6 +458,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Structure assumption: 200 kJ/m²K per m² floor area
         let structure_cap = self.zone_area.clone() * 200_000.0;
         self.thermal_capacitance = air_cap + structure_cap;
+
+        // Update optimization cache
+        self.update_optimization_cache();
+    }
+
+    /// Pre-computes derived values used in the inner simulation loop to avoid redundant calculations.
+    ///
+    /// This should be called whenever physical parameters (conductances) are modified.
+    pub fn update_optimization_cache(&mut self) {
+        // h_ext = h_tr_w + h_ve
+        self.derived_h_ext = self.h_tr_w.clone() + self.h_ve.clone();
+
+        // term_rest_1 = h_tr_ms + h_tr_is
+        self.derived_term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
+
+        // h_ms_is_prod = h_tr_ms * h_tr_is
+        self.derived_h_ms_is_prod = self.h_tr_ms.clone() * self.h_tr_is.clone();
+
+        // den = h_ms_is_prod + term_rest_1 * h_ext
+        self.derived_den = self.derived_h_ms_is_prod.clone()
+            + self.derived_term_rest_1.clone() * self.derived_h_ext.clone();
+
+        // sensitivity = term_rest_1 / den
+        self.derived_sensitivity = self.derived_term_rest_1.clone() / self.derived_den.clone();
     }
 
     /// Updates model parameters based on a gene vector from an optimizer.
@@ -652,11 +699,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
-        let h_ext = self.h_tr_w.clone() + self.h_ve.clone();
-        let term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
-        let den = self.h_tr_ms.clone() * self.h_tr_is.clone() + term_rest_1.clone() * h_ext.clone();
+        // Use pre-computed cached values to avoid redundant allocations
+        let h_ext = &self.derived_h_ext;
+        let term_rest_1 = &self.derived_term_rest_1;
+        let den = &self.derived_den;
 
-        let num_tm = self.h_tr_ms.clone() * self.h_tr_is.clone() * self.mass_temperatures.clone();
+        let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
@@ -705,14 +753,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
 
         // 3. HVAC Calculation
-        let sensitivity = term_rest_1.clone() / den.clone();
+        // Use cached sensitivity
+        let sensitivity = &self.derived_sensitivity;
         let hour_of_day = timestep % 24;
-        let hvac_output = self.hvac_power_demand(hour_of_day, &t_i_free, &sensitivity);
+        let hvac_output = self.hvac_power_demand(hour_of_day, &t_i_free, sensitivity);
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val.abs()) * dt;
 
         // 4. Update Temperatures
         let phi_ia_act = phi_ia + hvac_output;
-        let num_rest_act = term_rest_1 * (h_ext * t_e.clone() + phi_ia_act)
+        let num_rest_act = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia_act)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
         let t_i_act = (num_tm + num_phi_st.clone() + num_rest_act) / den.clone();
@@ -721,10 +770,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate free-running surface temperature for mass update
         // This prevents HVAC energy from being stored in thermal mass
+        // ts_num_free = h_tr_ms * mass_temp + h_tr_is * t_i_free + phi_st
         let ts_num_free = self.h_tr_ms.clone() * self.mass_temperatures.clone()
             + self.h_tr_is.clone() * t_i_free.clone()
             + phi_st.clone();
-        let t_s_free = ts_num_free / (self.h_tr_ms.clone() + self.h_tr_is.clone());
+        // Denominator is term_rest_1
+        let t_s_free = ts_num_free / term_rest_1.clone();
 
         let q_m_net = self.h_tr_em.clone() * (t_e - self.mass_temperatures.clone())
             + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone());
@@ -1624,7 +1675,7 @@ mod inter_zone_tests {
     fn test_inter_zone_heat_transfer_basic() {
         // Test that inter-zone heat transfer is calculated
         let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Check inter-zone conductance is set
         let h_iz = model.h_tr_iz.as_ref();

@@ -155,6 +155,9 @@ impl Case600Model {
         model.temperatures = VectorField::from_scalar(20.0, 1);
         model.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
+        // Update optimization cache since we manually modified conductances
+        model.update_optimization_cache();
+
         // Create Denver TMY weather source
         let weather = DenverTmyWeather::new();
 
