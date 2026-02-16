@@ -45,7 +45,7 @@ impl SolarPosition {
 /// Calculate solar position using the NOAA solar calculator algorithm.
 pub fn calculate_solar_position(
     latitude_deg: f64,
-    longitude_deg: f64,
+    _longitude_deg: f64,
     year: i32,
     month: u32,
     day: u32,
@@ -64,7 +64,7 @@ pub fn calculate_solar_position(
     let gamma = 2.0 * std::f64::consts::PI * (day_of_year_f - 1.0 + (hour - 12.0) / 24.0)
         / days_in_year as f64;
 
-    let eqtime_minutes = 229.18
+    let _eqtime_minutes = 229.18
         * (0.000075 + 0.001868 * gamma.cos()
             - 0.032077 * gamma.sin()
             - 0.014615 * (2.0 * gamma).cos()
