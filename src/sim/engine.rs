@@ -406,13 +406,15 @@ impl ThermalModel<VectorField> {
             let wall_cm = spec.construction.wall.thermal_capacitance_per_area();
             let roof_cm = spec.construction.roof.thermal_capacitance_per_area();
             let floor_cm = spec.construction.floor.thermal_capacitance_per_area();
-            
+
             // Total effective capacitance per m² of floor area
             // Weight walls, roof, floor by their area relative to floor
             let z_wall_area = geom.wall_area();
             let z_roof_area = geom.roof_area();
-            let cm_per_m2 = (wall_cm * z_wall_area + roof_cm * z_roof_area + floor_cm * z_floor_area) / z_floor_area;
-            
+            let cm_per_m2 =
+                (wall_cm * z_wall_area + roof_cm * z_roof_area + floor_cm * z_floor_area)
+                    / z_floor_area;
+
             // Air capacitance (small but included)
             let air_cap = z_volume * 1.2 * 1000.0;
             thermal_cap_vec.push(cm_per_m2 * z_floor_area + air_cap);
