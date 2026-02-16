@@ -8,7 +8,7 @@ pub mod report;
 // Re-export common types
 pub use ashrae_140_validator::ASHRAE140Validator;
 pub use cross_validator::{
-    AnalyticalComparison, CrossValidator, CrossValidatorConfig, CrossValidationResult,
+    AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
     EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
 };
 

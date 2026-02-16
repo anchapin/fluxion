@@ -239,9 +239,7 @@ impl CrossValidationResult {
         // Energy balance
         if let Some(ref eb) = self.aggregated_metrics.energy_balance {
             output.push_str("## Energy Balance\n\n");
-            output.push_str(&format!(
-                "| Metric | Value |\n",
-            ));
+            output.push_str(&format!("| Metric | Value |\n",));
             output.push_str(&format!("|--------|-------|\n"));
             output.push_str(&format!(
                 "| Analytical Total (kWh) | {:.2} |\n",
@@ -302,9 +300,13 @@ impl CrossValidationResult {
         output.push_str("## Summary\n\n");
         let pass_threshold = 0.15; // 15% MAPE threshold
         if self.aggregated_metrics.mean_mape < pass_threshold * 100.0 {
-            output.push_str("✓ **PASSED**: Surrogate model meets accuracy requirements (MAPE < 15%)\n");
+            output.push_str(
+                "✓ **PASSED**: Surrogate model meets accuracy requirements (MAPE < 15%)\n",
+            );
         } else {
-            output.push_str("✗ **FAILED**: Surrogate model exceeds accuracy threshold (MAPE >= 15%)\n");
+            output.push_str(
+                "✗ **FAILED**: Surrogate model exceeds accuracy threshold (MAPE >= 15%)\n",
+            );
         }
 
         output
@@ -434,10 +436,8 @@ impl CrossValidator {
                 .collect();
 
             // Get test data
-            let test_data: Vec<&ValidationDataPoint> = test_indices
-                .iter()
-                .map(|&i| &self.data[i])
-                .collect();
+            let test_data: Vec<&ValidationDataPoint> =
+                test_indices.iter().map(|&i| &self.data[i]).collect();
 
             // Make predictions using surrogate
             let mut predictions: Vec<f64> = Vec::new();
@@ -517,8 +517,13 @@ impl CrossValidator {
                 .map(|&i| self.data[i].targets.iter().sum())
                 .collect();
 
-            let fold_result =
-                self.compute_fold_metrics(fold, train_indices, test_indices, &predictions, &actuals);
+            let fold_result = self.compute_fold_metrics(
+                fold,
+                train_indices,
+                test_indices,
+                &predictions,
+                &actuals,
+            );
 
             result.add_fold_result(fold_result);
         }
