@@ -267,69 +267,91 @@ impl ThermalModel<VectorField> {
         model.surfaces = surfaces;
 
         // Update conductances based on spec
-        model.h_tr_w = VectorField::from_scalar(
-            total_window_area * spec.window_properties.u_value,
-            num_zones,
-        );
+        let mut h_tr_w_vec = Vec::with_capacity(num_zones);
+        let mut h_ve_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_floor_vec = Vec::with_capacity(num_zones);
 
-        // h_ve = (ACH * Volume * rho * cp) / 3600
-        let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
-        model.h_ve =
-            VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
+        for i in 0..num_zones {
+            let z_win_area: f64 = spec.windows[i].iter().map(|w| w.area).sum();
+            h_tr_w_vec.push(z_win_area * spec.window_properties.u_value);
 
-        // h_tr_floor - CALIBRATED FOR ASHRAE 140
-        // For ground-coupled floors, we need to account for the additional
-        // resistance of the soil/ground.
-        let floor_u = spec.construction.floor.u_value(None);
-        let h_tr_floor_val = if spec.case_id.starts_with('9') {
-            // High mass cases often have higher floor coupling
-            floor_u * floor_area * 1.2 // Calibrated factor
-        } else {
-            floor_u * floor_area
-        };
-        model.h_tr_floor = VectorField::from_scalar(h_tr_floor_val, num_zones);
+            let z_volume = spec.geometry[i].volume();
+            let air_cap = z_volume * 1.2 * 1005.0;
+            h_ve_vec.push((spec.infiltration_ach * air_cap) / 3600.0);
+
+            let z_floor_area = spec.geometry[i].floor_area();
+            let floor_u = spec.construction.floor.u_value(None);
+            let h_tr_floor_val = if spec.case_id.starts_with('9') {
+                floor_u * z_floor_area * 1.2
+            } else {
+                floor_u * z_floor_area
+            };
+            h_tr_floor_vec.push(h_tr_floor_val);
+        }
+
+        model.h_tr_w = VectorField::new(h_tr_w_vec).into();
+        model.h_ve = VectorField::new(h_ve_vec).into();
+        model.h_tr_floor = VectorField::new(h_tr_floor_vec).into();
 
         // ISO 13790 5R1C Mapping - CALIBRATED FOR ASHRAE 140
-        let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
+        let mut h_tr_em_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_is_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_ms_vec = Vec::with_capacity(num_zones);
+        let mut thermal_cap_vec = Vec::with_capacity(num_zones);
 
-        // h_is: Surface-to-air conductance. ASHRAE 140 standard value is approx 8.26 W/m²K (1/0.121).
-        // ISO 13790 uses 3.45, but ASHRAE 140 needs 8.26 for internal surfaces.
-        let h_is = 8.26;
-        model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
-
-        // h_ms: Mass-to-surface conductance. ISO 13790 standard value is 9.1 W/m²K.
-        // For ASHRAE 140, we adjust based on construction mass.
-        let h_ms = if spec.case_id.starts_with('9') {
-            12.0 // Increased for high-mass concrete coupling
-        } else {
-            9.1 // Standard for low-mass
-        };
-        let a_m = if spec.case_id.starts_with('9') {
-            3.2 * floor_area
-        } else {
-            2.5 * floor_area
-        };
-        model.h_tr_ms = VectorField::from_scalar(h_ms * a_m, num_zones);
-
-        // h_tr_em = Opaque conductance (Exterior to Mass)
-        // ISO 13790: h_tr_em = 1 / (1/h_tr_op - 1/h_tr_ms)
         let wall_u = spec.construction.wall.u_value(None);
         let roof_u = spec.construction.roof.u_value(None);
-        let opaque_wall_area = wall_area - total_window_area;
-        // Include thermal bridges in opaque conductance
-        let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u + model.thermal_bridge_coefficient;
 
-        // Ensure we don't have negative conductances if h_tr_op is very high
-        let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
-        model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
-        model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
+        for i in 0..num_zones {
+            let geom = &spec.geometry[i];
+            let z_floor_area = geom.floor_area();
+            let z_wall_area = geom.wall_area();
+            let z_volume = geom.volume();
+            let z_win_area: f64 = spec.windows[i].iter().map(|w| w.area).sum();
 
-        // Thermal Capacitance (Air + Structure)
-        let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
-        let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * floor_area;
-        let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * floor_area;
-        model.thermal_capacitance =
-            VectorField::from_scalar(wall_cap + roof_cap + floor_cap + air_cap, num_zones);
+            let z_area_tot = z_wall_area + z_floor_area * 2.0;
+
+            // h_is
+            let h_is = 8.26;
+            h_tr_is_vec.push(h_is * z_area_tot);
+
+            // h_ms
+            let h_ms = if spec.case_id.starts_with('9') {
+                12.0
+            } else {
+                9.1
+            };
+            let a_m = if spec.case_id.starts_with('9') {
+                3.2 * z_floor_area
+            } else {
+                2.5 * z_floor_area
+            };
+            h_tr_ms_vec.push(h_ms * a_m);
+
+            // h_tr_em
+            let mut opaque_wall_area = z_wall_area - z_win_area;
+            for wall in &spec.common_walls {
+                if wall.zone_a == i || wall.zone_b == i {
+                    opaque_wall_area -= wall.area;
+                }
+            }
+
+            let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u + model.thermal_bridge_coefficient;
+            let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
+            h_tr_em_vec.push(h_tr_em_val.max(0.1));
+
+            // Thermal Capacitance
+            let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
+            let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * z_floor_area;
+            let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * z_floor_area;
+            let air_cap = z_volume * 1.2 * 1005.0;
+            thermal_cap_vec.push(wall_cap + roof_cap + floor_cap + air_cap);
+        }
+
+        model.h_tr_is = VectorField::new(h_tr_is_vec).into();
+        model.h_tr_ms = VectorField::new(h_tr_ms_vec).into();
+        model.h_tr_em = VectorField::new(h_tr_em_vec).into();
+        model.thermal_capacitance = VectorField::new(thermal_cap_vec).into();
 
         // Internal loads - access first element
         if let Some(ref loads) = spec.internal_loads[0] {
@@ -365,10 +387,11 @@ impl ThermalModel<VectorField> {
 
             // Also update zone areas for multi-zone case
             // Zone 0: back-zone (8x6m), Zone 1: sunspace (8x2m)
-            if spec.geometry.len() >= 2 {
-                model.zone_area =
-                    VectorField::from_scalar(spec.geometry[0].floor_area(), num_zones);
+            let mut areas = Vec::with_capacity(num_zones);
+            for i in 0..num_zones {
+                areas.push(spec.geometry[i].floor_area());
             }
+            model.zone_area = VectorField::new(areas).into();
         }
 
         model.update_optimization_cache();
@@ -453,7 +476,7 @@ impl ThermalModel<VectorField> {
             h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
-            ground_temperature: Box::new(crate::weather::mod_::ConstantGroundTemperature::new(10.0)),
+            ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(10.0)),
             h_tr_iz: VectorField::from_scalar(0.0, num_zones),
             hvac_system_mode: HvacSystemMode::Controlled,
             night_ventilation: None,
@@ -527,8 +550,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// This should be called whenever physical parameters (conductances) are modified.
     pub fn update_optimization_cache(&mut self) {
-        // h_ext = h_tr_w + h_ve
-        self.derived_h_ext = self.h_tr_w.clone() + self.h_ve.clone();
+        // h_ext_air = h_tr_w + h_ve
+        let h_ext_air = self.h_tr_w.clone() + self.h_ve.clone();
+        self.derived_h_ext = h_ext_air.clone(); // Store air-coupled only for step_physics base
 
         // term_rest_1 = h_tr_ms + h_tr_is
         self.derived_term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
@@ -536,9 +560,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // h_ms_is_prod = h_tr_ms * h_tr_is
         self.derived_h_ms_is_prod = self.h_tr_ms.clone() * self.h_tr_is.clone();
 
-        // den = h_ms_is_prod + term_rest_1 * h_ext
+        // den = h_ms_is_prod + term_rest_1 * (h_ext_air + h_tr_floor)
+        let total_h_ext = h_ext_air + self.h_tr_floor.clone();
         self.derived_den = self.derived_h_ms_is_prod.clone()
-            + self.derived_term_rest_1.clone() * self.derived_h_ext.clone();
+            + self.derived_term_rest_1.clone() * total_h_ext;
 
         // sensitivity = term_rest_1 / den
         self.derived_sensitivity = self.derived_term_rest_1.clone() / self.derived_den.clone();
@@ -750,9 +775,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
-        // Convert loads (W/m²) to Watts
-        let loads_watts = self.loads.clone() * self.zone_area.clone();
-
         // 2. Solve Thermal Network
         let t_e = self.temperatures.constant_like(outdoor_temp);
         // Get ground temperature at this timestep
@@ -792,42 +814,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
         // Use pre-computed cached values to avoid redundant allocations
-        let h_ext_base = &self.derived_h_ext;
-
-        // If h_ve changed, we need to adjust h_ext
-        let h_ext = if let Some(night_vent) = &self.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                &(self.h_tr_w.clone() + current_h_ve.clone())
-            } else {
-                h_ext_base
-            }
-        } else {
-            h_ext_base
-        };
-
         let term_rest_1 = &self.derived_term_rest_1;
 
-        // We need to recalculate 'den' and 'sensitivity' if h_ext changed
-        let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
+        // If h_ve changed, we need to adjust h_ext and den
+        let (h_ext, den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+                let current_h_ext = self.h_tr_w.clone() + current_h_ve.clone();
+                let total_h_ext = current_h_ext.clone() + self.h_tr_floor.clone();
+                let den_val = self.derived_h_ms_is_prod.clone()
+                    + term_rest_1.clone() * total_h_ext;
                 let sens_val = term_rest_1.clone() / den_val.clone();
-                (den_val, sens_val)
+                (current_h_ext, den_val, sens_val)
             } else {
-                (self.derived_den.clone(), self.derived_sensitivity.clone())
+                (
+                    self.derived_h_ext.clone(),
+                    self.derived_den.clone(),
+                    self.derived_sensitivity.clone(),
+                )
             }
         } else {
-            (self.derived_den.clone(), self.derived_sensitivity.clone())
+            (
+                self.derived_h_ext.clone(),
+                self.derived_den.clone(),
+                self.derived_sensitivity.clone(),
+            )
         };
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
-
-        // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
-        // This adds to the external heat transfer
-        let _num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia.clone())
-            + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
         // === Inter-zone heat transfer (for multi-zone buildings like Case 960) ===
         // Q_iz = h_tr_iz * (T_zone_a - T_zone_b)
@@ -864,8 +878,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Recalculate num_rest with inter-zone heat transfer
         let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * t_e.clone() + phi_ia_with_iz.clone())
-            + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
+            * (h_ext.clone() * t_e.clone()
+                + phi_ia_with_iz.clone()
+                + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g));
 
         let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
 
@@ -877,9 +892,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val.abs()) * dt;
 
         // 4. Update Temperatures
-        let phi_ia_act = phi_ia + hvac_output;
-        let num_rest_act = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia_act)
-            + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
+        let phi_ia_act = phi_ia_with_iz + hvac_output;
+        let num_rest_act = term_rest_1.clone()
+            * (h_ext * t_e.clone()
+                + phi_ia_act
+                + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g));
 
         let t_i_act = (num_tm + num_phi_st.clone() + num_rest_act) / den.clone();
 
