@@ -842,7 +842,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             }
         }
 
-        // Use solar_distribution_to_air to split radiative gains.
+        // Use solar distribution fractions to split gains.
         // In ASHRAE 140, solar gains are primarily radiative.
         // We separate internal gains (which have a convective fraction) from solar gains.
         let internal_gains_watts = self.loads.clone() * self.zone_area.clone();
@@ -1127,15 +1127,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             solar_watts * (1.0 - self.solar_convective_fraction - self.solar_surface_fraction);
 
         let phi_ia = phi_ia_internal + phi_ia_solar;
-        let phi_st = phi_st_internal + phi_st_solar;
-
-        let phi_ia_internal = internal_watts.clone() * self.convective_fraction;
-        let phi_st_internal = internal_watts * (1.0 - self.convective_fraction);
-
-        let phi_st_solar = solar_watts.clone() * self.solar_distribution_to_air;
-        let _phi_m_solar = solar_watts * (1.0 - self.solar_distribution_to_air);
-
-        let phi_ia = phi_ia_internal;
         let phi_st = phi_st_internal + phi_st_solar;
 
         let h_ext = self.h_tr_w.clone()
