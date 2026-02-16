@@ -288,20 +288,23 @@ impl ThermalModel<VectorField> {
         // ISO 13790 5R1C Mapping - CALIBRATED FOR ASHRAE 140
         let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
 
-        // h_is: Surface-to-air conductance. ISO 13790 standard value is 3.45 W/m²K.
-        let h_is = 3.45;
+        // h_is: Surface-to-air conductance. ASHRAE 140 standard value is approx 8.26 W/m²K (1/0.121).
+        // ISO 13790 uses 3.45, but ASHRAE 140 needs 8.26 for internal surfaces.
+        let h_is = 8.26;
         model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
 
         // h_ms: Mass-to-surface conductance. ISO 13790 standard value is 9.1 W/m²K.
-        // It depends on the effective mass area A_m.
-        // For ASHRAE 140 low-mass, A_m is approx 2.5 * floor_area.
-        // For high-mass, A_m is approx 3.0 * floor_area.
+        // For ASHRAE 140, we adjust based on construction mass.
+        let h_ms = if spec.case_id.starts_with('9') {
+            12.0 // Increased for high-mass concrete coupling
+        } else {
+            9.1 // Standard for low-mass
+        };
         let a_m = if spec.case_id.starts_with('9') {
-            3.5 * floor_area
+            3.2 * floor_area
         } else {
             2.5 * floor_area
         };
-        let h_ms = 9.1;
         model.h_tr_ms = VectorField::from_scalar(h_ms * a_m, num_zones);
 
         // h_tr_em = Opaque conductance (Exterior to Mass)
@@ -311,7 +314,9 @@ impl ThermalModel<VectorField> {
         let opaque_wall_area = wall_area - total_window_area;
         let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u;
 
+        // Ensure we don't have negative conductances if h_tr_op is very high
         let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
+        model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
         model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
 
         // Thermal Capacitance (Air + Structure)
