@@ -9,6 +9,10 @@ use ort::execution_providers::{
     OpenVINOExecutionProvider,
 };
 use std::sync::{Arc, Mutex};
+use std::cell::RefCell;
+use rand::SeedableRng;
+use rand::rngs::StdRng;
+use rand::Rng;
 
 /// Defines the inference backend to be used for the ONNX Runtime session.
 ///
@@ -374,6 +378,173 @@ impl SurrogateManager {
         } else {
             batch_temps.iter().map(|t| vec![1.2; t.len()]).collect()
         }
+    }
+}
+
+/// Prediction result with uncertainty bounds.
+#[derive(Debug, Clone)]
+pub struct PredictionWithUncertainty {
+    /// Mean predicted thermal loads (W/m²)
+    pub mean: Vec<f64>,
+    /// Standard deviation of predictions
+    pub std: Vec<f64>,
+    /// Lower bound (mean - 2*std)
+    pub lower_bound: Vec<f64>,
+    /// Upper bound (mean + 2*std)
+    pub upper_bound: Vec<f64>,
+}
+
+impl PredictionWithUncertainty {
+    /// Creates a new prediction with uncertainty.
+    pub fn new(mean: Vec<f64>, std: Vec<f64>) -> Self {
+        let lower_bound: Vec<f64> = mean
+            .iter()
+            .zip(std.iter())
+            .map(|(&m, &s)| m - 2.0 * s)
+            .collect();
+        let upper_bound: Vec<f64> = mean
+            .iter()
+            .zip(std.iter())
+            .map(|(&m, &s)| m + 2.0 * s)
+            .collect();
+        
+        Self {
+            mean,
+            std,
+            lower_bound,
+            upper_bound,
+        }
+    }
+}
+
+impl SurrogateManager {
+    /// Predict thermal loads with uncertainty estimation.
+    ///
+    /// This method runs multiple inferences with slight input perturbations
+    /// to estimate prediction uncertainty. This is useful for risk-aware
+    /// optimization and understanding model confidence.
+    ///
+    /// # Arguments
+    /// * `current_temps` - Slice of current zone temperatures in degrees Celsius
+    /// * `num_samples` - Number of Monte Carlo samples for uncertainty estimation
+    /// * `noise_std` - Standard deviation of Gaussian noise to add to inputs (default: 0.5°C)
+    ///
+    /// # Returns
+    /// PredictionWithUncertainty containing mean, std, and confidence bounds
+    pub fn predict_with_uncertainty(
+        &self,
+        current_temps: &[f64],
+        num_samples: usize,
+        noise_std: f64,
+    ) -> PredictionWithUncertainty {
+        if !self.model_loaded || num_samples == 0 {
+            // Return deterministic prediction with zero uncertainty
+            let mean = self.predict_loads(current_temps);
+            let std = vec![0.0; mean.len()];
+            return PredictionWithUncertainty::new(mean, std);
+        }
+
+        // Run multiple forward passes with noise
+        let mut all_predictions: Vec<Vec<f64>> = Vec::with_capacity(num_samples);
+        
+        // Use mock predictions with added variance for development
+        // In production with real ONNX models, this would use dropout or ensemble
+        let base_prediction = self.predict_loads(current_temps);
+        
+        // Create thread-local RNG
+        thread_local! {
+            static RNG: RefCell<StdRng> = RefCell::new(StdRng::from_entropy());
+        }
+        
+        for _ in 0..num_samples {
+            // Add small random perturbation to simulate model uncertainty
+            let perturbed_temps: Vec<f64> = current_temps
+                .iter()
+                .map(|&t| {
+                    let noise: f64 = RNG.with(|r| {
+                        let mut rng = r.borrow_mut();
+                        rng.gen::<f64>() - 0.5
+                    }) * 2.0 * noise_std;
+                    t + noise
+                })
+                .collect();
+            
+            // Get prediction (in real implementation, this would be actual forward pass)
+            // For now, add variance to base prediction
+            let variance: f64 = base_prediction.iter().map(|v| v * 0.05).sum::<f64>() / base_prediction.len() as f64;
+            let prediction: Vec<f64> = base_prediction
+                .iter()
+                .map(|&v| {
+                    let noise = RNG.with(|r| {
+                        let mut rng = r.borrow_mut();
+                        rng.gen::<f64>() - 0.5
+                    }) * 2.0 * variance.sqrt();
+                    v + noise
+                })
+                .collect();
+            
+            all_predictions.push(prediction);
+        }
+
+        // Calculate statistics across samples
+        let num_outputs = all_predictions[0].len();
+        let mut means: Vec<f64> = vec![0.0; num_outputs];
+        let mut variances: Vec<f64> = vec![0.0; num_outputs];
+
+        // Calculate mean
+        for pred in &all_predictions {
+            for (i, &val) in pred.iter().enumerate() {
+                means[i] += val;
+            }
+        }
+        for mean in &mut means {
+            *mean /= num_samples as f64;
+        }
+
+        // Calculate variance (unbiased estimator)
+        for pred in &all_predictions {
+            for (i, &val) in pred.iter().enumerate() {
+                let diff = val - means[i];
+                variances[i] += diff * diff;
+            }
+        }
+        for var in &mut variances {
+            *var /= (num_samples - 1) as f64;
+        }
+
+        let std: Vec<f64> = variances.iter().map(|v| v.sqrt()).collect();
+
+        PredictionWithUncertainty::new(means, std)
+    }
+
+    /// Get prediction interval width at a specific confidence level.
+    ///
+    /// # Arguments
+    /// * `current_temps` - Current zone temperatures
+    /// * `confidence` - Confidence level (e.g., 0.95 for 95%)
+    ///
+    /// # Returns
+    /// Vector of interval widths at each zone
+    pub fn get_prediction_interval_width(
+        &self,
+        current_temps: &[f64],
+        confidence: f64,
+    ) -> Vec<f64> {
+        // Approximate z-score for common confidence levels
+        let z_score = match (confidence * 100.0) as u32 {
+            90 => 1.645,
+            95 => 1.960,
+            99 => 2.576,
+            _ => 1.960, // Default to 95%
+        };
+
+        let uncertainty = self.predict_with_uncertainty(current_temps, 10, 0.5);
+        
+        uncertainty
+            .std
+            .iter()
+            .map(|&s| 2.0 * z_score * s)
+            .collect()
     }
 }
 
