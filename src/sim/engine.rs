@@ -227,7 +227,7 @@ impl ThermalModel<VectorField> {
                     WallSurface::new(win_area, spec.window_properties.u_value, orientation);
 
                 // Add shading if applicable to this orientation
-                if let Some(shading) = &self.shading {
+                if let Some(shading) = &spec.shading {
                     match shading.shading_type {
                         ShadingType::Overhang | ShadingType::OverhangAndFins => {
                             // In ASHRAE 140, overhangs are typically on the same orientation as windows
@@ -335,7 +335,9 @@ impl ThermalModel<VectorField> {
                 }
             }
 
-            let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u + model.thermal_bridge_coefficient;
+            let h_tr_op = opaque_wall_area * wall_u
+                + z_floor_area * roof_u
+                + model.thermal_bridge_coefficient;
             let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
             h_tr_em_vec.push(h_tr_em_val.max(0.1));
 
