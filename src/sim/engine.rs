@@ -121,13 +121,14 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub convective_fraction: f64,
 
     // Solar gain distribution (ASHRAE 140 calibration)
-    /// Fraction of solar gains that go directly to interior air (remainder goes to thermal mass)
-    /// Typical values: 0.5-0.8 depending on construction type
-    /// Low-mass buildings: higher fraction to air (0.7-0.8)
-    /// High-mass buildings: lower fraction to air (0.5-0.6)
-    pub solar_distribution_to_air: f64,
+    /// Fraction of solar gains that go directly to interior air (convective)
+    pub solar_convective_fraction: f64,
+    /// Fraction of radiative solar gains that go to surfaces (phi_st)
+    /// The remainder (1 - solar_convective - solar_surface) goes to thermal mass (phi_m)
+    pub solar_surface_fraction: f64,
 
     // Optimization cache (derived from physical parameters)
+
     // These fields are pre-computed to avoid redundant calculations in step_physics
     pub derived_h_ext: T,
     pub derived_term_rest_1: T,
@@ -173,7 +174,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             night_ventilation: self.night_ventilation,
             thermal_bridge_coefficient: self.thermal_bridge_coefficient,
             convective_fraction: self.convective_fraction,
-            solar_distribution_to_air: self.solar_distribution_to_air,
+            solar_convective_fraction: self.solar_convective_fraction,
+            solar_surface_fraction: self.solar_surface_fraction,
 
             // Clone optimization cache
             derived_h_ext: self.derived_h_ext.clone(),
@@ -389,10 +391,13 @@ impl ThermalModel<VectorField> {
         model.night_ventilation = spec.night_ventilation;
 
         // Solar gain distribution (ASHRAE 140 calibration)
-        model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
+        model.solar_convective_fraction = 0.1; // Small portion to air
+        model.solar_surface_fraction = 0.4; // Large portion to surfaces
+                                            // remainder (0.5) to thermal mass
         model.solar_loads = VectorField::from_scalar(0.0, num_zones);
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
+
         if num_zones > 1 && !spec.common_walls.is_empty() {
             // Calculate inter-zone conductance from common walls
             // For Case 960: Zone 0 (back-zone) and Zone 1 (sunspace) share a common wall
@@ -511,7 +516,8 @@ impl ThermalModel<VectorField> {
             night_ventilation: None,
             thermal_bridge_coefficient: 0.0,
             convective_fraction: 0.4,
-            solar_distribution_to_air: 0.5,
+            solar_convective_fraction: 0.1,
+            solar_surface_fraction: 0.4,
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
@@ -836,26 +842,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             }
         }
 
-        // Use solar_distribution_to_air to split radiative gains.
+        // Use solar distribution fractions to split gains.
         // In ASHRAE 140, solar gains are primarily radiative.
         // We separate internal gains (which have a convective fraction) from solar gains.
         let internal_gains_watts = self.loads.clone() * self.zone_area.clone();
         let solar_gains_watts = self.solar_loads.clone() * self.zone_area.clone();
 
         // 1. Internal Gains Distribution
-        // phi_ia gets convective portion of internal gains
         let phi_ia_internal = internal_gains_watts.clone() * self.convective_fraction;
-        // radiative portion goes to surfaces (phi_st)
         let phi_st_internal = internal_gains_watts * (1.0 - self.convective_fraction);
 
-        // 2. Solar Gains Distribution (100% radiative for ASHRAE 140)
-        // solar_distribution_to_air represents fraction of solar gain to surfaces (phi_st)
-        // remainder goes to thermal mass (phi_m)
-        let phi_st_solar = solar_gains_watts.clone() * self.solar_distribution_to_air;
-        let phi_m_solar = solar_gains_watts * (1.0 - self.solar_distribution_to_air);
+        // 2. Solar Gains Distribution
+        // Split among air (convective), surfaces (radiative), and thermal mass (storage)
+        let phi_ia_solar = solar_gains_watts.clone() * self.solar_convective_fraction;
+        let phi_st_solar = solar_gains_watts.clone() * self.solar_surface_fraction;
+        let phi_m_solar = solar_gains_watts
+            * (1.0 - self.solar_convective_fraction - self.solar_surface_fraction);
 
         // 3. Combine Gains
-        let phi_ia = phi_ia_internal;
+        let phi_ia = phi_ia_internal + phi_ia_solar;
         let phi_st = phi_st_internal + phi_st_solar;
         let phi_m = phi_m_solar;
 
@@ -1116,10 +1121,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_ia_internal = internal_watts.clone() * self.convective_fraction;
         let phi_st_internal = internal_watts * (1.0 - self.convective_fraction);
 
-        let phi_st_solar = solar_watts.clone() * self.solar_distribution_to_air;
-        let _phi_m_solar = solar_watts * (1.0 - self.solar_distribution_to_air);
+        let phi_ia_solar = solar_watts.clone() * self.solar_convective_fraction;
+        let phi_st_solar = solar_watts.clone() * self.solar_surface_fraction;
+        let _phi_m_solar =
+            solar_watts * (1.0 - self.solar_convective_fraction - self.solar_surface_fraction);
 
-        let phi_ia = phi_ia_internal;
+        let phi_ia = phi_ia_internal + phi_ia_solar;
         let phi_st = phi_st_internal + phi_st_solar;
 
         let h_ext = self.h_tr_w.clone()
