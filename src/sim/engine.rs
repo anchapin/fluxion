@@ -733,9 +733,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
-        // Convert loads (W/m²) to Watts
-        let loads_watts = self.loads.clone() * self.zone_area.clone();
-
         // 2. Solve Thermal Network
         let t_e = self.temperatures.constant_like(outdoor_temp);
         // Get ground temperature at this timestep
