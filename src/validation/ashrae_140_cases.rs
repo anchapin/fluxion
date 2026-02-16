@@ -1363,7 +1363,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1535,7 +1535,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
