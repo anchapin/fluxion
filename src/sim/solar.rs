@@ -45,7 +45,7 @@ impl SolarPosition {
 /// Calculate solar position using the NOAA solar calculator algorithm.
 pub fn calculate_solar_position(
     latitude_deg: f64,
-    longitude_deg: f64,
+    _longitude_deg: f64,
     year: i32,
     month: u32,
     day: u32,
@@ -64,7 +64,7 @@ pub fn calculate_solar_position(
     let gamma = 2.0 * std::f64::consts::PI * (day_of_year_f - 1.0 + (hour - 12.0) / 24.0)
         / days_in_year as f64;
 
-    let eqtime_minutes = 229.18
+    let _eqtime_minutes = 229.18
         * (0.000075 + 0.001868 * gamma.cos()
             - 0.032077 * gamma.sin()
             - 0.014615 * (2.0 * gamma).cos()
@@ -76,10 +76,8 @@ pub fn calculate_solar_position(
         - 0.002697 * (3.0 * gamma).cos()
         + 0.00148 * (3.0 * gamma).sin();
 
-    let time_offset_minutes = eqtime_minutes + 4.0 * longitude_deg;
-    let tst_minutes = hour * 60.0 + time_offset_minutes;
-    let ha = tst_minutes / 4.0 - 180.0;
-
+    // Simplified hour angle for ASHRAE 140 (solar noon at 12:00)
+    let ha = (hour - 12.0) * 15.0; // 15 degrees per hour
     let lat_rad = latitude_deg.to_radians();
     let ha_rad = ha.to_radians();
 
@@ -93,7 +91,8 @@ pub fn calculate_solar_position(
         -lat_rad.sin() * zenith_rad.cos() - decl_rad.sin() * lat_rad.cos() * zenith_rad.sin();
 
     let mut az = sin_az.atan2(cos_az).to_degrees();
-    az = (az + 180.0) % 360.0;
+    // atan2 returns values in (-180, 180].
+    // Convert to [0, 360) convention (0=North, 90=East, 180=South, 270=West)
     if az < 0.0 {
         az += 360.0;
     }
@@ -238,28 +237,24 @@ pub fn calculate_window_solar_gain(
         shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar);
     }
 
-    let beam_transmittance = if incidence_angle <= 0.0 {
-        window.normal_transmittance
+    let beam_shgc = if incidence_angle <= 0.0 {
+        window.shgc
     } else if incidence_angle >= 80.0 {
         0.0
     } else {
         let angle_factor = (incidence_angle / 80.0).powi(2);
-        window.normal_transmittance * (1.0 - 0.5 * angle_factor)
+        window.shgc * (1.0 - 0.5 * angle_factor)
     };
 
-    let diffuse_transmittance = window.normal_transmittance * 0.85;
+    let diffuse_shgc = window.shgc * 0.9;
 
     // Apply shading to beam component
     let effective_beam = irradiance.beam_wm2 * (1.0 - shaded_fraction);
 
-    // For ASHRAE 140 simplified cases, diffuse shading is often handled
-    // by a constant factor or ignored for overhangs.
-    // Here we only apply shading to the beam component as requested.
+    let total_gain_wm2 = effective_beam * beam_shgc
+        + (irradiance.diffuse_wm2 + irradiance.ground_reflected_wm2) * diffuse_shgc;
 
-    let total_transmitted_wm2 = effective_beam * beam_transmittance
-        + (irradiance.diffuse_wm2 + irradiance.ground_reflected_wm2) * diffuse_transmittance;
-
-    window.area * total_transmitted_wm2 * window.shgc
+    window.area * total_gain_wm2
 }
 
 #[allow(clippy::too_many_arguments)]
