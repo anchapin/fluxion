@@ -94,3 +94,14 @@ impl VentilationSchedule for ScheduledVentilation {
         Box::new(self.clone())
     }
 }
+
+/// Utility to calculate thermal conductance (W/K) from air change rate (ACH).
+///
+/// # Arguments
+/// * `ach` - Air changes per hour (1/h)
+/// * `volume` - Zone volume (m³)
+/// * `rho` - Air density (kg/m³), typically 1.2
+/// * `cp` - Specific heat capacity of air (J/kg·K), typically 1005
+pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> f64 {
+    (ach * volume * rho * cp) / 3600.0
+}
