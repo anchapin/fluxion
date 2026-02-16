@@ -5,4 +5,5 @@ pub mod engine;
 pub mod schedule;
 pub mod shading;
 pub mod solar;
+pub mod thermal_model;
 pub mod ventilation;

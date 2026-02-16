@@ -4,6 +4,12 @@ pub mod sim;
 pub mod validation;
 pub mod weather;
 
+// Re-export thermal model traits for public API
+pub use sim::thermal_model::{
+    PhysicsThermalModel, SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode,
+    ThermalModelTrait, UnifiedThermalModel,
+};
+
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "python-bindings")]

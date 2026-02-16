@@ -28,6 +28,130 @@ pub enum InferenceBackend {
     OpenVINO,
 }
 
+/// Model quantization format for reduced memory footprint and faster inference.
+///
+/// Quantization reduces model size and can significantly improve inference speed
+/// at the cost of some accuracy.
+#[derive(Clone, Debug, Copy, Default, PartialEq, Eq)]
+pub enum QuantizationType {
+    /// Full precision (FP32) - no quantization
+    #[default]
+    FP32,
+    /// Half precision (FP16) - reduced size, faster inference
+    FP16,
+    /// 8-bit integer quantization - smallest size, fastest inference
+    INT8,
+}
+
+/// Configuration for model quantization settings.
+#[derive(Clone, Debug, Default)]
+pub struct QuantizationConfig {
+    /// The quantization type to use
+    pub quantization_type: QuantizationType,
+    /// Whether to apply quantization automatically if supported
+    pub auto_quantize: bool,
+}
+
+impl QuantizationConfig {
+    /// Create a new quantization configuration with FP32 (no quantization)
+    pub fn fp32() -> Self {
+        QuantizationConfig {
+            quantization_type: QuantizationType::FP32,
+            auto_quantize: false,
+        }
+    }
+
+    /// Create a new quantization configuration with FP16
+    pub fn fp16() -> Self {
+        QuantizationConfig {
+            quantization_type: QuantizationType::FP16,
+            auto_quantize: true,
+        }
+    }
+
+    /// Create a new quantization configuration with INT8
+    pub fn int8() -> Self {
+        QuantizationConfig {
+            quantization_type: QuantizationType::INT8,
+            auto_quantize: true,
+        }
+    }
+}
+
+/// Configuration for multi-device inference.
+///
+/// Allows specifying which devices to use for inference and how to distribute
+/// the workload across multiple devices.
+#[derive(Clone, Debug, Default)]
+pub struct MultiDeviceConfig {
+    /// List of device IDs to use for inference
+    pub device_ids: Vec<usize>,
+    /// Number of sessions per device for load balancing
+    pub sessions_per_device: usize,
+    /// Whether to automatically select the best available device
+    pub auto_select: bool,
+}
+
+impl MultiDeviceConfig {
+    /// Create a new multi-device config for single GPU
+    pub fn single_gpu(device_id: usize) -> Self {
+        MultiDeviceConfig {
+            device_ids: vec![device_id],
+            sessions_per_device: 4,
+            auto_select: false,
+        }
+    }
+
+    /// Create a new multi-device config for multi-GPU
+    pub fn multi_gpu(device_ids: Vec<usize>) -> Self {
+        MultiDeviceConfig {
+            device_ids,
+            sessions_per_device: 2,
+            auto_select: false,
+        }
+    }
+
+    /// Create config that auto-selects the best available device
+    pub fn auto() -> Self {
+        MultiDeviceConfig {
+            device_ids: vec![],
+            sessions_per_device: 4,
+            auto_select: true,
+        }
+    }
+}
+
+/// Performance metrics for inference benchmarking.
+#[derive(Clone, Debug, Default)]
+pub struct InferenceMetrics {
+    /// Average inference time in milliseconds
+    pub avg_inference_time_ms: f64,
+    /// Number of inferences performed
+    pub num_inferences: usize,
+    /// Peak memory usage in MB
+    pub peak_memory_mb: f64,
+    /// Throughput (inferences per second)
+    pub throughput: f64,
+}
+
+impl InferenceMetrics {
+    /// Record a new inference time
+    pub fn record_inference(&mut self, time_ms: f64) {
+        let n = self.num_inferences as f64;
+        self.avg_inference_time_ms = (self.avg_inference_time_ms * n + time_ms) / (n + 1.0);
+        self.num_inferences += 1;
+        self.throughput = 1000.0 / self.avg_inference_time_ms;
+    }
+
+    /// Reset all metrics
+    pub fn reset(&mut self) {
+        self.avg_inference_time_ms = 0.0;
+        self.num_inferences = 0;
+        self.peak_memory_mb = 0.0;
+        self.throughput = 0.0;
+    }
+}
+
 /// Manager that provides fast (mock or neural) thermal-load predictions.
 ///
 /// Wraps an ONNX Runtime session for neural network inference, or returns
