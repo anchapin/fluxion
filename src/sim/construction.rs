@@ -383,7 +383,7 @@ impl Materials {
 
     /// Concrete (normal weight)
     pub fn concrete(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Concrete", 0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete", 1.13, 1400.0, 1000.0, thickness)
     }
 
     /// Foam insulation
@@ -463,7 +463,7 @@ impl Assemblies {
     pub fn insulated_floor() -> Construction {
         Construction::new(vec![
             Materials::timber(0.025),
-            ConstructionLayer::new("Floor Insulation", 1.003, 50.0, 840.0, 0.040),
+            Materials::fiberglass(1.003), // Thick insulation to achieve U=0.039
         ])
     }
 
@@ -476,7 +476,7 @@ impl Assemblies {
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
             Materials::concrete_slab(0.080),
-            Materials::insulation_high_mass(0.040),
+            Materials::insulation_high_mass(1.003), // Thick insulation to achieve U=0.039
         ])
     }
 }
