@@ -335,7 +335,9 @@ impl ThermalModel<VectorField> {
                 }
             }
 
-            let h_tr_op = opaque_wall_area * wall_u + z_floor_area * roof_u + model.thermal_bridge_coefficient;
+            let h_tr_op = opaque_wall_area * wall_u
+                + z_floor_area * roof_u
+                + model.thermal_bridge_coefficient;
             let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
             h_tr_em_vec.push(h_tr_em_val.max(0.1));
 
@@ -475,14 +477,15 @@ impl ThermalModel<VectorField> {
             h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
-            ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(10.0)),
+            ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
+                10.0,
+            )),
             h_tr_iz: VectorField::from_scalar(0.0, num_zones),
             hvac_system_mode: HvacSystemMode::Controlled,
             night_ventilation: None,
             thermal_bridge_coefficient: 0.0,
             convective_fraction: 0.4,
             solar_distribution_to_air: 0.1,
-
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
@@ -561,8 +564,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // den = h_ms_is_prod + term_rest_1 * (h_ext_air + h_tr_floor)
         let total_h_ext = h_ext_air + self.h_tr_floor.clone();
-        self.derived_den = self.derived_h_ms_is_prod.clone()
-            + self.derived_term_rest_1.clone() * total_h_ext;
+        self.derived_den =
+            self.derived_h_ms_is_prod.clone() + self.derived_term_rest_1.clone() * total_h_ext;
 
         // sensitivity = term_rest_1 / den
         self.derived_sensitivity = self.derived_term_rest_1.clone() / self.derived_den.clone();
@@ -820,8 +823,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if night_vent.is_active_at_hour(hour_of_day) {
                 let current_h_ext = self.h_tr_w.clone() + current_h_ve.clone();
                 let total_h_ext = current_h_ext.clone() + self.h_tr_floor.clone();
-                let den_val = self.derived_h_ms_is_prod.clone()
-                    + term_rest_1.clone() * total_h_ext;
+                let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * total_h_ext;
                 let sens_val = term_rest_1.clone() / den_val.clone();
                 (current_h_ext, den_val, sens_val)
             } else {
