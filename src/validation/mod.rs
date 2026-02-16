@@ -2,10 +2,15 @@ pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod benchmark;
+pub mod cross_validator;
 pub mod report;
 
 // Re-export common types
 pub use ashrae_140_validator::ASHRAE140Validator;
+pub use cross_validator::{
+    AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
+    EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
+};
 
 pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
