@@ -39,19 +39,14 @@ pub enum HVACMode {
 /// HVAC system control mode.
 ///
 /// Determines whether HVAC is actively controlling temperature or just tracking it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum HvacSystemMode {
     /// Normal HVAC operation with heating/cooling based on setpoints
+    #[default]
     Controlled,
     /// Free-floating mode: no HVAC, track temperatures only
     /// Used for ASHRAE 140 FF cases (600FF, 900FF, 650FF, 950FF)
     FreeFloat,
-}
-
-impl Default for HvacSystemMode {
-    fn default() -> Self {
-        HvacSystemMode::Controlled
-    }
 }
 
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
@@ -105,8 +100,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub h_ve: T,    // Ventilation: Exterior -> Interior
 
     // Ground boundary condition
-    pub h_tr_floor: T, // Floor conductance (W/K)
+    pub h_tr_floor: T,                              // Floor conductance (W/K)
     ground_temperature: Box<dyn GroundTemperature>, // Ground temperature model
+
+    // Inter-zone conductance (for multi-zone buildings like Case 960 sunspace)
+    /// Conductance between zones (W/K). For 2-zone: h_tr_iz[0] = conductance between zone 0 and 1
+    pub h_tr_iz: T,
 
     // ASHRAE 140 specific modes
     /// HVAC system control mode (Controlled or FreeFloat)
@@ -146,6 +145,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_ve: self.h_ve.clone(),
             h_tr_floor: self.h_tr_floor.clone(),
             ground_temperature: self.ground_temperature.clone_box(),
+            h_tr_iz: self.h_tr_iz.clone(),
             hvac_system_mode: self.hvac_system_mode,
             night_ventilation_ach: self.night_ventilation_ach,
         }
@@ -281,6 +281,25 @@ impl ThermalModel<VectorField> {
             model.loads = VectorField::from_scalar(load_per_m2, num_zones);
         }
 
+        // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
+        if num_zones > 1 && !spec.common_walls.is_empty() {
+            // Calculate inter-zone conductance from common walls
+            // For Case 960: Zone 0 (back-zone) and Zone 1 (sunspace) share a common wall
+            let mut total_conductance = 0.0;
+            for wall in &spec.common_walls {
+                total_conductance += wall.conductance();
+            }
+            // Set inter-zone conductance (assuming single connection between zones for now)
+            model.h_tr_iz = VectorField::from_scalar(total_conductance, num_zones);
+
+            // Also update zone areas for multi-zone case
+            // Zone 0: back-zone (8x6m), Zone 1: sunspace (8x2m)
+            if spec.geometry.len() >= 2 {
+                model.zone_area =
+                    VectorField::from_scalar(spec.geometry[0].floor_area(), num_zones);
+            }
+        }
+
         model
     }
 
@@ -362,9 +381,10 @@ impl ThermalModel<VectorField> {
             h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
+            h_tr_iz: VectorField::from_scalar(0.0, num_zones), // Inter-zone conductance (0 for single-zone)
             ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
             hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
-            night_ventilation_ach: None, // No night ventilation by default
+            night_ventilation_ach: None,                  // No night ventilation by default
         };
 
         model.update_derived_parameters();
@@ -641,10 +661,48 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // This adds to the external heat transfer
-        let num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia.clone())
+        let _num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia.clone())
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
-        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest.clone()) / den.clone();
+        // === Inter-zone heat transfer (for multi-zone buildings like Case 960) ===
+        // Q_iz = h_tr_iz * (T_zone_a - T_zone_b)
+        // This creates a symmetric coupling between zones
+        let num_zones = self.num_zones;
+
+        // Use h_tr_iz from the model - it's already a VectorField
+        // so we can get its value using as_ref()
+        let h_iz_vec = self.h_tr_iz.as_ref();
+
+        let inter_zone_heat: Vec<f64> =
+            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
+                let temps = self.temperatures.as_ref();
+                let h_iz_val = h_iz_vec[0];
+                (0..num_zones)
+                    .map(|i| {
+                        // Sum heat transfer from all other zones
+                        let mut q_iz = 0.0;
+                        for j in 0..num_zones {
+                            if i != j {
+                                q_iz += h_iz_val * (temps[j] - temps[i]);
+                            }
+                        }
+                        q_iz
+                    })
+                    .collect()
+            } else {
+                vec![0.0; num_zones]
+            };
+
+        // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
+        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
+        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor;
+
+        // Recalculate num_rest with inter-zone heat transfer
+        let num_rest_with_iz = term_rest_1.clone()
+            * (h_ext.clone() * t_e.clone() + phi_ia_with_iz.clone())
+            + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
+
+        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
 
         // 3. HVAC Calculation
         let sensitivity = term_rest_1.clone() / den.clone();
@@ -1181,6 +1239,7 @@ mod tests {
         use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
         use crate::sim::schedule::DailySchedule;
+        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn steady_state_heat_transfer_matches_analytical() {
@@ -1337,6 +1396,7 @@ mod tests {
         use super::*;
         use crate::sim::boundary::ConstantGroundTemperature;
         use crate::sim::schedule::DailySchedule;
+        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn test_default_ground_temperature() {
@@ -1552,5 +1612,25 @@ mod tests {
                 "Default ground temperature should match ASHRAE 140 specification"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod inter_zone_tests {
+    use super::*;
+    use crate::validation::ashrae_140_cases::ASHRAE140Case;
+
+    #[test]
+    fn test_inter_zone_heat_transfer_basic() {
+        // Test that inter-zone heat transfer is calculated
+        let spec = ASHRAE140Case::Case960.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        // Check inter-zone conductance is set
+        let h_iz = model.h_tr_iz.as_ref();
+        println!("h_tr_iz values: {:?}", h_iz);
+
+        // The conductance should be set for multi-zone
+        assert!(h_iz[0] > 0.0, "Inter-zone conductance should be > 0");
     }
 }
