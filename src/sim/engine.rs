@@ -113,6 +113,13 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Night ventilation schedule (if applicable)
     pub night_ventilation_ach: Option<f64>,
 
+    // Solar gain distribution (ASHRAE 140 calibration)
+    /// Fraction of solar gains that go directly to interior air (remainder goes to thermal mass)
+    /// Typical values: 0.5-0.8 depending on construction type
+    /// Low-mass buildings: higher fraction to air (0.7-0.8)
+    /// High-mass buildings: lower fraction to air (0.5-0.6)
+    pub solar_distribution_to_air: f64,
+
     // Optimization cache (derived from physical parameters)
     // These fields are pre-computed to avoid redundant calculations in step_physics
     pub derived_h_ext: T,
@@ -156,6 +163,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_tr_iz: self.h_tr_iz.clone(),
             hvac_system_mode: self.hvac_system_mode,
             night_ventilation_ach: self.night_ventilation_ach,
+            solar_distribution_to_air: self.solar_distribution_to_air,
 
             // Clone optimization cache
             derived_h_ext: self.derived_h_ext.clone(),
