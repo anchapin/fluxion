@@ -314,7 +314,8 @@ impl ThermalModel<VectorField> {
         let roof_u = spec.construction.roof.u_value(None);
         let opaque_wall_area = wall_area - total_window_area;
         // Include thermal bridges in opaque conductance
-        let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u + model.thermal_bridge_coefficient;
+        let h_tr_op =
+            opaque_wall_area * wall_u + floor_area * roof_u + model.thermal_bridge_coefficient;
 
         let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
         model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
@@ -448,14 +449,15 @@ impl ThermalModel<VectorField> {
             h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
-            ground_temperature: Box::new(crate::weather::mod_::ConstantGroundTemperature::new(10.0)),
+            ground_temperature: Box::new(crate::weather::mod_::ConstantGroundTemperature::new(
+                10.0,
+            )),
             h_tr_iz: VectorField::from_scalar(0.0, num_zones),
             hvac_system_mode: HvacSystemMode::Controlled,
             night_ventilation: None,
             thermal_bridge_coefficient: 0.0,
             convective_fraction: 0.4,
             solar_distribution_to_air: 0.1,
-
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
