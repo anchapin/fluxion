@@ -743,7 +743,7 @@ impl CommonWall {
 
     /// Returns the inter-zone conductance (W/K).
     pub fn conductance(&self) -> f64 {
-        self.construction.u_value(None) * self.area
+        self.construction.u_value_internal() * self.area
     }
 }
 
@@ -762,6 +762,9 @@ pub struct CaseSpec {
 
     /// Geometry specifications (indexed by zone)
     pub geometry: Vec<GeometrySpec>,
+
+    /// Construction type (LowMass, HighMass)
+    pub construction_type: ConstructionType,
 
     /// Construction assemblies for each surface type
     pub construction: ConstructionSpec,
@@ -789,6 +792,9 @@ pub struct CaseSpec {
 
     /// Infiltration rate in air changes per hour (ACH)
     pub infiltration_ach: f64,
+
+    /// Solar absorptance of opaque surfaces (0.0 - 1.0)
+    pub opaque_absorptance: f64,
 
     /// Number of zones (1 for most cases, 2 for Case 960 sunspace)
     pub num_zones: usize,
@@ -995,6 +1001,7 @@ pub struct CaseBuilder {
     night_ventilation: Option<NightVentilation>,
     common_walls: Vec<CommonWall>,
     infiltration_ach: f64,
+    opaque_absorptance: f64,
     num_zones: usize,
 }
 
@@ -1021,6 +1028,7 @@ impl CaseBuilder {
             night_ventilation: None,
             common_walls: Vec::new(),
             infiltration_ach: 0.5,
+            opaque_absorptance: 0.6,
             num_zones: 1,
         }
     }
@@ -1184,13 +1192,19 @@ impl CaseBuilder {
         self
     }
 
-    /// Sets infiltration rate (ACH).
+    /// Sets the infiltration rate (ACH).
     pub fn with_infiltration(mut self, ach: f64) -> Self {
         self.infiltration_ach = ach;
         self
     }
 
-    /// Sets number of zones.
+    /// Sets the solar absorptance of opaque surfaces.
+    pub fn with_opaque_absorptance(mut self, absorptance: f64) -> Self {
+        self.opaque_absorptance = absorptance;
+        self
+    }
+
+    /// Sets the number of zones.
     pub fn with_num_zones(mut self, num_zones: usize) -> Self {
         self.num_zones = num_zones;
         self
@@ -1245,6 +1259,7 @@ impl CaseBuilder {
             case_id: self.case_id.unwrap_or_else(|| "custom".to_string()),
             description: self.description,
             geometry: self.geometry,
+            construction_type: self.construction_type,
             construction,
             windows: self.windows,
             window_properties: self.window_properties,
@@ -1252,8 +1267,9 @@ impl CaseBuilder {
             internal_loads: self.internal_loads,
             hvac: self.hvac,
             night_ventilation: self.night_ventilation,
-            common_walls: self.common_walls,
+            common_walls: self.common_walls.clone(),
             infiltration_ach: self.infiltration_ach,
+            opaque_absorptance: self.opaque_absorptance,
             num_zones: self.num_zones,
         };
 
@@ -1363,7 +1379,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1535,7 +1551,7 @@ impl CaseBuilder {
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
-            .with_hvac(HvacSchedule::with_operating_hours(20.0, 27.0, 7, 18))
+            .with_hvac(HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18)) // Heating ALWAYS OFF
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1595,16 +1611,20 @@ impl CaseBuilder {
             .with_description("Sunspace - 2-zone building (back-zone + sunspace)".to_string())
             // Zone 0: Back-zone (8m x 6m x 2.7m)
             .with_dimensions(8.0, 6.0, 2.7)
-            .low_mass_construction()
+            .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
             .with_hvac_setpoints(20.0, 27.0)
             // Zone 1: Sunspace (8m x 2m x 2.7m)
             .add_zone(8.0, 2.0, 2.7)
             .with_zone_hvac(1, HvacSchedule::free_floating())
             .with_zone_window(1, 6.0, Orientation::South)
-            .with_zone_window(1, 6.0, Orientation::South)
             // Common Wall (8m x 2.7m = 21.6 m2)
-            .with_common_wall(0, 1, 21.6, Assemblies::high_mass_wall_standard())
+            .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
             .with_infiltration(0.5)
             .with_num_zones(2)
             .build()
@@ -1645,6 +1665,7 @@ impl CaseBuilder {
             .with_internal_loads(InternalLoads::new(0.0, 0.6, 0.4)) // No internal loads
             .with_hvac_setpoints(20.0, 20.0) // Bang-bang control
             .with_infiltration(0.0) // No infiltration
+            .with_opaque_absorptance(0.0) // No solar absorption for Case 195
             .with_num_zones(1)
             .build()
             .expect("Case 195 should validate")

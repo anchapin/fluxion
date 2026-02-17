@@ -177,15 +177,19 @@ impl ASHRAE140Validator {
                 }
 
                 // --- Opaque Solar Gains (Walls + Roof) ---
-                // ASHRAE 140 Case 600: Absorptance = 0.6
-                let alpha = 0.6;
+                // ASHRAE 140: Default absorptance = 0.6, Re = 0.034
+                let alpha = spec.opaque_absorptance;
+                let re = 0.034; // Exterior film resistance (m²K/W)
                 let wall_area = spec.geometry[zone_idx].wall_area();
                 let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
                 let opaque_wall_area = wall_area - window_area;
                 let roof_area = spec.geometry[zone_idx].roof_area();
 
-                // Average solar gain on opaque walls (approximate)
-                // We calculate for all 4 orientations
+                // Get U-values from spec
+                let wall_u = spec.construction.wall.u_value(None);
+                let roof_u = spec.construction.roof.u_value(None);
+
+                // Average solar gain on opaque walls
                 for orientation in [
                     Orientation::South,
                     Orientation::West,
@@ -208,11 +212,9 @@ impl ASHRAE140Validator {
                         orientation,
                         Some(0.2),
                     );
-                    // Opaque gain = Area * irr * alpha * R_ext_total
-                    // Simplified: just add to total gain, ThermalModel will distribute it
+                    // Opaque gain = UA * I * alpha * Re
                     total_solar_gain_per_zone[zone_idx] +=
-                        (opaque_wall_area / 4.0) * irr.total_wm2 * alpha * 0.03;
-                    // 0.1 factor for exterior film resistance
+                        (opaque_wall_area / 4.0) * wall_u * irr.total_wm2 * alpha * re;
                 }
 
                 // Roof gain
@@ -233,12 +235,14 @@ impl ASHRAE140Validator {
                     Some(0.2),
                 );
                 total_solar_gain_per_zone[zone_idx] +=
-                    roof_area * irr_roof.total_wm2 * alpha * 0.03;
+                    roof_area * roof_u * irr_roof.total_wm2 * alpha * re;
             }
 
             // Calculate loads per zone (internal gains + solar)
             // For zones without internal loads specified, use first zone's value
-            let mut loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+            let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+            let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+
             for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
                 let internal_gains = spec
                     .internal_loads
@@ -253,33 +257,16 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                let total_load = internal_gains + solar_gain;
-                loads_per_zone.push(total_load / floor_area);
+                internal_loads_per_zone.push(internal_gains / floor_area);
+                solar_loads_per_zone.push(solar_gain / floor_area);
             }
 
-            model.set_loads(&loads_per_zone);
+            model.set_loads(&internal_loads_per_zone);
+            model.set_solar_loads(&solar_loads_per_zone);
 
-            let hvac_energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-            let hvac_energy_joules = hvac_energy_kwh * 3.6e6;
-
-            // For non-free-floating cases, categorize HVAC energy based on free-floating temperature
-            if !is_free_floating {
-                // Get the free-floating temperature BEFORE HVAC is applied
-                // This tells us whether heating or cooling is needed
-                let t_i_free =
-                    model.calculate_free_float_temperature(step, weather_data.dry_bulb_temp);
-
-                // Determine HVAC mode based on FREE-FLOATING temperature
-                if t_i_free < model.heating_setpoint {
-                    // Free-floating temp is below heating setpoint - HVAC was heating
-                    annual_heating_joules += hvac_energy_joules;
-                } else if t_i_free > model.cooling_setpoint {
-                    // Free-floating temp is above cooling setpoint - HVAC was cooling
-                    annual_cooling_joules += hvac_energy_joules;
-                }
-                // If free-floating temp is in deadband, no HVAC energy used
-            }
-            // For free-floating cases, HVAC is disabled so no energy is added
+            let (h_kwh, c_kwh) = model.step_physics(step, weather_data.dry_bulb_temp);
+            annual_heating_joules += h_kwh * 3.6e6;
+            annual_cooling_joules += c_kwh * 3.6e6;
         }
 
         CaseResults {

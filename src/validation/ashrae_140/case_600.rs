@@ -142,7 +142,7 @@ impl Case600Model {
         let volume = floor_area * ceiling_height; // 48 × 2.7 = 129.6 m³
         let q_vent = 0.5 * volume / 3600.0; // 0.5 ACH × 129.6 / 3600 = 0.018 m³/s
         let air_density = 1.2; // kg/m³
-        let cp_air = 1005.0; // J/kg·K
+        let cp_air = 1000.0; // J/kg·K
         let h_ve = air_density * cp_air * q_vent;
         model.h_ve = VectorField::from_scalar(h_ve, 1);
 
@@ -234,22 +234,15 @@ impl Case600Model {
             self.model.set_loads(&[load_per_area]);
 
             // Solve physics for this hour
-            let hvac_energy_kwh = self.model.step_physics(step, dry_bulb);
-            let hvac_energy_joules = hvac_energy_kwh * 3.6e6; // kWh → J
+            let (h_kwh, c_kwh) = self.model.step_physics(step, dry_bulb);
+            let h_joules = h_kwh * 3.6e6;
+            let c_joules = c_kwh * 3.6e6;
 
-            // Classify heating vs cooling based on outdoor temperature
-            // If outdoor temp is below heating setpoint, assume heating is needed
-            // If outdoor temp is above cooling setpoint, assume cooling is needed
-            let hvac_power_w = hvac_energy_joules / 3600.0; // J → W (per hour)
-            if dry_bulb < self.model.heating_setpoint {
-                // Heating
-                annual_heating_joules += hvac_energy_joules;
-                peak_heating_watts = peak_heating_watts.max(hvac_power_w);
-            } else if dry_bulb > self.model.cooling_setpoint {
-                // Cooling
-                annual_cooling_joules += hvac_energy_joules;
-                peak_cooling_watts = peak_cooling_watts.max(hvac_power_w);
-            }
+            annual_heating_joules += h_joules;
+            annual_cooling_joules += c_joules;
+
+            peak_heating_watts = peak_heating_watts.max(h_joules / 3600.0);
+            peak_cooling_watts = peak_cooling_watts.max(c_joules / 3600.0);
 
             // Store indoor temperature
             let indoor_temp = self.model.get_temperatures()[0];

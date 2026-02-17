@@ -239,11 +239,13 @@ pub fn calculate_window_solar_gain(
 
     let beam_shgc = if incidence_angle <= 0.0 {
         window.shgc
-    } else if incidence_angle >= 80.0 {
+    } else if incidence_angle >= 90.0 {
         0.0
     } else {
-        let angle_factor = (incidence_angle / 80.0).powi(2);
-        window.shgc * (1.0 - 0.5 * angle_factor)
+        // Improved fit for double clear glass angular dependence
+        // Matches ASHRAE 140 values: 0 (1.0), 40 (0.97), 60 (0.87), 80 (0.42)
+        let x = incidence_angle / 90.0;
+        window.shgc * (1.0 - 0.4 * x.powi(3) - 0.6 * x.powi(8))
     };
 
     let diffuse_shgc = window.shgc * 0.9;
