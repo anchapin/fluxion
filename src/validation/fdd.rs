@@ -7,7 +7,7 @@
 use std::collections::VecDeque;
 
 /// Fault severity levels
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd)]
 pub enum FaultSeverity {
     /// Low severity - informational only
     Info,
@@ -280,11 +280,13 @@ impl AnomalyDetector {
 
     /// Check if a value is anomalous (beyond threshold standard deviations)
     pub fn is_anomalous(&self, value: f64, threshold: f64) -> bool {
-        if self.count < self.window_size {
+        // Use window size for the check, not count (which accumulates indefinitely)
+        if self.values.len() < self.window_size {
             return false; // Not enough data
         }
         let z_score = (value - self.mean).abs() / self.std_dev;
-        z_score > threshold
+        // Use >= to include values at exactly the threshold
+        z_score >= threshold
     }
 
     /// Get z-score for a value
@@ -704,7 +706,7 @@ mod tests {
             detector.detect_sensor_faults("temp_sensor_1", 20.0, (15.0, 30.0), 0);
         }
         
-        let faults = detector.get_faults();
+        let _faults = detector.get_faults();
         // The sensor reading is consistent, but it should detect stuck when we add new reading
         // This test verifies the system runs without panic
         assert!(true);
@@ -737,8 +739,9 @@ mod tests {
     fn test_anomaly_detection() {
         let mut detector = AnomalyDetector::new(10);
         
-        // Add normal values
-        for _ in 0..20 {
+        // Add normal values - need more than window_size * 2 to ensure
+        // we have enough data and the statistics stabilize
+        for _ in 0..25 {
             detector.add_value(20.0);
         }
         
