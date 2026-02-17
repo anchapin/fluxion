@@ -90,6 +90,12 @@ pub struct MultiDeviceConfig {
     pub sessions_per_device: usize,
     /// Whether to automatically select the best available device
     pub auto_select: bool,
+    /// Enable device affinity (pin inference to specific device)
+    pub enable_affinity: bool,
+    /// Fallback to CPU if GPU fails
+    pub fallback_to_cpu: bool,
+    /// Maximum number of retry attempts on device failure
+    pub max_retries: usize,
 }
 
 impl MultiDeviceConfig {
@@ -99,6 +105,9 @@ impl MultiDeviceConfig {
             device_ids: vec![device_id],
             sessions_per_device: 4,
             auto_select: false,
+            enable_affinity: true,
+            fallback_to_cpu: true,
+            max_retries: 3,
         }
     }
 
@@ -108,6 +117,9 @@ impl MultiDeviceConfig {
             device_ids,
             sessions_per_device: 2,
             auto_select: false,
+            enable_affinity: true,
+            fallback_to_cpu: true,
+            max_retries: 3,
         }
     }
 
@@ -117,8 +129,34 @@ impl MultiDeviceConfig {
             device_ids: vec![],
             sessions_per_device: 4,
             auto_select: true,
+            enable_affinity: false,
+            fallback_to_cpu: true,
+            max_retries: 3,
         }
     }
+}
+
+/// Information about a CUDA device.
+#[derive(Clone, Debug)]
+pub struct CudaDeviceInfo {
+    /// Device ID
+    pub device_id: usize,
+    /// Device name (e.g., "NVIDIA RTX 3090")
+    pub name: String,
+    /// Compute capability (major, minor) if available
+    pub compute_capability: Option<(u32, u32)>,
+}
+
+/// Load balancing strategy for multi-device inference.
+#[derive(Clone, Debug, Default)]
+pub enum LoadBalancingStrategy {
+    /// Round-robin selection
+    #[default]
+    RoundRobin,
+    /// Least loaded device (fewest active sessions)
+    LeastLoaded,
+    /// Random selection
+    Random,
 }
 
 /// Performance metrics for inference benchmarking.
@@ -246,16 +284,78 @@ impl MultiDeviceSessionPool {
         })
     }
 
-    /// Detect available CUDA devices.
+    /// Detect available CUDA devices using ONNX Runtime.
+    ///
+    /// Returns a list of available GPU device IDs. If CUDA is not available,
+    /// returns None to indicate no GPUs were found.
     fn detect_cuda_devices() -> Option<Vec<usize>> {
         // Try to detect CUDA devices using ONNX Runtime
-        // This is a simplified implementation - in production you'd use CUDA API
+        // This implementation attempts to create a CUDA session to verify availability
         #[cfg(feature = "cuda")]
         {
-            // Attempt to list available CUDA devices
-            // For now, return a default device if CUDA is available
-            Some(vec![0])
+            use ort::session::Session;
+
+            // Try to create a minimal CUDA session to verify GPU availability
+            // We'll use a simple approach - try device 0 and iterate
+            let mut available_devices = Vec::new();
+
+            // Try up to 8 devices (common max for systems)
+            for device_id in 0..8 {
+                let mut builder = match Session::builder() {
+                    Ok(b) => b,
+                    Err(_) => continue,
+                };
+
+                // Try to add CUDA provider to detect if device is available
+                let cuda_ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
+                match builder.with_execution_providers([cuda_ep.build()]) {
+                    Ok(builder) => {
+                        // If we can configure CUDA provider, device might be available
+                        // Note: We can't fully test without a model, so we add the device
+                        // as "potentially available" - the actual session creation will
+                        // confirm availability
+                        available_devices.push(device_id);
+                    }
+                    Err(_) => {
+                        // This device is not available
+                        continue;
+                    }
+                }
+            }
+
+            if available_devices.is_empty() {
+                None
+            } else {
+                Some(available_devices)
+            }
         }
+
+        #[cfg(not(feature = "cuda"))]
+        {
+            // CUDA feature not enabled, return None
+            None
+        }
+    }
+
+    /// Get detailed information about available CUDA devices.
+    ///
+    /// Returns a vector of device information if successful, None otherwise.
+    pub fn get_cuda_device_info() -> Option<Vec<CudaDeviceInfo>> {
+        #[cfg(feature = "cuda")]
+        {
+            let devices = Self::detect_cuda_devices()?;
+            Some(
+                devices
+                    .into_iter()
+                    .map(|id| CudaDeviceInfo {
+                        device_id: id,
+                        name: format!("GPU {}", id),
+                        compute_capability: None, // Would require CUDA API to query
+                    })
+                    .collect(),
+            )
+        }
+
         #[cfg(not(feature = "cuda"))]
         {
             None
@@ -674,46 +774,6 @@ impl SurrogateManager {
     }
 }
 
-/// Configuration for MC Dropout uncertainty estimation.
-#[derive(Clone, Debug)]
-pub struct MCDropoutConfig {
-    /// Number of stochastic forward passes for uncertainty estimation
-    pub num_samples: usize,
-    /// Standard deviation of input noise for perturbation (0.0 = no noise)
-    pub input_noise_std: f64,
-    /// Whether to use dropout at inference time (requires dropout-enabled model)
-    pub use_inference_dropout: bool,
-}
-
-impl Default for MCDropoutConfig {
-    fn default() -> Self {
-        MCDropoutConfig {
-            num_samples: 20,
-            input_noise_std: 0.5,
-            use_inference_dropout: false,
-        }
-    }
-}
-
-impl MCDropoutConfig {
-    /// Create a new MC Dropout config
-    pub fn new(num_samples: usize) -> Self {
-        MCDropoutConfig {
-            num_samples,
-            ..Default::default()
-        }
-    }
-
-    /// Create with custom noise std
-    pub fn with_noise(num_samples: usize, noise_std: f64) -> Self {
-        MCDropoutConfig {
-            num_samples,
-            input_noise_std: noise_std,
-            ..Default::default()
-        }
-    }
-}
-
 /// Prediction result with uncertainty bounds.
 #[derive(Debug, Clone)]
 pub struct PredictionWithUncertainty {
@@ -725,8 +785,6 @@ pub struct PredictionWithUncertainty {
     pub lower_bound: Vec<f64>,
     /// Upper bound (mean + 2*std)
     pub upper_bound: Vec<f64>,
-    /// Individual samples (for detailed analysis)
-    pub samples: Vec<Vec<f64>>,
 }
 
 impl PredictionWithUncertainty {
@@ -748,62 +806,7 @@ impl PredictionWithUncertainty {
             std,
             lower_bound,
             upper_bound,
-            samples: vec![],
         }
-    }
-
-    /// Creates a new prediction with uncertainty including individual samples.
-    pub fn with_samples(mean: Vec<f64>, std: Vec<f64>, samples: Vec<Vec<f64>>) -> Self {
-        let lower_bound: Vec<f64> = mean
-            .iter()
-            .zip(std.iter())
-            .map(|(&m, &s)| m - 2.0 * s)
-            .collect();
-        let upper_bound: Vec<f64> = mean
-            .iter()
-            .zip(std.iter())
-            .map(|(&m, &s)| m + 2.0 * s)
-            .collect();
-
-        Self {
-            mean,
-            std,
-            lower_bound,
-            upper_bound,
-            samples,
-        }
-    }
-
-    /// Get the confidence interval at a specific level.
-    ///
-    /// # Arguments
-    /// * `confidence` - Confidence level (e.g., 0.95 for 95%)
-    ///
-    /// # Returns
-    /// Tuple of (lower_bound, upper_bound) at the specified confidence level
-    pub fn confidence_interval(&self, confidence: f64) -> (Vec<f64>, Vec<f64>) {
-        let z_score = match (confidence * 100.0) as u32 {
-            90 => 1.645,
-            95 => 1.960,
-            99 => 2.576,
-            _ => 1.960,
-        };
-
-        let lower: Vec<f64> = self
-            .mean
-            .iter()
-            .zip(self.std.iter())
-            .map(|(&m, &s)| m - z_score * s)
-            .collect();
-
-        let upper: Vec<f64> = self
-            .mean
-            .iter()
-            .zip(self.std.iter())
-            .map(|(&m, &s)| m + z_score * s)
-            .collect();
-
-        (lower, upper)
     }
 }
 
