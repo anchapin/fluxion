@@ -137,10 +137,10 @@ pub struct SensorFaultConfig {
 impl Default for SensorFaultConfig {
     fn default() -> Self {
         Self {
-            max_delta: 5.0,          // 5°C max change between readings
-            noise_threshold: 2.0,    // Std dev threshold for noise
-            stuck_window_size: 3,   // Check last 3 readings
-            max_drift_rate: 1.0,    // 1°C per hour max drift
+            max_delta: 5.0,       // 5°C max change between readings
+            noise_threshold: 2.0, // Std dev threshold for noise
+            stuck_window_size: 3, // Check last 3 readings
+            max_drift_rate: 1.0,  // 1°C per hour max drift
         }
     }
 }
@@ -175,11 +175,11 @@ impl DegradationTracker {
     pub fn update(&mut self, performance: f64) {
         self.current_performance = performance;
         self.performance_history.push_back(performance);
-        
+
         if self.performance_history.len() > self.window_size {
             self.performance_history.pop_front();
         }
-        
+
         self.calculate_degradation_rate();
     }
 
@@ -192,7 +192,7 @@ impl DegradationTracker {
 
         let history: Vec<f64> = self.performance_history.iter().cloned().collect();
         let n = history.len() as f64;
-        
+
         // Simple linear regression for trend
         let sum_x: f64 = (0..history.len()).sum::<usize>() as f64;
         let sum_y: f64 = history.iter().sum();
@@ -214,7 +214,8 @@ impl DegradationTracker {
     /// Get current degradation percentage
     pub fn get_degradation_percent(&self) -> f64 {
         if self.baseline_performance > 0.0 {
-            ((self.baseline_performance - self.current_performance) / self.baseline_performance) * 100.0
+            ((self.baseline_performance - self.current_performance) / self.baseline_performance)
+                * 100.0
         } else {
             0.0
         }
@@ -272,9 +273,12 @@ impl AnomalyDetector {
         }
 
         self.mean = self.values.iter().sum::<f64>() / n;
-        let variance = self.values.iter()
+        let variance = self
+            .values
+            .iter()
             .map(|x| (x - self.mean).powi(2))
-            .sum::<f64>() / n;
+            .sum::<f64>()
+            / n;
         self.std_dev = variance.sqrt().max(1e-10); // Avoid division by zero
     }
 
@@ -346,13 +350,15 @@ impl FaultDetector {
         let mut detected_faults = Vec::new();
 
         // Get or create history for this sensor
-        let history = self.temperature_history
+        let history = self
+            .temperature_history
             .entry(sensor_id.to_string())
             .or_insert_with(|| VecDeque::with_capacity(self.history_window));
 
         // Check for stuck sensor
         if history.len() >= self.sensor_config.stuck_window_size {
-            let stuck_check: Vec<f64> = history.iter()
+            let stuck_check: Vec<f64> = history
+                .iter()
                 .rev()
                 .take(self.sensor_config.stuck_window_size)
                 .cloned()
@@ -364,7 +370,10 @@ impl FaultDetector {
                     detected_faults.push(Fault::new(
                         FaultType::SensorStuck,
                         FaultSeverity::Warning,
-                        format!("Sensor {} appears to be stuck at {:.1}°C", sensor_id, stuck_check[0]),
+                        format!(
+                            "Sensor {} appears to be stuck at {:.1}°C",
+                            sensor_id, stuck_check[0]
+                        ),
                         sensor_id.to_string(),
                         hour,
                         0.8,
@@ -377,11 +386,12 @@ impl FaultDetector {
         // Check for values outside expected range
         let (min_expected, max_expected) = expected_range;
         if current_reading < min_expected || current_reading > max_expected {
-            let severity = if current_reading < min_expected - 10.0 || current_reading > max_expected + 10.0 {
-                FaultSeverity::Critical
-            } else {
-                FaultSeverity::Warning
-            };
+            let severity =
+                if current_reading < min_expected - 10.0 || current_reading > max_expected + 10.0 {
+                    FaultSeverity::Critical
+                } else {
+                    FaultSeverity::Warning
+                };
 
             detected_faults.push(Fault::new(
                 FaultType::SensorBias,
@@ -402,7 +412,8 @@ impl FaultDetector {
             let recent: Vec<f64> = history.iter().rev().take(3).cloned().collect();
             if recent.len() >= 2 {
                 let mean = recent.iter().sum::<f64>() / recent.len() as f64;
-                let variance = recent.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / recent.len() as f64;
+                let variance =
+                    recent.iter().map(|x| (x - mean).powi(2)).sum::<f64>() / recent.len() as f64;
                 let std_dev = variance.sqrt();
 
                 if std_dev > self.sensor_config.noise_threshold {
@@ -448,7 +459,8 @@ impl FaultDetector {
         let mut detected_faults = Vec::new();
 
         // Get or create degradation tracker
-        let tracker = self.degradation_trackers
+        let tracker = self
+            .degradation_trackers
             .entry(equipment_id.to_string())
             .or_insert_with(|| DegradationTracker::new(baseline, 168));
 
@@ -498,7 +510,10 @@ impl FaultDetector {
 
         self.temperature_anomaly_detector.add_value(temperature);
 
-        if self.temperature_anomaly_detector.is_anomalous(temperature, 3.0) {
+        if self
+            .temperature_anomaly_detector
+            .is_anomalous(temperature, 3.0)
+        {
             let z_score = self.temperature_anomaly_detector.get_z_score(temperature);
 
             detected_faults.push(Fault::new(
@@ -537,7 +552,10 @@ impl FaultDetector {
 
         self.consumption_anomaly_detector.add_value(consumption);
 
-        if self.consumption_anomaly_detector.is_anomalous(consumption, 3.0) {
+        if self
+            .consumption_anomaly_detector
+            .is_anomalous(consumption, 3.0)
+        {
             let z_score = self.consumption_anomaly_detector.get_z_score(consumption);
 
             detected_faults.push(Fault::new(
@@ -644,12 +662,18 @@ impl FaultDetector {
 
     /// Get faults by severity
     pub fn get_faults_by_severity(&self, severity: &FaultSeverity) -> Vec<&Fault> {
-        self.faults.iter().filter(|f| &f.severity == severity).collect()
+        self.faults
+            .iter()
+            .filter(|f| &f.severity == severity)
+            .collect()
     }
 
     /// Get faults by type
     pub fn get_faults_by_type(&self, fault_type: &FaultType) -> Vec<&Fault> {
-        self.faults.iter().filter(|f| &f.fault_type == fault_type).collect()
+        self.faults
+            .iter()
+            .filter(|f| &f.fault_type == fault_type)
+            .collect()
     }
 
     /// Clear all detected faults
@@ -668,7 +692,8 @@ impl FaultDetector {
         let warnings = self.get_faults_by_severity(&FaultSeverity::Warning).len();
         let info = self.get_faults_by_severity(&FaultSeverity::Info).len();
 
-        report.push_str(&format!("Fault Summary:\n"));
+        report.push_str("Fault Summary:
+");
         report.push_str(&format!("  CRITICAL: {}\n", critical));
         report.push_str(&format!("  MODERATE: {}\n", moderate));
         report.push_str(&format!("  WARNING:  {}\n", warnings));
@@ -680,7 +705,11 @@ impl FaultDetector {
             report.push_str("  No faults detected.\n");
         } else {
             for fault in &self.faults {
-                report.push_str(&format!("\n[{}] {}\n", fault.severity.as_str(), fault.fault_type.as_str()));
+                report.push_str(&format!(
+                    "\n[{}] {}\n",
+                    fault.severity.as_str(),
+                    fault.fault_type.as_str()
+                ));
                 report.push_str(&format!("  Location: {}\n", fault.location));
                 report.push_str(&format!("  Time: Hour {}\n", fault.detected_at));
                 report.push_str(&format!("  Description: {}\n", fault.description));
@@ -700,12 +729,12 @@ mod tests {
     #[test]
     fn test_sensor_stuck_detection() {
         let mut detector = FaultDetector::new();
-        
+
         // Simulate stuck sensor readings
         for _ in 0..5 {
             detector.detect_sensor_faults("temp_sensor_1", 20.0, (15.0, 30.0), 0);
         }
-        
+
         let _faults = detector.get_faults();
         // The sensor reading is consistent, but it should detect stuck when we add new reading
         // This test verifies the system runs without panic
@@ -715,9 +744,9 @@ mod tests {
     #[test]
     fn test_out_of_range_detection() {
         let mut detector = FaultDetector::new();
-        
+
         let faults = detector.detect_sensor_faults("temp_sensor_1", 50.0, (15.0, 30.0), 1);
-        
+
         assert!(!faults.is_empty());
         assert_eq!(faults[0].fault_type, FaultType::SensorBias);
     }
@@ -725,12 +754,12 @@ mod tests {
     #[test]
     fn test_degradation_tracking() {
         let mut tracker = DegradationTracker::new(100.0, 10);
-        
+
         // Simulate performance degradation
         for i in 0..20 {
             tracker.update(100.0 - (i as f64 * 0.5));
         }
-        
+
         assert!(tracker.degradation_rate < 0.0);
         assert!(tracker.is_degraded(5.0));
     }
@@ -738,19 +767,19 @@ mod tests {
     #[test]
     fn test_anomaly_detection() {
         let mut detector = AnomalyDetector::new(10);
-        
+
         // Add normal values - need more than window_size * 2 to ensure
         // we have enough data and the statistics stabilize
         for _ in 0..25 {
             detector.add_value(20.0);
         }
-        
+
         // Check if normal value is not flagged
         assert!(!detector.is_anomalous(20.0, 3.0));
-        
+
         // Add an anomaly
         detector.add_value(50.0);
-        
+
         // Check if anomalous value is detected
         assert!(detector.is_anomalous(50.0, 3.0));
     }
@@ -758,10 +787,10 @@ mod tests {
     #[test]
     fn test_control_fault_deadband() {
         let mut detector = FaultDetector::new();
-        
+
         // Invalid setpoints (heating >= cooling)
         let faults = detector.detect_control_faults("zone_1", 20.0, 25.0, 22.0, "heating", 5);
-        
+
         assert!(!faults.is_empty());
         assert_eq!(faults[0].fault_type, FaultType::DeadbandViolation);
     }
@@ -770,7 +799,7 @@ mod tests {
     fn test_report_generation() {
         let detector = FaultDetector::new();
         let report = detector.generate_report();
-        
+
         assert!(report.contains("Fault Detection and Diagnostics Report"));
         assert!(report.contains("No faults detected"));
     }
