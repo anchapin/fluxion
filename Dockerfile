@@ -19,8 +19,8 @@ WORKDIR /build
 COPY Cargo.toml ./
 COPY Cargo.lock ./
 
-# Create dummy source to build dependencies
-RUN mkdir -p src && echo "fn main() {}" > src/main.rs
+# Copy source code for building
+COPY src/ ./src/
 
 # Build dependencies only (cache layer)
 RUN cargo build --release
