@@ -65,8 +65,7 @@ fluxion = "fluxion.cli:main"
 
 [tool.maturin]
 features = ["python-bindings", "pyo3/extension-module"]
-python-source = "."
-module-name = "fluxion._fluxion"
+module-name = "fluxion"
 
 [tool.black]
 line-length = 88
