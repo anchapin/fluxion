@@ -169,7 +169,9 @@ impl LoadSheddingController {
         self.current_shed_load = 0.0;
 
         // Sort loads by priority (lowest first)
-        let mut sheddable: Vec<_> = self.loads.iter_mut()
+        let mut sheddable: Vec<_> = self
+            .loads
+            .iter_mut()
             .filter(|l| l.can_shed && !l.is_shed)
             .collect();
         sheddable.sort_by_key(|l| l.priority);
@@ -199,7 +201,8 @@ impl LoadSheddingController {
 
     /// Get current total load
     pub fn current_load(&self) -> f64 {
-        self.loads.iter()
+        self.loads
+            .iter()
             .map(|l| if l.is_shed { 0.0 } else { l.power_kw })
             .sum()
     }
@@ -242,12 +245,12 @@ impl RealTimePricing {
     pub fn set_time_of_use(&mut self, off_peak: f64, mid_peak: f64, peak: f64) {
         for hour in 0..24 {
             self.hourly_prices[hour] = match hour {
-                0..=6 => off_peak,     // Night
-                7..=9 => mid_peak,     // Morning ramp
-                10..=16 => peak,       // Mid-day peak
-                17..=19 => peak,       // Evening peak
-                20..=22 => mid_peak,   // Evening ramp down
-                23 => off_peak,        // Night
+                0..=6 => off_peak,   // Night
+                7..=9 => mid_peak,   // Morning ramp
+                10..=16 => peak,     // Mid-day peak
+                17..=19 => peak,     // Evening peak
+                20..=22 => mid_peak, // Evening ramp down
+                23 => off_peak,      // Night
                 _ => mid_peak,
             };
         }
@@ -262,8 +265,16 @@ impl RealTimePricing {
     /// Update price statistics
     fn update_statistics(&mut self) {
         self.average_price = self.hourly_prices.iter().sum::<f64>() / 24.0;
-        self.peak_price = self.hourly_prices.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        self.off_peak_price = self.hourly_prices.iter().cloned().fold(f64::INFINITY, f64::min);
+        self.peak_price = self
+            .hourly_prices
+            .iter()
+            .cloned()
+            .fold(f64::NEG_INFINITY, f64::max);
+        self.off_peak_price = self
+            .hourly_prices
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, f64::min);
     }
 }
 
@@ -307,7 +318,8 @@ impl DRManager {
 
     /// Get active events at current hour
     pub fn active_events(&self, hour_of_week: usize) -> Vec<&DREvent> {
-        self.events.iter()
+        self.events
+            .iter()
             .filter(|e| e.is_active_at(hour_of_week))
             .collect()
     }
@@ -346,8 +358,8 @@ mod tests {
         let event = DREvent::new(
             "DR-1".to_string(),
             DREventType::PeakShaving,
-            14,   // 2pm
-            4,    // 4 hours
+            14,    // 2pm
+            4,     // 4 hours
             100.0, // 100 kW
         );
 
@@ -396,13 +408,7 @@ mod tests {
         let mut manager = DRManager::new();
         manager.enabled = true;
 
-        let event = DREvent::new(
-            "DR-1".to_string(),
-            DREventType::Emergency,
-            10,
-            2,
-            50.0,
-        );
+        let event = DREvent::new("DR-1".to_string(), DREventType::Emergency, 10, 2, 50.0);
         manager.add_event(event);
 
         let target = manager.total_reduction_target(11);
