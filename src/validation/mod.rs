@@ -3,6 +3,7 @@ pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod benchmark;
 pub mod cross_validator;
+pub mod physics_validator;
 pub mod report;
 
 // Re-export common types
@@ -18,6 +19,9 @@ pub use ashrae_140_cases::{
     HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
 };
 pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
+pub use physics_validator::{
+    generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,
+};
 pub use report::{
     BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
     ValidationStatus, ValidationSuite,
