@@ -126,7 +126,12 @@ pub struct ModelMetrics {
 impl ModelMetrics {
     /// Create new metrics
     pub fn new(mae: f64, rmse: f64, r2: f64, bias: f64) -> Self {
-        ModelMetrics { mae, rmse, r2, bias }
+        ModelMetrics {
+            mae,
+            rmse,
+            r2,
+            bias,
+        }
     }
 
     /// Calculate composite score (lower is better)
@@ -252,9 +257,7 @@ impl EnsembleSurrogate {
             AggregationMethod::WeightedMean => {
                 self.aggregate_weighted_mean(&model_predictions, num_outputs)
             }
-            AggregationMethod::Median => {
-                self.aggregate_median(&model_predictions, num_outputs)
-            }
+            AggregationMethod::Median => self.aggregate_median(&model_predictions, num_outputs),
             AggregationMethod::TrimmedMean(trim_frac) => {
                 self.aggregate_trimmed_mean(&model_predictions, num_outputs, trim_frac)
             }
@@ -297,12 +300,12 @@ impl EnsembleSurrogate {
     }
 
     /// Calculate weighted mean across model predictions
-    fn aggregate_weighted_mean(
-        &self,
-        predictions: &[Vec<f64>],
-        num_outputs: usize,
-    ) -> Vec<f64> {
-        let weights = self.model_weights.as_ref().unwrap_or(&vec![1.0; predictions.len()]);
+    fn aggregate_weighted_mean(&self, predictions: &[Vec<f64>], num_outputs: usize) -> Vec<f64> {
+        let default_weights = vec![1.0; predictions.len()];
+        let weights = self
+            .model_weights
+            .as_ref()
+            .unwrap_or(&default_weights);
         let mut result = vec![0.0; num_outputs];
 
         for (pred, &w) in predictions.iter().zip(weights.iter()) {
@@ -429,7 +432,7 @@ impl DisagreementMetrics {
 
         // Calculate pairwise differences
         let mut total_diff = 0.0;
-        let mut max_diff = 0.0;
+        let mut max_diff: f64 = 0.0;
         let mut pair_count = 0;
 
         for i in 0..num_models {
@@ -480,12 +483,10 @@ mod tests {
 
     #[test]
     fn test_ensemble_config() {
-        let config = EnsembleConfig::new(vec![
-            "model1.onnx".to_string(),
-            "model2.onnx".to_string(),
-        ])
-        .with_method(AggregationMethod::Median)
-        .with_min_models(2);
+        let config =
+            EnsembleConfig::new(vec!["model1.onnx".to_string(), "model2.onnx".to_string()])
+                .with_method(AggregationMethod::Median)
+                .with_min_models(2);
 
         assert_eq!(config.model_paths.len(), 2);
         assert_eq!(config.aggregation_method, AggregationMethod::Median);
@@ -525,11 +526,7 @@ mod tests {
 
     #[test]
     fn test_aggregation_methods() {
-        let predictions = vec![
-            vec![1.0, 2.0],
-            vec![2.0, 3.0],
-            vec![3.0, 4.0],
-        ];
+        let predictions = vec![vec![1.0, 2.0], vec![2.0, 3.0], vec![3.0, 4.0]];
 
         // Test mean
         let mean_result: Vec<f64> = predictions

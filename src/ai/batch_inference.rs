@@ -5,7 +5,7 @@
 //! GPU/CPU utilization.
 
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Configuration for dynamic batching.
 #[derive(Clone, Debug)]
@@ -103,8 +103,7 @@ impl BatchStats {
 
         // Update average batch size
         let n = self.total_batches as f64;
-        self.avg_batch_size =
-            (self.avg_batch_size * (n - 1.0) + batch_size as f64) / n;
+        self.avg_batch_size = (self.avg_batch_size * (n - 1.0) + batch_size as f64) / n;
 
         // Update peak
         if batch_size > self.peak_batch_size {
@@ -246,7 +245,7 @@ impl BatchProcessor {
 
     /// Reset statistics.
     pub fn reset_stats(&self) {
-        let mut stats = self.queue.get_stats();
+        let mut stats = self.queue.stats.lock().unwrap();
         *stats = BatchStats::new();
     }
 }
@@ -271,13 +270,19 @@ impl BatchBenchmarkResult {
     pub fn print(&self) {
         println!("Batch Size: {}", self.batch_size);
         println!("Total Time: {:.2} ms", self.total_time_ms);
-        println!("Avg Time/Inference: {:.2} μs", self.avg_time_per_inference_us);
+        println!(
+            "Avg Time/Inference: {:.2} μs",
+            self.avg_time_per_inference_us
+        );
         println!("Throughput: {:.0} inferences/sec", self.throughput);
     }
 }
 
 /// Run benchmark for different batch sizes.
-pub fn benchmark_batch_inference<F>(inference_fn: F, max_batch_size: usize) -> Vec<BatchBenchmarkResult>
+pub fn benchmark_batch_inference<F>(
+    inference_fn: F,
+    max_batch_size: usize,
+) -> Vec<BatchBenchmarkResult>
 where
     F: Fn(&[Vec<f64>]) -> Vec<Vec<f64>> + Clone,
 {
@@ -363,7 +368,10 @@ mod tests {
 
         // Simple mock inference function
         let mock_inference = |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> {
-            inputs.iter().map(|v| v.iter().map(|x| x * 2.0).collect()).collect()
+            inputs
+                .iter()
+                .map(|v| v.iter().map(|x| x * 2.0).collect())
+                .collect()
         };
 
         let inputs = vec![vec![1.0, 2.0, 3.0], vec![4.0, 5.0, 6.0]];
@@ -376,7 +384,10 @@ mod tests {
     #[test]
     fn test_batch_benchmark() {
         let mock_inference = |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> {
-            inputs.iter().map(|v| v.iter().map(|x| x * 2.0).collect()).collect()
+            inputs
+                .iter()
+                .map(|v| v.iter().map(|x| x * 2.0).collect())
+                .collect()
         };
 
         let results = benchmark_batch_inference(mock_inference, 16);

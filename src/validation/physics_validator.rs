@@ -49,9 +49,9 @@ pub struct PhysicsValidator {
 impl Default for PhysicsValidator {
     fn default() -> Self {
         Self {
-            min_temperature: -50.0, // Extreme cold
-            max_temperature: 100.0,  // Extreme heat
-            max_thermal_load: 500.0, // W/m² - reasonable max for buildings
+            min_temperature: -50.0,         // Extreme cold
+            max_temperature: 100.0,         // Extreme heat
+            max_thermal_load: 500.0,        // W/m² - reasonable max for buildings
             energy_balance_tolerance: 10.0, // W/m² tolerance
         }
     }
@@ -157,11 +157,7 @@ impl PhysicsValidator {
     }
 
     /// Validate that predictions are physically reasonable
-    pub fn validate_prediction(
-        &self,
-        temperatures: &[f64],
-        thermal_loads: &[f64],
-    ) -> bool {
+    pub fn validate_prediction(&self, temperatures: &[f64], thermal_loads: &[f64]) -> bool {
         // Quick validation check
         for &temp in temperatures {
             if temp < self.min_temperature || temp > self.max_temperature {
@@ -184,7 +180,10 @@ pub fn generate_validation_report(results: &PhysicsValidationResult) -> String {
     let mut report = String::new();
     report.push_str("=== Physics Validation Report ===\n\n");
 
-    report.push_str(&format!("Overall Status: {}\n\n", if results.passed { "PASSED" } else { "FAILED" }));
+    report.push_str(&format!(
+        "Overall Status: {}\n\n",
+        if results.passed { "PASSED" } else { "FAILED" }
+    ));
 
     report.push_str(&format!(
         "Energy Balance Error: {:.2} W/m²\n\n",
