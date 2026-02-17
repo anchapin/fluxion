@@ -88,7 +88,7 @@ impl OccupancyProfile {
     /// Generate standard office occupancy schedule
     pub fn office_schedule(mut self) -> Self {
         self.hourly_schedule = vec![0.0; 168];
-        
+
         for day in 0..5 {
             // Weekdays: low at night, ramp up morning, peak mid-day, evening
             for hour in 0..24 {
@@ -124,7 +124,7 @@ impl OccupancyProfile {
     /// Generate retail occupancy schedule
     pub fn retail_schedule(mut self) -> Self {
         self.hourly_schedule = vec![0.0; 168];
-        
+
         for day in 0..7 {
             for hour in 0..24 {
                 let idx = day * 24 + hour;
@@ -150,7 +150,7 @@ impl OccupancyProfile {
     /// Generate school occupancy schedule
     pub fn school_schedule(mut self) -> Self {
         self.hourly_schedule = vec![0.0; 168];
-        
+
         // Weekdays only
         for day in 0..5 {
             for hour in 0..24 {
@@ -203,12 +203,12 @@ impl OccupancyProfile {
 fn heat_gains(building_type: BuildingType) -> (f64, f64) {
     match building_type {
         BuildingType::Office => (75.0, 55.0),     // Seated office work
-        BuildingType::Retail => (120.0, 80.0),     // Light work
-        BuildingType::School => (80.0, 60.0),      // Classroom
-        BuildingType::Hospital => (100.0, 100.0),  // Patient care
-        BuildingType::Hotel => (90.0, 70.0),       // Hotel room
+        BuildingType::Retail => (120.0, 80.0),    // Light work
+        BuildingType::School => (80.0, 60.0),     // Classroom
+        BuildingType::Hospital => (100.0, 100.0), // Patient care
+        BuildingType::Hotel => (90.0, 70.0),      // Hotel room
         BuildingType::Restaurant => (130.0, 100.0), // Restaurant
-        BuildingType::Warehouse => (200.0, 50.0),  // Heavy work
+        BuildingType::Warehouse => (200.0, 50.0), // Heavy work
     }
 }
 
@@ -325,11 +325,8 @@ mod tests {
 
     #[test]
     fn test_occupancy_profile_office() {
-        let profile = OccupancyProfile::new(
-            "Office-1".to_string(),
-            BuildingType::Office,
-            100.0,
-        ).office_schedule();
+        let profile = OccupancyProfile::new("Office-1".to_string(), BuildingType::Office, 100.0)
+            .office_schedule();
 
         // Peak occupancy during work hours
         let occupancy = profile.occupancy_at_time(2, 10); // Wednesday 10am
@@ -342,11 +339,8 @@ mod tests {
 
     #[test]
     fn test_occupancy_profile_retail() {
-        let profile = OccupancyProfile::new(
-            "Retail-1".to_string(),
-            BuildingType::Retail,
-            50.0,
-        ).retail_schedule();
+        let profile = OccupancyProfile::new("Retail-1".to_string(), BuildingType::Retail, 50.0)
+            .retail_schedule();
 
         let occupancy = profile.occupancy_at_time(3, 14); // Saturday 2pm
         assert!(occupancy > 0.0);
@@ -354,11 +348,8 @@ mod tests {
 
     #[test]
     fn test_internal_gains() {
-        let profile = OccupancyProfile::new(
-            "Office-1".to_string(),
-            BuildingType::Office,
-            100.0,
-        ).office_schedule();
+        let profile = OccupancyProfile::new("Office-1".to_string(), BuildingType::Office, 100.0)
+            .office_schedule();
 
         let gains = profile.internal_gains(50); // Tuesday 2am
         assert!(gains > 0.0);

@@ -41,21 +41,16 @@ pub struct DaylightZone {
 
 impl DaylightZone {
     /// Create a new daylight zone
-    pub fn new(
-        id: String,
-        thermal_zone_id: usize,
-        window_area: f64,
-        window_height: f64,
-    ) -> Self {
+    pub fn new(id: String, thermal_zone_id: usize, window_area: f64, window_height: f64) -> Self {
         Self {
             id,
             thermal_zone_id,
             window_area,
             window_height,
             daylight_zone_depth: window_height * 1.5, // Default depth based on window height
-            daylight_factor: 5.0, // Default 5% DF
-            dimming_threshold: 300.0, // lux
-            min_dimming_level: 0.1, // 10% minimum
+            daylight_factor: 5.0,                     // Default 5% DF
+            dimming_threshold: 300.0,                 // lux
+            min_dimming_level: 0.1,                   // 10% minimum
         }
     }
 
@@ -96,7 +91,8 @@ impl DaylightZone {
     ) -> f64 {
         let dimming = self.dimming_level(average_illuminance);
         let energy_reduction = 1.0 - dimming;
-        baseline_power * hours_per_day * days_per_year * energy_reduction / 1000.0 // kWh/year
+        baseline_power * hours_per_day * days_per_year * energy_reduction / 1000.0
+        // kWh/year
     }
 }
 
@@ -135,7 +131,7 @@ impl ShadingControl {
             shading_type,
             position: 0.0,
             deployment_threshold: 300.0, // W/m²
-            min_temp_deployment: 15.0,    // °C
+            min_temp_deployment: 15.0,   // °C
             is_deployed: false,
         }
     }
@@ -215,10 +211,7 @@ impl LightingSchedule {
 
     /// Calculate annual lighting energy consumption (kWh)
     pub fn annual_energy(&self, operating_days: usize) -> f64 {
-        let daily_energy: f64 = (0..24)
-            .map(|h| self.lighting_power(h))
-            .sum::<f64>()
-            / 1000.0; // Convert to kWh
+        let daily_energy: f64 = (0..24).map(|h| self.lighting_power(h)).sum::<f64>() / 1000.0; // Convert to kWh
         daily_energy * operating_days as f64
     }
 }
@@ -278,7 +271,9 @@ impl LightingSystem {
             let avg_dimming: f64 = self
                 .daylight_zones
                 .iter()
-                .map(|dz| dz.dimming_level(dz.interior_illuminance(exterior_illuminance, sky_condition)))
+                .map(|dz| {
+                    dz.dimming_level(dz.interior_illuminance(exterior_illuminance, sky_condition))
+                })
                 .sum::<f64>()
                 / self.daylight_zones.len() as f64;
 
@@ -295,12 +290,7 @@ mod tests {
 
     #[test]
     fn test_daylight_zone() {
-        let zone = DaylightZone::new(
-            "DZ-1".to_string(),
-            0,
-            10.0,
-            2.0,
-        );
+        let zone = DaylightZone::new("DZ-1".to_string(), 0, 10.0, 2.0);
 
         let illuminance = zone.interior_illuminance(10000.0, 0.8);
         assert!(illuminance > 0.0);
@@ -312,7 +302,7 @@ mod tests {
     #[test]
     fn test_shading_control() {
         let mut shading = ShadingControl::new(ShadingType::InteriorBlinds);
-        
+
         // High irradiance should deploy shading
         shading.update(500.0, 25.0);
         assert!(shading.is_deployed);
@@ -325,10 +315,10 @@ mod tests {
     #[test]
     fn test_lighting_schedule() {
         let schedule = LightingSchedule::office_schedule(10.0, 100.0);
-        
+
         // During operating hours
         assert!(schedule.lighting_power(10) > 0.0);
-        
+
         // Outside operating hours
         assert_eq!(schedule.lighting_power(2), 0.0);
     }
@@ -336,7 +326,7 @@ mod tests {
     #[test]
     fn test_lighting_system() {
         let mut system = LightingSystem::new(10.0, 100.0);
-        
+
         let mut dz = DaylightZone::new("DZ-1".to_string(), 0, 10.0, 2.0);
         dz.dimming_threshold = 500.0;
         system.add_daylight_zone(dz);
