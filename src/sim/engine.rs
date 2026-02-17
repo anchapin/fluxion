@@ -863,7 +863,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let sensitivity_val = sensitivity;
         let hour_of_day_idx = timestep % 24;
         let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
-        let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val.abs()) * dt;
+        let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val) * dt;
 
         // 4. Update Temperatures
         let phi_ia_act = phi_ia + hvac_output;
