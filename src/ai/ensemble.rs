@@ -191,23 +191,22 @@ impl EnsembleSurrogate {
         }
 
         // Calculate weights based on inverse of composite score
-        let mut weights = Vec::new();
-        let mut scores: Vec<f64> = self
+        let scores: Vec<f64> = self
             .validation_metrics
-            .iter()
-            .map(|(_, m)| m.composite_score())
+            .values()
+            .map(|m| m.composite_score())
             .collect();
 
         // Handle zero/negative scores
         let min_score = scores.iter().cloned().fold(f64::INFINITY, f64::min);
-        if min_score <= 0.0 {
+        let weights = if min_score <= 0.0 {
             // Use equal weights if any score is non-positive
-            weights = vec![1.0 / self.models.len() as f64; self.models.len()];
+            vec![1.0 / self.models.len() as f64; self.models.len()]
         } else {
             // Inverse score weighting
             let total_inv: f64 = scores.iter().map(|s| 1.0 / s).sum();
-            weights = scores.iter().map(|s| (1.0 / s) / total_inv).collect();
-        }
+            scores.iter().map(|s| (1.0 / s) / total_inv).collect()
+        };
 
         self.model_weights = Some(weights);
     }
@@ -249,7 +248,6 @@ impl EnsembleSurrogate {
         }
 
         let num_outputs = model_predictions[0].len();
-        let num_models = model_predictions.len();
 
         // Aggregate predictions based on method
         let predictions = match self.config.aggregation_method {
@@ -322,7 +320,7 @@ impl EnsembleSurrogate {
             let mut values: Vec<f64> = predictions.iter().map(|p| p[i]).collect();
             values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let mid = values.len() / 2;
-            let median = if values.len() % 2 == 0 {
+            let median = if values.len().is_multiple_of(2) {
                 (values[mid - 1] + values[mid]) / 2.0
             } else {
                 values[mid]
@@ -434,8 +432,8 @@ impl DisagreementMetrics {
 
         for i in 0..num_models {
             for j in (i + 1)..num_models {
-                for k in 0..num_outputs {
-                    let diff = (model_preds[i][k] - model_preds[j][k]).abs();
+                for (k, pred_i) in model_preds[i].iter().enumerate().take(num_outputs) {
+                    let diff = (pred_i - model_preds[j][k]).abs();
                     total_diff += diff;
                     max_diff = max_diff.max(diff);
                     pair_count += 1;
