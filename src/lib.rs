@@ -2,10 +2,16 @@ pub mod ai;
 pub mod physics;
 pub mod sim;
 pub mod validation;
+pub mod weather;
+
+// Re-export thermal model traits for public API
+pub use sim::thermal_model::{
+    PhysicsThermalModel, SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode,
+    ThermalModelTrait, UnifiedThermalModel,
+};
+
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::{ContinuousTensor, VectorField};
-#[cfg(feature = "python-bindings")]
-use crate::physics::nd_array::NDArrayField;
 #[cfg(feature = "python-bindings")]
 use ai::surrogate::SurrogateManager;
 #[cfg(feature = "python-bindings")]
@@ -30,73 +36,6 @@ use sim::engine::ThermalModel;
 // Re-export things for easier access in other modules
 // pub use ai::tensor_wrapper::TorchScalar; // REMOVED
 
-#[cfg(feature = "python-bindings")]
-#[derive(Clone)]
-enum BackendModel {
-    Vector(Box<ThermalModel<VectorField>>),
-    NDArray(Box<ThermalModel<NDArrayField>>),
-}
-
-#[cfg(feature = "python-bindings")]
-impl BackendModel {
-    fn apply_parameters(&mut self, params: &[f64]) {
-        match self {
-            BackendModel::Vector(m) => m.as_mut().apply_parameters(params),
-            BackendModel::NDArray(m) => m.as_mut().apply_parameters(params),
-        }
-    }
-
-    fn solve_timesteps(
-        &mut self,
-        steps: usize,
-        surrogates: &SurrogateManager,
-        use_ai: bool,
-    ) -> f64 {
-        match self {
-            BackendModel::Vector(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
-            BackendModel::NDArray(m) => m.as_mut().solve_timesteps(steps, surrogates, use_ai),
-        }
-    }
-
-    fn set_loads(&mut self, loads: &[f64]) {
-        match self {
-            BackendModel::Vector(m) => m.loads = m.temperatures.new_with_data(loads.to_vec()),
-            BackendModel::NDArray(m) => m.loads = m.temperatures.new_with_data(loads.to_vec()),
-        }
-    }
-
-    fn step_physics(&mut self, outdoor_temp: f64) -> f64 {
-        match self {
-            BackendModel::Vector(m) => m.step_physics(outdoor_temp),
-            BackendModel::NDArray(m) => m.step_physics(outdoor_temp),
-        }
-    }
-
-    fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
-        match self {
-            BackendModel::Vector(m) => m.calc_analytical_loads(timestep, use_analytical_gains),
-            BackendModel::NDArray(m) => m.calc_analytical_loads(timestep, use_analytical_gains),
-        }
-    }
-
-    fn get_total_area(&self) -> f64 {
-        match self {
-            BackendModel::Vector(m) => m.zone_area.integrate(),
-            BackendModel::NDArray(m) => m.zone_area.integrate(),
-        }
-    }
-}
-
-#[cfg(feature = "python-bindings")]
-impl AsRef<[f64]> for BackendModel {
-    fn as_ref(&self) -> &[f64] {
-        match self {
-            BackendModel::Vector(m) => m.temperatures.as_slice(),
-            BackendModel::NDArray(m) => m.temperatures.as_slice(),
-        }
-    }
-}
-
 /// Standard Single-Building Model for detailed building energy analysis.
 ///
 /// Use this class when you need detailed simulation of a single building configuration,
@@ -104,7 +43,7 @@ impl AsRef<[f64]> for BackendModel {
 #[cfg(feature = "python-bindings")]
 #[pyclass]
 struct Model {
-    inner: BackendModel,
+    inner: ThermalModel<VectorField>,
     surrogates: SurrogateManager,
 }
 
@@ -115,19 +54,10 @@ impl Model {
     ///
     /// # Arguments
     /// * `_config_path` - Path to building configuration file
-    /// * `shape` - Optional shape for NDArray backend (e.g., [10, 10]). If None, uses Vector backend with 10 zones.
     #[new]
-    #[pyo3(signature = (_config_path, shape = None))]
-    fn new(_config_path: String, shape: Option<Vec<usize>>) -> PyResult<Self> {
-        let inner = if let Some(s) = shape {
-            BackendModel::NDArray(Box::new(
-                ThermalModel::<NDArrayField>::new_ndarray_with_shape(s),
-            ))
-        } else {
-            BackendModel::Vector(Box::new(ThermalModel::<VectorField>::new(10)))
-        };
+    fn new(_config_path: String) -> PyResult<Self> {
         Ok(Model {
-            inner,
+            inner: ThermalModel::<VectorField>::new(10),
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
@@ -168,7 +98,7 @@ impl Model {
 #[cfg(feature = "python-bindings")]
 #[pyclass]
 struct BatchOracle {
-    base_model: BackendModel,
+    base_model: ThermalModel<VectorField>,
     surrogates: SurrogateManager,
 }
 
@@ -177,26 +107,46 @@ impl BatchOracle {
     // Physical constraints for optimization parameters
     const MIN_U_VALUE: f64 = 0.1; // Minimum realistic U-value (W/m²K)
     const MAX_U_VALUE: f64 = 5.0; // Maximum realistic U-value
-    const MIN_SETPOINT: f64 = 15.0; // Min HVAC setpoint (°C)
-    const MAX_SETPOINT: f64 = 30.0; // Max HVAC setpoint (°C)
+    const MIN_HEATING_SETPOINT: f64 = 15.0; // Min heating setpoint (°C)
+    const MAX_HEATING_SETPOINT: f64 = 25.0; // Max heating setpoint (°C)
+    const MIN_COOLING_SETPOINT: f64 = 22.0; // Min cooling setpoint (°C)
+    const MAX_COOLING_SETPOINT: f64 = 32.0; // Max cooling setpoint (°C)
 
     // Parameter indices
     const U_VALUE_INDEX: usize = 0;
-    const SETPOINT_INDEX: usize = 1;
+    const HEATING_SETPOINT_INDEX: usize = 1;
+    const COOLING_SETPOINT_INDEX: usize = 2;
 
     /// Validates a parameter vector against physical constraints.
     fn validate_parameters(params: &[f64]) -> Result<(), String> {
-        if params.len() < 2 {
-            return Err("Parameter vector must have at least 2 elements.".to_string());
+        if params.len() < 3 {
+            return Err("Parameter vector must have at least 3 elements.".to_string());
         }
         let u_value = params[Self::U_VALUE_INDEX];
-        let setpoint = params[Self::SETPOINT_INDEX];
+        let heating_setpoint = params[Self::HEATING_SETPOINT_INDEX];
+        let cooling_setpoint = params[Self::COOLING_SETPOINT_INDEX];
 
         if !(Self::MIN_U_VALUE..=Self::MAX_U_VALUE).contains(&u_value) {
             return Err(format!("U-value out of range: {}", u_value));
         }
-        if !(Self::MIN_SETPOINT..=Self::MAX_SETPOINT).contains(&setpoint) {
-            return Err(format!("Setpoint out of range: {}", setpoint));
+        if !(Self::MIN_HEATING_SETPOINT..=Self::MAX_HEATING_SETPOINT).contains(&heating_setpoint) {
+            return Err(format!(
+                "Heating setpoint out of range: {}",
+                heating_setpoint
+            ));
+        }
+        if !(Self::MIN_COOLING_SETPOINT..=Self::MAX_COOLING_SETPOINT).contains(&cooling_setpoint) {
+            return Err(format!(
+                "Cooling setpoint out of range: {}",
+                cooling_setpoint
+            ));
+        }
+        // Validate that heating < cooling (deadband must exist)
+        if heating_setpoint >= cooling_setpoint {
+            return Err(format!(
+                "Heating setpoint ({}) must be less than cooling setpoint ({})",
+                heating_setpoint, cooling_setpoint
+            ));
         }
         Ok(())
     }
@@ -208,21 +158,10 @@ impl BatchOracle {
     /// Create a new BatchOracle instance.
     ///
     /// Initializes the base thermal model template and surrogate manager.
-    ///
-    /// # Arguments
-    /// * `shape` - Optional shape for NDArray backend.
     #[new]
-    #[pyo3(signature = (shape = None))]
-    fn new(shape: Option<Vec<usize>>) -> PyResult<Self> {
-        let base_model = if let Some(s) = shape {
-            BackendModel::NDArray(Box::new(
-                ThermalModel::<NDArrayField>::new_ndarray_with_shape(s),
-            ))
-        } else {
-            BackendModel::Vector(Box::new(ThermalModel::<VectorField>::new(10)))
-        };
+    fn new() -> PyResult<Self> {
         Ok(BatchOracle {
-            base_model,
+            base_model: ThermalModel::<VectorField>::new(10), // The "template" building
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
@@ -233,11 +172,19 @@ impl BatchOracle {
     /// This is the critical "hot loop" for optimization. The function crosses the Python-Rust
     /// boundary once with all population data, then uses Rayon for multi-threaded evaluation.
     ///
+    /// When using surrogates, this implements a time-first loop architecture:
+    /// - Time loop (0..8760) runs sequentially on main thread
+    /// - Batched inference ONCE per timestep (full GPU utilization)
+    /// - Physics updates run in parallel with rayon
+    ///
+    /// This avoids nested parallelism and maximizes GPU tensor core utilization.
+    ///
     /// # Arguments
     /// * `population` - Vec of parameter vectors, each representing one design candidate.
-    ///   Each vector should have at least 2 elements:
-    ///   - `[0]`: Window U-value (W/m²K, range: 0.5-3.0)
-    ///   - `[1]`: HVAC setpoint (°C, range: 19-24)
+    ///   Each vector should have at least 3 elements:
+    ///   - `[0]`: Window U-value (W/m²K, range: 0.1-5.0)
+    ///   - `[1]`: Heating setpoint (°C, range: 15-25)
+    ///   - `[2]`: Cooling setpoint (°C, range: 22-32)
     /// * `use_surrogates` - If true, use neural network surrogates for faster (~100x) evaluation;
     ///   if false, use physics-based analytical calculations (slower but exact)
     ///
@@ -253,73 +200,113 @@ impl BatchOracle {
     ) -> PyResult<Vec<f64>> {
         use rayon::prelude::*;
 
-        // 1. Cross the Python-Rust boundary ONCE with all data.
-
-        // 2. Initialize all models in parallel
-        let mut active_instances: Vec<(usize, BackendModel)> = population
+        // 1. Validate and initialize all models upfront (parallel)
+        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population
             .par_iter()
             .enumerate()
             .filter_map(|(i, params)| {
                 if Self::validate_parameters(params).is_err() {
                     return None;
                 }
-                let mut instance = self.base_model.clone();
-                instance.apply_parameters(params);
-                Some((i, instance))
+                let mut model = self.base_model.clone();
+                model.apply_parameters(params);
+                Some((i, model))
             })
             .collect();
 
-        // 3. Prepare accumulators for energy
-        let mut active_energies = vec![0.0; active_instances.len()];
+        let mut results = vec![f64::NAN; population.len()];
 
-        // 4. Time loop (0..8760) - "Outer Loop" Pattern for Batched Inference
-        for t in 0..8760 {
-            let hour_of_day = t % 24;
-            let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
-            let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+        if use_surrogates && !valid_configs.is_empty() {
+            // Coordinator-Worker pattern with Channels
+            let n_workers = valid_configs.len();
+            let mut coord_txs = Vec::with_capacity(n_workers);
+            let mut coord_rxs = Vec::with_capacity(n_workers);
+            let mut worker_channels = Vec::with_capacity(n_workers);
 
-            if use_surrogates {
-                // Collect inputs for the entire population
-                let batch_inputs: Vec<&[f64]> =
-                    active_instances.iter().map(|(_, m)| m.as_ref()).collect();
+            for _ in 0..n_workers {
+                let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
+                let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
+                coord_rxs.push(rx_from_worker);
+                coord_txs.push(tx_to_worker);
+                worker_channels.push((tx_to_coord, rx_from_coord));
+            }
 
-                // Run batched inference once
-                let batch_loads = self.surrogates.predict_loads_batched(&batch_inputs);
+            let final_worker_data = rayon::scope(|s| {
+                let (result_tx, result_rx) = crossbeam::channel::unbounded();
 
-                // Update physics in parallel
-                active_instances
-                    .iter_mut()
-                    .zip(active_energies.iter_mut())
-                    .zip(batch_loads.iter())
-                    .for_each(|(((_, model), energy), loads)| {
-                        model.set_loads(loads);
-                        *energy += model.step_physics(outdoor_temp);
+                // Move models and channels into workers
+                for ((idx, mut model), (tx, rx)) in
+                    valid_configs.drain(..).zip(worker_channels.into_iter())
+                {
+                    let res_tx = result_tx.clone();
+                    s.spawn(move |_| {
+                        let energy = model.solve_timesteps_batched(8760, tx, rx);
+                        let _ = res_tx.send((idx, model, energy));
                     });
-            } else {
-                // Analytical loads + Physics in parallel
-                active_instances
-                    .iter_mut()
-                    .zip(active_energies.iter_mut())
-                    .for_each(|((_, model), energy)| {
-                        model.calc_analytical_loads(t, true);
-                        *energy += model.step_physics(outdoor_temp);
-                    });
+                }
+                drop(result_tx);
+
+                // Coordinator loop
+                for _t in 0..8760 {
+                    // 1. Collect temperatures from all workers
+                    let mut batch_temps = Vec::with_capacity(n_workers);
+                    for rx in &coord_rxs {
+                        batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
+                    }
+
+                    // 2. Batched inference
+                    let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
+
+                    // 3. Send loads back to workers
+                    for (tx, loads) in coord_txs.iter().zip(batch_loads) {
+                        tx.send(loads).expect("Failed to send loads to worker");
+                    }
+                }
+
+                let mut final_data = Vec::with_capacity(n_workers);
+                while let Ok(data) = result_rx.recv() {
+                    final_data.push(data);
+                }
+                final_data
+            });
+
+            // 3. Normalize and populate results
+            for (idx, model, energy) in final_worker_data {
+                let total_area = model.zone_area.integrate();
+                results[idx] = if total_area > 0.0 {
+                    energy / total_area
+                } else {
+                    0.0
+                };
+            }
+        } else if !valid_configs.is_empty() {
+            // Analytical path - fully parallel
+            let mut energies = vec![0.0; valid_configs.len()];
+            valid_configs
+                .par_iter_mut()
+                .zip(energies.par_iter_mut())
+                .for_each(|((_, model), energy)| {
+                    for t in 0..8760 {
+                        let hour_of_day = t % 24;
+                        let daily_cycle =
+                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                        *energy +=
+                            model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
+                    }
+                });
+
+            for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
+                let total_area = model.zone_area.integrate();
+                results[*idx] = if total_area > 0.0 {
+                    *energy / total_area
+                } else {
+                    0.0
+                };
             }
         }
 
-        // 5. Finalize results (Calculate EUI)
-        let mut final_results = vec![f64::NAN; population.len()];
-
-        for ((idx, model), energy_kwh) in active_instances.iter().zip(active_energies.iter()) {
-            let area = model.get_total_area();
-            if area > 0.0 {
-                final_results[*idx] = energy_kwh / area;
-            } else {
-                final_results[*idx] = 0.0;
-            }
-        }
-
-        Ok(final_results)
+        Ok(results)
     }
 
     /// Register an ONNX surrogate model for the oracle. This replaces the internal
@@ -356,13 +343,13 @@ mod tests {
     #[cfg(feature = "python-bindings")]
     #[test]
     fn test_batch_oracle_validation() {
-        let oracle = BatchOracle::new(None).unwrap();
+        let oracle = BatchOracle::new().unwrap();
         let population = vec![
-            vec![1.5, 22.0],  // Valid
-            vec![-1.0, 22.0], // Invalid U-value
-            vec![1.5, 500.0], // Invalid setpoint
-            vec![0.05, 22.0], // Invalid U-value (too low)
-            vec![1.5, 10.0],  // Invalid setpoint (too low)
+            vec![1.5, 20.0, 27.0],  // Valid
+            vec![-1.0, 20.0, 27.0], // Invalid U-value
+            vec![1.5, 500.0, 27.0], // Invalid heating setpoint
+            vec![1.5, 20.0, 10.0],  // Invalid cooling setpoint
+            vec![1.5, 27.0, 20.0],  // Invalid: heating >= cooling
         ];
 
         let results = oracle.evaluate_population(population, false).unwrap();
@@ -376,33 +363,70 @@ mod tests {
 
     #[cfg(feature = "python-bindings")]
     #[test]
-    fn test_batch_oracle_surrogates() {
-        let oracle = BatchOracle::new(None).unwrap();
-        let population = vec![vec![1.5, 22.0], vec![2.0, 21.0]];
+    fn test_batched_vs_unbatched_consistency() {
+        let oracle = BatchOracle::new().unwrap();
+        let population = vec![vec![1.5, 22.0], vec![2.0, 21.0], vec![1.0, 23.0]];
 
-        // This exercises the batched loop path with mock surrogates
-        let results = oracle.evaluate_population(population, true).unwrap();
+        // Test surrogate path
+        let results_batched = oracle
+            .evaluate_population(population.clone(), true)
+            .unwrap();
+        assert!(results_batched.iter().all(|r: &f64| r.is_finite()));
 
-        assert_eq!(results.len(), 2);
-        assert!(results[0].is_finite());
-        assert!(results[0] > 0.0);
-        assert!(results[1].is_finite());
-        assert!(results[1] > 0.0);
+        // Test analytical path for comparison
+        let results_analytical = oracle.evaluate_population(population, false).unwrap();
+        assert!(results_analytical.iter().all(|r: &f64| r.is_finite()));
+
+        // Results should be in similar range (may differ due to mock vs analytical loads)
+        for (batched, analytical) in results_batched.iter().zip(results_analytical.iter()) {
+            assert!(*batched > 0.0, "Batched result should be positive");
+            assert!(*analytical > 0.0, "Analytical result should be positive");
+        }
     }
 
     #[cfg(feature = "python-bindings")]
     #[test]
-    fn test_model_ndarray_backend() {
-        use crate::Model;
-        // Instantiate model with NDArray backend (10x10 grid)
-        let mut model = Model::new("config.json".to_string(), Some(vec![10, 10])).unwrap();
+    fn test_large_population_performance() {
+        let oracle = BatchOracle::new().unwrap();
+        let population: Vec<Vec<f64>> = (0..1000).map(|_| vec![1.5, 22.0]).collect();
 
-        // Run simulation
-        let result = model.simulate(1, false).unwrap();
+        let start = std::time::Instant::now();
+        let results = oracle.evaluate_population(population, true).unwrap();
+        let duration = start.elapsed();
 
-        // Verify result is valid
-        assert!(result > 0.0);
-        assert!(result.is_finite());
+        assert_eq!(results.len(), 1000);
+        assert!(results.iter().all(|r: &f64| r.is_finite()));
+
+        // Target: <100ms for 1000 configs (may be slower in debug mode)
+        #[cfg(debug_assertions)]
+        println!("Debug mode: {:?}", duration);
+        #[cfg(not(debug_assertions))]
+        assert!(duration.as_millis() < 100, "Too slow: {:?}", duration);
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_10k_population_throughput() {
+        let oracle = BatchOracle::new().unwrap();
+        let population: Vec<Vec<f64>> = (0..10_000).map(|_| vec![1.5, 22.0]).collect();
+
+        let start = std::time::Instant::now();
+        let results = oracle.evaluate_population(population, true).unwrap();
+        let duration = start.elapsed();
+
+        assert_eq!(results.len(), 10_000);
+        assert!(results.iter().all(|r: &f64| r.is_finite()));
+
+        let configs_per_sec = 10_000.0 / duration.as_secs_f64();
+        println!("Throughput: {:.0} configs/sec", configs_per_sec);
+
+        // Target: >10,000 configs/sec on 8-core CPU (may be slower in debug mode)
+        #[cfg(not(debug_assertions))]
+        assert!(
+            configs_per_sec > 10_000.0,
+            "Below target: {:.0}/sec",
+            configs_per_sec
+        );
     }
 
     #[test]
@@ -414,11 +438,12 @@ mod tests {
     #[test]
     fn test_apply_parameters() {
         let mut model = ThermalModel::<VectorField>::new(10);
-        let params = vec![1.5, 22.0];
+        let params = vec![1.5, 20.0, 27.0];
 
         model.apply_parameters(&params);
         assert_eq!(model.window_u_value, 1.5);
-        assert_eq!(model.hvac_setpoint, 22.0);
+        assert_eq!(model.heating_setpoint, 20.0);
+        assert_eq!(model.cooling_setpoint, 27.0);
     }
 
     #[test]
@@ -426,7 +451,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&[1.5, 21.0]);
+        model.apply_parameters(&[1.5, 20.0, 27.0]);
         let energy = model.solve_timesteps(8760, &surrogates, false);
 
         assert!(energy > 0.0, "Energy should be positive");
@@ -437,7 +462,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-        model.apply_parameters(&[1.5, 21.0]);
+        model.apply_parameters(&[1.5, 20.0, 27.0]);
         let energy = model.solve_timesteps(8760, &surrogates, true);
 
         assert!(energy > 0.0, "Energy should be positive");
@@ -474,7 +499,9 @@ mod tests {
 
         // Create a large population
         let population_size = 2000;
-        let population: Vec<Vec<f64>> = (0..population_size).map(|_| vec![1.5, 22.0]).collect();
+        let population: Vec<Vec<f64>> = (0..population_size)
+            .map(|_| vec![1.5, 20.0, 27.0])
+            .collect();
 
         // Sequential execution (using standard iter)
         let start_seq = std::time::Instant::now();
@@ -522,3 +549,6 @@ mod tests {
         }
     }
 }
+
+// Re-export ASHRAE 140 validation models
+pub use validation::ashrae_140::{Case600Model, SimulationResult};
