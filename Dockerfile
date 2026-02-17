@@ -49,8 +49,9 @@ COPY requirements-dev.txt .
 # Install Python build dependencies
 RUN pip install --no-cache-dir maturin pytest
 
-# Install Rust for maturin
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+# Install Rust for maturin and set PATH
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    echo 'export PATH="/root/.cargo/bin:$PATH"' >> ~/.bashrc
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy Cargo files from builder
