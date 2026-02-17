@@ -1,6 +1,7 @@
 pub mod boundary;
 pub mod components;
 pub mod construction;
+pub mod demand_response;
 pub mod engine;
 pub mod hvac;
 pub mod lighting;
