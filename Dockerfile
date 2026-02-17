@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y \
     libssl-dev \
     pkg-config \
     python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /build
