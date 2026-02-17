@@ -674,6 +674,46 @@ impl SurrogateManager {
     }
 }
 
+/// Configuration for MC Dropout uncertainty estimation.
+#[derive(Clone, Debug)]
+pub struct MCDropoutConfig {
+    /// Number of stochastic forward passes for uncertainty estimation
+    pub num_samples: usize,
+    /// Standard deviation of input noise for perturbation (0.0 = no noise)
+    pub input_noise_std: f64,
+    /// Whether to use dropout at inference time (requires dropout-enabled model)
+    pub use_inference_dropout: bool,
+}
+
+impl Default for MCDropoutConfig {
+    fn default() -> Self {
+        MCDropoutConfig {
+            num_samples: 20,
+            input_noise_std: 0.5,
+            use_inference_dropout: false,
+        }
+    }
+}
+
+impl MCDropoutConfig {
+    /// Create a new MC Dropout config
+    pub fn new(num_samples: usize) -> Self {
+        MCDropoutConfig {
+            num_samples,
+            ..Default::default()
+        }
+    }
+
+    /// Create with custom noise std
+    pub fn with_noise(num_samples: usize, noise_std: f64) -> Self {
+        MCDropoutConfig {
+            num_samples,
+            input_noise_std: noise_std,
+            ..Default::default()
+        }
+    }
+}
+
 /// Prediction result with uncertainty bounds.
 #[derive(Debug, Clone)]
 pub struct PredictionWithUncertainty {
@@ -685,6 +725,8 @@ pub struct PredictionWithUncertainty {
     pub lower_bound: Vec<f64>,
     /// Upper bound (mean + 2*std)
     pub upper_bound: Vec<f64>,
+    /// Individual samples (for detailed analysis)
+    pub samples: Vec<Vec<f64>>,
 }
 
 impl PredictionWithUncertainty {
@@ -706,7 +748,62 @@ impl PredictionWithUncertainty {
             std,
             lower_bound,
             upper_bound,
+            samples: vec![],
         }
+    }
+
+    /// Creates a new prediction with uncertainty including individual samples.
+    pub fn with_samples(mean: Vec<f64>, std: Vec<f64>, samples: Vec<Vec<f64>>) -> Self {
+        let lower_bound: Vec<f64> = mean
+            .iter()
+            .zip(std.iter())
+            .map(|(&m, &s)| m - 2.0 * s)
+            .collect();
+        let upper_bound: Vec<f64> = mean
+            .iter()
+            .zip(std.iter())
+            .map(|(&m, &s)| m + 2.0 * s)
+            .collect();
+
+        Self {
+            mean,
+            std,
+            lower_bound,
+            upper_bound,
+            samples,
+        }
+    }
+
+    /// Get the confidence interval at a specific level.
+    ///
+    /// # Arguments
+    /// * `confidence` - Confidence level (e.g., 0.95 for 95%)
+    ///
+    /// # Returns
+    /// Tuple of (lower_bound, upper_bound) at the specified confidence level
+    pub fn confidence_interval(&self, confidence: f64) -> (Vec<f64>, Vec<f64>) {
+        let z_score = match (confidence * 100.0) as u32 {
+            90 => 1.645,
+            95 => 1.960,
+            99 => 2.576,
+            _ => 1.960,
+        };
+
+        let lower: Vec<f64> = self
+            .mean
+            .iter()
+            .zip(self.std.iter())
+            .map(|(&m, &s)| m - z_score * s)
+            .collect();
+
+        let upper: Vec<f64> = self
+            .mean
+            .iter()
+            .zip(self.std.iter())
+            .map(|(&m, &s)| m + z_score * s)
+            .collect();
+
+        (lower, upper)
     }
 }
 
