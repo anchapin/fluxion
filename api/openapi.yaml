@@ -1,0 +1,230 @@
+openapi: 3.0.0
+info:
+  title: Fluxion API
+  description: |
+    REST API for building energy simulation and optimization using Fluxion.
+    
+    Fluxion is a high-performance building energy modeling tool that supports both
+    physics-based simulation and AI surrogate models for rapid evaluation.
+    
+    ## Features
+    - Population evaluation for optimization workflows
+    - Surrogate model loading/unloading
+    - Health monitoring endpoints
+    
+    ## Use Cases
+    - Genetic algorithm optimization
+    - Quantum annealing (D-Wave integration)
+    - Parametric analysis
+    - Uncertainty quantification
+  version: 0.1.0
+  contact:
+    name: Fluxion Team
+    url: https://github.com/anchapin/fluxion
+  license:
+    name: MIT
+    url: https://github.com/anchapin/fluxion/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:8000
+    description: Local development server
+
+paths:
+  /:
+    get:
+      summary: Root endpoint
+      description: Returns API health status
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /health:
+    get:
+      summary: Health check
+      description: Health check endpoint for monitoring and load balancers
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /status:
+    get:
+      summary: Get model status
+      description: Returns current surrogate model loading status
+      responses:
+        '200':
+          description: Model status retrieved
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModelStatus'
+
+  /load-surrogate:
+    post:
+      summary: Load surrogate model
+      description: |
+        Load an ONNX surrogate model for fast inference.
+        
+        The model should be trained on building energy data and exported in ONNX format.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - model_path
+              properties:
+                model_path:
+                  type: string
+                  description: Path to the ONNX model file
+      responses:
+        '200':
+          description: Model loaded successfully
+          content:
+            application/json:
+              example:
+                status: success
+                message: Model loaded from /path/to/model.onnx
+        '400':
+          description: Invalid request
+        '500':
+          description: Model loading failed
+
+  /unload-surrogate:
+    post:
+      summary: Unload surrogate model
+      description: Unload the current surrogate model to free memory
+      responses:
+        '200':
+          description: Model unloaded successfully
+          content:
+            application/json:
+              example:
+                status: success
+                message: Surrogate model unloaded
+
+  /evaluate:
+    post:
+      summary: Evaluate population
+      description: |
+        Evaluate a population of building design configurations.
+        
+        This is the core endpoint for optimization workflows. It accepts a list of
+        parameter vectors and returns fitness values (EUI) for each candidate.
+        
+        ## Parameter Vector Format
+        Each parameter vector should contain:
+        - `u_value`: Window U-value (W/m²K, range: 0.1-5.0)
+        - `heating_setpoint`: Heating setpoint (°C, range: 15-25)
+        - `cooling_setpoint`: Cooling setpoint (°C, range: 22-32)
+        
+        ## Example Request
+        ```json
+        {
+          "population": [
+            [1.5, 20.0, 27.0],
+            [2.0, 21.0, 26.0],
+            [1.0, 19.0, 28.0]
+          ],
+          "use_surrogates": true
+        }
+        ```
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PopulationEvaluationRequest'
+      responses:
+        '200':
+          description: Evaluation completed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PopulationEvaluationResponse'
+        '400':
+          description: Invalid request parameters
+        '500':
+          description: Evaluation failed
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: healthy
+        version:
+          type: string
+          example: 0.1.0
+
+    ModelStatus:
+      type: object
+      properties:
+        surrogate_loaded:
+          type: boolean
+          example: true
+        surrogate_path:
+          type: string
+          nullable: true
+          example: /models/loads_predictor.onnx
+        model_info:
+          type: object
+          nullable: true
+          properties:
+            path:
+              type: string
+            loaded:
+              type: boolean
+
+    PopulationEvaluationRequest:
+      type: object
+      required:
+        - population
+      properties:
+        population:
+          type: array
+          items:
+            type: array
+            items:
+              type: number
+              format: float
+          description: |
+            List of parameter vectors. Each vector represents one design candidate.
+            Required parameters: [window_u_value, heating_setpoint, cooling_setpoint]
+          example:
+            - [1.5, 20.0, 27.0]
+            - [2.0, 21.0, 26.0]
+        use_surrogates:
+          type: boolean
+          default: true
+          description: If true, use AI surrogates for faster evaluation
+
+    PopulationEvaluationResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            type: number
+            format: float
+          description: List of EUI values (kWh/m²/year) for each candidate
+          example: [105.5, 98.2, 112.3]
+        num_evaluated:
+          type: integer
+          description: Number of configurations evaluated
+          example: 3
+        evaluation_time_ms:
+          type: number
+          format: float
+          description: Evaluation time in milliseconds
+          example: 150.5

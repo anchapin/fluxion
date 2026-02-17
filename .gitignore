@@ -1,6 +1,5 @@
 # Rust
 target/
-Cargo.lock
 **/*.rs.bk
 *.pdb
 
@@ -78,3 +77,4 @@ Thumbs.db
 .env.local
 *.copilotmd
 cobertura.xml
+worktrees/

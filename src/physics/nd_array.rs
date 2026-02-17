@@ -187,21 +187,18 @@ impl ContinuousTensor<f64> for NDArrayField {
         NDArrayField::from_shape_vec(self.shape(), vec![value; self.len()])
     }
 
-    fn new_with_data(&self, data: Vec<f64>) -> Self {
-        assert_eq!(data.len(), self.len(), "Data length mismatch");
-        NDArrayField::from_shape_vec(self.shape(), data)
+    fn elementwise_min(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.min(b))
+    }
+
+    fn elementwise_max(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.max(b))
     }
 }
 
 impl From<crate::physics::cta::VectorField> for NDArrayField {
     fn from(v: crate::physics::cta::VectorField) -> Self {
         NDArrayField::from_shape_vec(vec![v.len()], v.as_slice().to_vec())
-    }
-}
-
-impl AsRef<[f64]> for NDArrayField {
-    fn as_ref(&self) -> &[f64] {
-        self.as_slice()
     }
 }
 

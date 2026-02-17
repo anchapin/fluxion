@@ -6,6 +6,22 @@
 
 Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surrogates, while maintaining a rigorous First-Principles thermal network for energy conservation.
 
+## ASHRAE 140 Validation
+
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-passing-8%2F18-yellow)
+
+Fluxion is validated against **ASHRAE Standard 140-2023** (8 of 18 cases currently implemented). This ensures the accuracy of our differentiable physics engine against industry-standard benchmarks.
+
+> **Note**: Full 18/18 validation is in progress. See [GitHub Issue #103](https://github.com/anchapin/fluxion/issues/103) for implementation status.
+
+Key features validated:
+- **Shading**: Overhangs and vertical fins.
+- **Multi-Zone**: Inter-zone heat transfer through common walls.
+- **Scheduling**: Thermostat setbacks and timed ventilation.
+- **Free-Floating**: Natural thermal response without HVAC.
+
+See [ASHRAE 140 Validation](docs/ASHRAE140_VALIDATION.md) for details.
+
 ## 🚀 Features
 
   * **Throughput**: Evaluates **10,000+ configurations/sec** via `BatchOracle` and `rayon` threading.
