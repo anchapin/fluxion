@@ -29,6 +29,7 @@ COPY requirements-dev.txt .
 COPY src/ ./src/
 COPY benches/ ./benches/
 COPY README.md .
+COPY api/ ./api/
 
 # Install Python build dependencies
 RUN pip install --no-cache-dir maturin pytest
