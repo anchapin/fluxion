@@ -299,11 +299,11 @@ impl ASHRAE140Validator {
             // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
-                let hvac_watts = hvac_kwh * 1000.0 / 3.6;
+                let hvac_watts = hvac_kwh * 1000.0; // kWh to Wh for 1 hour = kW * 1000
                 peak_heating_watts = peak_heating_watts.max(hvac_watts);
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-                let hvac_watts = (-hvac_kwh) * 1000.0 / 3.6;
+                let hvac_watts = (-hvac_kwh) * 1000.0; // kWh to Wh for 1 hour = kW * 1000
                 peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
             }
         }
