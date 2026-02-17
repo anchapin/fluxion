@@ -9,9 +9,6 @@ on:
       - 'v*'
   workflow_dispatch:
 
-env:
-  PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
-
 jobs:
   # Build and publish to PyPI
   publish:
