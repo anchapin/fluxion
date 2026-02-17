@@ -48,8 +48,11 @@ COPY requirements-dev.txt .
 # Install Python build dependencies
 RUN pip install --no-cache-dir maturin pytest
 
+# Copy Cargo files from builder
+COPY --from=builder-rust /build/Cargo.toml /build/Cargo.lock ./
+
 # Copy Rust source
-COPY --from=builder-rust /build ./
+COPY src/ ./src/
 
 # Build Python bindings
 RUN maturin build --release --strip
