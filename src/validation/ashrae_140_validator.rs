@@ -261,12 +261,22 @@ impl ASHRAE140Validator {
                 solar_loads_per_zone.push(solar_gain / floor_area);
             }
 
-            model.set_loads(&internal_loads_per_zone);
-            model.set_solar_loads(&solar_loads_per_zone);
+            // Combine internal and solar loads
+            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
+            for i in 0..num_zones {
+                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
+                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
+                total_loads.push(internal + solar);
+            }
+            model.set_loads(&total_loads);
 
-            let (h_kwh, c_kwh) = model.step_physics(step, weather_data.dry_bulb_temp);
-            annual_heating_joules += h_kwh * 3.6e6;
-            annual_cooling_joules += c_kwh * 3.6e6;
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            // Positive = heating, negative = cooling
+            if hvac_kwh > 0.0 {
+                annual_heating_joules += hvac_kwh * 3.6e6;
+            } else {
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            }
         }
 
         CaseResults {

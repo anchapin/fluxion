@@ -183,8 +183,8 @@ impl ThermalModelTrait for PhysicsThermalModel {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedules[0].value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedules[0].value(timestep % 24);
+        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             // Heating needed
@@ -300,8 +300,8 @@ impl ThermalModelTrait for SurrogateThermalModel {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedules[0].value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedules[0].value(timestep % 24);
+        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             (heating_sp - t) * 100.0
@@ -434,8 +434,8 @@ impl ThermalModelTrait for UnifiedThermalModel {
             return 0.0;
         }
         let t = temps[0];
-        let heating_sp = self.inner.heating_schedules[0].value(timestep % 24);
-        let cooling_sp = self.inner.cooling_schedules[0].value(timestep % 24);
+        let heating_sp = self.inner.heating_schedule.value(timestep % 24);
+        let cooling_sp = self.inner.cooling_schedule.value(timestep % 24);
 
         if t < heating_sp {
             (heating_sp - t) * 100.0
