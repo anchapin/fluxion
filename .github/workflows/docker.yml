@@ -54,7 +54,7 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
-            type=sha,prefix={{branch}}-
+            type=sha
 
       - name: Build Docker image
         uses: docker/build-push-action@v5
