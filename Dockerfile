@@ -21,6 +21,7 @@ COPY Cargo.lock ./
 
 # Copy source code for building
 COPY src/ ./src/
+COPY benches/ ./benches/
 
 # Build dependencies only (cache layer)
 RUN cargo build --release
