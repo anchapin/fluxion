@@ -147,8 +147,8 @@ impl HeatPump {
             cooling_capacity,
             heating_cop,
             cooling_cop,
-            design_temp_heating: -5.0,  // Design heating temp
-            design_temp_cooling: 35.0,   // Design cooling temp
+            design_temp_heating: -5.0, // Design heating temp
+            design_temp_cooling: 35.0, // Design cooling temp
             mode: HeatPumpMode::Off,
         }
     }
@@ -179,7 +179,7 @@ impl HeatPump {
         let temp_diff = (self.design_temp_heating - outdoor_temp).abs();
         let capacity_factor = 1.0 - (temp_diff * 0.01);
         let actual_capacity = self.heating_capacity * capacity_factor.max(0.3);
-        
+
         let cop = self.heating_cop_at_temperature(outdoor_temp);
         actual_capacity / cop
     }
@@ -192,7 +192,7 @@ impl HeatPump {
         let temp_diff = (outdoor_temp - self.design_temp_cooling).abs();
         let capacity_factor = 1.0 - (temp_diff * 0.015);
         let actual_capacity = self.cooling_capacity * capacity_factor.max(0.3);
-        
+
         let cop = self.cooling_cop_at_temperature(outdoor_temp);
         actual_capacity / cop
     }
@@ -218,11 +218,11 @@ mod tests {
         let vav = VAVTerminal::new("VAV-1".to_string(), 0, 0.5);
         assert_eq!(vav.max_airflow, 0.5);
         assert_eq!(vav.min_airflow, 0.15);
-        
+
         // Test reheat demand: supply_temp (20°C) > zone_temp (18°C), needs reheat
         let demand = vav.reheat_demand(20.0, 18.0);
         assert!(demand > 0.0);
-        
+
         // No reheat needed when zone temp is comfortable
         let no_demand = vav.reheat_demand(20.0, 22.0);
         assert!(no_demand == 0.0);
@@ -244,11 +244,11 @@ mod tests {
             3.5,     // COP 3.5
             3.0,     // EER 3.0
         );
-        
+
         // At design temperature, COP should be rated COP
         let cop_at_design = hp.heating_cop_at_temperature(-5.0);
         assert!((cop_at_design - 3.5).abs() < 0.1);
-        
+
         // At colder temperature, COP should degrade
         let cop_cold = hp.heating_cop_at_temperature(-15.0);
         assert!(cop_cold < 3.5);
@@ -256,20 +256,14 @@ mod tests {
 
     #[test]
     fn test_heat_pump_mode() {
-        let mut hp = HeatPump::new(
-            "HP-1".to_string(),
-            12000.0,
-            10000.0,
-            3.5,
-            3.0,
-        );
-        
+        let mut hp = HeatPump::new("HP-1".to_string(), 12000.0, 10000.0, 3.5, 3.0);
+
         hp.set_mode(18.0, 20.0, 27.0);
         assert_eq!(hp.mode, HeatPumpMode::Heating);
-        
+
         hp.set_mode(28.0, 20.0, 27.0);
         assert_eq!(hp.mode, HeatPumpMode::Cooling);
-        
+
         hp.set_mode(22.0, 20.0, 27.0);
         assert_eq!(hp.mode, HeatPumpMode::Off);
     }
