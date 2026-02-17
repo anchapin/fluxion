@@ -4,7 +4,7 @@
 # ============================================
 # Stage 1: Build Rust dependencies
 # ============================================
-FROM rust:1.75-slim AS builder-rust
+FROM rust:1.85-slim AS builder-rust
 
 # Install build dependencies
 RUN apt-get update && apt-get install -y \
