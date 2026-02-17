@@ -194,19 +194,16 @@ pub struct MultiDeviceSessionPool {
     /// Pools for each device
     device_pools: Vec<Arc<SessionPool>>,
     /// Configuration for multi-device setup
-    config: MultiDeviceConfig,
+    _config: MultiDeviceConfig,
     /// Model path (shared across devices)
-    model_path: String,
+    _model_path: String,
 }
 
 impl MultiDeviceSessionPool {
     /// Create a new multi-device session pool.
-    pub fn new(
-        model_path: String,
-        config: &MultiDeviceConfig,
-    ) -> Result<Self, String> {
+    pub fn new(model_path: String, config: &MultiDeviceConfig) -> Result<Self, String> {
         let mut device_pools = Vec::new();
-        
+
         let device_ids = if config.auto_select {
             // Auto-detect available CUDA devices
             Self::detect_cuda_devices().unwrap_or_else(|| vec![0])
@@ -230,7 +227,10 @@ impl MultiDeviceSessionPool {
                     device_pools.push(Arc::new(pool));
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to create session for device {}: {}", device_id, e);
+                    eprintln!(
+                        "Warning: Failed to create session for device {}: {}",
+                        device_id, e
+                    );
                 }
             }
         }
@@ -241,8 +241,8 @@ impl MultiDeviceSessionPool {
 
         Ok(MultiDeviceSessionPool {
             device_pools,
-            config: config.clone(),
-            model_path,
+            _config: config.clone(),
+            _model_path: model_path,
         })
     }
 
@@ -293,10 +293,14 @@ impl MultiDeviceSessionGuard {
     /// Run inference using this guard's pool.
     pub fn run_inference(&self, input_tensor: ort::value::Value) -> Result<Vec<f64>, String> {
         let mut guard = self.pool.get_or_create_session()?;
-        let outputs = guard.run(ort::inputs![input_tensor]).map_err(|e| e.to_string())?;
-        
+        let outputs = guard
+            .run(ort::inputs![input_tensor])
+            .map_err(|e| e.to_string())?;
+
         if outputs.len() > 0 {
-            let array = outputs[0].try_extract_array::<f32>().map_err(|e| e.to_string())?;
+            let array = outputs[0]
+                .try_extract_array::<f32>()
+                .map_err(|e| e.to_string())?;
             Ok(array.iter().copied().map(|x| x as f64).collect())
         } else {
             Err("No outputs from inference".to_string())
@@ -469,10 +473,7 @@ impl SurrogateManager {
     ///
     /// # Returns
     /// SurrogateManager with multi-device support enabled
-    pub fn with_multi_device(
-        path: &str,
-        config: MultiDeviceConfig,
-    ) -> Result<Self, String> {
+    pub fn with_multi_device(path: &str, config: MultiDeviceConfig) -> Result<Self, String> {
         use std::path::Path;
 
         if !Path::new(path).exists() {
@@ -484,9 +485,11 @@ impl SurrogateManager {
             Ok(multi_pool) => {
                 // For now, we use a single device pool as primary
                 // The multi-device pool is managed separately
-                let first_pool = multi_pool.device_pools.first()
+                let first_pool = multi_pool
+                    .device_pools
+                    .first()
                     .ok_or("Failed to get first device pool")?;
-                
+
                 Ok(SurrogateManager {
                     model_loaded: true,
                     model_path: Some(path.to_string()),
@@ -497,7 +500,10 @@ impl SurrogateManager {
             }
             Err(e) => {
                 // Fall back to single device
-                eprintln!("Multi-device setup failed: {}, falling back to single device", e);
+                eprintln!(
+                    "Multi-device setup failed: {}, falling back to single device",
+                    e
+                );
                 Self::with_gpu_backend(path, InferenceBackend::CUDA, 0)
             }
         }

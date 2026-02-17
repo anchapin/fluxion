@@ -954,31 +954,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 let sens_val = term_rest_1.clone() / den_val.clone();
                 (current_h_ext, den_val, sens_val)
             } else {
-                let h_ext = if self.thermal_bridge_coefficient.abs() > 1e-9 {
+                (
                     self.derived_h_ext.clone()
                         + self
                             .temperatures
-                            .constant_like(self.thermal_bridge_coefficient)
-                } else {
-                    self.derived_h_ext.clone()
-                };
-                (
-                    h_ext,
+                            .constant_like(self.thermal_bridge_coefficient),
                     self.derived_den.clone(),
                     self.derived_sensitivity.clone(),
                 )
             }
         } else {
-            let h_ext = if self.thermal_bridge_coefficient.abs() > 1e-9 {
+            (
                 self.derived_h_ext.clone()
                     + self
                         .temperatures
-                        .constant_like(self.thermal_bridge_coefficient)
-            } else {
-                self.derived_h_ext.clone()
-            };
-            (
-                h_ext,
+                        .constant_like(self.thermal_bridge_coefficient),
                 self.derived_den.clone(),
                 self.derived_sensitivity.clone(),
             )
@@ -996,28 +986,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // so we can get its value using as_ref()
         let h_iz_vec = self.h_tr_iz.as_ref();
 
-        let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
-
-        let phi_ia_with_iz = if has_inter_zone {
-            let temps = self.temperatures.as_ref();
-            let h_iz_val = h_iz_vec[0];
-            let inter_zone_heat: Vec<f64> = (0..num_zones)
-                .map(|i| {
-                    // Sum heat transfer from all other zones
-                    let mut q_iz = 0.0;
-                    for j in 0..num_zones {
-                        if i != j {
-                            q_iz += h_iz_val * (temps[j] - temps[i]);
+        let inter_zone_heat: Vec<f64> =
+            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
+                let temps = self.temperatures.as_ref();
+                let h_iz_val = h_iz_vec[0];
+                (0..num_zones)
+                    .map(|i| {
+                        // Sum heat transfer from all other zones
+                        let mut q_iz = 0.0;
+                        for j in 0..num_zones {
+                            if i != j {
+                                q_iz += h_iz_val * (temps[j] - temps[i]);
+                            }
                         }
-                    }
-                    q_iz
-                })
-                .collect();
-            let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-            phi_ia + q_iz_tensor
-        } else {
-            phi_ia
-        };
+                        q_iz
+                    })
+                    .collect()
+            } else {
+                vec![0.0; num_zones]
+            };
+
+        // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
+        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
+        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor;
 
         // Recalculate num_rest with inter-zone heat transfer
         let num_rest_with_iz = term_rest_1.clone()
@@ -1240,27 +1231,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let num_zones = self.num_zones;
         let h_iz_vec = self.h_tr_iz.as_ref();
 
-        let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
-
-        let phi_ia_with_iz = if has_inter_zone {
-            let temps = self.temperatures.as_ref();
-            let h_iz_val = h_iz_vec[0];
-            let inter_zone_heat: Vec<f64> = (0..num_zones)
-                .map(|i| {
-                    let mut q_iz = 0.0;
-                    for j in 0..num_zones {
-                        if i != j {
-                            q_iz += h_iz_val * (temps[j] - temps[i]);
+        let inter_zone_heat: Vec<f64> =
+            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
+                let temps = self.temperatures.as_ref();
+                let h_iz_val = h_iz_vec[0];
+                (0..num_zones)
+                    .map(|i| {
+                        let mut q_iz = 0.0;
+                        for j in 0..num_zones {
+                            if i != j {
+                                q_iz += h_iz_val * (temps[j] - temps[i]);
+                            }
                         }
-                    }
-                    q_iz
-                })
-                .collect();
-            let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-            phi_ia + q_iz_tensor
-        } else {
-            phi_ia
-        };
+                        q_iz
+                    })
+                    .collect()
+            } else {
+                vec![0.0; num_zones]
+            };
+
+        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
+        let phi_ia_with_iz = phi_ia + q_iz_tensor;
 
         let num_rest = term_rest_1.clone()
             * (h_ext * t_e
