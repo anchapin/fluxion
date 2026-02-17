@@ -153,8 +153,8 @@ fn bench_vector_zip_with(c: &mut Criterion) {
 
 /// Benchmark: ThermalModel operations with VectorField
 fn bench_thermal_model_ops(c: &mut Criterion) {
-    use fluxion::sim::engine::ThermalModel;
     use fluxion::ai::surrogate::SurrogateManager;
+    use fluxion::sim::engine::ThermalModel;
 
     let mut model = ThermalModel::<VectorField>::new(10);
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
