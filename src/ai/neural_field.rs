@@ -93,7 +93,10 @@ impl NeuralScalarField<f64> {
     ) -> Result<Self, Box<dyn std::error::Error>> {
         let mut session = Session::builder()?.commit_from_file(model_path)?;
 
-        let input_tensor = Value::from_array(input)?;
+        // Convert ArrayD to owned Array with concrete dimension for ort compatibility
+        let shape: Vec<usize> = input.shape().to_vec();
+        let data: Vec<f32> = input.into_iter().collect();
+        let input_tensor = Value::from_array((shape, data))?;
         let outputs = session.run(ort::inputs![input_tensor])?;
 
         // Assuming the first output is the weights
