@@ -337,6 +337,16 @@ impl ThermalModel<VectorField> {
         // Night ventilation
         model.night_ventilation = spec.night_ventilation;
 
+        // Set HVAC capacity limits
+        // For ASHRAE 140 analytical validation, we use very high capacities to avoid artificial limiting.
+        // Real buildings would have design capacities, but for validation we want to measure
+        // the energy needed without capacity constraints.
+        // Peak heating for Case 600: ~5-6 kW, Case 900: ~2 kW
+        // Peak cooling for Case 600: ~7-8 kW, Case 900: ~2-3 kW
+        // We set to 100 kW per zone to ensure no artificial limiting for reasonable buildings
+        model.hvac_heating_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
+        model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
+
         // Solar gain distribution (ASHRAE 140 calibration)
         model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
 
@@ -428,8 +438,8 @@ impl ThermalModel<VectorField> {
             cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
             heating_schedule: DailySchedule::constant(20.0),
             cooling_schedule: DailySchedule::constant(27.0),
-            hvac_heating_capacity: 5000.0, // Default: 5kW heating
-            hvac_cooling_capacity: 5000.0, // Default: 5kW cooling
+            hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)
+            hvac_cooling_capacity: 100_000.0, // Default: 100kW cooling (high limit for validation)
 
             // Physical Constants Defaults
             zone_area: VectorField::from_scalar(zone_area, num_zones),
