@@ -113,6 +113,9 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Night ventilation specification
     pub night_ventilation: Option<crate::validation::ashrae_140_cases::NightVentilation>,
 
+    /// Thermal bridge coefficient (W/K) representing bypass heat transfer
+    pub thermal_bridge_coefficient: f64,
+
     /// Fraction of internal gains that are convective (rest is radiative to surfaces)
     pub convective_fraction: f64,
 
@@ -166,6 +169,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_tr_iz: self.h_tr_iz.clone(),
             hvac_system_mode: self.hvac_system_mode,
             night_ventilation: self.night_ventilation,
+            thermal_bridge_coefficient: self.thermal_bridge_coefficient,
             convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
 
@@ -309,7 +313,9 @@ impl ThermalModel<VectorField> {
         let wall_u = spec.construction.wall.u_value(None);
         let roof_u = spec.construction.roof.u_value(None);
         let opaque_wall_area = wall_area - total_window_area;
-        let h_tr_op = opaque_wall_area * wall_u + floor_area * roof_u;
+        // Include thermal bridges in opaque conductance
+        let h_tr_op =
+            opaque_wall_area * wall_u + floor_area * roof_u + model.thermal_bridge_coefficient;
 
         let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
         model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
@@ -443,12 +449,15 @@ impl ThermalModel<VectorField> {
             h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
-            h_tr_iz: VectorField::from_scalar(0.0, num_zones), // Inter-zone conductance (0 for single-zone)
-            ground_temperature: Box::new(ConstantGroundTemperature::new(10.0)), // ASHRAE 140 default
-            hvac_system_mode: HvacSystemMode::Controlled, // Default to controlled HVAC
-            night_ventilation: None,                      // No night ventilation by default
-            convective_fraction: 0.5,                     // Default 50% convective
-            solar_distribution_to_air: 0.5,               // Default 50% to air
+            ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
+                10.0,
+            )),
+            h_tr_iz: VectorField::from_scalar(0.0, num_zones),
+            hvac_system_mode: HvacSystemMode::Controlled,
+            night_ventilation: None,
+            thermal_bridge_coefficient: 0.0,
+            convective_fraction: 0.4,
+            solar_distribution_to_air: 0.1,
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),
