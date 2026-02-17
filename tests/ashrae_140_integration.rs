@@ -35,8 +35,6 @@ fn test_case_600_baseline() {
 }
 
 mod phase2 {
-    use super::*;
-
     #[test]
     #[ignore = "Issue #62 pending merge"]
     fn test_case_610_shading() {
