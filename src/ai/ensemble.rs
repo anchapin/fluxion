@@ -302,10 +302,7 @@ impl EnsembleSurrogate {
     /// Calculate weighted mean across model predictions
     fn aggregate_weighted_mean(&self, predictions: &[Vec<f64>], num_outputs: usize) -> Vec<f64> {
         let default_weights = vec![1.0; predictions.len()];
-        let weights = self
-            .model_weights
-            .as_ref()
-            .unwrap_or(&default_weights);
+        let weights = self.model_weights.as_ref().unwrap_or(&default_weights);
         let mut result = vec![0.0; num_outputs];
 
         for (pred, &w) in predictions.iter().zip(weights.iter()) {
