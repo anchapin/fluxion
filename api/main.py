@@ -13,6 +13,9 @@ import logging
 import json
 from pathlib import Path
 
+# Import monitoring module for real-time monitoring and BAS integration
+from api.monitoring import router as monitoring_router
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +34,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include monitoring router for real-time monitoring and BAS integration
+app.include_router(monitoring_router)
 
 
 # Data Models
