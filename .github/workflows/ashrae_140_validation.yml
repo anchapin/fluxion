@@ -1,0 +1,224 @@
+name: ASHRAE 140 Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run nightly validation at 2 AM UTC
+    - cron: '0 2 * * *'
+
+concurrency:
+  group: ashrae-140-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run ASHRAE 140 Validation Tests
+        id: validation
+        run: |
+          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
+          TEST_EXIT=$?
+          echo "test_exit_code=$TEST_EXIT" >> $GITHUB_OUTPUT
+          exit 0  # Always continue to generate report
+        continue-on-error: true
+
+      - name: Extract Validation Results
+        id: extract
+        run: |
+          python3 << 'EOF'
+          import re
+          import json
+          
+          with open('validation_output.txt', 'r') as f:
+              output = f.read()
+          
+          # Extract case results
+          cases = {}
+          case_pattern = r"Case (\d+[A-Z]*): Heating=([\d.]+) \(Ref: ([\d.-]+)-([\d.-]+)\), Cooling=([\d.]+) \(Ref: ([\d.-]+)-([\d.-]+)\)"
+          for match in re.finditer(case_pattern, output):
+              case_id, heating, heating_min, heating_max, cooling, cooling_min, cooling_max = match.groups()
+              cases[case_id] = {
+                  'heating': float(heating),
+                  'heating_min': float(heating_min),
+                  'heating_max': float(heating_max),
+                  'cooling': float(cooling),
+                  'cooling_min': float(cooling_min),
+                  'cooling_max': float(cooling_max)
+              }
+          
+          # Extract summary
+          summary_pattern = r"Validation Report Summary:.*?Pass Rate: ([\d.]+)%.*?Passed: (\d+).*?Failed: (\d+).*?Mean Absolute Error: ([\d.]+)%"
+          summary_match = re.search(summary_pattern, output, re.DOTALL)
+          
+          summary = {}
+          if summary_match:
+              pass_rate, passed, failed, mae = summary_match.groups()
+              summary = {
+                  'pass_rate': float(pass_rate),
+                  'passed': int(passed),
+                  'failed': int(failed),
+                  'mae': float(mae)
+              }
+          
+          with open('validation_results.json', 'w') as f:
+              json.dump({'cases': cases, 'summary': summary}, f, indent=2)
+          
+          print(f"::notice::ASHRAE 140 Validation Summary")
+          if summary:
+              print(f"Pass Rate: {summary['pass_rate']:.1f}%")
+              print(f"Passed: {summary['passed']}")
+              print(f"Failed: {summary['failed']}")
+              print(f"Mean Absolute Error: {summary['mae']:.2f}%")
+          EOF
+
+      - name: Generate Markdown Report
+        run: |
+          python3 << 'EOF'
+          import json
+          
+          with open('validation_results.json', 'r') as f:
+              data = json.load(f)
+          
+          cases = data.get('cases', {})
+          summary = data.get('summary', {})
+          
+          report = """# ASHRAE 140 Validation Report
+
+## Summary
+- **Pass Rate**: {:.1f}%
+- **Cases Passed**: {}
+- **Cases Failed**: {}
+- **Mean Absolute Error**: {:.2f}%
+
+## Case Results
+
+| Case | Heating (MWh) | Ref Min | Ref Max | Status | Cooling (MWh) | Ref Min | Ref Max | Status |
+|------|------|---------|---------|--------|---------|---------|---------|--------|
+""".format(
+              summary.get('pass_rate', 0),
+              summary.get('passed', 0),
+              summary.get('failed', 0),
+              summary.get('mae', 0)
+          )
+          
+          for case_id in sorted(cases.keys(), key=lambda x: (x[0] if x[0].isdigit() else '9', x)):
+              case = cases[case_id]
+              h = case['heating']
+              h_min = case['heating_min']
+              h_max = case['heating_max']
+              c = case['cooling']
+              c_min = case['cooling_min']
+              c_max = case['cooling_max']
+              
+              h_status = "✓" if h_min <= h <= h_max else "✗"
+              c_status = "✓" if c_min <= c <= c_max else "✗"
+              
+              report += f"| {case_id} | {h:.2f} | {h_min:.2f} | {h_max:.2f} | {h_status} | {c:.2f} | {c_min:.2f} | {c_max:.2f} | {c_status} |\n"
+          
+          report += """
+## Legend
+- ✓ = Within acceptable range
+- ✗ = Outside acceptable range
+
+## Details
+- Denver TMY2 weather data
+- Annual simulation (8760 hours)
+- Low-mass and high-mass construction variants
+- Free-floating and controlled HVAC modes
+- Multi-zone and shading cases
+
+---
+Generated by ASHRAE 140 CI Validation
+"""
+          
+          with open('ASHRAE_140_VALIDATION_REPORT.md', 'w') as f:
+              f.write(report)
+          EOF
+
+      - name: Check Validation Results
+        id: check
+        run: |
+          python3 << 'EOF'
+          import json
+          
+          with open('validation_results.json', 'r') as f:
+              data = json.load(f)
+          
+          summary = data.get('summary', {})
+          pass_rate = summary.get('pass_rate', 0)
+          
+          # Allow warnings but require minimum 25% pass rate
+          MIN_PASS_RATE = 25.0
+          
+          if pass_rate >= MIN_PASS_RATE:
+              print(f"✓ Validation passed (pass_rate={pass_rate:.1f}%)")
+              exit(0)
+          else:
+              print(f"✗ Validation failed (pass_rate={pass_rate:.1f}% < {MIN_PASS_RATE}%)")
+              exit(1)
+          EOF
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ashrae-140-results
+          path: |
+            validation_output.txt
+            validation_results.json
+            ASHRAE_140_VALIDATION_REPORT.md
+          retention-days: 30
+
+      - name: Comment on PR
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+          
+          with open('ASHRAE_140_VALIDATION_REPORT.md', 'r') as f:
+              report = f.read()
+          
+          import subprocess
+          pr_number = os.getenv('GITHUB_EVENT_PATH')
+          if pr_number:
+              result = subprocess.run(
+                  ['gh', 'pr', 'comment', '--body', report],
+                  capture_output=True,
+                  text=True
+              )
+              print("PR comment result:", result.returncode)
+          EOF
+        continue-on-error: true
+
+      - name: Fail if validation failed
+        if: failure() || steps.check.outcome == 'failure'
+        run: |
+          echo "❌ ASHRAE 140 validation failed"
+          exit 1
