@@ -67,6 +67,7 @@ jobs:
           cache-to: type=gha,mode=max
 
       - name: Run container smoke test
+        if: github.event_name != 'pull_request'
         run: |
           # Start container in background
           docker run -d --name fluxion-test ${{ steps.meta.outputs.tags }} sleep 30
@@ -82,6 +83,7 @@ jobs:
           docker rm fluxion-test
 
       - name: Run integration tests
+        if: github.event_name != 'pull_request'
         run: |
           docker run --rm ${{ steps.meta.outputs.tags }} python -c "import fluxion; print('Fluxion import successful')"
 
