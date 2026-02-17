@@ -2,37 +2,11 @@
 # Multi-stage build for minimal image size
 
 # ============================================
-# Stage 1: Build Rust dependencies
+# Stage 1: Build Python bindings
 # ============================================
-FROM rust:1.88-slim AS builder-rust
+FROM python:3.11-slim AS builder
 
-# Install build dependencies
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    libssl-dev \
-    pkg-config \
-    && rm -rf /var/lib/apt/lists/*
-
-WORKDIR /build
-
-# Copy Cargo files
-COPY Cargo.toml ./
-COPY Cargo.lock ./
-
-# Copy source code for building
-COPY src/ ./src/
-COPY benches/ ./benches/
-
-# Build dependencies only (cache layer)
-RUN cargo build --release
-RUN rm -rf src target/release/deps/main*
-
-# ============================================
-# Stage 2: Build Python bindings
-# ============================================
-FROM python:3.11-slim AS builder-python
-
-# Install build dependencies
+# Install system and Rust build dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
     libssl-dev \
@@ -41,31 +15,29 @@ RUN apt-get update && apt-get install -y \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /build
-
-# Copy Python project files
-COPY pyproject.toml .
-COPY requirements-dev.txt .
-
-# Install Python build dependencies
-RUN pip install --no-cache-dir maturin pytest
-
-# Install Rust for maturin and set PATH
+# Install Rust
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 ENV PATH="/root/.cargo/bin:${PATH}"
 
-# Copy Cargo files from builder
-COPY --from=builder-rust /build/Cargo.toml /build/Cargo.lock ./
+WORKDIR /build
 
-# Copy Rust source and README for maturin
+# Copy project files
+COPY Cargo.toml .
+COPY Cargo.lock .
+COPY pyproject.toml .
+COPY requirements-dev.txt .
 COPY src/ ./src/
-COPY README.md ./
+COPY benches/ ./benches/
+COPY README.md .
+
+# Install Python build dependencies
+RUN pip install --no-cache-dir maturin pytest
 
 # Build Python bindings
 RUN maturin build --release --strip
 
 # ============================================
-# Stage 3: Production runtime
+# Stage 2: Production runtime
 # ============================================
 FROM python:3.11-slim AS runtime
 
@@ -81,13 +53,13 @@ RUN useradd -m -u 1000 fluxion
 WORKDIR /home/fluxion
 
 # Copy built wheel from builder
-COPY --from=builder-python /build/target/wheels/*.whl .
+COPY --from=builder /build/target/wheels/*.whl .
 
 # Install the wheel
 RUN pip install --no-cache-dir *.whl && rm *.whl
 
 # Copy API server files
-COPY --from=builder-python /build/api ./api
+COPY --from=builder /build/api ./api
 
 # Create data and model directories
 RUN mkdir -p /home/fluxion/data /home/fluxion/models
