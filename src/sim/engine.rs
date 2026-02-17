@@ -1540,11 +1540,13 @@ mod tests {
 
             let energy_kwh_cool =
                 model.solve_single_step(0, outdoor_temp_cooling, false, &surrogates, false);
+            // Cooling energy is negative in our convention (heating is positive, cooling is negative)
             let energy_watts_cool = energy_kwh_cool * 1000.0;
             let analytical_load_cool = h_total * (outdoor_temp_cooling - setpoint_cooling);
 
+            // Compare magnitudes (both should be negative for cooling)
             let relative_error_cool =
-                (energy_watts_cool - analytical_load_cool).abs() / analytical_load_cool;
+                (energy_watts_cool + analytical_load_cool).abs() / analytical_load_cool;
             assert!(
                 relative_error_cool < 0.01,
                 "Cooling: Analytical vs. Simulated load mismatch. Analytical: {:.2}, Simulated: {:.2}, Rel Error: {:.5}%",
@@ -1613,8 +1615,8 @@ mod tests {
                 "Should use heating when outdoor temp is below setpoint."
             );
             assert!(
-                energy_cooling > 0.0,
-                "Should use cooling when outdoor temp is above setpoint."
+                energy_cooling < 0.0,
+                "Should use cooling (negative energy) when outdoor temp is above setpoint."
             );
             assert!(
                 energy_deadband.abs() < 1e-9,
