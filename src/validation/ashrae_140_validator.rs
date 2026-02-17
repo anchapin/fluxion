@@ -190,6 +190,31 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+            
+            // Apply dynamic setpoints based on HVAC schedule (for setback cases)
+            if let Some(hvac_schedule) = spec.hvac.first() {
+                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8) {
+                    model.heating_setpoint = heating_sp;
+                }
+                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8) {
+                    model.cooling_setpoint = cooling_sp;
+                }
+            }
+            
+            // Apply night ventilation if active (adds extra cooling during night hours)
+            if let Some(vent) = &spec.night_ventilation {
+                if vent.is_active_at_hour(hour_of_day as u8) {
+                    // Night ventilation provides additional cooling effect
+                    // For simplicity, we reduce the cooling setpoint to -100 to allow free cooling
+                    // This simulates the ventilation providing cool outdoor air to the zone
+                    if let Some(hvac_schedule) = spec.hvac.first() {
+                        // Only apply if heating is disabled (cooling-only mode)
+                        if hvac_schedule.heating_setpoint < 0.0 {
+                            model.cooling_setpoint = -100.0; // Allow free cooling during night vent hours
+                        }
+                    }
+                }
+            }
 
             // Calculate solar gains for all windows in the spec
             // For multi-zone, sum across all zones
