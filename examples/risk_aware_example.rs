@@ -11,7 +11,6 @@
 //!
 //! Related Issue: #176 - Phase 7: Create risk-aware optimization examples
 
-use fluxion::ai::ensemble::{AggregationMethod, EnsembleConfig, EnsembleSurrogate};
 use fluxion::ai::surrogate::{PredictionWithUncertainty, SurrogateManager};
 
 /// Risk tolerance levels for optimization
@@ -47,9 +46,9 @@ impl RiskPreference {
     /// Get acceptable probability of exceeding target
     pub fn max_exceed_probability(&self) -> f64 {
         match self {
-            RiskPreference::Conservative => 0.05,  // 5%
-            RiskPreference::Balanced => 0.15,      // 15%
-            RiskPreference::Aggressive => 0.25,    // 25%
+            RiskPreference::Conservative => 0.05, // 5%
+            RiskPreference::Balanced => 0.15,     // 15%
+            RiskPreference::Aggressive => 0.25,   // 25%
         }
     }
 }
@@ -154,7 +153,11 @@ impl RiskAwareOptimizer {
     }
 
     /// Calculate probability of exceeding target using normal CDF approximation
-    fn calculate_exceed_probability(&self, predictions: &PredictionWithUncertainty, target: f64) -> f64 {
+    fn calculate_exceed_probability(
+        &self,
+        predictions: &PredictionWithUncertainty,
+        target: f64,
+    ) -> f64 {
         // Calculate z-score for each output
         let mut total_prob = 0.0;
         let n = predictions.mean.len();
@@ -198,7 +201,11 @@ impl RiskAwareOptimizer {
     }
 
     /// Calculate expected shortfall
-    fn calculate_expected_shortfall(&self, predictions: &PredictionWithUncertainty, target: f64) -> f64 {
+    fn calculate_expected_shortfall(
+        &self,
+        predictions: &PredictionWithUncertainty,
+        target: f64,
+    ) -> f64 {
         let mut total_shortfall = 0.0;
         let n = predictions.mean.len();
 
@@ -226,19 +233,28 @@ impl RiskAwareOptimizer {
                 name: "Conservative".to_string(),
                 heating: RiskPreference::Conservative.heating_setpoint(),
                 cooling: RiskPreference::Conservative.cooling_setpoint(),
-                risk: self.evaluate_risk(&predictions, RiskPreference::Conservative.heating_setpoint() * 10.0),
+                risk: self.evaluate_risk(
+                    &predictions,
+                    RiskPreference::Conservative.heating_setpoint() * 10.0,
+                ),
             },
             SetpointScenario {
                 name: "Balanced".to_string(),
                 heating: RiskPreference::Balanced.heating_setpoint(),
                 cooling: RiskPreference::Balanced.cooling_setpoint(),
-                risk: self.evaluate_risk(&predictions, RiskPreference::Balanced.heating_setpoint() * 10.0),
+                risk: self.evaluate_risk(
+                    &predictions,
+                    RiskPreference::Balanced.heating_setpoint() * 10.0,
+                ),
             },
             SetpointScenario {
                 name: "Aggressive".to_string(),
                 heating: RiskPreference::Aggressive.heating_setpoint(),
                 cooling: RiskPreference::Aggressive.cooling_setpoint(),
-                risk: self.evaluate_risk(&predictions, RiskPreference::Aggressive.heating_setpoint() * 10.0),
+                risk: self.evaluate_risk(
+                    &predictions,
+                    RiskPreference::Aggressive.heating_setpoint() * 10.0,
+                ),
             },
         ];
 
@@ -286,20 +302,30 @@ impl SetpointRecommendation {
         println!("  Heating Setpoint: {:.1}°C", self.selected.heating);
         println!("  Cooling Setpoint: {:.1}°C", self.selected.cooling);
         println!("  Risk Level: {}", self.selected.risk.risk_level_str());
-        println!("  Probability of Exceed: {:.1}%", self.selected.risk.probability_exceed * 100.0);
-        println!("  Within Tolerance: {}", self.selected.risk.within_tolerance);
+        println!(
+            "  Probability of Exceed: {:.1}%",
+            self.selected.risk.probability_exceed * 100.0
+        );
+        println!(
+            "  Within Tolerance: {}",
+            self.selected.risk.within_tolerance
+        );
 
         println!("\nAll Scenarios:");
-        println!("{:<15} {:>12} {:>12} {:>10} {:>15}", 
-            "Name", "Heat SP", "Cool SP", "Risk", "Prob Exceed");
+        println!(
+            "{:<15} {:>12} {:>12} {:>10} {:>15}",
+            "Name", "Heat SP", "Cool SP", "Risk", "Prob Exceed"
+        );
         println!("{}", "-".repeat(70));
         for scenario in &self.all_scenarios {
-            println!("{:<15} {:>12.1} {:>12.1} {:>10} {:>15.1}%",
+            println!(
+                "{:<15} {:>12.1} {:>12.1} {:>10} {:>15.1}%",
                 scenario.name,
                 scenario.heating,
                 scenario.cooling,
                 scenario.risk.risk_level_str(),
-                scenario.risk.probability_exceed * 100.0);
+                scenario.risk.probability_exceed * 100.0
+            );
         }
     }
 }
@@ -327,9 +353,21 @@ pub fn demonstrate_risk_aware_optimization() {
     println!("\nPrediction Results:");
     println!("  Mean loads: {:?}", predictions.mean);
     println!("  Std dev: {:?}", predictions.std);
-    println!("  95% CI: [{}, {}]", 
-        predictions.lower_bound.iter().map(|v| format!("{:.2}", v)).collect::<Vec<_>>().join(", "),
-        predictions.upper_bound.iter().map(|v| format!("{:.2}", v)).collect::<Vec<_>>().join(", "));
+    println!(
+        "  95% CI: [{}, {}]",
+        predictions
+            .lower_bound
+            .iter()
+            .map(|v| format!("{:.2}", v))
+            .collect::<Vec<_>>()
+            .join(", "),
+        predictions
+            .upper_bound
+            .iter()
+            .map(|v| format!("{:.2}", v))
+            .collect::<Vec<_>>()
+            .join(", ")
+    );
 
     // Step 2: Evaluate risk
     println!("\n--- Step 2: Risk Evaluation ---");
@@ -337,7 +375,10 @@ pub fn demonstrate_risk_aware_optimization() {
     let risk = optimizer.evaluate_risk(&predictions, target_load);
 
     println!("\nTarget Load: {:.1} W/m²", target_load);
-    println!("Probability of Exceed: {:.1}%", risk.probability_exceed * 100.0);
+    println!(
+        "Probability of Exceed: {:.1}%",
+        risk.probability_exceed * 100.0
+    );
     println!("Expected Shortfall: {:.2} W/m²", risk.expected_shortfall);
     println!("Risk Level: {}", risk.risk_level_str());
     println!("Within Tolerance: {}", risk.within_tolerance);
@@ -345,7 +386,11 @@ pub fn demonstrate_risk_aware_optimization() {
     // Step 3: Optimize setpoints
     println!("\n--- Step 3: Risk-Aware Setpoint Optimization ---");
 
-    for preference in [RiskPreference::Conservative, RiskPreference::Balanced, RiskPreference::Aggressive] {
+    for preference in [
+        RiskPreference::Conservative,
+        RiskPreference::Balanced,
+        RiskPreference::Aggressive,
+    ] {
         println!("\n--- {:?} Preference ---", preference);
         let opt = RiskAwareOptimizer::new(None, preference);
         let recommendation = opt.optimize_setpoints(&zone_temps);
@@ -365,13 +410,14 @@ fn main() {
     println!("  1. Uncertainty-aware predictions with confidence intervals");
     println!("  2. Risk evaluation based on prediction uncertainty");
     println!("  3. Risk-aware HVAC setpoint optimization");
-    
+
     demonstrate_risk_aware_optimization();
 
     println!("\n{}", "-".repeat(70));
     println!("USAGE INSTRUCTIONS:");
     println!("{}", "-".repeat(70));
-    println!("
+    println!(
+        "
 To use in your own code:
 
     use fluxion::ai::surrogate::SurrogateManager;
@@ -398,5 +444,6 @@ Best Practices:
     - Increase num_samples for more accurate uncertainty estimates
     - Consider both mean prediction and uncertainty in decisions
     - Monitor risk levels over time for operational insights
-");
+"
+    );
 }
