@@ -513,10 +513,10 @@ mod tests {
         let mut expected_disagreement = vec![0.0; 3];
         for i in 0..3 {
             let mean = (predictions[0][i] + predictions[1][i] + predictions[2][i]) / 3.0;
-            let variance = ((predictions[0][i] - mean).powi(2)
-                + (predictions[1][i] - mean).powi(2)
-                + (predictions[2][i] - mean).powi(2))
-                / 2.0;
+            let diff0: f64 = predictions[0][i] - mean;
+            let diff1: f64 = predictions[1][i] - mean;
+            let diff2: f64 = predictions[2][i] - mean;
+            let variance = (diff0 * diff0 + diff1 * diff1 + diff2 * diff2) / 2.0;
             expected_disagreement[i] = variance.sqrt();
         }
 
