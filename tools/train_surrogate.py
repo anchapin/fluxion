@@ -214,6 +214,45 @@ class SurrogateModel(nn.Module):
         return self.net(x)
 
 
+class PhysicsLoss(nn.Module):
+    """
+    Physics-Informed Loss function for thermal surrogates.
+    
+    Combines standard MSE (data loss) with a physics regularization term
+    that penalizes energy balance violations.
+    """
+    def __init__(self, lambda_physics: float = 0.1):
+        super().__init__()
+        self.lambda_physics = lambda_physics
+        self.mse = nn.MSELoss()
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor, features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        # 1. Data Fitting Loss (MSE)
+        data_loss = self.mse(pred, target)
+
+        # 2. Physics Regularization Loss
+        # Features: [u_value, hvac_setpoint, outdoor_temp]
+        u_value = features[:, 0:1]
+        hvac_setpoint = features[:, 1:2]
+        outdoor_temp = features[:, 2:3]
+
+        # Theoretical load based on steady-state heat balance:
+        # Q_theory = U * (T_setpoint - T_outdoor)
+        # Note: Synthetic data includes per-zone variation (zone_factor),
+        # but the general physics law still holds for the aggregate or mean.
+        theoretical_load_base = u_value * (hvac_setpoint - outdoor_temp)
+        
+        # Penalize deviation of average predicted load from theoretical base
+        mean_pred_load = torch.mean(pred, dim=1, keepdim=True)
+        physics_residual = mean_pred_load - theoretical_load_base
+        physics_loss = torch.mean(physics_residual**2)
+
+        # Combined loss
+        total_loss = data_loss + self.lambda_physics * physics_loss
+        
+        return total_loss, data_loss, physics_loss
+
+
 def train_model(
     X: np.ndarray,
     y: np.ndarray,
@@ -223,6 +262,8 @@ def train_model(
     hidden_dims: List[int],
     output_dir: Path,
     seed: int,
+    use_physics_loss: bool = True,
+    lambda_physics: float = 0.1,
 ):
     """Train the PyTorch model."""
     torch.manual_seed(seed)
@@ -251,7 +292,14 @@ def train_model(
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, "min", patience=5, factor=0.5
     )
-    criterion = nn.MSELoss()
+    
+    # Loss criterion
+    if use_physics_loss:
+        criterion = PhysicsLoss(lambda_physics=lambda_physics)
+        logger.info(f"Using Physics-Informed Loss (lambda={lambda_physics})")
+    else:
+        criterion = nn.MSELoss()
+        logger.info("Using standard MSE Loss")
 
     logger.info(
         f"Model Architecture: Input={input_dim} -> {hidden_dims} -> Output={output_dim}"
@@ -259,41 +307,54 @@ def train_model(
     logger.info("Starting training...")
 
     best_val_loss = float("inf")
-    history: Dict[str, List[float]] = {"loss": [], "val_loss": []}
+    history: Dict[str, List[float]] = {"loss": [], "val_loss": [], "physics_loss": []}
 
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0.0
+        epoch_physics_loss = 0.0
 
         for batch_X, batch_y in loader:
             optimizer.zero_grad()
             pred = model(batch_X)
-            loss = criterion(pred, batch_y)
+            
+            if use_physics_loss:
+                loss, data_loss, phys_loss = criterion(pred, batch_y, batch_X)
+                epoch_physics_loss += phys_loss.item()
+            else:
+                loss = criterion(pred, batch_y)
+            
             loss.backward()
             optimizer.step()
             epoch_loss += loss.item()
 
         avg_loss = epoch_loss / len(loader)
+        avg_phys_loss = epoch_physics_loss / len(loader)
 
         # Validation
         model.eval()
         with torch.no_grad():
             val_pred = model(X_val_t)
-            val_loss = criterion(val_pred, y_val_t).item()
+            if use_physics_loss:
+                val_loss, _, _ = criterion(val_pred, y_val_t, X_val_t)
+                val_loss = val_loss.item()
+            else:
+                val_loss = criterion(val_pred, y_val_t).item()
 
         scheduler.step(val_loss)
         history["loss"].append(avg_loss)
         history["val_loss"].append(val_loss)
+        history["physics_loss"].append(avg_phys_loss)
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save(model.state_dict(), output_dir / "best_model.pt")
 
         if (epoch + 1) % 10 == 0:
-            logger.info(
-                f"Epoch {epoch + 1}/{epochs} - "
-                f"Loss: {avg_loss:.6f} - Val Loss: {val_loss:.6f}"
-            )
+            msg = f"Epoch {epoch + 1}/{epochs} - Loss: {avg_loss:.6f} - Val Loss: {val_loss:.6f}"
+            if use_physics_loss:
+                msg += f" - Phys Loss: {avg_phys_loss:.6f}"
+            logger.info(msg)
 
     # Load best model
     model.load_state_dict(torch.load(output_dir / "best_model.pt"))
@@ -369,6 +430,26 @@ def main():
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
+    # Physics Loss Args
+    parser.add_argument(
+        "--use-physics-loss",
+        action="store_true",
+        default=True,
+        help="Use Physics-Informed Loss",
+    )
+    parser.add_argument(
+        "--no-physics-loss",
+        action="store_false",
+        dest="use_physics_loss",
+        help="Disable Physics-Informed Loss",
+    )
+    parser.add_argument(
+        "--lambda-physics",
+        type=float,
+        default=0.1,
+        help="Weight for physics loss term",
+    )
+
     # Output Args
     parser.add_argument(
         "--output-dir", type=str, default="models", help="Output directory"
@@ -398,6 +479,8 @@ def main():
         hidden_dims=args.hidden_dims,
         output_dir=output_dir,
         seed=args.seed,
+        use_physics_loss=args.use_physics_loss,
+        lambda_physics=args.lambda_physics,
     )
 
     # Export

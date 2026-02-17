@@ -50,9 +50,11 @@ where
     /// Creates a new tensor of the same shape and size, filled with a constant value.
     fn constant_like(&self, value: T) -> Self;
 
-    /// Creates a new tensor of the same shape and size, filled with the provided data.
-    /// The data vector must have the same length as the tensor.
-    fn new_with_data(&self, data: Vec<T>) -> Self;
+    /// Computes the element-wise minimum of two tensors.
+    fn elementwise_min(&self, other: &Self) -> Self;
+
+    /// Computes the element-wise maximum of two tensors.
+    fn elementwise_max(&self, other: &Self) -> Self;
 }
 
 /// A basic CPU-based implementation of ContinuousTensor using Vec<f64>.
@@ -200,9 +202,12 @@ impl ContinuousTensor<f64> for VectorField {
         VectorField::from_scalar(value, self.len())
     }
 
-    fn new_with_data(&self, data: Vec<f64>) -> Self {
-        assert_eq!(data.len(), self.len(), "Data length mismatch");
-        VectorField::new(data)
+    fn elementwise_min(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.min(b))
+    }
+
+    fn elementwise_max(&self, other: &Self) -> Self {
+        self.zip_with(other, |a, b| a.max(b))
     }
 }
 
