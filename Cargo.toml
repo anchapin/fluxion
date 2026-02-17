@@ -15,6 +15,8 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing)
 python-bindings = ["dep:pyo3"]
+# Feature flag for CUDA support
+cuda = []
 
 [dependencies]
 # Core Logic
@@ -28,8 +30,14 @@ faer = { version = "0.23.2", default-features = false, features = ["std"] }
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
 
+# CLI
+clap = { version = "4.5", features = ["derive"] }
+
 # Parallelism
 rayon = "1.10"
+
+# Random number generation for uncertainty quantification
+rand = "0.8"
 
 # AI / Machine Learning Integration
 # Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io
@@ -42,9 +50,18 @@ num-traits = "0.2.19"
 
 [dev-dependencies]
 criterion = "0.5"
+tempfile = "3.10"
 
 [[bench]]
 name = "cta_bench"
+harness = false
+
+[[bench]]
+name = "engine_bench"
+harness = false
+
+[[bench]]
+name = "cta_perf_comparison"
 harness = false
 
 [profile.release]
