@@ -195,8 +195,8 @@ impl CrossValidationResult {
 
         // Configuration
         output.push_str("## Configuration\n\n");
-        output.push_str(&format!("| Parameter | Value |\n"));
-        output.push_str(&format!("|-----------|-------|\n"));
+        output.push_str("| Parameter | Value |\n");
+        output.push_str("|-----------|-------|\n");
         output.push_str(&format!("| K-Folds | {} |\n", self.config.k_folds));
         output.push_str(&format!("| Seed | {} |\n", self.config.seed));
         output.push_str(&format!("| Shuffle | {:?} |\n", self.config.shuffle));
@@ -239,8 +239,8 @@ impl CrossValidationResult {
         // Energy balance
         if let Some(ref eb) = self.aggregated_metrics.energy_balance {
             output.push_str("## Energy Balance\n\n");
-            output.push_str(&format!("| Metric | Value |\n",));
-            output.push_str(&format!("|--------|-------|\n"));
+            output.push_str("| Metric | Value |\n");
+            output.push_str("|--------|-------|\n");
             output.push_str(&format!(
                 "| Analytical Total (kWh) | {:.2} |\n",
                 eb.analytical_total
@@ -271,12 +271,8 @@ impl CrossValidationResult {
         // Analytical comparison
         if let Some(ref comp) = self.analytical_comparison {
             output.push_str("## Analytical vs Surrogate Comparison\n\n");
-            output.push_str(&format!(
-                "| Metric | Analytical | Surrogate | Difference |\n"
-            ));
-            output.push_str(&format!(
-                "|--------|------------|-----------|------------|\n"
-            ));
+            output.push_str("| Metric | Analytical | Surrogate | Difference |\n");
+            output.push_str("|--------|------------|-----------|------------|\n");
             output.push_str(&format!(
                 "| Mean Heating (kWh) | {:.2} | {:.2} | {:+.2} |\n",
                 comp.analytical_mean_heating,

@@ -142,21 +142,17 @@ def create_default_construction(os_api, model, name="Default Construction"):
     return construction
 
 
-def create_window_construction(os_api, model):
+def create_window_construction(os_api, model, u_value=2.5):
     """
-    Creates a simple single pane window construction.
+    Creates a simple single pane window construction with targeted U-value.
     """
-    # For simplicity in API (to avoid SimpleGlazing vs StandardGlazing complexity),
-    # we just use a thin material with high conductivity?
-    # Or use SimpleGlazing if available in Mock?
-    # Let's stick to Material for generic robustness or use standard if known.
-    # OpenStudio usually has SimpleGlazing.
+    # Simplified U = k / L => k = U * L
+    thickness = 0.006
+    conductivity = u_value * thickness
 
-    # We'll use a standard Material but with glass-like properties for now to be
-    # safe with the mock.
     mat = os_api.model.Material(model)
-    mat.setThickness(0.006)
-    mat.setConductivity(0.9)  # Glass
+    mat.setThickness(thickness)
+    mat.setConductivity(conductivity)
     mat.setDensity(2500)
     mat.setSpecificHeat(840)
 
@@ -198,7 +194,9 @@ def create_shoebox_model(
     height: float = 3.5,
     wwr: float = 0.4,
     orientation_degrees: float = 0.0,
-    insulation_r_value: float | None = None,  # Placeholder for future material logic
+    window_u_value: float = 2.5,
+    hvac_setpoint: float = 21.0,
+    insulation_r_value: float | None = None,
 ):
     """
     Generates an OpenStudio Model (.osm) for a simple rectangular building.
@@ -208,7 +206,7 @@ def create_shoebox_model(
 
     # Create Constructions
     default_const = create_default_construction(os_api, model)
-    win_const = create_window_construction(os_api, model)
+    win_const = create_window_construction(os_api, model, u_value=window_u_value)
 
     # Create Thermal Zone
     thermal_zone = os_api.model.ThermalZone(model)

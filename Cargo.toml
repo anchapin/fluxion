@@ -15,6 +15,8 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing)
 python-bindings = ["dep:pyo3"]
+# Feature flag for CUDA support
+cuda = []
 
 [dependencies]
 # Core Logic
@@ -56,6 +58,10 @@ harness = false
 
 [[bench]]
 name = "engine_bench"
+harness = false
+
+[[bench]]
+name = "cta_perf_comparison"
 harness = false
 
 [profile.release]
