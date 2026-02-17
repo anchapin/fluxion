@@ -59,54 +59,88 @@ impl ASHRAE140Validator {
                 let spec = case.spec();
                 let results = self.simulate_case(&spec, &weather);
 
-                println!(
-                    "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
-                    case_id,
-                    results.annual_heating_mwh,
-                    data.annual_heating_min,
-                    data.annual_heating_max,
-                    results.annual_cooling_mwh,
-                    data.annual_cooling_min,
-                    data.annual_cooling_max,
-                    results.peak_heating_kw,
-                    results.peak_cooling_kw
-                );
+                if spec.is_free_floating() {
+                    println!(
+                        "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
+                        case_id,
+                        results.min_temp_celsius.unwrap_or(0.0),
+                        data.min_free_float_min,
+                        data.min_free_float_max,
+                        results.max_temp_celsius.unwrap_or(0.0),
+                        data.max_free_float_min,
+                        data.max_free_float_max
+                    );
 
-                report.add_result_simple(
-                    &case_id,
-                    MetricType::AnnualHeating,
-                    results.annual_heating_mwh,
-                    data.annual_heating_min,
-                    data.annual_heating_max,
-                );
+                    // Add free-floating temperature metrics
+                    if let Some(min_temp) = results.min_temp_celsius {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::MinFreeFloat,
+                            min_temp,
+                            data.min_free_float_min,
+                            data.min_free_float_max,
+                        );
+                    }
 
-                report.add_result_simple(
-                    &case_id,
-                    MetricType::AnnualCooling,
-                    results.annual_cooling_mwh,
-                    data.annual_cooling_min,
-                    data.annual_cooling_max,
-                );
-
-                // Add peak loads if reference data is available
-                if data.peak_heating_min >= 0.0 {
-                    report.add_result_simple(
-                        &case_id,
-                        MetricType::PeakHeating,
+                    if let Some(max_temp) = results.max_temp_celsius {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::MaxFreeFloat,
+                            max_temp,
+                            data.max_free_float_min,
+                            data.max_free_float_max,
+                        );
+                    }
+                } else {
+                    println!(
+                        "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
+                        case_id,
+                        results.annual_heating_mwh,
+                        data.annual_heating_min,
+                        data.annual_heating_max,
+                        results.annual_cooling_mwh,
+                        data.annual_cooling_min,
+                        data.annual_cooling_max,
                         results.peak_heating_kw,
-                        data.peak_heating_min,
-                        data.peak_heating_max,
+                        results.peak_cooling_kw
                     );
-                }
 
-                if data.peak_cooling_min >= 0.0 {
                     report.add_result_simple(
                         &case_id,
-                        MetricType::PeakCooling,
-                        results.peak_cooling_kw,
-                        data.peak_cooling_min,
-                        data.peak_cooling_max,
+                        MetricType::AnnualHeating,
+                        results.annual_heating_mwh,
+                        data.annual_heating_min,
+                        data.annual_heating_max,
                     );
+
+                    report.add_result_simple(
+                        &case_id,
+                        MetricType::AnnualCooling,
+                        results.annual_cooling_mwh,
+                        data.annual_cooling_min,
+                        data.annual_cooling_max,
+                    );
+
+                    // Add peak loads if reference data is available
+                    if data.peak_heating_min >= 0.0 {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::PeakHeating,
+                            results.peak_heating_kw,
+                            data.peak_heating_min,
+                            data.peak_heating_max,
+                        );
+                    }
+
+                    if data.peak_cooling_min >= 0.0 {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::PeakCooling,
+                            results.peak_cooling_kw,
+                            data.peak_cooling_min,
+                            data.peak_cooling_max,
+                        );
+                    }
                 }
 
                 report.add_benchmark_data(&case_id, data.clone());
@@ -136,6 +170,8 @@ impl ASHRAE140Validator {
         let mut annual_cooling_joules = 0.0;
         let mut peak_heating_watts: f64 = 0.0;
         let mut peak_cooling_watts: f64 = 0.0;
+        let mut min_temp_celsius: f64 = f64::INFINITY;
+        let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -296,6 +332,16 @@ impl ASHRAE140Validator {
             model.set_loads(&total_loads);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            
+            // Track min/max temperatures for free-floating cases
+            if is_free_floating {
+                // Get zone 0 air temperature (primary zone)
+                if let Some(&zone_0_temp) = model.temperatures.as_slice().get(0) {
+                    min_temp_celsius = min_temp_celsius.min(zone_0_temp);
+                    max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                }
+            }
+            
             // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
@@ -313,6 +359,16 @@ impl ASHRAE140Validator {
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
             peak_heating_kw: peak_heating_watts / 1000.0,
             peak_cooling_kw: peak_cooling_watts / 1000.0,
+            min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
+                Some(min_temp_celsius)
+            } else {
+                None
+            },
+            max_temp_celsius: if is_free_floating && max_temp_celsius != f64::NEG_INFINITY {
+                Some(max_temp_celsius)
+            } else {
+                None
+            },
         }
     }
 }
@@ -322,4 +378,8 @@ struct CaseResults {
     annual_cooling_mwh: f64,
     peak_heating_kw: f64,
     peak_cooling_kw: f64,
+    /// Minimum zone temperature (°C) for free-floating cases
+    min_temp_celsius: Option<f64>,
+    /// Maximum zone temperature (°C) for free-floating cases
+    max_temp_celsius: Option<f64>,
 }
