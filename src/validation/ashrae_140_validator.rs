@@ -60,14 +60,16 @@ impl ASHRAE140Validator {
                 let results = self.simulate_case(&spec, &weather);
 
                 println!(
-                    "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2})",
+                    "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
                     case_id,
                     results.annual_heating_mwh,
                     data.annual_heating_min,
                     data.annual_heating_max,
                     results.annual_cooling_mwh,
                     data.annual_cooling_min,
-                    data.annual_cooling_max
+                    data.annual_cooling_max,
+                    results.peak_heating_kw,
+                    results.peak_cooling_kw
                 );
 
                 report.add_result_simple(
@@ -85,6 +87,27 @@ impl ASHRAE140Validator {
                     data.annual_cooling_min,
                     data.annual_cooling_max,
                 );
+
+                // Add peak loads if reference data is available
+                if data.peak_heating_min >= 0.0 {
+                    report.add_result_simple(
+                        &case_id,
+                        MetricType::PeakHeating,
+                        results.peak_heating_kw,
+                        data.peak_heating_min,
+                        data.peak_heating_max,
+                    );
+                }
+
+                if data.peak_cooling_min >= 0.0 {
+                    report.add_result_simple(
+                        &case_id,
+                        MetricType::PeakCooling,
+                        results.peak_cooling_kw,
+                        data.peak_cooling_min,
+                        data.peak_cooling_max,
+                    );
+                }
 
                 report.add_benchmark_data(&case_id, data.clone());
             }
@@ -111,6 +134,8 @@ impl ASHRAE140Validator {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
+        let mut peak_heating_watts: f64 = 0.0;
+        let mut peak_cooling_watts: f64 = 0.0;
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -274,14 +299,20 @@ impl ASHRAE140Validator {
             // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
+                let hvac_watts = hvac_kwh * 1000.0 / 3.6;
+                peak_heating_watts = peak_heating_watts.max(hvac_watts);
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                let hvac_watts = (-hvac_kwh) * 1000.0 / 3.6;
+                peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
             }
         }
 
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            peak_heating_kw: peak_heating_watts / 1000.0,
+            peak_cooling_kw: peak_cooling_watts / 1000.0,
         }
     }
 }
@@ -289,4 +320,6 @@ impl ASHRAE140Validator {
 struct CaseResults {
     annual_heating_mwh: f64,
     annual_cooling_mwh: f64,
+    peak_heating_kw: f64,
+    peak_cooling_kw: f64,
 }
