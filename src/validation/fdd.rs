@@ -692,8 +692,10 @@ impl FaultDetector {
         let warnings = self.get_faults_by_severity(&FaultSeverity::Warning).len();
         let info = self.get_faults_by_severity(&FaultSeverity::Info).len();
 
-        report.push_str("Fault Summary:
-");
+        report.push_str(
+            "Fault Summary:
+",
+        );
         report.push_str(&format!("  CRITICAL: {}\n", critical));
         report.push_str(&format!("  MODERATE: {}\n", moderate));
         report.push_str(&format!("  WARNING:  {}\n", warnings));

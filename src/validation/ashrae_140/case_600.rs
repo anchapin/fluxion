@@ -235,13 +235,23 @@ impl Case600Model {
 
             // Solve physics for this hour
             let hvac_kwh = self.model.step_physics(step, dry_bulb);
-            // Positive = heating, negative = cooling
+
+            // Positive = heating (energy added to building), negative = cooling (energy removed)
+            // hvac_kwh is the HVAC energy for 1 hour timestep.
+            // Since it's already in kWh (energy), to get the average power during that hour:
+            // power(kW) = energy(kWh) / time(h) = kWh / 1h = kWh value as kW
             if hvac_kwh > 0.0 {
+                // Heating energy in joules = kWh * 3600 * 1000
                 annual_heating_joules += hvac_kwh * 3.6e6;
-                peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0 / 3600.0);
+                // Convert kWh to Watts: kWh for 1 hour = kW = kW * 1000 = W
+                // Bug fix: was dividing by 3600 incorrectly
+                let hvac_power_watts = hvac_kwh * 1000.0;
+                peak_heating_watts = peak_heating_watts.max(hvac_power_watts);
             } else {
+                // Cooling energy in joules (absolute value)
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-                peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0 / 3600.0);
+                let hvac_power_watts = (-hvac_kwh) * 1000.0;
+                peak_cooling_watts = peak_cooling_watts.max(hvac_power_watts);
             }
 
             // Store indoor temperature
