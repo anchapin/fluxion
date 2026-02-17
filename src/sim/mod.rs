@@ -2,6 +2,7 @@ pub mod boundary;
 pub mod components;
 pub mod construction;
 pub mod engine;
+pub mod hvac;
 pub mod schedule;
 pub mod shading;
 pub mod solar;
