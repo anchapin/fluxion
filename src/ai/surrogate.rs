@@ -206,7 +206,7 @@ impl MultiDeviceSessionPool {
             use ort::session::Session;
             let mut available_devices = Vec::new();
             for device_id in 0..8 {
-                let mut builder = match Session::builder() {
+                let builder = match Session::builder() {
                     Ok(b) => b,
                     Err(_) => continue,
                 };
