@@ -3,6 +3,7 @@ pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod benchmark;
 pub mod cross_validator;
+pub mod diagnostic;
 pub mod fdd;
 pub mod physics_validator;
 pub mod report;
@@ -26,6 +27,10 @@ pub use physics_validator::{
 pub use report::{
     BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
     ValidationStatus, ValidationSuite,
+};
+pub use diagnostic::{
+    ComparisonRow, DiagnosticConfig, DiagnosticReport, EnergyBreakdown, HourlyData, PeakTiming,
+    TemperatureProfile,
 };
 
 #[cfg(test)]

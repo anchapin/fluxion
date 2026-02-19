@@ -3,12 +3,19 @@ use crate::sim::engine::ThermalModel;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, Orientation};
 use crate::validation::benchmark;
+use crate::validation::diagnostic::{
+    ComparisonRow, DiagnosticConfig, DiagnosticReport, EnergyBreakdown, HourlyData, PeakTiming,
+    TemperatureProfile,
+};
 use crate::validation::report::{BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 
 /// Validator for ASHRAE 140 standard cases.
-pub struct ASHRAE140Validator;
+pub struct ASHRAE140Validator {
+    /// Diagnostic configuration
+    diagnostic_config: DiagnosticConfig,
+}
 
 impl Default for ASHRAE140Validator {
     fn default() -> Self {
@@ -19,7 +26,225 @@ impl Default for ASHRAE140Validator {
 impl ASHRAE140Validator {
     /// Creates a new ASHRAE 140 validator.
     pub fn new() -> Self {
-        Self {}
+        Self {
+            diagnostic_config: DiagnosticConfig::from_env(),
+        }
+    }
+
+    /// Creates a validator with diagnostic output enabled.
+    pub fn with_diagnostics(config: DiagnosticConfig) -> Self {
+        Self {
+            diagnostic_config: config,
+        }
+    }
+
+    /// Validates with full diagnostic output.
+    pub fn validate_with_diagnostics(&mut self) -> (BenchmarkReport, DiagnosticReport) {
+        let mut report = BenchmarkReport::new();
+        let mut diagnostic_report = DiagnosticReport::new(self.diagnostic_config.clone());
+        let benchmark_data = benchmark::get_all_benchmark_data();
+        let weather = DenverTmyWeather::new();
+
+        // Cases to validate - all 18 ASHRAE 140 cases
+        let cases = vec![
+            // Low mass cases (600 series)
+            ASHRAE140Case::Case600,
+            ASHRAE140Case::Case610,
+            ASHRAE140Case::Case620,
+            ASHRAE140Case::Case630,
+            ASHRAE140Case::Case640,
+            ASHRAE140Case::Case650,
+            ASHRAE140Case::Case600FF,
+            ASHRAE140Case::Case650FF,
+            // High mass cases (900 series)
+            ASHRAE140Case::Case900,
+            ASHRAE140Case::Case910,
+            ASHRAE140Case::Case920,
+            ASHRAE140Case::Case930,
+            ASHRAE140Case::Case940,
+            ASHRAE140Case::Case950,
+            ASHRAE140Case::Case900FF,
+            ASHRAE140Case::Case950FF,
+            // Special cases
+            ASHRAE140Case::Case960,
+            ASHRAE140Case::Case195,
+        ];
+
+        for case in cases {
+            let case_id = case.number();
+            if let Some(data) = benchmark_data.get(&case_id) {
+                let spec = case.spec();
+                let (results, case_diagnostic) =
+                    self.simulate_case_with_diagnostics(&spec, &weather, &case_id);
+
+                if spec.is_free_floating() {
+                    if self.diagnostic_config.verbose {
+                        println!(
+                            "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
+                            case_id,
+                            results.min_temp_celsius.unwrap_or(0.0),
+                            data.min_free_float_min,
+                            data.min_free_float_max,
+                            results.max_temp_celsius.unwrap_or(0.0),
+                            data.max_free_float_min,
+                            data.max_free_float_max
+                        );
+                    }
+
+                    // Add free-floating temperature metrics
+                    if let Some(min_temp) = results.min_temp_celsius {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::MinFreeFloat,
+                            min_temp,
+                            data.min_free_float_min,
+                            data.min_free_float_max,
+                        );
+
+                        diagnostic_report.add_comparison_row(ComparisonRow::new(
+                            &case_id,
+                            "Min Temp",
+                            min_temp,
+                            data.min_free_float_min,
+                            data.min_free_float_max,
+                        ));
+                    }
+
+                    if let Some(max_temp) = results.max_temp_celsius {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::MaxFreeFloat,
+                            max_temp,
+                            data.max_free_float_min,
+                            data.max_free_float_max,
+                        );
+
+                        diagnostic_report.add_comparison_row(ComparisonRow::new(
+                            &case_id,
+                            "Max Temp",
+                            max_temp,
+                            data.max_free_float_min,
+                            data.max_free_float_max,
+                        ));
+                    }
+
+                    // Add temperature profile for free-floating cases
+                    if self.diagnostic_config.output_temperature_profiles {
+                        diagnostic_report.add_temperature_profile(case_diagnostic.temp_profile);
+                    }
+                } else {
+                    if self.diagnostic_config.verbose {
+                        println!(
+                            "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
+                            case_id,
+                            results.annual_heating_mwh,
+                            data.annual_heating_min,
+                            data.annual_heating_max,
+                            results.annual_cooling_mwh,
+                            data.annual_cooling_min,
+                            data.annual_cooling_max,
+                            results.peak_heating_kw,
+                            results.peak_cooling_kw
+                        );
+                    }
+
+                    report.add_result_simple(
+                        &case_id,
+                        MetricType::AnnualHeating,
+                        results.annual_heating_mwh,
+                        data.annual_heating_min,
+                        data.annual_heating_max,
+                    );
+
+                    report.add_result_simple(
+                        &case_id,
+                        MetricType::AnnualCooling,
+                        results.annual_cooling_mwh,
+                        data.annual_cooling_min,
+                        data.annual_cooling_max,
+                    );
+
+                    // Add comparison rows for diagnostic report
+                    diagnostic_report.add_comparison_row(ComparisonRow::new(
+                        &case_id,
+                        "Heating",
+                        results.annual_heating_mwh,
+                        data.annual_heating_min,
+                        data.annual_heating_max,
+                    ));
+
+                    diagnostic_report.add_comparison_row(ComparisonRow::new(
+                        &case_id,
+                        "Cooling",
+                        results.annual_cooling_mwh,
+                        data.annual_cooling_min,
+                        data.annual_cooling_max,
+                    ));
+
+                    // Add peak loads if reference data is available
+                    if data.peak_heating_min >= 0.0 {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::PeakHeating,
+                            results.peak_heating_kw,
+                            data.peak_heating_min,
+                            data.peak_heating_max,
+                        );
+
+                        diagnostic_report.add_comparison_row(ComparisonRow::new(
+                            &case_id,
+                            "Peak Heat",
+                            results.peak_heating_kw,
+                            data.peak_heating_min,
+                            data.peak_heating_max,
+                        ));
+                    }
+
+                    if data.peak_cooling_min >= 0.0 {
+                        report.add_result_simple(
+                            &case_id,
+                            MetricType::PeakCooling,
+                            results.peak_cooling_kw,
+                            data.peak_cooling_min,
+                            data.peak_cooling_max,
+                        );
+
+                        diagnostic_report.add_comparison_row(ComparisonRow::new(
+                            &case_id,
+                            "Peak Cool",
+                            results.peak_cooling_kw,
+                            data.peak_cooling_min,
+                            data.peak_cooling_max,
+                        ));
+                    }
+
+                    // Add energy breakdown and peak timing for diagnostic report
+                    if self.diagnostic_config.output_energy_breakdown {
+                        diagnostic_report
+                            .add_energy_breakdown(&case_id, case_diagnostic.energy_breakdown);
+                    }
+
+                    if self.diagnostic_config.output_peak_timing {
+                        diagnostic_report.add_peak_timing(&case_id, case_diagnostic.peak_timing);
+                    }
+                }
+
+                report.add_benchmark_data(&case_id, data.clone());
+            }
+        }
+
+        // Export hourly data if configured
+        if self.diagnostic_config.output_hourly {
+            if let Some(ref path) = self.diagnostic_config.hourly_output_path {
+                if let Err(e) = diagnostic_report.export_hourly_csv(path) {
+                    eprintln!("Failed to export hourly data: {}", e);
+                }
+            }
+        }
+
+        diagnostic_report.print_summary();
+
+        (report, diagnostic_report)
     }
 
     /// Validates the analytical engine against the ASHRAE 140 cases.
@@ -422,4 +647,353 @@ struct CaseResults {
     min_temp_celsius: Option<f64>,
     /// Maximum zone temperature (°C) for free-floating cases
     max_temp_celsius: Option<f64>,
+}
+
+/// Diagnostic data collected during case simulation.
+struct CaseDiagnostic {
+    /// Energy breakdown by component
+    energy_breakdown: EnergyBreakdown,
+    /// Peak load timing information
+    peak_timing: PeakTiming,
+    /// Temperature profile for free-floating cases
+    temp_profile: TemperatureProfile,
+    /// Hourly data (if collected)
+    hourly_data: Vec<HourlyData>,
+}
+
+impl CaseDiagnostic {
+    fn new(case_id: &str, _num_zones: usize) -> Self {
+        Self {
+            energy_breakdown: EnergyBreakdown::new(),
+            peak_timing: PeakTiming::new(),
+            temp_profile: TemperatureProfile::new(case_id),
+            hourly_data: Vec::new(),
+        }
+    }
+}
+
+impl ASHRAE140Validator {
+    /// Simulate a case with full diagnostic data collection.
+    fn simulate_case_with_diagnostics(
+        &self,
+        spec: &CaseSpec,
+        weather: &DenverTmyWeather,
+        case_id: &str,
+    ) -> (CaseResults, CaseDiagnostic) {
+        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        const STEPS: usize = 8760;
+        let num_zones = model.num_zones;
+
+        let is_free_floating = spec.is_free_floating();
+        let mut diagnostic = CaseDiagnostic::new(case_id, num_zones);
+
+        if is_free_floating {
+            model.heating_setpoint = -999.0;
+            model.cooling_setpoint = 999.0;
+            model.hvac_heating_capacity = 0.0;
+            model.hvac_cooling_capacity = 0.0;
+        }
+
+        let mut annual_heating_joules = 0.0;
+        let mut annual_cooling_joules = 0.0;
+        let mut peak_heating_watts: f64 = 0.0;
+        let mut peak_cooling_watts: f64 = 0.0;
+        let mut peak_heating_hour: usize = 0;
+        let mut peak_cooling_hour: usize = 0;
+        let mut min_temp_celsius: f64 = f64::INFINITY;
+        let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+
+        // Track energy components
+        let mut total_solar_gains_joules = 0.0;
+        let mut total_internal_gains_joules = 0.0;
+        let mut total_envelope_conduction_joules = 0.0;
+        let mut total_infiltration_joules = 0.0;
+
+        for step in 0..STEPS {
+            let hour_of_day = step % 24;
+            let day_of_year = step / 24 + 1;
+
+            let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+            let mut month = 1;
+            let mut day = day_of_year;
+            for (i, &days) in days_in_month.iter().enumerate() {
+                if day <= days as usize {
+                    month = i + 1;
+                    break;
+                }
+                day -= days as usize;
+            }
+
+            let weather_data = weather.get_hourly_data(step).unwrap();
+
+            // Apply dynamic setpoints
+            if let Some(hvac_schedule) = spec.hvac.first() {
+                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
+                {
+                    model.heating_setpoint = heating_sp;
+                }
+                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
+                {
+                    model.cooling_setpoint = cooling_sp;
+                }
+            }
+
+            // Apply night ventilation
+            if let Some(vent) = &spec.night_ventilation {
+                if vent.is_active_at_hour(hour_of_day as u8) {
+                    if let Some(hvac_schedule) = spec.hvac.first() {
+                        if hvac_schedule.heating_setpoint < 0.0 {
+                            model.cooling_setpoint = -100.0;
+                        }
+                    }
+                }
+            }
+
+            // Calculate solar gains
+            let mut total_solar_gain_per_zone: Vec<f64> = vec![0.0; num_zones];
+            for (zone_idx, zone_windows) in spec.windows.iter().enumerate() {
+                if zone_idx >= num_zones {
+                    break;
+                }
+                for win_area in zone_windows {
+                    let props = WindowProperties::new(
+                        win_area.area,
+                        spec.window_properties.shgc,
+                        spec.window_properties.normal_transmittance,
+                    );
+
+                    let mut overhang = None;
+                    let mut fins = Vec::new();
+                    if let Some(zone_surfaces) = model.surfaces.get(zone_idx) {
+                        for surf in zone_surfaces {
+                            if surf.orientation == win_area.orientation {
+                                overhang = surf.overhang.as_ref();
+                                fins = surf.fins.clone();
+                                break;
+                            }
+                        }
+                    }
+
+                    let (_, _, gain) = calculate_hourly_solar(
+                        39.7392,
+                        -104.9903,
+                        2024,
+                        month as u32,
+                        day as u32,
+                        hour_of_day as f64 + 0.5,
+                        weather_data.dni,
+                        weather_data.dhi,
+                        &props,
+                        Some(win_area),
+                        overhang,
+                        &fins,
+                        win_area.orientation,
+                        Some(0.2),
+                    );
+                    total_solar_gain_per_zone[zone_idx] += gain;
+                }
+
+                // Opaque solar gains
+                let alpha = spec.opaque_absorptance;
+                let re = 0.034;
+                let wall_area = spec.geometry[zone_idx].wall_area();
+                let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
+                let opaque_wall_area = wall_area - window_area;
+                let roof_area = spec.geometry[zone_idx].roof_area();
+
+                let wall_u = spec.construction.wall.u_value(None);
+                let roof_u = spec.construction.roof.u_value(None);
+
+                for orientation in [
+                    Orientation::South,
+                    Orientation::West,
+                    Orientation::North,
+                    Orientation::East,
+                ] {
+                    let (_, irr, _) = calculate_hourly_solar(
+                        39.7392,
+                        -104.9903,
+                        2024,
+                        month as u32,
+                        day as u32,
+                        hour_of_day as f64 + 0.5,
+                        weather_data.dni,
+                        weather_data.dhi,
+                        &WindowProperties::new(0.0, 0.0, 0.0),
+                        None,
+                        None,
+                        &[],
+                        orientation,
+                        Some(0.2),
+                    );
+                    total_solar_gain_per_zone[zone_idx] +=
+                        (opaque_wall_area / 4.0) * wall_u * irr.total_wm2 * alpha * re;
+                }
+
+                let (_, irr_roof, _) = calculate_hourly_solar(
+                    39.7392,
+                    -104.9903,
+                    2024,
+                    month as u32,
+                    day as u32,
+                    hour_of_day as f64 + 0.5,
+                    weather_data.dni,
+                    weather_data.dhi,
+                    &WindowProperties::new(0.0, 0.0, 0.0),
+                    None,
+                    None,
+                    &[],
+                    Orientation::Up,
+                    Some(0.2),
+                );
+                total_solar_gain_per_zone[zone_idx] +=
+                    roof_area * roof_u * irr_roof.total_wm2 * alpha * re;
+            }
+
+            // Calculate loads
+            let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+            let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+
+            for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
+                let internal_gains = spec
+                    .internal_loads
+                    .get(zone_idx)
+                    .or(spec.internal_loads.first())
+                    .and_then(|l| l.as_ref())
+                    .map_or(0.0, |l| l.total_load);
+
+                let floor_area = spec
+                    .geometry
+                    .get(zone_idx)
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
+
+                internal_loads_per_zone.push(internal_gains / floor_area);
+                solar_loads_per_zone.push(solar_gain / floor_area);
+
+                // Track energy components (convert W to Joules for 1 hour)
+                total_solar_gains_joules += solar_gain * 3600.0;
+                total_internal_gains_joules += internal_gains * 3600.0;
+            }
+
+            // Estimate envelope conduction and infiltration for diagnostics
+            let zone_temp = model.temperatures.as_slice().first().copied().unwrap_or(20.0);
+            let delta_t = zone_temp - weather_data.dry_bulb_temp;
+            let floor_area = spec.geometry.first().map_or(20.0, |g| g.floor_area());
+            let wall_area = spec.geometry.first().map_or(48.0, |g| g.wall_area());
+            let window_area: f64 = spec.windows.first().map_or(12.0, |zone| {
+                zone.iter().map(|w| w.area).sum()
+            });
+            let opaque_area = wall_area - window_area;
+
+            // Envelope conduction estimate (W)
+            let envelope_conduction_w = opaque_area
+                * spec.construction.wall.u_value(None)
+                * delta_t.abs()
+                + floor_area * spec.construction.roof.u_value(None) * delta_t.abs();
+            total_envelope_conduction_joules += envelope_conduction_w * 3600.0;
+
+            // Infiltration estimate (W)
+            let volume = floor_area * spec.geometry.first().map_or(2.7, |g| g.height);
+            let infiltration_w =
+                spec.infiltration_ach * volume * 1.2 * 1005.0 * delta_t.abs() / 3600.0;
+            total_infiltration_joules += infiltration_w * 3600.0;
+
+            // Combine loads
+            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
+            for i in 0..num_zones {
+                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
+                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
+                total_loads.push(internal + solar);
+            }
+            model.set_loads(&total_loads);
+
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+
+            // Track temperatures for free-floating cases
+            if is_free_floating {
+                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                    min_temp_celsius = min_temp_celsius.min(zone_0_temp);
+                    max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    diagnostic.temp_profile.update(zone_0_temp);
+                }
+            }
+
+            // Track HVAC energy and peaks
+            if hvac_kwh > 0.0 {
+                annual_heating_joules += hvac_kwh * 3.6e6;
+                let hvac_watts = hvac_kwh * 1000.0;
+                if hvac_watts > peak_heating_watts {
+                    peak_heating_watts = hvac_watts;
+                    peak_heating_hour = step;
+                }
+            } else {
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                let hvac_watts = (-hvac_kwh) * 1000.0;
+                if hvac_watts > peak_cooling_watts {
+                    peak_cooling_watts = hvac_watts;
+                    peak_cooling_hour = step;
+                }
+            }
+
+            // Collect hourly data if enabled
+            if self.diagnostic_config.output_hourly {
+                let mut hourly = HourlyData::new(step, num_zones);
+                hourly.outdoor_temp = weather_data.dry_bulb_temp;
+                hourly.zone_temps = model.temperatures.as_slice().to_vec();
+                hourly.solar_gains = total_solar_gain_per_zone.clone();
+                hourly.hvac_power = if hvac_kwh > 0.0 {
+                    vec![hvac_kwh * 1000.0; num_zones]
+                } else {
+                    vec![hvac_kwh * 1000.0; num_zones]
+                };
+                hourly.internal_loads = internal_loads_per_zone.clone();
+                diagnostic.hourly_data.push(hourly);
+            }
+        }
+
+        // Finalize diagnostic data
+        diagnostic.energy_breakdown = EnergyBreakdown {
+            envelope_conduction_mwh: total_envelope_conduction_joules / 3.6e9,
+            infiltration_mwh: total_infiltration_joules / 3.6e9,
+            solar_gains_mwh: total_solar_gains_joules / 3.6e9,
+            internal_gains_mwh: total_internal_gains_joules / 3.6e9,
+            heating_mwh: annual_heating_joules / 3.6e9,
+            cooling_mwh: annual_cooling_joules / 3.6e9,
+            net_balance_mwh: (total_solar_gains_joules + total_internal_gains_joules
+                - annual_heating_joules
+                - annual_cooling_joules)
+                / 3.6e9,
+        };
+
+        diagnostic.peak_timing = PeakTiming {
+            peak_heating_kw: peak_heating_watts / 1000.0,
+            peak_heating_hour,
+            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            peak_cooling_hour,
+        };
+
+        if is_free_floating {
+            diagnostic.temp_profile.finalize();
+        }
+
+        let results = CaseResults {
+            annual_heating_mwh: annual_heating_joules / 3.6e9,
+            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            peak_heating_kw: peak_heating_watts / 1000.0,
+            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
+                Some(min_temp_celsius)
+            } else {
+                None
+            },
+            max_temp_celsius: if is_free_floating && max_temp_celsius != f64::NEG_INFINITY {
+                Some(max_temp_celsius)
+            } else {
+                None
+            },
+        };
+
+        (results, diagnostic)
+    }
 }
