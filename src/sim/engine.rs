@@ -122,12 +122,7 @@ impl IdealHVACController {
     ///
     /// # Returns
     /// HVAC power in Watts (positive = heating, negative = cooling)
-    pub fn calculate_power(
-        &self,
-        zone_temp: f64,
-        free_float_temp: f64,
-        sensitivity: f64,
-    ) -> f64 {
+    pub fn calculate_power(&self, zone_temp: f64, free_float_temp: f64, sensitivity: f64) -> f64 {
         let mode = self.determine_mode(zone_temp);
 
         match mode {
@@ -2076,8 +2071,8 @@ mod hvac_controller_tests {
     #[test]
     fn test_ideal_hvac_controller_with_stages() {
         let controller = IdealHVACController::with_stages(
-            20.0, 27.0,      // setpoints
-            2, 3,            // stages
+            20.0, 27.0, // setpoints
+            2, 3, // stages
             10_000.0, 15_000.0, // capacity per stage
         );
 
@@ -2170,11 +2165,7 @@ mod hvac_controller_tests {
 
     #[test]
     fn test_active_heating_stages() {
-        let controller = IdealHVACController::with_stages(
-            20.0, 27.0,
-            3, 1,
-            10_000.0, 100_000.0,
-        );
+        let controller = IdealHVACController::with_stages(20.0, 27.0, 3, 1, 10_000.0, 100_000.0);
 
         assert_eq!(controller.active_heating_stages(0.0), 0);
         assert_eq!(controller.active_heating_stages(-5.0), 0);
@@ -2187,11 +2178,7 @@ mod hvac_controller_tests {
 
     #[test]
     fn test_active_cooling_stages() {
-        let controller = IdealHVACController::with_stages(
-            20.0, 27.0,
-            1, 2,
-            100_000.0, 10_000.0,
-        );
+        let controller = IdealHVACController::with_stages(20.0, 27.0, 1, 2, 100_000.0, 10_000.0);
 
         assert_eq!(controller.active_cooling_stages(0.0), 0);
         assert_eq!(controller.active_cooling_stages(5.0), 0);
@@ -2212,23 +2199,19 @@ mod hvac_controller_tests {
     fn test_validate_invalid_deadband() {
         let controller = IdealHVACController {
             heating_setpoint: 25.0,
-            cooling_setpoint: 26.0,
+            cooling_setpoint: 25.5,
             deadband_tolerance: 0.5,
             ..Default::default()
         };
 
-        // Deadband is only 1°C but tolerance requires at least 1°C gap
+        // Deadband is only 0.5°C but tolerance requires at least 1°C gap (2 * 0.5)
         assert!(controller.validate().is_err());
     }
 
     #[test]
     fn test_staging_reduces_cycling() {
         // Test that staging helps reduce rapid cycling
-        let controller = IdealHVACController::with_stages(
-            20.0, 27.0,
-            2, 2,
-            5_000.0, 5_000.0,
-        );
+        let controller = IdealHVACController::with_stages(20.0, 27.0, 2, 2, 5_000.0, 5_000.0);
 
         // Near the heating setpoint, staging should modulate
         let power_low = controller.calculate_power(19.4, 19.4, 0.001);
