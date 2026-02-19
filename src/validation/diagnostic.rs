@@ -754,11 +754,18 @@ mod tests {
         data.outdoor_temp = 10.0;
         collector.record_hour(data);
 
-        // Export to a temp file
-        let result = collector.export_hourly_csv("/tmp/test_hourly.csv");
+        // Export to a temp file (cross-platform)
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_hourly.csv");
+        let path_str = temp_path.to_string_lossy().into_owned();
+
+        let result = collector.export_hourly_csv(&path_str);
         assert!(result.is_ok());
 
         // Verify file exists
-        assert!(std::path::Path::new("/tmp/test_hourly.csv").exists());
+        assert!(temp_path.exists());
+
+        // Cleanup
+        let _ = std::fs::remove_file(&temp_path);
     }
 }
