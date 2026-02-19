@@ -440,7 +440,7 @@ impl Assemblies {
     pub fn high_mass_wall() -> Construction {
         Construction::new(vec![
             Materials::concrete(0.100),
-            Materials::foam(0.0615),
+            Materials::foam(0.066), // Adjusted for U=0.514
             Materials::wood_siding(0.009),
         ])
     }
@@ -454,7 +454,7 @@ impl Assemblies {
     pub fn high_mass_roof() -> Construction {
         Construction::new(vec![
             Materials::concrete(0.080),
-            Materials::foam(0.0615),
+            Materials::foam(0.111), // Adjusted for U=0.318
             Materials::roof_deck(0.019),
         ])
     }
@@ -463,7 +463,7 @@ impl Assemblies {
     pub fn insulated_floor() -> Construction {
         Construction::new(vec![
             Materials::timber(0.025),
-            Materials::fiberglass(1.003), // Thick insulation to achieve U=0.039
+            Materials::fiberglass(0.197), // Adjusted for U=0.190
         ])
     }
 
@@ -476,7 +476,7 @@ impl Assemblies {
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
             Materials::concrete_slab(0.080),
-            Materials::insulation_high_mass(1.003), // Thick insulation to achieve U=0.039
+            Materials::insulation_high_mass(0.197), // Adjusted for U=0.190
         ])
     }
 }
@@ -1029,7 +1029,7 @@ mod tests {
 
         // Check layer properties
         assert_eq!(wall.layers[0].thickness, 0.100); // Concrete
-        assert_eq!(wall.layers[1].thickness, 0.0615); // Foam
+        assert_eq!(wall.layers[1].thickness, 0.066); // Foam
         assert_eq!(wall.layers[2].thickness, 0.009); // Siding
     }
 
@@ -1040,7 +1040,7 @@ mod tests {
 
         // Check layer properties
         assert_eq!(roof.layers[0].thickness, 0.080); // Concrete
-        assert_eq!(roof.layers[1].thickness, 0.0615); // Foam
+        assert_eq!(roof.layers[1].thickness, 0.111); // Foam
         assert_eq!(roof.layers[2].thickness, 0.019); // Deck
     }
 
@@ -1051,7 +1051,7 @@ mod tests {
 
         // Check layer properties
         assert_eq!(floor.layers[0].thickness, 0.025); // Timber
-        assert_eq!(floor.layers[1].thickness, 1.003); // Insulation
+        assert_eq!(floor.layers[1].thickness, 0.197); // Insulation
     }
 
     #[test]
