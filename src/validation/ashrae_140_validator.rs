@@ -350,7 +350,10 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                let solar = total_solar_gain_per_zone.get(zone_idx).copied().unwrap_or(0.0);
+                let solar = total_solar_gain_per_zone
+                    .get(zone_idx)
+                    .copied()
+                    .unwrap_or(0.0);
                 total_loads.push(internal_gains / floor_area + solar / floor_area);
             }
             model.set_loads(&total_loads);
