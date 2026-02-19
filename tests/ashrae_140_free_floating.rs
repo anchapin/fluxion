@@ -330,8 +330,10 @@ fn test_thermal_mass_effect_on_temperature_swing() {
     println!("\n=== Thermal Mass Effect on Temperature Swing ===");
     println!("Low mass (600FF) swing:  {:.2}°C", swing_low_mass);
     println!("High mass (900FF) swing: {:.2}°C", swing_high_mass);
-    println!("Reduction due to mass:   {:.1}%", 
-        (swing_low_mass - swing_high_mass) / swing_low_mass * 100.0);
+    println!(
+        "Reduction due to mass:   {:.1}%",
+        (swing_low_mass - swing_high_mass) / swing_low_mass * 100.0
+    );
 
     // High mass should reduce temperature swing
     assert!(
@@ -343,7 +345,7 @@ fn test_thermal_mass_effect_on_temperature_swing() {
     // Our values are much smaller, but the relative effect is correct
     let expected_reduction = 35.0; // At least 35% reduction
     let actual_reduction = (swing_low_mass - swing_high_mass) / swing_low_mass * 100.0;
-    
+
     println!("Expected reduction: >{:.0}%", expected_reduction);
     println!("Actual reduction:   {:.1}%", actual_reduction);
 }
@@ -358,13 +360,25 @@ fn test_night_ventilation_effect() {
 
     println!("\n=== Night Ventilation Effect ===");
     println!("Low Mass:");
-    println!("  600FF (no vent): Min={:.2}°C, Max={:.2}°C", min_600ff, max_600ff);
-    println!("  650FF (vent):    Min={:.2}°C, Max={:.2}°C", min_650ff, max_650ff);
+    println!(
+        "  600FF (no vent): Min={:.2}°C, Max={:.2}°C",
+        min_600ff, max_600ff
+    );
+    println!(
+        "  650FF (vent):    Min={:.2}°C, Max={:.2}°C",
+        min_650ff, max_650ff
+    );
     println!("  Max temp change: {:.2}°C", max_650ff - max_600ff);
-    
+
     println!("High Mass:");
-    println!("  900FF (no vent): Min={:.2}°C, Max={:.2}°C", min_900ff, max_900ff);
-    println!("  950FF (vent):    Min={:.2}°C, Max={:.2}°C", min_950ff, max_950ff);
+    println!(
+        "  900FF (no vent): Min={:.2}°C, Max={:.2}°C",
+        min_900ff, max_900ff
+    );
+    println!(
+        "  950FF (vent):    Min={:.2}°C, Max={:.2}°C",
+        min_950ff, max_950ff
+    );
     println!("  Max temp change: {:.2}°C", max_950ff - max_900ff);
 
     // Night ventilation should reduce maximum temperatures
