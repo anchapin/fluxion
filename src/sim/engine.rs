@@ -859,6 +859,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
+
+        // Check if we need to preserve q_iz for superposition later
+        let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
+        let q_iz_clone = if has_inter_zone {
+            Some(q_iz_tensor.clone())
+        } else {
+            None
+        };
+
         let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor;
 
         // Recalculate num_rest with inter-zone heat transfer
@@ -875,12 +884,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val) * dt;
 
-        // 4. Update Temperatures
-        let phi_ia_act = phi_ia + hvac_output;
-        let num_rest_act = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia_act)
-            + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
+        // 4. Update Temperatures (Optimized via Superposition)
+        // t_i_act = t_i_free + sensitivity * (hvac_output - q_iz)
+        // This avoids re-calculating the entire thermal network state.
+        let delta_load = if let Some(q_iz) = q_iz_clone {
+            // Replicate existing behavior: remove q_iz effect in final step
+            hvac_output - q_iz
+        } else {
+            hvac_output
+        };
 
-        let t_i_act = (num_tm + num_phi_st.clone() + num_rest_act) / den.clone();
+        let t_i_act = t_i_free.clone() + sensitivity_val * delta_load;
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
