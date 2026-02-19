@@ -475,6 +475,7 @@ impl DiagnosticCollector {
     }
 
     /// Adds a comparison row for the validation table.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_comparison(
         &mut self,
         case_id: &str,
