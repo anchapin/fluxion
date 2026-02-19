@@ -97,6 +97,34 @@ impl Div for NDArrayField {
     }
 }
 
+impl<'a> Add<&'a NDArrayField> for NDArrayField {
+    type Output = NDArrayField;
+    fn add(self, rhs: &'a NDArrayField) -> NDArrayField {
+        self.zip_with(rhs, |a, b| a + b)
+    }
+}
+
+impl<'a> Sub<&'a NDArrayField> for NDArrayField {
+    type Output = NDArrayField;
+    fn sub(self, rhs: &'a NDArrayField) -> NDArrayField {
+        self.zip_with(rhs, |a, b| a - b)
+    }
+}
+
+impl<'a> Mul<&'a NDArrayField> for NDArrayField {
+    type Output = NDArrayField;
+    fn mul(self, rhs: &'a NDArrayField) -> NDArrayField {
+        self.zip_with(rhs, |a, b| a * b)
+    }
+}
+
+impl<'a> Div<&'a NDArrayField> for NDArrayField {
+    type Output = NDArrayField;
+    fn div(self, rhs: &'a NDArrayField) -> NDArrayField {
+        self.zip_with(rhs, |a, b| a / b)
+    }
+}
+
 // Scalar multiplication/division implementations
 impl Mul<f64> for NDArrayField {
     type Output = Self;

@@ -14,6 +14,10 @@ pub trait ContinuousTensor<T>:
     + Sub<Output = Self>
     + Mul<Output = Self>
     + Div<Output = Self>
+    + for<'a> Add<&'a Self, Output = Self>
+    + for<'a> Sub<&'a Self, Output = Self>
+    + for<'a> Mul<&'a Self, Output = Self>
+    + for<'a> Div<&'a Self, Output = Self>
     + Mul<f64, Output = Self>
     + Div<f64, Output = Self>
     // Required for many internal operations
@@ -136,6 +140,34 @@ impl Div for VectorField {
     type Output = Self;
     fn div(self, rhs: Self) -> Self {
         self.zip_with(&rhs, |a, b| a / b)
+    }
+}
+
+impl<'a> Add<&'a VectorField> for VectorField {
+    type Output = VectorField;
+    fn add(self, rhs: &'a VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a + b)
+    }
+}
+
+impl<'a> Sub<&'a VectorField> for VectorField {
+    type Output = VectorField;
+    fn sub(self, rhs: &'a VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a - b)
+    }
+}
+
+impl<'a> Mul<&'a VectorField> for VectorField {
+    type Output = VectorField;
+    fn mul(self, rhs: &'a VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a * b)
+    }
+}
+
+impl<'a> Div<&'a VectorField> for VectorField {
+    type Output = VectorField;
+    fn div(self, rhs: &'a VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a / b)
     }
 }
 

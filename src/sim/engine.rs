@@ -12,6 +12,21 @@ use std::sync::OnceLock;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
 
+enum TensorCow<'a, T> {
+    Borrowed(&'a T),
+    Owned(T),
+}
+
+impl<'a, T> std::ops::Deref for TensorCow<'a, T> {
+    type Target = T;
+    fn deref(&self) -> &T {
+        match self {
+            Self::Borrowed(v) => v,
+            Self::Owned(v) => v,
+        }
+    }
+}
+
 /// Returns a precomputed array of 24 sine values for the daily cycle.
 fn get_daily_cycle() -> &'static [f64; 24] {
     DAILY_CYCLE.get_or_init(|| {
@@ -783,7 +798,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Fix: Distribute total radiative gains (internal + solar) using calibrated solar distribution
         let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
-        let phi_rad_total = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
+        let phi_rad_total = internal_gains_watts * (1.0 - self.convective_fraction);
 
         let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air;
         let phi_m = phi_rad_total * (1.0 - self.solar_distribution_to_air);
@@ -791,12 +806,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
         // Use pre-computed cached values to avoid redundant allocations
-        let h_ext_base = &self.derived_h_ext;
+        let h_ext_base = TensorCow::Borrowed(&self.derived_h_ext);
 
         // If h_ve changed, we need to adjust h_ext
         let h_ext = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                &(self.h_tr_w.clone() + current_h_ve.clone())
+                TensorCow::Owned(self.h_tr_w.clone() + &current_h_ve)
             } else {
                 h_ext_base
             }
@@ -810,22 +825,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
-                let sens_val = term_rest_1.clone() / den_val.clone();
-                (den_val, sens_val)
+                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * &*h_ext;
+                let sens_val = term_rest_1.clone() / &den_val;
+                (TensorCow::Owned(den_val), TensorCow::Owned(sens_val))
             } else {
-                (self.derived_den.clone(), self.derived_sensitivity.clone())
+                (TensorCow::Borrowed(&self.derived_den), TensorCow::Borrowed(&self.derived_sensitivity))
             }
         } else {
-            (self.derived_den.clone(), self.derived_sensitivity.clone())
+            (TensorCow::Borrowed(&self.derived_den), TensorCow::Borrowed(&self.derived_sensitivity))
         };
 
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        let num_tm = self.derived_h_ms_is_prod.clone() * &self.mass_temperatures;
+        let num_phi_st = self.h_tr_is.clone() * &phi_st;
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // This adds to the external heat transfer
-        let _num_rest = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia.clone())
+        let _num_rest = term_rest_1.clone() * (h_ext.clone() * &t_e + &phi_ia)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
         // === Inter-zone heat transfer (for multi-zone buildings like Case 960) ===
@@ -859,14 +874,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor;
+        let phi_ia_with_iz = phi_ia.clone() + &q_iz_tensor;
 
         // Recalculate num_rest with inter-zone heat transfer
         let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * t_e.clone() + phi_ia_with_iz.clone())
+            * (h_ext.clone() * &t_e + &phi_ia_with_iz)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
-        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
+        let t_i_free = (num_tm.clone() + &num_phi_st + &num_rest_with_iz) / &*den;
 
         // 3. HVAC Calculation
         // Use local sensitivity (might be different from cached if night vent is active)
@@ -876,26 +891,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val) * dt;
 
         // 4. Update Temperatures
-        let phi_ia_act = phi_ia + hvac_output;
-        let num_rest_act = term_rest_1.clone() * (h_ext.clone() * t_e.clone() + phi_ia_act)
+        let phi_ia_act = phi_ia + &hvac_output;
+        let num_rest_act = term_rest_1.clone() * (h_ext.clone() * &t_e + &phi_ia_act)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
-        let t_i_act = (num_tm + num_phi_st.clone() + num_rest_act) / den.clone();
+        let t_i_act = (num_tm + &num_phi_st + &num_rest_act) / &*den;
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate free-running surface temperature for mass update
         // This prevents HVAC energy from being stored in thermal mass
         // ts_num_free = h_tr_ms * mass_temp + h_tr_is * t_i_free + phi_st
-        let ts_num_free = self.h_tr_ms.clone() * self.mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
-            + phi_st.clone();
+        let ts_num_free = self.h_tr_ms.clone() * &self.mass_temperatures
+            + self.h_tr_is.clone() * &t_i_free
+            + &phi_st;
         // Denominator is term_rest_1
         let t_s_free = ts_num_free / term_rest_1.clone();
 
-        let q_m_net = self.h_tr_em.clone() * (t_e - self.mass_temperatures.clone())
-            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone())
-            + phi_m; // Add gain directly to mass node
+        let q_m_net = self.h_tr_em.clone() * (t_e - &self.mass_temperatures)
+            + self.h_tr_ms.clone() * (t_s_free - &self.mass_temperatures)
+            + &phi_m; // Add gain directly to mass node
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
         self.temperatures = t_i_act;
