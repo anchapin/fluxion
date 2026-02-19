@@ -86,14 +86,23 @@ fn test_case_960_multi_zone_configuration() {
     assert_eq!(spec.geometry[1].floor_area(), 16.0);
 
     // Verify common wall exists
-    assert!(!spec.common_walls.is_empty(), "Should have common wall between zones");
+    assert!(
+        !spec.common_walls.is_empty(),
+        "Should have common wall between zones"
+    );
 
     // Verify HVAC configuration
     // Zone 0 should have HVAC control
-    assert!(!spec.hvac[0].is_free_floating(), "Back-zone should have HVAC control");
+    assert!(
+        !spec.hvac[0].is_free_floating(),
+        "Back-zone should have HVAC control"
+    );
 
     // Zone 1 should be free-floating (sunspace)
-    assert!(spec.hvac[1].is_free_floating(), "Sunspace should be free-floating");
+    assert!(
+        spec.hvac[1].is_free_floating(),
+        "Sunspace should be free-floating"
+    );
 }
 
 #[test]
@@ -154,7 +163,8 @@ fn test_case_960_zone_temperatures() {
     let mut sunspace_temps: Vec<f64> = Vec::new();
 
     // Simulate for a few days to see temperature patterns
-    for step in 0..168 { // One week
+    for step in 0..168 {
+        // One week
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -163,10 +173,19 @@ fn test_case_960_zone_temperatures() {
         sunspace_temps.push(temps[1]);
     }
 
-    let back_min = back_zone_temps.iter().cloned().fold(f64::INFINITY, f64::min);
-    let back_max = back_zone_temps.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let back_min = back_zone_temps
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let back_max = back_zone_temps
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
     let sunspace_min = sunspace_temps.iter().cloned().fold(f64::INFINITY, f64::min);
-    let sunspace_max = sunspace_temps.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let sunspace_max = sunspace_temps
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
 
     println!("\n=== Case 960 Temperature Ranges (Week 1) ===");
     println!("Back-zone: {:.2}°C to {:.2}°C", back_min, back_max);
@@ -178,8 +197,14 @@ fn test_case_960_zone_temperatures() {
     let _sunspace_swing = sunspace_max - sunspace_min;
 
     // Both zones should have reasonable temperatures
-    assert!(back_min > -30.0 && back_max < 50.0, "Back-zone temps should be reasonable");
-    assert!(sunspace_min > -30.0 && sunspace_max < 80.0, "Sunspace temps should be reasonable");
+    assert!(
+        back_min > -30.0 && back_max < 50.0,
+        "Back-zone temps should be reasonable"
+    );
+    assert!(
+        sunspace_min > -30.0 && sunspace_max < 80.0,
+        "Sunspace temps should be reasonable"
+    );
 }
 
 #[test]
@@ -199,7 +224,10 @@ fn test_case_960_solar_gains_distribution() {
     println!("=== End ===\n");
 
     // Sunspace should have windows for solar gains
-    assert!(sunspace_window_area > 0.0, "Sunspace should have window area");
+    assert!(
+        sunspace_window_area > 0.0,
+        "Sunspace should have window area"
+    );
 }
 
 #[test]
@@ -211,5 +239,8 @@ fn test_case_960_hvac_only_in_back_zone() {
 
     // Verify HVAC is only in zone 0
     assert!(!spec.hvac[0].is_free_floating(), "Zone 0 should have HVAC");
-    assert!(spec.hvac[1].is_free_floating(), "Zone 1 should be free-floating");
+    assert!(
+        spec.hvac[1].is_free_floating(),
+        "Zone 1 should be free-floating"
+    );
 }
