@@ -790,7 +790,7 @@ impl DiagnosticCollector {
             return;
         }
 
-        if self.config.verbose && data.hour % 1000 == 0 {
+        if self.config.verbose && data.hour.is_multiple_of(1000) {
             println!(
                 "  Hour {}: Zone Temp = {:.2}°C, Outdoor = {:.2}°C",
                 data.hour,

@@ -1674,7 +1674,6 @@ mod tests {
         use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
         use crate::sim::schedule::DailySchedule;
-        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn steady_state_heat_transfer_matches_analytical() {
@@ -1833,7 +1832,6 @@ mod tests {
         use super::*;
         use crate::sim::boundary::ConstantGroundTemperature;
         use crate::sim::schedule::DailySchedule;
-        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn test_default_ground_temperature() {
