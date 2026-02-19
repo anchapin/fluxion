@@ -103,10 +103,7 @@ fn test_case_600ff_free_floating() {
     println!("=== End ===\n");
 
     // Verify temperatures are in reasonable range
-    assert!(
-        min_temp < max_temp,
-        "Min temp should be less than max temp"
-    );
+    assert!(min_temp < max_temp, "Min temp should be less than max temp");
     assert!(
         min_temp > -50.0 && min_temp < 50.0,
         "Min temp should be in reasonable range"
@@ -137,10 +134,7 @@ fn test_case_650ff_free_floating_night_vent() {
     println!("=== End ===\n");
 
     // Verify temperatures are in reasonable range
-    assert!(
-        min_temp < max_temp,
-        "Min temp should be less than max temp"
-    );
+    assert!(min_temp < max_temp, "Min temp should be less than max temp");
 }
 
 #[test]
@@ -173,10 +167,7 @@ fn test_case_900ff_free_floating_high_mass() {
     );
 
     // High mass should moderate temperature swings
-    assert!(
-        min_temp < max_temp,
-        "Min temp should be less than max temp"
-    );
+    assert!(min_temp < max_temp, "Min temp should be less than max temp");
 }
 
 #[test]
@@ -198,10 +189,7 @@ fn test_case_950ff_free_floating_night_vent_high_mass() {
     );
     println!("=== End ===\n");
 
-    assert!(
-        min_temp < max_temp,
-        "Min temp should be less than max temp"
-    );
+    assert!(min_temp < max_temp, "Min temp should be less than max temp");
 }
 
 #[test]
@@ -209,10 +197,24 @@ fn test_hvac_schedule_free_floating() {
     // Test that free-floating schedule is correctly configured
     let schedule = HvacSchedule::free_floating();
 
-    assert!(!schedule.is_enabled(), "Free-floating schedule should not be enabled");
-    assert!(schedule.is_free_floating(), "Schedule should report as free-floating");
-    assert_eq!(schedule.heating_setpoint_at_hour(12), None, "No heating setpoint in free-floating mode");
-    assert_eq!(schedule.cooling_setpoint_at_hour(12), None, "No cooling setpoint in free-floating mode");
+    assert!(
+        !schedule.is_enabled(),
+        "Free-floating schedule should not be enabled"
+    );
+    assert!(
+        schedule.is_free_floating(),
+        "Schedule should report as free-floating"
+    );
+    assert_eq!(
+        schedule.heating_setpoint_at_hour(12),
+        None,
+        "No heating setpoint in free-floating mode"
+    );
+    assert_eq!(
+        schedule.cooling_setpoint_at_hour(12),
+        None,
+        "No cooling setpoint in free-floating mode"
+    );
 }
 
 #[test]
@@ -227,7 +229,15 @@ fn test_free_floating_case_specification() {
 
     for case in cases {
         let spec = case.spec();
-        assert!(spec.is_free_floating(), "Case {:?} should be free-floating", case);
-        assert!(spec.hvac[0].is_free_floating(), "Case {:?} should have free-floating HVAC schedule", case);
+        assert!(
+            spec.is_free_floating(),
+            "Case {:?} should be free-floating",
+            case
+        );
+        assert!(
+            spec.hvac[0].is_free_floating(),
+            "Case {:?} should have free-floating HVAC schedule",
+            case
+        );
     }
 }
