@@ -86,10 +86,7 @@ fn simulate_case(case: ASHRAE140Case) -> (f64, f64) {
         }
     }
 
-    (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
-    )
+    (annual_heating_joules / 3.6e9, annual_cooling_joules / 3.6e9)
 }
 
 #[test]
@@ -100,16 +97,40 @@ fn test_hvac_schedule_with_setback() {
     assert!(schedule.is_enabled(), "Schedule should be enabled");
 
     // During setback hours (23:00-07:00), heating setpoint should be 10°C
-    assert_eq!(schedule.heating_setpoint_at_hour(0), Some(10.0), "Midnight should have setback setpoint");
-    assert_eq!(schedule.heating_setpoint_at_hour(6), Some(10.0), "6 AM should have setback setpoint");
+    assert_eq!(
+        schedule.heating_setpoint_at_hour(0),
+        Some(10.0),
+        "Midnight should have setback setpoint"
+    );
+    assert_eq!(
+        schedule.heating_setpoint_at_hour(6),
+        Some(10.0),
+        "6 AM should have setback setpoint"
+    );
 
     // During normal hours, heating setpoint should be 20°C
-    assert_eq!(schedule.heating_setpoint_at_hour(12), Some(20.0), "Noon should have normal setpoint");
-    assert_eq!(schedule.heating_setpoint_at_hour(20), Some(20.0), "8 PM should have normal setpoint");
+    assert_eq!(
+        schedule.heating_setpoint_at_hour(12),
+        Some(20.0),
+        "Noon should have normal setpoint"
+    );
+    assert_eq!(
+        schedule.heating_setpoint_at_hour(20),
+        Some(20.0),
+        "8 PM should have normal setpoint"
+    );
 
     // Cooling setpoint should remain constant
-    assert_eq!(schedule.cooling_setpoint_at_hour(0), Some(27.0), "Cooling setpoint should be constant");
-    assert_eq!(schedule.cooling_setpoint_at_hour(12), Some(27.0), "Cooling setpoint should be constant");
+    assert_eq!(
+        schedule.cooling_setpoint_at_hour(0),
+        Some(27.0),
+        "Cooling setpoint should be constant"
+    );
+    assert_eq!(
+        schedule.cooling_setpoint_at_hour(12),
+        Some(27.0),
+        "Cooling setpoint should be constant"
+    );
 }
 
 #[test]
@@ -171,7 +192,10 @@ fn test_case_650_night_vent_low_mass() {
     println!("=== End ===\n");
 
     // Heating should be zero (disabled for night ventilation cases)
-    assert_eq!(heating, 0.0, "Heating should be zero for night ventilation case");
+    assert_eq!(
+        heating, 0.0,
+        "Heating should be zero for night ventilation case"
+    );
     assert!(cooling >= 0.0, "Cooling should be non-negative");
 }
 
@@ -218,7 +242,10 @@ fn test_case_950_night_vent_high_mass() {
     println!("=== End ===\n");
 
     // Heating should be zero (disabled for night ventilation cases)
-    assert_eq!(heating, 0.0, "Heating should be zero for night ventilation case");
+    assert_eq!(
+        heating, 0.0,
+        "Heating should be zero for night ventilation case"
+    );
     assert!(cooling >= 0.0, "Cooling should be non-negative");
 }
 
@@ -258,17 +285,36 @@ fn test_night_vent_reduces_cooling() {
 fn test_case_specifications() {
     // Verify setback cases have setback configured
     let spec_640 = ASHRAE140Case::Case640.spec();
-    assert!(spec_640.hvac[0].setback_setpoint.is_some(), "Case 640 should have setback");
-    assert_eq!(spec_640.hvac[0].setback_setpoint, Some(10.0), "Setback should be 10°C");
+    assert!(
+        spec_640.hvac[0].setback_setpoint.is_some(),
+        "Case 640 should have setback"
+    );
+    assert_eq!(
+        spec_640.hvac[0].setback_setpoint,
+        Some(10.0),
+        "Setback should be 10°C"
+    );
 
     let spec_940 = ASHRAE140Case::Case940.spec();
-    assert!(spec_940.hvac[0].setback_setpoint.is_some(), "Case 940 should have setback");
+    assert!(
+        spec_940.hvac[0].setback_setpoint.is_some(),
+        "Case 940 should have setback"
+    );
 
     // Verify night ventilation cases have ventilation configured
     let spec_650 = ASHRAE140Case::Case650.spec();
-    assert!(spec_650.night_ventilation.is_some(), "Case 650 should have night ventilation");
-    assert!(spec_650.hvac[0].heating_setpoint < 0.0, "Case 650 should have heating disabled");
+    assert!(
+        spec_650.night_ventilation.is_some(),
+        "Case 650 should have night ventilation"
+    );
+    assert!(
+        spec_650.hvac[0].heating_setpoint < 0.0,
+        "Case 650 should have heating disabled"
+    );
 
     let spec_950 = ASHRAE140Case::Case950.spec();
-    assert!(spec_950.night_ventilation.is_some(), "Case 950 should have night ventilation");
+    assert!(
+        spec_950.night_ventilation.is_some(),
+        "Case 950 should have night ventilation"
+    );
 }
