@@ -624,10 +624,15 @@ mod tests {
             let u_value = wall.u_value(None);
             let expected = 0.514;
 
-            println!("Low mass wall U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!(
+                "Low mass wall U-value: {:.4} W/m²K (expected: {:.4})",
+                u_value, expected
+            );
             println!("  R_total: {:.4} m²K/W", wall.r_value_total(None));
-            println!("  R_materials: {:.4} m²K/W", 
-                wall.layers.iter().map(|l| l.r_value()).sum::<f64>());
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                wall.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
 
             // Check within tolerance
             let deviation = (u_value - expected).abs() / expected;
@@ -647,10 +652,15 @@ mod tests {
             let u_value = roof.u_value(None);
             let expected = 0.318;
 
-            println!("Low mass roof U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!(
+                "Low mass roof U-value: {:.4} W/m²K (expected: {:.4})",
+                u_value, expected
+            );
             println!("  R_total: {:.4} m²K/W", roof.r_value_total(None));
-            println!("  R_materials: {:.4} m²K/W", 
-                roof.layers.iter().map(|l| l.r_value()).sum::<f64>());
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                roof.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
 
             let deviation = (u_value - expected).abs() / expected;
             assert!(
@@ -669,10 +679,15 @@ mod tests {
             let u_value = floor.u_value(None);
             let expected = 0.190;
 
-            println!("Insulated floor U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!(
+                "Insulated floor U-value: {:.4} W/m²K (expected: {:.4})",
+                u_value, expected
+            );
             println!("  R_total: {:.4} m²K/W", floor.r_value_total(None));
-            println!("  R_materials: {:.4} m²K/W", 
-                floor.layers.iter().map(|l| l.r_value()).sum::<f64>());
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                floor.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
 
             let deviation = (u_value - expected).abs() / expected;
             assert!(
@@ -691,10 +706,15 @@ mod tests {
             let u_value = wall.u_value(None);
             let expected = 0.514;
 
-            println!("High mass wall U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!(
+                "High mass wall U-value: {:.4} W/m²K (expected: {:.4})",
+                u_value, expected
+            );
             println!("  R_total: {:.4} m²K/W", wall.r_value_total(None));
-            println!("  R_materials: {:.4} m²K/W", 
-                wall.layers.iter().map(|l| l.r_value()).sum::<f64>());
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                wall.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
 
             let deviation = (u_value - expected).abs() / expected;
             assert!(
@@ -713,10 +733,15 @@ mod tests {
             let u_value = roof.u_value(None);
             let expected = 0.318;
 
-            println!("High mass roof U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!(
+                "High mass roof U-value: {:.4} W/m²K (expected: {:.4})",
+                u_value, expected
+            );
             println!("  R_total: {:.4} m²K/W", roof.r_value_total(None));
-            println!("  R_materials: {:.4} m²K/W", 
-                roof.layers.iter().map(|l| l.r_value()).sum::<f64>());
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                roof.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
 
             let deviation = (u_value - expected).abs() / expected;
             assert!(
@@ -735,10 +760,15 @@ mod tests {
             let u_value = floor.u_value(None);
             let expected = 0.190;
 
-            println!("High mass floor U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!(
+                "High mass floor U-value: {:.4} W/m²K (expected: {:.4})",
+                u_value, expected
+            );
             println!("  R_total: {:.4} m²K/W", floor.r_value_total(None));
-            println!("  R_materials: {:.4} m²K/W", 
-                floor.layers.iter().map(|l| l.r_value()).sum::<f64>());
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                floor.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
 
             let deviation = (u_value - expected).abs() / expected;
             assert!(
@@ -769,7 +799,10 @@ mod tests {
 
             println!("R_materials: {:.4} m²K/W", r_materials);
             println!("R_total: {:.4} m²K/W", r_total);
-            println!("R_film: {:.4} m²K/W (expected: {:.4})", r_film, expected_r_film);
+            println!(
+                "R_film: {:.4} m²K/W (expected: {:.4})",
+                r_film, expected_r_film
+            );
 
             assert!(
                 (r_film - expected_r_film).abs() < 0.001,
@@ -820,16 +853,43 @@ mod tests {
         #[test]
         fn test_all_u_values_summary() {
             println!("\n=== ASHRAE 140 U-Value Comparison ===");
-            println!("{:<20} {:>12} {:>12} {:>10}", "Construction", "Calculated", "Expected", "Deviation");
+            println!(
+                "{:<20} {:>12} {:>12} {:>10}",
+                "Construction", "Calculated", "Expected", "Deviation"
+            );
             println!("{}", "-".repeat(56));
 
             let tests: Vec<(&str, f64, f64)> = vec![
-                ("Low Mass Wall", Assemblies::low_mass_wall().u_value(None), 0.514),
-                ("Low Mass Roof", Assemblies::low_mass_roof().u_value(None), 0.318),
-                ("Insulated Floor", Assemblies::insulated_floor().u_value(None), 0.190),
-                ("High Mass Wall", Assemblies::high_mass_wall().u_value(None), 0.514),
-                ("High Mass Roof", Assemblies::high_mass_roof().u_value(None), 0.318),
-                ("High Mass Floor", Assemblies::high_mass_floor().u_value(None), 0.190),
+                (
+                    "Low Mass Wall",
+                    Assemblies::low_mass_wall().u_value(None),
+                    0.514,
+                ),
+                (
+                    "Low Mass Roof",
+                    Assemblies::low_mass_roof().u_value(None),
+                    0.318,
+                ),
+                (
+                    "Insulated Floor",
+                    Assemblies::insulated_floor().u_value(None),
+                    0.190,
+                ),
+                (
+                    "High Mass Wall",
+                    Assemblies::high_mass_wall().u_value(None),
+                    0.514,
+                ),
+                (
+                    "High Mass Roof",
+                    Assemblies::high_mass_roof().u_value(None),
+                    0.318,
+                ),
+                (
+                    "High Mass Floor",
+                    Assemblies::high_mass_floor().u_value(None),
+                    0.190,
+                ),
             ];
 
             for (name, calculated, expected) in &tests {
