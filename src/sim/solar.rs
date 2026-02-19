@@ -451,7 +451,12 @@ mod tests {
                 let effective_shgc = window.shgc * (1.0 - 0.4 * x.powi(3) - 0.6 * x.powi(8));
                 let ratio = effective_shgc / window.shgc;
 
-                println!("{:>10.0} {:>10.4} {:>10.2}%", angle, effective_shgc, ratio * 100.0);
+                println!(
+                    "{:>10.0} {:>10.4} {:>10.2}%",
+                    angle,
+                    effective_shgc,
+                    ratio * 100.0
+                );
 
                 // SHGC should decrease with increasing incidence angle
                 if angle > 0.0 {
@@ -547,16 +552,25 @@ mod tests {
                 ("Jun 21 18:00", 2024, 6, 21, 18.0, 400.0, 100.0),
             ];
 
-            println!("{:<15} {:>10} {:>10} {:>12}", "Time", "Alt(°)", "Az(°)", "Gain(W)");
+            println!(
+                "{:<15} {:>10} {:>10} {:>12}",
+                "Time", "Alt(°)", "Az(°)", "Gain(W)"
+            );
             println!("{}", "-".repeat(50));
 
             for (label, year, month, day, hour, dni, dhi) in test_cases {
-                let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
-                let irradiance = calculate_surface_irradiance(
-                    &sun_pos, dni, dhi, None, Orientation::South, 0.2
-                );
+                let sun_pos =
+                    calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+                let irradiance =
+                    calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::South, 0.2);
                 let gain = calculate_window_solar_gain(
-                    &irradiance, &window, None, None, &[], &sun_pos, Orientation::South
+                    &irradiance,
+                    &window,
+                    None,
+                    None,
+                    &[],
+                    &sun_pos,
+                    Orientation::South,
                 );
 
                 println!(
@@ -578,18 +592,28 @@ mod tests {
                 zenith_deg: 50.0,
             };
 
-            let irradiance_south = calculate_surface_irradiance(
-                &sun_pos, 800.0, 100.0, None, Orientation::South, 0.2
-            );
-            let irradiance_west = calculate_surface_irradiance(
-                &sun_pos, 800.0, 100.0, None, Orientation::West, 0.2
-            );
+            let irradiance_south =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+            let irradiance_west =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::West, 0.2);
 
             let gain_south = calculate_window_solar_gain(
-                &irradiance_south, &window, None, None, &[], &sun_pos, Orientation::South
+                &irradiance_south,
+                &window,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::South,
             );
             let gain_west = calculate_window_solar_gain(
-                &irradiance_west, &window, None, None, &[], &sun_pos, Orientation::West
+                &irradiance_west,
+                &window,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::West,
             );
 
             println!("Orientation effect (sun in west at 40° altitude):");
@@ -610,16 +634,20 @@ mod tests {
             };
 
             // Test with different ground reflectance values
-            let irr_0_2 = calculate_surface_irradiance(
-                &sun_pos, 800.0, 100.0, None, Orientation::South, 0.2
-            );
-            let irr_0_5 = calculate_surface_irradiance(
-                &sun_pos, 800.0, 100.0, None, Orientation::South, 0.5
-            );
+            let irr_0_2 =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+            let irr_0_5 =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.5);
 
             println!("Ground reflectance effect:");
-            println!("  ρ=0.2: ground reflected = {:.1} W/m²", irr_0_2.ground_reflected_wm2);
-            println!("  ρ=0.5: ground reflected = {:.1} W/m²", irr_0_5.ground_reflected_wm2);
+            println!(
+                "  ρ=0.2: ground reflected = {:.1} W/m²",
+                irr_0_2.ground_reflected_wm2
+            );
+            println!(
+                "  ρ=0.5: ground reflected = {:.1} W/m²",
+                irr_0_5.ground_reflected_wm2
+            );
 
             // Higher reflectance should give more ground reflected radiation
             assert!(irr_0_5.ground_reflected_wm2 > irr_0_2.ground_reflected_wm2);
