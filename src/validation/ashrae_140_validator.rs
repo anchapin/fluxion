@@ -190,17 +190,19 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
-            
+
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
-                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8) {
+                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
+                {
                     model.heating_setpoint = heating_sp;
                 }
-                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8) {
+                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
+                {
                     model.cooling_setpoint = cooling_sp;
                 }
             }
-            
+
             // Apply night ventilation if active (adds extra cooling during night hours)
             if let Some(vent) = &spec.night_ventilation {
                 if vent.is_active_at_hour(hour_of_day as u8) {
@@ -357,16 +359,16 @@ impl ASHRAE140Validator {
             model.set_loads(&total_loads);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-            
+
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
                 // Get zone 0 air temperature (primary zone)
-                if let Some(&zone_0_temp) = model.temperatures.as_slice().get(0) {
+                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                 }
             }
-            
+
             // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;

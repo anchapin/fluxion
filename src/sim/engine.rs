@@ -824,15 +824,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // We need to recalculate 'den' and 'sensitivity' if h_ext changed
         let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * &*h_ext;
+                let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * &*h_ext;
                 let sens_val = term_rest_1.clone() / &den_val;
                 (TensorCow::Owned(den_val), TensorCow::Owned(sens_val))
             } else {
-                (TensorCow::Borrowed(&self.derived_den), TensorCow::Borrowed(&self.derived_sensitivity))
+                (
+                    TensorCow::Borrowed(&self.derived_den),
+                    TensorCow::Borrowed(&self.derived_sensitivity),
+                )
             }
         } else {
-            (TensorCow::Borrowed(&self.derived_den), TensorCow::Borrowed(&self.derived_sensitivity))
+            (
+                TensorCow::Borrowed(&self.derived_den),
+                TensorCow::Borrowed(&self.derived_sensitivity),
+            )
         };
 
         let num_tm = self.derived_h_ms_is_prod.clone() * &self.mass_temperatures;
@@ -877,8 +882,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_ia_with_iz = phi_ia.clone() + &q_iz_tensor;
 
         // Recalculate num_rest with inter-zone heat transfer
-        let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * &t_e + &phi_ia_with_iz)
+        let num_rest_with_iz = term_rest_1.clone() * (h_ext.clone() * &t_e + &phi_ia_with_iz)
             + self.h_tr_floor.clone() * self.temperatures.constant_like(t_g);
 
         let t_i_free = (num_tm.clone() + &num_phi_st + &num_rest_with_iz) / &*den;

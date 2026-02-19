@@ -1,3 +1,5 @@
+#![allow(clippy::useless_conversion)]
+
 pub mod ai;
 pub mod physics;
 pub mod sim;
