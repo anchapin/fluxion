@@ -272,8 +272,35 @@ impl ThermalModel<VectorField> {
             num_zones,
         );
 
-        // h_ve = (ACH * Volume * rho * cp) / 3600
-        let air_cap = volume * 1.2 * 1005.0; // rho=1.2, cp=1005
+        // Infiltration heat transfer conductance (h_ve)
+        //
+        // ASHRAE 140 specifies infiltration as Air Changes per Hour (ACH).
+        // The thermal conductance is calculated as:
+        //
+        //   h_ve = ACH * V * ρ * cp / 3600  [W/K]
+        //
+        // Where:
+        //   ACH = Air Changes per Hour (1/hr)
+        //   V   = Zone volume (m³)
+        //   ρ   = Air density = 1.2 kg/m³
+        //   cp  = Specific heat of air = 1005 J/(kg·K)
+        //   3600 = Seconds per hour
+        //
+        // Derivation:
+        //   Q_vent = ACH * V / 3600  [m³/s] (volumetric flow rate)
+        //   ṁ = ρ * Q_vent           [kg/s] (mass flow rate)
+        //   h_ve = ṁ * cp            [W/K]  (thermal conductance)
+        //
+        // For Case 600 (0.5 ACH, 48 m² floor, 2.7 m height):
+        //   V = 48 * 2.7 = 129.6 m³
+        //   Q_vent = 0.5 * 129.6 / 3600 = 0.018 m³/s
+        //   h_ve = 1.2 * 1005 * 0.018 = 21.7 W/K
+        //
+        // This assumes:
+        // - Infiltration air is at outdoor temperature
+        // - Heat transfer is proportional to temperature difference
+        // - Constant ACH (no wind/stack effect variation)
+        let air_cap = volume * 1.2 * 1005.0; // ρ * cp * V = J/K (thermal capacitance of air)
         model.h_ve =
             VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
 
