@@ -734,8 +734,10 @@ impl ASHRAE140Validator {
             hourly_data.mass_temps = model.mass_temperatures.as_slice().to_vec();
 
             for zone_idx in 0..num_zones {
-                hourly_data.solar_gains[zone_idx] =
-                    total_solar_gain_per_zone.get(zone_idx).copied().unwrap_or(0.0);
+                hourly_data.solar_gains[zone_idx] = total_solar_gain_per_zone
+                    .get(zone_idx)
+                    .copied()
+                    .unwrap_or(0.0);
                 hourly_data.internal_loads[zone_idx] = spec
                     .internal_loads
                     .get(zone_idx)

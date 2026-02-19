@@ -234,7 +234,10 @@ impl EnergyBreakdown {
     /// Prints the energy breakdown to stdout.
     pub fn print(&self, case_id: &str) {
         println!("\nCase {} Energy Breakdown:", case_id);
-        println!("  Envelope conduction: {:.3} MWh", self.envelope_conduction_mwh);
+        println!(
+            "  Envelope conduction: {:.3} MWh",
+            self.envelope_conduction_mwh
+        );
         println!("  Infiltration:        {:.3} MWh", self.infiltration_mwh);
         println!("  Solar gains:         {:.3} MWh", self.solar_gains_mwh);
         println!("  Internal gains:      {:.3} MWh", self.internal_gains_mwh);
@@ -388,7 +391,7 @@ impl DiagnosticCollector {
             return;
         }
 
-        if self.config.verbose && data.hour % 1000 == 0 {
+        if self.config.verbose && data.hour.is_multiple_of(1000) {
             println!(
                 "  Hour {}: Zone Temp = {:.2}°C, Outdoor = {:.2}°C",
                 data.hour,
@@ -413,21 +416,30 @@ impl DiagnosticCollector {
 
         for data in &self.hourly_data {
             for zone_idx in 0..self.num_zones {
-                breakdown.solar_gains_mwh += data.solar_gains.get(zone_idx).copied().unwrap_or(0.0)
-                    / 1_000_000.0; // Wh to MWh
+                breakdown.solar_gains_mwh +=
+                    data.solar_gains.get(zone_idx).copied().unwrap_or(0.0) / 1_000_000.0; // Wh to MWh
                 breakdown.internal_gains_mwh +=
                     data.internal_loads.get(zone_idx).copied().unwrap_or(0.0) / 1_000_000.0;
-                breakdown.infiltration_mwh +=
-                    data.infiltration_loss.get(zone_idx).copied().unwrap_or(0.0).abs() / 1_000_000.0;
-                breakdown.envelope_conduction_mwh +=
-                    data.envelope_conduction.get(zone_idx).copied().unwrap_or(0.0).abs()
-                        / 1_000_000.0;
+                breakdown.infiltration_mwh += data
+                    .infiltration_loss
+                    .get(zone_idx)
+                    .copied()
+                    .unwrap_or(0.0)
+                    .abs()
+                    / 1_000_000.0;
+                breakdown.envelope_conduction_mwh += data
+                    .envelope_conduction
+                    .get(zone_idx)
+                    .copied()
+                    .unwrap_or(0.0)
+                    .abs()
+                    / 1_000_000.0;
             }
         }
 
-        breakdown.net_balance_mwh =
-            breakdown.solar_gains_mwh + breakdown.internal_gains_mwh - breakdown.heating_mwh
-                + breakdown.cooling_mwh;
+        breakdown.net_balance_mwh = breakdown.solar_gains_mwh + breakdown.internal_gains_mwh
+            - breakdown.heating_mwh
+            + breakdown.cooling_mwh;
 
         // Compute peak timing
         let mut peak_timing = PeakTiming::new();

@@ -21,15 +21,15 @@ pub use ashrae_140_cases::{
     HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
 };
 pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
+pub use diagnostic::{
+    ComparisonRow, DiagnosticCollector, DiagnosticConfig, EnergyBreakdown, HourlyData, PeakTiming,
+};
 pub use physics_validator::{
     generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,
 };
 pub use report::{
     BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
     ValidationStatus, ValidationSuite,
-};
-pub use diagnostic::{
-    ComparisonRow, DiagnosticCollector, DiagnosticConfig, EnergyBreakdown, HourlyData, PeakTiming,
 };
 
 #[cfg(test)]
