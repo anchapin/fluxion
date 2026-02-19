@@ -602,6 +602,261 @@ mod tests {
         assert!(u_value < 0.6);
     }
 
+    /// ASHRAE 140 U-value validation tests
+    ///
+    /// These tests verify that construction U-values match ASHRAE 140 specifications:
+    /// - Low Mass Wall: 0.514 W/(m²·K)
+    /// - Low Mass Roof: 0.318 W/(m²·K)
+    /// - Low Mass Floor: 0.190 W/(m²·K)
+    /// - High Mass Wall: 0.514 W/(m²·K) (with concrete mass)
+    /// - High Mass Roof: 0.318 W/(m²·K)
+    /// - High Mass Floor: 0.190 W/(m²·K)
+    /// - Window: 3.0 W/(m²·K)
+    mod ashrae_140_u_values {
+        use super::*;
+
+        const U_VALUE_TOLERANCE: f64 = 0.05; // 5% tolerance for U-value comparison
+
+        /// Test low mass wall U-value matches ASHRAE 140 spec (0.514 W/m²K)
+        #[test]
+        fn test_low_mass_wall_u_value_ashrae_140() {
+            let wall = Assemblies::low_mass_wall();
+            let u_value = wall.u_value(None);
+            let expected = 0.514;
+
+            println!("Low mass wall U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None));
+            println!("  R_materials: {:.4} m²K/W", 
+                wall.layers.iter().map(|l| l.r_value()).sum::<f64>());
+
+            // Check within tolerance
+            let deviation = (u_value - expected).abs() / expected;
+            assert!(
+                deviation < U_VALUE_TOLERANCE,
+                "Low mass wall U-value {:.4} deviates {:.1}% from expected {:.4}",
+                u_value,
+                deviation * 100.0,
+                expected
+            );
+        }
+
+        /// Test low mass roof U-value matches ASHRAE 140 spec (0.318 W/m²K)
+        #[test]
+        fn test_low_mass_roof_u_value_ashrae_140() {
+            let roof = Assemblies::low_mass_roof();
+            let u_value = roof.u_value(None);
+            let expected = 0.318;
+
+            println!("Low mass roof U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!("  R_total: {:.4} m²K/W", roof.r_value_total(None));
+            println!("  R_materials: {:.4} m²K/W", 
+                roof.layers.iter().map(|l| l.r_value()).sum::<f64>());
+
+            let deviation = (u_value - expected).abs() / expected;
+            assert!(
+                deviation < U_VALUE_TOLERANCE,
+                "Low mass roof U-value {:.4} deviates {:.1}% from expected {:.4}",
+                u_value,
+                deviation * 100.0,
+                expected
+            );
+        }
+
+        /// Test insulated floor U-value matches ASHRAE 140 spec (0.190 W/m²K)
+        #[test]
+        fn test_insulated_floor_u_value_ashrae_140() {
+            let floor = Assemblies::insulated_floor();
+            let u_value = floor.u_value(None);
+            let expected = 0.190;
+
+            println!("Insulated floor U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!("  R_total: {:.4} m²K/W", floor.r_value_total(None));
+            println!("  R_materials: {:.4} m²K/W", 
+                floor.layers.iter().map(|l| l.r_value()).sum::<f64>());
+
+            let deviation = (u_value - expected).abs() / expected;
+            assert!(
+                deviation < U_VALUE_TOLERANCE,
+                "Insulated floor U-value {:.4} deviates {:.1}% from expected {:.4}",
+                u_value,
+                deviation * 100.0,
+                expected
+            );
+        }
+
+        /// Test high mass wall U-value matches ASHRAE 140 spec (0.514 W/m²K)
+        #[test]
+        fn test_high_mass_wall_u_value_ashrae_140() {
+            let wall = Assemblies::high_mass_wall();
+            let u_value = wall.u_value(None);
+            let expected = 0.514;
+
+            println!("High mass wall U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None));
+            println!("  R_materials: {:.4} m²K/W", 
+                wall.layers.iter().map(|l| l.r_value()).sum::<f64>());
+
+            let deviation = (u_value - expected).abs() / expected;
+            assert!(
+                deviation < U_VALUE_TOLERANCE,
+                "High mass wall U-value {:.4} deviates {:.1}% from expected {:.4}",
+                u_value,
+                deviation * 100.0,
+                expected
+            );
+        }
+
+        /// Test high mass roof U-value matches ASHRAE 140 spec (0.318 W/m²K)
+        #[test]
+        fn test_high_mass_roof_u_value_ashrae_140() {
+            let roof = Assemblies::high_mass_roof();
+            let u_value = roof.u_value(None);
+            let expected = 0.318;
+
+            println!("High mass roof U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!("  R_total: {:.4} m²K/W", roof.r_value_total(None));
+            println!("  R_materials: {:.4} m²K/W", 
+                roof.layers.iter().map(|l| l.r_value()).sum::<f64>());
+
+            let deviation = (u_value - expected).abs() / expected;
+            assert!(
+                deviation < U_VALUE_TOLERANCE,
+                "High mass roof U-value {:.4} deviates {:.1}% from expected {:.4}",
+                u_value,
+                deviation * 100.0,
+                expected
+            );
+        }
+
+        /// Test high mass floor U-value matches ASHRAE 140 spec (0.190 W/m²K)
+        #[test]
+        fn test_high_mass_floor_u_value_ashrae_140() {
+            let floor = Assemblies::high_mass_floor();
+            let u_value = floor.u_value(None);
+            let expected = 0.190;
+
+            println!("High mass floor U-value: {:.4} W/m²K (expected: {:.4})", u_value, expected);
+            println!("  R_total: {:.4} m²K/W", floor.r_value_total(None));
+            println!("  R_materials: {:.4} m²K/W", 
+                floor.layers.iter().map(|l| l.r_value()).sum::<f64>());
+
+            let deviation = (u_value - expected).abs() / expected;
+            assert!(
+                deviation < U_VALUE_TOLERANCE,
+                "High mass floor U-value {:.4} deviates {:.1}% from expected {:.4}",
+                u_value,
+                deviation * 100.0,
+                expected
+            );
+        }
+
+        /// Test that film coefficients are correctly included in R-value calculation
+        #[test]
+        fn test_film_coefficients_included() {
+            let wall = Assemblies::low_mass_wall();
+
+            // R-value without film coefficients (materials only)
+            let r_materials: f64 = wall.layers.iter().map(|l| l.r_value()).sum();
+
+            // R-value with film coefficients
+            let r_total = wall.r_value_total(None);
+
+            // Film coefficients should add resistance
+            let r_film = r_total - r_materials;
+
+            // Expected film resistance: 1/8.29 + 1/25.0 = 0.1206 + 0.04 = 0.1606 m²K/W
+            let expected_r_film = 1.0 / INTERIOR_FILM_COEFF + 1.0 / EXTERIOR_FILM_COEFF_DEFAULT;
+
+            println!("R_materials: {:.4} m²K/W", r_materials);
+            println!("R_total: {:.4} m²K/W", r_total);
+            println!("R_film: {:.4} m²K/W (expected: {:.4})", r_film, expected_r_film);
+
+            assert!(
+                (r_film - expected_r_film).abs() < 0.001,
+                "Film resistance {:.4} doesn't match expected {:.4}",
+                r_film,
+                expected_r_film
+            );
+        }
+
+        /// Test that interior film coefficient matches ASHRAE 140 spec (8.29 W/m²K)
+        #[test]
+        fn test_interior_film_coefficient_ashrae_140() {
+            let h_int = interior_film_coeff();
+            let expected = 8.29;
+
+            assert!(
+                (h_int - expected).abs() < 0.01,
+                "Interior film coefficient {} doesn't match expected {}",
+                h_int,
+                expected
+            );
+        }
+
+        /// Test R-value summation for multi-layer construction
+        #[test]
+        fn test_r_value_summation() {
+            let wall = Assemblies::low_mass_wall();
+
+            // Verify R-value summation
+            let r_plasterboard = wall.layers[0].r_value();
+            let r_fiberglass = wall.layers[1].r_value();
+            let r_siding = wall.layers[2].r_value();
+            let r_materials = r_plasterboard + r_fiberglass + r_siding;
+
+            println!("Layer R-values:");
+            println!("  Plasterboard: {:.4} m²K/W", r_plasterboard);
+            println!("  Fiberglass: {:.4} m²K/W", r_fiberglass);
+            println!("  Wood siding: {:.4} m²K/W", r_siding);
+            println!("  Total materials: {:.4} m²K/W", r_materials);
+
+            // Verify individual layer R-values
+            assert!((r_plasterboard - 0.012 / 0.16).abs() < 0.001);
+            assert!((r_fiberglass - 0.066 / 0.04).abs() < 0.001);
+            assert!((r_siding - 0.009 / 0.14).abs() < 0.001);
+        }
+
+        /// Summary test that prints all U-values for comparison with ASHRAE 140
+        #[test]
+        fn test_all_u_values_summary() {
+            println!("\n=== ASHRAE 140 U-Value Comparison ===");
+            println!("{:<20} {:>12} {:>12} {:>10}", "Construction", "Calculated", "Expected", "Deviation");
+            println!("{}", "-".repeat(56));
+
+            let tests: Vec<(&str, f64, f64)> = vec![
+                ("Low Mass Wall", Assemblies::low_mass_wall().u_value(None), 0.514),
+                ("Low Mass Roof", Assemblies::low_mass_roof().u_value(None), 0.318),
+                ("Insulated Floor", Assemblies::insulated_floor().u_value(None), 0.190),
+                ("High Mass Wall", Assemblies::high_mass_wall().u_value(None), 0.514),
+                ("High Mass Roof", Assemblies::high_mass_roof().u_value(None), 0.318),
+                ("High Mass Floor", Assemblies::high_mass_floor().u_value(None), 0.190),
+            ];
+
+            for (name, calculated, expected) in &tests {
+                let deviation = (calculated - expected).abs() / expected * 100.0;
+                let status = if deviation < 5.0 { "✓" } else { "✗" };
+                println!(
+                    "{:<20} {:>12.4} {:>12.4} {:>9.1}% {}",
+                    name, calculated, expected, deviation, status
+                );
+            }
+            println!("{}", "-".repeat(56));
+
+            // All should pass within tolerance
+            for (name, calculated, expected) in &tests {
+                let deviation = (calculated - expected).abs() / expected;
+                assert!(
+                    deviation < U_VALUE_TOLERANCE,
+                    "{} U-value {:.4} deviates more than {}% from expected {:.4}",
+                    name,
+                    calculated,
+                    U_VALUE_TOLERANCE * 100.0,
+                    expected
+                );
+            }
+        }
+    }
+
     #[test]
     fn test_construction_u_value_with_wind_speed() {
         let construction = Assemblies::low_mass_wall();
