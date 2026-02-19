@@ -61,16 +61,27 @@ fn test_case_195_configuration() {
     let spec = ASHRAE140Case::Case195.spec();
 
     // Verify no windows
-    let total_window_area: f64 = spec.windows.iter().flat_map(|w| w.iter()).map(|w| w.area).sum();
+    let total_window_area: f64 = spec
+        .windows
+        .iter()
+        .flat_map(|w| w.iter())
+        .map(|w| w.area)
+        .sum();
     assert_eq!(total_window_area, 0.0, "Case 195 should have no windows");
 
     // Verify no infiltration
-    assert_eq!(spec.infiltration_ach, 0.0, "Case 195 should have zero infiltration");
+    assert_eq!(
+        spec.infiltration_ach, 0.0,
+        "Case 195 should have zero infiltration"
+    );
 
     // Verify no internal loads
     let internal_loads = spec.internal_loads[0].as_ref();
     if let Some(loads) = internal_loads {
-        assert_eq!(loads.total_load, 0.0, "Case 195 should have zero internal loads");
+        assert_eq!(
+            loads.total_load, 0.0,
+            "Case 195 should have zero internal loads"
+        );
     }
 
     // Verify single zone
@@ -114,10 +125,16 @@ fn test_case_195_no_solar_gains() {
     let spec = ASHRAE140Case::Case195.spec();
 
     // Verify opaque absorptance is zero (no solar absorption)
-    assert_eq!(spec.opaque_absorptance, 0.0, "Case 195 should have zero solar absorptance");
+    assert_eq!(
+        spec.opaque_absorptance, 0.0,
+        "Case 195 should have zero solar absorptance"
+    );
 
     // Verify no windows for solar gains
-    assert!(spec.windows[0].is_empty(), "Case 195 should have no windows");
+    assert!(
+        spec.windows[0].is_empty(),
+        "Case 195 should have no windows"
+    );
 }
 
 #[test]
@@ -135,7 +152,10 @@ fn test_case_195_conduction_only() {
 
     // Infiltration should be zero
     let h_ve = model.h_ve.as_ref();
-    assert_eq!(h_ve[0], 0.0, "Ventilation conductance should be zero (no infiltration)");
+    assert_eq!(
+        h_ve[0], 0.0,
+        "Ventilation conductance should be zero (no infiltration)"
+    );
 }
 
 #[test]
@@ -154,7 +174,10 @@ fn test_case_195_temperature_range() {
     }
 
     let min_temp = temperatures.iter().cloned().fold(f64::INFINITY, f64::min);
-    let max_temp = temperatures.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_temp = temperatures
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
 
     println!("\n=== Case 195 Temperature Range (Week 1) ===");
     println!("Zone temperature: {:.2}°C to {:.2}°C", min_temp, max_temp);
@@ -163,7 +186,10 @@ fn test_case_195_temperature_range() {
     // Temperature should be maintained near setpoint (20°C)
     // With only conduction, the zone should track outdoor temp more closely
     // but HVAC maintains the setpoint
-    assert!(min_temp > 15.0 && max_temp < 25.0, "Temperature should be near setpoint");
+    assert!(
+        min_temp > 15.0 && max_temp < 25.0,
+        "Temperature should be near setpoint"
+    );
 }
 
 #[test]
@@ -185,10 +211,18 @@ fn test_case_195_construction_properties() {
 
     // Verify construction is low-mass
     assert!(
-        matches!(spec.construction_type, fluxion::validation::ashrae_140_cases::ConstructionType::LowMass | fluxion::validation::ashrae_140_cases::ConstructionType::Special),
+        matches!(
+            spec.construction_type,
+            fluxion::validation::ashrae_140_cases::ConstructionType::LowMass
+                | fluxion::validation::ashrae_140_cases::ConstructionType::Special
+        ),
         "Case 195 should use low-mass or special construction"
     );
 
     // Verify geometry
-    assert_eq!(spec.geometry[0].floor_area(), 48.0, "Floor area should be 48 m²");
+    assert_eq!(
+        spec.geometry[0].floor_area(),
+        48.0,
+        "Floor area should be 48 m²"
+    );
 }
