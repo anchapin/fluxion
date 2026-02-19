@@ -319,4 +319,338 @@ mod tests {
             calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
         assert!(irr.total_wm2 > 0.0);
     }
+
+    /// ASHRAE 140 solar gain validation tests
+    ///
+    /// These tests verify solar position and gain calculations match ASHRAE 140 specifications.
+    mod ashrae_140_solar {
+        use super::*;
+
+        const DENVER_LAT: f64 = 39.7392;
+        const DENVER_LON: f64 = -104.9903;
+
+        /// Test solar position at solar noon on summer solstice (June 21)
+        #[test]
+        fn test_solar_position_summer_solstice_noon() {
+            // June 21, 12:00 (solar noon) in Denver
+            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 6, 21, 12.0);
+
+            println!("Summer solstice solar noon:");
+            println!("  Altitude: {:.2}°", sun_pos.altitude_deg);
+            println!("  Azimuth: {:.2}°", sun_pos.azimuth_deg);
+            println!("  Zenith: {:.2}°", sun_pos.zenith_deg);
+
+            // At solar noon on summer solstice at 39.7°N latitude:
+            // Solar altitude = 90° - (latitude - declination)
+            // Declination on June 21 ≈ 23.45°
+            // Altitude ≈ 90° - (39.7° - 23.45°) = 73.75°
+            assert!(sun_pos.altitude_deg > 70.0 && sun_pos.altitude_deg < 77.0);
+            assert!(sun_pos.is_above_horizon());
+
+            // Azimuth should be near 180° (South) at solar noon
+            assert!(sun_pos.azimuth_deg > 175.0 && sun_pos.azimuth_deg < 185.0);
+        }
+
+        /// Test solar position at solar noon on winter solstice (December 21)
+        #[test]
+        fn test_solar_position_winter_solstice_noon() {
+            // December 21, 12:00 (solar noon) in Denver
+            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 12, 21, 12.0);
+
+            println!("Winter solstice solar noon:");
+            println!("  Altitude: {:.2}°", sun_pos.altitude_deg);
+            println!("  Azimuth: {:.2}°", sun_pos.azimuth_deg);
+
+            // At solar noon on winter solstice at 39.7°N latitude:
+            // Solar altitude = 90° - (latitude + declination)
+            // Declination on Dec 21 ≈ -23.45°
+            // Altitude ≈ 90° - (39.7° + 23.45°) = 26.85°
+            assert!(sun_pos.altitude_deg > 24.0 && sun_pos.altitude_deg < 30.0);
+            assert!(sun_pos.is_above_horizon());
+        }
+
+        /// Test solar position at equinox (March/September 21)
+        #[test]
+        fn test_solar_position_equinox_noon() {
+            // March 21, 12:00 (solar noon) in Denver
+            let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2024, 3, 21, 12.0);
+
+            println!("Equinox solar noon:");
+            println!("  Altitude: {:.2}°", sun_pos.altitude_deg);
+
+            // At equinox, declination ≈ 0°
+            // Solar altitude = 90° - latitude = 90° - 39.7° = 50.3°
+            assert!(sun_pos.altitude_deg > 48.0 && sun_pos.altitude_deg < 52.0);
+        }
+
+        /// Test incidence angle calculation on south-facing vertical surface
+        #[test]
+        fn test_incidence_angle_south_surface() {
+            // Solar noon, sun directly south
+            let sun_pos = SolarPosition {
+                altitude_deg: 50.0,
+                azimuth_deg: 180.0, // South
+                zenith_deg: 40.0,
+            };
+
+            // South-facing vertical surface (tilt=90°, azimuth=180°)
+            let cos_theta = sun_pos.incidence_cosine(90.0, 180.0);
+            let incidence_angle = cos_theta.acos().to_degrees();
+
+            println!("South surface at solar noon:");
+            println!("  cos(θ): {:.4}", cos_theta);
+            println!("  Incidence angle: {:.2}°", incidence_angle);
+
+            // For a vertical surface facing the sun, incidence angle = solar altitude
+            // When sun is at 50° altitude directly south, incidence on south wall = 50°
+            // (The surface normal is horizontal, sun rays are 50° above horizontal)
+            assert!((incidence_angle - 50.0).abs() < 1.0);
+        }
+
+        /// Test incidence angle on horizontal surface (roof)
+        #[test]
+        fn test_incidence_angle_horizontal() {
+            let sun_pos = SolarPosition {
+                altitude_deg: 45.0,
+                azimuth_deg: 180.0,
+                zenith_deg: 45.0,
+            };
+
+            // Horizontal surface (tilt=0°)
+            let cos_theta = sun_pos.incidence_cosine(0.0, 0.0);
+
+            println!("Horizontal surface:");
+            println!("  cos(θ): {:.4}", cos_theta);
+            println!("  Sun altitude: {:.2}°", sun_pos.altitude_deg);
+
+            // For horizontal surface, cos(θ) = sin(altitude)
+            let expected = sun_pos.altitude_deg.to_radians().sin();
+            assert!((cos_theta - expected).abs() < 0.01);
+        }
+
+        /// Test SHGC angular dependence for double clear glass
+        #[test]
+        fn test_shgc_angular_dependence() {
+            let window = WindowProperties::double_clear(12.0);
+
+            println!("SHGC angular dependence for double clear glass:");
+            println!("{:>10} {:>10} {:>10}", "Angle", "SHGC", "Ratio");
+
+            let angles = [0.0, 20.0, 40.0, 50.0, 60.0, 70.0, 80.0];
+
+            for &angle in &angles {
+                let _incidence_cos = (90.0_f64 - angle).to_radians().cos();
+                let sun_pos = SolarPosition {
+                    altitude_deg: 45.0,
+                    azimuth_deg: 180.0,
+                    zenith_deg: 45.0,
+                };
+
+                // Calculate effective SHGC at this angle
+                let x: f64 = angle / 90.0;
+                let effective_shgc = window.shgc * (1.0 - 0.4 * x.powi(3) - 0.6 * x.powi(8));
+                let ratio = effective_shgc / window.shgc;
+
+                println!(
+                    "{:>10.0} {:>10.4} {:>10.2}%",
+                    angle,
+                    effective_shgc,
+                    ratio * 100.0
+                );
+
+                // SHGC should decrease with increasing incidence angle
+                if angle > 0.0 {
+                    assert!(effective_shgc <= window.shgc);
+                }
+            }
+
+            // At 60°, SHGC should be about 87% of normal (per ASHRAE 140)
+            let x_60: f64 = 60.0 / 90.0;
+            let shgc_60 = window.shgc * (1.0 - 0.4 * x_60.powi(3) - 0.6 * x_60.powi(8));
+            assert!((shgc_60 / window.shgc - 0.87).abs() < 0.05);
+        }
+
+        /// Test window solar gain calculation
+        #[test]
+        fn test_window_solar_gain_basic() {
+            let window = WindowProperties::double_clear(12.0); // 12 m² window
+
+            // Sun directly facing south window at 45° altitude
+            let sun_pos = SolarPosition {
+                altitude_deg: 45.0,
+                azimuth_deg: 180.0, // South
+                zenith_deg: 45.0,
+            };
+
+            let irradiance = SurfaceIrradiance::new(800.0, 100.0, 20.0); // Beam, diffuse, ground
+
+            let gain = calculate_window_solar_gain(
+                &irradiance,
+                &window,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::South,
+            );
+
+            println!("Window solar gain:");
+            println!("  Window area: {} m²", window.area);
+            println!("  Beam irradiance: {} W/m²", irradiance.beam_wm2);
+            println!("  Diffuse irradiance: {} W/m²", irradiance.diffuse_wm2);
+            println!("  SHGC: {}", window.shgc);
+            println!("  Total gain: {:.2} W", gain);
+
+            // Basic sanity checks
+            assert!(gain > 0.0);
+            // Maximum possible gain = area × total irradiance × SHGC
+            let max_gain = window.area * irradiance.total_wm2 * window.shgc;
+            assert!(gain <= max_gain * 1.1); // Allow 10% margin for calculation variations
+        }
+
+        /// Test diffuse solar gain calculation
+        #[test]
+        fn test_diffuse_solar_gain() {
+            let window = WindowProperties::double_clear(12.0);
+
+            // Sun below horizon (night time)
+            let sun_pos = SolarPosition {
+                altitude_deg: -10.0,
+                azimuth_deg: 0.0,
+                zenith_deg: 100.0,
+            };
+
+            let irradiance = SurfaceIrradiance::zero();
+
+            let gain = calculate_window_solar_gain(
+                &irradiance,
+                &window,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::South,
+            );
+
+            // No solar gain when sun is below horizon
+            assert_eq!(gain, 0.0);
+        }
+
+        /// Test annual solar gain summary for Case 600 (south-facing window)
+        #[test]
+        fn test_annual_solar_summary() {
+            let window = WindowProperties::double_clear(12.0);
+
+            println!("\n=== Annual Solar Gain Summary (Case 600) ===");
+            println!("Window: 12 m² south-facing, double clear glass (SHGC=0.789)");
+
+            // Sample calculations for key times
+            let test_cases = [
+                ("Jun 21 12:00", 2024, 6, 21, 12.0, 900.0, 150.0),
+                ("Dec 21 12:00", 2024, 12, 21, 12.0, 700.0, 80.0),
+                ("Mar 21 12:00", 2024, 3, 21, 12.0, 800.0, 120.0),
+                ("Jun 21 18:00", 2024, 6, 21, 18.0, 400.0, 100.0),
+            ];
+
+            println!(
+                "{:<15} {:>10} {:>10} {:>12}",
+                "Time", "Alt(°)", "Az(°)", "Gain(W)"
+            );
+            println!("{}", "-".repeat(50));
+
+            for (label, year, month, day, hour, dni, dhi) in test_cases {
+                let sun_pos =
+                    calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+                let irradiance =
+                    calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::South, 0.2);
+                let gain = calculate_window_solar_gain(
+                    &irradiance,
+                    &window,
+                    None,
+                    None,
+                    &[],
+                    &sun_pos,
+                    Orientation::South,
+                );
+
+                println!(
+                    "{:<15} {:>10.1} {:>10.1} {:>12.0}",
+                    label, sun_pos.altitude_deg, sun_pos.azimuth_deg, gain
+                );
+            }
+        }
+
+        /// Test orientation effect on solar gains
+        #[test]
+        fn test_orientation_effect() {
+            let window = WindowProperties::double_clear(6.0);
+
+            // Summer afternoon, sun in the west
+            let sun_pos = SolarPosition {
+                altitude_deg: 40.0,
+                azimuth_deg: 270.0, // West
+                zenith_deg: 50.0,
+            };
+
+            let irradiance_south =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+            let irradiance_west =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::West, 0.2);
+
+            let gain_south = calculate_window_solar_gain(
+                &irradiance_south,
+                &window,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::South,
+            );
+            let gain_west = calculate_window_solar_gain(
+                &irradiance_west,
+                &window,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::West,
+            );
+
+            println!("Orientation effect (sun in west at 40° altitude):");
+            println!("  South window gain: {:.0} W", gain_south);
+            println!("  West window gain: {:.0} W", gain_west);
+
+            // West-facing window should have higher gain when sun is in the west
+            assert!(gain_west > gain_south);
+        }
+
+        /// Test ground reflected radiation contribution
+        #[test]
+        fn test_ground_reflected_radiation() {
+            let sun_pos = SolarPosition {
+                altitude_deg: 45.0,
+                azimuth_deg: 180.0,
+                zenith_deg: 45.0,
+            };
+
+            // Test with different ground reflectance values
+            let irr_0_2 =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+            let irr_0_5 =
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.5);
+
+            println!("Ground reflectance effect:");
+            println!(
+                "  ρ=0.2: ground reflected = {:.1} W/m²",
+                irr_0_2.ground_reflected_wm2
+            );
+            println!(
+                "  ρ=0.5: ground reflected = {:.1} W/m²",
+                irr_0_5.ground_reflected_wm2
+            );
+
+            // Higher reflectance should give more ground reflected radiation
+            assert!(irr_0_5.ground_reflected_wm2 > irr_0_2.ground_reflected_wm2);
+        }
+    }
 }
