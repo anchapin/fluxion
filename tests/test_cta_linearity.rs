@@ -16,7 +16,6 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{HVACMode, IdealHVACController, ThermalModel};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
-
 // =============================================================================
 // Test 1: Energy Equivalence - Internal Gains vs HVAC Heating
 // =============================================================================
@@ -112,7 +111,8 @@ fn test_hvac_heating_maintains_setpoint() {
     assert!(
         final_temp > initial_temp,
         "HVAC should heat the zone: initial={:.3}°C, final={:.3}°C",
-        initial_temp, final_temp
+        initial_temp,
+        final_temp
     );
 }
 
@@ -158,7 +158,8 @@ fn test_hvac_cooling_maintains_setpoint() {
     assert!(
         final_temp < initial_temp,
         "HVAC should cool the zone: initial={:.3}°C, final={:.3}°C",
-        initial_temp, final_temp
+        initial_temp,
+        final_temp
     );
 }
 
@@ -297,7 +298,10 @@ fn test_hvac_controller_linearity() {
 
     // The ratio should be approximately proportional to temperature difference
     let ratio = power_2 / power_1;
-    println!("Power at 19°C: {:.1}W, at 18°C: {:.1}W, ratio: {:.2}", power_1, power_2, ratio);
+    println!(
+        "Power at 19°C: {:.1}W, at 18°C: {:.1}W, ratio: {:.2}",
+        power_1, power_2, ratio
+    );
 }
 
 // =============================================================================
@@ -333,7 +337,9 @@ fn test_vector_field_tensor_operations() {
         assert!(
             (scaled_2[i] - sum_v[i]).abs() < 1e-10,
             "Scalar multiplication distributivity violated at index {}: 2*v = {}, v+v = {}",
-            i, scaled_2[i], sum_v[i]
+            i,
+            scaled_2[i],
+            sum_v[i]
         );
     }
 
@@ -346,7 +352,8 @@ fn test_vector_field_tensor_operations() {
         assert!(
             (grad[i] - 1.0).abs() < 0.1,
             "Gradient of linear function should be ~1.0, got {:.3} at index {}",
-            grad[i], i
+            grad[i],
+            i
         );
     }
 
@@ -393,7 +400,9 @@ fn test_thermal_model_consistency() {
         assert!(
             (e1 - e2).abs() < 1e-10,
             "Energy mismatch at step {}: {:.6} vs {:.6}",
-            t, e1, e2
+            t,
+            e1,
+            e2
         );
 
         // Temperatures should be identical
@@ -401,7 +410,10 @@ fn test_thermal_model_consistency() {
             assert!(
                 (model1.temperatures[i] - model2.temperatures[i]).abs() < 1e-10,
                 "Temperature mismatch at step {}, zone {}: {:.6} vs {:.6}",
-                t, i, model1.temperatures[i], model2.temperatures[i]
+                t,
+                i,
+                model1.temperatures[i],
+                model2.temperatures[i]
             );
         }
     }
@@ -464,10 +476,7 @@ fn test_multi_zone_energy_balance() {
     let spec = fluxion::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    assert!(
-        model.num_zones > 1,
-        "Case 960 should have multiple zones"
-    );
+    assert!(model.num_zones > 1, "Case 960 should have multiple zones");
 
     // Disable HVAC
     model.heating_setpoint = -999.0;
@@ -499,7 +508,8 @@ fn test_multi_zone_energy_balance() {
         assert!(
             temp > -50.0 && temp < 100.0,
             "Zone {} temperature {:.2}°C is out of reasonable range",
-            i, temp
+            i,
+            temp
         );
     }
 }
