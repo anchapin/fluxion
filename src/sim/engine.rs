@@ -236,6 +236,8 @@ pub enum ThermalModelType {
 /// * `window_u_value` - Thermal transmittance of windows (W/m²K) - optimization variable
 /// * `heating_setpoint` - HVAC heating setpoint temperature (°C) - heat when below this
 /// * `cooling_setpoint` - HVAC cooling setpoint temperature (°C) - cool when above this
+/// * `heating_setpoints` - Zone-specific heating setpoints (°C) for multi-zone HVAC
+/// * `cooling_setpoints` - Zone-specific cooling setpoints (°C) for multi-zone HVAC
 pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub num_zones: usize,
     pub temperatures: T,
@@ -245,6 +247,9 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub window_u_value: f64,
     pub heating_setpoint: f64,
     pub cooling_setpoint: f64,
+    pub heating_setpoints: T, // Zone-specific heating setpoints for multi-zone
+    pub cooling_setpoints: T, // Zone-specific cooling setpoints for multi-zone
+    pub hvac_enabled: T,      // True for conditioned zones, false for free-floating
     pub heating_schedule: DailySchedule,
     pub cooling_schedule: DailySchedule,
 
@@ -334,6 +339,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_u_value: self.window_u_value,
             heating_setpoint: self.heating_setpoint,
             cooling_setpoint: self.cooling_setpoint,
+            heating_setpoints: self.heating_setpoints.clone(),
+            cooling_setpoints: self.cooling_setpoints.clone(),
+            hvac_enabled: self.hvac_enabled.clone(),
             heating_schedule: self.heating_schedule.clone(),
             cooling_schedule: self.cooling_schedule.clone(),
             zone_area: self.zone_area.clone(),
@@ -665,6 +673,9 @@ impl ThermalModel<VectorField> {
             window_u_value: 2.5,    // Default U-value
             heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
             cooling_setpoint: 27.0, // Default cooling setpoint (ASHRAE 140)
+            heating_setpoints: VectorField::from_scalar(20.0, num_zones), // Zone-specific heating setpoints
+            cooling_setpoints: VectorField::from_scalar(27.0, num_zones), // Zone-specific cooling setpoints
+            hvac_enabled: VectorField::from_scalar(1.0, num_zones), // HVAC enabled for all zones
             heating_schedule: DailySchedule::constant(20.0),
             cooling_schedule: DailySchedule::constant(27.0),
             hvac_heating_capacity: 100_000.0, // Default: 100kW heating (high limit for validation)

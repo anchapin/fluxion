@@ -431,14 +431,11 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints from schedule
             if let Some(hvac_schedule) = spec.hvac.first() {
-                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.heating_setpoint = heating_sp;
-                }
-                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.cooling_setpoint = cooling_sp;
-                }
+                // Get setpoint values from schedule (constant schedules only have single value)
+                let heating_sp = hvac_schedule.heating_setpoint;
+                let cooling_sp = hvac_schedule.cooling_setpoint;
+                model.heating_setpoint = heating_sp;
+                model.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation
@@ -882,14 +879,10 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
-                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.heating_setpoint = heating_sp;
-                }
-                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.cooling_setpoint = cooling_sp;
-                }
+                let heating_sp = hvac_schedule.heating_setpoint;
+                let cooling_sp = hvac_schedule.cooling_setpoint;
+                model.heating_setpoint = heating_sp;
+                model.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation if active (adds extra cooling during night hours)
@@ -1149,14 +1142,10 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
-                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.heating_setpoint = heating_sp;
-                }
-                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.cooling_setpoint = cooling_sp;
-                }
+                let heating_sp = hvac_schedule.heating_setpoint;
+                let cooling_sp = hvac_schedule.cooling_setpoint;
+                model.heating_setpoint = heating_sp;
+                model.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation if active
@@ -1455,14 +1444,10 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints
             if let Some(hvac_schedule) = spec.hvac.first() {
-                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.heating_setpoint = heating_sp;
-                }
-                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
-                {
-                    model.cooling_setpoint = cooling_sp;
-                }
+                let heating_sp = hvac_schedule.heating_setpoint;
+                let cooling_sp = hvac_schedule.cooling_setpoint;
+                model.heating_setpoint = heating_sp;
+                model.cooling_setpoint = cooling_sp;
             }
 
             // Apply night ventilation

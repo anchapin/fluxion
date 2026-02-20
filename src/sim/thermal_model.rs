@@ -169,10 +169,12 @@ impl ThermalModelTrait for PhysicsThermalModel {
     }
 
     fn heating_setpoint(&self) -> f64 {
+        // Return heating setpoint (scalar value for single-zone models)
         self.inner.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
+        // Return cooling setpoint (scalar value for single-zone models)
         self.inner.cooling_setpoint
     }
 
@@ -287,10 +289,12 @@ impl ThermalModelTrait for SurrogateThermalModel {
     }
 
     fn heating_setpoint(&self) -> f64 {
+        // Return heating setpoint (scalar value for single-zone models)
         self.inner.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
+        // Return cooling setpoint (scalar value for single-zone models)
         self.inner.cooling_setpoint
     }
 
@@ -421,10 +425,12 @@ impl ThermalModelTrait for UnifiedThermalModel {
     }
 
     fn heating_setpoint(&self) -> f64 {
+        // Return heating setpoint (scalar value for single-zone models)
         self.inner.heating_setpoint
     }
 
     fn cooling_setpoint(&self) -> f64 {
+        // Return cooling setpoint (scalar value for single-zone models)
         self.inner.cooling_setpoint
     }
 

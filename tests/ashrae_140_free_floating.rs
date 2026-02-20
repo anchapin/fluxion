@@ -258,8 +258,8 @@ fn test_free_floating_diagnostic_summary() {
         ("950FF", ASHRAE140Case::Case950FF, -20.2, -17.8, 35.5, 38.5),
     ];
 
-    let mut all_min_ok = true;
-    let mut all_max_ok = true;
+    let mut _all_min_ok = true;
+    let mut _all_max_ok = true;
 
     for (name, case, ref_min_lo, ref_min_hi, ref_max_lo, ref_max_hi) in test_cases {
         let (min_temp, max_temp) = simulate_free_float_case(case);
@@ -269,7 +269,7 @@ fn test_free_floating_diagnostic_summary() {
         } else if min_temp >= ref_min_lo - 5.0 && min_temp <= ref_min_hi + 5.0 {
             "⚠ NEAR"
         } else {
-            all_min_ok = false;
+            _all_min_ok = false;
             "✗ FAIL"
         };
 
@@ -278,7 +278,7 @@ fn test_free_floating_diagnostic_summary() {
         } else if max_temp >= ref_max_lo - 5.0 && max_temp <= ref_max_hi + 5.0 {
             "⚠ NEAR"
         } else {
-            all_max_ok = false;
+            _all_max_ok = false;
             "✗ FAIL"
         };
 
