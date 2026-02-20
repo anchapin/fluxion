@@ -202,6 +202,26 @@ pub enum HvacSystemMode {
     FreeFloat,
 }
 
+/// Thermal model type specifying the complexity of the thermal network.
+///
+/// The 6R2C model provides better accuracy for high-mass buildings by
+/// separating internal mass (furniture, partitions) from envelope mass
+/// (walls, roof, floor), which better captures thermal lag effects.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum ThermalModelType {
+    /// 5R1C model: Single thermal mass node (ISO 13790 standard)
+    /// - 5 Resistances: h_tr_w, h_ve, h_tr_em, h_tr_ms, h_tr_is
+    /// - 1 Capacitance: Cm (combined thermal mass)
+    /// - Good for low-mass buildings and general use
+    #[default]
+    FiveROneC,
+    /// 6R2C model: Two thermal mass nodes for improved accuracy
+    /// - 6 Resistances: h_tr_w, h_ve, h_tr_em, h_tr_ms, h_tr_is, h_tr_me
+    /// - 2 Capacitances: Cm_envelope, Cm_internal
+    /// - Better for high-mass buildings (900 series) where thermal lag is critical
+    SixRTwoC,
+}
+
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
 ///
 /// This is the core physics engine. It models heat transfer through building zones using
@@ -241,9 +261,24 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub aspect_ratio: T,      // Zone Aspect Ratio (Length/Width)
     pub infiltration_rate: T, // Infiltration Rate (ACH)
 
-    // New fields for 5R1C model
+    // Thermal model type (5R1C or 6R2C)
+    pub thermal_model_type: ThermalModelType,
+
+    // Fields for 5R1C model (single mass node)
     pub mass_temperatures: T,   // Tm (Mass temperature)
     pub thermal_capacitance: T, // Cm (J/K) - Includes Air + Structure
+
+    // Additional fields for 6R2C model (two mass nodes)
+    /// Envelope mass temperature (walls, roof, floor) - for 6R2C model
+    pub envelope_mass_temperatures: T,
+    /// Internal mass temperature (furniture, partitions) - for 6R2C model
+    pub internal_mass_temperatures: T,
+    /// Envelope thermal capacitance (J/K) - walls, roof, floor - for 6R2C model
+    pub envelope_thermal_capacitance: T,
+    /// Internal thermal capacitance (J/K) - furniture, partitions - for 6R2C model
+    pub internal_thermal_capacitance: T,
+    /// Conductance between envelope mass and internal mass (W/K) - for 6R2C model
+    pub h_tr_me: T,
 
     // 5R1C Conductances (W/K)
     pub h_tr_em: T, // Transmission: Exterior -> Mass (walls + roof)
@@ -308,8 +343,14 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_ratio: self.window_ratio.clone(),
             aspect_ratio: self.aspect_ratio.clone(),
             infiltration_rate: self.infiltration_rate.clone(),
+            thermal_model_type: self.thermal_model_type,
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
+            envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
+            internal_mass_temperatures: self.internal_mass_temperatures.clone(),
+            envelope_thermal_capacitance: self.envelope_thermal_capacitance.clone(),
+            internal_thermal_capacitance: self.internal_thermal_capacitance.clone(),
+            h_tr_me: self.h_tr_me.clone(),
             hvac_cooling_capacity: self.hvac_cooling_capacity,
             hvac_heating_capacity: self.hvac_heating_capacity,
             h_tr_w: self.h_tr_w.clone(),
@@ -530,6 +571,14 @@ impl ThermalModel<VectorField> {
         // Solar gain distribution (ASHRAE 140 calibration)
         model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
 
+        // Configure 6R2C model for high-mass cases (900 series)
+        // This improves accuracy for thermal lag in heavy concrete buildings
+        if spec.case_id.starts_with('9') {
+            // For high-mass buildings: 75% envelope mass, 25% internal mass
+            // Conductance between masses: 100 W/K (typical for concrete construction)
+            model.configure_6r2c_model(0.75, 100.0);
+        }
+
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
         if num_zones > 1 && !spec.common_walls.is_empty() {
             // Calculate inter-zone conductance from common walls
@@ -630,8 +679,18 @@ impl ThermalModel<VectorField> {
             aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
             infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
 
+            // Thermal model type
+            thermal_model_type: ThermalModelType::FiveROneC,
+
             // Placeholders (will be updated by update_derived_parameters)
             thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
+
+            // 6R2C model fields (initialized for 5R1C compatibility)
+            envelope_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
+            internal_mass_temperatures: VectorField::from_scalar(20.0, num_zones),
+            envelope_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+            internal_thermal_capacitance: VectorField::from_scalar(0.0, num_zones),
+            h_tr_me: VectorField::from_scalar(0.0, num_zones), // Conductance between envelope and internal mass
 
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
@@ -729,6 +788,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // sensitivity = term_rest_1 / den
         self.derived_sensitivity = self.derived_term_rest_1.clone() / self.derived_den.clone();
+    }
+
+    /// Configures the model to use the 6R2C thermal network with two mass nodes.
+    ///
+    /// This method sets up the 6R2C model by:
+    /// 1. Splitting thermal capacitance into envelope and internal components
+    /// 2. Setting up conductance between the two mass nodes
+    /// 3. Initializing mass temperatures appropriately
+    ///
+    /// # Arguments
+    /// * `envelope_mass_fraction` - Fraction of total thermal mass that is envelope (walls, roof, floor)
+    ///   - Typical values: 0.7-0.8 for high-mass buildings
+    /// * `h_tr_me_value` - Conductance between envelope and internal mass (W/K)
+    ///   - Typical values: 50-200 W/K depending on construction
+    pub fn configure_6r2c_model(&mut self, envelope_mass_fraction: f64, h_tr_me_value: f64) {
+        self.thermal_model_type = ThermalModelType::SixRTwoC;
+
+        // Split thermal capacitance
+        // Envelope: walls, roof, floor (typically 70-80% of total mass)
+        // Internal: furniture, partitions (typically 20-30% of total mass)
+        let total_cap = self.thermal_capacitance.clone();
+        self.envelope_thermal_capacitance = total_cap.clone() * envelope_mass_fraction;
+        self.internal_thermal_capacitance = total_cap * (1.0 - envelope_mass_fraction);
+
+        // Set conductance between envelope and internal mass
+        self.h_tr_me = self.zone_area.clone().map(|_| h_tr_me_value);
+
+        // Initialize mass temperatures from current single mass temperature
+        self.envelope_mass_temperatures = self.mass_temperatures.clone();
+        self.internal_mass_temperatures = self.mass_temperatures.clone();
+    }
+
+    /// Returns true if the model is configured for 6R2C mode.
+    pub fn is_6r2c_model(&self) -> bool {
+        self.thermal_model_type == ThermalModelType::SixRTwoC
     }
 
     /// Updates model parameters based on a gene vector from an optimizer.
@@ -930,6 +1024,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Returns
     /// HVAC energy consumption for the timestep in kWh.
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+        // Branch based on thermal model type
+        if self.is_6r2c_model() {
+            self.step_physics_6r2c(timestep, outdoor_temp)
+        } else {
+            self.step_physics_5r1c(timestep, outdoor_temp)
+        }
+    }
+
+    /// Solve physics for one timestep using the 5R1C (single mass node) model.
+    ///
+    /// This is the original implementation for backward compatibility.
+    fn step_physics_5r1c(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
         let dt = 3600.0; // Timestep in seconds (1 hour)
 
         // Get ground temperature at this timestep
@@ -1094,6 +1200,149 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             + phi_m; // Add gain directly to mass node
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
+        self.temperatures = t_i_act;
+
+        hvac_energy_for_step / 3.6e6 // Return kWh
+    }
+
+    /// Solve physics for one timestep using the 6R2C (two mass node) model.
+    ///
+    /// This extends the 5R1C model by separating thermal mass into:
+    /// - Envelope mass (walls, roof, floor) - heavier thermal lag
+    /// - Internal mass (furniture, partitions) - faster response
+    ///
+    /// This better captures thermal phase shifts in high-mass buildings.
+    fn step_physics_6r2c(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+        let dt = 3600.0; // Timestep in seconds (1 hour)
+
+        // Get ground temperature at this timestep
+        let t_g = self.ground_temperature.ground_temperature(timestep);
+
+        let hour_of_day = (timestep % 24) as u8;
+
+        // Split gains using solar distribution and convective fraction
+        let internal_gains_watts = self.loads.clone() * self.zone_area.clone();
+        let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
+        let phi_rad_total = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
+
+        // Distribute radiative gains to air, envelope mass, and internal mass
+        // In 6R2C model:
+        // - phi_st: gains to surface node (proportional to envelope mass)
+        // - phi_m_env: gains directly to envelope mass
+        // - phi_m_int: gains directly to internal mass
+        let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air * 0.6; // 60% to surface (envelope)
+        let phi_m_env = phi_rad_total.clone() * (1.0 - self.solar_distribution_to_air) * 0.7; // 70% of remainder to envelope
+        let phi_m_int = phi_rad_total * (1.0 - self.solar_distribution_to_air) * 0.3; // 30% to internal mass
+
+        // Use pre-computed cached values
+        let h_ext_base = &self.derived_h_ext;
+        let term_rest_1 = &self.derived_term_rest_1;
+
+        // Handle night ventilation
+        let h_ext = if let Some(night_vent) = &self.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
+                let h_ve_vent = air_cap_vent / 3600.0;
+                h_ext_base.clone() + self.temperatures.constant_like(h_ve_vent)
+            } else {
+                h_ext_base.clone()
+            }
+        } else {
+            h_ext_base.clone()
+        };
+
+        // Recalculate sensitivity if h_ext changed
+        let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                let den_val =
+                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+                let sens_val = term_rest_1.clone() / den_val.clone();
+                (den_val, sens_val)
+            } else {
+                (self.derived_den.clone(), self.derived_sensitivity.clone())
+            }
+        } else {
+            (self.derived_den.clone(), self.derived_sensitivity.clone())
+        };
+
+        // Use envelope mass temperature instead of single mass temperature
+        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
+        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+
+        // Inter-zone heat transfer
+        let num_zones = self.num_zones;
+        let h_iz_vec = self.h_tr_iz.as_ref();
+
+        let inter_zone_heat: Vec<f64> =
+            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
+                let temps = self.temperatures.as_ref();
+                let h_iz_val = h_iz_vec[0];
+                (0..num_zones)
+                    .map(|i| {
+                        let mut q_iz = 0.0;
+                        for j in 0..num_zones {
+                            if i != j {
+                                q_iz += h_iz_val * (temps[j] - temps[i]);
+                            }
+                        }
+                        q_iz
+                    })
+                    .collect()
+            } else {
+                vec![0.0; num_zones]
+            };
+
+        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
+        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor.clone();
+
+        let num_rest_with_iz = term_rest_1.clone()
+            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz.clone())
+            + self.h_tr_floor.clone() * t_g;
+
+        // Calculate free-floating indoor temperature
+        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
+
+        // HVAC calculation
+        let hour_of_day_idx = timestep % 24;
+        let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
+        let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val) * dt;
+
+        // Update indoor temperature with superposition
+        let t_i_act = t_i_free.clone() + sensitivity.clone() * hvac_output.clone();
+
+        // Calculate surface temperature
+        let ts_num_free = self.h_tr_ms.clone() * self.envelope_mass_temperatures.clone()
+            + self.h_tr_is.clone() * t_i_free.clone()
+            + phi_st.clone();
+        let t_s_free = ts_num_free / term_rest_1.clone();
+
+        // === 6R2C: Update two mass nodes ===
+        // Envelope mass: receives heat from exterior, surface, and internal mass
+        let q_env_net = self.h_tr_em.clone()
+            * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
+            + self.h_tr_ms.clone() * (t_s_free - self.envelope_mass_temperatures.clone())
+            + self.h_tr_me.clone()
+                * (self.internal_mass_temperatures.clone()
+                    - self.envelope_mass_temperatures.clone())
+            + phi_m_env;
+        let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
+        self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
+
+        // Internal mass: receives heat from envelope mass and direct gains
+        let q_int_net = self.h_tr_me.clone()
+            * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
+            + phi_m_int;
+        let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
+        self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
+
+        // Update single mass temperature for backward compatibility (average of two masses)
+        let total_cap =
+            self.envelope_thermal_capacitance.clone() + self.internal_thermal_capacitance.clone();
+        self.mass_temperatures = (self.envelope_mass_temperatures.clone()
+            * self.envelope_thermal_capacitance.clone()
+            + self.internal_mass_temperatures.clone() * self.internal_thermal_capacitance.clone())
+            / total_cap;
+
         self.temperatures = t_i_act;
 
         hvac_energy_for_step / 3.6e6 // Return kWh
