@@ -208,7 +208,8 @@ impl DenverTmyWeather {
         // Calculate horizontal infrared radiation
         // IR = ε_sky * σ * T_ambient^4
         let t_ambient_kelvin = dry_bulb_temp + 273.15;
-        let horizontal_infrared = effective_emissivity * STEFAN_BOLTZMANN * t_ambient_kelvin.powi(4);
+        let horizontal_infrared =
+            effective_emissivity * STEFAN_BOLTZMANN * t_ambient_kelvin.powi(4);
 
         HourlyWeatherData {
             dry_bulb_temp,

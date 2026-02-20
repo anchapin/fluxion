@@ -130,12 +130,10 @@ impl SkyRadiationExchange {
         // q = ε × F × σ × (T_sky⁴ - T_surface⁴)
         // Note: This gives negative when surface is warmer (heat loss)
         // We negate to return positive for cooling
-        let net_flux = self.surface_emissivity
+        self.surface_emissivity
             * self.sky_view_factor
             * STEFAN_BOLTZMANN
-            * (t_sky_k.powi(4) - t_surface_k.powi(4));
-
-        net_flux
+            * (t_sky_k.powi(4) - t_surface_k.powi(4))
     }
 
     /// Calculates the radiative heat transfer coefficient (W/m²·K).
@@ -291,8 +289,9 @@ mod tests {
         assert!(flux < 0.0); // Negative = heat loss from surface
 
         // Verify magnitude is reasonable
+        // For 60K temperature difference, flux can be ~280 W/m²
         assert!(flux.abs() > 50.0); // Should be significant
-        assert!(flux.abs() < 200.0); // But not extreme
+        assert!(flux.abs() < 400.0); // Allow for large temperature differences
     }
 
     #[test]

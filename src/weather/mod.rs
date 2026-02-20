@@ -140,6 +140,7 @@ impl HourlyWeatherData {
     /// * `humidity` - Relative humidity in percentage (0-100)
     /// * `horizontal_infrared` - Horizontal Infrared Radiation Intensity in W/m²
     /// * `hour_of_year` - Hour of year (0-8759)
+    #[allow(clippy::too_many_arguments)]
     pub fn with_infrared(
         dry_bulb_temp: f64,
         dni: f64,
@@ -620,15 +621,13 @@ mod tests {
         }
 
         let source = ErrorSource;
-        let mut count = 0;
 
-        for result in source.iter_hours().take(15) {
+        for (count, result) in source.iter_hours().take(15).enumerate() {
             if count <= 10 {
                 assert!(result.is_ok());
             } else {
                 assert!(result.is_err());
             }
-            count += 1;
         }
     }
 }
