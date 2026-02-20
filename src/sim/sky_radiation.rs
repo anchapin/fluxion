@@ -360,12 +360,7 @@ impl SolAirTemperature {
     }
 
     /// Calculates sol-air temperature for a wall (vertical surface).
-    pub fn for_wall(
-        &self,
-        outdoor_temp: f64,
-        solar_irradiance: f64,
-        ground_reflected: f64,
-    ) -> f64 {
+    pub fn for_wall(&self, outdoor_temp: f64, solar_irradiance: f64, ground_reflected: f64) -> f64 {
         let total_solar = solar_irradiance + ground_reflected;
         let solar_term = self.solar_absorptance * total_solar / self.exterior_conductance;
         outdoor_temp + solar_term
