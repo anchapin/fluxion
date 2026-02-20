@@ -952,6 +952,23 @@ impl CaseSpec {
             .sum()
     }
 
+    /// Returns window area for a specific zone and orientation.
+    /// Returns 0.0 if zone index is out of range.
+    pub fn window_area_by_zone_and_orientation(
+        &self,
+        zone_idx: usize,
+        orientation: Orientation,
+    ) -> f64 {
+        if zone_idx >= self.windows.len() {
+            return 0.0;
+        }
+        self.windows[zone_idx]
+            .iter()
+            .filter(|w| w.orientation == orientation)
+            .map(|w| w.area)
+            .sum()
+    }
+
     /// Returns true if this is a free-floating case (based on first zone).
     pub fn is_free_floating(&self) -> bool {
         self.hvac[0].is_free_floating()
@@ -1618,11 +1635,12 @@ impl CaseBuilder {
                 Assemblies::high_mass_floor(),
             )
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_zone_window(0, 12.0, Orientation::South) // Back-zone south window
             .with_hvac_setpoints(20.0, 27.0)
             // Zone 1: Sunspace (8m x 2m x 2.7m)
             .add_zone(8.0, 2.0, 2.7)
             .with_zone_hvac(1, HvacSchedule::free_floating())
-            .with_zone_window(1, 6.0, Orientation::South)
+            .with_zone_window(1, 6.0, Orientation::South) // Sunspace south window
             // Common Wall (8m x 2.7m = 21.6 m2)
             .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
             .with_infiltration(0.5)

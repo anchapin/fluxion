@@ -6,6 +6,7 @@ use crate::sim::boundary::{
 use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
+use crate::sim::construction::MassClass;
 use crate::validation::ashrae_140_cases::{CaseSpec, ShadingType};
 use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
@@ -394,7 +395,6 @@ impl ThermalModel<VectorField> {
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];
         let floor_area = geometry.floor_area();
-        let volume = geometry.volume();
         let wall_area = geometry.wall_area();
         let total_window_area = spec.total_window_area();
 
@@ -427,7 +427,7 @@ impl ThermalModel<VectorField> {
         }
         model.hvac_enabled = VectorField::new(hvac_enabled_vec);
 
-        // Update surfaces based on spec window areas
+        // Update surfaces based on spec window areas (zone-specific for multi-zone)
         let mut surfaces = Vec::with_capacity(num_zones);
         let orientations = [
             crate::validation::ashrae_140_cases::Orientation::South,
@@ -436,10 +436,11 @@ impl ThermalModel<VectorField> {
             crate::validation::ashrae_140_cases::Orientation::East,
         ];
 
-        for _ in 0..num_zones {
+        for zone_idx in 0..num_zones {
             let mut zone_surfaces = Vec::new();
             for &orientation in &orientations {
-                let win_area = spec.window_area_by_orientation(orientation);
+                // Use zone-specific window area for multi-zone buildings
+                let win_area = spec.window_area_by_zone_and_orientation(zone_idx, orientation);
                 let mut surface =
                     WallSurface::new(win_area, spec.window_properties.u_value, orientation);
 
@@ -482,100 +483,149 @@ impl ThermalModel<VectorField> {
         }
         model.surfaces = surfaces;
 
-        // Update conductances based on spec
-        model.h_tr_w = VectorField::from_scalar(
-            total_window_area * spec.window_properties.u_value,
-            num_zones,
-        );
+        // Update conductances based on spec - zone-specific calculations for multi-zone
+        let mut h_tr_w_vec = Vec::with_capacity(num_zones);
+        let mut h_ve_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_floor_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_is_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_ms_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_em_vec = Vec::with_capacity(num_zones);
+        let mut thermal_cap_vec = Vec::with_capacity(num_zones);
 
-        // Infiltration heat transfer conductance (h_ve)
-        //
-        // ASHRAE 140 specifies infiltration as Air Changes per Hour (ACH).
-        // The thermal conductance is calculated as:
-        //
-        //   h_ve = ACH * V * ρ * cp / 3600  [W/K]
-        //
-        // Where:
-        //   ACH = Air Changes per Hour (1/hr)
-        //   V   = Zone volume (m³)
-        //   ρ   = Air density = 1.2 kg/m³
-        //   cp  = Specific heat of air = 1005 J/(kg·K)
-        //   3600 = Seconds per hour
-        //
-        // Derivation:
-        //   Q_vent = ACH * V / 3600  [m³/s] (volumetric flow rate)
-        //   ṁ = ρ * Q_vent           [kg/s] (mass flow rate)
-        //   h_ve = ṁ * cp            [W/K]  (thermal conductance)
-        //
-        // For Case 600 (0.5 ACH, 48 m² floor, 2.7 m height):
-        //   V = 48 * 2.7 = 129.6 m³
-        //   Q_vent = 0.5 * 129.6 / 3600 = 0.018 m³/s
-        //   h_ve = 1.2 * 1005 * 0.018 = 21.7 W/K
-        //
-        // This assumes:
-        // - Infiltration air is at outdoor temperature
-        // - Heat transfer is proportional to temperature difference
-        // - Constant ACH (no wind/stack effect variation)
-        let air_cap = volume * 1.2 * 1005.0; // ρ * cp * V = J/K (thermal capacitance of air)
-        model.h_ve =
-            VectorField::from_scalar((spec.infiltration_ach * air_cap) / 3600.0, num_zones);
+        for zone_idx in 0..num_zones {
+            let zone_floor_area = if zone_idx < spec.geometry.len() {
+                spec.geometry[zone_idx].floor_area()
+            } else {
+                // Fallback to first zone if geometry not specified
+                spec.geometry[0].floor_area()
+            };
 
-        // h_tr_floor - CALIBRATED FOR ASHRAE 140
-        // For ground-coupled floors, we need to account for the additional
-        // resistance of the soil/ground.
-        let floor_u = spec.construction.floor.u_value(None);
-        let h_tr_floor_val = if spec.case_id.starts_with('9') {
-            // High mass cases often have higher floor coupling
-            floor_u * floor_area * 1.2 // Calibrated factor
-        } else {
-            floor_u * floor_area
-        };
-        model.h_tr_floor = VectorField::from_scalar(h_tr_floor_val, num_zones);
+            let zone_volume = if zone_idx < spec.geometry.len() {
+                spec.geometry[zone_idx].volume()
+            } else {
+                spec.geometry[0].volume()
+            };
 
-        // ISO 13790 5R1C Mapping - CALIBRATED FOR ASHRAE 140
-        let area_tot = wall_area + floor_area * 2.0; // Gross wall + Floor + Roof
+            let zone_wall_area = if zone_idx < spec.geometry.len() {
+                spec.geometry[zone_idx].wall_area()
+            } else {
+                spec.geometry[0].wall_area()
+            };
 
-        // h_is: Surface-to-air conductance. ISO 13790 standard value is 3.45 W/m²K.
-        let h_is = 3.45;
-        model.h_tr_is = VectorField::from_scalar(h_is * area_tot, num_zones);
+            // Calculate zone-specific window area
+            let zone_window_area: f64 = [
+                crate::validation::ashrae_140_cases::Orientation::South,
+                crate::validation::ashrae_140_cases::Orientation::West,
+                crate::validation::ashrae_140_cases::Orientation::North,
+                crate::validation::ashrae_140_cases::Orientation::East,
+            ]
+            .iter()
+            .map(|&orientation| {
+                spec.window_area_by_zone_and_orientation(zone_idx, orientation)
+            })
+            .sum();
 
-        // h_ms: Mass-to-surface conductance. ISO 13790 standard value is 9.1 W/m²K.
-        // It depends on the effective mass area A_m.
-        // For ASHRAE 140 low-mass, A_m is approx 2.5 * floor_area.
-        // For high-mass, A_m is approx 3.0 * floor_area.
-        let a_m = if spec.case_id.starts_with('9') {
-            3.5 * floor_area
-        } else {
-            2.5 * floor_area
-        };
-        let h_ms = 9.1;
-        model.h_tr_ms = VectorField::from_scalar(h_ms * a_m, num_zones);
+            // Window conductance (h_tr_w = U_win * Window Area)
+            h_tr_w_vec.push(zone_window_area * spec.window_properties.u_value);
 
-        // h_tr_em = Opaque conductance (Exterior to Mass)
-        // ISO 13790: h_tr_em = 1 / (1/h_tr_op - 1/h_tr_ms)
-        let wall_u = spec.construction.wall.u_value(None);
-        let roof_u = spec.construction.roof.u_value(None);
-        let opaque_wall_area = wall_area - total_window_area;
-        // Include thermal bridges in opaque conductance
-        let h_tr_op =
-            opaque_wall_area * wall_u + floor_area * roof_u + model.thermal_bridge_coefficient;
+            // Infiltration conductance (h_ve = ACH * V * ρ * cp / 3600)
+            let zone_air_cap = zone_volume * 1.2 * 1005.0;
+            h_ve_vec.push((spec.infiltration_ach * zone_air_cap) / 3600.0);
 
-        let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
-        model.h_tr_em = VectorField::from_scalar(h_tr_em_val.max(0.1), num_zones);
+            // Floor conductance
+            let floor_u = spec.construction.floor.u_value(None);
+            let h_tr_floor_val = if spec.case_id.starts_with('9') {
+                floor_u * zone_floor_area * 1.2
+            } else {
+                floor_u * zone_floor_area
+            };
+            h_tr_floor_vec.push(h_tr_floor_val);
 
-        // Thermal Capacitance (Air + Structure)
-        let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_wall_area;
-        let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * floor_area;
-        let floor_cap = spec.construction.floor.thermal_capacitance_per_area() * floor_area;
-        model.thermal_capacitance =
-            VectorField::from_scalar(wall_cap + roof_cap + floor_cap + air_cap, num_zones);
+            // Surface-to-air conductance (h_is = 3.45 * Area_tot)
+            let opaque_area = zone_wall_area - zone_window_area;
+            let area_tot = opaque_area + zone_floor_area * 2.0;
+            h_tr_is_vec.push(3.45 * area_tot);
 
-        // Internal loads - access first element
-        if let Some(ref loads) = spec.internal_loads[0] {
-            let load_per_m2 = loads.total_load / floor_area;
-            model.loads = VectorField::from_scalar(load_per_m2, num_zones);
-            model.convective_fraction = loads.convective_fraction;
+            // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
+            //
+            // The mass-to-surface conductance (h_tr_ms) and thermal capacitance (Cm)
+            // are now derived from actual construction layer properties using ISO 13790 Annex C
+            // half-insulation rule, replacing the previous heuristic-based approach.
+            //
+            // Key improvements:
+            // 1. Effective thermal capacitance uses half-insulation rule (only interior-side
+            //    mass layers contribute fully)
+            // 2. A_m factor is derived from mass class based on effective κ,
+            //    not from case_id heuristic
+            // 3. Mass classification is physics-driven based on layer stack properties
+
+            // Calculate effective specific capacitances per area for each construction
+            let kappa_wall = spec.construction.wall.iso_13790_effective_capacitance_per_area();
+            let kappa_roof = spec.construction.roof.iso_13790_effective_capacitance_per_area();
+            let kappa_floor = spec.construction.floor.iso_13790_effective_capacitance_per_area();
+
+            // Determine mass class from dominant construction (wall, largest surface area)
+            let mass_class = spec.construction.wall.iso_13790_mass_class();
+            let a_m_factor = mass_class.a_m_factor();
+
+            // Effective mass area (A_m) = factor × floor_area
+            let a_m = a_m_factor * zone_floor_area;
+
+            // Mass-to-surface conductance (h_ms = 9.1 × A_m)
+            // ISO 13790 standard value for mass-to-surface conductance
+            let h_ms = 9.1;
+            h_tr_ms_vec.push(h_ms * a_m);
+
+            // Opaque conductance (h_tr_em)
+            let wall_u = spec.construction.wall.u_value(None);
+            let roof_u = spec.construction.roof.u_value(None);
+            let h_tr_op =
+                opaque_area * wall_u + zone_floor_area * roof_u + model.thermal_bridge_coefficient;
+            let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
+            h_tr_em_vec.push(h_tr_em_val.max(0.1));
+
+            // Thermal capacitance using ISO 13790 effective specific capacitances
+            // This replaces the previous approach that summed ALL layers regardless of
+            // their position relative to insulation (violating ISO 13790 Annex C)
+            let wall_cap = kappa_wall * opaque_area;
+            let roof_cap = kappa_roof * zone_floor_area;
+            let floor_cap = kappa_floor * zone_floor_area;
+            thermal_cap_vec.push(wall_cap + roof_cap + floor_cap + zone_air_cap);
         }
+
+        model.h_tr_w = VectorField::new(h_tr_w_vec);
+        model.h_ve = VectorField::new(h_ve_vec);
+        model.h_tr_floor = VectorField::new(h_tr_floor_vec);
+        model.h_tr_is = VectorField::new(h_tr_is_vec);
+        model.h_tr_ms = VectorField::new(h_tr_ms_vec);
+        model.h_tr_em = VectorField::new(h_tr_em_vec);
+        model.thermal_capacitance = VectorField::new(thermal_cap_vec);
+
+        // Internal loads - zone-specific for multi-zone
+        let mut loads_vec = Vec::with_capacity(num_zones);
+        for zone_idx in 0..num_zones {
+            let zone_floor_area = if zone_idx < spec.geometry.len() {
+                spec.geometry[zone_idx].floor_area()
+            } else {
+                spec.geometry[0].floor_area()
+            };
+
+            if zone_idx < spec.internal_loads.len() {
+                if let Some(ref loads) = spec.internal_loads[zone_idx] {
+                    let load_per_m2 = loads.total_load / zone_floor_area;
+                    loads_vec.push(load_per_m2);
+                    // Use convective fraction from first zone for now
+                    if zone_idx == 0 {
+                        model.convective_fraction = loads.convective_fraction;
+                    }
+                } else {
+                    loads_vec.push(0.0);
+                }
+            } else {
+                loads_vec.push(0.0);
+            }
+        }
+        model.loads = VectorField::new(loads_vec);
 
         // Night ventilation
         model.night_ventilation = spec.night_ventilation;

@@ -3,6 +3,18 @@
 //! This module provides structs and functions for calculating thermal resistance (R-value)
 //! and thermal transmittance (U-value) for multi-layer building constructions, following
 //! ASHRAE Standard 140 specifications.
+//!
+//! # ISO 13790 Annex C Implementation
+//!
+//! This module implements ISO 13790 Annex C methodology for deriving effective thermal
+//! mass parameters from multi-layer construction assemblies. The key concepts are:
+//!
+//! - **Effective Thermal Mass**: Only layers on the interior side of the dominant
+//!   insulation layer contribute to effective thermal mass (half-insulation rule).
+//! - **Mass Classification**: Constructions are classified by effective specific capacitance
+//!   into VeryLight, Light, Medium, Heavy, or VeryHeavy categories.
+//! - **Area Multipliers**: Each mass class has an associated effective mass area
+//!   multiplier (A_m factor) used in 5R1C thermal network calculations.
 
 use serde::{Deserialize, Serialize};
 
@@ -356,6 +368,202 @@ impl Construction {
     /// Number of layers
     pub fn layer_count(&self) -> usize {
         self.layers.len()
+    }
+
+    /// Finds the index of the dominant insulation layer.
+    ///
+    /// The dominant insulation layer is the layer with the highest thermal resistance
+    /// (R-value = thickness / conductivity). This layer separates interior thermal
+    /// mass from the exterior environment in the ISO 13790 half-insulation rule.
+    ///
+    /// # Returns
+    /// Index of the dominant insulation layer (0-based from interior)
+    ///
+    /// # ISO 13790 Reference
+    /// ISO 13790 Annex C specifies that thermal mass should be calculated
+    /// considering only layers on the interior side of the dominant insulation layer.
+    pub fn find_dominant_insulation_layer_index(&self) -> usize {
+        self.layers
+            .iter()
+            .enumerate()
+            .max_by(|(_, a), (_, b)| {
+                a.r_value()
+                    .partial_cmp(&b.r_value())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .map(|(idx, _)| idx)
+            .expect("Construction must have at least one layer")
+    }
+
+    /// Calculates the effective thermal capacitance per unit area using ISO 13790 Annex C
+    /// half-insulation rule.
+    ///
+    /// The half-insulation rule states that only layers on the interior side of the
+    /// dominant insulation layer contribute to effective thermal mass. The dominant
+    /// insulation layer itself contributes only half of its thermal capacitance.
+    ///
+    /// # Algorithm
+    /// 1. Find dominant insulation layer (highest R-value)
+    /// 2. For each layer at index `j`:
+    ///    - If `j < ins_idx`: full contribution (ρ × c × δ)
+    ///    - If `j == ins_idx`: half contribution (0.5 × ρ × c × δ)
+    ///    - If `j > ins_idx`: zero contribution
+    /// 3. Sum all contributions
+    ///
+    /// # Returns
+    /// Effective specific thermal capacitance (κ) in J/m²K
+    ///
+    /// # ISO 13790 Reference
+    /// ISO 13790 Annex C, Section C.2 specifies the half-insulation rule
+    /// for calculating effective thermal mass of multi-layer constructions.
+    ///
+    /// # Example
+    /// ```
+    /// use fluxion::sim::construction::{Construction, ConstructionLayer, Assemblies};
+    ///
+    /// // Case 600 wall: plasterboard + fiberglass + wood siding
+    /// // Fiberglass is dominant insulation (R=1.65 m²K/W)
+    /// // Only plasterboard (interior side) contributes fully
+    /// // Fiberglass contributes half its capacitance
+    /// // Wood siding (exterior side) contributes nothing
+    /// let wall = Assemblies::low_mass_wall();
+    /// let kappa = wall.iso_13790_effective_capacitance_per_area();
+    /// // kappa ≈ 9,900 J/m²K (very light mass)
+    /// ```
+    pub fn iso_13790_effective_capacitance_per_area(&self) -> f64 {
+        let ins_idx = self.find_dominant_insulation_layer_index();
+
+        self.layers
+            .iter()
+            .enumerate()
+            .map(|(j, layer)| {
+                let full_capacitance = layer.thermal_capacitance_per_area();
+                if j < ins_idx {
+                    // Interior to insulation: full contribution
+                    full_capacitance
+                } else if j == ins_idx {
+                    // Insulation layer itself: half contribution (half-insulation rule)
+                    0.5 * full_capacitance
+                } else {
+                    // Exterior to insulation: no contribution
+                    0.0
+                }
+            })
+            .sum()
+    }
+
+    /// Classifies the construction by its effective thermal mass per ISO 13790 Annex C.
+    ///
+    /// Classification is based on the effective specific thermal capacitance (κ)
+    /// calculated using the half-insulation rule. This determines the mass class
+    /// used for selecting the effective mass area multiplier (A_m factor) in
+    /// 5R1C thermal network calculations.
+    ///
+    /// # Returns
+    /// Mass classification (VeryLight, Light, Medium, Heavy, VeryHeavy)
+    ///
+    /// # ISO 13790 Reference
+    /// ISO 13790 Annex C, Table C.2 defines mass classes based on effective
+    /// specific thermal capacitance ranges.
+    ///
+    /// # Example
+    /// ```
+    /// use fluxion::sim::construction::{Construction, Assemblies};
+    ///
+    /// let wall = Assemblies::low_mass_wall();
+    /// let mass_class = wall.iso_13790_mass_class();
+    /// // Returns MassClass::VeryLight (κ ≈ 9,900 J/m²K)
+    ///
+    /// let heavy_wall = Assemblies::high_mass_wall();
+    /// let heavy_class = heavy_wall.iso_13790_mass_class();
+    /// // Returns MassClass::Light or Medium (κ ≈ 140,000 J/m²K)
+    /// ```
+    pub fn iso_13790_mass_class(&self) -> MassClass {
+        let kappa = self.iso_13790_effective_capacitance_per_area();
+
+        // Classification per ISO 13790 Table C.2
+        if kappa < 80_000.0 {
+            MassClass::VeryLight
+        } else if kappa < 165_000.0 {
+            MassClass::Light
+        } else if kappa < 260_000.0 {
+            MassClass::Medium
+        } else if kappa < 370_000.0 {
+            MassClass::Heavy
+        } else {
+            MassClass::VeryHeavy
+        }
+    }
+}
+
+/// Thermal mass classification per ISO 13790 Annex C.
+///
+/// Construction assemblies are classified by their effective specific thermal capacitance
+/// (κ, kappa) in J/m²K. This classification determines the effective
+/// mass area multiplier (A_m factor) used in 5R1C thermal networks.
+///
+/// # ISO 13790 Table C.2 Mass Classes
+///
+/// | Mass Class | κ (J/m²K) | A_m Factor |
+/// |-------------|--------------|------------|
+/// | VeryLight   | < 80,000     | 2.5        |
+/// | Light        | 80,000-165,000 | 2.5        |
+/// | Medium      | 165,000-260,000 | 2.5        |
+/// | Heavy       | 260,000-370,000 | 3.0        |
+/// | VeryHeavy   | ≥ 370,000    | 3.5        |
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MassClass {
+    /// Very light mass construction (κ < 80,000 J/m²K)
+    /// Examples: Timber frame with minimal mass
+    VeryLight,
+    /// Light mass construction (80,000 ≤ κ < 165,000 J/m²K)
+    /// Examples: Light masonry, timber frame with some internal mass
+    Light,
+    /// Medium mass construction (165,000 ≤ κ < 260,000 J/m²K)
+    /// Examples: Concrete walls with internal insulation
+    Medium,
+    /// Heavy mass construction (260,000 ≤ κ < 370,000 J/m²K)
+    /// Examples: Thick concrete walls, brick with minimal insulation
+    Heavy,
+    /// Very heavy mass construction (κ ≥ 370,000 J/m²K)
+    /// Examples: Massive concrete or masonry structures
+    VeryHeavy,
+}
+
+impl MassClass {
+    /// Returns the effective mass area multiplier (A_m factor) per ISO 13790 Table C.2.
+    ///
+    /// This factor is used to calculate the effective mass area A_m:
+    /// A_m = a_m_factor × floor_area
+    ///
+    /// # Returns
+    /// Effective mass area multiplier (dimensionless)
+    ///
+    /// # ISO 13790 Reference
+    /// ISO 13790 Annex C, Table C.2 specifies these multipliers based on
+    /// construction thermal mass classification.
+    pub fn a_m_factor(&self) -> f64 {
+        match self {
+            MassClass::VeryLight => 2.5,
+            MassClass::Light => 2.5,
+            MassClass::Medium => 2.5,
+            MassClass::Heavy => 3.0,
+            MassClass::VeryHeavy => 3.5,
+        }
+    }
+
+    /// Returns the effective specific capacitance range for this mass class.
+    ///
+    /// # Returns
+    /// Tuple of (min_kappa, max_kappa) in J/m²K
+    pub fn kappa_range(&self) -> (f64, f64) {
+        match self {
+            MassClass::VeryLight => (0.0, 80_000.0),
+            MassClass::Light => (80_000.0, 165_000.0),
+            MassClass::Medium => (165_000.0, 260_000.0),
+            MassClass::Heavy => (260_000.0, 370_000.0),
+            MassClass::VeryHeavy => (370_000.0, f64::INFINITY),
+        }
     }
 }
 
