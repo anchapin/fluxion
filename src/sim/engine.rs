@@ -882,9 +882,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
-    fn hvac_power_demand(&self, hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        let heating_sp = self.heating_schedule.value(hour);
-        let cooling_sp = self.cooling_schedule.value(hour);
+    fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
+        // Use direct setpoint fields to support dynamic changes (e.g., thermostat setback)
+        // The validator updates these fields directly each hour for setback cases
+        let heating_sp = self.heating_setpoint;
+        let cooling_sp = self.cooling_setpoint;
 
         t_i_free.zip_with(sensitivity, |t, sens| {
             // Determine HVAC mode based on temperature and setpoints
