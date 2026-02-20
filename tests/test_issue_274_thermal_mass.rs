@@ -3,7 +3,7 @@
 //! Issue #274: Investigation of thermal mass modeling differences
 
 use fluxion::sim::construction::Assemblies;
-use fluxion::validation::ashrae_140_cases::{CaseBuilder, ASHRAE140Case};
+use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder};
 
 #[test]
 fn test_thermal_capacitance_low_vs_high_mass() {
@@ -11,14 +11,32 @@ fn test_thermal_capacitance_low_vs_high_mass() {
     let high_mass_spec = ASHRAE140Case::Case900.spec();
 
     // Calculate thermal capacitance per area for walls
-    let low_wall_cap = low_mass_spec.construction.wall.thermal_capacitance_per_area();
-    let high_wall_cap = high_mass_spec.construction.wall.thermal_capacitance_per_area();
+    let low_wall_cap = low_mass_spec
+        .construction
+        .wall
+        .thermal_capacitance_per_area();
+    let high_wall_cap = high_mass_spec
+        .construction
+        .wall
+        .thermal_capacitance_per_area();
 
-    let low_roof_cap = low_mass_spec.construction.roof.thermal_capacitance_per_area();
-    let high_roof_cap = high_mass_spec.construction.roof.thermal_capacitance_per_area();
+    let low_roof_cap = low_mass_spec
+        .construction
+        .roof
+        .thermal_capacitance_per_area();
+    let high_roof_cap = high_mass_spec
+        .construction
+        .roof
+        .thermal_capacitance_per_area();
 
-    let low_floor_cap = low_mass_spec.construction.floor.thermal_capacitance_per_area();
-    let high_floor_cap = high_mass_spec.construction.floor.thermal_capacitance_per_area();
+    let low_floor_cap = low_mass_spec
+        .construction
+        .floor
+        .thermal_capacitance_per_area();
+    let high_floor_cap = high_mass_spec
+        .construction
+        .floor
+        .thermal_capacitance_per_area();
 
     let floor_area = low_mass_spec.geometry[0].floor_area();
     let wall_area = low_mass_spec.geometry[0].wall_area();
@@ -85,7 +103,9 @@ fn test_solar_distribution_effect_on_thermal_mass() {
     println!("Solar distribution for Case 600: Not directly accessible in spec");
     println!("Solar distribution for Case 900: Not directly accessible in spec");
     println!();
-    println!("Note: solar_distribution_to_air is hardcoded to 0.1 in ThermalModel::from_case_spec()");
+    println!(
+        "Note: solar_distribution_to_air is hardcoded to 0.1 in ThermalModel::from_case_spec()"
+    );
     println!("This means 10% of radiative gains go to air, 90% go to thermal mass");
     println!();
     println!("Expected behavior:");
@@ -114,7 +134,7 @@ fn test_5r1c_conductance_values() {
     let wall_u_diff = (wall_u_low - wall_u_high).abs() / wall_u_low;
 
     assert!(
-        wall_u_diff < 0.01,  // Allow <1% difference
+        wall_u_diff < 0.01, // Allow <1% difference
         "Wall U-value difference ({:.4}%) should be < 1%",
         wall_u_diff * 100.0
     );
@@ -134,13 +154,22 @@ fn test_5r1c_conductance_values() {
     let floor_u_diff = (floor_u_low - floor_u_high).abs() / floor_u_low;
 
     assert!(
-        floor_u_diff < 0.03,  // Allow <3% difference (floor construction differs more)
+        floor_u_diff < 0.03, // Allow <3% difference (floor construction differs more)
         "Floor U-value difference ({:.4}%) should be < 3%",
         floor_u_diff * 100.0
     );
 
     println!("U-values are correctly equal between low-mass and high-mass cases");
-    println!("Wall U: {:.3} W/m²K", low_mass_spec.construction.wall.u_value(None));
-    println!("Roof U: {:.3} W/m²K", low_mass_spec.construction.roof.u_value(None));
-    println!("Floor U: {:.3} W/m²K", low_mass_spec.construction.floor.u_value(None));
+    println!(
+        "Wall U: {:.3} W/m²K",
+        low_mass_spec.construction.wall.u_value(None)
+    );
+    println!(
+        "Roof U: {:.3} W/m²K",
+        low_mass_spec.construction.roof.u_value(None)
+    );
+    println!(
+        "Floor U: {:.3} W/m²K",
+        low_mass_spec.construction.floor.u_value(None)
+    );
 }
