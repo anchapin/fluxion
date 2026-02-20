@@ -413,6 +413,20 @@ impl ThermalModel<VectorField> {
         model.cooling_setpoint = hvac.cooling_setpoint; // Direct access
         model.infiltration_rate = VectorField::from_scalar(spec.infiltration_ach, num_zones);
 
+        // Set zone-specific HVAC enable flags for multi-zone buildings
+        // This is critical for Case 960 where Zone 1 (sunspace) should be free-floating
+        let mut hvac_enabled_vec = Vec::with_capacity(num_zones);
+        for zone_idx in 0..num_zones {
+            if zone_idx < spec.hvac.len() {
+                // 1.0 if HVAC is enabled, 0.0 if free-floating
+                hvac_enabled_vec.push(if spec.hvac[zone_idx].is_enabled() { 1.0 } else { 0.0 });
+            } else {
+                // Default to enabled if no HVAC spec for this zone
+                hvac_enabled_vec.push(1.0);
+            }
+        }
+        model.hvac_enabled = VectorField::new(hvac_enabled_vec);
+
         // Update surfaces based on spec window areas
         let mut surfaces = Vec::with_capacity(num_zones);
         let orientations = [
@@ -606,11 +620,19 @@ impl ThermalModel<VectorField> {
             // Set inter-zone conductance (assuming single connection between zones for now)
             model.h_tr_iz = VectorField::from_scalar(total_conductance, num_zones);
 
-            // Also update zone areas for multi-zone case
-            // Zone 0: back-zone (8x6m), Zone 1: sunspace (8x2m)
+            // Update zone areas for multi-zone case
+            // Zone 0: back-zone (8x6m = 48 m²), Zone 1: sunspace (8x2m = 16 m²)
             if spec.geometry.len() >= 2 {
-                model.zone_area =
-                    VectorField::from_scalar(spec.geometry[0].floor_area(), num_zones);
+                let mut zone_area_vec = Vec::with_capacity(num_zones);
+                for zone_idx in 0..num_zones {
+                    if zone_idx < spec.geometry.len() {
+                        zone_area_vec.push(spec.geometry[zone_idx].floor_area());
+                    } else {
+                        // Fallback to first zone's area if geometry not specified
+                        zone_area_vec.push(spec.geometry[0].floor_area());
+                    }
+                }
+                model.zone_area = VectorField::new(zone_area_vec);
             }
         }
 
@@ -899,7 +921,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let heating_sp = self.heating_setpoint;
         let cooling_sp = self.cooling_setpoint;
 
-        t_i_free.zip_with(sensitivity, |t, sens| {
+        let hvac_demand = t_i_free.zip_with(sensitivity, |t, sens| {
             // Determine HVAC mode based on temperature and setpoints
             let mode = if t < heating_sp {
                 HVACMode::Heating
@@ -927,7 +949,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     0.0
                 }
             }
-        })
+        });
+
+        // Apply HVAC enable flag to disable HVAC for free-floating zones
+        // This is critical for multi-zone buildings like Case 960 where Zone 1 (sunspace) is free-floating
+        hvac_demand * self.hvac_enabled.clone()
     }
 
     /// Core physics simulation loop for annual building energy performance.
