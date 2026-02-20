@@ -901,7 +901,7 @@ impl ASHRAE140Validator {
                     if let Some(hvac_schedule) = spec.hvac.first() {
                         // Only apply if heating is disabled (cooling-only mode)
                         if hvac_schedule.heating_setpoint < 0.0 {
-                            model.cooling_setpoint = -100.0; // Allow free cooling during night vent hours
+                            model.cooling_setpoint = 999.0; // Prevent cooling during night vent hours
                         }
                     }
                 }
