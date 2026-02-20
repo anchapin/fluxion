@@ -1318,23 +1318,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // === 6R2C: Update two mass nodes ===
         // Envelope mass: receives heat from exterior, surface, and internal mass
-        let q_env_net = self.h_tr_em.clone() * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
+        let q_env_net = self.h_tr_em.clone()
+            * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
             + self.h_tr_ms.clone() * (t_s_free - self.envelope_mass_temperatures.clone())
-            + self.h_tr_me.clone() * (self.internal_mass_temperatures.clone() - self.envelope_mass_temperatures.clone())
+            + self.h_tr_me.clone()
+                * (self.internal_mass_temperatures.clone()
+                    - self.envelope_mass_temperatures.clone())
             + phi_m_env;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
         // Internal mass: receives heat from envelope mass and direct gains
-        let q_int_net = self.h_tr_me.clone() * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
+        let q_int_net = self.h_tr_me.clone()
+            * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
         // Update single mass temperature for backward compatibility (average of two masses)
-        let total_cap = self.envelope_thermal_capacitance.clone() + self.internal_thermal_capacitance.clone();
-        self.mass_temperatures = (self.envelope_mass_temperatures.clone() * self.envelope_thermal_capacitance.clone()
-            + self.internal_mass_temperatures.clone() * self.internal_thermal_capacitance.clone()) / total_cap;
+        let total_cap =
+            self.envelope_thermal_capacitance.clone() + self.internal_thermal_capacitance.clone();
+        self.mass_temperatures = (self.envelope_mass_temperatures.clone()
+            * self.envelope_thermal_capacitance.clone()
+            + self.internal_mass_temperatures.clone() * self.internal_thermal_capacitance.clone())
+            / total_cap;
 
         self.temperatures = t_i_act;
 

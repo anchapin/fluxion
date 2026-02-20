@@ -7,8 +7,8 @@
 //!
 //! The 6R2C model better captures thermal lag in high-mass buildings.
 
-use fluxion::sim::engine::{ThermalModel, ThermalModelType};
 use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::{ThermalModel, ThermalModelType};
 
 #[test]
 fn test_thermal_model_type_default() {
@@ -66,10 +66,7 @@ fn test_6r2c_model_cloning() {
         cloned.internal_thermal_capacitance.as_ref()[0],
         model.internal_thermal_capacitance.as_ref()[0]
     );
-    assert_eq!(
-        cloned.h_tr_me.as_ref()[0],
-        model.h_tr_me.as_ref()[0]
-    );
+    assert_eq!(cloned.h_tr_me.as_ref()[0], model.h_tr_me.as_ref()[0]);
 }
 
 #[test]
@@ -90,7 +87,11 @@ fn test_6r2c_model_single_timestep() {
     let new_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
     // Temperatures should have changed from initial state
-    assert!(new_temp != initial_temp || new_env_mass != initial_env_mass || new_int_mass != initial_int_mass);
+    assert!(
+        new_temp != initial_temp
+            || new_env_mass != initial_env_mass
+            || new_int_mass != initial_int_mass
+    );
 
     // Mass temperatures should be updated
     assert!(new_env_mass >= -50.0 && new_env_mass <= 100.0); // Reasonable range
@@ -148,7 +149,11 @@ fn test_6r2c_model_thermal_lag() {
     let mut temps_6r2c = Vec::new();
 
     for t in 0..steps {
-        let outdoor = if t < steps / 2 { initial_outdoor } else { final_outdoor };
+        let outdoor = if t < steps / 2 {
+            initial_outdoor
+        } else {
+            final_outdoor
+        };
 
         model_5r1c.step_physics(t, outdoor);
         model_6r2c.step_physics(t, outdoor);
