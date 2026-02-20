@@ -8,6 +8,7 @@ pub mod lighting;
 pub mod occupancy;
 pub mod schedule;
 pub mod shading;
+pub mod sky_radiation;
 pub mod solar;
 pub mod thermal_model;
 pub mod ventilation;

@@ -279,6 +279,11 @@ impl EpwWeatherSource {
         // Parse wind speed (field 21 in 0-indexed array)
         let wind_speed = parse_field(fields[21], "wind speed")?;
 
+        // Parse horizontal infrared radiation (field 15 in 0-indexed array)
+        // This is the "Horizontal Infrared Radiation Intensity from Sky" in W/m²
+        // Used for calculating sky temperature for longwave radiation exchange
+        let horizontal_infrared = parse_optional_field(fields[15], 0.0);
+
         Ok(HourlyWeatherData {
             dry_bulb_temp,
             dni,
@@ -286,6 +291,7 @@ impl EpwWeatherSource {
             ghi,
             wind_speed,
             humidity,
+            horizontal_infrared,
             hour_of_year,
         })
     }

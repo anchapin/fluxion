@@ -24,7 +24,7 @@ use std::fmt;
 ///
 /// Contains all meteorological parameters required for ASHRAE 140 standard
 /// building energy calculations, including temperature, solar radiation,
-/// wind speed, and humidity.
+/// wind speed, humidity, and longwave radiation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HourlyWeatherData {
     /// Dry bulb temperature (°C)
@@ -61,6 +61,16 @@ pub struct HourlyWeatherData {
     /// Ratio of the partial pressure of water vapor to the equilibrium vapor
     /// pressure of water at a given temperature, expressed as a percentage.
     pub humidity: f64,
+
+    /// Horizontal Infrared Radiation Intensity (W/m²)
+    ///
+    /// Total longwave (thermal) radiation coming from the sky hemisphere,
+    /// measured on a horizontal surface. This is used to calculate sky temperature
+    /// for longwave radiation exchange calculations.
+    ///
+    /// In EPW files, this is field 16 (0-indexed: field 15).
+    /// Typical values range from 200-500 W/m² depending on cloud cover and humidity.
+    pub horizontal_infrared: f64,
 
     /// Hour of year (0-8759)
     ///
@@ -113,8 +123,119 @@ impl HourlyWeatherData {
             ghi,
             wind_speed,
             humidity,
+            horizontal_infrared: 0.0, // Default, can be set via with_infrared()
             hour_of_year,
         }
+    }
+
+    /// Creates a new [`HourlyWeatherData`] instance with all fields including infrared.
+    ///
+    /// # Arguments
+    ///
+    /// * `dry_bulb_temp` - Dry bulb temperature in °C
+    /// * `dni` - Direct Normal Irradiance in W/m²
+    /// * `dhi` - Diffuse Horizontal Irradiance in W/m²
+    /// * `ghi` - Global Horizontal Irradiance in W/m²
+    /// * `wind_speed` - Wind speed in m/s
+    /// * `humidity` - Relative humidity in percentage (0-100)
+    /// * `horizontal_infrared` - Horizontal Infrared Radiation Intensity in W/m²
+    /// * `hour_of_year` - Hour of year (0-8759)
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_infrared(
+        dry_bulb_temp: f64,
+        dni: f64,
+        dhi: f64,
+        ghi: f64,
+        wind_speed: f64,
+        humidity: f64,
+        horizontal_infrared: f64,
+        hour_of_year: usize,
+    ) -> Self {
+        HourlyWeatherData {
+            dry_bulb_temp,
+            dni,
+            dhi,
+            ghi,
+            wind_speed,
+            humidity,
+            horizontal_infrared,
+            hour_of_year,
+        }
+    }
+
+    /// Calculates the effective sky temperature (°C) from horizontal infrared radiation.
+    ///
+    /// The sky temperature represents the equivalent black-body temperature of the sky
+    /// that would produce the measured horizontal infrared radiation. This is essential
+    /// for calculating longwave radiation exchange between building surfaces and the sky.
+    ///
+    /// # Formula
+    ///
+    /// The sky temperature is calculated using the Stefan-Boltzmann law:
+    ///
+    /// ```text
+    /// T_sky = (IR_horizontal / σ)^(1/4) - 273.15
+    /// ```
+    ///
+    /// Where:
+    /// - `IR_horizontal` is the horizontal infrared radiation intensity (W/m²)
+    /// - `σ` is the Stefan-Boltzmann constant (5.67×10⁻⁸ W/m²·K⁴)
+    ///
+    /// # Returns
+    ///
+    /// Sky temperature in °C. Returns a default value of -20°C if infrared data is missing.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use fluxion::weather::HourlyWeatherData;
+    ///
+    /// let weather = HourlyWeatherData::with_infrared(
+    ///     20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 350.0, 100
+    /// );
+    ///
+    /// let t_sky = weather.sky_temperature();
+    /// // Typical sky temperatures range from -40°C (clear sky) to +10°C (cloudy)
+    /// assert!(t_sky > -50.0 && t_sky < 20.0);
+    /// ```
+    pub fn sky_temperature(&self) -> f64 {
+        const STEFAN_BOLTZMANN: f64 = 5.67e-8; // W/(m²·K⁴)
+
+        if self.horizontal_infrared <= 0.0 {
+            // Default sky temperature for clear sky conditions
+            // This is a reasonable approximation when IR data is not available
+            return self.dry_bulb_temp - 15.0;
+        }
+
+        // Calculate sky temperature from measured infrared radiation
+        // T_sky = (IR / σ)^(1/4) - 273.15
+        let t_sky_kelvin = (self.horizontal_infrared / STEFAN_BOLTZMANN).powf(0.25);
+        t_sky_kelvin - 273.15
+    }
+
+    /// Calculates the sky emissivity from horizontal infrared radiation.
+    ///
+    /// Sky emissivity (ε_sky) relates the actual sky radiation to black-body radiation
+    /// at ambient temperature. This is useful for detailed radiation models.
+    ///
+    /// # Formula
+    ///
+    /// ```text
+    /// ε_sky = IR_horizontal / (σ × T_ambient⁴)
+    /// ```
+    ///
+    /// # Returns
+    ///
+    /// Sky emissivity (dimensionless, typically 0.6-0.9). Returns 0.8 as default.
+    pub fn sky_emissivity(&self) -> f64 {
+        const STEFAN_BOLTZMANN: f64 = 5.67e-8; // W/(m²·K⁴)
+
+        if self.horizontal_infrared <= 0.0 {
+            return 0.8; // Default emissivity
+        }
+
+        let t_ambient_kelvin = self.dry_bulb_temp + 273.15;
+        self.horizontal_infrared / (STEFAN_BOLTZMANN * t_ambient_kelvin.powi(4))
     }
 
     /// Returns the hour of day (0-23) for this weather data.
@@ -500,15 +621,13 @@ mod tests {
         }
 
         let source = ErrorSource;
-        let mut count = 0;
 
-        for result in source.iter_hours().take(15) {
+        for (count, result) in source.iter_hours().take(15).enumerate() {
             if count <= 10 {
                 assert!(result.is_ok());
             } else {
                 assert!(result.is_err());
             }
-            count += 1;
         }
     }
 }

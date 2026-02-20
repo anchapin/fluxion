@@ -173,6 +173,44 @@ impl DenverTmyWeather {
 
         let humidity = (seasonal_humidity + daily_humidity).clamp(10.0, 95.0);
 
+        // === HORIZONTAL INFRARED RADIATION ===
+        // Longwave radiation from the sky hemisphere
+        // Calculated using sky emissivity and ambient temperature
+        // σ * ε_sky * T_ambient^4 where σ = 5.67e-8 W/(m²·K⁴)
+        //
+        // Sky emissivity depends on cloud cover and humidity:
+        // - Clear sky: ε ≈ 0.6-0.7 (lower IR)
+        // - Cloudy sky: ε ≈ 0.85-0.95 (higher IR)
+        //
+        // Denver's semi-arid climate means generally lower emissivity (clearer skies)
+        // but we also model some cloud cover variation
+        const STEFAN_BOLTZMANN: f64 = 5.67e-8; // W/(m²·K⁴)
+
+        // Sky emissivity: varies with cloud cover (modeled as function of DHI/DNI ratio)
+        // Clear sky: ε ≈ 0.68, Overcast: ε ≈ 0.90
+        let clearness = if dni > 100.0 {
+            (dhi / dni).min(1.0) // Higher ratio = more diffuse = more clouds
+        } else {
+            0.5 // Night/low sun: assume partial cloud
+        };
+
+        // Emissivity increases with cloud cover
+        let sky_emissivity = 0.68 + 0.22 * clearness;
+
+        // At night, use a default emissivity based on humidity
+        let effective_emissivity = if dni < 1.0 {
+            // Nighttime: emissivity correlates with humidity
+            0.70 + 0.002 * humidity
+        } else {
+            sky_emissivity
+        };
+
+        // Calculate horizontal infrared radiation
+        // IR = ε_sky * σ * T_ambient^4
+        let t_ambient_kelvin = dry_bulb_temp + 273.15;
+        let horizontal_infrared =
+            effective_emissivity * STEFAN_BOLTZMANN * t_ambient_kelvin.powi(4);
+
         HourlyWeatherData {
             dry_bulb_temp,
             dni,
@@ -180,6 +218,7 @@ impl DenverTmyWeather {
             ghi,
             wind_speed,
             humidity,
+            horizontal_infrared,
             hour_of_year: hour,
         }
     }
