@@ -212,13 +212,13 @@ pub enum ThermalModelType {
     /// 5R1C model: Single thermal mass node (ISO 13790 standard)
     /// - 5 Resistances: h_tr_w, h_ve, h_tr_em, h_tr_ms, h_tr_is
     /// - 1 Capacitance: Cm (combined thermal mass)
-    /// Good for low-mass buildings and general use
+    /// - Good for low-mass buildings and general use
     #[default]
     FiveROneC,
     /// 6R2C model: Two thermal mass nodes for improved accuracy
     /// - 6 Resistances: h_tr_w, h_ve, h_tr_em, h_tr_ms, h_tr_is, h_tr_me
     /// - 2 Capacitances: Cm_envelope, Cm_internal
-    /// Better for high-mass buildings (900 series) where thermal lag is critical
+    /// - Better for high-mass buildings (900 series) where thermal lag is critical
     SixRTwoC,
 }
 
