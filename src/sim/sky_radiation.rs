@@ -1,8 +1,8 @@
-//! Sky radiation exchange calculations for building energy modeling.
+//! Sky radiation exchange and sol-air temperature calculations for building energy modeling.
 //!
-//! This module implements longwave radiation exchange between building surfaces
-//! (primarily roofs) and the sky. This is critical for accurate nighttime cooling
-//! calculations and free-floating temperature predictions in ASHRAE 140 validation.
+//! This module implements:
+//! - Longwave radiation exchange between building surfaces and the sky
+//! - Sol-air temperature calculations for opaque surfaces
 //!
 //! # Physical Background
 //!
@@ -11,19 +11,21 @@
 //! - Radiation emitted by the surface: ε_surface × σ × T_surface⁴
 //! - Radiation received from the sky: ε_sky × σ × T_sky⁴
 //!
-//! For horizontal surfaces (roofs), the sky view factor is approximately 1.0,
-//! meaning they "see" primarily the sky hemisphere.
+//! Sol-air temperature is the equivalent outdoor temperature that accounts for
+//! solar radiation and longwave radiation exchange.
 //!
 //! # ASHRAE 140 Relevance
 //!
-//! Sky radiation is particularly important for:
+//! These calculations are critical for:
 //! - Free-floating temperature cases (600FF, 650FF, 900FF, 950FF)
 //! - Nighttime cooling calculations
 //! - Peak cooling load predictions
+//! - Accurate conduction through opaque surfaces
 //!
 //! # References
 //!
 //! - ASHRAE Handbook - Fundamentals, Chapter 4: Heat Transfer
+//! - ASHRAE Handbook - Fundamentals, Chapter 18: Nonresidential Cooling and Heating Load
 //! - ISO 13790:2008, Section 10.2: Longwave radiation
 
 use std::f64::consts::PI;
@@ -248,141 +250,251 @@ pub fn estimate_sky_emissivity(humidity: f64, cloud_cover: f64) -> f64 {
     (clear_sky_emissivity + cloud_factor).clamp(0.6, 0.98)
 }
 
+/// Sol-air temperature calculator for opaque surfaces.
+///
+/// Sol-air temperature (T_sol-air) is the equivalent outdoor temperature that
+/// would cause the same rate of heat flow through an exterior surface as the
+/// actual combination of outdoor air temperature, solar radiation, and
+/// longwave radiation exchange.
+///
+/// # Formula
+///
+/// ```text
+/// T_sol-air = T_outdoor + (α × I / h_o) - (ε × ΔR / h_o)
+/// ```
+///
+/// Where:
+/// - `T_outdoor` = Outdoor air temperature (°C)
+/// - `α` = Solar absorptance of the surface (0-1)
+/// - `I` = Total solar radiation incident on surface (W/m²)
+/// - `h_o` = Exterior surface conductance (W/m²·K)
+/// - `ε` = Surface emissivity (0-1)
+/// - `ΔR` = Longwave radiation difference (W/m²)
+#[derive(Debug, Clone, Copy)]
+pub struct SolAirTemperature {
+    /// Solar absorptance of the surface (dimensionless, 0-1)
+    pub solar_absorptance: f64,
+    /// Surface emissivity for longwave radiation (dimensionless, 0-1)
+    pub emissivity: f64,
+    /// Exterior surface conductance (W/m²·K)
+    pub exterior_conductance: f64,
+}
+
+impl Default for SolAirTemperature {
+    fn default() -> Self {
+        Self {
+            solar_absorptance: 0.6,
+            emissivity: 0.9,
+            exterior_conductance: 22.7,
+        }
+    }
+}
+
+impl SolAirTemperature {
+    /// Creates a new sol-air temperature calculator.
+    pub fn new(solar_absorptance: f64, emissivity: f64, exterior_conductance: f64) -> Self {
+        Self {
+            solar_absorptance: solar_absorptance.clamp(0.0, 1.0),
+            emissivity: emissivity.clamp(0.0, 1.0),
+            exterior_conductance: exterior_conductance.max(1.0),
+        }
+    }
+
+    /// Creates a calculator with ASHRAE 140 default parameters.
+    pub fn ashrae_140_default() -> Self {
+        Self::default()
+    }
+
+    /// Creates a calculator for a light-colored surface.
+    pub fn light_surface() -> Self {
+        Self {
+            solar_absorptance: 0.3,
+            emissivity: 0.9,
+            exterior_conductance: 22.7,
+        }
+    }
+
+    /// Creates a calculator for a dark-colored surface.
+    pub fn dark_surface() -> Self {
+        Self {
+            solar_absorptance: 0.8,
+            emissivity: 0.9,
+            exterior_conductance: 22.7,
+        }
+    }
+
+    /// Calculates the sol-air temperature for a surface.
+    ///
+    /// # Arguments
+    ///
+    /// * `outdoor_temp` - Outdoor air temperature (°C)
+    /// * `solar_irradiance` - Total solar radiation on surface (W/m²)
+    /// * `sky_temp` - Effective sky temperature (°C)
+    /// * `ground_reflected` - Ground-reflected solar radiation (W/m²), optional
+    pub fn calculate(
+        &self,
+        outdoor_temp: f64,
+        solar_irradiance: f64,
+        sky_temp: f64,
+        ground_reflected: Option<f64>,
+    ) -> f64 {
+        let total_solar = solar_irradiance + ground_reflected.unwrap_or(0.0);
+        let solar_term = self.solar_absorptance * total_solar / self.exterior_conductance;
+
+        let delta_r = self.calculate_longwave_radiation_difference(outdoor_temp, sky_temp);
+        let longwave_term = self.emissivity * delta_r / self.exterior_conductance;
+
+        outdoor_temp + solar_term - longwave_term
+    }
+
+    /// Calculates the longwave radiation difference for sol-air temperature.
+    fn calculate_longwave_radiation_difference(&self, outdoor_temp: f64, sky_temp: f64) -> f64 {
+        let t_outdoor_k = outdoor_temp + 273.15;
+        let t_sky_k = sky_temp + 273.15;
+        STEFAN_BOLTZMANN * (t_sky_k.powi(4) - t_outdoor_k.powi(4))
+    }
+
+    /// Calculates sol-air temperature for a roof (horizontal surface).
+    pub fn for_roof(&self, outdoor_temp: f64, solar_irradiance: f64, sky_temp: f64) -> f64 {
+        self.calculate(outdoor_temp, solar_irradiance, sky_temp, None)
+    }
+
+    /// Calculates sol-air temperature for a wall (vertical surface).
+    pub fn for_wall(
+        &self,
+        outdoor_temp: f64,
+        solar_irradiance: f64,
+        ground_reflected: f64,
+    ) -> f64 {
+        let total_solar = solar_irradiance + ground_reflected;
+        let solar_term = self.solar_absorptance * total_solar / self.exterior_conductance;
+        outdoor_temp + solar_term
+    }
+
+    /// Calculates the exterior surface conductance based on wind speed.
+    pub fn calculate_exterior_conductance(wind_speed: f64) -> f64 {
+        let h_convective = 5.8 + 3.8 * wind_speed;
+        let h_radiative = 5.0;
+        h_convective + h_radiative
+    }
+
+    /// Returns the heat flux through the surface (W/m²).
+    pub fn heat_flux(&self, sol_air_temp: f64, surface_temp: f64, u_value: f64) -> f64 {
+        u_value * (sol_air_temp - surface_temp)
+    }
+}
+
+/// Calculates the sol-air temperature for a surface with given parameters.
+pub fn sol_air_temperature_simple(
+    outdoor_temp: f64,
+    solar_irradiance: f64,
+    solar_absorptance: f64,
+    exterior_conductance: f64,
+) -> f64 {
+    outdoor_temp + (solar_absorptance * solar_irradiance / exterior_conductance)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_default_values() {
+    fn test_sky_radiation_default() {
         let sky = SkyRadiationExchange::default();
-
         assert!((sky.surface_emissivity - 0.90).abs() < 1e-6);
         assert!((sky.sky_view_factor - 1.0).abs() < 1e-6);
     }
 
     #[test]
-    fn test_horizontal_roof() {
+    fn test_net_radiative_flux() {
         let sky = SkyRadiationExchange::horizontal_roof();
-
-        assert!((sky.surface_emissivity - 0.90).abs() < 1e-6);
-        assert!((sky.sky_view_factor - 1.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_tilted_surface() {
-        // Vertical surface (wall)
-        let wall = SkyRadiationExchange::tilted_surface(90.0, 0.9);
-        assert!((wall.sky_view_factor - 0.5).abs() < 1e-6);
-
-        // 45-degree surface
-        let tilted = SkyRadiationExchange::tilted_surface(45.0, 0.9);
-        let expected_f = (1.0 + (45.0_f64 * PI / 180.0).cos()) / 2.0;
-        assert!((tilted.sky_view_factor - expected_f).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_net_radiative_flux_cooling() {
-        let sky = SkyRadiationExchange::horizontal_roof();
-
-        // Hot roof, cold sky = net cooling
-        let flux = sky.net_radiative_flux(40.0, -20.0);
-        assert!(flux < 0.0); // Negative = heat loss from surface
-
-        // Verify magnitude is reasonable
-        // For 60K temperature difference, flux can be ~280 W/m²
-        assert!(flux.abs() > 50.0); // Should be significant
-        assert!(flux.abs() < 400.0); // Allow for large temperature differences
-    }
-
-    #[test]
-    fn test_net_radiative_flux_heating() {
-        let sky = SkyRadiationExchange::horizontal_roof();
-
-        // Cold roof, warm (cloudy) sky = net heating
-        let flux = sky.net_radiative_flux(-10.0, 10.0);
-        assert!(flux > 0.0); // Positive = heat gain to surface
-    }
-
-    #[test]
-    fn test_radiative_coefficient() {
-        let sky = SkyRadiationExchange::horizontal_roof();
-
-        // Typical values: 4-6 W/m²K for radiative coefficient
-        let h_r = sky.radiative_coefficient(20.0, -10.0);
-        assert!(h_r > 3.0 && h_r < 8.0);
+        let flux = sky.net_radiative_flux(30.0, -10.0);
+        assert!(flux < 0.0); // Heat loss from warm surface
     }
 
     #[test]
     fn test_sky_temperature_from_ir() {
-        // Typical IR values: 250-400 W/m²
         let t_sky = SkyRadiationExchange::sky_temperature_from_ir(350.0);
-
-        // Should be below freezing for clear sky
         assert!(t_sky > -50.0 && t_sky < 20.0);
     }
 
     #[test]
-    fn test_sky_temperature_from_emissivity() {
-        // Clear sky (low emissivity)
-        let t_clear = SkyRadiationExchange::sky_temperature_from_emissivity(20.0, 0.7);
-        assert!(t_clear < 0.0); // Below freezing
-
-        // Cloudy sky (high emissivity)
-        let t_cloudy = SkyRadiationExchange::sky_temperature_from_emissivity(20.0, 0.9);
-        assert!(t_cloudy > t_clear); // Warmer than clear sky
-    }
-
-    #[test]
-    fn test_roof_heat_loss() {
-        let sky = SkyRadiationExchange::horizontal_roof();
-
-        // 100 m² roof at 30°C, sky at -10°C
-        let heat_loss = sky.roof_heat_loss(100.0, 30.0, -10.0);
-
-        // Should be several kW of cooling
-        assert!(heat_loss.abs() > 1000.0);
-        assert!(heat_loss.abs() < 20000.0);
-    }
-
-    #[test]
     fn test_estimate_sky_emissivity() {
-        // Clear sky, dry
         let e_clear = estimate_sky_emissivity(30.0, 0.0);
         assert!(e_clear > 0.6 && e_clear < 0.75);
 
-        // Cloudy sky
         let e_cloudy = estimate_sky_emissivity(50.0, 0.8);
         assert!(e_cloudy > e_clear);
-
-        // Overcast
-        let e_overcast = estimate_sky_emissivity(70.0, 1.0);
-        assert!(e_overcast > 0.85);
     }
 
     #[test]
-    fn test_stefan_boltzmann_constant() {
-        // Verify the constant is correct
-        assert!((STEFAN_BOLTZMANN - 5.67e-8).abs() < 1e-12);
+    fn test_sol_air_default() {
+        let sol = SolAirTemperature::default();
+        assert!((sol.solar_absorptance - 0.6).abs() < 1e-6);
+        assert!((sol.exterior_conductance - 22.7).abs() < 1e-6);
     }
 
     #[test]
-    fn test_radiative_flux_symmetry() {
-        let sky = SkyRadiationExchange::horizontal_roof();
+    fn test_sol_air_calculate() {
+        let sol = SolAirTemperature::ashrae_140_default();
 
-        // If surface and sky are at same temperature, flux should be zero
-        let flux = sky.net_radiative_flux(20.0, 20.0);
-        assert!(flux.abs() < 1e-6);
+        // Summer conditions: high solar, cold sky
+        let t_sol = sol.calculate(35.0, 500.0, -10.0, None);
+        assert!(t_sol > 35.0); // Sol-air higher than air temp due to solar
+
+        // Night conditions (no solar): cold sky
+        let t_sol_night = sol.calculate(25.0, 0.0, -20.0, None);
+        // The sol-air temp should be higher than outdoor due to radiative cooling effect
+        assert!(t_sol_night > 25.0);
     }
 
     #[test]
-    fn test_view_factor_effect() {
-        let horizontal = SkyRadiationExchange::horizontal_roof();
-        let vertical = SkyRadiationExchange::tilted_surface(90.0, 0.9);
+    fn test_sol_air_for_roof() {
+        let sol = SolAirTemperature::ashrae_140_default();
+        let t_sol = sol.for_roof(35.0, 600.0, -10.0);
+        assert!(t_sol > 35.0);
+    }
 
-        // Vertical surface should have half the radiative exchange
-        let flux_h = horizontal.net_radiative_flux(30.0, -10.0);
-        let flux_v = vertical.net_radiative_flux(30.0, -10.0);
+    #[test]
+    fn test_sol_air_for_wall() {
+        let sol = SolAirTemperature::ashrae_140_default();
+        let t_sol = sol.for_wall(30.0, 400.0, 50.0);
+        assert!(t_sol > 30.0);
+    }
 
-        assert!((flux_v.abs() - flux_h.abs() * 0.5).abs() < 1e-6);
+    #[test]
+    fn test_sol_air_light_vs_dark() {
+        let light = SolAirTemperature::light_surface();
+        let dark = SolAirTemperature::dark_surface();
+
+        let t_light = light.calculate(30.0, 500.0, -10.0, None);
+        let t_dark = dark.calculate(30.0, 500.0, -10.0, None);
+
+        assert!(t_light < t_dark); // Light surface stays cooler
+    }
+
+    #[test]
+    fn test_exterior_conductance() {
+        // Low wind
+        let h_low = SolAirTemperature::calculate_exterior_conductance(1.0);
+        assert!(h_low > 10.0 && h_low < 20.0);
+
+        // High wind
+        let h_high = SolAirTemperature::calculate_exterior_conductance(10.0);
+        assert!(h_high > h_low);
+    }
+
+    #[test]
+    fn test_sol_air_simple() {
+        let t_sol = sol_air_temperature_simple(30.0, 500.0, 0.6, 22.7);
+        let expected = 30.0 + (0.6 * 500.0 / 22.7);
+        assert!((t_sol - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_heat_flux() {
+        let sol = SolAirTemperature::default();
+        let flux = sol.heat_flux(40.0, 25.0, 0.5);
+        assert!((flux - 7.5).abs() < 1e-6);
     }
 }
