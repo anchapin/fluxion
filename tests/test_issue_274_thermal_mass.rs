@@ -2,8 +2,7 @@
 //!
 //! Issue #274: Investigation of thermal mass modeling differences
 
-use fluxion::sim::construction::Assemblies;
-use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder};
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[test]
 fn test_thermal_capacitance_low_vs_high_mass() {
@@ -92,8 +91,8 @@ fn test_thermal_capacitance_low_vs_high_mass() {
 
 #[test]
 fn test_solar_distribution_effect_on_thermal_mass() {
-    let spec_600 = ASHRAE140Case::Case600.spec();
-    let spec_900 = ASHRAE140Case::Case900.spec();
+    let _spec_600 = ASHRAE140Case::Case600.spec();
+    let _spec_900 = ASHRAE140Case::Case900.spec();
 
     // Both cases should have the same solar distribution setting
     // This is currently hardcoded to 0.1 in the model initialization
