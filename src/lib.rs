@@ -331,6 +331,9 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     Ok(())
 }
 
+// Re-export ASHRAE 140 validation models
+pub use validation::ashrae_140::{Case600Model, SimulationResult};
+
 // Tests for core physics engine (no Python bindings required)
 #[cfg(test)]
 mod tests {
@@ -550,6 +553,3 @@ mod tests {
         }
     }
 }
-
-// Re-export ASHRAE 140 validation models
-pub use validation::ashrae_140::{Case600Model, SimulationResult};

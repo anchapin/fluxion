@@ -647,6 +647,7 @@ mod tests {
 
         /// Test low mass roof U-value matches ASHRAE 140 spec (0.318 W/m²K)
         #[test]
+        #[allow(clippy::approx_constant)] // 0.318 is ASHRAE 140 spec, not 1/π
         fn test_low_mass_roof_u_value_ashrae_140() {
             let roof = Assemblies::low_mass_roof();
             let u_value = roof.u_value(None);
@@ -728,6 +729,7 @@ mod tests {
 
         /// Test high mass roof U-value matches ASHRAE 140 spec (0.318 W/m²K)
         #[test]
+        #[allow(clippy::approx_constant)] // 0.318 is ASHRAE 140 spec, not 1/π
         fn test_high_mass_roof_u_value_ashrae_140() {
             let roof = Assemblies::high_mass_roof();
             let u_value = roof.u_value(None);

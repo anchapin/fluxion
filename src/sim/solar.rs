@@ -440,7 +440,7 @@ mod tests {
 
             for &angle in &angles {
                 let _incidence_cos = (90.0_f64 - angle).to_radians().cos();
-                let sun_pos = SolarPosition {
+                let _sun_pos = SolarPosition {
                     altitude_deg: 45.0,
                     azimuth_deg: 180.0,
                     zenith_deg: 45.0,
