@@ -340,7 +340,8 @@ fn test_issue_282_single_case_validation() {
     // Verify single case validation with diagnostics
     let mut validator = ASHRAE140Validator::new();
 
-    let (report, collector) = validator.validate_single_case_with_diagnostics(ASHRAE140Case::Case600);
+    let (report, collector) =
+        validator.validate_single_case_with_diagnostics(ASHRAE140Case::Case600);
 
     // Verify we got validation results
     assert!(!report.results.is_empty());

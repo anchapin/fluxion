@@ -101,7 +101,10 @@ fn main() -> anyhow::Result<()> {
     }
 
     collector.finalize_case(5.0, 3.0);
-    println!("   - Collected {} hourly records", collector.hourly_data.len());
+    println!(
+        "   - Collected {} hourly records",
+        collector.hourly_data.len()
+    );
     println!("   - Generated energy breakdown and peak timing");
     println!();
 

@@ -119,7 +119,7 @@ fn test_peak_timing() {
     assert!(formatted.contains("Case 600"));
     assert!(formatted.contains("5.50")); // Peak heating
     assert!(formatted.contains("3.20")); // Peak cooling
-    // The formatted output uses table format with | separators
+                                         // The formatted output uses table format with | separators
     assert!(formatted.contains("| Heating |") || formatted.contains("|Heating|"));
     assert!(formatted.contains("| Cooling |") || formatted.contains("|Cooling|"));
 }
@@ -293,7 +293,8 @@ fn test_validator_single_case_with_diagnostics() {
     let mut validator = ASHRAE140Validator::new();
 
     // Test single case validation with diagnostics
-    let (report, collector) = validator.validate_single_case_with_diagnostics(ASHRAE140Case::Case600);
+    let (report, collector) =
+        validator.validate_single_case_with_diagnostics(ASHRAE140Case::Case600);
 
     // Check that we got results
     assert!(!report.results.is_empty());
