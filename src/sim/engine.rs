@@ -1423,8 +1423,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Return net HVAC energy (subtract mass energy change)
         // This fixes Issue #272, #274, #275: HVAC was counting mass charging as consumption
-        let net_hvac_energy_for_step =
-            hvac_energy_for_step - mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
+
+        // DEBUG: Print thermal mass energy accounting details for issue #317 investigation
+        let mass_energy_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
+        let hvac_net = hvac_energy_for_step - mass_energy_total;
+
+        // DEBUG: Print first timestep details
+        #[cfg(debug_assertions)]
+        if timestep == 0 {
+            println!("DEBUG: Timestep 0 - HVAC: {:.2} kWh, Mass Energy Change: {:.6} kJ, Net: {:.2} kWh",
+                hvac_energy_for_step, mass_energy_total, hvac_net);
+        }
+
+        let net_hvac_energy_for_step = hvac_net;
 
         net_hvac_energy_for_step / 3.6e6 // Return kWh (net energy)
     }
@@ -1551,6 +1562,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
             + phi_m_env;
+        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
+        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
@@ -1559,6 +1572,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_int_net = self.h_tr_me.clone()
             * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
+        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
+        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
