@@ -844,6 +844,9 @@ impl ASHRAE140Validator {
 
     fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
 
         // Note: The model.weather field will be updated each timestep in the simulation loop (Issue #278)
 
