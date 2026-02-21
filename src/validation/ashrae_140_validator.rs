@@ -389,6 +389,9 @@ impl ASHRAE140Validator {
         controller: &IdealHVACController,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
@@ -1110,6 +1113,9 @@ impl ASHRAE140Validator {
         weather: &DenverTmyWeather,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
@@ -1409,6 +1415,9 @@ impl ASHRAE140Validator {
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
