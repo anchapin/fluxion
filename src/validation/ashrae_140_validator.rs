@@ -429,6 +429,9 @@ impl ASHRAE140Validator {
 
             let weather_data = weather.get_hourly_data(step).unwrap();
 
+            // Update weather data on model for solar gain calculation (Issue #278)
+            model.weather = Some(weather_data.clone());
+
             // Apply dynamic setpoints from schedule
             if let Some(hvac_schedule) = spec.hvac.first() {
                 // Get setpoint values from schedule (constant schedules only have single value)
@@ -838,6 +841,9 @@ impl ASHRAE140Validator {
 
     fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+
+        // Note: The model.weather field will be updated each timestep in the simulation loop (Issue #278)
+
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
@@ -876,6 +882,9 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+
+            // Update weather data on model for solar gain calculation (Issue #278)
+            model.weather = Some(weather_data.clone());
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -1139,6 +1148,9 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
+
+            // Update weather data on model for solar gain calculation (Issue #278)
+            model.weather = Some(weather_data.clone());
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {

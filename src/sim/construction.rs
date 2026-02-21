@@ -684,7 +684,7 @@ impl Assemblies {
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
             Materials::concrete_slab(0.080),
-            Materials::insulation_high_mass(0.197), // Adjusted for U=0.190
+            Materials::insulation_high_mass(0.201), // Adjusted for U=0.190
         ])
     }
 }

@@ -11,6 +11,9 @@ pub use sim::thermal_model::{
     ThermalModelTrait, UnifiedThermalModel,
 };
 
+// Re-export ISO 13790 Annex C construction types
+pub use sim::construction::{Construction, ConstructionLayer, MassClass};
+
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::{ContinuousTensor, VectorField};
 #[cfg(feature = "python-bindings")]
