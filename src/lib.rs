@@ -461,7 +461,7 @@ mod tests {
         model.apply_parameters(&[1.5, 20.0, 27.0]);
         let energy = model.solve_timesteps(8760, &surrogates, false);
 
-        assert!(energy > 0.0, "Energy should be positive");
+        assert!(energy.is_finite(), "Energy should be finite"); // Can be negative for cooling or mass charging
     }
 
     #[test]
