@@ -1608,8 +1608,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             hvac_energy_for_step - mass_energy_total
         } else {
             // Return gross HVAC energy (no subtraction) for validation scenarios
-            // Return 0.0 since no thermal mass energy subtraction
-            0.0
+            hvac_energy_for_step
         };
 
         // Update single mass temperature for backward compatibility (average of two masses)
