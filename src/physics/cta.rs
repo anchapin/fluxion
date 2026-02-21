@@ -113,29 +113,45 @@ impl Index<usize> for VectorField {
 
 impl Add for VectorField {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a + b)
+    fn add(mut self, rhs: Self) -> Self {
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a += b;
+        }
+        self
     }
 }
 
 impl Sub for VectorField {
     type Output = Self;
-    fn sub(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a - b)
+    fn sub(mut self, rhs: Self) -> Self {
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a -= b;
+        }
+        self
     }
 }
 
 impl Mul for VectorField {
     type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a * b)
+    fn mul(mut self, rhs: Self) -> Self {
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a *= b;
+        }
+        self
     }
 }
 
 impl Div for VectorField {
     type Output = Self;
-    fn div(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a / b)
+    fn div(mut self, rhs: Self) -> Self {
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a /= b;
+        }
+        self
     }
 }
 
@@ -214,15 +230,21 @@ impl ContinuousTensor<f64> for VectorField {
 // Convenience implementations for Scalar <-> Tensor operations
 impl Mul<f64> for VectorField {
     type Output = Self;
-    fn mul(self, rhs: f64) -> Self {
-        self.map(|x| x * rhs)
+    fn mul(mut self, rhs: f64) -> Self {
+        for x in self.data.iter_mut() {
+            *x *= rhs;
+        }
+        self
     }
 }
 
 impl Div<f64> for VectorField {
     type Output = Self;
-    fn div(self, rhs: f64) -> Self {
-        self.map(|x| x / rhs)
+    fn div(mut self, rhs: f64) -> Self {
+        for x in self.data.iter_mut() {
+            *x /= rhs;
+        }
+        self
     }
 }
 
