@@ -65,8 +65,8 @@
 //! 3. Verify conductance and capacitance calculations
 //! 4. Check if peak occurs at expected hours (coldest/hottest)
 
-use fluxion::sim::engine::ThermalModel;
 use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
@@ -103,19 +103,40 @@ fn test_issue_272_case_600_peak_load_calculation() {
 
     // Log thermal network parameters
     println!("Thermal Network Parameters:");
-    println!("  h_tr_em (Ext->Mass): {:.2} W/K", model.h_tr_em.as_slice()[0]);
-    println!("  h_tr_ms (Mass->Surf): {:.2} W/K", model.h_tr_ms.as_slice()[0]);
-    println!("  h_tr_is (Surf->Int): {:.2} W/K", model.h_tr_is.as_slice()[0]);
-    println!("  h_tr_w (Ext->Int via win): {:.2} W/K", model.h_tr_w.as_slice()[0]);
+    println!(
+        "  h_tr_em (Ext->Mass): {:.2} W/K",
+        model.h_tr_em.as_slice()[0]
+    );
+    println!(
+        "  h_tr_ms (Mass->Surf): {:.2} W/K",
+        model.h_tr_ms.as_slice()[0]
+    );
+    println!(
+        "  h_tr_is (Surf->Int): {:.2} W/K",
+        model.h_tr_is.as_slice()[0]
+    );
+    println!(
+        "  h_tr_w (Ext->Int via win): {:.2} W/K",
+        model.h_tr_w.as_slice()[0]
+    );
     println!("  h_ve (Ventilation): {:.2} W/K", model.h_ve.as_slice()[0]);
-    println!("  h_tr_floor (Ground): {:.2} W/K", model.h_tr_floor.as_slice()[0]);
-    println!("  Thermal Capacitance: {:.2} J/K", model.thermal_capacitance.as_slice()[0]);
+    println!(
+        "  h_tr_floor (Ground): {:.2} W/K",
+        model.h_tr_floor.as_slice()[0]
+    );
+    println!(
+        "  Thermal Capacitance: {:.2} J/K",
+        model.thermal_capacitance.as_slice()[0]
+    );
     println!();
 
     // Log derived parameters
     println!("Derived Parameters:");
     println!("  derived_den: {:.6}", model.derived_den.as_slice()[0]);
-    println!("  derived_sensitivity: {:.6}", model.derived_sensitivity.as_slice()[0]);
+    println!(
+        "  derived_sensitivity: {:.6}",
+        model.derived_sensitivity.as_slice()[0]
+    );
     println!();
 
     // Run simulation for one timestep
@@ -124,8 +145,14 @@ fn test_issue_272_case_600_peak_load_calculation() {
     println!("Simulation Results:");
     println!("  HVAC Energy: {:.6} kWh", hvac_kwh);
     println!("  HVAC Power (instant): {:.2} W", hvac_kwh * 1000.0);
-    println!("  Zone Temperature: {:.2}°C", model.temperatures.as_slice()[0]);
-    println!("  Mass Temperature: {:.2}°C", model.mass_temperatures.as_slice()[0]);
+    println!(
+        "  Zone Temperature: {:.2}°C",
+        model.temperatures.as_slice()[0]
+    );
+    println!(
+        "  Mass Temperature: {:.2}°C",
+        model.mass_temperatures.as_slice()[0]
+    );
     println!();
 
     // Calculate expected power demand manually
@@ -188,7 +215,10 @@ fn test_issue_272_case_600_peak_cooling_calculation() {
     println!("Simulation Results:");
     println!("  HVAC Energy: {:.6} kWh", hvac_kwh);
     println!("  HVAC Power (instant): {:.2} W", (-hvac_kwh) * 1000.0);
-    println!("  Zone Temperature: {:.2}°C", model.temperatures.as_slice()[0]);
+    println!(
+        "  Zone Temperature: {:.2}°C",
+        model.temperatures.as_slice()[0]
+    );
     println!();
 
     // Sanity check

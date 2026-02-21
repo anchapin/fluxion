@@ -58,8 +58,14 @@ fn test_case_960_hvac_enabled_flags() {
     );
 
     println!("\n=== Case 960 HVAC Enable Flags ===");
-    println!("Zone 0 (Back-zone): HVAC enabled = {}", hvac_enabled[0] > 0.5);
-    println!("Zone 1 (Sunspace): HVAC enabled = {}", hvac_enabled[1] > 0.5);
+    println!(
+        "Zone 0 (Back-zone): HVAC enabled = {}",
+        hvac_enabled[0] > 0.5
+    );
+    println!(
+        "Zone 1 (Sunspace): HVAC enabled = {}",
+        hvac_enabled[1] > 0.5
+    );
     println!("=== End ===\n");
 }
 

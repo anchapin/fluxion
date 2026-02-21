@@ -18,6 +18,7 @@
 pub mod denver;
 pub mod epw;
 
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
 /// Hourly weather data for building energy simulation.
@@ -25,7 +26,7 @@ use std::fmt;
 /// Contains all meteorological parameters required for ASHRAE 140 standard
 /// building energy calculations, including temperature, solar radiation,
 /// wind speed, humidity, and longwave radiation.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HourlyWeatherData {
     /// Dry bulb temperature (°C)
     ///

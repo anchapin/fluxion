@@ -32,6 +32,7 @@
 //! ```
 
 use crate::sim::construction::{Assemblies, Construction};
+use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
 
 /// Window specification with U-value, SHGC, and optical properties.
@@ -798,6 +799,10 @@ pub struct CaseSpec {
 
     /// Number of zones (1 for most cases, 2 for Case 960 sunspace)
     pub num_zones: usize,
+
+    /// Weather data for solar gain calculation (Issue #278)
+    /// Hourly weather data (temperature, DNI, DHI, GHI, wind, humidity)
+    pub weather_data: Option<HourlyWeatherData>,
 }
 
 /// Geometry specification for a building zone.
@@ -1288,11 +1293,29 @@ impl CaseBuilder {
             infiltration_ach: self.infiltration_ach,
             opaque_absorptance: self.opaque_absorptance,
             num_zones: self.num_zones,
+            weather_data: None, // Will be loaded separately for solar calculations
         };
 
         // spec.validate()?; // Skip detailed validation for now to save time
 
         Ok(spec)
+    }
+
+    /// Generate weather data for ASHRAE 140 cases using Denver TMY.
+    ///
+    /// This creates a vector of 8760 HourlyWeatherData instances representing
+    /// a full year of Denver weather with DNI, DHI, GHI, temperature, and humidity.
+    ///
+    /// Note: Weather data should be loaded dynamically from DenverTmyWeather in validation,
+    /// not pre-generated here to avoid performance issues.
+    #[allow(dead_code)]
+    pub fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {
+        use crate::weather::denver::DenverTmyWeather;
+        let weather = DenverTmyWeather::new();
+
+        (0..8760)
+            .map(|hour| weather.get_hourly_data(hour).unwrap())
+            .collect()
     }
 
     // ===== Predefined ASHRAE 140 Case Specifications =====

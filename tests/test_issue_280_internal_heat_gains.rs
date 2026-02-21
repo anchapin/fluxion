@@ -7,16 +7,15 @@
 //! - Schedule-based profiles
 //! - Convective/radiative split
 
-use fluxion::sim::occupancy::{
-    BuildingType, OccupancyProfile, DemandControlledVentilation,
-    OccupancyControls,
-};
-use fluxion::sim::lighting::{
-    LightingSchedule, LightingSystem, DaylightZone, ShadingControl, ShadingType,
-};
-use fluxion::validation::ashrae_140_cases::{InternalLoads, ASHRAE140Case};
-use fluxion::sim::engine::ThermalModel;
 use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::lighting::{
+    DaylightZone, LightingSchedule, LightingSystem, ShadingControl, ShadingType,
+};
+use fluxion::sim::occupancy::{
+    BuildingType, DemandControlledVentilation, OccupancyControls, OccupancyProfile,
+};
+use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, InternalLoads};
 
 // =============================================================================
 // Helper Macros
@@ -31,7 +30,10 @@ macro_rules! assert_approx_eq {
         assert!(
             diff < tolerance_val,
             "{}: expected {:.3}, got {:.3}, diff {:.3}",
-            $message, expected_val, actual_val, diff
+            $message,
+            expected_val,
+            actual_val,
+            diff
         );
     };
 }
@@ -48,10 +50,24 @@ fn test_internal_loads_structure() {
     let loads = InternalLoads::new(200.0, 0.6, 0.4);
 
     assert_eq!(loads.total_load, 200.0, "Total load should be 200W");
-    assert_eq!(loads.radiative_fraction, 0.6, "Radiative fraction should be 0.6");
-    assert_eq!(loads.convective_fraction, 0.4, "Convective fraction should be 0.4");
-    assert_eq!(loads.radiative_load(), 120.0, "Radiative load should be 120W");
-    assert_eq!(loads.convective_load(), 80.0, "Convective load should be 80W");
+    assert_eq!(
+        loads.radiative_fraction, 0.6,
+        "Radiative fraction should be 0.6"
+    );
+    assert_eq!(
+        loads.convective_fraction, 0.4,
+        "Convective fraction should be 0.4"
+    );
+    assert_eq!(
+        loads.radiative_load(),
+        120.0,
+        "Radiative load should be 120W"
+    );
+    assert_eq!(
+        loads.convective_load(),
+        80.0,
+        "Convective load should be 80W"
+    );
 
     println!("  ✓ Internal loads structure validated: 200W total, 120W radiative, 80W convective");
 }
@@ -65,21 +81,53 @@ fn test_occupancy_heat_gains_by_building_type() {
     println!("Test 2: Occupancy Heat Gains by Building Type");
 
     let test_cases = vec![
-        (BuildingType::Office, 75.0, 55.0, "Office: 130W/person (75 sensible + 55 latent)"),
-        (BuildingType::Retail, 120.0, 80.0, "Retail: 200W/person (120 sensible + 80 latent)"),
-        (BuildingType::School, 80.0, 60.0, "School: 140W/person (80 sensible + 60 latent)"),
-        (BuildingType::Hospital, 100.0, 100.0, "Hospital: 200W/person (100 sensible + 100 latent)"),
-        (BuildingType::Hotel, 90.0, 70.0, "Hotel: 160W/person (90 sensible + 70 latent)"),
-        (BuildingType::Restaurant, 130.0, 100.0, "Restaurant: 230W/person (130 sensible + 100 latent)"),
-        (BuildingType::Warehouse, 200.0, 50.0, "Warehouse: 250W/person (200 sensible + 50 latent)"),
+        (
+            BuildingType::Office,
+            75.0,
+            55.0,
+            "Office: 130W/person (75 sensible + 55 latent)",
+        ),
+        (
+            BuildingType::Retail,
+            120.0,
+            80.0,
+            "Retail: 200W/person (120 sensible + 80 latent)",
+        ),
+        (
+            BuildingType::School,
+            80.0,
+            60.0,
+            "School: 140W/person (80 sensible + 60 latent)",
+        ),
+        (
+            BuildingType::Hospital,
+            100.0,
+            100.0,
+            "Hospital: 200W/person (100 sensible + 100 latent)",
+        ),
+        (
+            BuildingType::Hotel,
+            90.0,
+            70.0,
+            "Hotel: 160W/person (90 sensible + 70 latent)",
+        ),
+        (
+            BuildingType::Restaurant,
+            130.0,
+            100.0,
+            "Restaurant: 230W/person (130 sensible + 100 latent)",
+        ),
+        (
+            BuildingType::Warehouse,
+            200.0,
+            50.0,
+            "Warehouse: 250W/person (200 sensible + 50 latent)",
+        ),
     ];
 
     for (building_type, expected_sensible, expected_latent, description) in test_cases {
-        let profile = OccupancyProfile::new(
-            format!("Test-{:?}", building_type),
-            building_type,
-            100.0,
-        );
+        let profile =
+            OccupancyProfile::new(format!("Test-{:?}", building_type), building_type, 100.0);
 
         assert_eq!(
             profile.sensible_heat_per_person, expected_sensible,
@@ -105,7 +153,10 @@ fn test_occupancy_schedule_variation() {
     // Test peak occupancy (Tuesday 10am = hour 10 + 24*2 = 58)
     let peak_occupancy = profile.occupancy_at_time(2, 10); // Wednesday 10am
     println!("  Peak occupancy (Wed 10am): {:.1} people", peak_occupancy);
-    assert!(peak_occupancy > 80.0, "Peak occupancy should be > 80 people");
+    assert!(
+        peak_occupancy > 80.0,
+        "Peak occupancy should be > 80 people"
+    );
 
     // Test low occupancy (Sunday 2am = hour 2 + 24*6 = 146)
     let low_occupancy = profile.occupancy_at_time(6, 2); // Sunday 2am
@@ -167,15 +218,27 @@ fn test_daylighting_dimming() {
 
     // Test with low daylight (illuminance = 200 lux)
     let power_low_daylight = system.effective_lighting_power(12, 10000.0, 0.8);
-    println!("  Lighting power with low daylight: {:.1} W", power_low_daylight);
-    assert!(power_low_daylight > 800.0, "Should be near full power with low daylight");
+    println!(
+        "  Lighting power with low daylight: {:.1} W",
+        power_low_daylight
+    );
+    assert!(
+        power_low_daylight > 800.0,
+        "Should be near full power with low daylight"
+    );
 
     // Test with high daylight (illuminance = 1000 lux - exceeds threshold)
     let power_high_daylight = system.effective_lighting_power(12, 10000.0, 1.0);
-    println!("  Lighting power with high daylight: {:.1} W", power_high_daylight);
+    println!(
+        "  Lighting power with high daylight: {:.1} W",
+        power_high_daylight
+    );
     // With 10000 lux exterior and 5% daylight factor, interior is 500 lux (at threshold)
     // So it will be at minimum dimming level (20%)
-    assert!(power_high_daylight < 400.0, "Should be dimmed with high daylight");
+    assert!(
+        power_high_daylight < 400.0,
+        "Should be dimmed with high daylight"
+    );
 
     let savings = 1.0 - (power_high_daylight / power_low_daylight);
     println!("  Daylighting energy savings: {:.1}%", savings * 100.0);
@@ -201,7 +264,10 @@ fn test_demand_controlled_ventilation() {
     // Test unoccupied (0% occupancy)
     let ach_unoccupied = dcv.ventilation_rate(0.0);
     println!("  Ventilation rate (unoccupied): {:.2} ACH", ach_unoccupied);
-    assert_eq!(ach_unoccupied, 0.5, "Should use minimum ACH when unoccupied");
+    assert_eq!(
+        ach_unoccupied, 0.5,
+        "Should use minimum ACH when unoccupied"
+    );
 
     // Test partially occupied (10% occupancy)
     let ach_partial = dcv.ventilation_rate(0.1);
@@ -210,8 +276,14 @@ fn test_demand_controlled_ventilation() {
 
     // Test fully occupied (100% occupancy)
     let ach_occupied = dcv.ventilation_rate(1.0);
-    println!("  Ventilation rate (100% occupied): {:.2} ACH", ach_occupied);
-    assert_eq!(ach_occupied, 2.0, "Should use maximum ACH when fully occupied");
+    println!(
+        "  Ventilation rate (100% occupied): {:.2} ACH",
+        ach_occupied
+    );
+    assert_eq!(
+        ach_occupied, 2.0,
+        "Should use maximum ACH when fully occupied"
+    );
 
     println!("  ✓ DCV reduces ventilation when building is unoccupied");
 }
@@ -227,18 +299,33 @@ fn test_occupancy_based_lighting_control() {
     let controls = OccupancyControls::new();
 
     // Test occupied
-    assert!(controls.should_lights_on(true, 0), "Lights should be ON when occupied");
+    assert!(
+        controls.should_lights_on(true, 0),
+        "Lights should be ON when occupied"
+    );
     println!("  ✓ Lights ON when occupied");
 
     // Test just left (within delay)
-    assert!(controls.should_lights_on(false, 5), "Lights should stay ON within delay");
+    assert!(
+        controls.should_lights_on(false, 5),
+        "Lights should stay ON within delay"
+    );
     let level_partial = controls.lighting_level(false, 5);
-    println!("  ✓ Lights at {:.0}% level 5 minutes after vacancy", level_partial * 100.0);
+    println!(
+        "  ✓ Lights at {:.0}% level 5 minutes after vacancy",
+        level_partial * 100.0
+    );
 
     // Test left for longer (beyond delay)
-    assert!(!controls.should_lights_on(false, 20), "Lights should turn OFF beyond delay");
+    assert!(
+        !controls.should_lights_on(false, 20),
+        "Lights should turn OFF beyond delay"
+    );
     let level_off = controls.lighting_level(false, 20);
-    println!("  ✓ Lights OFF ({:.0}%) 20 minutes after vacancy", level_off * 100.0);
+    println!(
+        "  ✓ Lights OFF ({:.0}%) 20 minutes after vacancy",
+        level_off * 100.0
+    );
     assert_eq!(level_off, 0.0, "Lights should be at 0% level beyond delay");
 }
 
@@ -260,9 +347,18 @@ fn test_ashrae_140_internal_loads_distribution() {
         println!("  Radiative load: {:.1} W", loads.radiative_load());
         println!("  Convective load: {:.1} W", loads.convective_load());
 
-        assert_eq!(loads.total_load, 200.0, "ASHRAE 140 specifies 200W internal load");
-        assert_eq!(loads.radiative_fraction, 0.6, "ASHRAE 140 specifies 60% radiative");
-        assert_eq!(loads.convective_fraction, 0.4, "ASHRAE 140 specifies 40% convective");
+        assert_eq!(
+            loads.total_load, 200.0,
+            "ASHRAE 140 specifies 200W internal load"
+        );
+        assert_eq!(
+            loads.radiative_fraction, 0.6,
+            "ASHRAE 140 specifies 60% radiative"
+        );
+        assert_eq!(
+            loads.convective_fraction, 0.4,
+            "ASHRAE 140 specifies 40% convective"
+        );
 
         println!("  ✓ ASHRAE 140 internal loads correctly specified");
     } else {
@@ -281,11 +377,23 @@ fn test_thermal_model_convective_fraction() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    println!("  Model convective_fraction: {:.2}", model.convective_fraction);
-    println!("  Model solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
+    println!(
+        "  Model convective_fraction: {:.2}",
+        model.convective_fraction
+    );
+    println!(
+        "  Model solar_distribution_to_air: {:.2}",
+        model.solar_distribution_to_air
+    );
 
-    assert_eq!(model.convective_fraction, 0.4, "Default convective fraction should be 0.4");
-    assert_eq!(model.solar_distribution_to_air, 0.1, "Default solar distribution to air should be 0.1");
+    assert_eq!(
+        model.convective_fraction, 0.4,
+        "Default convective fraction should be 0.4"
+    );
+    assert_eq!(
+        model.solar_distribution_to_air, 0.1,
+        "Default solar distribution to air should be 0.1"
+    );
 
     // Calculate how loads would be distributed using ASHRAE 140 internal loads
     let floor_area = spec.geometry[0].floor_area();
@@ -298,13 +406,34 @@ fn test_thermal_model_convective_fraction() {
     let phi_ia = loads_watts * model.convective_fraction;
     let phi_rad = loads_watts * (1.0 - model.convective_fraction);
 
-    println!("  For ASHRAE 140 case (200W total, {:.2} W/m²):", ashrae_load_per_m2);
+    println!(
+        "  For ASHRAE 140 case (200W total, {:.2} W/m²):",
+        ashrae_load_per_m2
+    );
     println!("    Total load: {:.2} W", loads_watts);
-    println!("    Convective to air: {:.2} W ({:.0}%)", phi_ia, phi_ia / loads_watts * 100.0);
-    println!("    Radiative to mass: {:.2} W ({:.0}%)", phi_rad, phi_rad / loads_watts * 100.0);
+    println!(
+        "    Convective to air: {:.2} W ({:.0}%)",
+        phi_ia,
+        phi_ia / loads_watts * 100.0
+    );
+    println!(
+        "    Radiative to mass: {:.2} W ({:.0}%)",
+        phi_rad,
+        phi_rad / loads_watts * 100.0
+    );
 
-    assert_approx_eq!(phi_ia, 80.0, 1.0, "Convective portion should be ~40% of 200W");
-    assert_approx_eq!(phi_rad, 120.0, 1.0, "Radiative portion should be ~60% of 200W");
+    assert_approx_eq!(
+        phi_ia,
+        80.0,
+        1.0,
+        "Convective portion should be ~40% of 200W"
+    );
+    assert_approx_eq!(
+        phi_rad,
+        120.0,
+        1.0,
+        "Radiative portion should be ~60% of 200W"
+    );
 
     println!("  ✓ Thermal model correctly distributes loads between air and mass");
 }
@@ -335,8 +464,10 @@ fn test_schedule_integration_with_thermal_model() {
 
         model.set_loads(&vec![load_per_m2]);
 
-        println!("  Hour {}: {:.1}W occupancy, {:.3}W/m² load",
-                 hour, occupancy_gains, load_per_m2);
+        println!(
+            "  Hour {}: {:.1}W occupancy, {:.3}W/m² load",
+            hour, occupancy_gains, load_per_m2
+        );
     }
 
     println!("  ✓ Schedule-based loads can be set on thermal model");
@@ -355,14 +486,26 @@ fn test_shading_control_impact() {
     // Test without shading (low irradiance)
     shading.update(100.0, 25.0);
     let shgc_reduction_no_shade = shading.shgc_reduction();
-    println!("  Without shading: SHGC reduction = {:.2}", shgc_reduction_no_shade);
-    assert_eq!(shgc_reduction_no_shade, 0.0, "Should not reduce SHGC with low irradiance");
+    println!(
+        "  Without shading: SHGC reduction = {:.2}",
+        shgc_reduction_no_shade
+    );
+    assert_eq!(
+        shgc_reduction_no_shade, 0.0,
+        "Should not reduce SHGC with low irradiance"
+    );
 
     // Test with shading (high irradiance)
     shading.update(500.0, 25.0);
     let shgc_reduction_shaded = shading.shgc_reduction();
-    println!("  With shading: SHGC reduction = {:.2}", shgc_reduction_shaded);
-    assert!(shgc_reduction_shaded > 0.0, "Should reduce SHGC with high irradiance");
+    println!(
+        "  With shading: SHGC reduction = {:.2}",
+        shgc_reduction_shaded
+    );
+    assert!(
+        shgc_reduction_shaded > 0.0,
+        "Should reduce SHGC with high irradiance"
+    );
 
     // Different shading types
     let types = vec![
@@ -377,9 +520,16 @@ fn test_shading_control_impact() {
         let mut shade = ShadingControl::new(shade_type);
         shade.update(500.0, 25.0);
         let reduction = shade.shgc_reduction();
-        println!("    {:?}: {:.2} SHGC reduction (expected {:.2})",
-                 shade_type, reduction, expected_factor);
-        assert_approx_eq!(reduction, expected_factor, 0.01, "Shading effectiveness mismatch");
+        println!(
+            "    {:?}: {:.2} SHGC reduction (expected {:.2})",
+            shade_type, reduction, expected_factor
+        );
+        assert_approx_eq!(
+            reduction,
+            expected_factor,
+            0.01,
+            "Shading effectiveness mismatch"
+        );
     }
 
     println!("  ✓ Shading control effectively reduces solar heat gain");
