@@ -336,12 +336,6 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Cumulative thermal mass energy change (J) - to subtract from HVAC energy
     pub mass_energy_change_cumulative: f64,
 
-    /// Thermal mass energy accounting mode (Issue #317)
-    /// When false: Disables thermal mass energy subtraction from HVAC energy
-    /// This is needed for steady-state HVAC validation scenarios where thermal mass
-    /// energy storage/release should not affect the thermal balance.
-    pub thermal_mass_energy_accounting: bool,
-
     // Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, solar radiation, wind, humidity)
     pub weather: Option<HourlyWeatherData>,
