@@ -21,6 +21,10 @@ pub trait ContinuousTensor<T>:
     + Clone
 where
     T: Copy + Add<Output = T> + Sub<Output = T> + Mul<Output = T> + Div<Output = T> + AddAssign + Default,
+    for<'a> &'a Self: Add<&'a Self, Output = Self>
+        + Sub<&'a Self, Output = Self>
+        + Mul<&'a Self, Output = Self>
+        + Div<&'a Self, Output = Self>,
 {
     /// Applies a function element-wise to the tensor.
     fn map<F>(&self, f: F) -> Self
@@ -136,6 +140,34 @@ impl Div for VectorField {
     type Output = Self;
     fn div(self, rhs: Self) -> Self {
         self.zip_with(&rhs, |a, b| a / b)
+    }
+}
+
+impl<'a, 'b> Add<&'b VectorField> for &'a VectorField {
+    type Output = VectorField;
+    fn add(self, rhs: &'b VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a + b)
+    }
+}
+
+impl<'a, 'b> Sub<&'b VectorField> for &'a VectorField {
+    type Output = VectorField;
+    fn sub(self, rhs: &'b VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a - b)
+    }
+}
+
+impl<'a, 'b> Mul<&'b VectorField> for &'a VectorField {
+    type Output = VectorField;
+    fn mul(self, rhs: &'b VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a * b)
+    }
+}
+
+impl<'a, 'b> Div<&'b VectorField> for &'a VectorField {
+    type Output = VectorField;
+    fn div(self, rhs: &'b VectorField) -> VectorField {
+        self.zip_with(rhs, |a, b| a / b)
     }
 }
 

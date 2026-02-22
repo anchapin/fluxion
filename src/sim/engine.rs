@@ -240,7 +240,13 @@ pub enum ThermalModelType {
 /// * `cooling_setpoint` - HVAC cooling setpoint temperature (°C) - cool when above this
 /// * `heating_setpoints` - Zone-specific heating setpoints (°C) for multi-zone HVAC
 /// * `cooling_setpoints` - Zone-specific cooling setpoints (°C) for multi-zone HVAC
-pub struct ThermalModel<T: ContinuousTensor<f64>> {
+pub struct ThermalModel<T: ContinuousTensor<f64>>
+where
+    for<'a> &'a T: std::ops::Add<&'a T, Output = T>
+        + std::ops::Sub<&'a T, Output = T>
+        + std::ops::Mul<&'a T, Output = T>
+        + std::ops::Div<&'a T, Output = T>,
+{
     pub num_zones: usize,
     pub temperatures: T,
     pub loads: T,
@@ -362,7 +368,13 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
 }
 
 // Manual Clone implementation for ThermalModel
-impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
+impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T>
+where
+    for<'a> &'a T: std::ops::Add<&'a T, Output = T>
+        + std::ops::Sub<&'a T, Output = T>
+        + std::ops::Mul<&'a T, Output = T>
+        + std::ops::Div<&'a T, Output = T>,
+{
     fn clone(&self) -> Self {
         Self {
             num_zones: self.num_zones,
@@ -921,7 +933,13 @@ impl ThermalModel<VectorField> {
     }
 }
 
-impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T> {
+impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T>
+where
+    for<'a> &'a T: std::ops::Add<&'a T, Output = T>
+        + std::ops::Sub<&'a T, Output = T>
+        + std::ops::Mul<&'a T, Output = T>
+        + std::ops::Div<&'a T, Output = T>,
+{
     /// Updates derived physical parameters based on geometry and constants.
     fn update_derived_parameters(&mut self) {
         // Geometry Calculations
@@ -1287,7 +1305,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
                 // h_ext = derived_h_ext + h_ve_vent
                 // This saves one large vector addition compared to (h_tr_w + h_ve + vent)
-                let new_h_ext = h_ext_base.clone() + self.temperatures.constant_like(h_ve_vent);
+        let new_h_ext = h_ext_base + &self.temperatures.constant_like(h_ve_vent);
                 modified_h_ext = Some(new_h_ext);
                 modified_h_ext.as_ref().unwrap()
             } else {
@@ -1301,8 +1319,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
-                let sens_val = term_rest_1.clone() / den_val.clone();
+                    &self.derived_h_ms_is_prod + &(term_rest_1 * h_ext);
+                let sens_val = term_rest_1 / &den_val;
                 (den_val, sens_val)
             } else {
                 (self.derived_den.clone(), self.derived_sensitivity.clone())
@@ -1311,8 +1329,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             (self.derived_den.clone(), self.derived_sensitivity.clone())
         };
 
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        let num_tm = &self.derived_h_ms_is_prod * &self.mass_temperatures;
+        let num_phi_st = &self.h_tr_is * &phi_st;
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // Optimization: use scalar multiplication for t_g and outdoor_temp instead of creating full constant vectors
@@ -1364,11 +1382,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Recalculate num_rest with inter-zone heat transfer
         // Optimized: h_ext * t_e -> h_ext * outdoor_temp
         // Optimized: t_g_vec -> t_g
-        let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz.clone())
-            + self.h_tr_floor.clone() * t_g;
+        let num_rest_with_iz = &(term_rest_1
+            * &(&h_ext.map(|x| x * outdoor_temp) + &phi_ia_with_iz))
+            + &self.h_tr_floor.map(|x| x * t_g);
 
-        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
+        let t_i_free = &(&(&num_tm + &num_phi_st) + &num_rest_with_iz) / &den;
 
         // 3. HVAC Calculation
         // Use local sensitivity (might be different from cached if night vent is active)
@@ -1393,32 +1411,32 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             hvac_output
         };
 
-        let t_i_act = t_i_free.clone() + sensitivity_val * delta_load;
+        let t_i_act = &t_i_free + &(&sensitivity_val * &delta_load);
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate free-running surface temperature for mass update
         // This prevents HVAC energy from being stored in thermal mass
         // ts_num_free = h_tr_ms * mass_temp + h_tr_is * t_i_free + phi_st
-        let ts_num_free = self.h_tr_ms.clone() * self.mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
-            + phi_st.clone();
+        let ts_num_free = &(&(&self.h_tr_ms * &self.mass_temperatures)
+            + &(&self.h_tr_is * &t_i_free))
+            + &phi_st;
         // Denominator is term_rest_1
-        let t_s_free = ts_num_free / term_rest_1.clone();
+        let t_s_free = &ts_num_free / term_rest_1;
 
         // Optimization: Avoid creating t_e vector. Use map with scalar outdoor_temp.
         // t_e - mass_temperatures = outdoor_temp - mass_temperatures
-        let q_m_net = self.h_tr_em.clone() * self.mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone())
-            + phi_m; // Add gain directly to mass node
-        let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
-        self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
+        let q_m_net = &(&(&self.h_tr_em * &self.mass_temperatures.map(|m| outdoor_temp - m))
+            + &(&self.h_tr_ms * &(&t_s_free - &self.mass_temperatures)))
+            + &phi_m; // Add gain directly to mass node
+        let dt_m = (&q_m_net / &self.thermal_capacitance) * dt;
+        self.mass_temperatures = &self.mass_temperatures + &dt_m;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change AFTER mass temperature is updated
         // Mass energy change = Cm × (Tm_new - Tm_old)
         let mass_temp_change =
-            self.mass_temperatures.clone() - old_mass_temperatures.clone();
-        let mass_energy_change_for_step = self.thermal_capacitance.clone() * mass_temp_change;
+            &self.mass_temperatures - &old_mass_temperatures;
+        let mass_energy_change_for_step = &self.thermal_capacitance * &mass_temp_change;
 
         // Track cumulative mass energy change for debugging
         self.mass_energy_change_cumulative +=
@@ -1488,7 +1506,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if night_vent.is_active_at_hour(hour_of_day) {
                 let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
                 let h_ve_vent = air_cap_vent / 3600.0;
-                h_ext_base.clone() + self.temperatures.constant_like(h_ve_vent)
+                h_ext_base + &self.temperatures.constant_like(h_ve_vent)
             } else {
                 h_ext_base.clone()
             }
@@ -1500,8 +1518,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
-                let sens_val = term_rest_1.clone() / den_val.clone();
+                    &self.derived_h_ms_is_prod + &(term_rest_1 * &h_ext);
+                let sens_val = term_rest_1 / &den_val;
                 (den_val, sens_val)
             } else {
                 (self.derived_den.clone(), self.derived_sensitivity.clone())
@@ -1511,8 +1529,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         };
 
         // Use envelope mass temperature instead of single mass temperature
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        let num_tm = &self.derived_h_ms_is_prod * &self.envelope_mass_temperatures;
+        let num_phi_st = &self.h_tr_is * &phi_st;
 
         // Inter-zone heat transfer
         let num_zones = self.num_zones;
@@ -1538,14 +1556,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             };
 
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor.clone();
+        let phi_ia_with_iz = phi_ia + q_iz_tensor; // phi_ia consumed (was clone)
 
-        let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz.clone())
-            + self.h_tr_floor.clone() * t_g;
+        let num_rest_with_iz = &(term_rest_1
+            * &(&h_ext.map(|x| x * outdoor_temp) + &phi_ia_with_iz))
+            + &self.h_tr_floor.map(|x| x * t_g);
 
         // Calculate free-floating indoor temperature
-        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
+        let t_i_free = &(&(&num_tm + &num_phi_st) + &num_rest_with_iz) / &den;
 
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
@@ -1553,39 +1571,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val) * dt;
 
         // Update indoor temperature with superposition
-        let t_i_act = t_i_free.clone() + sensitivity.clone() * hvac_output.clone();
+        let t_i_act = &t_i_free + &(&sensitivity * &hvac_output);
 
         // Calculate surface temperature
         // === 6R2C: Update two mass nodes ===
-        let ts_num_free = self.h_tr_ms.clone() * self.envelope_mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
-            + phi_st.clone();
-        let t_s_free = ts_num_free / term_rest_1.clone();
+        let ts_num_free = &(&(&self.h_tr_ms * &self.envelope_mass_temperatures)
+            + &(&self.h_tr_is * &t_i_free))
+            + &phi_st;
+        let t_s_free = &ts_num_free / term_rest_1;
 
         // === 6R2C: Update two mass nodes ===
         // Envelope mass: receives heat from exterior, surface, and internal mass
         let old_env_mass_temperatures = self.envelope_mass_temperatures.clone();
-        let q_env_net = self.h_tr_em.clone()
-            * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_free - self.envelope_mass_temperatures.clone())
-            + self.h_tr_me.clone()
-                * (self.internal_mass_temperatures.clone()
-                    - self.envelope_mass_temperatures.clone())
-            + phi_m_env;
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
-        let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
-        self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
+        let q_env_net = &(&(&(&self.h_tr_em * &self.envelope_mass_temperatures.map(|m| outdoor_temp - m))
+            + &(&self.h_tr_ms * &(&t_s_free - &self.envelope_mass_temperatures)))
+            + &(&self.h_tr_me
+                * &(&self.internal_mass_temperatures
+                    - &self.envelope_mass_temperatures)))
+            + &phi_m_env;
+        // Removed premature/duplicate/incorrect env_mass_energy_change calculation
+        let dt_env = (&q_env_net / &self.envelope_thermal_capacitance) * dt;
+        self.envelope_mass_temperatures = &self.envelope_mass_temperatures + &dt_env;
 
         // Internal mass: receives heat from envelope mass and direct gains
         let old_int_mass_temperatures = self.internal_mass_temperatures.clone();
-        let q_int_net = self.h_tr_me.clone()
-            * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
-            + phi_m_int;
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
-        let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
-        self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
+        let q_int_net = &(&self.h_tr_me
+            * &(&self.envelope_mass_temperatures - &self.internal_mass_temperatures))
+            + &phi_m_int;
+        // Removed premature/duplicate int_mass_energy_change calculation
+        let dt_int = (&q_int_net / &self.internal_thermal_capacitance) * dt;
+        self.internal_mass_temperatures = &self.internal_mass_temperatures + &dt_int;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
