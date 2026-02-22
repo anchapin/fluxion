@@ -143,28 +143,28 @@ impl Div for VectorField {
     }
 }
 
-impl<'a, 'b> Add<&'b VectorField> for &'a VectorField {
+impl<'b> Add<&'b VectorField> for &VectorField {
     type Output = VectorField;
     fn add(self, rhs: &'b VectorField) -> VectorField {
         self.zip_with(rhs, |a, b| a + b)
     }
 }
 
-impl<'a, 'b> Sub<&'b VectorField> for &'a VectorField {
+impl<'b> Sub<&'b VectorField> for &VectorField {
     type Output = VectorField;
     fn sub(self, rhs: &'b VectorField) -> VectorField {
         self.zip_with(rhs, |a, b| a - b)
     }
 }
 
-impl<'a, 'b> Mul<&'b VectorField> for &'a VectorField {
+impl<'b> Mul<&'b VectorField> for &VectorField {
     type Output = VectorField;
     fn mul(self, rhs: &'b VectorField) -> VectorField {
         self.zip_with(rhs, |a, b| a * b)
     }
 }
 
-impl<'a, 'b> Div<&'b VectorField> for &'a VectorField {
+impl<'b> Div<&'b VectorField> for &VectorField {
     type Output = VectorField;
     fn div(self, rhs: &'b VectorField) -> VectorField {
         self.zip_with(rhs, |a, b| a / b)

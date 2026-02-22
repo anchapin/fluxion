@@ -117,7 +117,7 @@ impl Div<f64> for NDArrayField {
     }
 }
 
-impl<'a, 'b> Add<&'b NDArrayField> for &'a NDArrayField {
+impl<'b> Add<&'b NDArrayField> for &NDArrayField {
     type Output = NDArrayField;
     fn add(self, rhs: &'b NDArrayField) -> NDArrayField {
         // Need to bring ContinuousTensor into scope or use fully qualified syntax if not present,
@@ -126,21 +126,21 @@ impl<'a, 'b> Add<&'b NDArrayField> for &'a NDArrayField {
     }
 }
 
-impl<'a, 'b> Sub<&'b NDArrayField> for &'a NDArrayField {
+impl<'b> Sub<&'b NDArrayField> for &NDArrayField {
     type Output = NDArrayField;
     fn sub(self, rhs: &'b NDArrayField) -> NDArrayField {
         ContinuousTensor::zip_with(self, rhs, |a, b| a - b)
     }
 }
 
-impl<'a, 'b> Mul<&'b NDArrayField> for &'a NDArrayField {
+impl<'b> Mul<&'b NDArrayField> for &NDArrayField {
     type Output = NDArrayField;
     fn mul(self, rhs: &'b NDArrayField) -> NDArrayField {
         ContinuousTensor::zip_with(self, rhs, |a, b| a * b)
     }
 }
 
-impl<'a, 'b> Div<&'b NDArrayField> for &'a NDArrayField {
+impl<'b> Div<&'b NDArrayField> for &NDArrayField {
     type Output = NDArrayField;
     fn div(self, rhs: &'b NDArrayField) -> NDArrayField {
         ContinuousTensor::zip_with(self, rhs, |a, b| a / b)
