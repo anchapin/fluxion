@@ -1171,7 +1171,7 @@ where
                 self.set_loads(&loads);
 
                 // 3. Solve physics for this timestep
-                self.step_physics(t, outdoor_temp)
+                self.step_physics(t, outdoor_temp).abs()
             })
             .sum();
 
@@ -1206,7 +1206,8 @@ where
                 let hour_of_day = t % 24;
                 let daily_cycle = cycle[hour_of_day];
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true).abs()
+                self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true)
+                    .abs()
             })
             .sum();
 
