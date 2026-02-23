@@ -19,6 +19,16 @@ fn bench_solve_timesteps(c: &mut Criterion) {
             model.solve_timesteps(8760, &surrogates, false);
         })
     });
+
+    let mut model_6r2c = ThermalModel::<VectorField>::new(10);
+    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.solve_timesteps(100, &surrogates, false); // Warmup
+
+    c.bench_function("solve_timesteps_1year_10zones_6r2c", |b| {
+        b.iter(|| {
+            model_6r2c.solve_timesteps(8760, &surrogates, false);
+        })
+    });
 }
 
 criterion_group!(benches, bench_solve_timesteps);

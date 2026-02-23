@@ -1311,8 +1311,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             (self.derived_den.clone(), self.derived_sensitivity.clone())
         };
 
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        let num_tm = self
+            .derived_h_ms_is_prod
+            .zip_with(&self.mass_temperatures, |a, b| a * b);
+        let num_phi_st = self.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // Optimization: use scalar multiplication for t_g and outdoor_temp instead of creating full constant vectors
@@ -1511,8 +1513,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         };
 
         // Use envelope mass temperature instead of single mass temperature
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        let num_tm = self
+            .derived_h_ms_is_prod
+            .zip_with(&self.envelope_mass_temperatures, |a, b| a * b);
+        let num_phi_st = self.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         // Inter-zone heat transfer
         let num_zones = self.num_zones;
@@ -1572,8 +1576,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
             + phi_m_env;
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
@@ -1582,24 +1584,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_int_net = self.h_tr_me.clone()
             * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
         // Envelope mass energy change (Cm × (Tm_new - Tm_old))
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
+        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures;
         let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
 
         // Internal mass energy change (Cm × (Tm_new - Tm_old))
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
+        let int_mass_temp_change =
+            self.internal_mass_temperatures.clone() - old_int_mass_temperatures;
+        let int_mass_energy_change =
+            self.internal_thermal_capacitance.clone() * int_mass_temp_change;
 
         // Total mass energy change for this timestep
-        let mass_energy_change_for_step_6r2c =
-            env_mass_energy_change.clone() + int_mass_energy_change;
+        let mass_energy_change_for_step_6r2c = env_mass_energy_change + int_mass_energy_change;
 
         // Track cumulative mass energy change
         self.mass_energy_change_cumulative +=
