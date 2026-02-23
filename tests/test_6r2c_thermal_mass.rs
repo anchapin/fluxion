@@ -1,7 +1,7 @@
-use fluxion::ai::surrogate::SurrogateManager;
-use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::physics::cta::VectorField;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::ai::surrogate::SurrogateManager;
 
 #[test]
 fn test_6r2c_thermal_mass_initialization() {
