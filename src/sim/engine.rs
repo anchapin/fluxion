@@ -1327,45 +1327,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Use h_tr_iz from the model - it's already a VectorField
         // so we can get its value using as_ref()
         let h_iz_vec = self.h_tr_iz.as_ref();
-
-        let inter_zone_heat: Vec<f64> =
-            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
-                let temps = self.temperatures.as_ref();
-                let h_iz_val = h_iz_vec[0];
-                (0..num_zones)
-                    .map(|i| {
-                        // Sum heat transfer from all other zones
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                q_iz += h_iz_val * (temps[j] - temps[i]);
-                            }
-                        }
-                        q_iz
-                    })
-                    .collect()
-            } else {
-                vec![0.0; num_zones]
-            };
-
-        // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
-        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-
-        // Check if we need to preserve q_iz for superposition later
         let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
-        let q_iz_clone = if has_inter_zone {
-            Some(q_iz_tensor.clone())
+
+        let q_iz_tensor: Option<T> = if has_inter_zone {
+            let temps = self.temperatures.as_ref();
+            let h_iz_val = h_iz_vec[0];
+            let total_temp: f64 = temps.iter().sum();
+            // Optimized calculation: q_iz[i] = h_iz * (Sum(T) - N * T[i])
+            let data: Vec<f64> = temps
+                .iter()
+                .map(|&t_i| h_iz_val * (total_temp - (num_zones as f64) * t_i))
+                .collect();
+            Some(VectorField::new(data).into())
         } else {
             None
         };
 
-        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor;
+        // Check if we need to preserve q_iz for superposition later
+        let q_iz_clone = if has_inter_zone {
+            q_iz_tensor.clone()
+        } else {
+            None
+        };
+
+        let phi_ia_with_iz = if let Some(q_iz) = &q_iz_tensor {
+            phi_ia + q_iz.clone()
+        } else {
+            phi_ia
+        };
 
         // Recalculate num_rest with inter-zone heat transfer
         // Optimized: h_ext * t_e -> h_ext * outdoor_temp
         // Optimized: t_g_vec -> t_g
         let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz.clone())
+            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
             + self.h_tr_floor.clone() * t_g;
 
         let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
@@ -1416,8 +1411,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Issue #272, #274, #275: Calculate thermal mass energy change AFTER mass temperature is updated
         // Mass energy change = Cm × (Tm_new - Tm_old)
-        let mass_temp_change =
-            self.mass_temperatures.clone() - old_mass_temperatures.clone();
+        let mass_temp_change = self.mass_temperatures.clone() - old_mass_temperatures.clone();
         let mass_energy_change_for_step = self.thermal_capacitance.clone() * mass_temp_change;
 
         // Track cumulative mass energy change for debugging
@@ -1517,31 +1511,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Inter-zone heat transfer
         let num_zones = self.num_zones;
         let h_iz_vec = self.h_tr_iz.as_ref();
+        let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
 
-        let inter_zone_heat: Vec<f64> =
-            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
-                let temps = self.temperatures.as_ref();
-                let h_iz_val = h_iz_vec[0];
-                (0..num_zones)
-                    .map(|i| {
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                q_iz += h_iz_val * (temps[j] - temps[i]);
-                            }
-                        }
-                        q_iz
-                    })
-                    .collect()
-            } else {
-                vec![0.0; num_zones]
-            };
+        let q_iz_tensor: Option<T> = if has_inter_zone {
+            let temps = self.temperatures.as_ref();
+            let h_iz_val = h_iz_vec[0];
+            let total_temp: f64 = temps.iter().sum();
+            // Optimized calculation: q_iz[i] = h_iz * (Sum(T) - N * T[i])
+            let data: Vec<f64> = temps
+                .iter()
+                .map(|&t_i| h_iz_val * (total_temp - (num_zones as f64) * t_i))
+                .collect();
+            Some(VectorField::new(data).into())
+        } else {
+            None
+        };
 
-        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor.clone();
+        let phi_ia_with_iz = if let Some(q_iz) = &q_iz_tensor {
+            phi_ia + q_iz.clone()
+        } else {
+            phi_ia
+        };
 
         let num_rest_with_iz = term_rest_1.clone()
-            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz.clone())
+            * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
             + self.h_tr_floor.clone() * t_g;
 
         // Calculate free-floating indoor temperature
@@ -1572,8 +1565,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
             + phi_m_env;
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
@@ -1582,20 +1573,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_int_net = self.h_tr_me.clone()
             * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
         // Envelope mass energy change (Cm × (Tm_new - Tm_old))
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
+        let env_mass_temp_change =
+            self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
+        let env_mass_energy_change =
+            self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
 
         // Internal mass energy change (Cm × (Tm_new - Tm_old))
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
+        let int_mass_temp_change =
+            self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
+        let int_mass_energy_change =
+            self.internal_thermal_capacitance.clone() * int_mass_temp_change;
 
         // Total mass energy change for this timestep
         let mass_energy_change_for_step_6r2c =
@@ -1610,7 +1603,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
             // Subtract thermal mass energy change from HVAC energy
             // Only subtract when mass is charging (positive energy change), not when discharging
-            let mass_energy_total = mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
+            let mass_energy_total =
+                mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
             if mass_energy_total > 0.0 {
                 hvac_energy_for_step - mass_energy_total
             } else {
@@ -1913,28 +1907,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Inter-zone heat transfer
         let num_zones = self.num_zones;
         let h_iz_vec = self.h_tr_iz.as_ref();
+        let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
 
-        let inter_zone_heat: Vec<f64> =
-            if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
-                let temps = self.temperatures.as_ref();
-                let h_iz_val = h_iz_vec[0];
-                (0..num_zones)
-                    .map(|i| {
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                q_iz += h_iz_val * (temps[j] - temps[i]);
-                            }
-                        }
-                        q_iz
-                    })
-                    .collect()
-            } else {
-                vec![0.0; num_zones]
-            };
+        let q_iz_tensor: Option<T> = if has_inter_zone {
+            let temps = self.temperatures.as_ref();
+            let h_iz_val = h_iz_vec[0];
+            let total_temp: f64 = temps.iter().sum();
+            // Optimized calculation: q_iz[i] = h_iz * (Sum(T) - N * T[i])
+            let data: Vec<f64> = temps
+                .iter()
+                .map(|&t_i| h_iz_val * (total_temp - (num_zones as f64) * t_i))
+                .collect();
+            Some(VectorField::new(data).into())
+        } else {
+            None
+        };
 
-        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-        let phi_ia_with_iz = phi_ia + q_iz_tensor;
+        let phi_ia_with_iz = if let Some(q_iz) = &q_iz_tensor {
+            phi_ia + q_iz.clone()
+        } else {
+            phi_ia
+        };
 
         // Optimization: Use scalar multiplications
         let num_rest = term_rest_1.clone() * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
@@ -2255,8 +2248,8 @@ mod tests {
         // Long simulation (5 years)
         let energy_long = model.solve_timesteps(8760 * 5, &surrogates, false);
         assert!(energy_long.is_finite()); // Can be negative for cooling or mass charging
-        // 5-year should be roughly 5x the annual (with some variation)
-        // Note: This comparison may not hold with thermal mass energy accounting
+                                          // 5-year should be roughly 5x the annual (with some variation)
+                                          // Note: This comparison may not hold with thermal mass energy accounting
     }
 
     #[test]
@@ -2450,9 +2443,7 @@ mod tests {
 
             // For now, skip this test due to thermal mass energy accounting complexity
             // TODO: Rewrite test to properly account for thermal mass energy changes
-            println!(
-                "Skipping cooling part of steady_state_heat_transfer_matches_analytical test"
-            );
+            println!("Skipping cooling part of steady_state_heat_transfer_matches_analytical test");
             println!(
                 "Analytical: {:.2}, Simulated: {:.2}, Rel Error: {:.5}%",
                 analytical_load_cool,
@@ -2484,9 +2475,7 @@ mod tests {
             println!(
                 "Skipping zero_load_when_no_temperature_difference test due to thermal mass energy accounting"
             );
-            println!(
-                "Energy when in deadband: {:.9}", energy_kwh
-            );
+            println!("Energy when in deadband: {:.9}", energy_kwh);
         }
 
         #[test]
@@ -2537,9 +2526,7 @@ mod tests {
             println!(
                 "Skipping deadband_heating_cooling test due to thermal mass energy accounting"
             );
-            println!(
-                "Energy when in deadband: {:.9}", energy_deadband
-            );
+            println!("Energy when in deadband: {:.9}", energy_deadband);
         }
     }
 
