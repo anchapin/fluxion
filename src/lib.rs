@@ -278,7 +278,7 @@ impl BatchOracle {
             for (idx, model, energy) in final_worker_data {
                 let total_area = model.zone_area.integrate();
                 results[idx] = if total_area > 0.0 {
-                    energy / total_area
+                    (energy / total_area).max(0.0)
                 } else {
                     0.0
                 };
@@ -303,7 +303,7 @@ impl BatchOracle {
             for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
                 let total_area = model.zone_area.integrate();
                 results[*idx] = if total_area > 0.0 {
-                    *energy / total_area
+                    (*energy / total_area).max(0.0)
                 } else {
                     0.0
                 };
