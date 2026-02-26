@@ -164,13 +164,8 @@ impl BatchOracle {
     /// Initializes the base thermal model template and surrogate manager.
     #[new]
     fn new() -> PyResult<Self> {
-        let mut base_model = ThermalModel::<VectorField>::new(10); // The "template" building
-        // Disable thermal mass energy accounting for optimization
-        // We want gross HVAC consumption (always positive), not net load (can be negative due to solar charging)
-        base_model.thermal_mass_energy_accounting = false;
-
         Ok(BatchOracle {
-            base_model,
+            base_model: ThermalModel::<VectorField>::new(10), // The "template" building
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
