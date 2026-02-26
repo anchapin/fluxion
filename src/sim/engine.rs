@@ -611,14 +611,13 @@ impl ThermalModel<VectorField> {
             let h_is_wall = 8.29;
             let h_is_ceiling = 9.09;
 
-            // Surface-to-air conductance: Sum of individual surface conductances
-            // ASHRAE 140 specifies different h_is values per surface type:
-            // h_tr_is = Σ(h_is_i × Area_i) for all surfaces i
-            let h_tr_floor = h_is_floor * floor_area;
-            let h_tr_wall = h_is_wall * wall_area;
-            let h_tr_ceiling = h_is_ceiling * ceiling_area;
-            let h_tr_is_val = h_tr_floor + h_tr_wall + h_tr_ceiling;
-            h_tr_is_vec.push(h_tr_is_val);
+            // Surface-to-air conductance (h_is = 3.45 * Area_tot)
+            // For ASHRAE 140 simplified 5R1C model, use single h_is value
+            // This reverts the incorrect "Multiple Surface Conductances" implementation
+            // that inflated h_tr_is from 717.6 W/K to 1659 W/K (2.3x increase)
+            let opaque_area = zone_wall_area - zone_window_area;
+            let area_tot = opaque_area + zone_floor_area * 2.0;
+            h_tr_is_vec.push(3.45 * area_tot);
 
             // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
             //
