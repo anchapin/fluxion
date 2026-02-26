@@ -122,7 +122,7 @@ impl SkyRadiationExchange {
     ///
     /// // Roof at 30°C, sky at -10°C (clear night)
     /// let flux = sky.net_radiative_flux(30.0, -10.0);
-    /// assert!(flux > 0.0); // Net cooling
+    /// assert!(flux < 0.0); // Net cooling (negative flux = heat loss from surface)
     /// ```
     pub fn net_radiative_flux(&self, surface_temp_c: f64, sky_temp_c: f64) -> f64 {
         let t_surface_k = surface_temp_c + 273.15;
@@ -404,7 +404,7 @@ mod tests {
     fn test_net_radiative_flux() {
         let sky = SkyRadiationExchange::horizontal_roof();
         let flux = sky.net_radiative_flux(30.0, -10.0);
-        assert!(flux < 0.0); // Heat loss from warm surface
+        assert!(flux < 0.0); // Heat loss from warm surface (negative gain)
     }
 
     #[test]
