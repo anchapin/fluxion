@@ -1416,8 +1416,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Issue #272, #274, #275: Calculate thermal mass energy change AFTER mass temperature is updated
         // Mass energy change = Cm × (Tm_new - Tm_old)
-        let mass_temp_change =
-            self.mass_temperatures.clone() - old_mass_temperatures.clone();
+        let mass_temp_change = self.mass_temperatures.clone() - old_mass_temperatures.clone();
         let mass_energy_change_for_step = self.thermal_capacitance.clone() * mass_temp_change;
 
         // Track cumulative mass energy change for debugging
@@ -1572,8 +1571,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
             + phi_m_env;
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
@@ -1582,20 +1579,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_int_net = self.h_tr_me.clone()
             * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
         // Envelope mass energy change (Cm × (Tm_new - Tm_old))
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
+        let env_mass_temp_change =
+            self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
+        let env_mass_energy_change =
+            self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
 
         // Internal mass energy change (Cm × (Tm_new - Tm_old))
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
+        let int_mass_temp_change =
+            self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
+        let int_mass_energy_change =
+            self.internal_thermal_capacitance.clone() * int_mass_temp_change;
 
         // Total mass energy change for this timestep
         let mass_energy_change_for_step_6r2c =
@@ -1610,7 +1609,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
             // Subtract thermal mass energy change from HVAC energy
             // Only subtract when mass is charging (positive energy change), not when discharging
-            let mass_energy_total = mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
+            let mass_energy_total =
+                mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
             if mass_energy_total > 0.0 {
                 hvac_energy_for_step - mass_energy_total
             } else {
@@ -2255,8 +2255,8 @@ mod tests {
         // Long simulation (5 years)
         let energy_long = model.solve_timesteps(8760 * 5, &surrogates, false);
         assert!(energy_long.is_finite()); // Can be negative for cooling or mass charging
-        // 5-year should be roughly 5x the annual (with some variation)
-        // Note: This comparison may not hold with thermal mass energy accounting
+                                          // 5-year should be roughly 5x the annual (with some variation)
+                                          // Note: This comparison may not hold with thermal mass energy accounting
     }
 
     #[test]
@@ -2450,9 +2450,7 @@ mod tests {
 
             // For now, skip this test due to thermal mass energy accounting complexity
             // TODO: Rewrite test to properly account for thermal mass energy changes
-            println!(
-                "Skipping cooling part of steady_state_heat_transfer_matches_analytical test"
-            );
+            println!("Skipping cooling part of steady_state_heat_transfer_matches_analytical test");
             println!(
                 "Analytical: {:.2}, Simulated: {:.2}, Rel Error: {:.5}%",
                 analytical_load_cool,
@@ -2484,9 +2482,7 @@ mod tests {
             println!(
                 "Skipping zero_load_when_no_temperature_difference test due to thermal mass energy accounting"
             );
-            println!(
-                "Energy when in deadband: {:.9}", energy_kwh
-            );
+            println!("Energy when in deadband: {:.9}", energy_kwh);
         }
 
         #[test]
@@ -2537,9 +2533,7 @@ mod tests {
             println!(
                 "Skipping deadband_heating_cooling test due to thermal mass energy accounting"
             );
-            println!(
-                "Energy when in deadband: {:.9}", energy_deadband
-            );
+            println!("Energy when in deadband: {:.9}", energy_deadband);
         }
     }
 
