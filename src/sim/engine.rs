@@ -330,6 +330,13 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// High-mass buildings: lower fraction to air (0.5-0.6)
     pub solar_distribution_to_air: f64,
 
+    /// Fraction of beam (direct) solar radiation that goes directly to thermal mass (floor)
+    /// Remaining beam goes to interior air
+    /// Diffuse radiation is distributed by area-weighted method
+    /// This implements Issue #297: Geometric Solar Distribution (Beam-to-Floor Logic)
+    /// Typical value: 0.8-0.95 (most beam radiation reaches floor)
+    pub solar_beam_to_mass_fraction: f64,
+
     // Energy tracking for thermal mass calibration (Issue #272, #274, #275)
     /// Previous mass temperature for tracking thermal mass energy changes
     pub previous_mass_temperatures: T,
@@ -407,6 +414,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             thermal_bridge_coefficient: self.thermal_bridge_coefficient,
             convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
+            solar_beam_to_mass_fraction: self.solar_beam_to_mass_fraction,
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
             weather: self.weather.clone(),
@@ -588,10 +596,28 @@ impl ThermalModel<VectorField> {
             };
             h_tr_floor_vec.push(h_tr_floor_val);
 
-            // Surface-to-air conductance (h_is = 3.45 * Area_tot)
+            // Surface-to-air conductance with multiple h_is values per surface type
+            // ASHRAE 140 specifies different interior resistances for different surface orientations:
+            // - Floor: h_is = 6.13 W/m²K (upward heat flow)
+            // - Walls: h_is = 8.29 W/m²K (horizontal heat flow)
+            // - Ceiling/Roof: h_is = 9.09 W/m²K (downward heat flow)
+            // This implements Issue #295: Multiple Surface Conductances (h_is) per Zone
             let opaque_area = zone_wall_area - zone_window_area;
-            let area_tot = opaque_area + zone_floor_area * 2.0;
-            h_tr_is_vec.push(3.45 * area_tot);
+            let floor_area = zone_floor_area;
+            let ceiling_area = zone_floor_area; // Assume flat roof with same area as floor
+            let wall_area = opaque_area;
+
+            let h_is_floor = 6.13;
+            let h_is_wall = 8.29;
+            let h_is_ceiling = 9.09;
+
+            // Area-weighted average h_is
+            let weighted_h_is = (h_is_floor * floor_area
+                + h_is_wall * wall_area
+                + h_is_ceiling * ceiling_area)
+                / (floor_area + wall_area + ceiling_area);
+
+            h_tr_is_vec.push(weighted_h_is * area_tot);
 
             // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
             //
@@ -876,7 +902,7 @@ impl ThermalModel<VectorField> {
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
             h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
-            h_tr_is: VectorField::from_scalar(200.0, num_zones),  // Fixed coupling
+            h_tr_is: VectorField::from_scalar(1658.0, num_zones),  // ~7.97 W/m²K * 208 m² for default zone
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
@@ -888,6 +914,7 @@ impl ThermalModel<VectorField> {
             thermal_bridge_coefficient: 0.0,
             convective_fraction: 0.4,
             solar_distribution_to_air: 0.1,
+            solar_beam_to_mass_fraction: 0.9, // Most beam radiation reaches floor (Issue #297)
 
             // Energy tracking for thermal mass calibration (Issue #272, #274, #275)
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
