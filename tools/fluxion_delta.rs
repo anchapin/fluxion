@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use clap::Parser;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HourlyComparison {
@@ -175,7 +174,7 @@ impl DeltaAnalysisReport {
 
     pub fn to_csv(&self) -> String {
         let mut csv = String::from("Hour,Fluxion_Outdoor_Temp,EnergyPlus_Outdoor_Temp,Outdoor_Temp_Delta,Fluxion_Zone_Temp,EnergyPlus_Zone_Temp,Zone_Temp_Delta,Fluxion_Heating,EnergyPlus_Heating,Heating_Delta,Fluxion_Cooling,EnergyPlus_Cooling,Cooling_Delta,Heating_Percent_Error,Cooling_Percent_Error\n");
-        
+
         for comp in &self.comparisons {
             csv.push_str(&format!(
                 "{},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.3},{:.3},{:.3},{:.3},{:.3},{:.3},{:.1},{:.1}\n",
@@ -205,15 +204,21 @@ fn parse_csv_value(s: &str) -> f64 {
     s.trim().parse().unwrap_or(0.0)
 }
 
-pub fn compare_hourly_data(fluxion_csv: &str, energyplus_csv: &str, case_id: &str) -> Result<DeltaAnalysisReport, String> {
-    let fluxion_file = File::open(fluxion_csv).map_err(|e| format!("Failed to open Fluxion CSV: {}", e))?;
-    let ep_file = File::open(energyplus_csv).map_err(|e| format!("Failed to open EnergyPlus CSV: {}", e))?;
+pub fn compare_hourly_data(
+    fluxion_csv: &str,
+    energyplus_csv: &str,
+    case_id: &str,
+) -> Result<DeltaAnalysisReport, String> {
+    let fluxion_file =
+        File::open(fluxion_csv).map_err(|e| format!("Failed to open Fluxion CSV: {}", e))?;
+    let ep_file =
+        File::open(energyplus_csv).map_err(|e| format!("Failed to open EnergyPlus CSV: {}", e))?;
 
     let fluxion_reader = BufReader::new(fluxion_file);
     let ep_reader = BufReader::new(ep_file);
 
-    let fluxion_lines: Vec<String> = fluxion_reader.lines().filter_map(|l| l.ok()).collect();
-    let ep_lines: Vec<String> = ep_reader.lines().filter_map(|l| l.ok()).collect();
+    let fluxion_lines: Vec<String> = fluxion_reader.lines().map_while(Result::ok).collect();
+    let ep_lines: Vec<String> = ep_reader.lines().map_while(Result::ok).collect();
 
     if fluxion_lines.len() < 2 || ep_lines.len() < 2 {
         return Err("CSV files must have header and at least one data row".to_string());
@@ -227,8 +232,8 @@ pub fn compare_hourly_data(fluxion_csv: &str, energyplus_csv: &str, case_id: &st
 
     let mut report = DeltaAnalysisReport::new(case_id.to_string());
 
-    let fluxion_data: Vec<&str> = fluxion_lines[1..].to_vec();
-    let ep_data: Vec<&str> = ep_lines[1..].to_vec();
+    let fluxion_data: Vec<String> = fluxion_lines[1..].to_vec();
+    let ep_data: Vec<String> = ep_lines[1..].to_vec();
 
     let num_rows = fluxion_data.len().min(ep_data.len());
 
@@ -243,7 +248,7 @@ pub fn compare_hourly_data(fluxion_csv: &str, energyplus_csv: &str, case_id: &st
         let hour = i;
         let fluxion_outdoor = parse_csv_value(fcols[4]);
         let ep_outdoor = parse_csv_value(ecols[4]);
-        
+
         let fluxion_zone = parse_csv_value(fcols[5]);
         let ep_zone = parse_csv_value(ecols[5]);
 
