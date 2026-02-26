@@ -1153,7 +1153,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 self.set_loads(&loads);
 
                 // 3. Solve physics for this timestep
-                self.step_physics(t, outdoor_temp).abs()
+                self.step_physics(t, outdoor_temp)
             })
             .sum();
 
@@ -1188,7 +1188,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 let hour_of_day = t % 24;
                 let daily_cycle = cycle[hour_of_day];
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true).abs()
+                self.solve_single_step(t, outdoor_temp, use_ai, surrogates, true)
             })
             .sum();
 
@@ -1571,6 +1571,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
             + phi_m_env;
+        let env_mass_temp_change =
+            self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
+        let env_mass_energy_change =
+            self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
@@ -1579,6 +1583,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_int_net = self.h_tr_me.clone()
             * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
+        let int_mass_temp_change =
+            self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
+        let int_mass_energy_change =
+            self.internal_thermal_capacitance.clone() * int_mass_temp_change;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
