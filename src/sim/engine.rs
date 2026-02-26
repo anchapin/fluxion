@@ -617,7 +617,7 @@ impl ThermalModel<VectorField> {
                 + h_is_ceiling * ceiling_area)
                 / (floor_area + wall_area + ceiling_area);
 
-            h_tr_is_vec.push(weighted_h_is * area_tot);
+            h_tr_is_vec.push(weighted_h_is * (floor_area + wall_area + ceiling_area));
 
             // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
             //
