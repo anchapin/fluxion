@@ -1332,17 +1332,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
                 let temps = self.temperatures.as_ref();
                 let h_iz_val = h_iz_vec[0];
+                // Optimization: O(N) calculation instead of O(N^2) loop
+                // Sum_{j!=i} h * (T_j - T_i) = h * (Sum(T) - T_i - (N-1) * T_i) = h * (Sum(T) - N * T_i)
+                let temp_sum: f64 = temps.iter().sum();
+                let n_zones = num_zones as f64;
                 (0..num_zones)
-                    .map(|i| {
-                        // Sum heat transfer from all other zones
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                q_iz += h_iz_val * (temps[j] - temps[i]);
-                            }
-                        }
-                        q_iz
-                    })
+                    .map(|i| h_iz_val * (temp_sum - n_zones * temps[i]))
                     .collect()
             } else {
                 vec![0.0; num_zones]
@@ -1522,16 +1517,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
                 let temps = self.temperatures.as_ref();
                 let h_iz_val = h_iz_vec[0];
+                // Optimization: O(N) calculation instead of O(N^2) loop
+                let temp_sum: f64 = temps.iter().sum();
+                let n_zones = num_zones as f64;
                 (0..num_zones)
-                    .map(|i| {
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                q_iz += h_iz_val * (temps[j] - temps[i]);
-                            }
-                        }
-                        q_iz
-                    })
+                    .map(|i| h_iz_val * (temp_sum - n_zones * temps[i]))
                     .collect()
             } else {
                 vec![0.0; num_zones]
@@ -1572,8 +1562,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
             + phi_m_env;
-        let env_mass_temp_change = self.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change = self.envelope_thermal_capacitance.clone() * env_mass_temp_change;
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
@@ -1582,8 +1570,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let q_int_net = self.h_tr_me.clone()
             * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
             + phi_m_int;
-        let int_mass_temp_change = self.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change = self.internal_thermal_capacitance.clone() * int_mass_temp_change;
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
@@ -1918,16 +1904,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0 {
                 let temps = self.temperatures.as_ref();
                 let h_iz_val = h_iz_vec[0];
+                // Optimization: O(N) calculation instead of O(N^2) loop
+                let temp_sum: f64 = temps.iter().sum();
+                let n_zones = num_zones as f64;
                 (0..num_zones)
-                    .map(|i| {
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                q_iz += h_iz_val * (temps[j] - temps[i]);
-                            }
-                        }
-                        q_iz
-                    })
+                    .map(|i| h_iz_val * (temp_sum - n_zones * temps[i]))
                     .collect()
             } else {
                 vec![0.0; num_zones]

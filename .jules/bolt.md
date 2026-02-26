@@ -1,0 +1,3 @@
+## 2024-05-22 - O(N) Heat Transfer Optimization
+**Learning:** Replacing an O(N^2) nested loop with an O(N) algebraic simplification `Sum(h * (T_j - T_i)) = h * (Sum(T) - N * T_i)` in `src/sim/engine.rs` improves scalability for multi-zone simulations. While performance gains are negligible for small zone counts (N=10), this change is critical for large-scale simulations. Also, unused variables in `step_physics_6r2c` were causing warnings and potentially misleading logic; cleaning them up improves code quality.
+**Action:** Always look for O(N^2) interactions in physics loops that can be simplified algebraically. Ensure unused variable warnings are addressed promptly to maintain clean code.
