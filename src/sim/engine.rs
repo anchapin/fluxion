@@ -1361,19 +1361,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             h_ext_base
         };
 
-        // We need to recalculate 'den' and 'sensitivity' if h_ext changed
-        let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
-                let sens_val = term_rest_1.clone() / den_val.clone();
-                (den_val, sens_val)
-            } else {
-                (self.derived_den.clone(), self.derived_sensitivity.clone())
-            }
-        } else {
-            (self.derived_den.clone(), self.derived_sensitivity.clone())
-        };
+        // Recalculate sensitivity tensor at each timestep (Issue #301)
+        // When ventilation (h_ve) changes, the zone temperature sensitivity to HVAC changes
+        // For systems with variable infiltration/ventilation, we must recalculate sensitivity
+        // at each timestep to maintain accuracy (non-linear system behavior)
+        let den_val =
+            self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+        let sens_val = term_rest_1.clone() / den_val.clone();
+        let (den, sensitivity) = (den_val, sens_val);
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
@@ -1566,19 +1561,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             h_ext_base.clone()
         };
 
-        // Recalculate sensitivity if h_ext changed
-        let (den, sensitivity) = if let Some(night_vent) = &self.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                let den_val =
-                    self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
-                let sens_val = term_rest_1.clone() / den_val.clone();
-                (den_val, sens_val)
-            } else {
-                (self.derived_den.clone(), self.derived_sensitivity.clone())
-            }
-        } else {
-            (self.derived_den.clone(), self.derived_sensitivity.clone())
-        };
+        // Recalculate sensitivity tensor at each timestep (Issue #301)
+        // For 6R2C model with variable infiltration/ventilation, sensitivity changes
+        // as h_ext changes. We recalculate at each timestep for accuracy.
+        let den_val =
+            self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+        let sens_val = term_rest_1.clone() / den_val.clone();
+        let (den, sensitivity) = (den_val, sens_val);
 
         // Use envelope mass temperature instead of single mass temperature
         let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
