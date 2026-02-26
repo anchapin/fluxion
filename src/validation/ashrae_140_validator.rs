@@ -894,8 +894,13 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
-                let heating_sp = hvac_schedule.heating_setpoint;
-                let cooling_sp = hvac_schedule.cooling_setpoint;
+                let hour = hour_of_day as u8;
+                let heating_sp = hvac_schedule
+                    .heating_setpoint_at_hour(hour)
+                    .unwrap_or(hvac_schedule.heating_setpoint);
+                let cooling_sp = hvac_schedule
+                    .cooling_setpoint_at_hour(hour)
+                    .unwrap_or(hvac_schedule.cooling_setpoint);
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
             }
@@ -1163,8 +1168,13 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
-                let heating_sp = hvac_schedule.heating_setpoint;
-                let cooling_sp = hvac_schedule.cooling_setpoint;
+                let hour = hour_of_day as u8;
+                let heating_sp = hvac_schedule
+                    .heating_setpoint_at_hour(hour)
+                    .unwrap_or(hvac_schedule.heating_setpoint);
+                let cooling_sp = hvac_schedule
+                    .cooling_setpoint_at_hour(hour)
+                    .unwrap_or(hvac_schedule.cooling_setpoint);
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
             }
