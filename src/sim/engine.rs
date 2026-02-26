@@ -611,13 +611,14 @@ impl ThermalModel<VectorField> {
             let h_is_wall = 8.29;
             let h_is_ceiling = 9.09;
 
-            // Area-weighted average h_is
-            let weighted_h_is = (h_is_floor * floor_area
-                + h_is_wall * wall_area
-                + h_is_ceiling * ceiling_area)
-                / (floor_area + wall_area + ceiling_area);
-
-            h_tr_is_vec.push(weighted_h_is * (floor_area + wall_area + ceiling_area));
+            // Surface-to-air conductance: Sum of individual surface conductances
+            // ASHRAE 140 specifies different h_is values per surface type:
+            // h_tr_is = Σ(h_is_i × Area_i) for all surfaces i
+            let h_tr_floor = h_is_floor * floor_area;
+            let h_tr_wall = h_is_wall * wall_area;
+            let h_tr_ceiling = h_is_ceiling * ceiling_area;
+            let h_tr_is_val = h_tr_floor + h_tr_wall + h_tr_ceiling;
+            h_tr_is_vec.push(h_tr_is_val);
 
             // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
             //
