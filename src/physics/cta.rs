@@ -113,29 +113,49 @@ impl Index<usize> for VectorField {
 
 impl Add for VectorField {
     type Output = Self;
-    fn add(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a + b)
+    fn add(mut self, rhs: Self) -> Self {
+        // Optimization: reuse self buffer
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a += b;
+        }
+        self
     }
 }
 
 impl Sub for VectorField {
     type Output = Self;
-    fn sub(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a - b)
+    fn sub(mut self, rhs: Self) -> Self {
+        // Optimization: reuse self buffer
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a -= b;
+        }
+        self
     }
 }
 
 impl Mul for VectorField {
     type Output = Self;
-    fn mul(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a * b)
+    fn mul(mut self, rhs: Self) -> Self {
+        // Optimization: reuse self buffer
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a *= b;
+        }
+        self
     }
 }
 
 impl Div for VectorField {
     type Output = Self;
-    fn div(self, rhs: Self) -> Self {
-        self.zip_with(&rhs, |a, b| a / b)
+    fn div(mut self, rhs: Self) -> Self {
+        // Optimization: reuse self buffer
+        assert_eq!(self.len(), rhs.len(), "Tensor dimension mismatch");
+        for (a, b) in self.data.iter_mut().zip(rhs.data.iter()) {
+            *a /= b;
+        }
+        self
     }
 }
 
@@ -214,15 +234,23 @@ impl ContinuousTensor<f64> for VectorField {
 // Convenience implementations for Scalar <-> Tensor operations
 impl Mul<f64> for VectorField {
     type Output = Self;
-    fn mul(self, rhs: f64) -> Self {
-        self.map(|x| x * rhs)
+    fn mul(mut self, rhs: f64) -> Self {
+        // Optimization: reuse self buffer
+        for x in &mut self.data {
+            *x *= rhs;
+        }
+        self
     }
 }
 
 impl Div<f64> for VectorField {
     type Output = Self;
-    fn div(self, rhs: f64) -> Self {
-        self.map(|x| x / rhs)
+    fn div(mut self, rhs: f64) -> Self {
+        // Optimization: reuse self buffer
+        for x in &mut self.data {
+            *x /= rhs;
+        }
+        self
     }
 }
 
@@ -273,5 +301,37 @@ mod tests {
         let v = VectorField::new(vec![1.0, 2.0, 4.0, 7.0]);
         let grad = v.gradient();
         assert_eq!(grad.as_slice(), &[1.0, 1.5, 2.5, 3.0]);
+    }
+
+    #[test]
+    fn test_in_place_arithmetic() {
+        // Verify that operations reuse memory (check pointer equality would be hard in safe Rust,
+        // but we can verify results are correct and "mut" is working as expected)
+
+        // Add
+        let mut v1 = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let v2 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let ptr_before = v1.as_slice().as_ptr();
+        v1 = v1 + v2;
+        let ptr_after = v1.as_slice().as_ptr();
+        assert_eq!(v1.as_slice(), &[11.0, 22.0, 33.0]);
+        assert_eq!(ptr_before, ptr_after, "Add should reuse allocation of LHS");
+
+        // Sub
+        let mut v3 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let v4 = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let ptr_before = v3.as_slice().as_ptr();
+        v3 = v3 - v4;
+        let ptr_after = v3.as_slice().as_ptr();
+        assert_eq!(v3.as_slice(), &[9.0, 18.0, 27.0]);
+        assert_eq!(ptr_before, ptr_after, "Sub should reuse allocation of LHS");
+
+        // Mul scalar
+        let mut v5 = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let ptr_before = v5.as_slice().as_ptr();
+        v5 = v5 * 2.0;
+        let ptr_after = v5.as_slice().as_ptr();
+        assert_eq!(v5.as_slice(), &[2.0, 4.0, 6.0]);
+        assert_eq!(ptr_before, ptr_after, "Mul<f64> should reuse allocation");
     }
 }

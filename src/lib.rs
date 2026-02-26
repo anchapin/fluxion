@@ -277,11 +277,19 @@ impl BatchOracle {
             // 3. Normalize and populate results
             for (idx, model, energy) in final_worker_data {
                 let total_area = model.zone_area.integrate();
+<<<<<<< HEAD
                 results[idx] = if total_area > 0.0 {
                     (energy / total_area).max(0.0)
+=======
+                let eui = if total_area > 0.0 {
+                    energy / total_area
+>>>>>>> origin/main
                 } else {
                     0.0
                 };
+                // Clamp negative results to 0.0 (caused by thermal mass energy accounting
+                // when mass charging > HVAC input in deadband)
+                results[idx] = eui.max(0.0);
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
@@ -302,11 +310,18 @@ impl BatchOracle {
 
             for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
                 let total_area = model.zone_area.integrate();
+<<<<<<< HEAD
                 results[*idx] = if total_area > 0.0 {
                     (*energy / total_area).max(0.0)
+=======
+                let eui = if total_area > 0.0 {
+                    *energy / total_area
+>>>>>>> origin/main
                 } else {
                     0.0
                 };
+                // Clamp negative results to 0.0
+                results[*idx] = eui.max(0.0);
             }
         }
 
