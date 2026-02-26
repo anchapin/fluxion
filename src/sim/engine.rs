@@ -612,12 +612,12 @@ impl ThermalModel<VectorField> {
             let h_is_ceiling = 9.09;
 
             // Area-weighted average h_is
-            let weighted_h_is = (h_is_floor * floor_area
-                + h_is_wall * wall_area
-                + h_is_ceiling * ceiling_area)
-                / (floor_area + wall_area + ceiling_area);
+            let weighted_h_is =
+                (h_is_floor * floor_area + h_is_wall * wall_area + h_is_ceiling * ceiling_area)
+                    / (floor_area + wall_area + ceiling_area);
 
-            h_tr_is_vec.push(weighted_h_is * (floor_area + wall_area + ceiling_area));
+            let area_tot = floor_area + wall_area + ceiling_area;
+            h_tr_is_vec.push(weighted_h_is * area_tot);
 
             // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
             //
@@ -902,7 +902,7 @@ impl ThermalModel<VectorField> {
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
             h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
-            h_tr_is: VectorField::from_scalar(1658.0, num_zones),  // ~7.97 W/m²K * 208 m² for default zone
+            h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
