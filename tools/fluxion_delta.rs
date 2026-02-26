@@ -227,8 +227,8 @@ pub fn compare_hourly_data(fluxion_csv: &str, energyplus_csv: &str, case_id: &st
 
     let mut report = DeltaAnalysisReport::new(case_id.to_string());
 
-    let fluxion_data: Vec<&str> = fluxion_lines[1..].to_vec();
-    let ep_data: Vec<&str> = ep_lines[1..].to_vec();
+    let fluxion_data: Vec<String> = fluxion_lines[1..].to_vec();
+    let ep_data: Vec<String> = ep_lines[1..].to_vec();
 
     let num_rows = fluxion_data.len().min(ep_data.len());
 
