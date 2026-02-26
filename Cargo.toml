@@ -64,6 +64,10 @@ harness = false
 name = "cta_perf_comparison"
 harness = false
 
+[[bin]]
+name = "fluxion-delta"
+path = "tools/fluxion_delta.rs"
+
 [profile.release]
 opt-level = 3
 lto = true
