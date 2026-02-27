@@ -33,10 +33,16 @@ fn investigate_case_960_hvac_assignment() {
     for (i, hvac) in spec.hvac.iter().enumerate() {
         println!("Zone {}: {:?}", i, hvac);
         match hvac {
-            HvacSchedule { heating_setpoint: 20.0, cooling_setpoint: 27.0, .. } => {
+            HvacSchedule {
+                heating_setpoint: 20.0,
+                cooling_setpoint: 27.0,
+                ..
+            } => {
                 println!("  -> HVAC controlled (heating: 20°C, cooling: 27°C)");
             }
-            HvacSchedule { efficiency: 0.0, .. } => {
+            HvacSchedule {
+                efficiency: 0.0, ..
+            } => {
                 println!("  -> FREE-FLOATING (no HVAC)");
             }
             _ => {
@@ -48,16 +54,26 @@ fn investigate_case_960_hvac_assignment() {
 
     println!("=== Zone Geometry ===");
     for (i, geo) in spec.geometry.iter().enumerate() {
-        println!("Zone {}: {}m x {}m x {}m (floor: {:.1} m², volume: {:.1} m³)",
-                 i, geo.width, geo.depth, geo.height, geo.floor_area(), geo.volume());
+        println!(
+            "Zone {}: {}m x {}m x {}m (floor: {:.1} m², volume: {:.1} m³)",
+            i,
+            geo.width,
+            geo.depth,
+            geo.height,
+            geo.floor_area(),
+            geo.volume()
+        );
     }
     println!();
 
     println!("=== Zone Windows ===");
     for (i, zone_windows) in spec.windows.iter().enumerate() {
-        println!("Zone {}: {} windows total ({:.1} m²)",
-                 i, zone_windows.len(),
-                 zone_windows.iter().map(|w| w.area).sum::<f64>());
+        println!(
+            "Zone {}: {} windows total ({:.1} m²)",
+            i,
+            zone_windows.len(),
+            zone_windows.iter().map(|w| w.area).sum::<f64>()
+        );
         for win in zone_windows {
             println!("  - {:.1} m² {:?} window", win.area, win.orientation);
         }
@@ -67,8 +83,12 @@ fn investigate_case_960_hvac_assignment() {
     println!("=== Internal Loads ===");
     for (i, loads) in spec.internal_loads.iter().enumerate() {
         match loads {
-            Some(l) => println!("Zone {}: {:.1} W total ({:.1} W/m²)",
-                               i, l.total_load, l.total_load / spec.geometry[i].floor_area()),
+            Some(l) => println!(
+                "Zone {}: {:.1} W total ({:.1} W/m²)",
+                i,
+                l.total_load,
+                l.total_load / spec.geometry[i].floor_area()
+            ),
             None => println!("Zone {}: No internal loads", i),
         }
     }
@@ -76,16 +96,20 @@ fn investigate_case_960_hvac_assignment() {
 
     println!("=== Common Walls (Inter-Zone Heat Transfer) ===");
     for wall in &spec.common_walls {
-        println!("Zone {} <-> Zone {}: {:.1} m² (U: {:.3} W/m²K, conductance: {:.1} W/K)",
-                 wall.zone_a, wall.zone_b, wall.area,
-                 wall.construction.u_value(None),
-                 wall.conductance());
+        println!(
+            "Zone {} <-> Zone {}: {:.1} m² (U: {:.3} W/m²K, conductance: {:.1} W/K)",
+            wall.zone_a,
+            wall.zone_b,
+            wall.area,
+            wall.construction.u_value(None),
+            wall.conductance()
+        );
     }
     println!();
 
     // Create a model and check its HVAC configuration
-    use fluxion::sim::engine::ThermalModel;
     use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
 
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
@@ -95,8 +119,10 @@ fn investigate_case_960_hvac_assignment() {
     println!();
 
     println!("=== ISSUE DETECTED ===");
-    println!("The model has a SINGLE heating/cooling setpoint ({:.1}-{:.1}°C)",
-             model.heating_setpoint, model.cooling_setpoint);
+    println!(
+        "The model has a SINGLE heating/cooling setpoint ({:.1}-{:.1}°C)",
+        model.heating_setpoint, model.cooling_setpoint
+    );
     println!("This is applied to ALL zones!");
     println!();
     println!("EXPECTED BEHAVIOR:");
@@ -114,19 +140,26 @@ fn investigate_case_960_hvac_assignment() {
 
     // Check Zone 0 (main zone)
     let zone_0_hvac = &spec.hvac[0];
-    assert!(zone_0_hvac.is_enabled(),
-            "Zone 0 should have HVAC enabled");
-    assert_eq!(zone_0_hvac.heating_setpoint, 20.0,
-               "Zone 0 heating setpoint should be 20°C");
-    assert_eq!(zone_0_hvac.cooling_setpoint, 27.0,
-               "Zone 0 cooling setpoint should be 27°C");
+    assert!(zone_0_hvac.is_enabled(), "Zone 0 should have HVAC enabled");
+    assert_eq!(
+        zone_0_hvac.heating_setpoint, 20.0,
+        "Zone 0 heating setpoint should be 20°C"
+    );
+    assert_eq!(
+        zone_0_hvac.cooling_setpoint, 27.0,
+        "Zone 0 cooling setpoint should be 27°C"
+    );
 
     // Check Zone 1 (sunspace)
     let zone_1_hvac = &spec.hvac[1];
-    assert!(!zone_1_hvac.is_enabled(),
-            "Zone 1 (sunspace) should NOT have HVAC enabled");
-    assert!(zone_1_hvac.is_free_floating(),
-            "Zone 1 (sunspace) should be free-floating");
+    assert!(
+        !zone_1_hvac.is_enabled(),
+        "Zone 1 (sunspace) should NOT have HVAC enabled"
+    );
+    assert!(
+        zone_1_hvac.is_free_floating(),
+        "Zone 1 (sunspace) should be free-floating"
+    );
 
     // This assertion will fail, demonstrating the bug
     // The model incorrectly applies HVAC setpoints from Zone 0 to all zones
@@ -151,7 +184,6 @@ fn investigate_case_960_hvac_assignment() {
 fn investigate_case_960_zone_areas() {
     let spec = ASHRAE140Case::Case960.spec();
     use fluxion::sim::engine::ThermalModel;
-    use fluxion::physics::cta::VectorField;
 
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
@@ -161,8 +193,10 @@ fn investigate_case_960_zone_areas() {
     println!("From spec:");
     println!("  Zone 0: {:.1} m²", spec.geometry[0].floor_area());
     println!("  Zone 1: {:.1} m²", spec.geometry[1].floor_area());
-    println!("  Total: {:.1} m²",
-             spec.geometry[0].floor_area() + spec.geometry[1].floor_area());
+    println!(
+        "  Total: {:.1} m²",
+        spec.geometry[0].floor_area() + spec.geometry[1].floor_area()
+    );
     println!();
 
     // Model's zone areas (stored as VectorField)
@@ -175,8 +209,10 @@ fn investigate_case_960_zone_areas() {
 
     // ISSUE: The model uses the same floor area for ALL zones
     println!("=== ISSUE DETECTED ===");
-    println!("The model uses the same floor area ({:.1} m²) for all zones!",
-             zone_areas[0]);
+    println!(
+        "The model uses the same floor area ({:.1} m²) for all zones!",
+        zone_areas[0]
+    );
     println!("Zone 1 (sunspace) should have a different floor area!");
     println!();
     println!("EXPECTED:");
@@ -199,7 +235,6 @@ fn investigate_case_960_zone_areas() {
 fn investigate_case_960_inter_zone_heat_transfer() {
     let spec = ASHRAE140Case::Case960.spec();
     use fluxion::sim::engine::ThermalModel;
-    use fluxion::physics::cta::VectorField;
 
     let model = ThermalModel::<VectorField>::from_spec(&spec);
 
@@ -256,13 +291,20 @@ fn demonstrate_case_960_solar_gains_distribution() {
 
     println!("Zone Windows:");
     for (i, zone_windows) in spec.windows.iter().enumerate() {
-        println!("Zone {}: {} windows ({:.1} m² total)",
-                 i, zone_windows.len(),
-                 zone_windows.iter().map(|w| w.area).sum::<f64>());
+        println!(
+            "Zone {}: {} windows ({:.1} m² total)",
+            i,
+            zone_windows.len(),
+            zone_windows.iter().map(|w| w.area).sum::<f64>()
+        );
         for win in zone_windows {
-            println!("  - {:.1} m² {:?} window (U: {:.2} W/m²K, SHGC: {:.2})",
-                     win.area, win.orientation, spec.window_properties.u_value,
-                     spec.window_properties.shgc);
+            println!(
+                "  - {:.1} m² {:?} window (U: {:.2} W/m²K, SHGC: {:.2})",
+                win.area,
+                win.orientation,
+                spec.window_properties.u_value,
+                spec.window_properties.shgc
+            );
         }
     }
     println!();
