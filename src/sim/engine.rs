@@ -1865,32 +1865,55 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             return (radiative_to_surface, radiative_to_mass);
         }
 
-        // Calculate total surface area (excluding floor which is ground-coupled)
+        // Calculate total surface area (including all surfaces for proper weighting)
+        // Issue #362: Implement proper area-weighted diffuse distribution
         let surfaces = &self.surfaces[zone_idx];
-        let total_surface_area: f64 = surfaces
+        
+        // Separate floor and non-floor surfaces
+        // Floor receives beam radiation directly, others receive diffuse proportionally
+        let floor_area: f64 = surfaces
             .iter()
-            .filter(|s| {
-                // Exclude floor surfaces (typically horizontal downward orientation)
-                // Floors are ground-coupled and don't receive internal radiation
-                s.orientation != crate::validation::ashrae_140_cases::Orientation::Down
-            })
+            .filter(|s| s.orientation == crate::validation::ashrae_140_cases::Orientation::Down)
+            .map(|s| s.area)
+            .sum();
+        
+        let non_floor_area: f64 = surfaces
+            .iter()
+            .filter(|s| s.orientation != crate::validation::ashrae_140_cases::Orientation::Down)
             .map(|s| s.area)
             .sum();
 
-        if total_surface_area == 0.0 {
+        let total_area = floor_area + non_floor_area;
+
+        if total_area == 0.0 {
             // Fallback if no valid surfaces
             let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
             let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
         }
 
-        // For ASHRAE 140 validation, we use a simplified approach:
-        // - Walls and ceiling receive most of the radiative gains
-        // - Distribution based on surface area proportion
-        // - Use solar_distribution_to_air as the base fraction for surface vs mass
-
-        let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
-        let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
+        // Implement area-weighted distribution (Issue #362)
+        // Diffuse radiation distributes proportionally to surface area
+        // Larger surfaces receive more diffuse gain
+        
+        // Calculate weighted distribution
+        // Floor receives a larger fraction due to beam radiation hitting it directly
+        // Walls and ceiling receive diffuse proportionally to their area
+        let floor_fraction = if floor_area > 0.0 {
+            floor_area / total_area
+        } else {
+            0.0
+        };
+        
+        // Use solar_distribution_to_air as base, but weight by actual surface areas
+        // This accounts for asymmetric surface areas in buildings
+        let radiative_to_surface = radiative_gain_watts * (
+            self.solar_distribution_to_air * (1.0 - floor_fraction) +
+            floor_fraction * 0.9 // Floor gets 90% of beam radiation
+        );
+        
+        // Remaining goes to thermal mass
+        let radiative_to_mass = radiative_gain_watts - radiative_to_surface;
 
         (radiative_to_surface, radiative_to_mass)
     }
