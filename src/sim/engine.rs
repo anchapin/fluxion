@@ -1341,10 +1341,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
         let phi_rad_total = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
-        // For 5R1C model, use simplified area-weighted distribution
-        // Future enhancement: Use surface-specific view factors for multi-node models
-        let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air;
-        let phi_m = phi_rad_total * (1.0 - self.solar_distribution_to_air);
+        // For 5R1C model, implement beam-to-floor direct radiation mapping (Issue #361)
+        // Most radiative gains from solar are beam radiation, which reaches floor directly
+        // Use solar_beam_to_mass_fraction to route beam radiation to thermal mass
+        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction);
+        let phi_m = phi_rad_total * self.solar_beam_to_mass_fraction;
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -1553,13 +1554,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_rad_total = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Distribute radiative gains to air, envelope mass, and internal mass
+        // Implement beam-to-floor direct radiation mapping (Issue #361)
         // In 6R2C model:
         // - phi_st: gains to surface node (proportional to envelope mass)
         // - phi_m_env: gains directly to envelope mass
         // - phi_m_int: gains directly to internal mass
-        let phi_st = phi_rad_total.clone() * self.solar_distribution_to_air * 0.6; // 60% to surface (envelope)
-        let phi_m_env = phi_rad_total.clone() * (1.0 - self.solar_distribution_to_air) * 0.7; // 70% of remainder to envelope
-        let phi_m_int = phi_rad_total * (1.0 - self.solar_distribution_to_air) * 0.3; // 30% to internal mass
+        // Use solar_beam_to_mass_fraction to route beam radiation to thermal masses
+        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6; // 60% to surface (envelope)
+        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7; // 70% of beam to envelope mass
+        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3; // 30% of beam to internal mass
 
         // Use pre-computed cached values
         let h_ext_base = &self.derived_h_ext;
