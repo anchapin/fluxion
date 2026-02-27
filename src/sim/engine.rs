@@ -1398,30 +1398,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_iz_vec = self.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.h_tr_iz_rad.as_ref();
 
-        let inter_zone_heat: Vec<f64> =
-            if num_zones > 1 && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
-                || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0) {
-                let temps = self.temperatures.as_ref();
-                let h_iz_val = h_iz_vec.get(0).copied().unwrap_or(0.0);
-                let h_iz_rad_val = h_iz_rad_vec.get(0).copied().unwrap_or(0.0);
-                let total_h_iz = h_iz_val + h_iz_rad_val;
+        let inter_zone_heat: Vec<f64> = if num_zones > 1
+            && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
+                || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0)
+        {
+            let temps = self.temperatures.as_ref();
+            let h_iz_val = h_iz_vec.first().copied().unwrap_or(0.0);
+            let h_iz_rad_val = h_iz_rad_vec.first().copied().unwrap_or(0.0);
+            let total_h_iz = h_iz_val + h_iz_rad_val;
 
-                (0..num_zones)
-                    .map(|i| {
-                        // Sum heat transfer from all other zones
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                // Combined conductive + radiative heat transfer
-                                q_iz += total_h_iz * (temps[j] - temps[i]);
-                            }
+            (0..num_zones)
+                .map(|i| {
+                    // Sum heat transfer from all other zones
+                    let mut q_iz = 0.0;
+                    for j in 0..num_zones {
+                        if i != j {
+                            // Combined conductive + radiative heat transfer
+                            q_iz += total_h_iz * (temps[j] - temps[i]);
                         }
-                        q_iz
-                    })
-                    .collect()
-            } else {
-                vec![0.0; num_zones]
-            };
+                    }
+                    q_iz
+                })
+                .collect()
+        } else {
+            vec![0.0; num_zones]
+        };
 
         // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
@@ -1588,29 +1589,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_iz_vec = self.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.h_tr_iz_rad.as_ref();
 
-        let inter_zone_heat: Vec<f64> =
-            if num_zones > 1 && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
-                || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0) {
-                let temps = self.temperatures.as_ref();
-                let h_iz_val = h_iz_vec.get(0).copied().unwrap_or(0.0);
-                let h_iz_rad_val = h_iz_rad_vec.get(0).copied().unwrap_or(0.0);
-                let total_h_iz = h_iz_val + h_iz_rad_val;
+        let inter_zone_heat: Vec<f64> = if num_zones > 1
+            && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
+                || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0)
+        {
+            let temps = self.temperatures.as_ref();
+            let h_iz_val = h_iz_vec.first().copied().unwrap_or(0.0);
+            let h_iz_rad_val = h_iz_rad_vec.first().copied().unwrap_or(0.0);
+            let total_h_iz = h_iz_val + h_iz_rad_val;
 
-                (0..num_zones)
-                    .map(|i| {
-                        let mut q_iz = 0.0;
-                        for j in 0..num_zones {
-                            if i != j {
-                                // Combined conductive + radiative heat transfer
-                                q_iz += total_h_iz * (temps[j] - temps[i]);
-                            }
+            (0..num_zones)
+                .map(|i| {
+                    let mut q_iz = 0.0;
+                    for j in 0..num_zones {
+                        if i != j {
+                            // Combined conductive + radiative heat transfer
+                            q_iz += total_h_iz * (temps[j] - temps[i]);
                         }
-                        q_iz
-                    })
-                    .collect()
-            } else {
-                vec![0.0; num_zones]
-            };
+                    }
+                    q_iz
+                })
+                .collect()
+        } else {
+            vec![0.0; num_zones]
+        };
 
         let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
         let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor.clone();
@@ -1924,9 +1926,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_rad = 4.0 * STEFAN_BOLTZMANN * emissivity_product * reference_temp.powi(3);
 
         // Total radiative conductance
-        let h_rad_total = h_rad * window_area;
-
-        h_rad_total
+        h_rad * window_area
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
