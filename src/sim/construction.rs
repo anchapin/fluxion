@@ -24,12 +24,58 @@ use serde::{Deserialize, Serialize};
 /// of a building assembly. The value 8.29 W/m²K is specified in ASHRAE 140.
 pub const INTERIOR_FILM_COEFF: f64 = 8.29; // W/m²K
 
+/// ASHRAE 140 interior film coefficient for wall surfaces (vertical).
+///
+/// Based on ASHRAE 140 R_si = 0.13 m²K/W for vertical surfaces.
+pub const INTERIOR_FILM_COEFF_WALL: f64 = 7.69; // W/m²K (1/0.13)
+
+/// ASHRAE 140 interior film coefficient for ceiling surfaces (heat flow up).
+///
+/// Based on ASHRAE 140 R_si = 0.10 m²K/W for upward heat flow.
+pub const INTERIOR_FILM_COEFF_CEILING: f64 = 10.0; // W/m²K (1/0.10)
+
+/// ASHRAE 140 interior film coefficient for floor surfaces (heat flow down).
+///
+/// Based on ASHRAE 140 R_si = 0.17 m²K/W for downward heat flow.
+pub const INTERIOR_FILM_COEFF_FLOOR: f64 = 5.88; // W/m²K (1/0.17)
+
 /// Default exterior film coefficient (typical for average wind conditions).
 ///
 /// For wind speeds of 3-4 m/s, the exterior film coefficient typically ranges
 /// from 21-29.3 W/m²K. This default value of 25.0 W/m²K represents a mid-range
 /// condition suitable for most applications.
 pub const EXTERIOR_FILM_COEFF_DEFAULT: f64 = 25.0; // W/m²K
+
+/// Surface type for ASHRAE 140 surface-type-specific interior film coefficients.
+///
+/// ASHRAE 140 specifies different interior resistances for different surface orientations
+/// to account for different heat flow directions (vertical, upward, downward).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SurfaceType {
+    /// Vertical wall surface
+    Wall,
+    /// Ceiling/roof surface (upward heat flow)
+    Ceiling,
+    /// Floor surface (downward heat flow)
+    Floor,
+}
+
+impl SurfaceType {
+    /// Returns the interior film coefficient for the specified surface type.
+    ///
+    /// # Arguments
+    /// * `surface_type` - The surface type
+    ///
+    /// # Returns
+    /// Interior film coefficient in W/m²K per ASHRAE 140
+    pub fn interior_film_coeff(surface_type: SurfaceType) -> f64 {
+        match surface_type {
+            SurfaceType::Wall => INTERIOR_FILM_COEFF_WALL,
+            SurfaceType::Ceiling => INTERIOR_FILM_COEFF_CEILING,
+            SurfaceType::Floor => INTERIOR_FILM_COEFF_FLOOR,
+        }
+    }
+}
 
 /// Returns the exterior film coefficient based on wind speed.
 ///
@@ -290,13 +336,17 @@ impl Construction {
     /// R_total = R_film_int + Σ(δ/k) + R_film_ext
     ///
     /// # Arguments
+    /// * `surface_type` - Optional surface type for ASHRAE 140 surface-type-specific
+    ///   interior film coefficient. If None, uses default INTERIOR_FILM_COEFF.
     /// * `exterior_wind_speed` - Wind speed at exterior surface in m/s
     ///   If not provided, uses default exterior film coefficient (25.0 W/m²K)
     ///
     /// # Returns
     /// Total thermal resistance in m²K/W
-    pub fn r_value_total(&self, exterior_wind_speed: Option<f64>) -> f64 {
-        let h_int = interior_film_coeff();
+    pub fn r_value_total(&self, surface_type: Option<SurfaceType>, exterior_wind_speed: Option<f64>) -> f64 {
+        let h_int = surface_type
+            .map(SurfaceType::interior_film_coeff)
+            .unwrap_or_else(interior_film_coeff);
         let h_ext = exterior_wind_speed
             .map(exterior_film_coeff)
             .unwrap_or(EXTERIOR_FILM_COEFF_DEFAULT);
@@ -316,13 +366,15 @@ impl Construction {
     /// Units: W/m²K
     ///
     /// # Arguments
+    /// * `surface_type` - Optional surface type for ASHRAE 140 surface-type-specific
+    ///   interior film coefficient. If None, uses default INTERIOR_FILM_COEFF.
     /// * `exterior_wind_speed` - Wind speed at exterior surface in m/s
     ///   If not provided, uses default exterior film coefficient (25.0 W/m²K)
     ///
     /// # Returns
     /// Thermal transmittance in W/m²K
-    pub fn u_value(&self, exterior_wind_speed: Option<f64>) -> f64 {
-        let r_total = self.r_value_total(exterior_wind_speed);
+    pub fn u_value(&self, surface_type: Option<SurfaceType>, exterior_wind_speed: Option<f64>) -> f64 {
+        let r_total = self.r_value_total(surface_type, exterior_wind_speed);
         assert!(r_total > 0.0, "Total R-value must be positive");
         1.0 / r_total
     }
@@ -789,20 +841,20 @@ mod tests {
         // R_siding = 0.009 / 0.14 = 0.064286
         // R_ext = 1 / 25.0 = 0.04
         // R_total = 0.120627 + 0.075 + 1.65 + 0.064286 + 0.04 = 1.949913
-        let r_total = construction.r_value_total(None);
+        let r_total = construction.r_value_total(None, None);
 
         let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 25.0;
         assert!((r_total - expected_r).abs() < EPSILON);
 
         // Check that U = 1/R
-        let u_value = construction.u_value(None);
+        let u_value = construction.u_value(None, None);
         assert!((u_value - 1.0 / r_total).abs() < EPSILON);
     }
 
     #[test]
     fn test_construction_u_value() {
         let construction = Assemblies::low_mass_wall();
-        let u_value = construction.u_value(None);
+        let u_value = construction.u_value(None, None);
 
         // For Case 600 wall: expected U ≈ 0.514 W/m²K
         // This may vary slightly due to different assumptions about film coefficients
@@ -829,14 +881,24 @@ mod tests {
         #[test]
         fn test_low_mass_wall_u_value_ashrae_140() {
             let wall = Assemblies::low_mass_wall();
-            let u_value = wall.u_value(None);
+            let u_value = wall.u_value(None, None);
             let expected = 0.514;
 
             println!(
                 "Low mass wall U-value: {:.4} W/m²K (expected: {:.4})",
                 u_value, expected
             );
-            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None));
+            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None, None));
+            println!(
+                "  R_materials: {:.4} m²K/W",
+                wall.layers.iter().map(|l| l.r_value()).sum::<f64>()
+            );
+
+            println!(
+                "  With Wall SurfaceType: {:.4} W/m²K",
+                wall.u_value(Some(SurfaceType::Wall), None)
+            );
+            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None, None));
             println!(
                 "  R_materials: {:.4} m²K/W",
                 wall.layers.iter().map(|l| l.r_value()).sum::<f64>()
@@ -858,14 +920,14 @@ mod tests {
         #[allow(clippy::approx_constant)] // 0.318 is ASHRAE 140 spec, not 1/π
         fn test_low_mass_roof_u_value_ashrae_140() {
             let roof = Assemblies::low_mass_roof();
-            let u_value = roof.u_value(None);
+            let u_value = roof.u_value(None, None);
             let expected = 0.318;
 
             println!(
                 "Low mass roof U-value: {:.4} W/m²K (expected: {:.4})",
                 u_value, expected
             );
-            println!("  R_total: {:.4} m²K/W", roof.r_value_total(None));
+            println!("  R_total: {:.4} m²K/W", roof.r_value_total(None, None));
             println!(
                 "  R_materials: {:.4} m²K/W",
                 roof.layers.iter().map(|l| l.r_value()).sum::<f64>()
@@ -885,14 +947,14 @@ mod tests {
         #[test]
         fn test_insulated_floor_u_value_ashrae_140() {
             let floor = Assemblies::insulated_floor();
-            let u_value = floor.u_value(None);
+            let u_value = floor.u_value(None, None);
             let expected = 0.190;
 
             println!(
                 "Insulated floor U-value: {:.4} W/m²K (expected: {:.4})",
                 u_value, expected
             );
-            println!("  R_total: {:.4} m²K/W", floor.r_value_total(None));
+            println!("  R_total: {:.4} m²K/W", floor.r_value_total(None, None));
             println!(
                 "  R_materials: {:.4} m²K/W",
                 floor.layers.iter().map(|l| l.r_value()).sum::<f64>()
@@ -912,14 +974,14 @@ mod tests {
         #[test]
         fn test_high_mass_wall_u_value_ashrae_140() {
             let wall = Assemblies::high_mass_wall();
-            let u_value = wall.u_value(None);
+            let u_value = wall.u_value(None, None);
             let expected = 0.514;
 
             println!(
                 "High mass wall U-value: {:.4} W/m²K (expected: {:.4})",
                 u_value, expected
             );
-            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None));
+            println!("  R_total: {:.4} m²K/W", wall.r_value_total(None, None));
             println!(
                 "  R_materials: {:.4} m²K/W",
                 wall.layers.iter().map(|l| l.r_value()).sum::<f64>()
@@ -940,14 +1002,14 @@ mod tests {
         #[allow(clippy::approx_constant)] // 0.318 is ASHRAE 140 spec, not 1/π
         fn test_high_mass_roof_u_value_ashrae_140() {
             let roof = Assemblies::high_mass_roof();
-            let u_value = roof.u_value(None);
+            let u_value = roof.u_value(None, None);
             let expected = 0.318;
 
             println!(
                 "High mass roof U-value: {:.4} W/m²K (expected: {:.4})",
                 u_value, expected
             );
-            println!("  R_total: {:.4} m²K/W", roof.r_value_total(None));
+            println!("  R_total: {:.4} m²K/W", roof.r_value_total(None, None));
             println!(
                 "  R_materials: {:.4} m²K/W",
                 roof.layers.iter().map(|l| l.r_value()).sum::<f64>()
@@ -967,14 +1029,14 @@ mod tests {
         #[test]
         fn test_high_mass_floor_u_value_ashrae_140() {
             let floor = Assemblies::high_mass_floor();
-            let u_value = floor.u_value(None);
+            let u_value = floor.u_value(None, None);
             let expected = 0.190;
 
             println!(
                 "High mass floor U-value: {:.4} W/m²K (expected: {:.4})",
                 u_value, expected
             );
-            println!("  R_total: {:.4} m²K/W", floor.r_value_total(None));
+            println!("  R_total: {:.4} m²K/W", floor.r_value_total(None, None));
             println!(
                 "  R_materials: {:.4} m²K/W",
                 floor.layers.iter().map(|l| l.r_value()).sum::<f64>()
@@ -999,7 +1061,7 @@ mod tests {
             let r_materials: f64 = wall.layers.iter().map(|l| l.r_value()).sum();
 
             // R-value with film coefficients
-            let r_total = wall.r_value_total(None);
+            let r_total = wall.r_value_total(None, None);
 
             // Film coefficients should add resistance
             let r_film = r_total - r_materials;
@@ -1072,32 +1134,32 @@ mod tests {
             let tests: Vec<(&str, f64, f64)> = vec![
                 (
                     "Low Mass Wall",
-                    Assemblies::low_mass_wall().u_value(None),
+                    Assemblies::low_mass_wall().u_value(None, None),
                     0.514,
                 ),
                 (
                     "Low Mass Roof",
-                    Assemblies::low_mass_roof().u_value(None),
+                    Assemblies::low_mass_roof().u_value(None, None),
                     0.318,
                 ),
                 (
                     "Insulated Floor",
-                    Assemblies::insulated_floor().u_value(None),
+                    Assemblies::insulated_floor().u_value(None, None),
                     0.190,
                 ),
                 (
                     "High Mass Wall",
-                    Assemblies::high_mass_wall().u_value(None),
+                    Assemblies::high_mass_wall().u_value(None, None),
                     0.514,
                 ),
                 (
                     "High Mass Roof",
-                    Assemblies::high_mass_roof().u_value(None),
+                    Assemblies::high_mass_roof().u_value(None, None),
                     0.318,
                 ),
                 (
                     "High Mass Floor",
-                    Assemblies::high_mass_floor().u_value(None),
+                    Assemblies::high_mass_floor().u_value(None, None),
                     0.190,
                 ),
             ];
@@ -1132,9 +1194,9 @@ mod tests {
         let construction = Assemblies::low_mass_wall();
 
         // Test with different wind speeds
-        let u_no_wind = construction.u_value(Some(0.0));
-        let u_low_wind = construction.u_value(Some(2.0));
-        let u_high_wind = construction.u_value(Some(10.0));
+        let u_no_wind = construction.u_value(None, Some(0.0));
+        let u_low_wind = construction.u_value(None, Some(2.0));
+        let u_high_wind = construction.u_value(None, Some(10.0));
 
         // Higher wind speed → higher exterior film coefficient → lower resistance → higher U
         assert!(u_high_wind > u_low_wind);

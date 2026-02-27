@@ -507,8 +507,8 @@ impl ASHRAE140Validator {
                 let opaque_wall_area = wall_area - window_area;
                 let roof_area = spec.geometry[zone_idx].roof_area();
 
-                let wall_u = spec.construction.wall.u_value(None);
-                let roof_u = spec.construction.roof.u_value(None);
+                let wall_u = spec.construction.wall.u_value(None, None);
+                let roof_u = spec.construction.roof.u_value(None, None);
 
                 for orientation in [
                     Orientation::South,
@@ -976,8 +976,8 @@ impl ASHRAE140Validator {
                 let roof_area = spec.geometry[zone_idx].roof_area();
 
                 // Get U-values from spec
-                let wall_u = spec.construction.wall.u_value(None);
-                let roof_u = spec.construction.roof.u_value(None);
+                let wall_u = spec.construction.wall.u_value(None, None);
+                let roof_u = spec.construction.roof.u_value(None, None);
 
                 // Average solar gain on opaque walls
                 for orientation in [
@@ -1242,8 +1242,8 @@ impl ASHRAE140Validator {
                 let opaque_wall_area = wall_area - window_area;
                 let roof_area = spec.geometry[zone_idx].roof_area();
 
-                let wall_u = spec.construction.wall.u_value(None);
-                let roof_u = spec.construction.roof.u_value(None);
+                let wall_u = spec.construction.wall.u_value(None, None);
+                let roof_u = spec.construction.roof.u_value(None, None);
 
                 for orientation in [
                     Orientation::South,
@@ -1547,8 +1547,8 @@ impl ASHRAE140Validator {
                 let opaque_wall_area = wall_area - window_area;
                 let roof_area = spec.geometry[zone_idx].roof_area();
 
-                let wall_u = spec.construction.wall.u_value(None);
-                let roof_u = spec.construction.roof.u_value(None);
+                let wall_u = spec.construction.wall.u_value(None, None);
+                let roof_u = spec.construction.roof.u_value(None, None);
 
                 for orientation in [
                     Orientation::South,
@@ -1640,8 +1640,8 @@ impl ASHRAE140Validator {
 
             // Envelope conduction estimate (W)
             let envelope_conduction_w =
-                opaque_area * spec.construction.wall.u_value(None) * delta_t.abs()
-                    + floor_area * spec.construction.roof.u_value(None) * delta_t.abs();
+                opaque_area * spec.construction.wall.u_value(None, None) * delta_t.abs()
+                    + floor_area * spec.construction.roof.u_value(None, None) * delta_t.abs();
             total_envelope_conduction_joules += envelope_conduction_w * 3600.0;
 
             // Infiltration estimate (W)
