@@ -1371,11 +1371,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         };
 
         // Recalculate sensitivity tensor at each timestep (Issue #301)
-        // When ventilation (h_ve) changes, the zone temperature sensitivity to HVAC changes
+        // When ventilation (h_ve) changes, zone temperature sensitivity to HVAC changes
         // For systems with variable infiltration/ventilation, we must recalculate sensitivity
         // at each timestep to maintain accuracy (non-linear system behavior)
-        let den_val =
-            self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
 
@@ -1575,8 +1574,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Recalculate sensitivity tensor at each timestep (Issue #301)
         // For 6R2C model with variable infiltration/ventilation, sensitivity changes
         // as h_ext changes. We recalculate at each timestep for accuracy.
-        let den_val =
-            self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
 
@@ -1852,10 +1850,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Get surfaces for this zone
         if zone_idx >= self.surfaces.len() || self.surfaces[zone_idx].is_empty() {
             // Fallback to default distribution if no surfaces defined
-            let radiative_to_surface =
-                radiative_gain_watts * self.solar_distribution_to_air;
-            let radiative_to_mass =
-                radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
+            let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
+            let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
         }
 
@@ -1873,10 +1869,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         if total_surface_area == 0.0 {
             // Fallback if no valid surfaces
-            let radiative_to_surface =
-                radiative_gain_watts * self.solar_distribution_to_air;
-            let radiative_to_mass =
-                radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
+            let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
+            let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
         }
 
@@ -1885,10 +1879,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // - Distribution based on surface area proportion
         // - Use solar_distribution_to_air as the base fraction for surface vs mass
 
-        let radiative_to_surface =
-            radiative_gain_watts * self.solar_distribution_to_air;
-        let radiative_to_mass =
-            radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
+        let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
+        let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
 
         (radiative_to_surface, radiative_to_mass)
     }
