@@ -217,8 +217,8 @@ pub fn compare_hourly_data(
     let fluxion_reader = BufReader::new(fluxion_file);
     let ep_reader = BufReader::new(ep_file);
 
-    let fluxion_lines: Vec<String> = fluxion_reader.lines().filter_map(|l| l.ok()).collect();
-    let ep_lines: Vec<String> = ep_reader.lines().filter_map(|l| l.ok()).collect();
+    let fluxion_lines: Vec<String> = fluxion_reader.lines().map_while(Result::ok).collect();
+    let ep_lines: Vec<String> = ep_reader.lines().map_while(Result::ok).collect();
 
     if fluxion_lines.len() < 2 || ep_lines.len() < 2 {
         return Err("CSV files must have header and at least one data row".to_string());
