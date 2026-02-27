@@ -1427,17 +1427,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Calculate free-running surface temperature for mass update
         // This prevents HVAC energy from being stored in thermal mass
         // ts_num_free = h_tr_ms * mass_temp + h_tr_is * t_i_free + phi_st
-        let ts_num_free = self.h_tr_ms.clone() * self.mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
-            + phi_st.clone();
+        // Optimized to reduce allocations using iterators
+        let ts_num_free_data: Vec<f64> = self
+            .h_tr_ms
+            .as_ref()
+            .iter()
+            .zip(self.mass_temperatures.as_ref().iter())
+            .zip(self.h_tr_is.as_ref().iter())
+            .zip(t_i_free.as_ref().iter())
+            .zip(phi_st.as_ref().iter())
+            .map(|((((&h_ms, &tm), &h_is), &ti), &phi)| h_ms * tm + h_is * ti + phi)
+            .collect();
+        let ts_num_free = T::from(VectorField::new(ts_num_free_data));
         // Denominator is term_rest_1
         let t_s_free = ts_num_free / term_rest_1.clone();
 
         // Optimization: Avoid creating t_e vector. Use map with scalar outdoor_temp.
         // t_e - mass_temperatures = outdoor_temp - mass_temperatures
-        let q_m_net = self.h_tr_em.clone() * self.mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone())
-            + phi_m; // Add gain directly to mass node
+        // Optimized to reduce allocations using iterators
+        let q_m_net_data: Vec<f64> = self
+            .h_tr_em
+            .as_ref()
+            .iter()
+            .zip(self.mass_temperatures.as_ref().iter())
+            .zip(self.h_tr_ms.as_ref().iter())
+            .zip(t_s_free.as_ref().iter())
+            .zip(phi_m.as_ref().iter())
+            .map(|((((&h_em, &tm), &h_ms), &ts), &phi)| {
+                h_em * (outdoor_temp - tm) + h_ms * (ts - tm) + phi
+            })
+            .collect();
+        let q_m_net = T::from(VectorField::new(q_m_net_data)); // Add gain directly to mass node
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
 
@@ -1583,29 +1603,58 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Calculate surface temperature
         // === 6R2C: Update two mass nodes ===
-        let ts_num_free = self.h_tr_ms.clone() * self.envelope_mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
-            + phi_st.clone();
+        // Optimized to reduce allocations using iterators
+        let ts_num_free_data: Vec<f64> = self
+            .h_tr_ms
+            .as_ref()
+            .iter()
+            .zip(self.envelope_mass_temperatures.as_ref().iter())
+            .zip(self.h_tr_is.as_ref().iter())
+            .zip(t_i_free.as_ref().iter())
+            .zip(phi_st.as_ref().iter())
+            .map(|((((&h_ms, &tm), &h_is), &ti), &phi)| h_ms * tm + h_is * ti + phi)
+            .collect();
+        let ts_num_free = T::from(VectorField::new(ts_num_free_data));
         let t_s_free = ts_num_free / term_rest_1.clone();
 
         // === 6R2C: Update two mass nodes ===
         // Envelope mass: receives heat from exterior, surface, and internal mass
         let old_env_mass_temperatures = self.envelope_mass_temperatures.clone();
-        let q_env_net = self.h_tr_em.clone()
-            * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_free - self.envelope_mass_temperatures.clone())
-            + self.h_tr_me.clone()
-                * (self.internal_mass_temperatures.clone()
-                    - self.envelope_mass_temperatures.clone())
-            + phi_m_env;
+        // Optimized q_env_net calculation
+        let q_env_net_data: Vec<f64> = self
+            .h_tr_em
+            .as_ref()
+            .iter()
+            .zip(self.envelope_mass_temperatures.as_ref().iter())
+            .zip(self.h_tr_ms.as_ref().iter())
+            .zip(t_s_free.as_ref().iter())
+            .zip(self.h_tr_me.as_ref().iter())
+            .zip(self.internal_mass_temperatures.as_ref().iter())
+            .zip(phi_m_env.as_ref().iter())
+            .map(|((((((&h_em, &tm_env), &h_ms), &ts), &h_me), &tm_int), &phi)| {
+                h_em * (outdoor_temp - tm_env)
+                    + h_ms * (ts - tm_env)
+                    + h_me * (tm_int - tm_env)
+                    + phi
+            })
+            .collect();
+        let q_env_net = T::from(VectorField::new(q_env_net_data));
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
         self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
 
         // Internal mass: receives heat from envelope mass and direct gains
         let old_int_mass_temperatures = self.internal_mass_temperatures.clone();
-        let q_int_net = self.h_tr_me.clone()
-            * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
-            + phi_m_int;
+        // Optimized q_int_net calculation
+        let q_int_net_data: Vec<f64> = self
+            .h_tr_me
+            .as_ref()
+            .iter()
+            .zip(self.envelope_mass_temperatures.as_ref().iter())
+            .zip(self.internal_mass_temperatures.as_ref().iter())
+            .zip(phi_m_int.as_ref().iter())
+            .map(|((((&h_me, &tm_env), &tm_int), &phi))| h_me * (tm_env - tm_int) + phi)
+            .collect();
+        let q_int_net = T::from(VectorField::new(q_int_net_data));
         let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
         self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
 
