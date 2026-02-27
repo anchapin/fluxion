@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs::File;
-use std::io::{BufRead, BufReader, Write};
-use std::path::PathBuf;
 use clap::Parser;
+use serde::{Deserialize, Serialize};
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HourlyComparison {
@@ -205,9 +204,15 @@ fn parse_csv_value(s: &str) -> f64 {
     s.trim().parse().unwrap_or(0.0)
 }
 
-pub fn compare_hourly_data(fluxion_csv: &str, energyplus_csv: &str, case_id: &str) -> Result<DeltaAnalysisReport, String> {
-    let fluxion_file = File::open(fluxion_csv).map_err(|e| format!("Failed to open Fluxion CSV: {}", e))?;
-    let ep_file = File::open(energyplus_csv).map_err(|e| format!("Failed to open EnergyPlus CSV: {}", e))?;
+pub fn compare_hourly_data(
+    fluxion_csv: &str,
+    energyplus_csv: &str,
+    case_id: &str,
+) -> Result<DeltaAnalysisReport, String> {
+    let fluxion_file =
+        File::open(fluxion_csv).map_err(|e| format!("Failed to open Fluxion CSV: {}", e))?;
+    let ep_file =
+        File::open(energyplus_csv).map_err(|e| format!("Failed to open EnergyPlus CSV: {}", e))?;
 
     let fluxion_reader = BufReader::new(fluxion_file);
     let ep_reader = BufReader::new(ep_file);

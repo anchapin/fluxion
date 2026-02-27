@@ -207,9 +207,7 @@ impl WindowProperties {
 fn ashrae_140_window_shgc_ratio(angle_deg: f64) -> f64 {
     // ASHRAE 140 values for double-pane clear glass
     // Angle (deg) : SHGC ratio (relative to normal incidence)
-    const ANGLES: &[f64] = &[
-        0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0,
-    ];
+    const ANGLES: &[f64] = &[0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0];
     const RATIOS: &[f64] = &[
         1.000, 0.995, 0.985, 0.970, 0.940, 0.890, 0.810, 0.680, 0.450, 0.000,
     ];

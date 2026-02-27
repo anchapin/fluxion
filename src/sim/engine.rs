@@ -905,7 +905,7 @@ impl ThermalModel<VectorField> {
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
             h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
-            h_tr_is: VectorField::from_scalar(1658.0, num_zones),  // ~7.97 W/m²K * 208 m² for default zone
+            h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
