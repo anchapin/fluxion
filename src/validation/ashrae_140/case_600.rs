@@ -112,9 +112,9 @@ impl Case600Model {
         let floor_assembly = Assemblies::insulated_floor();
 
         // Calculate U-values with default wind speed (25 m/s → ~21 W/m²K film coefficient)
-        let _u_wall = wall_assembly.u_value(None);
-        let u_roof = roof_assembly.u_value(None);
-        let _u_floor = floor_assembly.u_value(None);
+        let _u_wall = wall_assembly.u_value(None, None);
+        let u_roof = roof_assembly.u_value(None, None);
+        let _u_floor = floor_assembly.u_value(None, None);
 
         // Update 5R1C conductances based on construction U-values
         // h_tr_em: Exterior → Mass (roof)
