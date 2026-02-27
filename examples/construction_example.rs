@@ -26,7 +26,7 @@ fn main() {
         "  Total R-value: {:.4} m²K/W",
         custom_wall.r_value_total(None)
     );
-    println!("  U-value: {:.4} W/m²K", custom_wall.u_value(None));
+    println!("  U-value: {:.4} W/m²K", custom_wall.u_value(None, None));
     println!(
         "  Thermal capacitance: {:.2} J/m²K",
         custom_wall.thermal_capacitance_per_area()
@@ -38,14 +38,14 @@ fn main() {
     println!("  Layers: {}", case_600_wall.layer_count());
     println!(
         "  U-value: {:.4} W/m²K (expected ~0.514)",
-        case_600_wall.u_value(None)
+        case_600_wall.u_value(None, None)
     );
     println!("  R-value: {:.4} m²K/W", case_600_wall.r_value_total(None));
 
     let case_900_wall = Assemblies::high_mass_wall();
     println!("\nASHRAE 140 Case 900 (High Mass) Wall:");
     println!("  Layers: {}", case_900_wall.layer_count());
-    println!("  U-value: {:.4} W/m²K", case_900_wall.u_value(None));
+    println!("  U-value: {:.4} W/m²K", case_900_wall.u_value(None, None));
     println!("  R-value: {:.4} m²K/W", case_900_wall.r_value_total(None));
     println!(
         "  Thermal capacitance: {:.2} J/m²K",
@@ -56,7 +56,7 @@ fn main() {
     println!("\nWind speed effect on U-value (Case 600 wall):");
     for wind_speed in [0.0, 2.0, 5.0, 10.0] {
         let h_ext = exterior_film_coeff(wind_speed);
-        let u = case_600_wall.u_value(Some(wind_speed));
+        let u = case_600_wall.u_value(Some(wind_speed), None);
         println!(
             "  {:.1} m/s wind → h_ext = {:.2} W/m²K → U = {:.4} W/m²K",
             wind_speed, h_ext, u
@@ -75,22 +75,22 @@ fn main() {
     println!("\nASHRAE 140 Assembly U-values:");
     println!(
         "  Low mass wall: {:.4} W/m²K",
-        Assemblies::low_mass_wall().u_value(None)
+        Assemblies::low_mass_wall().u_value(None, None)
     );
     println!(
         "  Low mass roof: {:.4} W/m²K",
-        Assemblies::low_mass_roof().u_value(None)
+        Assemblies::low_mass_roof().u_value(None, None)
     );
     println!(
         "  Insulated floor: {:.4} W/m²K",
-        Assemblies::insulated_floor().u_value(None)
+        Assemblies::insulated_floor().u_value(None, None)
     );
     println!(
         "  High mass wall: {:.4} W/m²K",
-        Assemblies::high_mass_wall().u_value(None)
+        Assemblies::high_mass_wall().u_value(None, None)
     );
     println!(
         "  High mass roof: {:.4} W/m²K",
-        Assemblies::high_mass_roof().u_value(None)
+        Assemblies::high_mass_roof().u_value(None, None)
     );
 }

@@ -18,7 +18,8 @@
 //! - Cooling energy is 23x higher than reference (64.79 vs 1.55-2.78 MWh)
 //! - Heating energy is 16x higher than reference (40.21 vs 1.65-2.45 MWh)
 
-use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, HvacSchedule};
+use fluxion::physics::cta::VectorField;
+use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
 
 #[test]
 fn investigate_case_960_hvac_assignment() {
@@ -101,7 +102,7 @@ fn investigate_case_960_hvac_assignment() {
             wall.zone_a,
             wall.zone_b,
             wall.area,
-            wall.construction.u_value(None),
+            wall.construction.u_value(None, None),
             wall.conductance()
         );
     }
@@ -255,7 +256,10 @@ fn investigate_case_960_inter_zone_heat_transfer() {
         println!("  Zone A: {}", wall.zone_a);
         println!("  Zone B: {}", wall.zone_b);
         println!("  Construction: {:?}", wall.construction);
-        println!("  U-value: {:.3} W/m²K", wall.construction.u_value(None));
+        println!(
+            "  U-value: {:.3} W/m²K",
+            wall.construction.u_value(None, None)
+        );
         println!("  Conductance: {:.1} W/K", wall.conductance());
         println!();
     }
