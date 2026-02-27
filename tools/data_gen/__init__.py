@@ -6,3 +6,7 @@ using EnergyPlus and OpenStudio.
 """
 
 __version__ = "0.1.0"
+
+from .ashrae_140_generator import ASHRAE140CaseGenerator, save_cases_to_json
+
+__all__ = ["ASHRAE140CaseGenerator", "save_cases_to_json"]

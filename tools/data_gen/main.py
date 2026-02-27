@@ -12,7 +12,7 @@ import sys
 # Ensure we can import the package if run directly
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
 
-from tools.data_gen import geometry, simulation, weather
+from tools.data_gen import ashrae_140_generator, geometry, simulation, weather
 
 # Setup logging
 logging.basicConfig(
@@ -31,6 +31,40 @@ def main():
     )
     weather_parser.add_argument(
         "--out", default="assets/weather", help="Output directory for weather files"
+    )
+
+    # Subcommand: generate-ashrae
+    ashrae_parser = subparsers.add_parser(
+        "generate-ashrae", help="Generate ASHRAE 140 test cases with variations"
+    )
+    ashrae_parser.add_argument(
+        "--out", default="assets/ashrae_140_cases.json", help="Output JSON file"
+    )
+    ashrae_parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility"
+    )
+    ashrae_parser.add_argument(
+        "--u-value-variation",
+        type=float,
+        default=0.5,
+        help="U-value variation fraction (default: 0.5 = ±50%%)",
+    )
+    ashrae_parser.add_argument(
+        "--setpoint-variation",
+        type=float,
+        default=5.0,
+        help="Setpoint variation in °C (default: 5.0)",
+    )
+    ashrae_parser.add_argument(
+        "--variations-per-case",
+        type=int,
+        default=0,
+        help="Number of variations per case (0 = no variations, just base cases)",
+    )
+    ashrae_parser.add_argument(
+        "--base-only",
+        action="store_true",
+        help="Generate only base cases without variations (same as --variations-per-case 0)",
     )
 
     # Subcommand: generate
@@ -67,7 +101,28 @@ def main():
 
     args = parser.parse_args()
 
-    if args.command == "download-weather":
+    if args.command == "generate-ashrae":
+        generator = ashrae_140_generator.ASHRAE140CaseGenerator(seed=args.seed)
+
+        if args.base_only:
+            cases = generator.generate_all_cases()
+            logger.info(f"Generated {len(cases)} base ASHRAE 140 cases")
+        elif args.variations_per_case > 0:
+            cases = generator.generate_all_variations(
+                u_value_variation=args.u_value_variation,
+                setpoint_variation=args.setpoint_variation,
+                num_variations_per_case=args.variations_per_case,
+            )
+            logger.info(f"Generated {len(cases)} ASHRAE 140 cases with variations")
+        else:
+            # Default: generate base cases
+            cases = generator.generate_all_cases()
+            logger.info(f"Generated {len(cases)} base ASHRAE 140 cases")
+
+        ashrae_140_generator.save_cases_to_json(cases, args.out)
+        logger.info(f"ASHRAE 140 cases saved to {args.out}")
+
+    elif args.command == "download-weather":
         weather.download_standard_files(args.out)
 
     elif args.command == "generate":
