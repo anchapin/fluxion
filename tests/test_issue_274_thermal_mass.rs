@@ -128,8 +128,8 @@ fn test_5r1c_conductance_values() {
     // For Case 600 and 900, the U-values should be approximately the same
     // The difference is in thermal capacitance, not conductance
     // Small differences (<1%) are acceptable due to different layer compositions
-    let wall_u_low = low_mass_spec.construction.wall.u_value(None);
-    let wall_u_high = high_mass_spec.construction.wall.u_value(None);
+    let wall_u_low = low_mass_spec.construction.wall.u_value(None, None);
+    let wall_u_high = high_mass_spec.construction.wall.u_value(None, None);
     let wall_u_diff = (wall_u_low - wall_u_high).abs() / wall_u_low;
 
     assert!(
@@ -138,8 +138,8 @@ fn test_5r1c_conductance_values() {
         wall_u_diff * 100.0
     );
 
-    let roof_u_low = low_mass_spec.construction.roof.u_value(None);
-    let roof_u_high = high_mass_spec.construction.roof.u_value(None);
+    let roof_u_low = low_mass_spec.construction.roof.u_value(None, None);
+    let roof_u_high = high_mass_spec.construction.roof.u_value(None, None);
     let roof_u_diff = (roof_u_low - roof_u_high).abs() / roof_u_low;
 
     assert!(
@@ -148,8 +148,8 @@ fn test_5r1c_conductance_values() {
         roof_u_diff * 100.0
     );
 
-    let floor_u_low = low_mass_spec.construction.floor.u_value(None);
-    let floor_u_high = high_mass_spec.construction.floor.u_value(None);
+    let floor_u_low = low_mass_spec.construction.floor.u_value(None, None);
+    let floor_u_high = high_mass_spec.construction.floor.u_value(None, None);
     let floor_u_diff = (floor_u_low - floor_u_high).abs() / floor_u_low;
 
     assert!(
@@ -161,14 +161,14 @@ fn test_5r1c_conductance_values() {
     println!("U-values are correctly equal between low-mass and high-mass cases");
     println!(
         "Wall U: {:.3} W/m²K",
-        low_mass_spec.construction.wall.u_value(None)
+        low_mass_spec.construction.wall.u_value(None, None)
     );
     println!(
         "Roof U: {:.3} W/m²K",
-        low_mass_spec.construction.roof.u_value(None)
+        low_mass_spec.construction.roof.u_value(None, None)
     );
     println!(
         "Floor U: {:.3} W/m²K",
-        low_mass_spec.construction.floor.u_value(None)
+        low_mass_spec.construction.floor.u_value(None, None)
     );
 }

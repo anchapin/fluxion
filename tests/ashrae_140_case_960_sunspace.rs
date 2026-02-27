@@ -340,7 +340,8 @@ fn test_case_960_comprehensive_energy_validation() {
     println!("Annual Heating: {:.2} MWh", result.annual_heating_mwh);
     println!(
         "  Reference: {:.2}-{:.2} MWh",
-        reference::ANNUAL_HEATING_MIN, reference::ANNUAL_HEATING_MAX
+        reference::ANNUAL_HEATING_MIN,
+        reference::ANNUAL_HEATING_MAX
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
@@ -350,7 +351,8 @@ fn test_case_960_comprehensive_energy_validation() {
     println!("\nAnnual Cooling: {:.2} MWh", result.annual_cooling_mwh);
     println!(
         "  Reference: {:.2}-{:.2} MWh",
-        reference::ANNUAL_COOLING_MIN, reference::ANNUAL_COOLING_MAX
+        reference::ANNUAL_COOLING_MIN,
+        reference::ANNUAL_COOLING_MAX
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
@@ -360,7 +362,8 @@ fn test_case_960_comprehensive_energy_validation() {
     println!("\nPeak Heating: {:.2} kW", result.peak_heating_kw);
     println!(
         "  Reference: {:.2}-{:.2} kW",
-        reference::PEAK_HEATING_MIN, reference::PEAK_HEATING_MAX
+        reference::PEAK_HEATING_MIN,
+        reference::PEAK_HEATING_MAX
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
@@ -370,7 +373,8 @@ fn test_case_960_comprehensive_energy_validation() {
     println!("\nPeak Cooling: {:.2} kW", result.peak_cooling_kw);
     println!(
         "  Reference: {:.2}-{:.2} kW",
-        reference::PEAK_COOLING_MIN, reference::PEAK_COOLING_MAX
+        reference::PEAK_COOLING_MIN,
+        reference::PEAK_COOLING_MAX
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
@@ -400,8 +404,8 @@ fn test_case_960_comprehensive_energy_validation() {
 
     // Note: Cooling validation is currently expected to fail due to the 20× issue (#273)
     // This test documents the issue and will pass once inter-zone radiation is fixed
-    let cooling_ratio =
-        result.annual_cooling_mwh / ((reference::ANNUAL_COOLING_MIN + reference::ANNUAL_COOLING_MAX) / 2.0);
+    let cooling_ratio = result.annual_cooling_mwh
+        / ((reference::ANNUAL_COOLING_MIN + reference::ANNUAL_COOLING_MAX) / 2.0);
     if cooling_ratio > 10.0 {
         println!(
             "WARNING: Case 960 cooling energy is {:.1}× higher than reference (expected ~20× due to issue #273)",
@@ -450,7 +454,10 @@ fn test_case_960_inter_zone_heat_transfer_analysis() {
     println!("\n=== Case 960 Inter-Zone Heat Transfer Analysis ===");
     println!("Back-zone mean temperature: {:.2}°C", back_mean);
     println!("Sunspace mean temperature: {:.2}°C", sunspace_mean);
-    println!("Mean temperature difference (Sunspace - Back): {:.2}°C", mean_temp_diff);
+    println!(
+        "Mean temperature difference (Sunspace - Back): {:.2}°C",
+        mean_temp_diff
+    );
     println!("Max temperature difference: {:.2}°C", max_temp_diff);
     println!("Min temperature difference: {:.2}°C", min_temp_diff);
     println!("=== End ===\n");
