@@ -1809,7 +1809,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let mut total_solar_gain = 0.0;
         for &orientation in orientations {
             // Use solar module to calculate gain for this orientation
-            let (_sun_pos, _irradiance, solar_gain_watts) = calculate_hourly_solar(
+            let (_sun_pos, _irradiance, solar_gain) = calculate_hourly_solar(
                 self.latitude_deg,
                 self.longitude_deg,
                 year,
@@ -1825,8 +1825,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 orientation,
                 Some(0.2), // Ground reflectance
             );
-
-            total_solar_gain += solar_gain_watts;
+            total_solar_gain += solar_gain.total_gain_w;
         }
 
         total_solar_gain

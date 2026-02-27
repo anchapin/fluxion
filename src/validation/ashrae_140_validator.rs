@@ -496,7 +496,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
                 }
 
                 // Opaque solar gains
@@ -963,7 +963,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
                 }
 
                 // --- Opaque Solar Gains (Walls + Roof) ---
@@ -1231,7 +1231,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
                 }
 
                 // Opaque Solar Gains
@@ -1536,7 +1536,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
                 }
 
                 // Opaque solar gains

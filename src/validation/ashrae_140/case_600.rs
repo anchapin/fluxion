@@ -204,7 +204,7 @@ impl Case600Model {
             let dhi = weather_data.dhi;
 
             // Calculate solar gain through south window
-            let (_, _, solar_gain_watts) = calculate_hourly_solar(
+            let (_, _, solar_gain) = calculate_hourly_solar(
                 39.7392,                       // Denver latitude (°N)
                 -104.9903,                     // Denver longitude (°W)
                 2024,                          // Year
@@ -224,10 +224,10 @@ impl Case600Model {
             // Calculate total internal loads (W)
             // Internal gains: 200W continuous (60% radiative, 40% convective)
             let internal_gains = 200.0;
-            let total_loads = internal_gains + solar_gain_watts;
+            let total_loads = internal_gains + solar_gain.total_gain_w;
 
             // Store solar gain for analysis
-            hourly_solar.push(solar_gain_watts);
+            hourly_solar.push(solar_gain.total_gain_w);
 
             // Set loads for this timestep (W/m²)
             let load_per_area = total_loads / 48.0; // 48 m² floor area
