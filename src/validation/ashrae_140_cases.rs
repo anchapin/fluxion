@@ -872,17 +872,20 @@ impl ConstructionSpec {
 
     /// Returns the total wall U-value (with ASHRAE film coefficients).
     pub fn wall_u_value(&self) -> f64 {
-        self.wall.u_value(Some(crate::sim::construction::SurfaceType::Wall), None)
+        self.wall
+            .u_value(Some(crate::sim::construction::SurfaceType::Wall), None)
     }
 
     /// Returns the total roof U-value (with ASHRAE film coefficients).
     pub fn roof_u_value(&self) -> f64 {
-        self.roof.u_value(Some(crate::sim::construction::SurfaceType::Ceiling), None)
+        self.roof
+            .u_value(Some(crate::sim::construction::SurfaceType::Ceiling), None)
     }
 
     /// Returns the total floor U-value (with ASHRAE film coefficients).
     pub fn floor_u_value(&self) -> f64 {
-        self.floor.u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
+        self.floor
+            .u_value(Some(crate::sim::construction::SurfaceType::Floor), None)
     }
 }
 

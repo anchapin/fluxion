@@ -1024,7 +1024,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_is_wall = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Wall);
         let h_is_ceiling = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Ceiling);
         let h_is_floor = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Floor);
-        self.h_tr_is = opaque_wall_area.clone() * h_is_wall + roof_area.clone() * h_is_ceiling + self.zone_area.clone() * h_is_floor;
+        self.h_tr_is = opaque_wall_area.clone() * h_is_wall
+            + roof_area.clone() * h_is_ceiling
+            + self.zone_area.clone() * h_is_floor;
 
         // Ventilation
         // h_ve = (infiltration_rate * volume * density * cp) / 3600
