@@ -596,10 +596,7 @@ impl ThermalModel<VectorField> {
             h_ve_vec.push((spec.infiltration_ach * zone_air_cap) / 3600.0);
 
             // Floor conductance
-            let floor_u = spec
-                .construction
-                .floor
-                .u_value(None, None);
+            let floor_u = spec.construction.floor.u_value(None, None);
             let h_tr_floor_val = if spec.case_id.starts_with('9') {
                 floor_u * zone_floor_area * 1.2
             } else {
@@ -661,14 +658,8 @@ impl ThermalModel<VectorField> {
             h_tr_ms_vec.push(h_ms * a_m);
 
             // Opaque conductance (h_tr_em)
-            let wall_u = spec
-                .construction
-                .wall
-                .u_value(None, None);
-            let roof_u = spec
-                .construction
-                .roof
-                .u_value(None, None);
+            let wall_u = spec.construction.wall.u_value(None, None);
+            let roof_u = spec.construction.roof.u_value(None, None);
             let h_tr_op =
                 opaque_area * wall_u + zone_floor_area * roof_u + model.thermal_bridge_coefficient;
             let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
@@ -1377,7 +1368,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // For systems with variable infiltration/ventilation, we must recalculate sensitivity
         // at each timestep to maintain accuracy (non-linear system behavior)
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
-        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone() + self.derived_ground_coeff.clone();
+        let den_val = self.derived_h_ms_is_prod.clone()
+            + term_rest_1.clone() * h_ext.clone()
+            + self.derived_ground_coeff.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
 
@@ -1580,7 +1573,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // For 6R2C model with variable infiltration/ventilation, sensitivity changes
         // as h_ext changes. We recalculate at each timestep for accuracy.
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
-        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone() + self.derived_ground_coeff.clone();
+        let den_val = self.derived_h_ms_is_prod.clone()
+            + term_rest_1.clone() * h_ext.clone()
+            + self.derived_ground_coeff.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
 
@@ -1863,7 +1858,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Calculate total surface area (including all surfaces for proper weighting)
         // Issue #362: Implement proper area-weighted diffuse distribution
         let surfaces = &self.surfaces[zone_idx];
-        
+
         // Separate floor and non-floor surfaces
         // Floor receives beam radiation directly, others receive diffuse proportionally
         let floor_area: f64 = surfaces
@@ -1871,7 +1866,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             .filter(|s| s.orientation == crate::validation::ashrae_140_cases::Orientation::Down)
             .map(|s| s.area)
             .sum();
-        
+
         let non_floor_area: f64 = surfaces
             .iter()
             .filter(|s| s.orientation != crate::validation::ashrae_140_cases::Orientation::Down)
@@ -1890,7 +1885,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Implement area-weighted distribution (Issue #362)
         // Diffuse radiation distributes proportionally to surface area
         // Larger surfaces receive more diffuse gain
-        
+
         // Calculate weighted distribution
         // Floor receives a larger fraction due to beam radiation hitting it directly
         // Walls and ceiling receive diffuse proportionally to their area
@@ -1899,14 +1894,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         } else {
             0.0
         };
-        
+
         // Use solar_distribution_to_air as base, but weight by actual surface areas
         // This accounts for asymmetric surface areas in buildings
-        let radiative_to_surface = radiative_gain_watts * (
-            self.solar_distribution_to_air * (1.0 - floor_fraction) +
-            floor_fraction * 0.9 // Floor gets 90% of beam radiation
-        );
-        
+        let radiative_to_surface = radiative_gain_watts
+            * (
+                self.solar_distribution_to_air * (1.0 - floor_fraction) + floor_fraction * 0.9
+                // Floor gets 90% of beam radiation
+            );
+
         // Remaining goes to thermal mass
         let radiative_to_mass = radiative_gain_watts - radiative_to_surface;
 
