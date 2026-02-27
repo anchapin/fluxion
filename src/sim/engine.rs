@@ -596,7 +596,10 @@ impl ThermalModel<VectorField> {
             h_ve_vec.push((spec.infiltration_ach * zone_air_cap) / 3600.0);
 
             // Floor conductance
-            let floor_u = spec.construction.floor.u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
+            let floor_u = spec
+                .construction
+                .floor
+                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
             let h_tr_floor_val = if spec.case_id.starts_with('9') {
                 floor_u * zone_floor_area * 1.2
             } else {
@@ -658,8 +661,14 @@ impl ThermalModel<VectorField> {
             h_tr_ms_vec.push(h_ms * a_m);
 
             // Opaque conductance (h_tr_em)
-            let wall_u = spec.construction.wall.u_value(Some(crate::sim::construction::SurfaceType::Wall), None);
-            let roof_u = spec.construction.roof.u_value(Some(crate::sim::construction::SurfaceType::Ceiling), None);
+            let wall_u = spec
+                .construction
+                .wall
+                .u_value(Some(crate::sim::construction::SurfaceType::Wall), None);
+            let roof_u = spec
+                .construction
+                .roof
+                .u_value(Some(crate::sim::construction::SurfaceType::Ceiling), None);
             let h_tr_op =
                 opaque_area * wall_u + zone_floor_area * roof_u + model.thermal_bridge_coefficient;
             let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));

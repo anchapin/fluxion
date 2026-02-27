@@ -343,7 +343,11 @@ impl Construction {
     ///
     /// # Returns
     /// Total thermal resistance in m²K/W
-    pub fn r_value_total(&self, surface_type: Option<SurfaceType>, exterior_wind_speed: Option<f64>) -> f64 {
+    pub fn r_value_total(
+        &self,
+        surface_type: Option<SurfaceType>,
+        exterior_wind_speed: Option<f64>,
+    ) -> f64 {
         let h_int = surface_type
             .map(SurfaceType::interior_film_coeff)
             .unwrap_or_else(interior_film_coeff);
@@ -373,7 +377,11 @@ impl Construction {
     ///
     /// # Returns
     /// Thermal transmittance in W/m²K
-    pub fn u_value(&self, surface_type: Option<SurfaceType>, exterior_wind_speed: Option<f64>) -> f64 {
+    pub fn u_value(
+        &self,
+        surface_type: Option<SurfaceType>,
+        exterior_wind_speed: Option<f64>,
+    ) -> f64 {
         let r_total = self.r_value_total(surface_type, exterior_wind_speed);
         assert!(r_total > 0.0, "Total R-value must be positive");
         1.0 / r_total
