@@ -1377,11 +1377,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             h_ext_base
         };
 
-        // Recalculate sensitivity tensor at each timestep (Issue #301)
+        // Recalculate sensitivity tensor at each timestep (Issue #301, #366)
         // When ventilation (h_ve) changes, zone temperature sensitivity to HVAC changes
         // For systems with variable infiltration/ventilation, we must recalculate sensitivity
         // at each timestep to maintain accuracy (non-linear system behavior)
-        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+        // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
+        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone() + self.derived_ground_coeff.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
 
@@ -1578,10 +1579,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             h_ext_base.clone()
         };
 
-        // Recalculate sensitivity tensor at each timestep (Issue #301)
+        // Recalculate sensitivity tensor at each timestep (Issue #301, #366)
         // For 6R2C model with variable infiltration/ventilation, sensitivity changes
         // as h_ext changes. We recalculate at each timestep for accuracy.
-        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone();
+        // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
+        let den_val = self.derived_h_ms_is_prod.clone() + term_rest_1.clone() * h_ext.clone() + self.derived_ground_coeff.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
 
