@@ -902,7 +902,7 @@ impl ThermalModel<VectorField> {
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
             h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
-            h_tr_is: VectorField::from_scalar(1658.0, num_zones),  // ~7.97 W/m²K * 208 m² for default zone
+            h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(
@@ -1631,12 +1631,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             .zip(self.h_tr_me.as_ref().iter())
             .zip(self.internal_mass_temperatures.as_ref().iter())
             .zip(phi_m_env.as_ref().iter())
-            .map(|((((((&h_em, &tm_env), &h_ms), &ts), &h_me), &tm_int), &phi)| {
-                h_em * (outdoor_temp - tm_env)
-                    + h_ms * (ts - tm_env)
-                    + h_me * (tm_int - tm_env)
-                    + phi
-            })
+            .map(
+                |((((((&h_em, &tm_env), &h_ms), &ts), &h_me), &tm_int), &phi)| {
+                    h_em * (outdoor_temp - tm_env)
+                        + h_ms * (ts - tm_env)
+                        + h_me * (tm_int - tm_env)
+                        + phi
+                },
+            )
             .collect();
         let q_env_net = T::from(VectorField::new(q_env_net_data));
         let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
