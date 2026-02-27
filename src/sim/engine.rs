@@ -596,7 +596,10 @@ impl ThermalModel<VectorField> {
             h_ve_vec.push((spec.infiltration_ach * zone_air_cap) / 3600.0);
 
             // Floor conductance
-            let floor_u = spec.construction.floor.u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
+            let floor_u = spec
+                .construction
+                .floor
+                .u_value(None, None);
             let h_tr_floor_val = if spec.case_id.starts_with('9') {
                 floor_u * zone_floor_area * 1.2
             } else {
@@ -604,25 +607,13 @@ impl ThermalModel<VectorField> {
             };
             h_tr_floor_vec.push(h_tr_floor_val);
 
-            // Surface-to-air conductance with ASHRAE 140 surface-type-specific interior film coefficients
-            // Issue #295: Multiple Surface Conductances (h_is) per Zone
-            //
-            // ASHRAE 140 specifies different interior resistances for different surface orientations:
-            // - Floor: h_is = 5.88 W/m²K (R_si = 0.17 m²K/W, downward heat flow)
-            // - Walls: h_is = 7.69 W/m²K (R_si = 0.13 m²K/W, vertical)
-            // - Ceiling/Roof: h_is = 10.0 W/m²K (R_si = 0.10 m²K/W, upward heat flow)
-            //
-            // h_tr_is = h_is_wall × wall_area + h_is_ceiling × ceiling_area + h_is_floor × floor_area
+            // h_tr_is = Surface-to-air conductance for simplified 5R1C model
+            // Issue #340: Fix ASHRAE 140 regression - use single h_is value
+            // For ASHRAE 140 simplified 5R1C model, use single h_is = 3.45 W/m²K
+            // h_tr_is = 3.45 × (opaque_area + floor_area × 2)
             let opaque_area = zone_wall_area - zone_window_area;
-            let ceiling_area = zone_floor_area; // Assume flat roof with same area as floor
-            let wall_area = opaque_area;
-
-            let h_is_floor = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Floor);
-            let h_is_wall = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Wall);
-            let h_is_ceiling = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Ceiling);
-
-            // Per-surface-type aggregation of interior surface conductance
-            h_tr_is_vec.push(h_is_wall * wall_area + h_is_ceiling * ceiling_area + h_is_floor * zone_floor_area);
+            let area_tot = opaque_area + zone_floor_area * 2.0;
+            h_tr_is_vec.push(3.45 * area_tot);
 
             // ISO 13790 Annex C: Derive effective thermal mass parameters from construction layers
             //
@@ -670,8 +661,14 @@ impl ThermalModel<VectorField> {
             h_tr_ms_vec.push(h_ms * a_m);
 
             // Opaque conductance (h_tr_em)
-            let wall_u = spec.construction.wall.u_value(Some(crate::sim::construction::SurfaceType::Wall), None);
-            let roof_u = spec.construction.roof.u_value(Some(crate::sim::construction::SurfaceType::Ceiling), None);
+            let wall_u = spec
+                .construction
+                .wall
+                .u_value(None, None);
+            let roof_u = spec
+                .construction
+                .roof
+                .u_value(None, None);
             let h_tr_op =
                 opaque_area * wall_u + zone_floor_area * roof_u + model.thermal_bridge_coefficient;
             let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms * a_m)));
@@ -1018,15 +1015,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // ASHRAE 140 Case 600: Floor U-value = 0.039 W/m²K (insulated slab)
         self.h_tr_floor = self.zone_area.clone() * 0.039;
 
-        // h_tr_is = Surface-type-specific interior surface conductance
-        // Issue #295: Multiple Surface Conductances (h_is) per Zone
-        // h_tr_is = h_is_wall × wall_area + h_is_ceiling × ceiling_area + h_is_floor × floor_area
-        let h_is_wall = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Wall);
-        let h_is_ceiling = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Ceiling);
-        let h_is_floor = crate::sim::construction::SurfaceType::interior_film_coeff(crate::sim::construction::SurfaceType::Floor);
-        self.h_tr_is = opaque_wall_area.clone() * h_is_wall
-            + roof_area.clone() * h_is_ceiling
-            + self.zone_area.clone() * h_is_floor;
+        // h_tr_is = Surface-to-air conductance for simplified 5R1C model
+        // Issue #340: Fix ASHRAE 140 regression - use single h_is value
+        // For ASHRAE 140 simplified 5R1C model, use single h_is = 3.45 W/m²K
+        // h_tr_is = 3.45 × (opaque_area + floor_area × 2)
+        let area_tot = opaque_wall_area.clone() + self.zone_area.clone() * 2.0;
+        self.h_tr_is = area_tot * 3.45;
 
         // Ventilation
         // h_ve = (infiltration_rate * volume * density * cp) / 3600
