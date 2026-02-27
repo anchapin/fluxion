@@ -113,6 +113,35 @@ pub struct SurfaceIrradiance {
     pub total_wm2: f64,
 }
 
+/// Components of solar gain through a window.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SolarGain {
+    pub beam_gain_w: f64,
+    pub diffuse_gain_w: f64,
+    pub ground_reflected_gain_w: f64,
+    pub total_gain_w: f64,
+}
+
+impl SolarGain {
+    pub fn new(beam_gain_w: f64, diffuse_gain_w: f64, ground_reflected_gain_w: f64) -> Self {
+        SolarGain {
+            beam_gain_w,
+            diffuse_gain_w,
+            ground_reflected_gain_w,
+            total_gain_w: beam_gain_w + diffuse_gain_w + ground_reflected_gain_w,
+        }
+    }
+
+    pub fn zero() -> Self {
+        SolarGain {
+            beam_gain_w: 0.0,
+            diffuse_gain_w: 0.0,
+            ground_reflected_gain_w: 0.0,
+            total_gain_w: 0.0,
+        }
+    }
+}
+
 impl SurfaceIrradiance {
     pub fn new(beam_wm2: f64, diffuse_wm2: f64, ground_reflected_wm2: f64) -> Self {
         SurfaceIrradiance {
@@ -239,9 +268,9 @@ pub fn calculate_window_solar_gain(
     fins: &[ShadeFin],
     sun_pos: &SolarPosition,
     orientation: Orientation,
-) -> f64 {
+) -> SolarGain {
     if irradiance.total_wm2 <= 0.0 {
-        return 0.0;
+        return SolarGain::zero();
     }
 
     let (tilt_deg, surface_azimuth_deg) = orientation_to_angles(orientation);
@@ -284,12 +313,14 @@ pub fn calculate_window_solar_gain(
     let diffuse_shgc = window.shgc * 0.9;
 
     // Apply shading to beam component
-    let effective_beam = irradiance.beam_wm2 * (1.0 - shaded_fraction);
+    let effective_beam_wm2 = irradiance.beam_wm2 * (1.0 - shaded_fraction);
 
-    let total_gain_wm2 = effective_beam * beam_shgc
-        + (irradiance.diffuse_wm2 + irradiance.ground_reflected_wm2) * diffuse_shgc;
+    // Calculate separate gain components
+    let beam_gain = window.area * effective_beam_wm2 * beam_shgc;
+    let diffuse_gain = window.area * irradiance.diffuse_wm2 * diffuse_shgc;
+    let ground_reflected_gain = window.area * irradiance.ground_reflected_wm2 * diffuse_shgc;
 
-    window.area * total_gain_wm2
+    SolarGain::new(beam_gain, diffuse_gain, ground_reflected_gain)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -308,7 +339,7 @@ pub fn calculate_hourly_solar(
     fins: &[ShadeFin],
     orientation: Orientation,
     ground_reflectance: Option<f64>,
-) -> (SolarPosition, SurfaceIrradiance, f64) {
+) -> (SolarPosition, SurfaceIrradiance, SolarGain) {
     let sun_pos = calculate_solar_position(latitude_deg, longitude_deg, year, month, day, hour);
     let irradiance = calculate_surface_irradiance(
         &sun_pos,
@@ -532,13 +563,13 @@ mod tests {
             println!("  Beam irradiance: {} W/m²", irradiance.beam_wm2);
             println!("  Diffuse irradiance: {} W/m²", irradiance.diffuse_wm2);
             println!("  SHGC: {}", window.shgc);
-            println!("  Total gain: {:.2} W", gain);
+            println!("  Total gain: {:.2} W", gain.total_gain_w);
 
             // Basic sanity checks
-            assert!(gain > 0.0);
+            assert!(gain.total_gain_w > 0.0);
             // Maximum possible gain = area × total irradiance × SHGC
             let max_gain = window.area * irradiance.total_wm2 * window.shgc;
-            assert!(gain <= max_gain * 1.1); // Allow 10% margin for calculation variations
+            assert!(gain.total_gain_w <= max_gain * 1.1); // Allow 10% margin for calculation variations
         }
 
         /// Test diffuse solar gain calculation
@@ -566,7 +597,7 @@ mod tests {
             );
 
             // No solar gain when sun is below horizon
-            assert_eq!(gain, 0.0);
+            assert_eq!(gain.total_gain_w, 0.0);
         }
 
         /// Test annual solar gain summary for Case 600 (south-facing window)
@@ -608,7 +639,7 @@ mod tests {
 
                 println!(
                     "{:<15} {:>10.1} {:>10.1} {:>12.0}",
-                    label, sun_pos.altitude_deg, sun_pos.azimuth_deg, gain
+                    label, sun_pos.altitude_deg, sun_pos.azimuth_deg, gain.total_gain_w
                 );
             }
         }
@@ -650,11 +681,11 @@ mod tests {
             );
 
             println!("Orientation effect (sun in west at 40° altitude):");
-            println!("  South window gain: {:.0} W", gain_south);
-            println!("  West window gain: {:.0} W", gain_west);
+            println!("  South window gain: {:.0} W", gain_south.total_gain_w);
+            println!("  West window gain: {:.0} W", gain_west.total_gain_w);
 
             // West-facing window should have higher gain when sun is in the west
-            assert!(gain_west > gain_south);
+            assert!(gain_west.total_gain_w > gain_south.total_gain_w);
         }
 
         /// Test ground reflected radiation contribution
