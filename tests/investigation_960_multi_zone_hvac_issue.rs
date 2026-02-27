@@ -183,7 +183,6 @@ fn investigate_case_960_hvac_assignment() {
 #[test]
 fn investigate_case_960_zone_areas() {
     let spec = ASHRAE140Case::Case960.spec();
-    use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
 
     let model = ThermalModel::<VectorField>::from_spec(&spec);
@@ -235,7 +234,6 @@ fn investigate_case_960_zone_areas() {
 #[test]
 fn investigate_case_960_inter_zone_heat_transfer() {
     let spec = ASHRAE140Case::Case960.spec();
-    use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
 
     let model = ThermalModel::<VectorField>::from_spec(&spec);
