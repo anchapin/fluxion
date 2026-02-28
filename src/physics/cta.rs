@@ -1,5 +1,10 @@
 use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 
+#[cfg(feature = "python-bindings")]
+use numpy::{PyArray1, PyArrayMethods};
+#[cfg(feature = "python-bindings")]
+use pyo3::{prelude::*, PyResult};
+
 /// The Continuous Tensor Abstraction (CTA) trait.
 ///
 /// This trait defines the interface for tensor operations in Fluxion, abstracting
@@ -59,6 +64,7 @@ where
 
 /// A basic CPU-based implementation of ContinuousTensor using Vec<f64>.
 /// Represents a 1D Tensor (Vector).
+#[cfg_attr(feature = "python-bindings", pyo3::pyclass)]
 #[derive(Debug, Clone, PartialEq)]
 pub struct VectorField {
     data: Vec<f64>,
@@ -260,6 +266,62 @@ impl AsRef<[f64]> for VectorField {
     }
 }
 
+#[cfg(feature = "python-bindings")]
+impl VectorField {
+    /// Convert to a numpy array (zero-copy borrow).
+    pub fn to_numpy_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice_bound(py, &self.data)
+    }
+
+    /// Create from a numpy array.
+    pub fn from_numpy_array<'py>(_py: Python<'py>, array: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let numpy_array = array.downcast::<PyArray1<f64>>()?;
+        let slice = unsafe { numpy_array.as_slice()? };
+        Ok(VectorField::new(slice.to_vec()))
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl VectorField {
+    #[new]
+    fn new_py(data: Vec<f64>) -> Self {
+        VectorField::new(data)
+    }
+
+    fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
+        Ok(self.to_numpy_array(py).into_py(py))
+    }
+
+    fn integrate(&self) -> f64 {
+        ContinuousTensor::integrate(self)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "VectorField(len={}, data=[{}])",
+            self.data.len(),
+            self.data
+                .iter()
+                .take(5)
+                .map(|x| format!("{:.4}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+
+    fn __str__(&self) -> String {
+        format!(
+            "[{}]",
+            self.data
+                .iter()
+                .map(|x| format!("{:.2}", x))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -333,5 +395,35 @@ mod tests {
         let ptr_after = v5.as_slice().as_ptr();
         assert_eq!(v5.as_slice(), &[2.0, 4.0, 6.0]);
         assert_eq!(ptr_before, ptr_after, "Mul<f64> should reuse allocation");
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_vector_field_numpy_conversion() {
+        pyo3::prepare_freethreaded_python();
+
+        pyo3::Python::with_gil(|py| {
+            let original = VectorField::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+
+            let numpy_array = original.to_numpy_array(py);
+            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
+
+            assert_eq!(original.len(), recovered.len());
+            assert_eq!(original.as_slice(), recovered.as_slice());
+        });
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_empty_vector_field_numpy() {
+        pyo3::prepare_freethreaded_python();
+
+        pyo3::Python::with_gil(|py| {
+            let empty = VectorField::new(vec![]);
+            let numpy_array = empty.to_numpy_array(py);
+            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
+
+            assert!(recovered.is_empty());
+        });
     }
 }
