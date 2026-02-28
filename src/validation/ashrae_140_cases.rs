@@ -48,16 +48,21 @@ pub struct WindowSpec {
     pub normal_transmittance: f64,
     /// Glass type
     pub glass_type: GlassType,
+    /// Glass emissivity for longwave radiation (0-1)
+    /// Typical values: 0.84 for clear glass, 0.04-0.15 for low-E coatings
+    pub emissivity: f64,
 }
 
 impl WindowSpec {
     /// Creates a new window specification.
     pub fn new(u_value: f64, shgc: f64, normal_transmittance: f64, glass_type: GlassType) -> Self {
+        let emissivity = glass_type.emissivity();
         WindowSpec {
             u_value,
             shgc,
             normal_transmittance,
             glass_type,
+            emissivity,
         }
     }
 
@@ -66,11 +71,17 @@ impl WindowSpec {
     /// - U-value: 3.0 W/m²K
     /// - SHGC: 0.789
     /// - Normal transmittance: 0.86156
+    /// - Emissivity: 0.84 (typical for clear glass)
     pub fn double_clear_glass() -> Self {
         WindowSpec::new(3.0, 0.789, 0.86156, GlassType::DoubleClear)
     }
 
     /// Creates a double low-e glass window specification.
+    ///
+    /// - U-value: 2.0 W/m²K
+    /// - SHGC: 0.65
+    /// - Normal transmittance: 0.70
+    /// - Emissivity: 0.10 (low-E coating)
     pub fn double_low_e() -> Self {
         WindowSpec::new(2.0, 0.65, 0.70, GlassType::DoubleLowE)
     }
@@ -98,6 +109,21 @@ impl GlassType {
             GlassType::SingleClear => 1,
             GlassType::DoubleClear | GlassType::DoubleLowE => 2,
             GlassType::TripleClear | GlassType::TripleLowE => 3,
+        }
+    }
+
+    /// Returns the emissivity for longwave radiation (0-1).
+    ///
+    /// Reference values for glass emissivity:
+    /// - Clear glass: ~0.84-0.90
+    /// - Low-E coating: ~0.04-0.15
+    pub fn emissivity(&self) -> f64 {
+        match self {
+            GlassType::SingleClear => 0.84,
+            GlassType::DoubleClear => 0.84,
+            GlassType::DoubleLowE => 0.10,
+            GlassType::TripleClear => 0.84,
+            GlassType::TripleLowE => 0.10,
         }
     }
 }

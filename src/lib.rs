@@ -23,9 +23,8 @@ use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
 use pyo3::{
-    prelude::{pyclass, PyModule},
-    pymethods, pymodule,
-    types::PyModuleMethods,
+    prelude::{pyclass, pymethods, pymodule, PyModule},
+    types::{PyListMethods, PyModuleMethods},
     Bound, PyResult, Python,
 };
 
@@ -54,17 +53,41 @@ struct Model {
 #[cfg(feature = "python-bindings")]
 #[pymethods]
 impl Model {
-    /// Create a new Model instance.
+    /// Create a new Model instance with default configuration.
     ///
     /// # Arguments
-    /// * `_config_path` - Path to building configuration file
+    /// * `num_zones` - Number of thermal zones (default: 1)
     #[new]
-    fn new(_config_path: String) -> PyResult<Self> {
+    #[pyo3(signature = (num_zones=1))]
+    fn new(num_zones: usize) -> PyResult<Self> {
         Ok(Model {
-            inner: ThermalModel::<VectorField>::new(10),
+            inner: ThermalModel::<VectorField>::new(num_zones),
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
+    }
+
+    /// Get number of zones in the model.
+    fn num_zones(&self) -> usize {
+        self.inner.num_zones
+    }
+
+    /// Get current zone temperatures.
+    fn get_temperatures(&self) -> Vec<f64> {
+        self.inner.get_temperatures()
+    }
+
+    /// Set zone temperatures.
+    fn set_temperatures(&mut self, temps: Vec<f64>) -> PyResult<()> {
+        if temps.len() != self.inner.num_zones {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Temperature vector length ({}) must match number of zones ({})",
+                temps.len(),
+                self.inner.num_zones
+            )));
+        }
+        self.inner.temperatures = VectorField::new(temps);
+        Ok(())
     }
 
     /// Simulate building energy consumption over specified years.
@@ -82,6 +105,56 @@ impl Model {
             .solve_timesteps(steps, &self.surrogates, use_surrogates))
     }
 
+    /// Simulate one timestep.
+    ///
+    /// # Arguments
+    /// * `timestep` - Current timestep index (0-8759 for hourly annual simulation)
+    /// * `outdoor_temp` - Outdoor air temperature (°C)
+    /// * `use_surrogates` - If true, use neural surrogates; if false, use analytical calculations
+    ///
+    /// # Returns
+    /// HVAC energy consumption for timestep in kWh
+    fn step(&mut self, timestep: usize, outdoor_temp: f64, use_surrogates: bool) -> PyResult<f64> {
+        Ok(self.inner.solve_single_step(
+            timestep,
+            outdoor_temp,
+            use_surrogates,
+            &self.surrogates,
+            true,
+        ))
+    }
+
+    /// Apply optimization parameters to the model.
+    ///
+    /// # Arguments
+    /// * `params` - Parameter vector:
+    ///   - params[0]: Window U-value (W/m²K, range: 0.1-5.0)
+    ///   - params[1]: Heating setpoint (°C, range: 15-25)
+    ///   - params[2]: Cooling setpoint (°C, range: 22-32)
+    fn apply_parameters(&mut self, params: Vec<f64>) {
+        self.inner.apply_parameters(&params);
+    }
+
+    /// Get current window U-value.
+    fn window_u_value(&self) -> f64 {
+        self.inner.window_u_value
+    }
+
+    /// Get current heating setpoint.
+    fn heating_setpoint(&self) -> f64 {
+        self.inner.heating_setpoint
+    }
+
+    /// Get current cooling setpoint.
+    fn cooling_setpoint(&self) -> f64 {
+        self.inner.cooling_setpoint
+    }
+
+    /// Get zone floor area in m².
+    fn zone_area(&self) -> f64 {
+        self.inner.zone_area.integrate()
+    }
+
     /// Register an ONNX surrogate model for this `Model` instance.
     fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
         match SurrogateManager::load_onnx(&model_path) {
@@ -91,6 +164,383 @@ impl Model {
             }
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
         }
+    }
+
+    /// Set ground temperature model to constant value.
+    ///
+    /// # Arguments
+    /// * `temperature` - Constant ground temperature (°C)
+    fn set_ground_temp(&mut self, temperature: f64) {
+        self.inner.set_ground_temp(temperature);
+    }
+
+    /// Get ground temperature at a specific timestep.
+    ///
+    /// # Arguments
+    /// * `timestep` - Timestep index (0-8759 for hourly annual simulation)
+    ///
+    /// # Returns
+    /// Ground temperature (°C)
+    fn ground_temperature_at(&self, timestep: usize) -> f64 {
+        self.inner.ground_temperature_at(timestep)
+    }
+}
+
+/// VectorField wrapper for Python.
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "VectorField")]
+pub struct PyVectorField {
+    inner: crate::physics::cta::VectorField,
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl PyVectorField {
+    /// Create a new VectorField from a Python list of floats.
+    #[new]
+    fn new(data: &Bound<'_, pyo3::types::PyList>) -> PyResult<Self> {
+        use pyo3::types::PyAnyMethods;
+
+        let mut vec = Vec::with_capacity(data.len());
+        for item in data.iter() {
+            if let Ok(val) = item.extract::<f64>() {
+                vec.push(val);
+            } else {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "VectorField elements must be floats",
+                ));
+            }
+        }
+        Ok(PyVectorField {
+            inner: crate::physics::cta::VectorField::new(vec),
+        })
+    }
+
+    /// Create a VectorField filled with a constant value.
+    #[staticmethod]
+    fn from_scalar(value: f64, size: usize) -> Self {
+        PyVectorField {
+            inner: crate::physics::cta::VectorField::from_scalar(value, size),
+        }
+    }
+
+    /// Get the number of elements in the VectorField.
+    fn len(&self) -> usize {
+        self.inner.len()
+    }
+
+    /// Convert to Python list.
+    fn to_list(&self) -> Vec<f64> {
+        self.inner.as_slice().to_vec()
+    }
+
+    /// Convert to numpy array (requires numpy feature).
+    #[cfg(not(all(feature = "numpy")))]
+    fn to_numpy(&self, _py: Python<'_>) -> PyResult<Vec<f64>> {
+        Err(pyo3::exceptions::PyNotImplementedError::new_err(
+            "NumPy support not enabled. Use to_list() instead.",
+        ))
+    }
+
+    /// Compute the sum (integral) of all elements.
+    fn integrate(&self) -> f64 {
+        self.inner.integrate()
+    }
+
+    /// Compute the gradient (rate of change) of the field.
+    fn gradient(&self) -> Self {
+        PyVectorField {
+            inner: self.inner.gradient(),
+        }
+    }
+}
+
+/// Construction layer material properties for Python.
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "ConstructionLayer")]
+#[derive(Clone)]
+pub struct PyConstructionLayer {
+    #[pyo3(get, set)]
+    pub name: String,
+    #[pyo3(get, set)]
+    pub conductivity: f64,
+    #[pyo3(get, set)]
+    pub density: f64,
+    #[pyo3(get, set)]
+    pub specific_heat: f64,
+    #[pyo3(get, set)]
+    pub thickness: f64,
+    #[pyo3(get, set)]
+    pub emissivity: f64,
+    #[pyo3(get, set)]
+    pub absorptance: f64,
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<&crate::sim::construction::ConstructionLayer> for PyConstructionLayer {
+    fn from(layer: &crate::sim::construction::ConstructionLayer) -> Self {
+        PyConstructionLayer {
+            name: layer.name.clone(),
+            conductivity: layer.conductivity,
+            density: layer.density,
+            specific_heat: layer.specific_heat,
+            thickness: layer.thickness,
+            emissivity: layer.emissivity,
+            absorptance: layer.absorptance,
+        }
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<PyConstructionLayer> for crate::sim::construction::ConstructionLayer {
+    fn from(layer: PyConstructionLayer) -> Self {
+        crate::sim::construction::ConstructionLayer::with_surface_properties(
+            layer.name,
+            layer.conductivity,
+            layer.density,
+            layer.specific_heat,
+            layer.thickness,
+            layer.emissivity,
+            layer.absorptance,
+        )
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl PyConstructionLayer {
+    /// Create a new ConstructionLayer.
+    #[new]
+    #[pyo3(signature = (name, conductivity, density, specific_heat, thickness, emissivity=0.9, absorptance=0.7))]
+    fn new(
+        name: String,
+        conductivity: f64,
+        density: f64,
+        specific_heat: f64,
+        thickness: f64,
+        emissivity: f64,
+        absorptance: f64,
+    ) -> Self {
+        PyConstructionLayer {
+            name,
+            conductivity,
+            density,
+            specific_heat,
+            thickness,
+            emissivity,
+            absorptance,
+        }
+    }
+
+    /// Calculate thermal resistance (R-value).
+    fn r_value(&self) -> f64 {
+        self.thickness / self.conductivity
+    }
+
+    /// Calculate thermal capacitance per unit area.
+    fn thermal_capacitance_per_area(&self) -> f64 {
+        self.density * self.thickness * self.specific_heat
+    }
+}
+
+/// Surface type for construction calculations.
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "SurfaceType")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PySurfaceType {
+    Wall,
+    Ceiling,
+    Floor,
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<PySurfaceType> for crate::sim::construction::SurfaceType {
+    fn from(st: PySurfaceType) -> Self {
+        match st {
+            PySurfaceType::Wall => crate::sim::construction::SurfaceType::Wall,
+            PySurfaceType::Ceiling => crate::sim::construction::SurfaceType::Ceiling,
+            PySurfaceType::Floor => crate::sim::construction::SurfaceType::Floor,
+        }
+    }
+}
+
+/// Thermal mass classification for Python.
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "MassClass")]
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum PyMassClass {
+    VeryLight,
+    Light,
+    Medium,
+    Heavy,
+    VeryHeavy,
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<PyMassClass> for crate::sim::construction::MassClass {
+    fn from(mc: PyMassClass) -> Self {
+        match mc {
+            PyMassClass::VeryLight => crate::sim::construction::MassClass::VeryLight,
+            PyMassClass::Light => crate::sim::construction::MassClass::Light,
+            PyMassClass::Medium => crate::sim::construction::MassClass::Medium,
+            PyMassClass::Heavy => crate::sim::construction::MassClass::Heavy,
+            PyMassClass::VeryHeavy => crate::sim::construction::MassClass::VeryHeavy,
+        }
+    }
+}
+
+/// Multi-layer construction assembly for Python.
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "Construction")]
+pub struct PyConstruction {
+    #[pyo3(get)]
+    pub layers: Vec<PyConstructionLayer>,
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<&crate::sim::construction::Construction> for PyConstruction {
+    fn from(construction: &crate::sim::construction::Construction) -> Self {
+        PyConstruction {
+            layers: construction
+                .layers
+                .iter()
+                .map(PyConstructionLayer::from)
+                .collect(),
+        }
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<PyConstruction> for crate::sim::construction::Construction {
+    fn from(construction: PyConstruction) -> Self {
+        crate::sim::construction::Construction::new(
+            construction.layers.into_iter().map(|l| l.into()).collect(),
+        )
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl PyConstruction {
+    /// Create a new Construction from a list of layers.
+    #[new]
+    fn new(layers: Vec<PyConstructionLayer>) -> Self {
+        PyConstruction { layers }
+    }
+
+    /// Calculate total thermal resistance (R-value).
+    #[pyo3(signature = (surface_type=None, exterior_wind_speed=None))]
+    fn r_value_total(
+        &self,
+        surface_type: Option<PySurfaceType>,
+        exterior_wind_speed: Option<f64>,
+    ) -> PyResult<f64> {
+        let st = surface_type.map(|st| st.into());
+        let layers: Vec<crate::sim::construction::ConstructionLayer> =
+            self.layers.iter().map(|l| l.clone().into()).collect();
+        let rust_construction = crate::sim::construction::Construction::new(layers);
+        Ok(rust_construction.r_value_total(st, exterior_wind_speed))
+    }
+
+    /// Calculate thermal transmittance (U-value).
+    #[pyo3(signature = (surface_type=None, exterior_wind_speed=None))]
+    fn u_value(
+        &self,
+        surface_type: Option<PySurfaceType>,
+        exterior_wind_speed: Option<f64>,
+    ) -> PyResult<f64> {
+        let st = surface_type.map(|st| st.into());
+        let layers: Vec<crate::sim::construction::ConstructionLayer> =
+            self.layers.iter().map(|l| l.clone().into()).collect();
+        let rust_construction = crate::sim::construction::Construction::new(layers);
+        Ok(rust_construction.u_value(st, exterior_wind_speed))
+    }
+
+    /// Calculate total thermal mass.
+    fn thermal_capacitance_per_area(&self) -> PyResult<f64> {
+        let layers: Vec<crate::sim::construction::ConstructionLayer> =
+            self.layers.iter().map(|l| l.clone().into()).collect();
+        let rust_construction = crate::sim::construction::Construction::new(layers);
+        Ok(rust_construction.thermal_capacitance_per_area())
+    }
+
+    /// Get total thickness.
+    fn total_thickness(&self) -> PyResult<f64> {
+        let layers: Vec<crate::sim::construction::ConstructionLayer> =
+            self.layers.iter().map(|l| l.clone().into()).collect();
+        let rust_construction = crate::sim::construction::Construction::new(layers);
+        Ok(rust_construction.total_thickness())
+    }
+
+    /// Get number of layers.
+    fn layer_count(&self) -> usize {
+        self.layers.len()
+    }
+
+    /// Get mass class.
+    fn mass_class(&self) -> PyResult<PyMassClass> {
+        let layers: Vec<crate::sim::construction::ConstructionLayer> =
+            self.layers.iter().map(|l| l.clone().into()).collect();
+        let rust_construction = crate::sim::construction::Construction::new(layers);
+        match rust_construction.iso_13790_mass_class() {
+            crate::sim::construction::MassClass::VeryLight => Ok(PyMassClass::VeryLight),
+            crate::sim::construction::MassClass::Light => Ok(PyMassClass::Light),
+            crate::sim::construction::MassClass::Medium => Ok(PyMassClass::Medium),
+            crate::sim::construction::MassClass::Heavy => Ok(PyMassClass::Heavy),
+            crate::sim::construction::MassClass::VeryHeavy => Ok(PyMassClass::VeryHeavy),
+        }
+    }
+}
+
+/// Wall surface representation for Python.
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "WallSurface")]
+#[derive(Clone)]
+pub struct PyWallSurface {
+    #[pyo3(get, set)]
+    pub area: f64,
+    #[pyo3(get, set)]
+    pub u_value: f64,
+    #[pyo3(get)]
+    pub orientation: String,
+}
+
+#[cfg(feature = "python-bindings")]
+impl From<&crate::sim::components::WallSurface> for PyWallSurface {
+    fn from(surface: &crate::sim::components::WallSurface) -> Self {
+        PyWallSurface {
+            area: surface.area,
+            u_value: surface.u_value,
+            orientation: format!("{:?}", surface.orientation),
+        }
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl PyWallSurface {
+    /// Create a new WallSurface.
+    #[new]
+    #[pyo3(signature = (area, u_value, orientation))]
+    fn new(area: f64, u_value: f64, orientation: String) -> PyResult<Self> {
+        let rust_orientation = match orientation.to_lowercase().as_str() {
+            "south" => crate::validation::ashrae_140_cases::Orientation::South,
+            "west" => crate::validation::ashrae_140_cases::Orientation::West,
+            "north" => crate::validation::ashrae_140_cases::Orientation::North,
+            "east" => crate::validation::ashrae_140_cases::Orientation::East,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Invalid orientation. Use: south, west, north, east",
+                ))
+            }
+        };
+        let rust_surface =
+            crate::sim::components::WallSurface::new(area, u_value, rust_orientation);
+        Ok(PyWallSurface {
+            area,
+            u_value,
+            orientation: format!("{:?}", rust_orientation),
+        })
     }
 }
 
@@ -337,6 +787,11 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<BatchOracle>()?;
     m.add_class::<VectorField>()?;
+    m.add_class::<PyConstruction>()?;
+    m.add_class::<PyConstructionLayer>()?;
+    m.add_class::<PyMassClass>()?;
+    m.add_class::<PySurfaceType>()?;
+    m.add_class::<PyWallSurface>()?;
     Ok(())
 }
 

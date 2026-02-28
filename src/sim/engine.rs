@@ -19,7 +19,8 @@ fn get_daily_cycle() -> &'static [f64; 24] {
     DAILY_CYCLE.get_or_init(|| {
         let mut arr = [0.0; 24];
         for (h, val) in arr.iter_mut().enumerate() {
-            *val = (h as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            *val =
+                ((h as f64 / 24.0 * 2.0 * std::f64::consts::PI) - std::f64::consts::PI / 2.0).sin();
         }
         arr
     })
@@ -734,14 +735,23 @@ impl ThermalModel<VectorField> {
         model.longitude_deg = -104.65;
 
         // Initialize window properties for solar gain calculation (Issue #278)
+        // Issue #351: Use zone-specific window areas for accurate solar gains
         // Extract window properties and orientations from spec
         let mut window_props_vec = Vec::with_capacity(num_zones);
         let mut window_orients_vec = Vec::with_capacity(num_zones);
 
         for zone_idx in 0..num_zones {
+            // Calculate zone-specific window area
+            let zone_window_area = if zone_idx < spec.windows.len() {
+                spec.windows[zone_idx].iter().map(|w| w.area).sum()
+            } else {
+                // Fallback to first zone if windows not specified
+                spec.windows[0].iter().map(|w| w.area).sum()
+            };
+
             // Create window properties for this zone
             let window_props = WindowProperties::new(
-                spec.total_window_area(), // Total window area for this zone
+                zone_window_area, // Zone-specific window area
                 spec.window_properties.shgc,
                 spec.window_properties.normal_transmittance,
             );
@@ -798,7 +808,6 @@ impl ThermalModel<VectorField> {
                     reference_temp,
                     view_factor,
                 );
-
                 println!(
                     "Issue #348: Radiative conductance through inter-zone windows: {:.2} W/K",
                     radiative_conductance
@@ -1045,10 +1054,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // ground_coeff = term_rest_1 * h_tr_floor
         self.derived_ground_coeff = self.derived_term_rest_1.clone() * self.h_tr_floor.clone();
 
-        // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor)
-        // Factor out term_rest_1: den = h_ms_is_prod + term_rest_1 * h_ext + derived_ground_coeff
+        // For multi-zone buildings, include inter-zone conductance in sensitivity calculation
+        // Issue #351: Update thermal network for inter-zone coupling
+        // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor + h_tr_iz)
+        let h_total = if self.num_zones > 1 {
+            // Include both conductive and radiative inter-zone conductance
+            self.derived_h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        } else {
+            self.derived_h_ext.clone()
+        };
+
+        // Factor out term_rest_1: den = h_ms_is_prod + term_rest_1 * h_total + derived_ground_coeff
         self.derived_den = self.derived_h_ms_is_prod.clone()
-            + self.derived_term_rest_1.clone() * self.derived_h_ext.clone()
+            + self.derived_term_rest_1.clone() * h_total.clone()
             + self.derived_ground_coeff.clone();
 
         // sensitivity = term_rest_1 / den
@@ -1295,7 +1313,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// # Returns
     /// HVAC energy consumption for the timestep in kWh.
+    ///
+    /// Issue #351: Calculate solar gains internally if weather data is available
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+        // Issue #351: Calculate loads from weather data if not already set
+        // This is needed for ASHRAE 140 validation where step_physics is called directly
+        if self.weather.is_some() {
+            self.calc_analytical_loads(timestep, true);
+        }
+
         // Branch based on thermal model type
         if self.is_6r2c_model() {
             self.step_physics_6r2c(timestep, outdoor_temp)
@@ -1369,8 +1395,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // For systems with variable infiltration/ventilation, we must recalculate sensitivity
         // at each timestep to maintain accuracy (non-linear system behavior)
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
+        // Issue #351: Include inter-zone conductance in sensitivity calculation
+        let h_total_with_iz = if self.num_zones > 1 {
+            // Include both conductive and radiative inter-zone conductance
+            h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        } else {
+            h_ext.clone()
+        };
         let den_val = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * h_ext.clone()
+            + term_rest_1.clone() * h_total_with_iz.clone()
             + self.derived_ground_coeff.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
@@ -1425,7 +1458,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Check if we need to preserve q_iz for superposition later
         let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
-        let q_iz_clone = if has_inter_zone {
+        let _q_iz_clone = if has_inter_zone {
             Some(q_iz_tensor.clone())
         } else {
             None
@@ -1457,16 +1490,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let old_mass_temperatures = self.mass_temperatures.clone();
 
         // 4. Update Temperatures (Optimized via Superposition)
-        // t_i_act = t_i_free + sensitivity * (hvac_output - q_iz)
+        // t_i_act = t_i_free + sensitivity * hvac_output
         // This avoids re-calculating the entire thermal network state.
-        let delta_load = if let Some(q_iz) = q_iz_clone {
-            // Replicate existing behavior: remove q_iz effect in final step
-            hvac_output - q_iz
-        } else {
-            hvac_output
-        };
-
-        let t_i_act = t_i_free.clone() + sensitivity_val * delta_load;
+        // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
+        // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
+        let t_i_act = t_i_free.clone() + sensitivity_val * hvac_output.clone();
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
@@ -1574,8 +1602,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // For 6R2C model with variable infiltration/ventilation, sensitivity changes
         // as h_ext changes. We recalculate at each timestep for accuracy.
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
+        // Issue #351: Include inter-zone conductance in sensitivity calculation
+        let h_total_with_iz = if self.num_zones > 1 {
+            // Include both conductive and radiative inter-zone conductance
+            h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        } else {
+            h_ext.clone()
+        };
         let den_val = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * h_ext.clone()
+            + term_rest_1.clone() * h_total_with_iz.clone()
             + self.derived_ground_coeff.clone();
         let sens_val = term_rest_1.clone() / den_val.clone();
         let (den, sensitivity) = (den_val, sens_val);
@@ -1631,6 +1666,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let hvac_energy_for_step = hvac_output.reduce(0.0, |acc, val| acc + val) * dt;
 
         // Update indoor temperature with superposition
+        // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
+        // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
         let t_i_act = t_i_free.clone() + sensitivity.clone() * hvac_output.clone();
 
         // Calculate surface temperature
@@ -1960,13 +1997,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         h_rad * window_area
     }
 
+    /// Calculate window-to-window radiative conductance using glass emissivity.
+    ///
+    /// Implements Issue #349: Window-to-Window Radiative Exchange
+    ///
+    /// The radiative heat exchange between two windows follows:
+    /// Q_ij = σ * F_ij * ε_glass^2 * A_window * (T_i^4 - T_j^4)
+    ///
+    /// Linearized around reference temperature T_ref:
+    /// Q_ij ≈ h_rad * (T_i - T_j)
+    ///
+    /// where h_rad = 4 * σ * F_ij * ε_glass^2 * A_window * T_ref^3
+    ///
+    /// # Arguments
+    /// * `window_area` - Area of the windows (m²)
+    /// * `glass_emissivity` - Emissivity of glass for longwave radiation (0-1)
+    /// * `reference_temp` - Reference temperature for linearization (K)
+    /// * `view_factor` - View factor between windows (0-1)
+    ///
+    /// # Returns
+    /// Radiative conductance in W/K
+    fn calculate_window_radiative_conductance(
+        window_area: f64,
+        glass_emissivity: f64,
+        reference_temp: f64,
+        view_factor: f64,
+    ) -> f64 {
+        const STEFAN_BOLTZMANN: f64 = 5.670374419e-8;
+        let effective_emissivity = glass_emissivity * glass_emissivity;
+        let h_rad =
+            4.0 * STEFAN_BOLTZMANN * effective_emissivity * view_factor * reference_temp.powi(3);
+        h_rad * window_area
+    }
+
     /// Calculate analytical thermal loads without neural surrogates.
     ///
     /// When weather data is available, this uses the solar module to calculate
     /// realistic solar gains based on solar position, DNI, DHI, and window properties.
-    /// Falls back to the trivial sine-wave approximation if weather data is not available.
+    /// Falls back to trivial sine-wave approximation if weather data is not available.
     fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
         if use_analytical_gains {
+            // Issue #351: Preserve initial internal loads and add solar gains
+            // Store current internal loads before modifying
+            let initial_internal_loads = self.loads.clone();
+
             // Try to use weather data for solar gain calculation (Issue #278)
             if let Some(ref weather) = self.weather {
                 // Calculate solar gain for each zone using weather data
@@ -1975,24 +2049,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                         let solar_gain =
                             self.calculate_zone_solar_gain(zone_idx, timestep, weather);
 
-                        // Add internal gains (constant 10 W/m² from original implementation)
-                        // TODO: This should use actual internal loads from spec when available
-                        let zone_area = self.zone_area.as_ref()[zone_idx];
-                        let internal_gain = 10.0 * zone_area;
+                        // Add internal gains (preserve from spec, use default 10 W/m² if not set)
+                        // Issue #351: Use zone-specific internal loads from initial loads
+                        let internal_gain = initial_internal_loads.as_ref()[zone_idx];
 
                         solar_gain + internal_gain
                     })
                     .collect();
 
                 // Apply zone-specific gains by creating new VectorField
-                // For now, since T is VectorField in most cases, this should work
-                let _ = zone_gains;
-                // TODO: Properly handle the generic T type here
-                // For now, fall back to the old behavior (constant across all zones)
-                let hour_of_day = timestep % 24;
-                let daily_cycle = get_daily_cycle()[hour_of_day];
-                let total_gain = (50.0 * daily_cycle).max(0.0) + 10.0;
-                self.loads = self.temperatures.constant_like(total_gain);
+                // Issue #351: Properly handle multi-zone load calculation
+                self.loads = T::from(VectorField::new(zone_gains));
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
@@ -2117,9 +2184,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let term_rest_1 = &self.derived_term_rest_1;
 
         // Dynamic den must include derived_ground_coeff
-        // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor)
+        // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor + h_tr_iz)
+        // Issue #351: Include inter-zone conductance
+        let h_total_with_iz = if self.num_zones > 1 {
+            h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        } else {
+            h_ext.clone()
+        };
         let den = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * h_ext.clone()
+            + term_rest_1.clone() * h_total_with_iz.clone()
             + self.derived_ground_coeff.clone();
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
@@ -2304,7 +2377,9 @@ mod tests {
 
         // Check against expected values for noon
         let hour_of_day = 12;
-        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+        let daily_cycle = ((hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI)
+            - std::f64::consts::PI / 2.0)
+            .sin();
         let solar_gain = (50.0 * daily_cycle).max(0.0);
         let internal_gains = 10.0;
         let expected_load = solar_gain + internal_gains;
@@ -3041,31 +3116,47 @@ mod inter_zone_tests {
     }
 
     #[test]
-    fn test_case_960_radiative_conductance() {
+    fn test_window_radiative_conductance() {
+        let window_area = 10.8;
+        let glass_emissivity = 0.84;
+        let reference_temp = 293.15;
+        let view_factor = 0.1;
+
+        let h_rad = ThermalModel::<VectorField>::calculate_window_radiative_conductance(
+            window_area,
+            glass_emissivity,
+            reference_temp,
+            view_factor,
+        );
+
+        assert!(h_rad > 0.0, "Radiative conductance should be positive");
+        println!("Window radiative conductance: {:.2} W/K", h_rad);
+    }
+
+    #[test]
+    fn test_case_960_window_radiative_exchange() {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         let h_iz_rad = model.h_tr_iz_rad.as_ref();
+        let h_iz = model.h_tr_iz.as_ref();
 
         assert!(
             h_iz_rad[0] > 0.0,
             "Radiative inter-zone conductance should be > 0"
         );
-        println!(
-            "Case 960 radiative inter-zone conductance: {:.2} W/K",
-            h_iz_rad[0]
-        );
+        assert!(h_iz[0] > 0.0, "Total inter-zone conductance should be > 0");
 
-        let h_iz = model.h_tr_iz.as_ref();
-        let total_h_iz = h_iz[0] + h_iz_rad[0];
+        println!("Issue #349: Case 960 window-to-window radiative exchange:");
+        println!("  - Radiative conductance: {:.2} W/K", h_iz_rad[0]);
+        println!("  - Total conductance: {:.2} W/K", h_iz[0]);
         println!(
-            "Total inter-zone conductance (conductive + radiative): {:.2} W/K",
-            total_h_iz
+            "  - Window emissivity: {:.4}",
+            spec.window_properties.emissivity
         );
     }
-}
 
-#[cfg(test)]
+    #[cfg(test)]
 mod hvac_controller_tests {
     use super::*;
 
