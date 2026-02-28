@@ -45,10 +45,7 @@ ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
 
 # Python Interop
 pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py311"], optional = true }
-<<<<<<< HEAD
 numpy = { version = "0.22", optional = true }
-=======
->>>>>>> origin/main
 crossbeam = "0.8.4"
 num-traits = "0.2.19"
 
