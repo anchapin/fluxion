@@ -19,7 +19,8 @@ fn get_daily_cycle() -> &'static [f64; 24] {
     DAILY_CYCLE.get_or_init(|| {
         let mut arr = [0.0; 24];
         for (h, val) in arr.iter_mut().enumerate() {
-            *val = (h as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+            *val =
+                ((h as f64 / 24.0 * 2.0 * std::f64::consts::PI) - std::f64::consts::PI / 2.0).sin();
         }
         arr
     })
@@ -1459,7 +1460,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Check if we need to preserve q_iz for superposition later
         let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
-        let q_iz_clone = if has_inter_zone {
+        let _q_iz_clone = if has_inter_zone {
             Some(q_iz_tensor.clone())
         } else {
             None
@@ -2065,7 +2066,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
                 let daily_cycle = get_daily_cycle()[hour_of_day];
-                let total_gain = (50.0 * daily_cycle).max(0.0);
+                let total_gain = (50.0 * daily_cycle).max(0.0) + 10.0;
                 self.loads = self.temperatures.constant_like(total_gain);
             }
         } else {
@@ -2378,7 +2379,9 @@ mod tests {
 
         // Check against expected values for noon
         let hour_of_day = 12;
-        let daily_cycle = (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+        let daily_cycle = ((hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI)
+            - std::f64::consts::PI / 2.0)
+            .sin();
         let solar_gain = (50.0 * daily_cycle).max(0.0);
         let internal_gains = 10.0;
         let expected_load = solar_gain + internal_gains;
