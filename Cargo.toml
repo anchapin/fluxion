@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing)
-python-bindings = ["dep:pyo3"]
+python-bindings = ["dep:pyo3", "dep:pyo3-build-config"]
 # Feature flag for CUDA support
 cuda = []
 
@@ -44,9 +44,12 @@ rand = "0.8"
 ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
 
 # Python Interop
-pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3"], optional = true }
+pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py311"], optional = true }
 crossbeam = "0.8.4"
 num-traits = "0.2.19"
+
+[build-dependencies]
+pyo3-build-config = { version = "0.22", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
