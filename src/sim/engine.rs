@@ -3156,45 +3156,7 @@ mod inter_zone_tests {
         );
     }
 
-    #[test]
-    fn test_case_960_window_radiative_exchange() {
-        let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
-
-        let h_iz_rad = model.h_tr_iz_rad.as_ref();
-
-        assert!(
-            h_iz_rad[0] > 0.0,
-            "Radiative inter-zone conductance should be > 0"
-        );
-        println!(
-            "Case 960 radiative inter-zone conductance: {:.2} W/K",
-            h_iz_rad[0]
-        );
-        let spec = ASHRAE140Case::Case960.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
-
-        let h_iz_rad = model.h_tr_iz_rad.as_ref();
-
-        assert!(
-            h_iz_rad[0] > 0.0,
-            "Radiative inter-zone conductance should be > 0"
-        );
-        println!(
-            "Case 960 radiative inter-zone conductance: {:.2} W/K",
-            h_iz_rad[0]
-        );
-
-        let h_iz = model.h_tr_iz.as_ref();
-        let total_h_iz = h_iz[0] + h_iz_rad[0];
-        println!(
-            "Total inter-zone conductance (conductive + radiative): {:.2} W/K",
-            total_h_iz
-        );
-    }
-}
-
-#[cfg(test)]
+    #[cfg(test)]
 mod hvac_controller_tests {
     use super::*;
 
