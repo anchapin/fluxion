@@ -47,10 +47,10 @@ impl DaylightZone {
             thermal_zone_id,
             window_area,
             window_height,
-            daylight_zone_depth: window_height * 1.5, // Default depth based on window height
-            daylight_factor: 5.0,                     // Default 5% DF
-            dimming_threshold: 300.0,                 // lux
-            min_dimming_level: 0.1,                   // 10% minimum
+            daylight_zone_depth: window_height * 1.5,
+            daylight_factor: 5.0,
+            dimming_threshold: 300.0,
+            min_dimming_level: 0.1,
         }
     }
 
@@ -59,8 +59,6 @@ impl DaylightZone {
     /// * `exterior_illuminance` - Exterior horizontal illuminance (lux)
     /// * `sky_condition` - Sky condition factor (0-1, 1 = clear sky)
     pub fn interior_illuminance(&self, exterior_illuminance: f64, sky_condition: f64) -> f64 {
-        // Interior illuminance = Exterior * DF * Sky Factor * Geometry Factor
-        // Simplified: only using DF and sky condition
         exterior_illuminance * (self.daylight_factor / 100.0) * sky_condition
     }
 
@@ -68,10 +66,8 @@ impl DaylightZone {
     /// Returns fraction (0-1) of maximum lighting output
     pub fn dimming_level(&self, interior_illuminance: f64) -> f64 {
         if interior_illuminance >= self.dimming_threshold {
-            // Fully daylit - minimum artificial lighting
             self.min_dimming_level
         } else {
-            // Interpolate between min and max based on illuminance
             let fraction = interior_illuminance / self.dimming_threshold;
             self.min_dimming_level + fraction * (1.0 - self.min_dimming_level)
         }
@@ -92,7 +88,6 @@ impl DaylightZone {
         let dimming = self.dimming_level(average_illuminance);
         let energy_reduction = 1.0 - dimming;
         baseline_power * hours_per_day * days_per_year * energy_reduction / 1000.0
-        // kWh/year
     }
 }
 
@@ -130,15 +125,14 @@ impl ShadingControl {
         Self {
             shading_type,
             position: 0.0,
-            deployment_threshold: 300.0, // W/m²
-            min_temp_deployment: 15.0,   // °C
+            deployment_threshold: 300.0,
+            min_temp_deployment: 15.0,
             is_deployed: false,
         }
     }
 
     /// Determine shading deployment based on conditions
     pub fn update(&mut self, solar_irradiance: f64, outdoor_temp: f64) {
-        // Deploy shading if irradiance exceeds threshold and temp is comfortable
         if solar_irradiance > self.deployment_threshold && outdoor_temp > self.min_temp_deployment {
             self.is_deployed = true;
             self.position = 1.0;
@@ -154,7 +148,6 @@ impl ShadingControl {
             return 0.0;
         }
 
-        // Different shading types have different effectiveness
         match self.shading_type {
             ShadingType::InteriorBlinds => 0.3 * self.position,
             ShadingType::ExteriorBlinds => 0.6 * self.position,
@@ -173,6 +166,10 @@ pub struct LightingSchedule {
     pub power_density: f64,
     /// Zone area this schedule applies to (m²)
     pub zone_area: f64,
+    /// Fraction of lighting heat that is convective (0-1)
+    pub convective_fraction: f64,
+    /// Fraction of lighting heat that is radiative (0-1)
+    pub radiative_fraction: f64,
 }
 
 impl LightingSchedule {
@@ -182,6 +179,8 @@ impl LightingSchedule {
             hourly_schedule: [0.0; 24],
             power_density,
             zone_area,
+            convective_fraction: 0.2,
+            radiative_fraction: 0.8,
         }
     }
 
@@ -209,9 +208,19 @@ impl LightingSchedule {
         self.power_density * self.zone_area * self.hourly_schedule[h]
     }
 
+    /// Get convective heat gains from lighting for a specific hour
+    pub fn convective_heat_gains(&self, hour: usize) -> f64 {
+        self.lighting_power(hour) * self.convective_fraction
+    }
+
+    /// Get radiative heat gains from lighting for a specific hour
+    pub fn radiative_heat_gains(&self, hour: usize) -> f64 {
+        self.lighting_power(hour) * self.radiative_fraction
+    }
+
     /// Calculate annual lighting energy consumption (kWh)
     pub fn annual_energy(&self, operating_days: usize) -> f64 {
-        let daily_energy: f64 = (0..24).map(|h| self.lighting_power(h)).sum::<f64>() / 1000.0; // Convert to kWh
+        let daily_energy: f64 = (0..24).map(|h| self.lighting_power(h)).sum::<f64>() / 1000.0;
         daily_energy * operating_days as f64
     }
 }
@@ -263,11 +272,9 @@ impl LightingSystem {
     ) -> f64 {
         let base_power = self.schedule.lighting_power(hour);
 
-        // Apply daylighting dimming if applicable
         if self.control_type == LightingControlType::ContinuousDimming
             && !self.daylight_zones.is_empty()
         {
-            // Average dimming across all daylight zones
             let avg_dimming: f64 = self
                 .daylight_zones
                 .iter()
@@ -303,11 +310,9 @@ mod tests {
     fn test_shading_control() {
         let mut shading = ShadingControl::new(ShadingType::InteriorBlinds);
 
-        // High irradiance should deploy shading
         shading.update(500.0, 25.0);
         assert!(shading.is_deployed);
 
-        // Low irradiance should retract
         shading.update(100.0, 25.0);
         assert!(!shading.is_deployed);
     }
@@ -316,11 +321,26 @@ mod tests {
     fn test_lighting_schedule() {
         let schedule = LightingSchedule::office_schedule(10.0, 100.0);
 
-        // During operating hours
         assert!(schedule.lighting_power(10) > 0.0);
 
-        // Outside operating hours
         assert_eq!(schedule.lighting_power(2), 0.0);
+    }
+
+    #[test]
+    fn test_lighting_heat_gains() {
+        let schedule = LightingSchedule::office_schedule(10.0, 100.0);
+
+        assert_eq!(schedule.convective_fraction, 0.2);
+        assert_eq!(schedule.radiative_fraction, 0.8);
+
+        let hour = 10;
+        let total_power = schedule.lighting_power(hour);
+        let convective = schedule.convective_heat_gains(hour);
+        let radiative = schedule.radiative_heat_gains(hour);
+
+        assert_eq!(convective, total_power * 0.2);
+        assert_eq!(radiative, total_power * 0.8);
+        assert!((total_power - (convective + radiative)).abs() < 1e-10);
     }
 
     #[test]
@@ -331,8 +351,7 @@ mod tests {
         dz.dimming_threshold = 500.0;
         system.add_daylight_zone(dz);
 
-        // Test with high daylight
         let power = system.effective_lighting_power(12, 10000.0, 0.8);
-        assert!(power < 1000.0); // Should be dimmed
+        assert!(power < 1000.0);
     }
 }
