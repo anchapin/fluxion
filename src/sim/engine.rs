@@ -954,6 +954,7 @@ impl ThermalModel<VectorField> {
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
             mass_energy_change_cumulative: 0.0, // Cumulative mass energy change (J)
             thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
+            ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
