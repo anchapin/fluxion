@@ -2945,9 +2945,10 @@ mod tests {
                     model2.ground_temperature_at(t),
                     "Ground temp mismatch at timestep {}",
                     t
-                );
-            }
-        }
+        );
+    }
+
+    #[cfg(test)]
 
         #[test]
         fn test_ground_heat_transfer_contribution() {
