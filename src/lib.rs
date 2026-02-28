@@ -427,7 +427,7 @@ impl PyConstruction {
         exterior_wind_speed: Option<f64>,
     ) -> PyResult<f64> {
         let st = surface_type.map(|st| st.into());
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.r_value_total(st, exterior_wind_speed))
     }
 
@@ -439,19 +439,19 @@ impl PyConstruction {
         exterior_wind_speed: Option<f64>,
     ) -> PyResult<f64> {
         let st = surface_type.map(|st| st.into());
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.u_value(st, exterior_wind_speed))
     }
 
     /// Calculate total thermal mass.
     fn thermal_capacitance_per_area(&self) -> PyResult<f64> {
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.thermal_capacitance_per_area())
     }
 
     /// Get total thickness.
     fn total_thickness(&self) -> PyResult<f64> {
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.total_thickness())
     }
 
@@ -462,7 +462,7 @@ impl PyConstruction {
 
     /// Get mass class.
     fn mass_class(&self) -> PyResult<PyMassClass> {
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         match rust_construction.iso_13790_mass_class() {
             crate::sim::construction::MassClass::VeryLight => Ok(PyMassClass::VeryLight),
             crate::sim::construction::MassClass::Light => Ok(PyMassClass::Light),
