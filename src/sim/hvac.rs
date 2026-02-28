@@ -17,6 +17,8 @@ pub enum HVACSystemType {
     /// Heat pump system with COP curves
     HeatPump,
 }
+    /// Ideal air loads system with infinite capacity (for ASHRAE 140 validation)
+    Ideal,
 
 /// Represents a VAV (Variable Air Volume) terminal unit
 #[derive(Debug, Clone, Serialize, Deserialize)]
