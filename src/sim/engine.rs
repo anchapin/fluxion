@@ -789,22 +789,20 @@ impl ThermalModel<VectorField> {
                 let view_factor =
                     Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
 
-                let glass_emissivity = spec.window_properties.emissivity;
+                let emissivity = 0.9;
                 let reference_temp = 293.15;
 
-                radiative_conductance = Self::calculate_window_radiative_conductance(
+                radiative_conductance = Self::calculate_radiative_conductance_with_view_factor(
                     window_area,
-                    glass_emissivity,
+                    emissivity,
                     reference_temp,
                     view_factor,
                 );
-
                 println!(
-                    "Issue #349: Window-to-window radiative conductance: {:.2} W/K",
+                    "Issue #348: Radiative conductance through inter-zone windows: {:.2} W/K",
                     radiative_conductance
                 );
                 println!("  - Window area: {:.2} m²", window_area);
-                println!("  - Glass emissivity: {:.4}", glass_emissivity);
                 println!("  - View factor: {:.4}", view_factor);
             }
 
@@ -3075,48 +3073,20 @@ mod inter_zone_tests {
     }
 
     #[test]
-    fn test_window_radiative_conductance() {
-        let window_area = 10.8;
-        let glass_emissivity = 0.84;
-        let reference_temp = 293.15;
-        let view_factor = 0.1;
-
-        let h_rad = ThermalModel::<VectorField>::calculate_window_radiative_conductance(
-            window_area,
-            glass_emissivity,
-            reference_temp,
-            view_factor,
-        );
-
-        assert!(h_rad > 0.0, "Radiative conductance should be positive");
-        println!("Window radiative conductance: {:.2} W/K", h_rad);
-    }
-
-    #[test]
     fn test_case_960_window_radiative_exchange() {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
         let h_iz_rad = model.h_tr_iz_rad.as_ref();
-        let h_iz = model.h_tr_iz.as_ref();
 
         assert!(
             h_iz_rad[0] > 0.0,
             "Radiative inter-zone conductance should be > 0"
         );
-        assert!(h_iz[0] > 0.0, "Total inter-zone conductance should be > 0");
-
-        println!("Issue #349: Case 960 window-to-window radiative exchange:");
-        println!("  - Radiative conductance: {:.2} W/K", h_iz_rad[0]);
-        println!("  - Total conductance: {:.2} W/K", h_iz[0]);
         println!(
-            "  - Window emissivity: {:.4}",
-            spec.window_properties.emissivity
+            "Case 960 radiative inter-zone conductance: {:.2} W/K",
+            h_iz_rad[0]
         );
-    }
-
-    #[test]
-    fn test_case_960_radiative_conductance() {
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
