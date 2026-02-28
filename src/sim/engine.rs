@@ -1963,6 +1963,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// # Returns
     /// Radiative conductance in W/K
+    #[allow(dead_code)]
     fn calculate_window_radiative_conductance(
         window_area: f64,
         glass_emissivity: f64,
