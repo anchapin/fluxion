@@ -440,6 +440,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_orientations: self.window_orientations.clone(),
             hvac_controller: self.hvac_controller.clone(),
             thermal_mass_energy_accounting: self.thermal_mass_energy_accounting,
+            ideal_air_loads_mode: self.ideal_air_loads_mode,
 
             // Clone optimization cache
             derived_h_ext: self.derived_h_ext.clone(),
