@@ -526,6 +526,7 @@ dependencies = [
  "num-traits",
  "ort",
  "pyo3",
+ "pyo3-build-config",
  "rand",
  "rayon",
  "serde",
