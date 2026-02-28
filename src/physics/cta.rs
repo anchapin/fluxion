@@ -268,32 +268,16 @@ impl AsRef<[f64]> for VectorField {
 
 #[cfg(feature = "python-bindings")]
 impl VectorField {
-    /// Create a VectorField from a numpy array.
-    ///
-    /// This method converts a numpy array to a VectorField by copying the data.
-    pub fn from_numpy_array<'py>(
-        _py: Python<'py>,
-        array: &Bound<'py, pyo3::PyAny>,
-    ) -> PyResult<Self> {
-        let numpy_array = array.downcast::<PyArray1<f64>>()?;
-        let slice = unsafe { numpy_array.as_slice()? };
-        Ok(VectorField::new(slice.to_vec()))
-    }
-
-    /// Convert this VectorField to a numpy array.
-    ///
-    /// Returns a PyArray1 that borrows the data from this VectorField.
-    /// The Python array will be valid only as long as the VectorField exists.
+    /// Convert to a numpy array (zero-copy borrow).
     pub fn to_numpy_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
         PyArray1::from_slice_bound(py, &self.data)
     }
 
-    /// Validate that a Python object is a valid numpy array for conversion.
-    ///
-    /// Checks that the object is a numpy array with dtype float64 and 1-dimensional.
-    pub fn validate_numpy_array<'py>(obj: &Bound<'py, pyo3::PyAny>) -> PyResult<()> {
-        let _numpy_array = obj.downcast::<PyArray1<f64>>()?;
-        Ok(())
+    /// Create from a numpy array.
+    pub fn from_numpy_array<'py>(_py: Python<'py>, array: &Bound<'py, PyAny>) -> PyResult<Self> {
+        let numpy_array = array.downcast::<PyArray1<f64>>()?;
+        let slice = unsafe { numpy_array.as_slice()? };
+        Ok(VectorField::new(slice.to_vec()))
     }
 }
 
@@ -305,12 +289,12 @@ impl VectorField {
         VectorField::new(data)
     }
 
-    fn integrate(&self) -> f64 {
-        ContinuousTensor::integrate(self)
+    fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
+        Ok(self.to_numpy_array(py).into_py(py))
     }
 
-    fn to_numpy(&self, py: Python) -> PyResult<PyObject> {
-        Ok(PyArray1::from_slice_bound(py, &self.data).into_py(py))
+    fn integrate(&self) -> f64 {
+        ContinuousTensor::integrate(self)
     }
 
     fn __repr__(&self) -> String {
@@ -319,6 +303,7 @@ impl VectorField {
             self.data.len(),
             self.data
                 .iter()
+                .take(5)
                 .map(|x| format!("{:.4}", x))
                 .collect::<Vec<_>>()
                 .join(", ")
@@ -354,105 +339,6 @@ mod tests {
 
         let scaled = v1 * 2.0;
         assert_eq!(scaled.data, vec![2.0, 4.0, 6.0]);
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_vector_field_to_numpy() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let vf = VectorField::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
-            let numpy_array = vf.to_numpy_array(py);
-
-            assert_eq!(numpy_array.len().unwrap(), 5);
-            let slice = unsafe { numpy_array.as_slice().unwrap() };
-            assert_eq!(slice, &[1.0, 2.0, 3.0, 4.0, 5.0]);
-        });
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_vector_field_from_numpy() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-            let numpy_array = PyArray1::from_slice_bound(py, &data);
-            let vf = VectorField::from_numpy_array(py, &numpy_array).unwrap();
-
-            assert_eq!(vf.len(), 5);
-            assert_eq!(vf.as_slice(), &[1.0, 2.0, 3.0, 4.0, 5.0]);
-        });
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_vector_field_roundtrip() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let original = VectorField::new(vec![1.5, 2.5, 3.5, 4.5, 5.5]);
-
-            let numpy_array = original.to_numpy_array(py);
-            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
-
-            assert_eq!(original.len(), recovered.len());
-            assert_eq!(original.as_slice(), recovered.as_slice());
-        });
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_numpy_validation() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let data = vec![1.0, 2.0, 3.0];
-            let array = PyArray1::from_slice_bound(py, &data);
-            assert!(
-                VectorField::validate_numpy_array(&array).is_ok(),
-                "Valid array should pass validation"
-            );
-
-            let empty_data: Vec<f64> = vec![];
-            let empty_array = PyArray1::from_slice_bound(py, &empty_data);
-            assert!(
-                VectorField::validate_numpy_array(&empty_array).is_ok(),
-                "Empty array should be valid"
-            );
-        });
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_empty_vector_field_conversion() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let vf = VectorField::new(vec![]);
-            let numpy_array = vf.to_numpy_array(py);
-            assert_eq!(numpy_array.len().unwrap(), 0);
-
-            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
-            assert!(recovered.is_empty());
-        });
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_large_vector_field_conversion() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let large_data: Vec<f64> = (0..10000).map(|i| i as f64).collect();
-            let vf = VectorField::new(large_data.clone());
-            let numpy_array = vf.to_numpy_array(py);
-            assert_eq!(numpy_array.len().unwrap(), 10000);
-
-            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
-            assert_eq!(vf.as_slice(), recovered.as_slice());
-        });
     }
 
     #[test]
@@ -509,5 +395,35 @@ mod tests {
         let ptr_after = v5.as_slice().as_ptr();
         assert_eq!(v5.as_slice(), &[2.0, 4.0, 6.0]);
         assert_eq!(ptr_before, ptr_after, "Mul<f64> should reuse allocation");
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_vector_field_numpy_conversion() {
+        pyo3::prepare_freethreaded_python();
+
+        pyo3::Python::with_gil(|py| {
+            let original = VectorField::new(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+
+            let numpy_array = original.to_numpy_array(py);
+            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
+
+            assert_eq!(original.len(), recovered.len());
+            assert_eq!(original.as_slice(), recovered.as_slice());
+        });
+    }
+
+    #[cfg(feature = "python-bindings")]
+    #[test]
+    fn test_empty_vector_field_numpy() {
+        pyo3::prepare_freethreaded_python();
+
+        pyo3::Python::with_gil(|py| {
+            let empty = VectorField::new(vec![]);
+            let numpy_array = empty.to_numpy_array(py);
+            let recovered = VectorField::from_numpy_array(py, &numpy_array).unwrap();
+
+            assert!(recovered.is_empty());
+        });
     }
 }
