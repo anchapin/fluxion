@@ -53,41 +53,17 @@ struct Model {
 #[cfg(feature = "python-bindings")]
 #[pymethods]
 impl Model {
-    /// Create a new Model instance with default configuration.
+    /// Create a new Model instance.
     ///
     /// # Arguments
-    /// * `num_zones` - Number of thermal zones (default: 1)
+    /// * `_config_path` - Path to building configuration file
     #[new]
-    #[pyo3(signature = (num_zones=1))]
-    fn new(num_zones: usize) -> PyResult<Self> {
+    fn new(_config_path: String) -> PyResult<Self> {
         Ok(Model {
-            inner: ThermalModel::<VectorField>::new(num_zones),
+            inner: ThermalModel::<VectorField>::new(10),
             surrogates: SurrogateManager::new()
                 .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
         })
-    }
-
-    /// Get number of zones in the model.
-    fn num_zones(&self) -> usize {
-        self.inner.num_zones
-    }
-
-    /// Get current zone temperatures.
-    fn get_temperatures(&self) -> Vec<f64> {
-        self.inner.get_temperatures()
-    }
-
-    /// Set zone temperatures.
-    fn set_temperatures(&mut self, temps: Vec<f64>) -> PyResult<()> {
-        if temps.len() != self.inner.num_zones {
-            return Err(pyo3::exceptions::PyValueError::new_err(format!(
-                "Temperature vector length ({}) must match number of zones ({})",
-                temps.len(),
-                self.inner.num_zones
-            )));
-        }
-        self.inner.temperatures = VectorField::new(temps);
-        Ok(())
     }
 
     /// Simulate building energy consumption over specified years.
@@ -111,50 +87,6 @@ impl Model {
     /// * `timestep` - Current timestep index (0-8759 for hourly annual simulation)
     /// * `outdoor_temp` - Outdoor air temperature (°C)
     /// * `use_surrogates` - If true, use neural surrogates; if false, use analytical calculations
-    ///
-    /// # Returns
-    /// HVAC energy consumption for timestep in kWh
-    fn step(&mut self, timestep: usize, outdoor_temp: f64, use_surrogates: bool) -> PyResult<f64> {
-        Ok(self.inner.solve_single_step(
-            timestep,
-            outdoor_temp,
-            use_surrogates,
-            &self.surrogates,
-            true,
-        ))
-    }
-
-    /// Apply optimization parameters to the model.
-    ///
-    /// # Arguments
-    /// * `params` - Parameter vector:
-    ///   - params[0]: Window U-value (W/m²K, range: 0.1-5.0)
-    ///   - params[1]: Heating setpoint (°C, range: 15-25)
-    ///   - params[2]: Cooling setpoint (°C, range: 22-32)
-    fn apply_parameters(&mut self, params: Vec<f64>) {
-        self.inner.apply_parameters(&params);
-    }
-
-    /// Get current window U-value.
-    fn window_u_value(&self) -> f64 {
-        self.inner.window_u_value
-    }
-
-    /// Get current heating setpoint.
-    fn heating_setpoint(&self) -> f64 {
-        self.inner.heating_setpoint
-    }
-
-    /// Get current cooling setpoint.
-    fn cooling_setpoint(&self) -> f64 {
-        self.inner.cooling_setpoint
-    }
-
-    /// Get zone floor area in m².
-    fn zone_area(&self) -> f64 {
-        self.inner.zone_area.integrate()
-    }
-
     /// Register an ONNX surrogate model for this `Model` instance.
     fn load_surrogate(&mut self, model_path: String) -> PyResult<()> {
         match SurrogateManager::load_onnx(&model_path) {
@@ -164,25 +96,6 @@ impl Model {
             }
             Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
         }
-    }
-
-    /// Set ground temperature model to constant value.
-    ///
-    /// # Arguments
-    /// * `temperature` - Constant ground temperature (°C)
-    fn set_ground_temp(&mut self, temperature: f64) {
-        self.inner.set_ground_temp(temperature);
-    }
-
-    /// Get ground temperature at a specific timestep.
-    ///
-    /// # Arguments
-    /// * `timestep` - Timestep index (0-8759 for hourly annual simulation)
-    ///
-    /// # Returns
-    /// Ground temperature (°C)
-    fn ground_temperature_at(&self, timestep: usize) -> f64 {
-        self.inner.ground_temperature_at(timestep)
     }
 }
 
