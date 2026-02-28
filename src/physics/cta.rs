@@ -268,6 +268,7 @@ impl AsRef<[f64]> for VectorField {
 }
 
 #[cfg(feature = "python-bindings")]
+#[cfg(all(feature = "python-bindings", feature = "numpy"))]
 impl VectorField {
     /// Convert to a numpy array (zero-copy borrow).
     pub fn to_numpy_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
@@ -283,6 +284,7 @@ impl VectorField {
 }
 
 #[cfg(feature = "python-bindings")]
+#[cfg(all(feature = "python-bindings", feature = "numpy"))]
 #[pymethods]
 impl VectorField {
     #[new]
