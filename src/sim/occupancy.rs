@@ -57,6 +57,10 @@ pub struct OccupancyProfile {
     pub sensible_heat_per_person: f64,
     /// Latent heat gain per person (W)
     pub latent_heat_per_person: f64,
+    /// Fraction of sensible heat that is convective (0-1)
+    pub convective_sensible_fraction: f64,
+    /// Fraction of sensible heat that is radiative (0-1)
+    pub radiative_sensible_fraction: f64,
 }
 
 impl OccupancyProfile {
@@ -82,6 +86,8 @@ impl OccupancyProfile {
             hourly_schedule: Vec::with_capacity(168),
             sensible_heat_per_person: sensible,
             latent_heat_per_person: latent,
+            convective_sensible_fraction: 0.6,
+            radiative_sensible_fraction: 0.4,
         }
     }
 
@@ -94,16 +100,16 @@ impl OccupancyProfile {
             for hour in 0..24 {
                 let idx = day * 24 + hour;
                 let fraction = match hour {
-                    0..=6 => 0.05,   // Night: 5%
-                    7 => 0.20,       // 7am: 20%
-                    8 => 0.50,       // 8am: 50%
-                    9..=11 => 0.90,  // Morning peak: 90%
-                    12 => 0.80,      // Lunch: 80%
-                    13..=16 => 0.90, // Afternoon: 90%
-                    17 => 0.70,      // 5pm: 70%
-                    18 => 0.40,      // 6pm: 40%
-                    19 => 0.20,      // 7pm: 20%
-                    20..=23 => 0.10, // Evening: 10%
+                    0..=6 => 0.05,
+                    7 => 0.20,
+                    8 => 0.50,
+                    9..=11 => 0.90,
+                    12 => 0.80,
+                    13..=16 => 0.90,
+                    17 => 0.70,
+                    18 => 0.40,
+                    19 => 0.20,
+                    20..=23 => 0.10,
                     _ => 0.05,
                 };
                 self.hourly_schedule[idx] = fraction;
@@ -159,8 +165,8 @@ impl OccupancyProfile {
                     0..=6 => 0.10,
                     7 => 0.30,
                     8 => 0.80,
-                    9..=14 => 0.95, // Class time
-                    15 => 0.70,     // After school
+                    9..=14 => 0.95,
+                    15 => 0.70,
                     16 => 0.40,
                     17..=23 => 0.10,
                     _ => 0.10,
@@ -197,18 +203,46 @@ impl OccupancyProfile {
         let occupancy = self.occupancy_at(hour_of_week);
         occupancy * (self.sensible_heat_per_person + self.latent_heat_per_person)
     }
+
+    /// Calculate convective heat gains from occupancy
+    /// Convective heat includes:
+    /// - Convective portion of sensible heat (instantly warms air)
+    /// - All latent heat (humidifies air)
+    pub fn convective_heat_gains(&self, hour_of_week: usize) -> f64 {
+        let occupancy = self.occupancy_at(hour_of_week);
+        let convective_sensible = self.sensible_heat_per_person * self.convective_sensible_fraction;
+        occupancy * (convective_sensible + self.latent_heat_per_person)
+    }
+
+    /// Calculate radiative heat gains from occupancy
+    /// Radiative heat is absorbed by thermal mass
+    pub fn radiative_heat_gains(&self, hour_of_week: usize) -> f64 {
+        let occupancy = self.occupancy_at(hour_of_week);
+        let radiative_sensible = self.sensible_heat_per_person * self.radiative_sensible_fraction;
+        occupancy * radiative_sensible
+    }
+
+    /// Calculate convective sensible heat gain per person
+    pub fn convective_sensible_heat_per_person(&self) -> f64 {
+        self.sensible_heat_per_person * self.convective_sensible_fraction
+    }
+
+    /// Calculate radiative sensible heat gain per person
+    pub fn radiative_sensible_heat_per_person(&self) -> f64 {
+        self.sensible_heat_per_person * self.radiative_sensible_fraction
+    }
 }
 
 /// Heat gains per person by building type
 fn heat_gains(building_type: BuildingType) -> (f64, f64) {
     match building_type {
-        BuildingType::Office => (75.0, 55.0),     // Seated office work
-        BuildingType::Retail => (120.0, 80.0),    // Light work
-        BuildingType::School => (80.0, 60.0),     // Classroom
-        BuildingType::Hospital => (100.0, 100.0), // Patient care
-        BuildingType::Hotel => (90.0, 70.0),      // Hotel room
-        BuildingType::Restaurant => (130.0, 100.0), // Restaurant
-        BuildingType::Warehouse => (200.0, 50.0), // Heavy work
+        BuildingType::Office => (75.0, 55.0),
+        BuildingType::Retail => (120.0, 80.0),
+        BuildingType::School => (80.0, 60.0),
+        BuildingType::Hospital => (100.0, 100.0),
+        BuildingType::Hotel => (90.0, 70.0),
+        BuildingType::Restaurant => (130.0, 100.0),
+        BuildingType::Warehouse => (200.0, 50.0),
     }
 }
 
@@ -353,6 +387,66 @@ mod tests {
 
         let gains = profile.internal_gains(50); // Tuesday 2am
         assert!(gains > 0.0);
+    }
+
+    #[test]
+    fn test_convective_radiative_split() {
+        let profile = OccupancyProfile::new("Office-Test".to_string(), BuildingType::Office, 100.0)
+            .office_schedule();
+
+        assert_eq!(profile.convective_sensible_fraction, 0.6);
+        assert_eq!(profile.radiative_sensible_fraction, 0.4);
+
+        let total_sensible = profile.sensible_heat_per_person;
+        let convective_per_person = profile.convective_sensible_heat_per_person();
+        let radiative_per_person = profile.radiative_sensible_heat_per_person();
+
+        assert!((convective_per_person - 0.6 * total_sensible).abs() < 1e-10);
+        assert!((radiative_per_person - 0.4 * total_sensible).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_convective_heat_gains() {
+        let profile = OccupancyProfile::new("Office-Test".to_string(), BuildingType::Office, 100.0)
+            .office_schedule();
+
+        let hour_of_week = 50;
+        let occupancy = profile.occupancy_at(hour_of_week);
+        let convective_gains = profile.convective_heat_gains(hour_of_week);
+
+        let expected_convective = occupancy
+            * (profile.sensible_heat_per_person * profile.convective_sensible_fraction
+                + profile.latent_heat_per_person);
+
+        assert!((convective_gains - expected_convective).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_radiative_heat_gains() {
+        let profile = OccupancyProfile::new("Office-Test".to_string(), BuildingType::Office, 100.0)
+            .office_schedule();
+
+        let hour_of_week = 50;
+        let occupancy = profile.occupancy_at(hour_of_week);
+        let radiative_gains = profile.radiative_heat_gains(hour_of_week);
+
+        let expected_radiative =
+            occupancy * (profile.sensible_heat_per_person * profile.radiative_sensible_fraction);
+
+        assert!((radiative_gains - expected_radiative).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_total_gains_equal_sum_of_parts() {
+        let profile = OccupancyProfile::new("Office-Test".to_string(), BuildingType::Office, 100.0)
+            .office_schedule();
+
+        let hour_of_week = 58;
+        let total_gains = profile.internal_gains(hour_of_week);
+        let convective_gains = profile.convective_heat_gains(hour_of_week);
+        let radiative_gains = profile.radiative_heat_gains(hour_of_week);
+
+        assert!((total_gains - (convective_gains + radiative_gains)).abs() < 1e-10);
     }
 
     #[test]
