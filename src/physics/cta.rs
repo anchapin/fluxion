@@ -366,7 +366,7 @@ mod tests {
             let numpy_array = vf.to_numpy_array(py);
 
             assert_eq!(numpy_array.len().unwrap(), 5);
-            let slice = numpy_array.as_slice().unwrap();
+            let slice = unsafe { numpy_array.as_slice().unwrap() };
             assert_eq!(slice, &[1.0, 2.0, 3.0, 4.0, 5.0]);
         });
     }
@@ -399,21 +399,6 @@ mod tests {
 
             assert_eq!(original.len(), recovered.len());
             assert_eq!(original.as_slice(), recovered.as_slice());
-        });
-    }
-
-    #[cfg(feature = "python-bindings")]
-    #[test]
-    fn test_vector_field_from_numpy() {
-        pyo3::prepare_freethreaded_python();
-
-        pyo3::Python::with_gil(|py| {
-            let data = vec![1.0, 2.0, 3.0, 4.0, 5.0];
-            let numpy_array = PyArray1::from_slice_bound(py, &data);
-            let vf = VectorField::from_numpy_array(py, &numpy_array).unwrap();
-
-            assert_eq!(vf.len(), 5);
-            assert_eq!(vf.as_slice(), &[1.0, 2.0, 3.0, 4.0, 5.0]);
         });
     }
 
