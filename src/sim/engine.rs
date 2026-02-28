@@ -7,7 +7,7 @@ use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
-use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
+use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
 use std::sync::OnceLock;
@@ -777,33 +777,34 @@ impl ThermalModel<VectorField> {
                 total_conductance += wall.conductance();
             }
 
-            // Add radiative conductance through inter-zone windows (Issue #302)
-            // ASHRAE 140 Case 960 has windows between sunspace and back-zone
             let mut radiative_conductance = 0.0;
             if spec.case_id == "960" {
-                // Estimate window area in common wall for Case 960
-                // ASHRAE 140 Case 960: 21.6 m² common wall, approximately 50% glazed
                 let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
-                let window_fraction = 0.5; // Approximately 50% of common wall is window
+                let window_fraction = 0.5;
                 let window_area = common_wall_area * window_fraction;
 
-                // Calculate radiative conductance
-                // Interior surface emissivity: 0.9 (typical for painted surfaces)
-                let emissivity = 0.9;
-                let reference_temp = 293.15; // 20°C in Kelvin
+                let zone_a_area = Self::calculate_total_interior_surface_area(&spec.geometry[0]);
+                let zone_b_area = Self::calculate_total_interior_surface_area(&spec.geometry[1]);
 
-                radiative_conductance = Self::calculate_radiative_conductance_through_window(
+                let view_factor =
+                    Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
+
+                let emissivity = 0.9;
+                let reference_temp = 293.15;
+
+                radiative_conductance = Self::calculate_radiative_conductance_with_view_factor(
                     window_area,
                     emissivity,
                     reference_temp,
+                    view_factor,
                 );
 
                 println!(
-                    "Issue #302: Radiative conductance through inter-zone windows: {:.2} W/K",
+                    "Issue #348: Radiative conductance through inter-zone windows: {:.2} W/K",
                     radiative_conductance
                 );
                 println!("  - Window area: {:.2} m²", window_area);
-                println!("  - Surface emissivity: {:.2}", emissivity);
+                println!("  - View factor: {:.4}", view_factor);
             }
 
             // Add convective coupling (air exchange)
@@ -1927,21 +1928,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// Radiative exchange: Q_rad = σ * ε1 * ε2 * A * F12 * (T1^4 - T2^4)
     /// Linearized: Q_rad ≈ h_rad * (T1 - T2)
     /// Where h_rad ≈ 4 * σ * ε * T_avg^3 * A
-    fn calculate_radiative_conductance_through_window(
+    fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {
+        geometry.wall_area() + geometry.floor_area() + geometry.roof_area()
+    }
+
+    fn calculate_zone_to_zone_view_factor(
+        common_window_area: f64,
+        zone_a_area: f64,
+        zone_b_area: f64,
+    ) -> f64 {
+        let zone_a_interior_area = zone_a_area;
+        let zone_b_interior_area = zone_b_area;
+
+        let f_window_to_a = common_window_area / zone_a_interior_area;
+        let f_window_to_b = common_window_area / zone_b_interior_area;
+
+        0.5 * (f_window_to_a + f_window_to_b)
+    }
+
+    fn calculate_radiative_conductance_with_view_factor(
         window_area: f64,
         surface_emissivity: f64,
         reference_temp: f64,
+        view_factor: f64,
     ) -> f64 {
-        // Stefan-Boltzmann constant (W/m²·K⁴)
         const STEFAN_BOLTZMANN: f64 = 5.670374419e-8;
-
-        // Linearized radiative coefficient
-        // h_rad ≈ 4 * σ * ε1 * ε2 * T_avg^3
-        // Assuming ε1 = ε2 = surface_emissivity for same building material
-        let emissivity_product = surface_emissivity * surface_emissivity;
-        let h_rad = 4.0 * STEFAN_BOLTZMANN * emissivity_product * reference_temp.powi(3);
-
-        // Total radiative conductance
+        let effective_emissivity =
+            1.0 / (1.0 / surface_emissivity + 1.0 / surface_emissivity - 1.0);
+        let h_rad =
+            4.0 * STEFAN_BOLTZMANN * effective_emissivity * view_factor * reference_temp.powi(3);
         h_rad * window_area
     }
 
@@ -2967,16 +2982,86 @@ mod inter_zone_tests {
 
     #[test]
     fn test_inter_zone_heat_transfer_basic() {
-        // Test that inter-zone heat transfer is calculated
         let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
-        // Check inter-zone conductance is set
         let h_iz = model.h_tr_iz.as_ref();
         println!("h_tr_iz values: {:?}", h_iz);
 
-        // The conductance should be set for multi-zone
         assert!(h_iz[0] > 0.0, "Inter-zone conductance should be > 0");
+    }
+
+    #[test]
+    fn test_total_interior_surface_area() {
+        use crate::validation::ashrae_140_cases::GeometrySpec;
+
+        let geometry = GeometrySpec::new(8.0, 6.0, 2.7);
+        let area = ThermalModel::<VectorField>::calculate_total_interior_surface_area(&geometry);
+
+        let expected = geometry.wall_area() + geometry.floor_area() + geometry.roof_area();
+        assert!(
+            (area - expected).abs() < 0.001,
+            "Interior surface area calculation incorrect"
+        );
+    }
+
+    #[test]
+    fn test_zone_to_zone_view_factor() {
+        let window_area = 10.8;
+        let zone_a_area = 250.0;
+        let zone_b_area = 150.0;
+
+        let view_factor = ThermalModel::<VectorField>::calculate_zone_to_zone_view_factor(
+            window_area,
+            zone_a_area,
+            zone_b_area,
+        );
+
+        assert!(view_factor > 0.0, "View factor should be positive");
+        assert!(view_factor < 1.0, "View factor should be less than 1");
+        println!("View factor: {:.4}", view_factor);
+    }
+
+    #[test]
+    fn test_radiative_conductance_with_view_factor() {
+        let window_area = 10.8;
+        let emissivity = 0.9;
+        let reference_temp = 293.15;
+        let view_factor = 0.1;
+
+        let h_rad = ThermalModel::<VectorField>::calculate_radiative_conductance_with_view_factor(
+            window_area,
+            emissivity,
+            reference_temp,
+            view_factor,
+        );
+
+        assert!(h_rad > 0.0, "Radiative conductance should be positive");
+        println!("Radiative conductance: {:.2} W/K", h_rad);
+    }
+
+    #[test]
+    fn test_case_960_radiative_conductance() {
+        let spec = ASHRAE140Case::Case960.spec();
+        let model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        let h_iz_rad = model.h_tr_iz_rad.as_ref();
+
+        assert!(
+            h_iz_rad[0] > 0.0,
+            "Radiative inter-zone conductance should be > 0"
+        );
+        println!(
+            "Case 960 radiative inter-zone conductance: {:.2} W/K",
+            h_iz_rad[0]
+        );
+
+        let h_iz = model.h_tr_iz.as_ref();
+        let total_h_iz = h_iz[0] + h_iz_rad[0];
+        println!(
+            "Total inter-zone conductance (conductive + radiative): {:.2} W/K",
+            total_h_iz
+        );
     }
 }
 
