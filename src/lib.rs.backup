@@ -24,7 +24,7 @@ use sim::engine::ThermalModel;
 #[cfg(feature = "python-bindings")]
 use pyo3::{
     prelude::{pyclass, pymethods, pymodule, PyModule},
-    types::{PyAnyMethods, PyListMethods, PyModuleMethods},
+    types::{PyListMethods, PyModuleMethods},
     Bound, PyResult, Python,
 };
 
@@ -232,6 +232,19 @@ impl PyVectorField {
         self.inner.as_slice().to_vec()
     }
 
+    /// Convert to numpy array (requires numpy feature).
+    #[cfg(not(all(feature = "numpy")))]
+    fn to_numpy(&self, _py: Python<'_>) -> PyResult<Vec<f64>> {
+        Err(pyo3::exceptions::PyNotImplementedError::new_err(
+            "NumPy support not enabled. Use to_list() instead.",
+        ))
+    }
+
+    /// Convert to Python list.
+    fn to_list(&self) -> Vec<f64> {
+        self.inner.as_slice().to_vec()
+    }
+
     /// Compute the sum (integral) of all elements.
     fn integrate(&self) -> f64 {
         self.inner.integrate()
@@ -382,7 +395,6 @@ impl From<PyMassClass> for crate::sim::construction::MassClass {
 /// Multi-layer construction assembly for Python.
 #[cfg(feature = "python-bindings")]
 #[pyclass(name = "Construction")]
-#[derive(Clone)]
 pub struct PyConstruction {
     #[pyo3(get)]
     pub layers: Vec<PyConstructionLayer>,
@@ -427,7 +439,7 @@ impl PyConstruction {
         exterior_wind_speed: Option<f64>,
     ) -> PyResult<f64> {
         let st = surface_type.map(|st| st.into());
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.r_value_total(st, exterior_wind_speed))
     }
 
@@ -439,19 +451,19 @@ impl PyConstruction {
         exterior_wind_speed: Option<f64>,
     ) -> PyResult<f64> {
         let st = surface_type.map(|st| st.into());
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.u_value(st, exterior_wind_speed))
     }
 
     /// Calculate total thermal mass.
     fn thermal_capacitance_per_area(&self) -> PyResult<f64> {
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.thermal_capacitance_per_area())
     }
 
     /// Get total thickness.
     fn total_thickness(&self) -> PyResult<f64> {
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         Ok(rust_construction.total_thickness())
     }
 
@@ -462,7 +474,7 @@ impl PyConstruction {
 
     /// Get mass class.
     fn mass_class(&self) -> PyResult<PyMassClass> {
-        let rust_construction: crate::sim::construction::Construction = (*self).clone().into();
+        let rust_construction: crate::sim::construction::Construction = self.clone().into();
         match rust_construction.iso_13790_mass_class() {
             crate::sim::construction::MassClass::VeryLight => Ok(PyMassClass::VeryLight),
             crate::sim::construction::MassClass::Light => Ok(PyMassClass::Light),
@@ -767,12 +779,12 @@ impl BatchOracle {
 fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<BatchOracle>()?;
-    m.add_class::<PyVectorField>()?;
-    m.add_class::<PyConstruction>()?;
-    m.add_class::<PyConstructionLayer>()?;
-    m.add_class::<PyMassClass>()?;
-    m.add_class::<PySurfaceType>()?;
-    m.add_class::<PyWallSurface>()?;
+    m.add_class::<VectorField>()?;
+    m.add_class::<Construction>()?;
+    m.add_class::<ConstructionLayer>()?;
+    m.add_class::<MassClass>()?;
+    m.add_class::<SurfaceType>()?;
+    m.add_class::<WallSurface>()?;
     Ok(())
 }
 
