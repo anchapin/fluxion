@@ -324,6 +324,15 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// energy storage/release should not affect the thermal balance
     pub thermal_mass_energy_accounting: bool,
 
+    /// Ideal air loads mode for ASHRAE 140 validation (Issue #382)
+    /// When true: HVAC system has infinite capacity with no control lag
+    /// Used to measure pure building loads without fictitious dynamic effects
+    /// - Bypasses HVAC capacity limits (infinite capacity)
+    /// - Always subtracts thermal mass energy change (pure zone loads)
+    /// - Uses exact heat injection/extraction based on zone requirements
+    /// - No curve fitting or artificial delays
+    pub ideal_air_loads_mode: bool,
+
     /// Fraction of internal gains that are convective (rest is radiative to surfaces)
     pub convective_fraction: f64,
 
@@ -431,6 +440,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_orientations: self.window_orientations.clone(),
             hvac_controller: self.hvac_controller.clone(),
             thermal_mass_energy_accounting: self.thermal_mass_energy_accounting,
+            ideal_air_loads_mode: self.ideal_air_loads_mode,
 
             // Clone optimization cache
             derived_h_ext: self.derived_h_ext.clone(),
@@ -944,6 +954,7 @@ impl ThermalModel<VectorField> {
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
             mass_energy_change_cumulative: 0.0, // Cumulative mass energy change (J)
             thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
+            ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
