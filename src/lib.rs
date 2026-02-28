@@ -336,6 +336,7 @@ impl BatchOracle {
 fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<BatchOracle>()?;
+    m.add_class::<VectorField>()?;
     Ok(())
 }
 
