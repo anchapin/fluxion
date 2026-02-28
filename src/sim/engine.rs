@@ -324,6 +324,15 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// energy storage/release should not affect the thermal balance
     pub thermal_mass_energy_accounting: bool,
 
+    /// Ideal air loads mode for ASHRAE 140 validation (Issue #382)
+    /// When true: HVAC system has infinite capacity with no control lag
+    /// Used to measure pure building loads without fictitious dynamic effects
+    /// - Bypasses HVAC capacity limits (infinite capacity)
+    /// - Always subtracts thermal mass energy change (pure zone loads)
+    /// - Uses exact heat injection/extraction based on zone requirements
+    /// - No curve fitting or artificial delays
+    pub ideal_air_loads_mode: bool,
+
     /// Fraction of internal gains that are convective (rest is radiative to surfaces)
     pub convective_fraction: f64,
 
