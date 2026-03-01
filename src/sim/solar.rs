@@ -42,6 +42,18 @@ impl SolarPosition {
     }
 }
 
+/// Calculate the day of year (1-366) from year, month, and day.
+pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
+    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
+    day_of_year += day as i32;
+    if is_leap_year && month > 2 {
+        day_of_year += 1;
+    }
+    day_of_year as usize
+}
+
 /// Calculate solar position using the NOAA solar calculator algorithm.
 pub fn calculate_solar_position(
     latitude_deg: f64,
@@ -184,6 +196,7 @@ pub fn calculate_surface_irradiance(
     ghi: Option<f64>,
     orientation: Orientation,
     ground_reflectance: f64,
+    day_of_year: usize,
 ) -> SurfaceIrradiance {
     if !sun_pos.is_above_horizon() {
         return SurfaceIrradiance::zero();
@@ -341,6 +354,7 @@ pub fn calculate_hourly_solar(
     ground_reflectance: Option<f64>,
 ) -> (SolarPosition, SurfaceIrradiance, SolarGain) {
     let sun_pos = calculate_solar_position(latitude_deg, longitude_deg, year, month, day, hour);
+    let day_of_year = calculate_day_of_year(year, month, day);
     let irradiance = calculate_surface_irradiance(
         &sun_pos,
         dni,
@@ -348,6 +362,7 @@ pub fn calculate_hourly_solar(
         None,
         orientation,
         ground_reflectance.unwrap_or(0.2),
+        day_of_year,
     );
     let solar_gain = calculate_window_solar_gain(
         &irradiance,
@@ -380,7 +395,7 @@ mod tests {
             zenith_deg: 45.0,
         };
         let irr =
-            calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+            calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2, 172);
         assert!(irr.total_wm2 > 0.0);
     }
 
@@ -625,6 +640,7 @@ mod tests {
             for (label, year, month, day, hour, dni, dhi) in test_cases {
                 let sun_pos =
                     calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+                let day_of_year = calculate_day_of_year(year, month, day);
                 let irradiance =
                     calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::South, 0.2);
                 let gain = calculate_window_solar_gain(
@@ -657,9 +673,9 @@ mod tests {
             };
 
             let irradiance_south =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2, 172);
             let irradiance_west =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::West, 0.2);
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::West, 0.2, 172);
 
             let gain_south = calculate_window_solar_gain(
                 &irradiance_south,
@@ -699,9 +715,9 @@ mod tests {
 
             // Test with different ground reflectance values
             let irr_0_2 =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2);
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2, 172);
             let irr_0_5 =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.5);
+                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.5, 172);
 
             println!("Ground reflectance effect:");
             println!(
