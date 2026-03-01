@@ -394,8 +394,15 @@ mod tests {
             azimuth_deg: 180.0,
             zenith_deg: 45.0,
         };
-        let irr =
-            calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2, 172);
+        let irr = calculate_surface_irradiance(
+            &sun_pos,
+            800.0,
+            100.0,
+            None,
+            Orientation::South,
+            0.2,
+            172,
+        );
         assert!(irr.total_wm2 > 0.0);
     }
 
@@ -641,8 +648,15 @@ mod tests {
                 let sun_pos =
                     calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
                 let day_of_year = calculate_day_of_year(year, month, day);
-                let irradiance =
-                    calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::South, 0.2);
+                let irradiance = calculate_surface_irradiance(
+                    &sun_pos,
+                    dni,
+                    dhi,
+                    None,
+                    Orientation::South,
+                    0.2,
+                    day_of_year,
+                );
                 let gain = calculate_window_solar_gain(
                     &irradiance,
                     &window,
@@ -672,10 +686,24 @@ mod tests {
                 zenith_deg: 50.0,
             };
 
-            let irradiance_south =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2, 172);
-            let irradiance_west =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::West, 0.2, 172);
+            let irradiance_south = calculate_surface_irradiance(
+                &sun_pos,
+                800.0,
+                100.0,
+                None,
+                Orientation::South,
+                0.2,
+                172,
+            );
+            let irradiance_west = calculate_surface_irradiance(
+                &sun_pos,
+                800.0,
+                100.0,
+                None,
+                Orientation::West,
+                0.2,
+                172,
+            );
 
             let gain_south = calculate_window_solar_gain(
                 &irradiance_south,
@@ -714,10 +742,24 @@ mod tests {
             };
 
             // Test with different ground reflectance values
-            let irr_0_2 =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.2, 172);
-            let irr_0_5 =
-                calculate_surface_irradiance(&sun_pos, 800.0, 100.0, None, Orientation::South, 0.5, 172);
+            let irr_0_2 = calculate_surface_irradiance(
+                &sun_pos,
+                800.0,
+                100.0,
+                None,
+                Orientation::South,
+                0.2,
+                172,
+            );
+            let irr_0_5 = calculate_surface_irradiance(
+                &sun_pos,
+                800.0,
+                100.0,
+                None,
+                Orientation::South,
+                0.5,
+                172,
+            );
 
             println!("Ground reflectance effect:");
             println!(
