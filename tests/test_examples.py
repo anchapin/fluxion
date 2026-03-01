@@ -72,7 +72,7 @@ def test_model_single_building():
     except Exception:
         pytest.skip("fluxion Python bindings not available; skip example test")
 
-    model = fluxion.Model("config.json")
+    model = fluxion.Model(num_zones=1)
     result = model.simulate(1, False)
 
     assert isinstance(result, float)
@@ -85,7 +85,7 @@ def test_model_with_surrogates():
     except Exception:
         pytest.skip("fluxion Python bindings not available; skip example test")
 
-    model = fluxion.Model("config.json")
+    model = fluxion.Model(num_zones=1)
     result = model.simulate(1, True)
 
     assert isinstance(result, float)
@@ -98,7 +98,7 @@ def test_model_multiple_years():
     except Exception:
         pytest.skip("fluxion Python bindings not available; skip example test")
 
-    model = fluxion.Model("config.json")
+    model = fluxion.Model(num_zones=1)
     result_1yr = model.simulate(1, False)
     result_2yr = model.simulate(2, False)
 

@@ -499,9 +499,13 @@ impl PyWallSurface {
         })
     }
 }
-
-/// VectorField wrapper for Python.
+/// High-throughput parallel oracle for quantum and genetic algorithm optimization.
+///
+/// This is the core API for bulk evaluation of building design populations. It accepts
+/// thousands of parameter vectors and returns fitness values (EUI) using data parallelism
+/// across CPU cores. Critical for integrating with D-Wave quantum annealers and GA frameworks.
 #[cfg(feature = "python-bindings")]
+#[pyclass]
 struct BatchOracle {
     base_model: ThermalModel<VectorField>,
     surrogates: SurrogateManager,
