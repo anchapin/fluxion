@@ -499,8 +499,6 @@ impl PyWallSurface {
         })
     }
 }
-
-
 /// High-throughput parallel oracle for quantum and genetic algorithm optimization.
 ///
 /// This is the core API for bulk evaluation of building design populations. It accepts

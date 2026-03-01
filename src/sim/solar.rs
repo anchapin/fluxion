@@ -56,6 +56,18 @@ impl SolarPosition {
     }
 }
 
+/// Calculate the day of year (1-366) from year, month, and day.
+pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
+    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
+    day_of_year += day as i32;
+    if is_leap_year && month > 2 {
+        day_of_year += 1;
+    }
+    day_of_year as usize
+}
+
 /// Calculate solar position using the NOAA solar calculator algorithm.
 pub fn calculate_solar_position(
     latitude_deg: f64,
