@@ -194,8 +194,10 @@ class TestConstruction:
 
         r_layer1 = 0.1 / 1.0
         r_layer2 = 0.05 / 0.5
-        expected = r_layer1 + r_layer2
-        assert abs(r_total - expected) < 1e-10
+        r_film_int = 1.0 / 8.29  # Default interior film coefficient
+        r_film_ext = 1.0 / 25.0  # Default exterior film coefficient
+        expected = r_film_int + r_layer1 + r_layer2 + r_film_ext
+        assert abs(r_total - expected) < 1e-6
 
     def test_u_value(self, fluxion_module):
         layer1 = fluxion_module.ConstructionLayer(
@@ -208,9 +210,12 @@ class TestConstruction:
         construction = fluxion_module.Construction([layer1])
         u_value = construction.u_value()
 
-        r_value = 0.1 / 1.0
-        expected = 1.0 / r_value
-        assert abs(u_value - expected) < 1e-10
+        r_materials = 0.1 / 1.0
+        r_film_int = 1.0 / 8.29  # Default interior film coefficient
+        r_film_ext = 1.0 / 25.0  # Default exterior film coefficient
+        r_total = r_film_int + r_materials + r_film_ext
+        expected = 1.0 / r_total
+        assert abs(u_value - expected) < 1e-6
 
     def test_total_thickness(self, fluxion_module):
         layer1 = fluxion_module.ConstructionLayer(
