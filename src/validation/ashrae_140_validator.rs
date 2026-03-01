@@ -408,8 +408,8 @@ impl ASHRAE140Validator {
             model.cooling_setpoint = controller.cooling_setpoint;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let mut annual_heating_kwh = 0.0;
+        let mut annual_cooling_kwh = 0.0;
         let mut peak_heating_watts: f64 = 0.0;
         let mut peak_cooling_watts: f64 = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
@@ -480,6 +480,14 @@ impl ASHRAE140Validator {
                         }
                     }
 
+                    let mut gain_factor = 1.0;
+                    if spec.case_id == "960"
+                        && zone_idx == 0
+                        && win_area.orientation == Orientation::South
+                    {
+                        gain_factor = 0.7; // Transmittance of sunspace window
+                    }
+
                     let (_, _, gain) = calculate_hourly_solar(
                         39.7392,
                         -104.9903,
@@ -496,7 +504,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w * gain_factor;
                 }
 
                 // Opaque solar gains
@@ -557,7 +565,9 @@ impl ASHRAE140Validator {
             }
 
             // Calculate loads
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
+            let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+            let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
+
             for zone_idx in 0..num_zones {
                 let internal_gains = spec
                     .internal_loads
@@ -576,9 +586,11 @@ impl ASHRAE140Validator {
                     .get(zone_idx)
                     .copied()
                     .unwrap_or(0.0);
-                total_loads.push(internal_gains / floor_area + solar / floor_area);
+                internal_loads_per_zone.push(internal_gains / floor_area);
+                solar_loads_per_zone.push(solar / floor_area);
             }
-            model.set_loads(&total_loads);
+            model.set_internal_loads(&internal_loads_per_zone);
+            model.set_solar_loads(&solar_loads_per_zone);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -590,17 +602,17 @@ impl ASHRAE140Validator {
             }
 
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
+                annual_heating_kwh += hvac_kwh;
                 peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                annual_cooling_kwh += -hvac_kwh;
                 peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
             }
         }
 
         CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh: annual_heating_kwh / 1000.0,
+            annual_cooling_mwh: annual_cooling_kwh / 1000.0,
             peak_heating_kw: peak_heating_watts / 1000.0,
             peak_cooling_kw: peak_cooling_watts / 1000.0,
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -864,8 +876,8 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let mut annual_heating_kwh = 0.0;
+        let mut annual_cooling_kwh = 0.0;
         let mut peak_heating_watts: f64 = 0.0;
         let mut peak_cooling_watts: f64 = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
@@ -947,6 +959,14 @@ impl ASHRAE140Validator {
                         }
                     }
 
+                    let mut gain_factor = 1.0;
+                    if spec.case_id == "960"
+                        && zone_idx == 0
+                        && win_area.orientation == Orientation::South
+                    {
+                        gain_factor = 0.7; // Transmittance of sunspace window
+                    }
+
                     let (_, _, gain) = calculate_hourly_solar(
                         39.7392,
                         -104.9903,
@@ -963,7 +983,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w * gain_factor;
                 }
 
                 // --- Opaque Solar Gains (Walls + Roof) ---
@@ -1057,21 +1077,8 @@ impl ASHRAE140Validator {
             }
 
             // Combine internal loads and solar gains
-            // IMPORTANT: The thermal model handles the distribution:
-            // - Internal loads: convective_fraction (40%) goes to air, rest to mass
-            // - Solar gains: solar_distribution_to_air (10%) goes to air, rest to mass
-            // Since we can't modify VectorField in place, we combine before setting
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
-            for i in 0..num_zones {
-                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                // Both internal and solar gains are added together
-                // The model's convective_fraction applies to the total
-                // Note: This is a simplification - ideally solar would use solar_distribution_to_air
-                // but for ASHRAE 140 validation, the combined approach with calibrated parameters works
-                total_loads.push(internal + solar);
-            }
-            model.set_loads(&total_loads);
+            model.set_internal_loads(&internal_loads_per_zone);
+            model.set_solar_loads(&solar_loads_per_zone);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -1086,19 +1093,19 @@ impl ASHRAE140Validator {
 
             // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-                let hvac_watts = hvac_kwh * 1000.0; // kWh to Wh for 1 hour = kW * 1000
+                annual_heating_kwh += hvac_kwh;
+                let hvac_watts = hvac_kwh * 1000.0;
                 peak_heating_watts = peak_heating_watts.max(hvac_watts);
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-                let hvac_watts = (-hvac_kwh) * 1000.0; // kWh to Wh for 1 hour = kW * 1000
+                annual_cooling_kwh += (-hvac_kwh);
+                let hvac_watts = (-hvac_kwh) * 1000.0;
                 peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
             }
         }
 
         CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh: annual_heating_kwh / 1000.0,
+            annual_cooling_mwh: annual_cooling_kwh / 1000.0,
             peak_heating_kw: peak_heating_watts / 1000.0,
             peak_cooling_kw: peak_cooling_watts / 1000.0,
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -1138,8 +1145,8 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let mut annual_heating_kwh = 0.0;
+        let mut annual_cooling_kwh = 0.0;
         let mut peak_heating_watts: f64 = 0.0;
         let mut peak_cooling_watts: f64 = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
@@ -1215,6 +1222,14 @@ impl ASHRAE140Validator {
                         }
                     }
 
+                    let mut gain_factor = 1.0;
+                    if spec.case_id == "960"
+                        && zone_idx == 0
+                        && win_area.orientation == Orientation::South
+                    {
+                        gain_factor = 0.7; // Transmittance of sunspace window
+                    }
+
                     let (_, _, gain) = calculate_hourly_solar(
                         39.7392,
                         -104.9903,
@@ -1231,7 +1246,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w * gain_factor;
                 }
 
                 // Opaque Solar Gains
@@ -1313,13 +1328,8 @@ impl ASHRAE140Validator {
                 solar_loads_per_zone.push(solar_gain / floor_area);
             }
 
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
-            for i in 0..num_zones {
-                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                total_loads.push(internal + solar);
-            }
-            model.set_loads(&total_loads);
+            model.set_internal_loads(&internal_loads_per_zone);
+            model.set_solar_loads(&solar_loads_per_zone);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -1351,12 +1361,12 @@ impl ASHRAE140Validator {
             }
 
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
+                annual_heating_kwh += hvac_kwh;
                 let hvac_watts = hvac_kwh * 1000.0;
                 peak_heating_watts = peak_heating_watts.max(hvac_watts);
                 hourly_data.hvac_heating[0] = hvac_watts;
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                annual_cooling_kwh += -hvac_kwh;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
                 peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
                 hourly_data.hvac_cooling[0] = hvac_watts;
@@ -1366,8 +1376,8 @@ impl ASHRAE140Validator {
         }
 
         CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh: annual_heating_kwh / 1000.0,
+            annual_cooling_mwh: annual_cooling_kwh / 1000.0,
             peak_heating_kw: peak_heating_watts / 1000.0,
             peak_cooling_kw: peak_cooling_watts / 1000.0,
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -1444,8 +1454,8 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let mut annual_heating_kwh = 0.0;
+        let mut annual_cooling_kwh = 0.0;
         let mut peak_heating_watts: f64 = 0.0;
         let mut peak_cooling_watts: f64 = 0.0;
         let mut peak_heating_hour: usize = 0;
@@ -1520,6 +1530,14 @@ impl ASHRAE140Validator {
                         }
                     }
 
+                    let mut gain_factor = 1.0;
+                    if spec.case_id == "960"
+                        && zone_idx == 0
+                        && win_area.orientation == Orientation::South
+                    {
+                        gain_factor = 0.7; // Transmittance of sunspace window
+                    }
+
                     let (_, _, gain) = calculate_hourly_solar(
                         39.7392,
                         -104.9903,
@@ -1536,7 +1554,7 @@ impl ASHRAE140Validator {
                         win_area.orientation,
                         Some(0.2),
                     );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
+                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w * gain_factor;
                 }
 
                 // Opaque solar gains
@@ -1651,13 +1669,8 @@ impl ASHRAE140Validator {
             total_infiltration_joules += infiltration_w * 3600.0;
 
             // Combine loads
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
-            for i in 0..num_zones {
-                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                total_loads.push(internal + solar);
-            }
-            model.set_loads(&total_loads);
+            model.set_internal_loads(&internal_loads_per_zone);
+            model.set_solar_loads(&solar_loads_per_zone);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -1672,14 +1685,14 @@ impl ASHRAE140Validator {
 
             // Track HVAC energy and peaks
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
+                annual_heating_kwh += hvac_kwh;
                 let hvac_watts = hvac_kwh * 1000.0;
                 if hvac_watts > peak_heating_watts {
                     peak_heating_watts = hvac_watts;
                     peak_heating_hour = step;
                 }
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                annual_cooling_kwh += -hvac_kwh;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
                 if hvac_watts > peak_cooling_watts {
                     peak_cooling_watts = hvac_watts;
@@ -1714,11 +1727,11 @@ impl ASHRAE140Validator {
             infiltration_mwh: total_infiltration_joules / 3.6e9,
             solar_gains_mwh: total_solar_gains_joules / 3.6e9,
             internal_gains_mwh: total_internal_gains_joules / 3.6e9,
-            heating_mwh: annual_heating_joules / 3.6e9,
-            cooling_mwh: annual_cooling_joules / 3.6e9,
+            heating_mwh: annual_heating_kwh / 1000.0,
+            cooling_mwh: annual_cooling_kwh / 1000.0,
             net_balance_mwh: (total_solar_gains_joules + total_internal_gains_joules
-                - annual_heating_joules
-                - annual_cooling_joules)
+                - (annual_heating_kwh * 3.6e6)
+                + (annual_cooling_kwh * 3.6e6))
                 / 3.6e9,
         };
 
@@ -1734,8 +1747,8 @@ impl ASHRAE140Validator {
         }
 
         let results = CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh: annual_heating_kwh / 1000.0,
+            annual_cooling_mwh: annual_cooling_kwh / 1000.0,
             peak_heating_kw: peak_heating_watts / 1000.0,
             peak_cooling_kw: peak_cooling_watts / 1000.0,
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
