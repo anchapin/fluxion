@@ -528,7 +528,7 @@ impl ThermalModel<VectorField> {
             for &orientation in &orientations {
                 // Use zone-specific window area for multi-zone buildings
                 let win_area = spec.window_area_by_zone_and_orientation(zone_idx, orientation);
-                
+
                 let total_area = match orientation {
                     Orientation::South | Orientation::North => geo.width * geo.height,
                     Orientation::East | Orientation::West => geo.depth * geo.height,
@@ -544,8 +544,7 @@ impl ThermalModel<VectorField> {
 
                 // Create surface with total area and optional window
                 let mut surface =
-                    WallSurface::new(total_area, u_value, orientation)
-                        .with_window(win_area);
+                    WallSurface::new(total_area, u_value, orientation).with_window(win_area);
 
                 // Add shading if applicable to this orientation
                 if let Some(shading) = &spec.shading {
@@ -1906,7 +1905,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 if opaque_area > 0.0 {
                     // Sol-air temperature method for opaque surfaces
                     // Q = alpha * I * Re * U * A
-                    total_solar_gain += opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
+                    total_solar_gain +=
+                        opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
                 }
             }
         }
@@ -1957,18 +1957,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // 1. Effective mass area (Am) is derived from h_tr_ms = 9.1 * Am
         let h_ms_val = self.h_tr_ms.as_ref()[zone_idx];
         let a_m = h_ms_val / 9.1;
-        
+
         // 2. Window conductance for correction (simplified)
         let h_tr_w = self.h_tr_w.as_ref()[zone_idx];
-        
+
         // 3. Distribution factors
         // Fraction to mass (phi_m)
         let f_m = (a_m / a_at).min(1.0);
-        
+
         // Fraction to surface (phi_st)
         // Correction for radiation lost through windows: h_tr_w / (9.1 * A_at)
         let f_st = (1.0 - f_m - (h_tr_w / (9.1 * a_at))).max(0.0);
-        
+
         // Normalize factors to ensure energy conservation within the model nodes
         let total_f = f_m + f_st;
         if total_f > 0.0 {
@@ -1988,10 +1988,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let num_zones = self.num_zones;
         let mut f_st_vec = Vec::with_capacity(num_zones);
         let mut f_m_vec = Vec::with_capacity(num_zones);
-        
+
         for zone_idx in 0..num_zones {
             let (st, m) = if radiative_gain.as_ref()[zone_idx].abs() > 1e-10 {
-                let (st_w, m_w) = self.calculate_area_weighted_radiative_distribution(zone_idx, 1.0);
+                let (st_w, m_w) =
+                    self.calculate_area_weighted_radiative_distribution(zone_idx, 1.0);
                 (st_w, m_w)
             } else {
                 (0.5, 0.5) // Default neutral split for zero gain
@@ -1999,11 +2000,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             f_st_vec.push(st);
             f_m_vec.push(m);
         }
-        
-        let f_st_field = self.temperatures.constant_like_vec(f_st_vec);
-        let f_m_field = self.temperatures.constant_like_vec(f_m_vec);
-        
-        (radiative_gain.clone() * f_st_field, radiative_gain * f_m_field)
+
+        let f_st_field = T::from(VectorField::new(f_st_vec));
+        let f_m_field = T::from(VectorField::new(f_m_vec));
+
+        (
+            radiative_gain.clone() * f_st_field,
+            radiative_gain * f_m_field,
+        )
     }
 
     /// Calculate radiative conductance through inter-zone windows.
