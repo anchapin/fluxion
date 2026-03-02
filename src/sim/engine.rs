@@ -513,15 +513,38 @@ impl ThermalModel<VectorField> {
             crate::validation::ashrae_140_cases::Orientation::West,
             crate::validation::ashrae_140_cases::Orientation::North,
             crate::validation::ashrae_140_cases::Orientation::East,
+            crate::validation::ashrae_140_cases::Orientation::Up,
+            crate::validation::ashrae_140_cases::Orientation::Down,
         ];
 
         for zone_idx in 0..num_zones {
             let mut zone_surfaces = Vec::new();
+            let geo = if zone_idx < spec.geometry.len() {
+                &spec.geometry[zone_idx]
+            } else {
+                &spec.geometry[0]
+            };
+
             for &orientation in &orientations {
                 // Use zone-specific window area for multi-zone buildings
                 let win_area = spec.window_area_by_zone_and_orientation(zone_idx, orientation);
+
+                let total_area = match orientation {
+                    Orientation::South | Orientation::North => geo.width * geo.height,
+                    Orientation::East | Orientation::West => geo.depth * geo.height,
+                    Orientation::Up | Orientation::Down => geo.width * geo.depth,
+                    _ => 0.0,
+                };
+
+                let u_value = match orientation {
+                    Orientation::Up => spec.construction.roof.u_value(None, None),
+                    Orientation::Down => spec.construction.floor.u_value(None, None),
+                    _ => spec.construction.wall.u_value(None, None),
+                };
+
+                // Create surface with total area and optional window
                 let mut surface =
-                    WallSurface::new(win_area, spec.window_properties.u_value, orientation);
+                    WallSurface::new(total_area, u_value, orientation).with_window(win_area);
 
                 // Add shading if applicable to this orientation
                 if let Some(shading) = &spec.shading {
@@ -1846,6 +1869,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             for surface in zone_surfaces {
                 let orientation = surface.orientation;
 
+                // Skip floor (Down) for solar gain as it's typically coupled to ground
+                if orientation == Orientation::Down {
+                    continue;
+                }
+
                 // Use solar module to calculate irradiance for this orientation
                 let (_sun_pos, irradiance, _solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
@@ -1856,7 +1884,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     hour,
                     weather.dni,
                     weather.dhi,
-                    window_props, // Note: this contains the TOTAL window area for the zone, which is slightly wrong if windows vary by orientation
+                    window_props, // Note: this contains the TOTAL window area for the zone
                     None,         // No window geometry specified
                     surface.overhang.as_ref(),
                     &surface.fins,
@@ -1865,54 +1893,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 );
 
                 // 1. Window Solar Gain
-                // The solar_gain.total_gain_w uses window_props.area.
-                // We should only add it if the current surface orientation matches the window orientation.
-                // However, calculate_hourly_solar already handles the orientation effect on irradiance.
-                // For ASHRAE 140, we typically have one main window orientation.
-                let win_area = if orientation == surface.orientation {
-                    surface.area
-                } else {
-                    0.0
-                };
+                let win_area = surface.window_area;
                 if win_area > 0.0 {
                     // Re-calculate gain specifically for this window's area
                     let window_gain = win_area * irradiance.total_wm2 * window_props.shgc;
                     total_solar_gain += window_gain;
                 }
 
-                // 2. Opaque Solar Gain (Wall)
-                // Assume each wall orientation has some opaque area
-                // For Case 600: total wall area = 75.6 m². 4 walls = 18.9 m² each.
-                let floor_area = self.zone_area.as_ref()[zone_idx];
-                let wall_area_per_side = (floor_area * 1.5) / 4.0; // Approximation
-                let opaque_area = (wall_area_per_side - win_area).max(0.0);
-
-                let wall_u = 0.514; // Default for Case 600
-                total_solar_gain += opaque_area * wall_u * irradiance.total_wm2 * alpha * re;
+                // 2. Opaque Solar Gain (Wall/Roof)
+                let opaque_area = (surface.area - win_area).max(0.0);
+                if opaque_area > 0.0 {
+                    // Sol-air temperature method for opaque surfaces
+                    // Q = alpha * I * Re * U * A
+                    total_solar_gain +=
+                        opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
+                }
             }
         }
-
-        // --- Roof Solar Gain ---
-        let (_sun_pos, roof_irradiance, _) = calculate_hourly_solar(
-            self.latitude_deg,
-            self.longitude_deg,
-            year,
-            month,
-            day,
-            hour,
-            weather.dni,
-            weather.dhi,
-            &WindowProperties::new(0.0, 0.0, 0.0),
-            None,
-            None,
-            &[],
-            Orientation::Up,
-            Some(0.2),
-        );
-
-        let roof_area = self.zone_area.as_ref()[zone_idx];
-        let roof_u = 0.514; // Default for Case 600
-        total_solar_gain += roof_area * roof_u * roof_irradiance.total_wm2 * alpha * re;
 
         total_solar_gain
     }
@@ -1922,8 +1919,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// This is a public method for testing and verification purposes.
     ///
     /// This method distributes radiative gains (internal + solar) among zone surfaces
-    /// based on their relative surface areas. This implements Issue #303: Detailed Internal
-    /// Radiation Network by using a simplified area-weighted view-factor approach.
+    /// based on their relative surface areas and thermal mass. This implements Issue #303:
+    /// Detailed Internal Radiation Network by using the ISO 13790 compliant
+    /// distribution approach.
     ///
     /// # Arguments
     /// * `zone_idx` - Zone index
@@ -1931,8 +1929,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// # Returns
     /// * (radiative_to_surface_watts, radiative_to_mass_watts)
-    ///   - radiative_to_surface_watts: Portion going directly to surface temperature node
-    ///   - radiative_to_mass_watts: Portion going to thermal mass nodes
+    ///   - radiative_to_surface_watts: Portion going directly to surface temperature node (phi_st)
+    ///   - radiative_to_mass_watts: Portion going to thermal mass nodes (phi_m)
     pub fn calculate_area_weighted_radiative_distribution(
         &self,
         zone_idx: usize,
@@ -1946,58 +1944,70 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             return (radiative_to_surface, radiative_to_mass);
         }
 
-        // Calculate total surface area (including all surfaces for proper weighting)
-        // Issue #362: Implement proper area-weighted diffuse distribution
         let surfaces = &self.surfaces[zone_idx];
+        let a_at: f64 = surfaces.iter().map(|s| s.area).sum();
 
-        // Separate floor and non-floor surfaces
-        // Floor receives beam radiation directly, others receive diffuse proportionally
-        let floor_area: f64 = surfaces
-            .iter()
-            .filter(|s| s.orientation == crate::validation::ashrae_140_cases::Orientation::Down)
-            .map(|s| s.area)
-            .sum();
-
-        let non_floor_area: f64 = surfaces
-            .iter()
-            .filter(|s| s.orientation != crate::validation::ashrae_140_cases::Orientation::Down)
-            .map(|s| s.area)
-            .sum();
-
-        let total_area = floor_area + non_floor_area;
-
-        if total_area == 0.0 {
-            // Fallback if no valid surfaces
+        if a_at == 0.0 {
             let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
             let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
         }
 
-        // Implement area-weighted distribution (Issue #362)
-        // Diffuse radiation distributes proportionally to surface area
-        // Larger surfaces receive more diffuse gain
+        // ISO 13790 Detailed Radiation Network Distribution
+        // 1. Effective mass area (Am) is derived from h_tr_ms = 9.1 * Am
+        let h_ms_val = self.h_tr_ms.as_ref()[zone_idx];
+        let a_m = h_ms_val / 9.1;
 
-        // Calculate weighted distribution
-        // Floor receives a larger fraction due to beam radiation hitting it directly
-        // Walls and ceiling receive diffuse proportionally to their area
-        let floor_fraction = if floor_area > 0.0 {
-            floor_area / total_area
+        // 2. Window conductance for correction (simplified)
+        let h_tr_w = self.h_tr_w.as_ref()[zone_idx];
+
+        // 3. Distribution factors
+        // Fraction to mass (phi_m)
+        let f_m = (a_m / a_at).min(1.0);
+
+        // Fraction to surface (phi_st)
+        // Correction for radiation lost through windows: h_tr_w / (9.1 * A_at)
+        let f_st = (1.0 - f_m - (h_tr_w / (9.1 * a_at))).max(0.0);
+
+        // Normalize factors to ensure energy conservation within the model nodes
+        let total_f = f_m + f_st;
+        if total_f > 0.0 {
+            let phi_m = radiative_gain_watts * (f_m / total_f);
+            let phi_st = radiative_gain_watts * (f_st / total_f);
+            (phi_st, phi_m)
         } else {
-            0.0
-        };
+            (0.0, radiative_gain_watts)
+        }
+    }
 
-        // Use solar_distribution_to_air as base, but weight by actual surface areas
-        // This accounts for asymmetric surface areas in buildings
-        let radiative_to_surface = radiative_gain_watts
-            * (
-                self.solar_distribution_to_air * (1.0 - floor_fraction) + floor_fraction * 0.9
-                // Floor gets 90% of beam radiation
-            );
+    /// Tensor version of radiative distribution for use in physics step.
+    pub fn calculate_area_weighted_radiative_distribution_tensor(
+        &self,
+        radiative_gain: T,
+    ) -> (T, T) {
+        let num_zones = self.num_zones;
+        let mut f_st_vec = Vec::with_capacity(num_zones);
+        let mut f_m_vec = Vec::with_capacity(num_zones);
 
-        // Remaining goes to thermal mass
-        let radiative_to_mass = radiative_gain_watts - radiative_to_surface;
+        for zone_idx in 0..num_zones {
+            let (st, m) = if radiative_gain.as_ref()[zone_idx].abs() > 1e-10 {
+                let (st_w, m_w) =
+                    self.calculate_area_weighted_radiative_distribution(zone_idx, 1.0);
+                (st_w, m_w)
+            } else {
+                (0.5, 0.5) // Default neutral split for zero gain
+            };
+            f_st_vec.push(st);
+            f_m_vec.push(m);
+        }
 
-        (radiative_to_surface, radiative_to_mass)
+        let f_st_field = T::from(VectorField::new(f_st_vec));
+        let f_m_field = T::from(VectorField::new(f_m_vec));
+
+        (
+            radiative_gain.clone() * f_st_field,
+            radiative_gain * f_m_field,
+        )
     }
 
     /// Calculate radiative conductance through inter-zone windows.
