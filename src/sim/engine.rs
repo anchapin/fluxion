@@ -1889,9 +1889,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     // We need to scale it to the actual surface area if they differ.
                     let area_scale = win_area / window_props.area.max(1e-6);
                     let beam_gain = solar_gain.beam_gain_w * area_scale;
-                    let diffuse_gain =
-                        (solar_gain.diffuse_gain_w + solar_gain.ground_reflected_gain_w)
-                            * area_scale;
+                    let diffuse_gain = (solar_gain.diffuse_gain_w
+                        + solar_gain.ground_reflected_gain_w)
+                        * area_scale;
 
                     total_beam_gain += beam_gain;
                     total_solar_gain += beam_gain + diffuse_gain;
@@ -2009,7 +2009,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // This accounts for asymmetric surface areas in buildings
         let radiative_to_surface = radiative_gain_watts
             * (
-                self.solar_distribution_to_air * (1.0 - floor_fraction) + floor_fraction * (1.0 - self.solar_beam_to_mass_fraction)
+                self.solar_distribution_to_air * (1.0 - floor_fraction)
+                    + floor_fraction * (1.0 - self.solar_beam_to_mass_fraction)
                 // Floor gets beam_to_mass_fraction to thermal mass, remaining to surface node
             );
 
