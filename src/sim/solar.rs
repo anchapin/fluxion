@@ -198,7 +198,7 @@ pub fn calculate_surface_irradiance(
     ghi: Option<f64>,
     orientation: Orientation,
     ground_reflectance: f64,
-    _day_of_year: usize,
+    day_of_year: usize,
 ) -> SurfaceIrradiance {
     if !sun_pos.is_above_horizon() {
         return SurfaceIrradiance::zero();
