@@ -39,8 +39,15 @@ fn test_debug_case_960_multi_zone() {
         }
 
         if step < 24 {
-            println!("Step {:2}: T_ext={:5.2}, T0={:5.2}, T1={:5.2}, Q_hvac={:7.2} W, Q_iz={:7.2} W",
-                step, weather_data.dry_bulb_temp, temps_new[0], temps_new[1], hvac_kwh * 1000.0, q_iz);
+            println!(
+                "Step {:2}: T_ext={:5.2}, T0={:5.2}, T1={:5.2}, Q_hvac={:7.2} W, Q_iz={:7.2} W",
+                step,
+                weather_data.dry_bulb_temp,
+                temps_new[0],
+                temps_new[1],
+                hvac_kwh * 1000.0,
+                q_iz
+            );
         }
     }
 
@@ -50,5 +57,8 @@ Annual Results:"
     );
     println!("Heating: {:.2} MWh", annual_heating / 1000.0);
     println!("Cooling: {:.2} MWh", annual_cooling / 1000.0);
-    println!("Net IZ heat flow to Zone 0: {:.2} MWh", iz_heat_transfer_total / 3.6e9);
+    println!(
+        "Net IZ heat flow to Zone 0: {:.2} MWh",
+        iz_heat_transfer_total / 3.6e9
+    );
 }
