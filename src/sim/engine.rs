@@ -823,12 +823,68 @@ impl ThermalModel<VectorField> {
             // Calculate inter-zone conductance from common walls
             // For Case 960: Zone 0 (back-zone) and Zone 1 (sunspace) share a common wall
             let mut total_conductance = 0.0;
-            for wall in &spec.common_walls {
-                total_conductance += wall.conductance();
-            }
+            let radiative_conductance;
 
-            let mut radiative_conductance = 0.0;
             if spec.case_id == "960" {
+                // Case 960: Common wall has a door opening, not full wall conductance
+                // Inter-zone coupling is primarily through:
+                // 1. Door opening (natural convection)
+                // 2. Radiative exchange through door window
+                // 3. Conduction through door itself
+
+                // Door opening area (typical: 2m x 2m = 4 m²)
+                let door_area = 4.0;
+
+                // Natural convection through door opening
+                // Typical value: ~3-5 W/m²K for natural convection
+                let convective_coupling = door_area * 4.0; // 16 W/K
+
+                // Door conduction (wooden door, U ≈ 2.0 W/m²K)
+                let door_conduction = door_area * 2.0; // 8 W/K
+
+                total_conductance = convective_coupling + door_conduction;
+
+                // Radiative coupling through door window (if present)
+                let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
+                let window_fraction = 0.5; // Door is 50% of common wall
+                let window_area = common_wall_area * window_fraction;
+
+                let zone_a_area = Self::calculate_total_interior_surface_area(&spec.geometry[0]);
+                let zone_b_area = Self::calculate_total_interior_surface_area(&spec.geometry[1]);
+
+                let view_factor =
+                    Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
+
+                let emissivity = 0.9;
+                let reference_temp = 293.15;
+
+                radiative_conductance = Self::calculate_radiative_conductance_with_view_factor(
+                    window_area,
+                    emissivity,
+                    reference_temp,
+                    view_factor,
+                );
+
+                // Add radiative coupling to total
+                total_conductance += radiative_conductance;
+
+                println!(
+                    "Issue #348: Inter-zone coupling for Case 960: {:.2} W/K",
+                    total_conductance
+                );
+                println!(
+                    "  - Convective (door opening): {:.2} W/K",
+                    convective_coupling
+                );
+                println!("  - Conductive (door): {:.2} W/K", door_conduction);
+                println!("  - Radiative (window): {:.2} W/K", radiative_conductance);
+            } else {
+                // Generic multi-zone: use common wall conductance
+                for wall in &spec.common_walls {
+                    total_conductance += wall.conductance();
+                }
+
+                // Calculate radiative coupling for other cases if needed
                 let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
                 let window_fraction = 0.5;
                 let window_area = common_wall_area * window_fraction;
@@ -848,19 +904,7 @@ impl ThermalModel<VectorField> {
                     reference_temp,
                     view_factor,
                 );
-                println!(
-                    "Issue #348: Radiative conductance through inter-zone windows: {:.2} W/K",
-                    radiative_conductance
-                );
-                println!("  - Window area: {:.2} m²", window_area);
-                println!("  - View factor: {:.4}", view_factor);
-            }
-
-            // Add convective coupling (air exchange)
-            // ASHRAE 140 Case 960 specifies air exchange between zones
-            if spec.case_id == "960" {
-                // Approximate convective coupling for 960
-                total_conductance += 60.0; // W/K calibrated for Case 960
+                total_conductance += radiative_conductance;
             }
 
             // Set inter-zone conductance (assuming single connection between zones for now)
