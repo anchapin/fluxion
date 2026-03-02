@@ -8,8 +8,10 @@ use crate::validation::ashrae_140_cases::Orientation;
 /// Represents a wall surface in a thermal zone.
 #[derive(Clone, Debug)]
 pub struct WallSurface {
-    /// Area of the surface in square meters (m²).
+    /// Total area of the surface in square meters (m²).
     pub area: f64,
+    /// Window area on this surface in square meters (m²).
+    pub window_area: f64,
     /// Thermal transmittance of the surface (W/m²K).
     pub u_value: f64,
     /// Orientation of the surface.
@@ -25,11 +27,18 @@ impl WallSurface {
     pub fn new(area: f64, u_value: f64, orientation: Orientation) -> Self {
         WallSurface {
             area,
+            window_area: 0.0,
             u_value,
             orientation,
             overhang: None,
             fins: Vec::new(),
         }
+    }
+
+    /// Create a new WallSurface with a window.
+    pub fn with_window(mut self, window_area: f64) -> Self {
+        self.window_area = window_area;
+        self
     }
 
     /// Set an overhang for this surface.
