@@ -1523,19 +1523,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
-        // Calculate free-running surface temperature for mass update
-        // This prevents HVAC energy from being stored in thermal mass
-        // ts_num_free = h_tr_ms * mass_temp + h_tr_is * t_i_free + phi_st
-        let ts_num_free = self.h_tr_ms.clone() * self.mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
+        // Calculate actual surface temperature for mass update (including HVAC effect)
+        // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
+        let ts_num_act = self.h_tr_ms.clone() * self.mass_temperatures.clone()
+            + self.h_tr_is.clone() * t_i_act.clone()
             + phi_st.clone();
         // Denominator is term_rest_1
-        let t_s_free = ts_num_free / term_rest_1.clone();
+        let t_s_act = ts_num_act / term_rest_1.clone();
 
         // Optimization: Avoid creating t_e vector. Use map with scalar outdoor_temp.
         // t_e - mass_temperatures = outdoor_temp - mass_temperatures
         let q_m_net = self.h_tr_em.clone() * self.mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_free - self.mass_temperatures.clone())
+            + self.h_tr_ms.clone() * (t_s_act - self.mass_temperatures.clone())
             + phi_m; // Add gain directly to mass node
         let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
         self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
@@ -1700,19 +1699,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
         let t_i_act = t_i_free.clone() + sensitivity.clone() * hvac_output.clone();
 
-        // Calculate surface temperature
+        // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
-        let ts_num_free = self.h_tr_ms.clone() * self.envelope_mass_temperatures.clone()
-            + self.h_tr_is.clone() * t_i_free.clone()
+        let ts_num_act = self.h_tr_ms.clone() * self.envelope_mass_temperatures.clone()
+            + self.h_tr_is.clone() * t_i_act.clone()
             + phi_st.clone();
-        let t_s_free = ts_num_free / term_rest_1.clone();
+        let t_s_act = ts_num_act / term_rest_1.clone();
 
         // === 6R2C: Update two mass nodes ===
         // Envelope mass: receives heat from exterior, surface, and internal mass
         let old_env_mass_temperatures = self.envelope_mass_temperatures.clone();
         let q_env_net = self.h_tr_em.clone()
             * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_free - self.envelope_mass_temperatures.clone())
+            + self.h_tr_ms.clone() * (t_s_act - self.envelope_mass_temperatures.clone())
             + self.h_tr_me.clone()
                 * (self.internal_mass_temperatures.clone()
                     - self.envelope_mass_temperatures.clone())
