@@ -16,12 +16,12 @@ fn test_6r2c_thermal_mass_initialization() {
 
     // Verify that envelope and internal masses have different initial temperatures
     assert!(
-        model.envelope_mass_temperatures.as_ref().len() > 0,
+        !model.envelope_mass_temperatures.as_ref().is_empty(),
         "Envelope mass temperatures should be initialized"
     );
 
     assert!(
-        model.internal_mass_temperatures.as_ref().len() > 0,
+        !model.internal_mass_temperatures.as_ref().is_empty(),
         "Internal mass temperatures should be initialized"
     );
 

@@ -303,7 +303,7 @@ mod tests {
         assert!(illuminance > 0.0);
 
         let dimming = zone.dimming_level(500.0);
-        assert!(dimming >= 0.1 && dimming <= 1.0);
+        assert!((0.1..=1.0).contains(&dimming));
     }
 
     #[test]

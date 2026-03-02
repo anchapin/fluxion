@@ -8,7 +8,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 #[test]
 fn test_area_weighted_radiative_distribution_basic() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model =
+    let model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     // Test with a single zone radiative gain

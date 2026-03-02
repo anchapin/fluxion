@@ -33,10 +33,10 @@ fn test_case_960_window_areas_from_model() {
 
     println!("\n=== Case 960 Model Window Conductance ===");
     let h_tr_w = model.h_tr_w.as_ref();
-    for zone_idx in 0..model.num_zones {
+    for (zone_idx, h_tr) in h_tr_w.iter().enumerate().take(model.num_zones) {
         println!(
             "Zone {} h_tr_w: {:.2} W/K (U={:.2})",
-            zone_idx, h_tr_w[zone_idx], spec.window_properties.u_value
+            zone_idx, h_tr, spec.window_properties.u_value
         );
     }
     println!("=== End ===\n");

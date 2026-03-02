@@ -33,7 +33,7 @@ fn test_issue_282_hourly_output_logging() {
         let mut data = HourlyData::new(hour, 1);
         data.outdoor_temp = 10.0 + (hour as f64);
         data.zone_temps[0] = 20.0 + (hour as f64) * 0.1;
-        data.solar_gains[0] = if hour >= 6 && hour <= 18 { 500.0 } else { 0.0 };
+        data.solar_gains[0] = if (6..=18).contains(&hour) { 500.0 } else { 0.0 };
         data.internal_loads[0] = 200.0;
         data.hvac_heating[0] = if hour < 12 { 1000.0 } else { 0.0 };
         collector.record_hour(data);
