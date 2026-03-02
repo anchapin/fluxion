@@ -247,6 +247,7 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub temperatures: T,
     pub loads: T,
     pub solar_gains: T,
+    pub solar_beam_gains: T,
     pub surfaces: Vec<Vec<WallSurface>>,
     // Simulation parameters that might be optimized
     pub window_u_value: f64,
@@ -394,6 +395,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             temperatures: self.temperatures.clone(),
             loads: self.loads.clone(),
             solar_gains: self.solar_gains.clone(),
+            solar_beam_gains: self.solar_beam_gains.clone(),
             surfaces: self.surfaces.clone(),
             window_u_value: self.window_u_value,
             heating_setpoint: self.heating_setpoint,
@@ -916,6 +918,7 @@ impl ThermalModel<VectorField> {
             mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
             loads: VectorField::from_scalar(0.0, num_zones),
             solar_gains: VectorField::from_scalar(0.0, num_zones),
+            solar_beam_gains: VectorField::from_scalar(0.0, num_zones),
             surfaces,
             window_u_value: 2.5,    // Default U-value
             heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)
@@ -1370,13 +1373,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
-        // Split total radiative gains (internal radiative + solar) for thermal mass mapping
-        let phi_rad_total = phi_rad_internal + solar_gains_watts;
+        // Issue #297: Separate beam and diffuse components for Geometric Solar Distribution
+        let solar_beam_watts = self.solar_beam_gains.clone() * self.zone_area.clone();
+        let solar_diffuse_watts = solar_gains_watts.clone() - solar_beam_watts.clone();
 
-        // For 5R1C model, implement beam-to-floor direct radiation mapping (Issue #361)
-        // Use solar_beam_to_mass_fraction to route radiation to thermal mass
-        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction);
-        let phi_m = phi_rad_total * self.solar_beam_to_mass_fraction;
+        // Beam radiation goes to thermal mass (floor) based on solar_beam_to_mass_fraction
+        // Diffuse solar and internal radiative go to surface node (standard ISO 13790)
+        let phi_m = solar_beam_watts.clone() * self.solar_beam_to_mass_fraction;
+        let phi_st = (solar_beam_watts * (1.0 - self.solar_beam_to_mass_fraction))
+            + solar_diffuse_watts
+            + phi_rad_internal;
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -1575,18 +1581,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
-        let phi_rad_total = phi_rad_internal + solar_gains_watts;
+        // Issue #297: Separate beam and diffuse components for Geometric Solar Distribution
+        let solar_beam_watts = self.solar_beam_gains.clone() * self.zone_area.clone();
+        let solar_diffuse_watts = solar_gains_watts.clone() - solar_beam_watts.clone();
 
         // Distribute radiative gains to air, envelope mass, and internal mass
         // Implement beam-to-floor direct radiation mapping (Issue #361)
         // In 6R2C model:
-        // - phi_st: gains to surface node (proportional to envelope mass)
-        // - phi_m_env: gains directly to envelope mass
-        // - phi_m_int: gains directly to internal mass
+        // - phi_st: gains to surface node (diffuse solar + internal radiative)
+        // - phi_m_env: gains directly to envelope mass (from beam)
+        // - phi_m_int: gains directly to internal mass (from beam)
         // Use solar_beam_to_mass_fraction to route beam radiation to thermal masses
-        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6; // 60% to surface (envelope)
-        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7; // 70% of beam to envelope mass
-        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3; // 30% of beam to internal mass
+        let phi_st = (solar_beam_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction))
+            + solar_diffuse_watts
+            + phi_rad_internal;
+        let phi_m_env = solar_beam_watts.clone() * self.solar_beam_to_mass_fraction * 0.7; // 70% of beam to envelope mass (floor)
+        let phi_m_int = solar_beam_watts * self.solar_beam_to_mass_fraction * 0.3; // 30% of beam to internal mass (furniture)
 
         // Use pre-computed cached values
         let h_ext_base = &self.derived_h_ext;
@@ -1825,7 +1835,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         zone_idx: usize,
         timestep: usize,
         weather: &HourlyWeatherData,
-    ) -> f64 {
+    ) -> (f64, f64) {
         // Get window properties for this zone
         let window_props = if zone_idx < self.window_properties.len() {
             &self.window_properties[zone_idx]
@@ -1839,6 +1849,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Calculate solar gain for each surface in the zone
         let mut total_solar_gain = 0.0;
+        let mut total_beam_gain = 0.0;
         let alpha = 0.6; // Default absorptance for ASHRAE 140
         let re = 0.034; // Exterior film resistance (m²K/W)
 
@@ -1847,7 +1858,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 let orientation = surface.orientation;
 
                 // Use solar module to calculate irradiance for this orientation
-                let (_sun_pos, irradiance, _solar_gain) = calculate_hourly_solar(
+                let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
                     self.longitude_deg,
                     year,
@@ -1856,8 +1867,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     hour,
                     weather.dni,
                     weather.dhi,
-                    window_props, // Note: this contains the TOTAL window area for the zone, which is slightly wrong if windows vary by orientation
-                    None,         // No window geometry specified
+                    window_props,
+                    None, // No window geometry specified
                     surface.overhang.as_ref(),
                     &surface.fins,
                     orientation,
@@ -1865,34 +1876,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 );
 
                 // 1. Window Solar Gain
-                // The solar_gain.total_gain_w uses window_props.area.
-                // We should only add it if the current surface orientation matches the window orientation.
-                // However, calculate_hourly_solar already handles the orientation effect on irradiance.
-                // For ASHRAE 140, we typically have one main window orientation.
+                // Only add if the current surface orientation matches the window orientation
                 let win_area = if orientation == surface.orientation {
                     surface.area
                 } else {
                     0.0
                 };
+
                 if win_area > 0.0 {
-                    // Re-calculate gain specifically for this window's area
-                    let window_gain = win_area * irradiance.total_wm2 * window_props.shgc;
-                    total_solar_gain += window_gain;
+                    // Use the calculated solar_gain which already accounts for orientation and shading
+                    // Note: calculate_hourly_solar uses window_props.area internally.
+                    // We need to scale it to the actual surface area if they differ.
+                    let area_scale = win_area / window_props.area.max(1e-6);
+                    let beam_gain = solar_gain.beam_gain_w * area_scale;
+                    let diffuse_gain =
+                        (solar_gain.diffuse_gain_w + solar_gain.ground_reflected_gain_w)
+                            * area_scale;
+
+                    total_beam_gain += beam_gain;
+                    total_solar_gain += beam_gain + diffuse_gain;
                 }
 
                 // 2. Opaque Solar Gain (Wall)
-                // Assume each wall orientation has some opaque area
-                // For Case 600: total wall area = 75.6 m². 4 walls = 18.9 m² each.
+                // Opaque gains are treated as non-beam (diffuse/conductive) for internal distribution
                 let floor_area = self.zone_area.as_ref()[zone_idx];
                 let wall_area_per_side = (floor_area * 1.5) / 4.0; // Approximation
                 let opaque_area = (wall_area_per_side - win_area).max(0.0);
 
                 let wall_u = 0.514; // Default for Case 600
-                total_solar_gain += opaque_area * wall_u * irradiance.total_wm2 * alpha * re;
+                let opaque_gain = opaque_area * wall_u * irradiance.total_wm2 * alpha * re;
+                total_solar_gain += opaque_gain;
             }
         }
 
         // --- Roof Solar Gain ---
+        // Roof gains are also treated as non-beam
         let (_sun_pos, roof_irradiance, _) = calculate_hourly_solar(
             self.latitude_deg,
             self.longitude_deg,
@@ -1912,9 +1930,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         let roof_area = self.zone_area.as_ref()[zone_idx];
         let roof_u = 0.514; // Default for Case 600
-        total_solar_gain += roof_area * roof_u * roof_irradiance.total_wm2 * alpha * re;
+        let roof_gain = roof_area * roof_u * roof_irradiance.total_wm2 * alpha * re;
+        total_solar_gain += roof_gain;
 
-        total_solar_gain
+        (total_beam_gain, total_solar_gain)
     }
 
     /// Calculate area-weighted radiative gain distribution for a zone.
@@ -1990,8 +2009,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // This accounts for asymmetric surface areas in buildings
         let radiative_to_surface = radiative_gain_watts
             * (
-                self.solar_distribution_to_air * (1.0 - floor_fraction) + floor_fraction * 0.9
-                // Floor gets 90% of beam radiation
+                self.solar_distribution_to_air * (1.0 - floor_fraction) + floor_fraction * (1.0 - self.solar_beam_to_mass_fraction)
+                // Floor gets beam_to_mass_fraction to thermal mass, remaining to surface node
             );
 
         // Remaining goes to thermal mass
@@ -2095,21 +2114,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             if let Some(ref weather) = self.weather {
                 // Calculate solar gain for each zone using weather data
                 let mut zone_solar_gains = Vec::with_capacity(self.num_zones);
+                let mut zone_solar_beam_gains = Vec::with_capacity(self.num_zones);
                 for zone_idx in 0..self.num_zones {
-                    let solar_gain_watts =
+                    let (beam_gain_watts, total_gain_watts) =
                         self.calculate_zone_solar_gain(zone_idx, timestep, weather);
                     let floor_area = self.zone_area.as_ref()[zone_idx];
-                    zone_solar_gains.push(solar_gain_watts / floor_area);
+                    zone_solar_gains.push(total_gain_watts / floor_area);
+                    zone_solar_beam_gains.push(beam_gain_watts / floor_area);
                 }
 
                 // Apply zone-specific solar gains
                 self.solar_gains = T::from(VectorField::new(zone_solar_gains));
+                self.solar_beam_gains = T::from(VectorField::new(zone_solar_beam_gains));
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
                 let daily_cycle = get_daily_cycle()[hour_of_day];
                 let total_gain = (50.0 * daily_cycle).max(0.0);
                 self.solar_gains = self.temperatures.constant_like(total_gain);
+                // For fallback, assume 80% is beam during the day
+                let beam_gain = total_gain * 0.8;
+                self.solar_beam_gains = self.temperatures.constant_like(beam_gain);
             }
         } else {
             self.loads = self.temperatures.constant_like(0.0);
@@ -2485,6 +2510,7 @@ mod tests {
 
         // Check if solar gains are calculated
         assert!(model.solar_gains.iter().all(|&l| l > 0.0));
+        assert!(model.solar_beam_gains.iter().all(|&l| l > 0.0));
         // Internal loads should remain at 10.0
         assert!(model.loads.iter().all(|&l| (l - 10.0).abs() < 1e-9));
 
