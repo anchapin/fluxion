@@ -2480,7 +2480,7 @@ mod tests {
         // Default internal loads are 0.0 W/m² in ThermalModel::new
         // Set some internal loads
         model.loads = VectorField::from_scalar(10.0, 5);
-        
+
         model.calc_analytical_loads(12, true); // noon
 
         // Check if solar gains are calculated
