@@ -7,6 +7,7 @@ use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
+use crossbeam::channel::{Receiver, Sender};
 use faer::linalg::solvers::Solve;
 use faer::Mat;
 use std::sync::OnceLock;
@@ -956,7 +957,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             // Case 960 specific: back-zone solar gain is through the sunspace
             if self.num_zones == 2 && self.weather.is_some() {
                 // Approximate: back-zone solar is reduced because it passes through sunspace glazing
-                gs[0] = gs[0] * 0.7; // 70% of theoretical south gain
+                gs[0] *= 0.7; // 70% of theoretical south gain
             }
 
             self.solar_loads = T::from(VectorField::new(gs.clone()));
@@ -976,5 +977,47 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     }
     fn calculate_total_interior_surface_area(g: &GeometrySpec) -> f64 {
         g.wall_area() + g.floor_area() + g.roof_area()
+    }
+
+    /// Core physics simulation loop for annual building energy performance.
+    ///
+    /// Simulates hourly thermal dynamics using batched inference with a coordinator.
+    ///
+    /// This method implements the worker side of the coordinator-worker pattern.
+    /// At each timestep, it sends its current temperature state to the coordinator,
+    /// waits for the predicted loads, and then completes the physics calculation.
+    pub fn solve_timesteps_batched(
+        &mut self,
+        steps: usize,
+        tx: Sender<Vec<f64>>,
+        rx: Receiver<Vec<f64>>,
+    ) -> f64 {
+        let cycle = get_daily_cycle();
+        let total_energy_kwh: f64 = (0..steps)
+            .map(|t| {
+                let hour_of_day = t % 24;
+                let daily_cycle = cycle[hour_of_day];
+                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+
+                // 1. Send current state to coordinator
+                let temps = self.get_temperatures();
+                tx.send(temps).expect("Failed to send state to coordinator");
+
+                // 2. Receive predicted loads from coordinator
+                let loads = rx.recv().expect("Failed to receive loads from coordinator");
+                self.set_loads(&loads);
+
+                // 3. Solve physics for this timestep
+                self.step_physics(t, outdoor_temp)
+            })
+            .sum();
+
+        // Normalize by total floor area to get EUI
+        let total_area = self.zone_area.integrate();
+        if total_area > 0.0 {
+            total_energy_kwh / total_area
+        } else {
+            total_energy_kwh
+        }
     }
 }

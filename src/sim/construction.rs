@@ -1148,7 +1148,7 @@ mod tests {
                 (
                     "Low Mass Roof",
                     Assemblies::low_mass_roof().u_value(None, None),
-                    0.318,
+                    std::f64::consts::FRAC_1_PI,
                 ),
                 (
                     "Insulated Floor",
@@ -1163,7 +1163,7 @@ mod tests {
                 (
                     "High Mass Roof",
                     Assemblies::high_mass_roof().u_value(None, None),
-                    0.318,
+                    std::f64::consts::FRAC_1_PI,
                 ),
                 (
                     "High Mass Floor",

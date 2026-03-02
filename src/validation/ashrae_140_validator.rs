@@ -1097,7 +1097,7 @@ impl ASHRAE140Validator {
                 let hvac_watts = hvac_kwh * 1000.0;
                 peak_heating_watts = peak_heating_watts.max(hvac_watts);
             } else {
-                annual_cooling_kwh += (-hvac_kwh);
+                annual_cooling_kwh += -hvac_kwh;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
                 peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
             }

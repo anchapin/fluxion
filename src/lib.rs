@@ -24,7 +24,7 @@ use sim::engine::ThermalModel;
 #[cfg(feature = "python-bindings")]
 use pyo3::{
     prelude::{pyclass, pymethods, pymodule, PyModule},
-    types::{PyAnyMethods, PyListMethods, PyModuleMethods},
+    types::{PyListMethods, PyModuleMethods},
     Bound, PyResult, Python,
 };
 
@@ -301,7 +301,7 @@ impl PyConstructionLayer {
 
 /// Surface type for construction calculations.
 #[cfg(feature = "python-bindings")]
-#[pyclass(name = "SurfaceType")]
+#[pyclass(name = "SurfaceType", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PySurfaceType {
     Wall,
@@ -322,7 +322,7 @@ impl From<PySurfaceType> for crate::sim::construction::SurfaceType {
 
 /// Thermal mass classification for Python.
 #[cfg(feature = "python-bindings")]
-#[pyclass(name = "MassClass")]
+#[pyclass(name = "MassClass", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyMassClass {
     VeryLight,
@@ -490,7 +490,7 @@ impl PyWallSurface {
                 ))
             }
         };
-        let rust_surface =
+        let _rust_surface =
             crate::sim::components::WallSurface::new(area, u_value, rust_orientation);
         Ok(PyWallSurface {
             area,

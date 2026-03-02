@@ -3,11 +3,11 @@
 //! This module provides tools for calculating heat transfer between different thermal zones,
 //! including conductive coupling through common walls and radiative exchange between surfaces.
 
-use crate::sim::construction::SurfaceType;
+
 
 /// Calculates the radiative view factor between two surfaces.
-/// 
-/// For now, implements a simplified analytical solution for two rectangular zones 
+///
+/// For now, implements a simplified analytical solution for two rectangular zones
 /// separated by a common wall.
 pub fn calculate_zone_to_zone_view_factor(
     common_wall_area: f64,
@@ -34,13 +34,13 @@ pub fn calculate_radiative_conductance(
     view_factor: f64,
 ) -> f64 {
     const SIGMA: f64 = 5.670374419e-8; // Stefan-Boltzmann constant
-    // linearized radiative exchange: h_rad = 4 * sigma * epsilon * F * T^3 * Area
+                                       // linearized radiative exchange: h_rad = 4 * sigma * epsilon * F * T^3 * Area
     4.0 * SIGMA * emissivity * emissivity * view_factor * mean_temp_k.powi(3) * area
 }
 
 /// Calculates window-to-window radiative exchange conductance.
-/// 
-/// Specifically for Case 960 where the sunspace window exchanges radiation 
+///
+/// Specifically for Case 960 where the sunspace window exchanges radiation
 /// with the back-zone through the common glazing.
 pub fn calculate_window_radiative_conductance(
     window_area: f64,
