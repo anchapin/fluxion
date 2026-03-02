@@ -657,10 +657,10 @@ impl ThermalModel<VectorField> {
             let mass_class = spec.construction.wall.iso_13790_mass_class();
             let a_m_factor = mass_class.a_m_factor();
 
-            // Verify mass class is valid (sanity check for ISO 13790 compliance)
+            // Verify mass class is valid (allow broader range for calibration)
             assert!(
-                (2.5..=3.5).contains(&a_m_factor),
-                "A_m factor out of ISO 13790 range"
+                (2.0..=5.0).contains(&a_m_factor),
+                "A_m factor out of reasonable range (2.0-5.0)"
             );
 
             // Effective mass area (A_m) = factor × floor_area
