@@ -4,6 +4,7 @@
 //! for ASHRAE 140 validation and general building energy simulation.
 
 use crate::sim::shading::{calculate_shaded_fraction, LocalSolarPosition, Overhang, ShadeFin};
+use crate::sim::sky_radiation::{extraterrestrial_irradiance, relative_airmass};
 use crate::validation::ashrae_140_cases::{Orientation, WindowArea};
 
 /// Sun position in the sky at a given time and location.
@@ -15,6 +16,19 @@ pub struct SolarPosition {
     pub azimuth_deg: f64,
     /// Solar zenith angle (90 - altitude) in degrees.
     pub zenith_deg: f64,
+}
+
+/// Calculates day of year from year, month, and day.
+pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
+    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+    let mut day_of_year: usize =
+        days_in_month.iter().take((month - 1) as usize).sum::<u32>() as usize;
+    day_of_year += day as usize;
+    if is_leap_year && month > 2 {
+        day_of_year += 1;
+    }
+    day_of_year
 }
 
 impl SolarPosition {
@@ -40,18 +54,6 @@ impl SolarPosition {
 
         cos_theta_i.max(0.0)
     }
-}
-
-/// Calculate the day of year (1-366) from year, month, and day.
-pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
-    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
-    day_of_year += day as i32;
-    if is_leap_year && month > 2 {
-        day_of_year += 1;
-    }
-    day_of_year as usize
 }
 
 /// Calculate solar position using the NOAA solar calculator algorithm.
@@ -208,10 +210,21 @@ pub fn calculate_surface_irradiance(
     let incidence_cos = sun_pos.incidence_cosine(tilt_deg, azimuth_deg);
     let beam = dni * incidence_cos;
 
-    let surface_tilt = tilt_deg.to_radians();
-    let aniso_factor = (1.0 + surface_tilt.cos()) / 2.0;
-    let diffuse = dhi * aniso_factor;
+    let dni_extra = extraterrestrial_irradiance(day_of_year);
+    let airmass = relative_airmass(sun_pos.zenith_deg);
 
+    let diffuse = crate::sim::sky_radiation::PerezSkyModel::calculate_diffuse_tilted(
+        dhi,
+        dni,
+        dni_extra,
+        airmass,
+        sun_pos.zenith_deg,
+        tilt_deg,
+        azimuth_deg,
+        sun_pos.azimuth_deg,
+    );
+
+    let surface_tilt = tilt_deg.to_radians();
     let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
     let ground_reflected = ghi * ground_reflectance * ground_factor;
 
