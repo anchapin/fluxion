@@ -2475,23 +2475,27 @@ mod tests {
 
     #[test]
     fn test_calc_analytical_loads() {
+        use super::get_daily_cycle;
         let mut model = ThermalModel::<VectorField>::new(5);
+        // Default internal loads are 0.0 W/m² in ThermalModel::new
+        // Set some internal loads
+        model.loads = VectorField::from_scalar(10.0, 5);
+        
         model.calc_analytical_loads(12, true); // noon
 
-        // Check if loads are calculated
-        assert!(model.loads.iter().all(|&l| l > 0.0));
+        // Check if solar gains are calculated
+        assert!(model.solar_gains.iter().all(|&l| l > 0.0));
+        // Internal loads should remain at 10.0
+        assert!(model.loads.iter().all(|&l| (l - 10.0).abs() < 1e-9));
 
         // Check against expected values for noon
         let hour_of_day = 12;
-        let daily_cycle = ((hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI)
-            - std::f64::consts::PI / 2.0)
-            .sin();
-        let solar_gain = (50.0 * daily_cycle).max(0.0);
-        let internal_gains = 10.0;
-        let expected_load = solar_gain + internal_gains;
+        let cycle = get_daily_cycle();
+        let daily_cycle = cycle[hour_of_day];
+        let expected_solar: f64 = (50.0 * daily_cycle).max(0.0);
 
         const EPSILON: f64 = 1e-9;
-        assert!((model.loads[0] - expected_load).abs() < EPSILON);
+        assert!((model.solar_gains[0] - expected_solar).abs() < EPSILON);
     }
 
     #[test]
