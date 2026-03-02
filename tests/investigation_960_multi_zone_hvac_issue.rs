@@ -164,8 +164,8 @@ fn investigate_case_960_hvac_assignment() {
 
     // This assertion will fail, demonstrating the bug
     // The model incorrectly applies HVAC setpoints from Zone 0 to all zones
-    let model_heating = model.heating_setpoint;
-    let model_cooling = model.cooling_setpoint;
+    let _model_heating = model.heating_setpoint;
+    let _model_cooling = model.cooling_setpoint;
 
     // The model should have zone-specific HVAC setpoints, not a single global value
     // This test documents the expected behavior

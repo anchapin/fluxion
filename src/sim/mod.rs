@@ -4,6 +4,7 @@ pub mod construction;
 pub mod demand_response;
 pub mod engine;
 pub mod hvac;
+pub mod interzone;
 pub mod lighting;
 pub mod occupancy;
 pub mod schedule;

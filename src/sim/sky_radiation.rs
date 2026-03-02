@@ -392,7 +392,6 @@ pub fn sol_air_temperature_simple(
     outdoor_temp + (solar_absorptance * solar_irradiance / exterior_conductance)
 }
 
-
 /// Perez anisotropic sky model for diffuse solar radiation on tilted surfaces.
 ///
 /// This implementation follows ASHRAE 140 requirements for accurate calculation
@@ -413,6 +412,7 @@ pub fn sol_air_temperature_simple(
 pub struct PerezSkyModel;
 
 impl PerezSkyModel {
+    #[allow(clippy::too_many_arguments)]
     pub fn calculate_diffuse_tilted(
         dhi: f64,
         dni: f64,
@@ -429,8 +429,8 @@ impl PerezSkyModel {
 
         let zenith_rad = zenith_deg.to_radians();
         let surface_tilt = surface_tilt_deg.to_radians();
-        let surface_azimuth = surface_azimuth_deg.to_radians();
-        let solar_azimuth = solar_azimuth_deg.to_radians();
+        let _surface_azimuth = surface_azimuth_deg.to_radians();
+        let _solar_azimuth = solar_azimuth_deg.to_radians();
 
         let kappa = 1.041;
         let delta = dhi * airmass / dni_extra;
@@ -518,7 +518,7 @@ impl PerezSkyModel {
             + tilt.sin() * surface_az.cos() * zenith.cos() * solar_az.cos()
             + tilt.cos() * zenith.sin();
 
-        cos_incidence.max(-1.0).min(1.0)
+        cos_incidence.clamp(-1.0, 1.0)
     }
 }
 
@@ -534,6 +534,7 @@ pub fn relative_airmass(zenith_deg: f64) -> f64 {
     1.0 / (cos_zenith + 0.50572 * term.powf(-1.6364))
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn total_irradiance_tilted(
     dni: f64,
     dhi: f64,
@@ -555,8 +556,14 @@ pub fn total_irradiance_tilted(
     let beam = dni * cos_incidence.max(0.0);
     let airmass = relative_airmass(zenith_deg);
     let diffuse = PerezSkyModel::calculate_diffuse_tilted(
-        dhi, dni, dni_extra, airmass, zenith_deg,
-        surface_tilt_deg, surface_azimuth_deg, solar_azimuth_deg,
+        dhi,
+        dni,
+        dni_extra,
+        airmass,
+        zenith_deg,
+        surface_tilt_deg,
+        surface_azimuth_deg,
+        solar_azimuth_deg,
     );
 
     let ghi = ghi.unwrap_or_else(|| {
@@ -570,7 +577,6 @@ pub fn total_irradiance_tilted(
 
     beam.max(0.0) + diffuse.max(0.0) + ground_reflected
 }
-
 
 #[cfg(test)]
 mod tests {

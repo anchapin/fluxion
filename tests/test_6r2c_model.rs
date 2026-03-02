@@ -94,8 +94,8 @@ fn test_6r2c_model_single_timestep() {
     );
 
     // Mass temperatures should be updated
-    assert!(new_env_mass >= -50.0 && new_env_mass <= 100.0); // Reasonable range
-    assert!(new_int_mass >= -50.0 && new_int_mass <= 100.0); // Reasonable range
+    assert!((-50.0..=100.0).contains(&new_env_mass)); // Reasonable range
+    assert!((-50.0..=100.0).contains(&new_int_mass)); // Reasonable range
 }
 
 #[test]

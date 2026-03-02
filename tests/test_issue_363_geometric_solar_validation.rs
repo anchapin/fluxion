@@ -3,7 +3,7 @@
 //! This test validates beam-to-floor mapping and area-weighted diffuse distribution
 //! for ASHRAE 140 validation, particularly for Case 960 (sunspace building).
 
-use fluxion::sim::solar::{calculate_surface_irradiance, SurfaceIrradiance};
+use fluxion::sim::solar::SurfaceIrradiance;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Test 1: Verify beam vs diffuse separation accuracy
@@ -37,7 +37,7 @@ fn test_beam_diffuse_separation_accuracy() {
 #[test]
 fn test_beam_to_floor_mapping() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model =
+    let model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     // Simulate beam radiation entering through window
@@ -47,8 +47,8 @@ fn test_beam_to_floor_mapping() {
 
     // Based on Issue #297, 80-95% of beam should reach floor mass
     let solar_beam_to_mass_fraction = 0.9; // 90% to mass
-    let expected_mass_gain = total_beam_watts * solar_beam_to_mass_fraction;
-    let expected_surface_gain = total_beam_watts * (1.0 - solar_beam_to_mass_fraction);
+    let _expected_mass_gain = total_beam_watts * solar_beam_to_mass_fraction;
+    let _expected_surface_gain = total_beam_watts * (1.0 - solar_beam_to_mass_fraction);
 
     // Calculate distribution using model's method
     let (radiative_to_surface, radiative_to_mass) =
@@ -57,7 +57,7 @@ fn test_beam_to_floor_mapping() {
     // Verify mass receives majority of beam radiation
     let mass_fraction = radiative_to_mass / total_beam_watts;
     assert!(
-        mass_fraction >= 0.8 && mass_fraction <= 0.95,
+        (0.8..=0.95).contains(&mass_fraction),
         "Beam-to-floor fraction should be 80-95%, got {:.2}%",
         mass_fraction * 100.0
     );
@@ -76,7 +76,7 @@ fn test_beam_to_floor_mapping() {
 #[test]
 fn test_area_weighted_diffuse_distribution() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model =
+    let model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     let diffuse_gain_watts = 500.0; // 500 W diffuse
@@ -121,7 +121,7 @@ fn test_area_weighted_diffuse_distribution() {
 #[test]
 fn test_area_weighted_diffuse_multi_zone() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model =
+    let model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     // Case 960 has 2 zones: conditioned space + sunspace
@@ -162,7 +162,7 @@ fn test_area_weighted_diffuse_multi_zone() {
 #[test]
 fn test_case_960_geometric_solar_validation() {
     let spec = ASHRAE140Case::Case960.spec();
-    let mut model =
+    let model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     // Validate 2-zone setup

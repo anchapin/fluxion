@@ -1,7 +1,6 @@
 use crate::physics::cta::VectorField;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
-use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
-use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, Orientation};
+use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use crate::validation::benchmark;
 use crate::validation::diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
@@ -420,11 +419,11 @@ impl ASHRAE140Validator {
             let day_of_year = step / 24 + 1;
 
             let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let mut month = 1;
+            let mut _month = 1;
             let mut day = day_of_year;
             for (i, &days) in days_in_month.iter().enumerate() {
                 if day <= days as usize {
-                    month = i + 1;
+                    _month = i + 1;
                     break;
                 }
                 day -= days as usize;
@@ -455,109 +454,8 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate solar gains
-            let mut total_solar_gain_per_zone: Vec<f64> = vec![0.0; num_zones];
-            for (zone_idx, zone_windows) in spec.windows.iter().enumerate() {
-                if zone_idx >= num_zones {
-                    break;
-                }
-                for win_area in zone_windows {
-                    let props = WindowProperties::new(
-                        win_area.area,
-                        spec.window_properties.shgc,
-                        spec.window_properties.normal_transmittance,
-                    );
-
-                    let mut overhang = None;
-                    let mut fins = Vec::new();
-                    if let Some(zone_surfaces) = model.surfaces.get(zone_idx) {
-                        for surf in zone_surfaces {
-                            if surf.orientation == win_area.orientation {
-                                overhang = surf.overhang.as_ref();
-                                fins = surf.fins.clone();
-                                break;
-                            }
-                        }
-                    }
-
-                    let (_, _, gain) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &props,
-                        Some(win_area),
-                        overhang,
-                        &fins,
-                        win_area.orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
-                }
-
-                // Opaque solar gains
-                let alpha = spec.opaque_absorptance;
-                let re = 0.034;
-                let wall_area = spec.geometry[zone_idx].wall_area();
-                let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
-                let opaque_wall_area = wall_area - window_area;
-                let roof_area = spec.geometry[zone_idx].roof_area();
-
-                let wall_u = spec.construction.wall.u_value(None, None);
-                let roof_u = spec.construction.roof.u_value(None, None);
-
-                for orientation in [
-                    Orientation::South,
-                    Orientation::West,
-                    Orientation::North,
-                    Orientation::East,
-                ] {
-                    let (_, irr, _) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &WindowProperties::new(0.0, 0.0, 0.0),
-                        None,
-                        None,
-                        &[],
-                        orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] +=
-                        (opaque_wall_area / 4.0) * wall_u * irr.total_wm2 * alpha * re;
-                }
-
-                let (_, irr_roof, _) = calculate_hourly_solar(
-                    39.7392,
-                    -104.9903,
-                    2024,
-                    month as u32,
-                    day as u32,
-                    hour_of_day as f64 + 0.5,
-                    weather_data.dni,
-                    weather_data.dhi,
-                    &WindowProperties::new(0.0, 0.0, 0.0),
-                    None,
-                    None,
-                    &[],
-                    Orientation::Up,
-                    Some(0.2),
-                );
-                total_solar_gain_per_zone[zone_idx] +=
-                    roof_area * roof_u * irr_roof.total_wm2 * alpha * re;
-            }
-
-            // Calculate loads
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
+            // Calculate internal loads (solar is now handled internally by step_physics)
+            let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
                 let internal_gains = spec
                     .internal_loads
@@ -572,13 +470,9 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                let solar = total_solar_gain_per_zone
-                    .get(zone_idx)
-                    .copied()
-                    .unwrap_or(0.0);
-                total_loads.push(internal_gains / floor_area + solar / floor_area);
+                internal_loads.push(internal_gains / floor_area);
             }
-            model.set_loads(&total_loads);
+            model.set_loads(&internal_loads);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -877,11 +771,11 @@ impl ASHRAE140Validator {
 
             // Correctly calculate month and day from day_of_year
             let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let mut month = 1;
+            let mut _month = 1;
             let mut day = day_of_year;
             for (i, &days) in days_in_month.iter().enumerate() {
                 if day <= days as usize {
-                    month = i + 1;
+                    _month = i + 1;
                     break;
                 }
                 day -= days as usize;
@@ -920,125 +814,9 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate solar gains for all windows in the spec
-            // For multi-zone, sum across all zones
-            let mut total_solar_gain_per_zone: Vec<f64> = vec![0.0; num_zones];
-            for (zone_idx, zone_windows) in spec.windows.iter().enumerate() {
-                if zone_idx >= num_zones {
-                    break;
-                }
-                for win_area in zone_windows {
-                    let props = WindowProperties::new(
-                        win_area.area,
-                        spec.window_properties.shgc,
-                        spec.window_properties.normal_transmittance,
-                    );
-
-                    // Find matching surface to get shading devices
-                    let mut overhang = None;
-                    let mut fins = Vec::new();
-                    if let Some(zone_surfaces) = model.surfaces.get(zone_idx) {
-                        for surf in zone_surfaces {
-                            if surf.orientation == win_area.orientation {
-                                overhang = surf.overhang.as_ref();
-                                fins = surf.fins.clone();
-                                break;
-                            }
-                        }
-                    }
-
-                    let (_, _, gain) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &props,
-                        Some(win_area),
-                        overhang,
-                        &fins,
-                        win_area.orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
-                }
-
-                // --- Opaque Solar Gains (Walls + Roof) ---
-                // ASHRAE 140: Default absorptance = 0.6, Re = 0.034
-                let alpha = spec.opaque_absorptance;
-                let re = 0.034; // Exterior film resistance (m²K/W)
-                let wall_area = spec.geometry[zone_idx].wall_area();
-                let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
-                let opaque_wall_area = wall_area - window_area;
-                let roof_area = spec.geometry[zone_idx].roof_area();
-
-                // Get U-values from spec
-                let wall_u = spec.construction.wall.u_value(None, None);
-                let roof_u = spec.construction.roof.u_value(None, None);
-
-                // Average solar gain on opaque walls
-                for orientation in [
-                    Orientation::South,
-                    Orientation::West,
-                    Orientation::North,
-                    Orientation::East,
-                ] {
-                    let (_, irr, _) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &WindowProperties::new(0.0, 0.0, 0.0), // No window
-                        None,
-                        None,
-                        &[],
-                        orientation,
-                        Some(0.2),
-                    );
-                    // Opaque gain = UA * I * alpha * Re
-                    total_solar_gain_per_zone[zone_idx] +=
-                        (opaque_wall_area / 4.0) * wall_u * irr.total_wm2 * alpha * re;
-                }
-
-                // Roof gain
-                let (_, irr_roof, _) = calculate_hourly_solar(
-                    39.7392,
-                    -104.9903,
-                    2024,
-                    month as u32,
-                    day as u32,
-                    hour_of_day as f64 + 0.5,
-                    weather_data.dni,
-                    weather_data.dhi,
-                    &WindowProperties::new(0.0, 0.0, 0.0),
-                    None,
-                    None,
-                    &[],
-                    Orientation::Up,
-                    Some(0.2),
-                );
-                total_solar_gain_per_zone[zone_idx] +=
-                    roof_area * roof_u * irr_roof.total_wm2 * alpha * re;
-            }
-
-            // Calculate loads per zone (internal gains + solar)
-            // IMPORTANT: Internal loads and solar gains are treated differently:
-            // - Internal loads: Have convective/radiative split (40%/60% per ASHRAE 140)
-            // - Solar gains: Mostly radiative (shortwave radiation absorbed by surfaces)
-            //
-            // The thermal model's convective_fraction applies to internal loads only.
-            // Solar gains are handled separately with solar_distribution_to_air.
-            let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-            let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-
-            for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
+            // Calculate internal loads (solar is now handled internally by step_physics)
+            let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
+            for zone_idx in 0..num_zones {
                 let internal_gains = spec
                     .internal_loads
                     .get(zone_idx)
@@ -1052,26 +830,9 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                internal_loads_per_zone.push(internal_gains / floor_area);
-                solar_loads_per_zone.push(solar_gain / floor_area);
+                internal_loads.push(internal_gains / floor_area);
             }
-
-            // Combine internal loads and solar gains
-            // IMPORTANT: The thermal model handles the distribution:
-            // - Internal loads: convective_fraction (40%) goes to air, rest to mass
-            // - Solar gains: solar_distribution_to_air (10%) goes to air, rest to mass
-            // Since we can't modify VectorField in place, we combine before setting
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
-            for i in 0..num_zones {
-                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                // Both internal and solar gains are added together
-                // The model's convective_fraction applies to the total
-                // Note: This is a simplification - ideally solar would use solar_distribution_to_air
-                // but for ASHRAE 140 validation, the combined approach with calibrated parameters works
-                total_loads.push(internal + solar);
-            }
-            model.set_loads(&total_loads);
+            model.set_loads(&internal_loads);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -1151,11 +912,11 @@ impl ASHRAE140Validator {
 
             // Correctly calculate month and day from day_of_year
             let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let mut month = 1;
+            let mut _month = 1;
             let mut day = day_of_year;
             for (i, &days) in days_in_month.iter().enumerate() {
                 if day <= days as usize {
-                    month = i + 1;
+                    _month = i + 1;
                     break;
                 }
                 day -= days as usize;
@@ -1190,112 +951,9 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate solar gains for all windows in the spec
-            let mut total_solar_gain_per_zone: Vec<f64> = vec![0.0; num_zones];
-            for (zone_idx, zone_windows) in spec.windows.iter().enumerate() {
-                if zone_idx >= num_zones {
-                    break;
-                }
-                for win_area in zone_windows {
-                    let props = WindowProperties::new(
-                        win_area.area,
-                        spec.window_properties.shgc,
-                        spec.window_properties.normal_transmittance,
-                    );
-
-                    let mut overhang = None;
-                    let mut fins = Vec::new();
-                    if let Some(zone_surfaces) = model.surfaces.get(zone_idx) {
-                        for surf in zone_surfaces {
-                            if surf.orientation == win_area.orientation {
-                                overhang = surf.overhang.as_ref();
-                                fins = surf.fins.clone();
-                                break;
-                            }
-                        }
-                    }
-
-                    let (_, _, gain) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &props,
-                        Some(win_area),
-                        overhang,
-                        &fins,
-                        win_area.orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
-                }
-
-                // Opaque Solar Gains
-                let alpha = spec.opaque_absorptance;
-                let re = 0.034;
-                let wall_area = spec.geometry[zone_idx].wall_area();
-                let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
-                let opaque_wall_area = wall_area - window_area;
-                let roof_area = spec.geometry[zone_idx].roof_area();
-
-                let wall_u = spec.construction.wall.u_value(None, None);
-                let roof_u = spec.construction.roof.u_value(None, None);
-
-                for orientation in [
-                    Orientation::South,
-                    Orientation::West,
-                    Orientation::North,
-                    Orientation::East,
-                ] {
-                    let (_, irr, _) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &WindowProperties::new(0.0, 0.0, 0.0),
-                        None,
-                        None,
-                        &[],
-                        orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] +=
-                        (opaque_wall_area / 4.0) * wall_u * irr.total_wm2 * alpha * re;
-                }
-
-                let (_, irr_roof, _) = calculate_hourly_solar(
-                    39.7392,
-                    -104.9903,
-                    2024,
-                    month as u32,
-                    day as u32,
-                    hour_of_day as f64 + 0.5,
-                    weather_data.dni,
-                    weather_data.dhi,
-                    &WindowProperties::new(0.0, 0.0, 0.0),
-                    None,
-                    None,
-                    &[],
-                    Orientation::Up,
-                    Some(0.2),
-                );
-                total_solar_gain_per_zone[zone_idx] +=
-                    roof_area * roof_u * irr_roof.total_wm2 * alpha * re;
-            }
-
-            // Calculate loads per zone
-            let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-            let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-
-            for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
+            // Calculate internal loads (solar is now handled internally by step_physics)
+            let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
+            for zone_idx in 0..num_zones {
                 let internal_gains = spec
                     .internal_loads
                     .get(zone_idx)
@@ -1309,17 +967,9 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                internal_loads_per_zone.push(internal_gains / floor_area);
-                solar_loads_per_zone.push(solar_gain / floor_area);
+                internal_loads.push(internal_gains / floor_area);
             }
-
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
-            for i in 0..num_zones {
-                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                total_loads.push(internal + solar);
-            }
-            model.set_loads(&total_loads);
+            model.set_loads(&internal_loads);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
@@ -1337,17 +987,17 @@ impl ASHRAE140Validator {
             hourly_data.zone_temps = model.temperatures.as_slice().to_vec();
             hourly_data.mass_temps = model.mass_temperatures.as_slice().to_vec();
 
-            for zone_idx in 0..num_zones {
-                hourly_data.solar_gains[zone_idx] = total_solar_gain_per_zone
+            for (zone_idx, load) in internal_loads.iter().enumerate().take(num_zones) {
+                // Get solar gains back from model (in Watts)
+                let floor_area = spec
+                    .geometry
                     .get(zone_idx)
-                    .copied()
-                    .unwrap_or(0.0);
-                hourly_data.internal_loads[zone_idx] = spec
-                    .internal_loads
-                    .get(zone_idx)
-                    .or(spec.internal_loads.first())
-                    .and_then(|l| l.as_ref())
-                    .map_or(0.0, |l| l.total_load);
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
+                hourly_data.solar_gains[zone_idx] =
+                    model.solar_gains.as_ref()[zone_idx] * floor_area;
+
+                hourly_data.internal_loads[zone_idx] = load * floor_area;
             }
 
             if hvac_kwh > 0.0 {
@@ -1464,11 +1114,11 @@ impl ASHRAE140Validator {
             let day_of_year = step / 24 + 1;
 
             let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-            let mut month = 1;
+            let mut _month = 1;
             let mut day = day_of_year;
             for (i, &days) in days_in_month.iter().enumerate() {
                 if day <= days as usize {
-                    month = i + 1;
+                    _month = i + 1;
                     break;
                 }
                 day -= days as usize;
@@ -1495,112 +1145,9 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Calculate solar gains
-            let mut total_solar_gain_per_zone: Vec<f64> = vec![0.0; num_zones];
-            for (zone_idx, zone_windows) in spec.windows.iter().enumerate() {
-                if zone_idx >= num_zones {
-                    break;
-                }
-                for win_area in zone_windows {
-                    let props = WindowProperties::new(
-                        win_area.area,
-                        spec.window_properties.shgc,
-                        spec.window_properties.normal_transmittance,
-                    );
-
-                    let mut overhang = None;
-                    let mut fins = Vec::new();
-                    if let Some(zone_surfaces) = model.surfaces.get(zone_idx) {
-                        for surf in zone_surfaces {
-                            if surf.orientation == win_area.orientation {
-                                overhang = surf.overhang.as_ref();
-                                fins = surf.fins.clone();
-                                break;
-                            }
-                        }
-                    }
-
-                    let (_, _, gain) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &props,
-                        Some(win_area),
-                        overhang,
-                        &fins,
-                        win_area.orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] += gain.total_gain_w;
-                }
-
-                // Opaque solar gains
-                let alpha = spec.opaque_absorptance;
-                let re = 0.034;
-                let wall_area = spec.geometry[zone_idx].wall_area();
-                let window_area: f64 = spec.windows[zone_idx].iter().map(|w| w.area).sum();
-                let opaque_wall_area = wall_area - window_area;
-                let roof_area = spec.geometry[zone_idx].roof_area();
-
-                let wall_u = spec.construction.wall.u_value(None, None);
-                let roof_u = spec.construction.roof.u_value(None, None);
-
-                for orientation in [
-                    Orientation::South,
-                    Orientation::West,
-                    Orientation::North,
-                    Orientation::East,
-                ] {
-                    let (_, irr, _) = calculate_hourly_solar(
-                        39.7392,
-                        -104.9903,
-                        2024,
-                        month as u32,
-                        day as u32,
-                        hour_of_day as f64 + 0.5,
-                        weather_data.dni,
-                        weather_data.dhi,
-                        &WindowProperties::new(0.0, 0.0, 0.0),
-                        None,
-                        None,
-                        &[],
-                        orientation,
-                        Some(0.2),
-                    );
-                    total_solar_gain_per_zone[zone_idx] +=
-                        (opaque_wall_area / 4.0) * wall_u * irr.total_wm2 * alpha * re;
-                }
-
-                let (_, irr_roof, _) = calculate_hourly_solar(
-                    39.7392,
-                    -104.9903,
-                    2024,
-                    month as u32,
-                    day as u32,
-                    hour_of_day as f64 + 0.5,
-                    weather_data.dni,
-                    weather_data.dhi,
-                    &WindowProperties::new(0.0, 0.0, 0.0),
-                    None,
-                    None,
-                    &[],
-                    Orientation::Up,
-                    Some(0.2),
-                );
-                total_solar_gain_per_zone[zone_idx] +=
-                    roof_area * roof_u * irr_roof.total_wm2 * alpha * re;
-            }
-
-            // Calculate loads
+            // Calculate internal loads (solar is now handled internally by step_physics)
             let mut internal_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-            let mut solar_loads_per_zone: Vec<f64> = Vec::with_capacity(num_zones);
-
-            for (zone_idx, solar_gain) in total_solar_gain_per_zone.iter().enumerate() {
+            for zone_idx in 0..num_zones {
                 let internal_gains = spec
                     .internal_loads
                     .get(zone_idx)
@@ -1615,10 +1162,8 @@ impl ASHRAE140Validator {
                     .map_or(20.0, |g| g.floor_area());
 
                 internal_loads_per_zone.push(internal_gains / floor_area);
-                solar_loads_per_zone.push(solar_gain / floor_area);
 
-                // Track energy components (convert W to Joules for 1 hour)
-                total_solar_gains_joules += solar_gain * 3600.0;
+                // Track internal gains energy (convert W to Joules for 1 hour)
                 total_internal_gains_joules += internal_gains * 3600.0;
             }
 
@@ -1650,16 +1195,21 @@ impl ASHRAE140Validator {
                 spec.infiltration_ach * volume * 1.2 * 1005.0 * delta_t.abs() / 3600.0;
             total_infiltration_joules += infiltration_w * 3600.0;
 
-            // Combine loads
-            let mut total_loads: Vec<f64> = Vec::with_capacity(num_zones);
-            for i in 0..num_zones {
-                let internal = internal_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                let solar = solar_loads_per_zone.get(i).copied().unwrap_or(0.0);
-                total_loads.push(internal + solar);
-            }
-            model.set_loads(&total_loads);
+            // Apply internal loads
+            model.set_loads(&internal_loads_per_zone);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+
+            // Track solar gains energy from model for diagnostics (convert W to Joules)
+            for zone_idx in 0..num_zones {
+                let floor_area = spec
+                    .geometry
+                    .get(zone_idx)
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
+                let solar_gain_watts = model.solar_gains.as_ref()[zone_idx] * floor_area;
+                total_solar_gains_joules += solar_gain_watts * 3600.0;
+            }
 
             // Track temperatures for free-floating cases
             if is_free_floating {
@@ -1692,7 +1242,20 @@ impl ASHRAE140Validator {
                 let mut hourly = HourlyData::new(step, num_zones);
                 hourly.outdoor_temp = weather_data.dry_bulb_temp;
                 hourly.zone_temps = model.temperatures.as_slice().to_vec();
-                hourly.solar_gains = total_solar_gain_per_zone.clone();
+
+                let mut solar_gains_watts = vec![0.0; num_zones];
+                for (zone_idx, solar_gain) in
+                    solar_gains_watts.iter_mut().enumerate().take(num_zones)
+                {
+                    let floor_area = spec
+                        .geometry
+                        .get(zone_idx)
+                        .or(spec.geometry.first())
+                        .map_or(20.0, |g| g.floor_area());
+                    *solar_gain = model.solar_gains.as_ref()[zone_idx] * floor_area;
+                }
+
+                hourly.solar_gains = solar_gains_watts;
                 hourly.hvac_heating = if hvac_kwh > 0.0 {
                     vec![hvac_kwh * 1000.0; num_zones]
                 } else {

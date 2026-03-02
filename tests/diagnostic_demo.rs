@@ -25,7 +25,7 @@ fn main() -> anyhow::Result<()> {
         let mut data = HourlyData::new(hour, 1);
         data.outdoor_temp = 5.0 + (hour as f64) * 0.5;
         data.zone_temps[0] = 20.0 + (hour as f64) * 0.2;
-        data.solar_gains[0] = if hour >= 6 && hour <= 18 { 500.0 } else { 0.0 };
+        data.solar_gains[0] = if (6..=18).contains(&hour) { 500.0 } else { 0.0 };
         data.internal_loads[0] = 200.0;
         hourly_data.push(data);
     }
