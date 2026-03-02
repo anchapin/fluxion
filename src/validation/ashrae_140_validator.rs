@@ -989,9 +989,14 @@ impl ASHRAE140Validator {
 
             for (zone_idx, load) in internal_loads.iter().enumerate().take(num_zones) {
                 // Get solar gains back from model (in Watts)
-                let floor_area = spec.geometry.get(zone_idx).or(spec.geometry.first()).map_or(20.0, |g| g.floor_area());
-                hourly_data.solar_gains[zone_idx] = model.solar_gains.as_ref()[zone_idx] * floor_area;
-                
+                let floor_area = spec
+                    .geometry
+                    .get(zone_idx)
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
+                hourly_data.solar_gains[zone_idx] =
+                    model.solar_gains.as_ref()[zone_idx] * floor_area;
+
                 hourly_data.internal_loads[zone_idx] = load * floor_area;
             }
 
@@ -1157,7 +1162,7 @@ impl ASHRAE140Validator {
                     .map_or(20.0, |g| g.floor_area());
 
                 internal_loads_per_zone.push(internal_gains / floor_area);
-                
+
                 // Track internal gains energy (convert W to Joules for 1 hour)
                 total_internal_gains_joules += internal_gains * 3600.0;
             }
@@ -1194,10 +1199,14 @@ impl ASHRAE140Validator {
             model.set_loads(&internal_loads_per_zone);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-            
+
             // Track solar gains energy from model for diagnostics (convert W to Joules)
             for zone_idx in 0..num_zones {
-                let floor_area = spec.geometry.get(zone_idx).or(spec.geometry.first()).map_or(20.0, |g| g.floor_area());
+                let floor_area = spec
+                    .geometry
+                    .get(zone_idx)
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
                 let solar_gain_watts = model.solar_gains.as_ref()[zone_idx] * floor_area;
                 total_solar_gains_joules += solar_gain_watts * 3600.0;
             }
@@ -1233,13 +1242,19 @@ impl ASHRAE140Validator {
                 let mut hourly = HourlyData::new(step, num_zones);
                 hourly.outdoor_temp = weather_data.dry_bulb_temp;
                 hourly.zone_temps = model.temperatures.as_slice().to_vec();
-                
+
                 let mut solar_gains_watts = vec![0.0; num_zones];
-                for (zone_idx, solar_gain) in solar_gains_watts.iter_mut().enumerate().take(num_zones) {
-                    let floor_area = spec.geometry.get(zone_idx).or(spec.geometry.first()).map_or(20.0, |g| g.floor_area());
+                for (zone_idx, solar_gain) in
+                    solar_gains_watts.iter_mut().enumerate().take(num_zones)
+                {
+                    let floor_area = spec
+                        .geometry
+                        .get(zone_idx)
+                        .or(spec.geometry.first())
+                        .map_or(20.0, |g| g.floor_area());
                     *solar_gain = model.solar_gains.as_ref()[zone_idx] * floor_area;
                 }
-                
+
                 hourly.solar_gains = solar_gains_watts;
                 hourly.hvac_heating = if hvac_kwh > 0.0 {
                     vec![hvac_kwh * 1000.0; num_zones]

@@ -40,13 +40,19 @@ fn main() {
         "  U-value: {:.4} W/m²K (expected ~0.514)",
         case_600_wall.u_value(None, None)
     );
-    println!("  R-value: {:.4} m²K/W", case_600_wall.r_value_total(None, None));
+    println!(
+        "  R-value: {:.4} m²K/W",
+        case_600_wall.r_value_total(None, None)
+    );
 
     let case_900_wall = Assemblies::high_mass_wall();
     println!("\nASHRAE 140 Case 900 (High Mass) Wall:");
     println!("  Layers: {}", case_900_wall.layer_count());
     println!("  U-value: {:.4} W/m²K", case_900_wall.u_value(None, None));
-    println!("  R-value: {:.4} m²K/W", case_900_wall.r_value_total(None, None));
+    println!(
+        "  R-value: {:.4} m²K/W",
+        case_900_wall.r_value_total(None, None)
+    );
     println!(
         "  Thermal capacitance: {:.2} J/m²K",
         case_900_wall.thermal_capacitance_per_area()

@@ -1840,12 +1840,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Calculate solar gain for each surface in the zone
         let mut total_solar_gain = 0.0;
         let alpha = 0.6; // Default absorptance for ASHRAE 140
-        let re = 0.034;  // Exterior film resistance (m²K/W)
+        let re = 0.034; // Exterior film resistance (m²K/W)
 
         if let Some(zone_surfaces) = self.surfaces.get(zone_idx) {
             for surface in zone_surfaces {
                 let orientation = surface.orientation;
-                
+
                 // Use solar module to calculate irradiance for this orientation
                 let (_sun_pos, irradiance, _solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
@@ -1857,19 +1857,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     weather.dni,
                     weather.dhi,
                     window_props, // Note: this contains the TOTAL window area for the zone, which is slightly wrong if windows vary by orientation
-                    None, // No window geometry specified
+                    None,         // No window geometry specified
                     surface.overhang.as_ref(),
                     &surface.fins,
                     orientation,
                     Some(0.2), // Ground reflectance
                 );
-                
+
                 // 1. Window Solar Gain
                 // The solar_gain.total_gain_w uses window_props.area.
                 // We should only add it if the current surface orientation matches the window orientation.
                 // However, calculate_hourly_solar already handles the orientation effect on irradiance.
                 // For ASHRAE 140, we typically have one main window orientation.
-                let win_area = if orientation == surface.orientation { surface.area } else { 0.0 };
+                let win_area = if orientation == surface.orientation {
+                    surface.area
+                } else {
+                    0.0
+                };
                 if win_area > 0.0 {
                     // Re-calculate gain specifically for this window's area
                     let window_gain = win_area * irradiance.total_wm2 * window_props.shgc;
@@ -1882,7 +1886,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 let floor_area = self.zone_area.as_ref()[zone_idx];
                 let wall_area_per_side = (floor_area * 1.5) / 4.0; // Approximation
                 let opaque_area = (wall_area_per_side - win_area).max(0.0);
-                
+
                 let wall_u = 0.514; // Default for Case 600
                 total_solar_gain += opaque_area * wall_u * irradiance.total_wm2 * alpha * re;
             }
@@ -1905,7 +1909,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             Orientation::Up,
             Some(0.2),
         );
-        
+
         let roof_area = self.zone_area.as_ref()[zone_idx];
         let roof_u = 0.514; // Default for Case 600
         total_solar_gain += roof_area * roof_u * roof_irradiance.total_wm2 * alpha * re;

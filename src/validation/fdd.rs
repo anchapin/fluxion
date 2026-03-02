@@ -740,7 +740,6 @@ mod tests {
         let _faults = detector.get_faults();
         // The sensor reading is consistent, but it should detect stuck when we add new reading
         // This test verifies the system runs without panic
-
     }
 
     #[test]

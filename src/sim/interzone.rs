@@ -3,8 +3,6 @@
 //! This module provides tools for calculating heat transfer between different thermal zones,
 //! including conductive coupling through common walls and radiative exchange between surfaces.
 
-
-
 /// Calculates the radiative view factor between two surfaces.
 ///
 /// For now, implements a simplified analytical solution for two rectangular zones
