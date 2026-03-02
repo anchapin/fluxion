@@ -305,7 +305,7 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     ground_temperature: Box<dyn GroundTemperature>, // Ground temperature model
 
     // Inter-zone conductance (for multi-zone buildings like Case 960 sunspace)
-    /// Conductance between zones (W/K). For 2-zone: h_tr_iz[0] = conductance between zone 0 and 1
+    /// Conductance between zones (W/K). For 2-zone: h_tr_iz\[0\] = conductance between zone 0 and 1
     /// Includes both conductive (common walls) and radiative (windows) heat transfer
     pub h_tr_iz: T,
     /// Radiative conductance through inter-zone windows (W/K)
@@ -2181,16 +2181,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// # Arguments
     /// * `num_zones` - Number of thermal zones
-    /// * `temps` - Current zone temperatures [K]
-    /// * `h_iz_vec` - Inter-zone conductances [W/K]
-    /// * `h_iz_rad_vec` - Radiative inter-zone conductances [W/K]
+    /// * `temps` - Current zone temperatures \[K\]
+    /// * `h_iz_vec` - Inter-zone conductances \[W/K\]
+    /// * `h_iz_rad_vec` - Radiative inter-zone conductances \[W/K\]
     ///
     /// # Returns
-    /// * Vector of inter-zone heat flows [W] for each zone
+    /// * Vector of inter-zone heat flows \[W\] for each zone
     ///
     /// # Mathematical Formulation
     /// For a multi-zone system with N zones, we solve:
-    /// Q_iz[i] = Σ_j (h_iz_ij + h_iz_rad_ij) * (T[j] - T[i])
+    /// Q_iz\[i\] = Σ_j (h_iz_ij + h_iz_rad_ij) * (T\[j\] - T\[i\])
     ///
     /// This can be expressed as a matrix equation:
     /// Q = (A - I) * diag(h_total) * T

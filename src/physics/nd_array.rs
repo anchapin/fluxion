@@ -16,7 +16,7 @@ impl NDArrayField {
         NDArrayField { arr }
     }
 
-    /// Return the shape of the underlying ndarray as a Vec<usize>.
+    /// Return the shape of the underlying ndarray as a `Vec<usize>`.
     pub fn shape(&self) -> Vec<usize> {
         self.arr.shape().to_vec()
     }
