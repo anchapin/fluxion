@@ -400,7 +400,7 @@ fn test_thermal_model_convective_fraction() {
     let ashrae_load_watts = 200.0; // ASHRAE 140 standard
     let ashrae_load_per_m2 = ashrae_load_watts / floor_area;
 
-    model.set_loads(&vec![ashrae_load_per_m2]);
+    model.set_loads(&[ashrae_load_per_m2]);
 
     let loads_watts = model.loads.as_ref()[0] * floor_area;
     let phi_ia = loads_watts * model.convective_fraction;
@@ -462,7 +462,7 @@ fn test_schedule_integration_with_thermal_model() {
         let occupancy_gains = profile.internal_gains(hour_of_week);
         let load_per_m2 = occupancy_gains / floor_area;
 
-        model.set_loads(&vec![load_per_m2]);
+        model.set_loads(&[load_per_m2]);
 
         println!(
             "  Hour {}: {:.1}W occupancy, {:.3}W/m² load",

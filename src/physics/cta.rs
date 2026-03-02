@@ -63,7 +63,7 @@ where
     fn elementwise_max(&self, other: &Self) -> Self;
 }
 
-/// A basic CPU-based implementation of ContinuousTensor using Vec<f64>.
+/// A basic CPU-based implementation of ContinuousTensor using `Vec<f64>`.
 /// Represents a 1D Tensor (Vector).
 #[cfg_attr(feature = "python-bindings", pyo3::pyclass)]
 #[derive(Debug, Clone, PartialEq)]

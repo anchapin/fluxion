@@ -500,7 +500,7 @@ fn test_case_960_seasonal_temperature_profiles() {
 
         let temps = model.temperatures.as_ref();
 
-        if step >= 4344 && step < 6552 {
+        if (4344..6552).contains(&step) {
             summer_back.push(temps[0]);
             summer_sunspace.push(temps[1]);
         } else if step < 1416 {
@@ -535,11 +535,11 @@ fn test_case_960_seasonal_temperature_profiles() {
 
     // Both zones should maintain reasonable temperatures
     assert!(
-        summer_back_mean >= 18.0 && summer_back_mean <= 28.0,
+        (18.0..=28.0).contains(&summer_back_mean),
         "Summer back-zone should be within HVAC setpoint range"
     );
     assert!(
-        winter_back_mean >= 18.0 && winter_back_mean <= 22.0,
+        (18.0..=22.0).contains(&winter_back_mean),
         "Winter back-zone should be near heating setpoint"
     );
 }
