@@ -7,6 +7,7 @@ use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
+use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
@@ -855,11 +856,8 @@ impl ThermalModel<VectorField> {
                 let window_fraction = 0.5; // Door is 50% of common wall
                 let window_area = common_wall_area * window_fraction;
 
-                let zone_a_area = Self::calculate_total_interior_surface_area(&spec.geometry[0]);
-                let zone_b_area = Self::calculate_total_interior_surface_area(&spec.geometry[1]);
-
-                let view_factor =
-                    Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
+                // Use proper window-to-window view factor for directly opposing windows
+                let view_factor = view_factors::window_to_window_view_factor(window_area);
 
                 let emissivity = 0.9;
                 let reference_temp = 293.15;
@@ -890,16 +888,13 @@ impl ThermalModel<VectorField> {
                     total_conductance += wall.conductance();
                 }
 
-                // Calculate radiative coupling for other cases if needed
+                // Calculate radiative coupling using proper window-to-window view factor
                 let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
                 let window_fraction = 0.5;
                 let window_area = common_wall_area * window_fraction;
 
-                let zone_a_area = Self::calculate_total_interior_surface_area(&spec.geometry[0]);
-                let zone_b_area = Self::calculate_total_interior_surface_area(&spec.geometry[1]);
-
-                let view_factor =
-                    Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
+                // Use proper window-to-window view factor for directly opposing windows
+                let view_factor = view_factors::window_to_window_view_factor(window_area);
 
                 let emissivity = 0.9;
                 let reference_temp = 293.15;
