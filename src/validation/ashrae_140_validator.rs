@@ -1168,31 +1168,49 @@ impl ASHRAE140Validator {
             }
 
             // Estimate envelope conduction and infiltration for diagnostics
-            let zone_temp = model
+            // Use first zone temperature as fallback for missing zone temperatures
+            let zone_temp_first = model
                 .temperatures
                 .as_slice()
                 .first()
                 .copied()
                 .unwrap_or(20.0);
-            let delta_t = zone_temp - weather_data.dry_bulb_temp;
-            let floor_area = spec.geometry.first().map_or(20.0, |g| g.floor_area());
-            let wall_area = spec.geometry.first().map_or(48.0, |g| g.wall_area());
-            let window_area: f64 = spec
-                .windows
-                .first()
-                .map_or(12.0, |zone| zone.iter().map(|w| w.area).sum());
-            let opaque_area = wall_area - window_area;
 
-            // Envelope conduction estimate (W)
-            let envelope_conduction_w =
-                opaque_area * spec.construction.wall.u_value(None, None) * delta_t.abs()
-                    + floor_area * spec.construction.roof.u_value(None, None) * delta_t.abs();
+            // Envelope conduction: sum across all zones
+            let mut envelope_conduction_w = 0.0;
+            let mut infiltration_w = 0.0;
+            for zone_idx in 0..num_zones {
+                let zone_temp = model
+                    .temperatures
+                    .as_slice()
+                    .get(zone_idx)
+                    .copied()
+                    .unwrap_or(zone_temp_first);
+                let delta_t = zone_temp - weather_data.dry_bulb_temp;
+
+                // Sum envelope conduction for this zone
+                if let (Some(geom), Some(windows)) =
+                    (spec.geometry.get(zone_idx), spec.windows.get(zone_idx))
+                {
+                    let floor_area = geom.floor_area();
+                    let wall_area = geom.wall_area();
+                    let window_area: f64 = windows.iter().map(|w| w.area).sum();
+                    let opaque_area = wall_area - window_area;
+                    let cond = opaque_area
+                        * spec.construction.wall.u_value(None, None)
+                        * delta_t.abs()
+                        + floor_area * spec.construction.roof.u_value(None, None) * delta_t.abs();
+                    envelope_conduction_w += cond;
+                }
+
+                // Sum infiltration for this zone
+                if let Some(geom) = spec.geometry.get(zone_idx) {
+                    let volume = geom.floor_area() * geom.height;
+                    infiltration_w +=
+                        spec.infiltration_ach * volume * 1.2 * 1005.0 * delta_t.abs() / 3600.0;
+                }
+            }
             total_envelope_conduction_joules += envelope_conduction_w * 3600.0;
-
-            // Infiltration estimate (W)
-            let volume = floor_area * spec.geometry.first().map_or(2.7, |g| g.height);
-            let infiltration_w =
-                spec.infiltration_ach * volume * 1.2 * 1005.0 * delta_t.abs() / 3600.0;
             total_infiltration_joules += infiltration_w * 3600.0;
 
             // Apply internal loads
