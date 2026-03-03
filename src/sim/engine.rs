@@ -760,7 +760,17 @@ impl ThermalModel<VectorField> {
         model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
 
         // Solar gain distribution (ASHRAE 140 calibration)
-        model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
+        // Issue #275: For free-floating cases, significantly reduce fraction to mass
+        // This allows more immediate temperature response - heat goes to air, not stored in mass
+        // Free-floating: Building should respond passively to weather without HVAC buffering
+        // This helps achieve lower nighttime minimums (heat releases at night) and
+        // more moderate daytime peaks (less heat stored in mass)
+        let is_ff = spec.is_free_floating();
+        if is_ff {
+            model.solar_beam_to_mass_fraction = 0.0; // 0% to mass, 100% to surface/air
+        } else {
+            model.solar_beam_to_mass_fraction = 0.6; // 60% to mass (HVAC buffering)
+        }
 
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
