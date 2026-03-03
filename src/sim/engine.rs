@@ -765,6 +765,12 @@ impl ThermalModel<VectorField> {
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
             IdealHVACController::new(hvac.heating_setpoint, hvac.cooling_setpoint);
+        // Configure HVAC controller capacities and staging
+        model.hvac_controller.heating_stages = 1;
+        model.hvac_controller.cooling_stages = 1;
+        model.hvac_controller.heating_capacity_per_stage = model.hvac_heating_capacity;
+        model.hvac_controller.cooling_capacity_per_stage = model.hvac_cooling_capacity;
+        model.hvac_controller.deadband_tolerance = 0.5; // 0.5°C deadband tolerance
 
         // Initialize location for solar position calculation (Issue #278)
         // Default to Denver, CO for ASHRAE 140 validation
@@ -1253,43 +1259,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        // Use direct setpoint fields to support dynamic changes (e.g., thermostat setback)
-        // The validator updates these fields directly each hour for setback cases
-        let heating_sp = self.heating_setpoint;
-        let cooling_sp = self.cooling_setpoint;
-
+        // Use IdealHVACController for deadband, staging, and proportional control
         let hvac_demand = t_i_free.zip_with(sensitivity, |t, sens| {
-            // Determine HVAC mode based on temperature and setpoints
-            let mode = if t < heating_sp {
-                HVACMode::Heating
-            } else if t > cooling_sp {
-                HVACMode::Cooling
-            } else {
-                HVACMode::Off
-            };
-
-            match mode {
-                HVACMode::Heating => {
-                    // Calculate heating demand
-                    let t_err = heating_sp - t;
-                    let q_req = t_err / sens;
-                    q_req.min(self.hvac_heating_capacity) // Apply heating capacity limit
-                }
-                HVACMode::Cooling => {
-                    // Calculate cooling demand
-                    let t_err = t - cooling_sp;
-                    let q_req = -t_err / sens; // Negative for cooling
-                    q_req.max(-self.hvac_cooling_capacity) // Apply cooling capacity limit
-                }
-                HVACMode::Off => {
-                    // Deadband zone - no HVAC
-                    0.0
-                }
-            }
+            self.hvac_controller.calculate_power(t, t, sens)
         });
-
-        // Apply HVAC enable flag to disable HVAC for free-floating zones
-        // This is critical for multi-zone buildings like Case 960 where Zone 1 (sunspace) is free-floating
         hvac_demand * self.hvac_enabled.clone()
     }
 
@@ -3075,15 +3048,8 @@ mod tests {
             let mut model2 = ThermalModel::<VectorField>::new(1);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
-            // Disable HVAC to see natural equilibrium
-            model1.heating_setpoint = -999.0;
-            model1.heating_schedule = DailySchedule::constant(-999.0);
-            model1.cooling_setpoint = 999.0;
-            model1.cooling_schedule = DailySchedule::constant(999.0);
-            model2.heating_setpoint = -999.0;
-            model2.heating_schedule = DailySchedule::constant(-999.0);
-            model2.cooling_setpoint = 999.0;
-            model2.cooling_schedule = DailySchedule::constant(999.0);
+            model1.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model2.hvac_enabled = VectorField::from_scalar(0.0, 1);
 
             // Same outdoor temperature
             let outdoor_temp = 15.0;
@@ -3175,14 +3141,8 @@ mod tests {
             model_warm.set_ground_temp(20.0); // Warm ground
 
             // Disable HVAC to see natural equilibrium
-            model_cold.heating_setpoint = -999.0;
-            model_cold.heating_schedule = DailySchedule::constant(-999.0);
-            model_cold.cooling_setpoint = 999.0;
-            model_cold.cooling_schedule = DailySchedule::constant(999.0);
-            model_warm.heating_setpoint = -999.0;
-            model_warm.heating_schedule = DailySchedule::constant(-999.0);
-            model_warm.cooling_setpoint = 999.0;
-            model_warm.cooling_schedule = DailySchedule::constant(999.0);
+            model_cold.hvac_enabled = VectorField::from_scalar(0.0, 1);
+            model_warm.hvac_enabled = VectorField::from_scalar(0.0, 1);
 
             // Run for a few steps
             let outdoor_temp = 15.0;
