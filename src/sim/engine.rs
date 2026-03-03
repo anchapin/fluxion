@@ -242,6 +242,7 @@ pub enum ThermalModelType {
 /// * `cooling_setpoint` - HVAC cooling setpoint temperature (°C) - cool when above this
 /// * `heating_setpoints` - Zone-specific heating setpoints (°C) for multi-zone HVAC
 /// * `cooling_setpoints` - Zone-specific cooling setpoints (°C) for multi-zone HVAC
+#[allow(clippy::doc_list_item_without_indentation)]
 pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub num_zones: usize,
     pub temperatures: T,
@@ -759,8 +760,24 @@ impl ThermalModel<VectorField> {
         model.hvac_heating_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
         model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
 
-        // Solar gain distribution (ASHRAE 140 calibration)
-        model.solar_distribution_to_air = 0.1; // Most radiative gains to mass for buffering
+        // Set solar distribution based on construction type (ASHRAE 140 calibration)
+        // Low-mass: ~75% to air (25% to mass)
+        // High-mass: ~50% to air (50% to mass)
+        // Special cases: use a balanced default (60% to air / 40% to mass)
+        match spec.construction_type {
+            crate::validation::ashrae_140_cases::ConstructionType::LowMass => {
+                model.solar_distribution_to_air = 0.75;
+                model.solar_beam_to_mass_fraction = 0.25;
+            }
+            crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
+                model.solar_distribution_to_air = 0.5;
+                model.solar_beam_to_mass_fraction = 0.5;
+            }
+            crate::validation::ashrae_140_cases::ConstructionType::Special => {
+                model.solar_distribution_to_air = 0.6;
+                model.solar_beam_to_mass_fraction = 0.4;
+            }
+        }
 
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
@@ -1616,16 +1633,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Solar gains are 100% radiative (Issue #361)
         let phi_rad_total = phi_rad_internal + solar_gains_watts;
 
-        // Distribute radiative gains to air, envelope mass, and internal mass
-        // Implement beam-to-floor direct radiation mapping (Issue #361)
+        // Distribute radiative gains to surface (envelope) and thermal masses
         // In 6R2C model:
         // - phi_st: gains to surface node (proportional to envelope mass)
-        // - phi_m_env: gains directly to envelope mass
-        // - phi_m_int: gains directly to internal mass
-        // Use solar_beam_to_mass_fraction to route beam radiation to thermal masses
-        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6; // 60% to surface (envelope)
-        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7; // 70% of beam to envelope mass
-        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3; // 30% of beam to internal mass
+        // - phi_m_env: gains directly to envelope mass (walls, roof, floor)
+        // - phi_m_int: gains directly to internal mass (furniture, partitions)
+        // The split between surface and total mass uses solar_beam_to_mass_fraction.
+        // The mass-directed gains are then split 70% envelope / 30% internal.
+        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction);
+        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7;
+        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3;
 
         // Use pre-computed cached values
         let h_ext_base = &self.derived_h_ext;
@@ -2044,10 +2061,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// Radiative exchange: Q_rad = σ * ε1 * ε2 * A * F12 * (T1^4 - T2^4)
     /// Linearized: Q_rad ≈ h_rad * (T1 - T2)
     /// Where h_rad ≈ 4 * σ * ε * T_avg^3 * A
+    #[allow(dead_code)]
     fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {
         geometry.wall_area() + geometry.floor_area() + geometry.roof_area()
     }
 
+    #[allow(dead_code)]
     fn calculate_zone_to_zone_view_factor(
         common_window_area: f64,
         zone_a_area: f64,
