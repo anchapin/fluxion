@@ -1916,7 +1916,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 }
 
                 // Use solar module to calculate irradiance for this orientation
-                let (_sun_pos, irradiance, _solar_gain) = calculate_hourly_solar(
+                let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
                     self.longitude_deg,
                     year,
@@ -1934,10 +1934,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 );
 
                 // 1. Window Solar Gain
+                // Use properly calculated solar gain from solar module (includes angular dependence)
+                // Scale by ratio of per-surface window area to total zone window area
                 let win_area = surface.window_area;
-                if win_area > 0.0 {
-                    // Re-calculate gain specifically for this window's area
-                    let window_gain = win_area * irradiance.total_wm2 * window_props.shgc;
+                if win_area > 0.0 && window_props.area > 0.0 {
+                    let area_ratio = win_area / window_props.area;
+                    let window_gain = solar_gain.total_gain_w * area_ratio;
                     total_solar_gain += window_gain;
                 }
 
