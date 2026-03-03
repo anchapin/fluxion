@@ -26,7 +26,6 @@ fn test_beam_to_floor_simulation_impact() {
     let diffuse_gain_watts = 0.0;
 
     // Manually set gains (normalized by area as expected by engine)
-    model.solar_beam_gains = VectorField::from_scalar(beam_gain_watts / zone_area, 1);
     model.solar_gains =
         VectorField::from_scalar((beam_gain_watts + diffuse_gain_watts) / zone_area, 1);
 
@@ -48,7 +47,6 @@ fn test_beam_to_floor_simulation_impact() {
     model_low.h_tr_ms = VectorField::from_scalar(10.0, 1);
     model_low.update_optimization_cache();
 
-    model_low.solar_beam_gains = VectorField::from_scalar(beam_gain_watts / zone_area, 1);
     model_low.solar_gains =
         VectorField::from_scalar((beam_gain_watts + diffuse_gain_watts) / zone_area, 1);
 
@@ -83,7 +81,6 @@ fn test_6r2c_beam_to_floor_simulation_impact() {
     let zone_area = model.zone_area.as_ref()[0];
     let beam_gain_watts = 2000.0;
 
-    model.solar_beam_gains = VectorField::from_scalar(beam_gain_watts / zone_area, 1);
     model.solar_gains = VectorField::from_scalar(beam_gain_watts / zone_area, 1);
 
     let initial_tm_env = model.envelope_mass_temperatures.as_ref()[0];
