@@ -9,6 +9,102 @@ This directory contains utility scripts for Fluxion development, including train
 - `benchmark_throughput.py`: Measure system throughput.
 - `generate_dummy_surrogate.py`: Create placeholder models for testing.
 - `quantize_model.py`: Optimize ONNX models using quantization.
+- `data_gen/`: Data generation tools for creating training datasets.
+
+## Data Generation (`data_gen/`)
+
+The `data_gen/` subdirectory contains tools for generating large-scale training data for AI surrogate models.
+
+### Monte Carlo Data Generator (`monte_carlo.py`)
+
+The Monte Carlo data generator creates diverse training datasets by sampling random building configurations and running physics simulations.
+
+#### Features
+
+- **Diverse Sampling**: Samples building parameters using Latin Hypercube Sampling (LHS) or random sampling
+- **Physics Simulation**: Runs simulations using the Fluxion engine for accurate energy modeling
+- **Batch Processing**: Optimized for large-scale data generation with batch processing
+- **Multiple Output Formats**: Supports Parquet, NumPy (.npz), and HDF5 output formats
+- **Reproducibility**: Supports random seeds for reproducible datasets
+
+#### Usage
+
+```bash
+# Generate 1000 training samples with default settings
+python -m tools.data_gen.monte_carlo generate --count 1000
+
+# Generate with custom output directory and seed
+python -m tools.data_gen.monte_carlo generate --count 5000 --output /tmp/train_data --seed 42
+
+# Generate with specific sampling method
+python -m tools.data_gen.monte_carlo generate --count 1000 --sampling-method LHS
+
+# Generate in batch mode for large datasets
+python -m tools.data_gen.monte_carlo generate --count 10000 --batch-size 1000
+
+# List available options
+python -m tools.data_gen.monte_carlo --help
+```
+
+#### Command-Line Arguments
+
+| Argument | Default | Description |
+| :--- | :--- | :--- |
+| `--count` | 1000 | Number of samples to generate |
+| `--output` | ./training_data | Output directory for generated data |
+| `--seed` | 42 | Random seed for reproducibility |
+| `--sampling-method` | LHS | Sampling method (RANDOM, LHS) |
+| `--batch-size` | 100 | Number of samples per batch |
+| `--weather-dir` | assets/weather | Directory containing weather files |
+| `--format` | parquet | Output format (parquet, npz, hdf5) |
+
+#### Output Format
+
+The generated training data is in (State_t, Action_t) → (State_t+1, Energy) format:
+
+| Column | Description |
+| :--- | :--- |
+| `outdoor_temp_t` | Outdoor temperature at time t (°C) |
+| `indoor_temp_t` | Indoor temperature at time t (°C) |
+| `solar_t` | Solar radiation at time t (W/m²) |
+| `hvac_mode` | HVAC mode (0=off, 1=heating, 2=cooling) |
+| `hvac_power` | HVAC power at time t (W) |
+| `indoor_temp_t1` | Indoor temperature at time t+1 (°C) |
+| `energy_consumed` | Energy consumed (Wh) |
+| `run_id` | Sample identifier |
+| `timestep` | Timestep index |
+
+#### Python API
+
+```python
+from tools.data_gen.monte_carlo import MonteCarloDataGenerator
+
+# Create generator
+gen = MonteCarloDataGenerator(
+    output_dir="./output",
+    num_samples=1000,
+    seed=42,
+    sampling_method="LHS",
+    batch_size=100,
+)
+
+# Setup (loads weather files, configures sampler)
+gen.setup()
+
+# Generate data
+df = gen.generate()
+
+# Save to specific format
+gen.save_output(df, format="parquet")
+```
+
+#### Performance
+
+The generator is optimized for large-scale data generation:
+- Batch processing reduces memory usage
+- Parallel simulation support for multi-core systems
+- Efficient Parquet format for fast I/O
+- Target throughput: >1000 samples/second
 
 ## Training Surrogate Models
 

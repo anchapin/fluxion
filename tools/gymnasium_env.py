@@ -789,13 +789,26 @@ class FluxionEnv(gym.Env):
             "episode_energy": self.episode_energy,
         }
     
-    def render(self):
-        """Render the environment."""
-        if self.render_mode == "human":
+    def render(self, mode: Optional[str] = None):
+        """
+        Render the environment.
+        
+        Args:
+            mode: Rendering mode - "human" or "rgb_array"
+        """
+        render_mode = mode or self.render_mode or "human"
+        
+        if render_mode == "human":
             print(f"Step {self.current_step}: T_zone={self._zone_temperatures[0]:.1f}°C, "
                   f"T_out={self._outdoor_temps[self.current_step]:.1f}°C, "
                   f"Price=${self._electricity_prices[self.current_step]:.3f}/kWh")
-        # TODO: Implement rgb_array rendering
+        elif render_mode == "rgb_array":
+            # TODO: Implement proper rgb_array rendering
+            # For now, return a simple text representation as numpy array
+            import numpy as np
+            text = f"Step: {self.current_step}, T_zone: {self._zone_temperatures[0]:.1f}, T_out: {self._outdoor_temps[self.current_step]:.1f}"
+            # Return as simple representation (placeholder for full implementation)
+            return np.zeros((100, 100, 3), dtype=np.uint8)
     
     def close(self):
         """Clean up resources."""
@@ -813,18 +826,22 @@ def make(env_id: str = "Fluxion-v0", **kwargs) -> "FluxionEnv":
     return FluxionEnv(**kwargs)
 
 
-def _fluxion_env_maker(**kwargs):
-    """Factory function for Gymnasium registration."""
-    return FluxionEnv(**kwargs)
+def make(env_id: str = "Fluxion-v0", **kwargs) -> "FluxionEnv":
+    """Create a Fluxion environment (alias for gym.make)."""
+    return gym.make(env_id, **kwargs)
 
 
 # Register with Gymnasium
 if GYMNASIUM_AVAILABLE:
     from gymnasium.envs.registration import register
     
+    # Note: For gym.make() to work, the module must be importable.
+    # This requires either:
+    # 1. Installing the package (pip install -e .)
+    # 2. Or importing the module first before calling gym.make()
     register(
         id="Fluxion-v0",
-        entry_point="tools.gymnasium_env:_fluxion_env_maker",
+        entry_point="tools.gymnasium_env:FluxionEnv",
         max_episode_steps=8760,
     )
     logger.info("Registered Fluxion-v0 with Gymnasium")
@@ -832,7 +849,7 @@ if GYMNASIUM_AVAILABLE:
     # Also register with versioned ID
     register(
         id="Fluxion-v0.1",
-        entry_point="tools.gymnasium_env:_fluxion_env_maker",
+        entry_point="tools.gymnasium_env:FluxionEnv",
         max_episode_steps=8760,
     )
     logger.info("Registered Fluxion-v0.1 with Gymnasium")

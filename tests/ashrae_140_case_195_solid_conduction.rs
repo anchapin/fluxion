@@ -229,7 +229,7 @@ fn test_case_195_construction_properties() {
 
 #[test]
 fn test_case_195_passes_tolerance() {
-    let (heating, cooling, peak_h) = simulate_case_195();
+    let (heating, _cooling, peak_h) = simulate_case_195();
 
     // Calculate midpoint of reference ranges
     let heating_midpoint = (reference::ANNUAL_HEATING_MIN + reference::ANNUAL_HEATING_MAX) / 2.0;
