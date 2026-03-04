@@ -788,8 +788,10 @@ impl ThermalModel<VectorField> {
         model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
 
         // Solar gain distribution (ASHRAE 140 calibration)
+        // Solar gain distribution (ASHRAE 140 calibration)
         // Low-mass buildings: higher fraction to air (0.7-0.8) - less thermal mass to buffer gains
         // High-mass buildings: lower fraction to air (0.5-0.6) - more thermal mass to buffer gains
+        // This implements Issue #278: Solar gain calculation accuracy
         model.solar_distribution_to_air = if spec.case_id.starts_with('9') {
             0.5 // High-mass: 50% to air, 50% to thermal mass
         } else {
@@ -1498,13 +1500,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
-        // Split total radiative gains (internal radiative + solar) for thermal mass mapping
-        let phi_rad_total = phi_rad_internal + solar_gains_watts;
-
         // For 5R1C model, implement beam-to-floor direct radiation mapping (Issue #361)
-        // Use solar_beam_to_mass_fraction to route radiation to thermal mass
-        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction);
-        let phi_m = phi_rad_total * self.solar_beam_to_mass_fraction;
+        // Use solar_beam_to_mass_fraction to route ONLY solar radiation to thermal mass
+        // Internal radiative gains are handled separately via area-weighted distribution
+        let phi_st_internal = phi_rad_internal.clone() * (1.0 - self.solar_distribution_to_air);
+        let phi_m_internal = phi_rad_internal * self.solar_distribution_to_air;
+
+        // Solar gains split by beam-to-mass fraction
+        let phi_st_solar = solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction);
+        let phi_m_solar = solar_gains_watts * self.solar_beam_to_mass_fraction;
+
+        // Total surface and mass gains
+        let phi_st = phi_st_internal + phi_st_solar;
+        let phi_m = phi_m_internal + phi_m_solar;
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -1705,18 +1713,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
-        let phi_rad_total = phi_rad_internal + solar_gains_watts;
+        // Split internal radiative gains separately from solar gains
+        // Internal radiative gains use solar_distribution_to_air
+        let phi_st_internal = phi_rad_internal.clone() * (1.0 - self.solar_distribution_to_air);
+        let phi_m_internal = phi_rad_internal * self.solar_distribution_to_air;
 
-        // Distribute radiative gains to surface (envelope) and thermal masses
-        // In 6R2C model:
-        // - phi_st: gains to surface node (proportional to envelope mass)
-        // - phi_m_env: gains directly to envelope mass (walls, roof, floor)
-        // - phi_m_int: gains directly to internal mass (furniture, partitions)
-        // The split between surface and total mass uses solar_beam_to_mass_fraction.
-        // The mass-directed gains are then split 70% envelope / 30% internal.
-        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction);
-        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7;
-        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3;
+        // Solar gains split by beam-to-mass fraction for 6R2C
+        let phi_st_solar =
+            solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
+        let phi_m_env_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction * 0.7;
+        let phi_m_int_solar = solar_gains_watts * self.solar_beam_to_mass_fraction * 0.3;
+
+        // Total surface and mass gains
+        let phi_st = phi_st_internal + phi_st_solar;
+        let phi_m_env = phi_m_internal.clone() + phi_m_env_solar;
+        let phi_m_int = phi_m_int_solar;
 
         // Use pre-computed cached values
         let h_ext_base = &self.derived_h_ext;
@@ -1985,7 +1996,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 }
 
                 // Use solar module to calculate irradiance for this orientation
-                let (_sun_pos, irradiance, _solar_gain) = calculate_hourly_solar(
+                let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
                     self.longitude_deg,
                     year,
@@ -2003,10 +2014,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 );
 
                 // 1. Window Solar Gain
+                // Use properly calculated solar gain from solar module (includes angular dependence)
+                // Scale by ratio of per-surface window area to total zone window area
                 let win_area = surface.window_area;
-                if win_area > 0.0 {
-                    // Re-calculate gain specifically for this window's area
-                    let window_gain = win_area * irradiance.total_wm2 * window_props.shgc;
+                if win_area > 0.0 && window_props.area > 0.0 {
+                    let area_ratio = win_area / window_props.area;
+                    let window_gain = solar_gain.total_gain_w * area_ratio;
                     total_solar_gain += window_gain;
                 }
 
