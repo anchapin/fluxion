@@ -484,6 +484,23 @@ impl ThermalModel<VectorField> {
         model.heating_setpoint = hvac.heating_setpoint; // Direct access
         model.cooling_setpoint = hvac.cooling_setpoint; // Direct access
 
+        // Set zone-specific HVAC setpoints for multi-zone buildings (Issue #273)
+        // This is critical for Case 960 where different zones may have different HVAC control
+        let mut heating_setpoints_vec = Vec::with_capacity(num_zones);
+        let mut cooling_setpoints_vec = Vec::with_capacity(num_zones);
+        for zone_idx in 0..num_zones {
+            if zone_idx < spec.hvac.len() {
+                heating_setpoints_vec.push(spec.hvac[zone_idx].heating_setpoint);
+                cooling_setpoints_vec.push(spec.hvac[zone_idx].cooling_setpoint);
+            } else {
+                // Default to first zone's setpoints if not specified
+                heating_setpoints_vec.push(hvac.heating_setpoint);
+                cooling_setpoints_vec.push(hvac.cooling_setpoint);
+            }
+        }
+        model.heating_setpoints = VectorField::new(heating_setpoints_vec);
+        model.cooling_setpoints = VectorField::new(cooling_setpoints_vec);
+
         // Weather data for solar gain calculation (Issue #278)
         // Try to load weather data from spec, otherwise use None
         model.weather = spec.weather_data.clone();
@@ -1276,10 +1293,43 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        // Use IdealHVACController for deadband, staging, and proportional control
-        let hvac_demand = t_i_free.zip_with(sensitivity, |t, sens| {
-            self.hvac_controller.calculate_power(t, t, sens)
-        });
+        // Calculate HVAC demand per zone, accounting for zone-specific setpoints (Issue #273)
+        // For free-floating zones (hvac_enabled = 0), return 0 demand
+
+        // Convert to VectorField for element-wise operations
+        let t_vec = t_i_free.as_ref();
+        let sens_vec = sensitivity.as_ref();
+        let h_sp_vec = self.heating_setpoints.as_ref();
+        let c_sp_vec = self.cooling_setpoints.as_ref();
+
+        // Compute HVAC demand per zone
+        let mut demand_vec = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let t = t_vec[i];
+            let sens = sens_vec[i];
+            let h_sp = h_sp_vec[i];
+            let c_sp = c_sp_vec[i];
+
+            // Determine HVAC mode based on zone-specific setpoints
+            let power = if t < h_sp {
+                // Heating mode
+                let temp_deficit = h_sp - t;
+                let power_needed = temp_deficit / sens;
+                power_needed.clamp(0.0, self.hvac_heating_capacity)
+            } else if t > c_sp {
+                // Cooling mode
+                let temp_excess = t - c_sp;
+                let power_needed = temp_excess / sens;
+                (-power_needed).clamp(-self.hvac_cooling_capacity, 0.0)
+            } else {
+                // Off/deadband
+                0.0
+            };
+            demand_vec.push(power);
+        }
+
+        // Convert back to T and apply per-zone HVAC enable flag
+        let hvac_demand = T::from(VectorField::new(demand_vec));
         hvac_demand * self.hvac_enabled.clone()
     }
 
