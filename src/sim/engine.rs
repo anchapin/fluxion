@@ -357,8 +357,9 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Thermal mass correction factor for HVAC energy calculation (Issue #274)
     /// This factor accounts for the reduced HVAC energy needed in high-mass buildings
     /// due to thermal buffering effect - the mass absorbs/releases heat, reducing HVAC runtime.
-    /// - Low-mass (600 series): 1.0 (no correction)
-    /// - High-mass (900 series): < 1.0 (reduces HVAC energy proportionally to thermal time constant)
+    ///   - Low-mass (600 series): 1.0 (no correction)
+    ///   - High-mass (900 series): < 1.0 (reduces HVAC energy proportionally to thermal time constant)
+    ///
     /// Calculated as: sqrt(C / C_ref) where C_ref is a reference low-mass capacitance
     pub thermal_mass_correction_factor: f64,
 
@@ -367,6 +368,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub previous_mass_temperatures: T,
     /// Cumulative thermal mass energy change (J) - to subtract from HVAC energy
     pub mass_energy_change_cumulative: f64,
+
+    // Peak power tracking (Issue #272)
+    /// Peak heating power in watts
+    pub peak_power_heating: f64,
+    /// Peak cooling power in watts
+    pub peak_power_cooling: f64,
 
     // Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, solar radiation, wind, humidity)
@@ -447,6 +454,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             thermal_mass_correction_factor: self.thermal_mass_correction_factor,
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
+            peak_power_heating: self.peak_power_heating,
+            peak_power_cooling: self.peak_power_cooling,
             weather: self.weather.clone(),
             latitude_deg: self.latitude_deg,
             longitude_deg: self.longitude_deg,
@@ -464,6 +473,25 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             derived_sensitivity: self.derived_sensitivity.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
         }
+    }
+}
+
+// Helper methods for peak power tracking (Issue #272)
+impl<T: ContinuousTensor<f64>> ThermalModel<T> {
+    /// Get peak heating power in kW
+    pub fn get_peak_heating_power_kw(&self) -> f64 {
+        self.peak_power_heating / 1000.0
+    }
+
+    /// Get peak cooling power in kW
+    pub fn get_peak_cooling_power_kw(&self) -> f64 {
+        self.peak_power_cooling / 1000.0
+    }
+
+    /// Reset peak power tracking
+    pub fn reset_peak_power(&mut self) {
+        self.peak_power_heating = 0.0;
+        self.peak_power_cooling = 0.0;
     }
 }
 
@@ -1117,6 +1145,10 @@ impl ThermalModel<VectorField> {
             thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
             ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
+            // Peak power tracking (Issue #272)
+            peak_power_heating: 0.0, // Peak heating power in watts
+            peak_power_cooling: 0.0, // Peak cooling power in watts
+
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
 
@@ -1218,20 +1250,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // since h_tr_floor doesn't include it (to avoid double application with h_tr_iz)
         let h_tr_floor_val = self.h_tr_floor.as_ref()[0];
         let zone_area_val = self.zone_area.as_ref()[0];
-        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 {
-            // Check if this is Case 195 by checking if h_tr_floor = 0.039 * area (without 1.2)
-            // For Case 195: h_tr_floor should be 0.039 * area (e.g., 0.039 * 48 = 1.872)
-            // For other cases: h_tr_floor = U * area * 1.2
-            let expected_case195 = 0.039 * zone_area_val;
-            if (h_tr_floor_val - expected_case195).abs() < 0.001 {
-                1.2 // Case 195: apply 1.2 multiplier here
+        let ground_multiplier =
+            if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 {
+                // Check if this is Case 195 by checking if h_tr_floor = 0.039 * area (without 1.2)
+                // For Case 195: h_tr_floor should be 0.039 * area (e.g., 0.039 * 48 = 1.872)
+                // For other cases: h_tr_floor = U * area * 1.2
+                let expected_case195 = 0.039 * zone_area_val;
+                if (h_tr_floor_val - expected_case195).abs() < 0.001 {
+                    1.2 // Case 195: apply 1.2 multiplier here
+                } else {
+                    1.0 // Other cases: already included in h_tr_floor
+                }
             } else {
-                1.0 // Other cases: already included in h_tr_floor
-            }
-        } else {
-            1.0
-        };
-        self.derived_ground_coeff = self.derived_term_rest_1.clone() * self.h_tr_floor.clone() * ground_multiplier;
+                1.0
+            };
+        self.derived_ground_coeff =
+            self.derived_term_rest_1.clone() * self.h_tr_floor.clone() * ground_multiplier;
 
         // For multi-zone buildings, include inter-zone conductance in sensitivity calculation
         // Issue #351: Update thermal network for inter-zone coupling
@@ -1649,6 +1683,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let sensitivity_val = sensitivity;
         let hour_of_day_idx = timestep % 24;
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+        // Issue #272: Track peak heating/cooling power BEFORE correction
+        // Use hvac_output_raw (not corrected) to get actual HVAC power demand
+        let hvac_power_watts = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val);
+        if hvac_power_watts > 0.0 {
+            // Heating
+            self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
+        } else {
+            // Cooling (store as positive value)
+            self.peak_power_cooling = self.peak_power_cooling.max(-hvac_power_watts);
+        }
         // Apply thermal mass correction factor (Issue #274)
         // High-mass buildings need less HVAC energy because thermal mass buffers temperature swings
         let hvac_output = hvac_output_raw * self.thermal_mass_correction_factor;

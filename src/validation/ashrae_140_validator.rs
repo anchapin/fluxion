@@ -391,6 +391,9 @@ impl ASHRAE140Validator {
         // Disable thermal mass energy accounting for ASHRAE 140 validation
         // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
         model.thermal_mass_energy_accounting = false;
+        // Reset peak power tracking (Issue #272)
+        model.reset_peak_power();
+
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
@@ -409,8 +412,7 @@ impl ASHRAE140Validator {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
+
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
@@ -485,18 +487,18 @@ impl ASHRAE140Validator {
 
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
-                peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-                peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
             }
         }
 
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            peak_heating_kw: peak_heating_watts / 1000.0,
-            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
+            // The old calculation (hvac_kwh * 1000.0) was wrong because it multiplied energy by 3600
+            peak_heating_kw: model.get_peak_heating_power_kw(),
+            peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
                 Some(min_temp_celsius)
             } else {
@@ -760,8 +762,7 @@ impl ASHRAE140Validator {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
+
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
@@ -848,20 +849,17 @@ impl ASHRAE140Validator {
             // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
-                let hvac_watts = hvac_kwh * 1000.0; // kWh to Wh for 1 hour = kW * 1000
-                peak_heating_watts = peak_heating_watts.max(hvac_watts);
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-                let hvac_watts = (-hvac_kwh) * 1000.0; // kWh to Wh for 1 hour = kW * 1000
-                peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
             }
         }
 
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            peak_heating_kw: peak_heating_watts / 1000.0,
-            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
+            peak_heating_kw: model.get_peak_heating_power_kw(),
+            peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
                 Some(min_temp_celsius)
             } else {
@@ -885,6 +883,9 @@ impl ASHRAE140Validator {
         // Disable thermal mass energy accounting for ASHRAE 140 validation
         // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
         model.thermal_mass_energy_accounting = false;
+        // Reset peak power tracking (Issue #272)
+        model.reset_peak_power();
+
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
@@ -901,8 +902,7 @@ impl ASHRAE140Validator {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
+
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
@@ -1003,12 +1003,10 @@ impl ASHRAE140Validator {
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
                 let hvac_watts = hvac_kwh * 1000.0;
-                peak_heating_watts = peak_heating_watts.max(hvac_watts);
                 hourly_data.hvac_heating[0] = hvac_watts;
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
-                peak_cooling_watts = peak_cooling_watts.max(hvac_watts);
                 hourly_data.hvac_cooling[0] = hvac_watts;
             }
 
@@ -1018,8 +1016,9 @@ impl ASHRAE140Validator {
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            peak_heating_kw: peak_heating_watts / 1000.0,
-            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
+            peak_heating_kw: model.get_peak_heating_power_kw(),
+            peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
                 Some(min_temp_celsius)
             } else {
@@ -1081,6 +1080,9 @@ impl ASHRAE140Validator {
         // Disable thermal mass energy accounting for ASHRAE 140 validation
         // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
         model.thermal_mass_energy_accounting = false;
+        // Reset peak power tracking (Issue #272)
+        model.reset_peak_power();
+
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
 
@@ -1094,12 +1096,11 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
-        let mut peak_heating_hour: usize = 0;
-        let mut peak_cooling_hour: usize = 0;
+        let annual_heating_joules = 0.0;
+        let annual_cooling_joules = 0.0;
+
+        let peak_heating_hour: usize = 0;
+        let peak_cooling_hour: usize = 0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
@@ -1238,23 +1239,6 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Track HVAC energy and peaks
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-                let hvac_watts = hvac_kwh * 1000.0;
-                if hvac_watts > peak_heating_watts {
-                    peak_heating_watts = hvac_watts;
-                    peak_heating_hour = step;
-                }
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-                let hvac_watts = (-hvac_kwh) * 1000.0;
-                if hvac_watts > peak_cooling_watts {
-                    peak_cooling_watts = hvac_watts;
-                    peak_cooling_hour = step;
-                }
-            }
-
             // Collect hourly data if enabled
             if self.diagnostic_config.output_hourly {
                 let mut hourly = HourlyData::new(step, num_zones);
@@ -1304,9 +1288,9 @@ impl ASHRAE140Validator {
         };
 
         diagnostic.peak_timing = PeakTiming {
-            peak_heating_kw: peak_heating_watts / 1000.0,
+            peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_heating_hour,
-            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            peak_cooling_kw: model.get_peak_cooling_power_kw(),
             peak_cooling_hour,
         };
 
@@ -1317,8 +1301,8 @@ impl ASHRAE140Validator {
         let results = CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            peak_heating_kw: peak_heating_watts / 1000.0,
-            peak_cooling_kw: peak_cooling_watts / 1000.0,
+            peak_heating_kw: model.get_peak_heating_power_kw(),
+            peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
                 Some(min_temp_celsius)
             } else {
