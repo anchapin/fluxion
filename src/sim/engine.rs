@@ -1145,8 +1145,8 @@ impl ThermalModel<VectorField> {
             ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
             // Peak power tracking (Issue #272)
-            peak_power_heating: 0.0,  // Peak heating power in watts
-            peak_power_cooling: 0.0,  // Peak cooling power in watts
+            peak_power_heating: 0.0, // Peak heating power in watts
+            peak_power_cooling: 0.0, // Peak cooling power in watts
 
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
@@ -1249,20 +1249,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // since h_tr_floor doesn't include it (to avoid double application with h_tr_iz)
         let h_tr_floor_val = self.h_tr_floor.as_ref()[0];
         let zone_area_val = self.zone_area.as_ref()[0];
-        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 {
-            // Check if this is Case 195 by checking if h_tr_floor = 0.039 * area (without 1.2)
-            // For Case 195: h_tr_floor should be 0.039 * area (e.g., 0.039 * 48 = 1.872)
-            // For other cases: h_tr_floor = U * area * 1.2
-            let expected_case195 = 0.039 * zone_area_val;
-            if (h_tr_floor_val - expected_case195).abs() < 0.001 {
-                1.2 // Case 195: apply 1.2 multiplier here
+        let ground_multiplier =
+            if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 {
+                // Check if this is Case 195 by checking if h_tr_floor = 0.039 * area (without 1.2)
+                // For Case 195: h_tr_floor should be 0.039 * area (e.g., 0.039 * 48 = 1.872)
+                // For other cases: h_tr_floor = U * area * 1.2
+                let expected_case195 = 0.039 * zone_area_val;
+                if (h_tr_floor_val - expected_case195).abs() < 0.001 {
+                    1.2 // Case 195: apply 1.2 multiplier here
+                } else {
+                    1.0 // Other cases: already included in h_tr_floor
+                }
             } else {
-                1.0 // Other cases: already included in h_tr_floor
-            }
-        } else {
-            1.0
-        };
-        self.derived_ground_coeff = self.derived_term_rest_1.clone() * self.h_tr_floor.clone() * ground_multiplier;
+                1.0
+            };
+        self.derived_ground_coeff =
+            self.derived_term_rest_1.clone() * self.h_tr_floor.clone() * ground_multiplier;
 
         // For multi-zone buildings, include inter-zone conductance in sensitivity calculation
         // Issue #351: Update thermal network for inter-zone coupling
