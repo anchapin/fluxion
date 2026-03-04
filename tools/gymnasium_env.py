@@ -25,8 +25,13 @@ Reward Function:
 - PMV (Predicted Mean Vote) thermal comfort penalty
 """
 
-import logging
 import sys
+import os
+
+# Add project root to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import logging
 from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple, Any
 
@@ -108,7 +113,7 @@ class EnvConfig:
     electricity_prices: Dict[str, float] = field(default_factory=lambda: DEFAULT_ELECTRICITY_PRICES.copy())
 
 
-class FluxionEnv:
+class FluxionEnv(gym.Env):
     """
     Gymnasium-compatible environment for HVAC control via RL.
     
@@ -808,13 +813,18 @@ def make(env_id: str = "Fluxion-v0", **kwargs) -> "FluxionEnv":
     return FluxionEnv(**kwargs)
 
 
+def _fluxion_env_maker(**kwargs):
+    """Factory function for Gymnasium registration."""
+    return FluxionEnv(**kwargs)
+
+
 # Register with Gymnasium
 if GYMNASIUM_AVAILABLE:
     from gymnasium.envs.registration import register
     
     register(
         id="Fluxion-v0",
-        entry_point="fluxion.gymnasium_env:FluxionEnv",
+        entry_point="tools.gymnasium_env:_fluxion_env_maker",
         max_episode_steps=8760,
     )
     logger.info("Registered Fluxion-v0 with Gymnasium")
@@ -822,7 +832,7 @@ if GYMNASIUM_AVAILABLE:
     # Also register with versioned ID
     register(
         id="Fluxion-v0.1",
-        entry_point="fluxion.gymnasium_env:FluxionEnv",
+        entry_point="tools.gymnasium_env:_fluxion_env_maker",
         max_episode_steps=8760,
     )
     logger.info("Registered Fluxion-v0.1 with Gymnasium")
