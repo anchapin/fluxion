@@ -357,8 +357,8 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Thermal mass correction factor for HVAC energy calculation (Issue #274)
     /// This factor accounts for the reduced HVAC energy needed in high-mass buildings
     /// due to thermal buffering effect - the mass absorbs/releases heat, reducing HVAC runtime.
-    /// - Low-mass (600 series): 1.0 (no correction)
-    /// - High-mass (900 series): < 1.0 (reduces HVAC energy proportionally to thermal time constant)
+    ///   - Low-mass (600 series): 1.0 (no correction)
+    ///   - High-mass (900 series): < 1.0 (reduces HVAC energy proportionally to thermal time constant)
     /// Calculated as: sqrt(C / C_ref) where C_ref is a reference low-mass capacitance
     pub thermal_mass_correction_factor: f64,
 
