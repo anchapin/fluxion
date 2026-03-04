@@ -242,11 +242,15 @@ fn test_case_195_passes_tolerance() {
     println!("\n=== ASHRAE 140 Case 195 Tolerance Check ===");
     println!(
         "Annual Heating: {:.4} MWh (midpoint: {:.4}), delta: {:.2}%",
-        heating, heating_midpoint, heating_delta * 100.0
+        heating,
+        heating_midpoint,
+        heating_delta * 100.0
     );
     println!(
         "Peak Heating: {:.4} kW (midpoint: {:.4}), delta: {:.2}%",
-        peak_h, peak_h_midpoint, peak_h_delta * 100.0
+        peak_h,
+        peak_h_midpoint,
+        peak_h_delta * 100.0
     );
     println!("Target tolerance: < 0.1%");
     println!("=== End ===\n");

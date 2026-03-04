@@ -1295,13 +1295,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
         // Calculate HVAC demand per zone, accounting for zone-specific setpoints (Issue #273)
         // For free-floating zones (hvac_enabled = 0), return 0 demand
-        
+
         // Convert to VectorField for element-wise operations
         let t_vec = t_i_free.as_ref();
         let sens_vec = sensitivity.as_ref();
         let h_sp_vec = self.heating_setpoints.as_ref();
         let c_sp_vec = self.cooling_setpoints.as_ref();
-        
+
         // Compute HVAC demand per zone
         let mut demand_vec = Vec::with_capacity(self.num_zones);
         for i in 0..self.num_zones {
@@ -1309,7 +1309,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             let sens = sens_vec[i];
             let h_sp = h_sp_vec[i];
             let c_sp = c_sp_vec[i];
-            
+
             // Determine HVAC mode based on zone-specific setpoints
             let power = if t < h_sp {
                 // Heating mode
@@ -1327,7 +1327,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             };
             demand_vec.push(power);
         }
-        
+
         // Convert back to T and apply per-zone HVAC enable flag
         let hvac_demand = T::from(VectorField::new(demand_vec));
         hvac_demand * self.hvac_enabled.clone()
