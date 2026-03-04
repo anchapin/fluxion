@@ -1096,11 +1096,11 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let annual_heating_joules = 0.0;
+        let annual_cooling_joules = 0.0;
 
-        let mut peak_heating_hour: usize = 0;
-        let mut peak_cooling_hour: usize = 0;
+        let peak_heating_hour: usize = 0;
+        let peak_cooling_hour: usize = 0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
