@@ -76,6 +76,25 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class QuantizationRequest(BaseModel):
+    """Request model for model quantization."""
+    model_path: str = Field(..., description="Path to the input ONNX model")
+    output_path: str = Field(..., description="Path to save the quantized model")
+    quantization_type: str = Field(
+        default="int8",
+        description="Quantization type: int8, fp16, or dynamic"
+    )
+
+
+class QuantizationResponse(BaseModel):
+    """Response model for quantization."""
+    status: str
+    original_size_kb: float
+    quantized_size_kb: float
+    reduction_percent: float
+    output_path: str
+
+
 # In-memory state (in production, use a proper state manager)
 class AppState:
     def __init__(self):
@@ -219,6 +238,80 @@ async def unload_surrogate():
     state.surrogate_path = None
     state.model_info = None
     return {"status": "success", "message": "Surrogate model unloaded"}
+
+
+@app.post("/quantize", response_model=QuantizationResponse)
+async def quantize_model(request: QuantizationRequest):
+    """
+    Quantize an ONNX model for optimized inference.
+    
+    Applies INT8 dynamic quantization to reduce model size by ~4x and speed up
+    CPU inference for commercial building edge devices.
+    
+    Parameters:
+        - model_path: Path to the input ONNX model
+        - output_path: Path to save the quantized model
+        - quantization_type: Type of quantization (int8, fp16, dynamic)
+    """
+    from onnxruntime.quantization import QuantType, quantize_dynamic
+    import os
+    
+    input_path = request.model_path
+    output_path = request.output_path
+    quant_type = request.quantization_type.lower()
+    
+    # Validate input file exists
+    if not os.path.exists(input_path):
+        raise HTTPException(status_code=400, detail=f"Input model not found: {input_path}")
+    
+    # Ensure output directory exists
+    output_dir = os.path.dirname(output_path)
+    if output_dir and not os.path.exists(output_dir):
+        os.makedirs(output_dir, exist_ok=True)
+    
+    try:
+        # Apply quantization based on type
+        if quant_type == "int8":
+            quantize_dynamic(
+                model_input=input_path,
+                model_output=output_path,
+                weight_type=QuantType.QInt8,
+            )
+        elif quant_type == "fp16":
+            # FP16 quantization requires onnxconverter-common
+            from onnxruntime.quantization import quantize_static, QuantType
+            quantize_dynamic(
+                model_input=input_path,
+                model_output=output_path,
+                weight_type=QuantType.QFLOAT8,
+            )
+        else:
+            # Default to INT8 dynamic quantization
+            quantize_dynamic(
+                model_input=input_path,
+                model_output=output_path,
+                weight_type=QuantType.QInt8,
+            )
+        
+        # Get file sizes
+        original_size = os.path.getsize(input_path)
+        quantized_size = os.path.getsize(output_path)
+        
+        reduction = (1 - quantized_size / original_size) * 100 if original_size > 0 else 0
+        
+        logger.info(f"Quantized {input_path} -> {output_path}: {original_size/1024:.1f}KB -> {quantized_size/1024:.1f}KB ({reduction:.1f}% reduction)")
+        
+        return QuantizationResponse(
+            status="success",
+            original_size_kb=original_size / 1024,
+            quantized_size_kb=quantized_size / 1024,
+            reduction_percent=reduction,
+            output_path=output_path
+        )
+        
+    except Exception as e:
+        logger.error(f"Quantization failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Quantization failed: {str(e)}")
 
 
 if __name__ == "__main__":

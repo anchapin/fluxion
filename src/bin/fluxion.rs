@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use fluxion::validation::ASHRAE140Validator;
 use std::path::PathBuf;
+use std::process::Command;
 
 #[derive(Parser)]
 #[command(name = "fluxion")]
@@ -29,6 +30,36 @@ enum Commands {
         /// Output file path
         #[arg(short, long)]
         output_file: Option<PathBuf>,
+    },
+
+    /// Quantize an ONNX model for optimized edge inference
+    Quantize {
+        /// Path to input ONNX model
+        #[arg(short, long)]
+        model: PathBuf,
+
+        /// Path to output quantized model
+        #[arg(short, long)]
+        output: PathBuf,
+
+        /// Quantization type (int8, uint8, fp16)
+        #[arg(long, default_value = "int8")]
+        quant_type: String,
+
+        /// Run inference benchmark after quantization
+        #[arg(short, long)]
+        benchmark: bool,
+    },
+
+    /// Run inference benchmark on an ONNX model
+    Benchmark {
+        /// Path to ONNX model
+        #[arg(short, long)]
+        model: PathBuf,
+
+        /// Number of inference runs
+        #[arg(short, long, default_value = "100")]
+        runs: usize,
     },
 }
 
@@ -60,6 +91,56 @@ fn main() -> anyhow::Result<()> {
                 println!("Report saved to {:?}", path);
             } else {
                 println!("{}", output);
+            }
+        }
+
+        Commands::Quantize {
+            model,
+            output,
+            quant_type,
+            benchmark,
+        } => {
+            // Call Python quantization script
+            let mut cmd = Command::new("python3");
+            cmd.arg("tools/quantize_model.py")
+                .arg("--model")
+                .arg(&model)
+                .arg("--output")
+                .arg(&output)
+                .arg("--type")
+                .arg(&quant_type);
+
+            if benchmark {
+                cmd.arg("--benchmark");
+            }
+
+            let status = cmd.current_dir(".").spawn()?.wait()?;
+
+            if !status.success() {
+                anyhow::bail!("Quantization failed with exit code: {:?}", status.code());
+            }
+
+            println!("Model quantized successfully!");
+            println!("  Input:  {:?}", model);
+            println!("  Output: {:?}", output);
+        }
+
+        Commands::Benchmark { model, runs } => {
+            // Call Python benchmark
+            let mut cmd = Command::new("python3");
+            cmd.arg("tools/quantize_model.py")
+                .arg("--model")
+                .arg(&model)
+                .arg("--output")
+                .arg("/tmp/benchmark_dummy.onnx") // Dummy output
+                .arg("--benchmark")
+                .arg("--benchmark-runs")
+                .arg(runs.to_string());
+
+            let status = cmd.current_dir(".").spawn()?.wait()?;
+
+            if !status.success() {
+                anyhow::bail!("Benchmark failed with exit code: {:?}", status.code());
             }
         }
     }

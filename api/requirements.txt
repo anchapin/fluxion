@@ -2,3 +2,5 @@
 fastapi>=0.109.0
 uvicorn>=0.27.0
 pydantic>=2.5.0
+# ONNX Runtime for model quantization
+onnxruntime>=1.16.0
