@@ -7,6 +7,7 @@ use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
+use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
@@ -242,6 +243,7 @@ pub enum ThermalModelType {
 /// * `cooling_setpoint` - HVAC cooling setpoint temperature (°C) - cool when above this
 /// * `heating_setpoints` - Zone-specific heating setpoints (°C) for multi-zone HVAC
 /// * `cooling_setpoints` - Zone-specific cooling setpoints (°C) for multi-zone HVAC
+#[allow(clippy::doc_list_item_without_indentation)]
 pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub num_zones: usize,
     pub temperatures: T,
@@ -482,6 +484,23 @@ impl ThermalModel<VectorField> {
         model.cooling_schedule = DailySchedule::constant(hvac.cooling_setpoint);
         model.heating_setpoint = hvac.heating_setpoint; // Direct access
         model.cooling_setpoint = hvac.cooling_setpoint; // Direct access
+
+        // Set zone-specific HVAC setpoints for multi-zone buildings (Issue #273)
+        // This is critical for Case 960 where different zones may have different HVAC control
+        let mut heating_setpoints_vec = Vec::with_capacity(num_zones);
+        let mut cooling_setpoints_vec = Vec::with_capacity(num_zones);
+        for zone_idx in 0..num_zones {
+            if zone_idx < spec.hvac.len() {
+                heating_setpoints_vec.push(spec.hvac[zone_idx].heating_setpoint);
+                cooling_setpoints_vec.push(spec.hvac[zone_idx].cooling_setpoint);
+            } else {
+                // Default to first zone's setpoints if not specified
+                heating_setpoints_vec.push(hvac.heating_setpoint);
+                cooling_setpoints_vec.push(hvac.cooling_setpoint);
+            }
+        }
+        model.heating_setpoints = VectorField::new(heating_setpoints_vec);
+        model.cooling_setpoints = VectorField::new(cooling_setpoints_vec);
 
         // Weather data for solar gain calculation (Issue #278)
         // Try to load weather data from spec, otherwise use None
@@ -772,6 +791,8 @@ impl ThermalModel<VectorField> {
             model.solar_beam_to_mass_fraction = 0.6; // 60% to mass (HVAC buffering)
         }
 
+        }
+
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
             IdealHVACController::new(hvac.heating_setpoint, hvac.cooling_setpoint);
@@ -865,11 +886,8 @@ impl ThermalModel<VectorField> {
                 let window_fraction = 0.5; // Door is 50% of common wall
                 let window_area = common_wall_area * window_fraction;
 
-                let zone_a_area = Self::calculate_total_interior_surface_area(&spec.geometry[0]);
-                let zone_b_area = Self::calculate_total_interior_surface_area(&spec.geometry[1]);
-
-                let view_factor =
-                    Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
+                // Use proper window-to-window view factor for directly opposing windows
+                let view_factor = view_factors::window_to_window_view_factor(window_area);
 
                 let emissivity = 0.9;
                 let reference_temp = 293.15;
@@ -900,16 +918,13 @@ impl ThermalModel<VectorField> {
                     total_conductance += wall.conductance();
                 }
 
-                // Calculate radiative coupling for other cases if needed
+                // Calculate radiative coupling using proper window-to-window view factor
                 let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
                 let window_fraction = 0.5;
                 let window_area = common_wall_area * window_fraction;
 
-                let zone_a_area = Self::calculate_total_interior_surface_area(&spec.geometry[0]);
-                let zone_b_area = Self::calculate_total_interior_surface_area(&spec.geometry[1]);
-
-                let view_factor =
-                    Self::calculate_zone_to_zone_view_factor(window_area, zone_a_area, zone_b_area);
+                // Use proper window-to-window view factor for directly opposing windows
+                let view_factor = view_factors::window_to_window_view_factor(window_area);
 
                 let emissivity = 0.9;
                 let reference_temp = 293.15;
@@ -1269,10 +1284,43 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        // Use IdealHVACController for deadband, staging, and proportional control
-        let hvac_demand = t_i_free.zip_with(sensitivity, |t, sens| {
-            self.hvac_controller.calculate_power(t, t, sens)
-        });
+        // Calculate HVAC demand per zone, accounting for zone-specific setpoints (Issue #273)
+        // For free-floating zones (hvac_enabled = 0), return 0 demand
+
+        // Convert to VectorField for element-wise operations
+        let t_vec = t_i_free.as_ref();
+        let sens_vec = sensitivity.as_ref();
+        let h_sp_vec = self.heating_setpoints.as_ref();
+        let c_sp_vec = self.cooling_setpoints.as_ref();
+
+        // Compute HVAC demand per zone
+        let mut demand_vec = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let t = t_vec[i];
+            let sens = sens_vec[i];
+            let h_sp = h_sp_vec[i];
+            let c_sp = c_sp_vec[i];
+
+            // Determine HVAC mode based on zone-specific setpoints
+            let power = if t < h_sp {
+                // Heating mode
+                let temp_deficit = h_sp - t;
+                let power_needed = temp_deficit / sens;
+                power_needed.clamp(0.0, self.hvac_heating_capacity)
+            } else if t > c_sp {
+                // Cooling mode
+                let temp_excess = t - c_sp;
+                let power_needed = temp_excess / sens;
+                (-power_needed).clamp(-self.hvac_cooling_capacity, 0.0)
+            } else {
+                // Off/deadband
+                0.0
+            };
+            demand_vec.push(power);
+        }
+
+        // Convert back to T and apply per-zone HVAC enable flag
+        let hvac_demand = T::from(VectorField::new(demand_vec));
         hvac_demand * self.hvac_enabled.clone()
     }
 
@@ -1626,16 +1674,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Solar gains are 100% radiative (Issue #361)
         let phi_rad_total = phi_rad_internal + solar_gains_watts;
 
-        // Distribute radiative gains to air, envelope mass, and internal mass
-        // Implement beam-to-floor direct radiation mapping (Issue #361)
+        // Distribute radiative gains to surface (envelope) and thermal masses
         // In 6R2C model:
         // - phi_st: gains to surface node (proportional to envelope mass)
-        // - phi_m_env: gains directly to envelope mass
-        // - phi_m_int: gains directly to internal mass
-        // Use solar_beam_to_mass_fraction to route beam radiation to thermal masses
-        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6; // 60% to surface (envelope)
-        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7; // 70% of beam to envelope mass
-        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3; // 30% of beam to internal mass
+        // - phi_m_env: gains directly to envelope mass (walls, roof, floor)
+        // - phi_m_int: gains directly to internal mass (furniture, partitions)
+        // The split between surface and total mass uses solar_beam_to_mass_fraction.
+        // The mass-directed gains are then split 70% envelope / 30% internal.
+        let phi_st = phi_rad_total.clone() * (1.0 - self.solar_beam_to_mass_fraction);
+        let phi_m_env = phi_rad_total.clone() * self.solar_beam_to_mass_fraction * 0.7;
+        let phi_m_int = phi_rad_total * self.solar_beam_to_mass_fraction * 0.3;
 
         // Use pre-computed cached values
         let h_ext_base = &self.derived_h_ext;
@@ -2054,10 +2102,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// Radiative exchange: Q_rad = σ * ε1 * ε2 * A * F12 * (T1^4 - T2^4)
     /// Linearized: Q_rad ≈ h_rad * (T1 - T2)
     /// Where h_rad ≈ 4 * σ * ε * T_avg^3 * A
+    #[allow(dead_code)]
     fn calculate_total_interior_surface_area(geometry: &GeometrySpec) -> f64 {
         geometry.wall_area() + geometry.floor_area() + geometry.roof_area()
     }
 
+    #[allow(dead_code)]
     fn calculate_zone_to_zone_view_factor(
         common_window_area: f64,
         zone_a_area: f64,
