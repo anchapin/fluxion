@@ -29,7 +29,7 @@ fn test_special_solar_distribution_case_960() {
 #[test]
 fn test_distribution_fractions_sum_to_one() {
     // Verify that the chosen fractions are complementary
-    let b_high = 0.5; // high-mass beam to mass
+    let b_high: f64 = 0.5; // high-mass beam to mass
     let air_high = 1.0 - b_high;
     assert_eq!(air_high, 0.5);
     // Sum check for 6R2C: (1-b) + b*0.7 + b*0.3 = 1
