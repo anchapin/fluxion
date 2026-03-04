@@ -414,7 +414,6 @@ impl ASHRAE140Validator {
         let mut annual_cooling_joules = 0.0;
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
-        let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
         for step in 0..STEPS {
@@ -765,7 +764,6 @@ impl ASHRAE140Validator {
         let mut annual_cooling_joules = 0.0;
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
-        let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
         for step in 0..STEPS {
@@ -905,7 +903,6 @@ impl ASHRAE140Validator {
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
-        let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
@@ -1102,7 +1099,6 @@ impl ASHRAE140Validator {
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
-        let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut peak_heating_hour: usize = 0;
         let mut peak_cooling_hour: usize = 0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
