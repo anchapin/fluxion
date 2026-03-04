@@ -24,7 +24,7 @@ use sim::engine::ThermalModel;
 #[cfg(feature = "python-bindings")]
 use pyo3::{
     prelude::{pyclass, pymethods, pymodule, PyModule},
-    types::{PyModuleMethods, PyAnyMethods},
+    types::{PyAnyMethods, PyModuleMethods},
     Bound, PyResult, Python,
 };
 
@@ -175,12 +175,12 @@ impl PyVectorField {
         let mut vec = Vec::new();
         let len = data.len()?;
         vec.reserve(len);
-        
+
         for item in data.iter()? {
             let val = item?.extract::<f64>()?;
             vec.push(val);
         }
-        
+
         Ok(PyVectorField {
             inner: crate::physics::cta::VectorField::new(vec),
         })
@@ -763,16 +763,16 @@ impl BatchOracle {
 
         // Try to extract as 2D numpy array
         let array = population.downcast::<numpy::PyArray2<f64>>()?;
-        
+
         // Get raw data pointer and dimensions
         let array_slice = unsafe { array.as_slice()? };
         let total_len = array_slice.len();
-        
+
         // Assume 3 columns: U-value, heating, cooling
         let n_params = 3;
         if total_len % n_params != 0 {
             return Err(pyo3::exceptions::PyValueError::new_err(
-                "Population array size must be divisible by 3"
+                "Population array size must be divisible by 3",
             ));
         }
         let n_candidates = total_len / n_params;
