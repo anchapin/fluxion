@@ -368,6 +368,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Cumulative thermal mass energy change (J) - to subtract from HVAC energy
     pub mass_energy_change_cumulative: f64,
 
+    // Peak power tracking (Issue #272)
+    /// Peak heating power in watts
+    pub peak_power_heating: f64,
+    /// Peak cooling power in watts
+    pub peak_power_cooling: f64,
+
     // Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, solar radiation, wind, humidity)
     pub weather: Option<HourlyWeatherData>,
@@ -447,6 +453,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             thermal_mass_correction_factor: self.thermal_mass_correction_factor,
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
+            peak_power_heating: self.peak_power_heating,
+            peak_power_cooling: self.peak_power_cooling,
             weather: self.weather.clone(),
             latitude_deg: self.latitude_deg,
             longitude_deg: self.longitude_deg,
@@ -464,6 +472,25 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             derived_sensitivity: self.derived_sensitivity.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
         }
+    }
+}
+
+// Helper methods for peak power tracking (Issue #272)
+impl<T: ContinuousTensor<f64>> ThermalModel<T> {
+    /// Get peak heating power in kW
+    pub fn get_peak_heating_power_kw(&self) -> f64 {
+        self.peak_power_heating / 1000.0
+    }
+
+    /// Get peak cooling power in kW
+    pub fn get_peak_cooling_power_kw(&self) -> f64 {
+        self.peak_power_cooling / 1000.0
+    }
+
+    /// Reset peak power tracking
+    pub fn reset_peak_power(&mut self) {
+        self.peak_power_heating = 0.0;
+        self.peak_power_cooling = 0.0;
     }
 }
 
@@ -1117,6 +1144,10 @@ impl ThermalModel<VectorField> {
             thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
             ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
+            // Peak power tracking (Issue #272)
+            peak_power_heating: 0.0,  // Peak heating power in watts
+            peak_power_cooling: 0.0,  // Peak cooling power in watts
+
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
 
@@ -1649,6 +1680,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let sensitivity_val = sensitivity;
         let hour_of_day_idx = timestep % 24;
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+        // Issue #272: Track peak heating/cooling power BEFORE correction
+        // Use hvac_output_raw (not corrected) to get actual HVAC power demand
+        let hvac_power_watts = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val);
+        if hvac_power_watts > 0.0 {
+            // Heating
+            self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
+        } else {
+            // Cooling (store as positive value)
+            self.peak_power_cooling = self.peak_power_cooling.max(-hvac_power_watts);
+        }
         // Apply thermal mass correction factor (Issue #274)
         // High-mass buildings need less HVAC energy because thermal mass buffers temperature swings
         let hvac_output = hvac_output_raw * self.thermal_mass_correction_factor;
