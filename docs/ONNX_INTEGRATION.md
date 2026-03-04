@@ -285,6 +285,47 @@ Failed to extract tensor: output is float64, expected float32
    - Adapt model weights during optimization
    - Feedback loops for continuous improvement
 
+## Model Quantization
+
+Fluxion supports **INT8 dynamic quantization** via ONNX Runtime to reduce model size by ~4x and speed up CPU inference for commercial building edge devices.
+
+### Why Quantization?
+
+- **4x smaller**: INT8 models are ~75% smaller than FP32
+- **2-4x faster**: CPU inference is significantly faster with INT8
+- **Edge deployment**: Smaller models fit on resource-constrained devices
+- **Maintained accuracy**: For thermal load prediction, quantization error is typically <1%
+
+### Using the Quantization Tool
+
+```bash
+# Basic INT8 quantization
+python3 tools/quantize_model.py --model model.onnx --output model_int8.onnx
+
+# With benchmarking
+python3 tools/quantize_model.py --model model.onnx --output model_int8.onnx --benchmark
+
+# Using CLI
+cargo run --release --bin fluxion -- quantize --model model.onnx --output model_int8.onnx
+```
+
+### API Quantization Endpoint
+
+```bash
+# Quantize via REST API
+curl -X POST http://localhost:8000/quantize \
+  -H "Content-Type: application/json" \
+  -d '{"model_path": "model.onnx", "output_path": "model_int8.onnx", "quantization_type": "int8"}'
+```
+
+### Quantization Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--type` | Quantization type (int8, uint8, fp16) | int8 |
+| `--reduce-range` | Use 7-bit quantization for older CPUs | false |
+| `--benchmark` | Run inference benchmark after quantization | false |
+
 ## References
 
 - **ONNX Specification**: https://github.com/onnx/onnx/blob/main/docs/IR.md
