@@ -24,9 +24,13 @@ use sim::engine::ThermalModel;
 #[cfg(feature = "python-bindings")]
 use pyo3::{
     prelude::{pyclass, pymethods, pymodule, PyModule},
-    types::{PyListMethods, PyModuleMethods},
+    types::{PyModuleMethods, PyAnyMethods},
     Bound, PyResult, Python,
 };
+
+// NumPy types - available when python-bindings feature is enabled
+#[cfg(feature = "python-bindings")]
+use numpy::PyArrayMethods;
 
 // When not using python-bindings feature, we still need these for tests
 #[cfg(not(feature = "python-bindings"))]
@@ -142,7 +146,7 @@ impl Model {
     }
 }
 
-/// VectorField wrapper for Python.
+/// VectorField wrapper for Python with optimized numpy support.
 #[cfg(feature = "python-bindings")]
 #[pyclass(name = "VectorField")]
 pub struct PyVectorField {
@@ -152,21 +156,31 @@ pub struct PyVectorField {
 #[cfg(feature = "python-bindings")]
 #[pymethods]
 impl PyVectorField {
-    /// Create a new VectorField from a Python list of floats.
+    /// Create a new VectorField from a Python list or numpy array.
+    ///
+    /// For optimal performance with large arrays, pass a numpy array directly.
+    /// This avoids Python object iteration overhead.
     #[new]
-    fn new(data: &Bound<'_, pyo3::types::PyList>) -> PyResult<Self> {
-        use pyo3::types::PyAnyMethods;
-
-        let mut vec = Vec::with_capacity(data.len());
-        for item in data.iter() {
-            if let Ok(val) = item.extract::<f64>() {
-                vec.push(val);
-            } else {
-                return Err(pyo3::exceptions::PyTypeError::new_err(
-                    "VectorField elements must be floats",
-                ));
-            }
+    fn new(data: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Self> {
+        // Try to extract as numpy array first (most efficient for large data)
+        if let Ok(arr) = data.downcast::<numpy::PyArray1<f64>>() {
+            // Fast path: directly copy from numpy array slice
+            let slice = unsafe { arr.as_slice()? };
+            return Ok(PyVectorField {
+                inner: crate::physics::cta::VectorField::new(slice.to_vec()),
+            });
         }
+
+        // Fall back to Python sequence iteration
+        let mut vec = Vec::new();
+        let len = data.len()?;
+        vec.reserve(len);
+        
+        for item in data.iter()? {
+            let val = item?.extract::<f64>()?;
+            vec.push(val);
+        }
+        
         Ok(PyVectorField {
             inner: crate::physics::cta::VectorField::new(vec),
         })
@@ -190,12 +204,13 @@ impl PyVectorField {
         self.inner.as_slice().to_vec()
     }
 
-    /// Convert to numpy array (requires numpy feature).
-    #[cfg(not(all(feature = "numpy")))]
-    fn to_numpy(&self, _py: Python<'_>) -> PyResult<Vec<f64>> {
-        Err(pyo3::exceptions::PyNotImplementedError::new_err(
-            "NumPy support not enabled. Use to_list() instead.",
-        ))
+    /// Convert to numpy array with zero-copy when possible.
+    ///
+    /// Returns a numpy array view of the underlying data when possible,
+    /// avoiding unnecessary memory copies for maximum performance.
+    fn to_numpy<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
+        // Use from_slice_bound for zero-copy conversion
+        Ok(numpy::PyArray1::from_slice_bound(py, self.inner.as_slice()))
     }
 
     /// Compute the sum (integral) of all elements.
@@ -721,6 +736,162 @@ impl BatchOracle {
         }
 
         Ok(results)
+    }
+
+    /// Evaluate a population of building design configurations using numpy arrays.
+    ///
+    /// This is an optimized version of `evaluate_population` that accepts numpy arrays
+    /// directly, avoiding Python list iteration overhead. This can provide significant
+    /// performance improvements when processing large populations.
+    ///
+    /// # Arguments
+    /// * `population` - 2D numpy array of shape (n_candidates, 3) where each row contains:
+    ///   - `[0]`: Window U-value (W/m²K, range: 0.1-5.0)
+    ///   - `[1]`: Heating setpoint (°C, range: 15-25)
+    ///   - `[2]`: Cooling setpoint (°C, range: 22-32)
+    /// * `use_surrogates` - If true, use neural network surrogates for faster evaluation
+    ///
+    /// # Returns
+    /// 1D numpy array of fitness values (EUI in kWh/m²/year) corresponding to each candidate.
+    fn evaluate_population_numpy<'a>(
+        &self,
+        py: Python<'a>,
+        population: &Bound<'_, pyo3::types::PyAny>,
+        use_surrogates: bool,
+    ) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
+        use rayon::prelude::*;
+
+        // Try to extract as 2D numpy array
+        let array = population.downcast::<numpy::PyArray2<f64>>()?;
+        
+        // Get raw data pointer and dimensions
+        let array_slice = unsafe { array.as_slice()? };
+        let total_len = array_slice.len();
+        
+        // Assume 3 columns: U-value, heating, cooling
+        let n_params = 3;
+        if total_len % n_params != 0 {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "Population array size must be divisible by 3"
+            ));
+        }
+        let n_candidates = total_len / n_params;
+
+        // Get contiguous copy of the data for efficient iteration
+        let population_vec: Vec<Vec<f64>> = (0..n_candidates)
+            .map(|i| {
+                vec![
+                    array_slice[i * n_params],
+                    array_slice[i * n_params + 1],
+                    array_slice[i * n_params + 2],
+                ]
+            })
+            .collect();
+
+        // 1. Validate and initialize all models upfront (parallel)
+        let mut valid_configs: Vec<(usize, ThermalModel<VectorField>)> = population_vec
+            .par_iter()
+            .enumerate()
+            .filter_map(|(i, params)| {
+                if Self::validate_parameters(params).is_err() {
+                    return None;
+                }
+                let mut model = self.base_model.clone();
+                model.apply_parameters(params);
+                Some((i, model))
+            })
+            .collect();
+
+        let mut results = vec![f64::NAN; n_candidates];
+
+        if use_surrogates && !valid_configs.is_empty() {
+            // Coordinator-Worker pattern with Channels
+            let n_workers = valid_configs.len();
+            let mut coord_txs = Vec::with_capacity(n_workers);
+            let mut coord_rxs = Vec::with_capacity(n_workers);
+            let mut worker_channels = Vec::with_capacity(n_workers);
+
+            for _ in 0..n_workers {
+                let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
+                let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
+                coord_rxs.push(rx_from_worker);
+                coord_txs.push(tx_to_worker);
+                worker_channels.push((tx_to_coord, rx_from_coord));
+            }
+
+            let final_worker_data = rayon::scope(|s| {
+                let (result_tx, result_rx) = crossbeam::channel::unbounded();
+
+                for ((idx, mut model), (tx, rx)) in
+                    valid_configs.drain(..).zip(worker_channels.into_iter())
+                {
+                    let res_tx = result_tx.clone();
+                    s.spawn(move |_| {
+                        let energy = model.solve_timesteps_batched(8760, tx, rx);
+                        let _ = res_tx.send((idx, model, energy));
+                    });
+                }
+                drop(result_tx);
+
+                for _t in 0..8760 {
+                    let mut batch_temps = Vec::with_capacity(n_workers);
+                    for rx in &coord_rxs {
+                        batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
+                    }
+
+                    let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
+
+                    for (tx, loads) in coord_txs.iter().zip(batch_loads) {
+                        tx.send(loads).expect("Failed to send loads to worker");
+                    }
+                }
+
+                let mut final_data = Vec::with_capacity(n_workers);
+                while let Ok(data) = result_rx.recv() {
+                    final_data.push(data);
+                }
+                final_data
+            });
+
+            for (idx, model, energy) in final_worker_data {
+                let total_area = model.zone_area.integrate();
+                let eui = if total_area > 0.0 {
+                    energy / total_area
+                } else {
+                    0.0
+                };
+                results[idx] = eui.max(0.0);
+            }
+        } else if !valid_configs.is_empty() {
+            // Analytical path - fully parallel
+            let mut energies = vec![0.0; valid_configs.len()];
+            valid_configs
+                .par_iter_mut()
+                .zip(energies.par_iter_mut())
+                .for_each(|((_, model), energy)| {
+                    for t in 0..8760 {
+                        let hour_of_day = t % 24;
+                        let daily_cycle =
+                            (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
+                        let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                        *energy +=
+                            model.solve_single_step(t, outdoor_temp, false, &self.surrogates, true);
+                    }
+                });
+
+            for ((idx, model), energy) in valid_configs.iter().zip(energies.iter()) {
+                let total_area = model.zone_area.integrate();
+                let eui = if total_area > 0.0 {
+                    *energy / total_area
+                } else {
+                    0.0
+                };
+                results[*idx] = eui.max(0.0);
+            }
+        }
+
+        // Return as numpy array
+        Ok(numpy::PyArray1::from_slice_bound(py, &results))
     }
 
     /// Register an ONNX surrogate model for the oracle. This replaces the internal

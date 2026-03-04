@@ -1,10 +1,9 @@
 use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 
 #[cfg(feature = "python-bindings")]
-#[cfg(feature = "numpy")]
 use numpy::{PyArray1, PyArrayMethods};
 #[cfg(feature = "python-bindings")]
-use pyo3::{prelude::*, PyResult};
+use pyo3::PyResult;
 
 /// The Continuous Tensor Abstraction (CTA) trait.
 ///
