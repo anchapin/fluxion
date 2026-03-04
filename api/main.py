@@ -11,7 +11,17 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import logging
 import json
+import httpx
 from pathlib import Path
+
+# Import LLM module for local LLM support
+from api.llm import (
+    init_llm,
+    unload_llm,
+    get_llm_status,
+    query_with_function_calling,
+    llm_pool
+)
 
 # Import monitoring module for real-time monitoring and BAS integration
 from api.monitoring import router as monitoring_router
@@ -312,6 +322,81 @@ async def quantize_model(request: QuantizationRequest):
     except Exception as e:
         logger.error(f"Quantization failed: {e}")
         raise HTTPException(status_code=500, detail=f"Quantization failed: {str(e)}")
+
+
+# LLM Endpoints
+@app.post("/llm/init")
+async def llm_init(request: dict):
+    """Initialize the local LLM with a GGUF model."""
+    model_path = request.get("model_path")
+    if not model_path:
+        raise HTTPException(status_code=400, detail="model_path is required")
+    
+    try:
+        result = init_llm(model_path)
+        return result
+    except Exception as e:
+        logger.error(f"Failed to initialize LLM: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/llm/status")
+async def llm_status():
+    """Get current LLM status."""
+    try:
+        return get_llm_status()
+    except Exception as e:
+        logger.error(f"Failed to get LLM status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/llm/query")
+async def llm_query(request: dict):
+    """Query the LLM with natural language."""
+    query = request.get("query")
+    if not query:
+        raise HTTPException(status_code=400, detail="query is required")
+    
+    model_path = request.get("model_path")
+    temperature = request.get("temperature", 0.7)
+    max_tokens = request.get("max_tokens", 2048)
+    
+    try:
+        # Get model path from pool if not specified
+        if not model_path:
+            status = get_llm_status()
+            model_path = status.get("model_path")
+        
+        result = query_with_function_calling(
+            query=query,
+            model_path=model_path,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            execute_functions=True,
+            api_client=httpx.Client(base_url="http://localhost:8000", timeout=60.0)
+        )
+        
+        return {
+            "response": result.get("response", ""),
+            "tool_calls": result.get("tool_calls"),
+            "tool_results": result.get("tool_results"),
+            "model": model_path,
+            "inference_time_ms": result.get("inference_time_ms", 0)
+        }
+    except Exception as e:
+        logger.error(f"LLM query failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/llm/unload")
+async def llm_unload():
+    """Unload the current LLM to free memory."""
+    try:
+        result = unload_llm()
+        return result
+    except Exception as e:
+        logger.error(f"Failed to unload LLM: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
