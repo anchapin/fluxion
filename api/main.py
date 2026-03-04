@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field
 from typing import List, Optional
 import logging
 import json
+import os
 import httpx
 from pathlib import Path
 
@@ -25,6 +26,23 @@ from api.llm import (
 
 # Import monitoring module for real-time monitoring and BAS integration
 from api.monitoring import router as monitoring_router
+
+# Import distributed inference modules
+from api.distributed_inference import (
+    DistributedInferenceManager,
+    EndpointConfig,
+    LoadBalancingStrategy,
+    get_inference_manager,
+    initialize_inference_manager,
+    start_inference_manager,
+    stop_inference_manager,
+)
+
+from api.distributed_inference_config import (
+    DistributedInferenceConfig,
+    auto_load,
+    initialize_from_config,
+)
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -111,9 +129,40 @@ class AppState:
         self.surrogate_loaded = False
         self.surrogate_path = None
         self.model_info = None
+        self.distributed_manager: Optional[DistributedInferenceManager] = None
+        self.distributed_enabled = False
 
 
 state = AppState()
+
+
+# Distributed Inference Configuration
+DISTRIBUTED_CONFIG_PATH = os.getenv("FLUXION_DISTRIBUTED_CONFIG", "config/distributed_inference.yaml")
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize services on startup."""
+    # Try to load distributed inference configuration
+    try:
+        config = auto_load(DISTRIBUTED_CONFIG_PATH)
+        if config.enabled and config.endpoints:
+            state.distributed_manager = initialize_from_config(config)
+            state.distributed_enabled = True
+            await start_inference_manager()
+            logger.info("Distributed inference enabled")
+        else:
+            logger.info("Distributed inference not configured or disabled")
+    except Exception as e:
+        logger.warning(f"Failed to initialize distributed inference: {e}")
+        state.distributed_enabled = False
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown."""
+    if state.distributed_manager:
+        await stop_inference_manager()
 
 
 # Endpoints
@@ -137,6 +186,115 @@ async def get_status():
         surrogate_path=state.surrogate_path,
         model_info=state.model_info
     )
+
+
+@app.get("/distributed/status")
+async def get_distributed_status():
+    """Get distributed inference status."""
+    if not state.distributed_enabled or not state.distributed_manager:
+        return {
+            "enabled": False,
+            "message": "Distributed inference is not enabled"
+        }
+    
+    health_status = await state.distributed_manager.health_check()
+    return {
+        "enabled": True,
+        **health_status
+    }
+
+
+@app.get("/distributed/metrics")
+async def get_distributed_metrics():
+    """Get distributed inference metrics."""
+    if not state.distributed_enabled or not state.distributed_manager:
+        return {
+            "enabled": False,
+            "message": "Distributed inference is not enabled"
+        }
+    
+    metrics = state.distributed_manager.get_metrics()
+    return {
+        "enabled": True,
+        **metrics
+    }
+
+
+@app.post("/distributed/configure")
+async def configure_distributed_inference(request: dict):
+    """
+    Configure distributed inference endpoints.
+    
+    Request body:
+        endpoints: List of endpoint URLs
+        strategy: Load balancing strategy (round_robin, least_connections, weighted, consistent_hash)
+        health_check_interval: Health check interval in seconds
+        default_timeout: Request timeout in seconds
+    """
+    endpoints_config = request.get("endpoints", [])
+    strategy = request.get("strategy", "round_robin")
+    health_check_interval = request.get("health_check_interval", 30.0)
+    default_timeout = request.get("default_timeout", 30.0)
+    max_retries = request.get("max_retries", 3)
+    
+    # Convert to EndpointConfig objects
+    endpoints = []
+    for ep in endpoints_config:
+        if isinstance(ep, str):
+            endpoints.append(EndpointConfig(url=ep))
+        elif isinstance(ep, dict):
+            endpoints.append(EndpointConfig(
+                url=ep["url"],
+                weight=ep.get("weight", 1),
+                max_retries=ep.get("max_retries", max_retries),
+                timeout=ep.get("timeout", default_timeout),
+            ))
+    
+    if not endpoints:
+        raise HTTPException(status_code=400, detail="At least one endpoint is required")
+    
+    # Stop existing manager if running
+    if state.distributed_manager:
+        await stop_inference_manager()
+    
+    # Initialize new manager
+    state.distributed_manager = initialize_inference_manager(
+        endpoints=endpoints,
+        strategy=LoadBalancingStrategy(strategy),
+        health_check_interval=health_check_interval,
+        default_timeout=default_timeout,
+        max_retries=max_retries,
+    )
+    
+    await start_inference_manager()
+    state.distributed_enabled = True
+    
+    logger.info(f"Configured distributed inference with {len(endpoints)} endpoints")
+    
+    return {
+        "status": "success",
+        "message": f"Configured {len(endpoints)} endpoints with {strategy} strategy"
+    }
+
+
+@app.post("/distributed/enable")
+async def enable_distributed_inference():
+    """Enable distributed inference."""
+    if state.distributed_manager:
+        await start_inference_manager()
+        state.distributed_enabled = True
+        return {"status": "success", "message": "Distributed inference enabled"}
+    return {"status": "error", "message": "No endpoints configured"}
+
+
+@app.post("/distributed/disable")
+async def disable_distributed_inference():
+    """Disable distributed inference."""
+    if state.distributed_manager:
+        await stop_inference_manager()
+        state.distributed_enabled = False
+        return {"status": "success", "message": "Distributed inference disabled"}
+    return {"status": "error", "message": "No endpoints configured"}
 
 
 @app.post("/load-surrogate")
@@ -176,6 +334,9 @@ async def evaluate_population(request: PopulationEvaluationRequest):
     This is the core endpoint for optimization workflows. It accepts a list of
     parameter vectors and returns fitness values (EUI) for each candidate.
     
+    When distributed inference is enabled, requests are automatically load-balanced
+    across multiple endpoints with automatic failover.
+    
     Parameters:
         - population: List of [u_value, heating_setpoint, cooling_setpoint]
         - use_surrogates: Use AI surrogates (fast) vs physics (accurate)
@@ -188,6 +349,23 @@ async def evaluate_population(request: PopulationEvaluationRequest):
     start_time = time.time()
     
     try:
+        # Check if distributed inference is enabled and use it
+        if state.distributed_enabled and state.distributed_manager:
+            # Use distributed inference
+            response = await state.distributed_manager.evaluate_population(
+                population=request.population,
+                use_surrogates=request.use_surrogates
+            )
+            
+            evaluation_time = (time.time() - start_time) * 1000
+            
+            return PopulationEvaluationResponse(
+                results=response["results"],
+                num_evaluated=response["num_evaluated"],
+                evaluation_time_ms=evaluation_time
+            )
+        
+        # Fall back to local evaluation
         # Import the Fluxion Rust bindings (when available)
         # For now, return mock results to demonstrate the API
         results = []
