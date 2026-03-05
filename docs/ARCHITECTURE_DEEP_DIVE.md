@@ -51,6 +51,12 @@ The heart of Fluxion - a 5R1C thermal network solver.
 - U: Overall heat transfer coefficient
 - ACH: Air changes per hour
 
+
+**Thermal Mass Accounting (Issues #274, #317):**
+- `thermal_mass_correction_factor`: Correction factor for HVAC energy in high-mass buildings (calculated as `1.0 / sqrt(C / C_ref)`)
+- `thermal_mass_energy_accounting`: Boolean flag to enable/disable thermal mass energy storage accounting
+- `ideal_air_loads_mode`: For ASHRAE 140 validation - infinite HVAC capacity with pure zone loads
+
 ### 2. Surrogate Manager (`src/ai/surrogate.rs`)
 
 Manages ONNX model loading and inference.

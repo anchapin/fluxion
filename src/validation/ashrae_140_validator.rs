@@ -1055,6 +1055,15 @@ struct CaseDiagnostic {
     /// Hourly data (if collected)
     #[allow(dead_code)]
     hourly_data: Vec<HourlyData>,
+    /// Issue #432: Thermal mass energy accounting data
+    /// Total cumulative mass energy change (J)
+    mass_energy_change_joules: f64,
+    /// Envelope mass cumulative energy change (J) - for 6R2C model
+    envelope_mass_energy_change_joules: f64,
+    /// Internal mass cumulative energy change (J) - for 6R2C model
+    internal_mass_energy_change_joules: f64,
+    /// Whether thermal mass energy accounting was enabled
+    thermal_mass_energy_accounting_enabled: bool,
 }
 
 impl CaseDiagnostic {
@@ -1064,6 +1073,11 @@ impl CaseDiagnostic {
             peak_timing: PeakTiming::new(),
             temp_profile: TemperatureProfile::new(case_id),
             hourly_data: Vec::new(),
+            // Issue #432: Initialize thermal mass energy tracking
+            mass_energy_change_joules: 0.0,
+            envelope_mass_energy_change_joules: 0.0,
+            internal_mass_energy_change_joules: 0.0,
+            thermal_mass_energy_accounting_enabled: false,
         }
     }
 }
@@ -1293,6 +1307,12 @@ impl ASHRAE140Validator {
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             peak_cooling_hour,
         };
+
+        // Issue #432: Collect thermal mass energy data
+        diagnostic.mass_energy_change_joules = model.mass_energy_change_cumulative;
+        diagnostic.envelope_mass_energy_change_joules = model.envelope_mass_energy_change_cumulative;
+        diagnostic.internal_mass_energy_change_joules = model.internal_mass_energy_change_cumulative;
+        diagnostic.thermal_mass_energy_accounting_enabled = model.thermal_mass_energy_accounting;
 
         if is_free_floating {
             diagnostic.temp_profile.finalize();
