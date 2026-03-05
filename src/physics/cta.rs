@@ -2,8 +2,19 @@ use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 
 #[cfg(feature = "python-bindings")]
 use numpy::{PyArray1, PyArrayMethods};
+
 #[cfg(feature = "python-bindings")]
-use pyo3::PyResult;
+use pyo3::{
+    Bound,
+    IntoPy,
+    Python,
+    pymethods,
+    PyAny,
+    PyObject,
+    PyResult,
+};
+#[cfg(feature = "python-bindings")]
+use pyo3::types::PyAnyMethods;
 
 /// The Continuous Tensor Abstraction (CTA) trait.
 ///
@@ -267,7 +278,7 @@ impl AsRef<[f64]> for VectorField {
 }
 
 #[cfg(feature = "python-bindings")]
-#[cfg(all(feature = "python-bindings", feature = "numpy"))]
+#[allow(unexpected_cfgs)]
 impl VectorField {
     /// Convert to a numpy array (zero-copy borrow).
     pub fn to_numpy_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
@@ -275,6 +286,7 @@ impl VectorField {
     }
 
     /// Create from a numpy array.
+    #[allow(unused_unsafe)]
     pub fn from_numpy_array<'py>(_py: Python<'py>, array: &Bound<'py, PyAny>) -> PyResult<Self> {
         let numpy_array = array.downcast::<PyArray1<f64>>()?;
         let slice = unsafe { numpy_array.as_slice()? };
@@ -283,7 +295,7 @@ impl VectorField {
 }
 
 #[cfg(feature = "python-bindings")]
-#[cfg(all(feature = "python-bindings", feature = "numpy"))]
+#[allow(unexpected_cfgs)]
 #[pymethods]
 impl VectorField {
     #[new]
