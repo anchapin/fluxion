@@ -14,7 +14,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing)
-python-bindings = ["dep:pyo3", "dep:pyo3-build-config"]
+python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
 # Feature flag for CUDA support
 cuda = []
 
