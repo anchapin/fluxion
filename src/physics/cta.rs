@@ -4,15 +4,8 @@ use std::ops::{Add, AddAssign, Div, Index, Mul, Sub};
 use numpy::{PyArray1, PyArrayMethods};
 
 #[cfg(feature = "python-bindings")]
-use pyo3::{
-    Bound,
-    IntoPy,
-    Python,
-    pymethods,
-    PyAny,
-    PyObject,
-    PyResult,
-};
+use pyo3::{pymethods, Bound, IntoPy, PyAny, PyObject, PyResult, Python};
+
 #[cfg(feature = "python-bindings")]
 use pyo3::types::PyAnyMethods;
 
