@@ -363,11 +363,16 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Calculated as: sqrt(C / C_ref) where C_ref is a reference low-mass capacitance
     pub thermal_mass_correction_factor: f64,
 
-    // Energy tracking for thermal mass calibration (Issue #272, #274, #275)
+    // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
     /// Previous mass temperature for tracking thermal mass energy changes
     pub previous_mass_temperatures: T,
     /// Cumulative thermal mass energy change (J) - to subtract from HVAC energy
+    /// Positive = energy stored in mass, Negative = energy released from mass
     pub mass_energy_change_cumulative: f64,
+    /// Cumulative envelope mass energy change (J) - for 6R2C model energy accounting
+    pub envelope_mass_energy_change_cumulative: f64,
+    /// Cumulative internal mass energy change (J) - for 6R2C model energy accounting
+    pub internal_mass_energy_change_cumulative: f64,
 
     // Peak power tracking (Issue #272)
     /// Peak heating power in watts
@@ -454,6 +459,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             thermal_mass_correction_factor: self.thermal_mass_correction_factor,
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
+            envelope_mass_energy_change_cumulative: self.envelope_mass_energy_change_cumulative,
+            internal_mass_energy_change_cumulative: self.internal_mass_energy_change_cumulative,
             peak_power_heating: self.peak_power_heating,
             peak_power_cooling: self.peak_power_cooling,
             weather: self.weather.clone(),
@@ -492,6 +499,70 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
     pub fn reset_peak_power(&mut self) {
         self.peak_power_heating = 0.0;
         self.peak_power_cooling = 0.0;
+    }
+
+    /// Reset thermal mass energy tracking (Issue #432)
+    pub fn reset_thermal_mass_energy(&mut self) {
+        self.mass_energy_change_cumulative = 0.0;
+        self.envelope_mass_energy_change_cumulative = 0.0;
+        self.internal_mass_energy_change_cumulative = 0.0;
+    }
+
+    /// Get cumulative mass energy change in Joules (Issue #432)
+    pub fn get_mass_energy_change_joules(&self) -> f64 {
+        self.mass_energy_change_cumulative
+    }
+
+    /// Get cumulative envelope mass energy change in Joules (Issue #432)
+    pub fn get_envelope_mass_energy_change_joules(&self) -> f64 {
+        self.envelope_mass_energy_change_cumulative
+    }
+
+    /// Get cumulative internal mass energy change in Joules (Issue #432)
+    pub fn get_internal_mass_energy_change_joules(&self) -> f64 {
+        self.internal_mass_energy_change_cumulative
+    }
+
+    /// Check if thermal mass energy accounting is enabled (Issue #432)
+    pub fn is_thermal_mass_energy_accounting_enabled(&self) -> bool {
+        self.thermal_mass_energy_accounting
+    }
+
+    /// Validate energy conservation (Issue #432)
+    /// Returns Some(error_message) if energy conservation is violated, None if OK
+    pub fn validate_energy_conservation(
+        &self,
+        total_hvac_energy_joules: f64,
+        total_solar_gains_joules: f64,
+        total_internal_gains_joules: f64,
+        total_envelope_conduction_joules: f64,
+    ) -> Option<String> {
+        // Energy conservation: HVAC + Solar + Internal = Envelope + Mass Change
+        // Rearranged: HVAC = Envelope + Mass Change - Solar - Internal
+        // Or: HVAC + Solar + Internal + Mass Change = Envelope (for steady state)
+
+        // For dynamic case with thermal mass:
+        // Energy in: HVAC + Solar + Internal
+        // Energy out: Envelope conduction + Thermal mass storage change
+
+        let total_energy_in =
+            total_hvac_energy_joules + total_solar_gains_joules + total_internal_gains_joules;
+        let total_energy_out =
+            total_envelope_conduction_joules + self.mass_energy_change_cumulative;
+
+        let imbalance = (total_energy_in - total_energy_out).abs();
+
+        // Allow small numerical error (0.1% of total energy or 1 MJ, whichever is larger)
+        let tolerance = total_energy_in.abs() * 0.001 + 1e6;
+
+        if imbalance > tolerance {
+            Some(format!(
+                "Energy conservation violation: In={:.2e} J, Out={:.2e} J, Imbalance={:.2e} J (tolerance={:.2e} J)",
+                total_energy_in, total_energy_out, imbalance, tolerance
+            ))
+        } else {
+            None
+        }
     }
 }
 
@@ -1139,9 +1210,11 @@ impl ThermalModel<VectorField> {
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
             thermal_mass_correction_factor: 1.0, // Default: no correction for low-mass buildings
 
-            // Energy tracking for thermal mass calibration (Issue #272, #274, #275)
+            // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
             mass_energy_change_cumulative: 0.0, // Cumulative mass energy change (J)
+            envelope_mass_energy_change_cumulative: 0.0, // Envelope mass energy change (J)
+            internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
             thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
             ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
