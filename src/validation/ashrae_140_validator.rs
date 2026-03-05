@@ -1310,8 +1310,10 @@ impl ASHRAE140Validator {
 
         // Issue #432: Collect thermal mass energy data
         diagnostic.mass_energy_change_joules = model.mass_energy_change_cumulative;
-        diagnostic.envelope_mass_energy_change_joules = model.envelope_mass_energy_change_cumulative;
-        diagnostic.internal_mass_energy_change_joules = model.internal_mass_energy_change_cumulative;
+        diagnostic.envelope_mass_energy_change_joules =
+            model.envelope_mass_energy_change_cumulative;
+        diagnostic.internal_mass_energy_change_joules =
+            model.internal_mass_energy_change_cumulative;
         diagnostic.thermal_mass_energy_accounting_enabled = model.thermal_mass_energy_accounting;
 
         if is_free_floating {

@@ -540,19 +540,21 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
         // Energy conservation: HVAC + Solar + Internal = Envelope + Mass Change
         // Rearranged: HVAC = Envelope + Mass Change - Solar - Internal
         // Or: HVAC + Solar + Internal + Mass Change = Envelope (for steady state)
-        
+
         // For dynamic case with thermal mass:
         // Energy in: HVAC + Solar + Internal
         // Energy out: Envelope conduction + Thermal mass storage change
-        
-        let total_energy_in = total_hvac_energy_joules + total_solar_gains_joules + total_internal_gains_joules;
-        let total_energy_out = total_envelope_conduction_joules + self.mass_energy_change_cumulative;
-        
+
+        let total_energy_in =
+            total_hvac_energy_joules + total_solar_gains_joules + total_internal_gains_joules;
+        let total_energy_out =
+            total_envelope_conduction_joules + self.mass_energy_change_cumulative;
+
         let imbalance = (total_energy_in - total_energy_out).abs();
-        
+
         // Allow small numerical error (0.1% of total energy or 1 MJ, whichever is larger)
         let tolerance = total_energy_in.abs() * 0.001 + 1e6;
-        
+
         if imbalance > tolerance {
             Some(format!(
                 "Energy conservation violation: In={:.2e} J, Out={:.2e} J, Imbalance={:.2e} J (tolerance={:.2e} J)",
