@@ -1,5 +1,5 @@
 use fluxion::validation::report::ValidationStatus;
-use fluxion::validation::{ASHRAE140Case, ASHRAE140Validator};
+use fluxion::validation::ASHRAE140Validator;
 
 #[test]
 fn test_ashrae_140_comprehensive_validation() {
@@ -46,6 +46,11 @@ fn test_ashrae_140_comprehensive_validation() {
 #[test]
 fn test_all_cases_instantiation() {
     // Verify all 18+ cases can be instantiated and have specs
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    let spec = ASHRAE140Case::Case960.spec();
+    println!("DEBUG: Case 960 spec.num_zones = {}", spec.num_zones);
+    println!("DEBUG: Case 960 spec.hvac.len() = {}", spec.hvac.len());
+
     let case_ids = [
         "600", "610", "620", "630", "640", "650", "600FF", "650FF", "900", "910", "920", "930",
         "940", "950", "900FF", "950FF", "960", "195",

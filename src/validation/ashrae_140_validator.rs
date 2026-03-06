@@ -410,6 +410,18 @@ impl ASHRAE140Validator {
             model.cooling_setpoint = controller.cooling_setpoint;
         }
 
+        // Set hvac_enabled per zone based on HVAC configuration (Issue #375)
+        // This ensures multi-zone cases like Case 960 properly track HVAC for each zone
+        let mut hvac_enabled_vals = vec![1.0; num_zones];
+        if !spec.hvac.is_empty() {
+            for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                if zone_idx < num_zones {
+                    hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
+                }
+            }
+        }
+        model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
+
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
@@ -436,9 +448,27 @@ impl ASHRAE140Validator {
             // Update weather data on model for solar gain calculation (Issue #278)
             model.weather = Some(weather_data.clone());
 
-            // Apply dynamic setpoints from schedule
-            if let Some(hvac_schedule) = spec.hvac.first() {
-                // Get setpoint values from schedule (constant schedules only have single value)
+            // Apply dynamic setpoints from schedule - use zone-specific setpoints (Issue #375, Case 960)
+            // For multi-zone buildings like Case 960, each zone may have different HVAC control
+            if spec.hvac.len() > 1 {
+                // Multi-zone case: update zone-specific setpoints
+                // Default to enabled for zones without explicit HVAC spec
+                let mut heating_sps = vec![20.0; num_zones];
+                let mut cooling_sps = vec![27.0; num_zones];
+                let mut hvac_enabled_vals = vec![1.0; num_zones];
+                for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                    if zone_idx < num_zones {
+                        heating_sps[zone_idx] = hvac.heating_setpoint;
+                        cooling_sps[zone_idx] = hvac.cooling_setpoint;
+                        // Update hvac_enabled per zone (1.0 if enabled, 0.0 if free-floating)
+                        hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
+                    }
+                }
+                model.heating_setpoints = VectorField::new(heating_sps);
+                model.cooling_setpoints = VectorField::new(cooling_sps);
+                model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+            } else if let Some(hvac_schedule) = spec.hvac.first() {
+                // Single zone case: use the same setpoint for all zones (original behavior)
                 let heating_sp = hvac_schedule.heating_setpoint;
                 let cooling_sp = hvac_schedule.cooling_setpoint;
                 model.heating_setpoint = heating_sp;
@@ -744,6 +774,9 @@ impl ASHRAE140Validator {
         // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
         model.thermal_mass_energy_accounting = false;
 
+        // Reset peak power tracking (Issue #272)
+        model.reset_peak_power();
+
         // Note: The model.weather field will be updated each timestep in the simulation loop (Issue #278)
 
         const STEPS: usize = 8760;
@@ -759,6 +792,18 @@ impl ASHRAE140Validator {
             model.hvac_heating_capacity = 0.0;
             model.hvac_cooling_capacity = 0.0;
         }
+
+        // Set hvac_enabled per zone based on HVAC configuration (Issue #375)
+        // This ensures multi-zone cases like Case 960 properly track HVAC for each zone
+        let mut hvac_enabled_vals = vec![1.0; num_zones];
+        if !spec.hvac.is_empty() {
+            for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                if zone_idx < num_zones {
+                    hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
+                }
+            }
+        }
+        model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
@@ -798,6 +843,27 @@ impl ASHRAE140Validator {
                     .unwrap_or(hvac_schedule.cooling_setpoint);
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
+
+                // Also update zone-specific setpoints for multi-zone cases (Issue #375)
+                // This ensures Case 960 and other multi-zone cases have correct HVAC setpoints
+                if spec.hvac.len() > 1 {
+                    let mut heating_sps = vec![heating_sp; num_zones];
+                    let mut cooling_sps = vec![cooling_sp; num_zones];
+                    for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                        if zone_idx < num_zones {
+                            let h_sp = hvac
+                                .heating_setpoint_at_hour(hour)
+                                .unwrap_or(hvac.heating_setpoint);
+                            let c_sp = hvac
+                                .cooling_setpoint_at_hour(hour)
+                                .unwrap_or(hvac.cooling_setpoint);
+                            heating_sps[zone_idx] = h_sp;
+                            cooling_sps[zone_idx] = c_sp;
+                        }
+                    }
+                    model.heating_setpoints = VectorField::new(heating_sps);
+                    model.cooling_setpoints = VectorField::new(cooling_sps);
+                }
             }
 
             // Apply night ventilation if active (adds extra cooling during night hours)
@@ -938,6 +1004,27 @@ impl ASHRAE140Validator {
                     .unwrap_or(hvac_schedule.cooling_setpoint);
                 model.heating_setpoint = heating_sp;
                 model.cooling_setpoint = cooling_sp;
+
+                // Also update zone-specific setpoints for multi-zone cases (Issue #375)
+                // This ensures Case 960 and other multi-zone cases have correct HVAC setpoints
+                if spec.hvac.len() > 1 {
+                    let mut heating_sps = vec![heating_sp; num_zones];
+                    let mut cooling_sps = vec![cooling_sp; num_zones];
+                    for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+                        if zone_idx < num_zones {
+                            let h_sp = hvac
+                                .heating_setpoint_at_hour(hour)
+                                .unwrap_or(hvac.heating_setpoint);
+                            let c_sp = hvac
+                                .cooling_setpoint_at_hour(hour)
+                                .unwrap_or(hvac.cooling_setpoint);
+                            heating_sps[zone_idx] = h_sp;
+                            cooling_sps[zone_idx] = c_sp;
+                        }
+                    }
+                    model.heating_setpoints = VectorField::new(heating_sps);
+                    model.cooling_setpoints = VectorField::new(cooling_sps);
+                }
             }
 
             // Apply night ventilation if active
