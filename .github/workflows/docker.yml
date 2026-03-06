@@ -70,7 +70,7 @@ jobs:
         if: github.event_name != 'pull_request'
         run: |
           # Start container in background
-          docker run -d --name fluxion-test ${{ steps.meta.outputs.tags }} sleep 30
+          docker run -d --name fluxion-test --pull=never ${{ steps.meta.outputs.tags }} sleep 30
           
           # Wait for container to start
           sleep 5
@@ -85,7 +85,7 @@ jobs:
       - name: Run integration tests
         if: github.event_name != 'pull_request'
         run: |
-          docker run --rm ${{ steps.meta.outputs.tags }} python -c "import fluxion; print('Fluxion import successful')"
+          docker run --rm --pull=never ${{ steps.meta.outputs.tags }} python -c "import fluxion; print('Fluxion import successful')"
 
   # Multi-platform build
   multi-platform:
@@ -117,6 +117,11 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=sha
 
       - name: Build and push multi-platform image
         uses: docker/build-push-action@v5
