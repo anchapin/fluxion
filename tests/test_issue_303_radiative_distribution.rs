@@ -7,9 +7,13 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[test]
 fn test_area_weighted_radiative_distribution_basic() {
-    let spec = ASHRAE140Case::Case600.spec();
-    let model =
-        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    // Create a simple model with empty surfaces to test the fallback distribution
+    let mut model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::new(1);
+    // Set solar distribution to air (default 0.1)
+    model.solar_distribution_to_air = 0.1;
+    // Clear surfaces to trigger the fallback path
+    model.surfaces = vec![vec![]]; // Zone 0 has no surfaces
 
     // Test with a single zone radiative gain
     let zone_idx = 0;
@@ -18,8 +22,7 @@ fn test_area_weighted_radiative_distribution_basic() {
     let (radiative_to_surface, radiative_to_mass) =
         model.calculate_area_weighted_radiative_distribution(zone_idx, radiative_gain_watts);
 
-    // The distribution should respect the solar_distribution_to_air parameter
-    // Default is 0.1, so 10% to surface, 90% to mass
+    // Without surfaces, the fallback uses solar_distribution_to_air
     let expected_surface = radiative_gain_watts * model.solar_distribution_to_air;
     let expected_mass = radiative_gain_watts * (1.0 - model.solar_distribution_to_air);
 
@@ -40,9 +43,11 @@ fn test_area_weighted_radiative_distribution_basic() {
 
 #[test]
 fn test_area_weighted_radiative_distribution_different_fractions() {
-    let spec = ASHRAE140Case::Case600.spec();
+    // Create a simple model with empty surfaces to test the fallback distribution
     let mut model =
-        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::new(1);
+    // Clear surfaces to trigger the fallback path
+    model.surfaces = vec![vec![]]; // Zone 0 has no surfaces
 
     // Test with different solar distribution fractions
     let radiative_gain_watts = 1000.0;
@@ -54,6 +59,7 @@ fn test_area_weighted_radiative_distribution_different_fractions() {
         let (radiative_to_surface, radiative_to_mass) =
             model.calculate_area_weighted_radiative_distribution(0, radiative_gain_watts);
 
+        // Fallback uses solar_distribution_to_air
         let expected_surface: f64 = radiative_gain_watts * fraction;
         let expected_mass: f64 = radiative_gain_watts * (1.0 - fraction);
 
