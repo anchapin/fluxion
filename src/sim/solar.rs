@@ -25,7 +25,7 @@ pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
     static MONTH_DAYS_ACCUM: [u32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
 
     // Protect against invalid month inputs
-    let m_idx = (month.max(1).min(12) - 1) as usize;
+    let m_idx = (month.clamp(1, 12) - 1) as usize;
     let mut day_of_year = MONTH_DAYS_ACCUM[m_idx] as usize + day as usize;
 
     if is_leap_year && month > 2 {
@@ -72,7 +72,7 @@ pub fn calculate_solar_position(
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
     static MONTH_DAYS_ACCUM: [i32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
     // Protect against invalid month inputs
-    let m_idx = (month.max(1).min(12) - 1) as usize;
+    let m_idx = (month.clamp(1, 12) - 1) as usize;
     let mut day_of_year = MONTH_DAYS_ACCUM[m_idx] + day as i32;
     if is_leap_year && month > 2 {
         day_of_year += 1;
