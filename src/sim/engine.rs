@@ -592,9 +592,19 @@ impl ThermalModel<VectorField> {
                 };
 
                 let u_value = match orientation {
-                    Orientation::Up => spec.construction.roof.u_value(None, None),
-                    Orientation::Down => spec.construction.floor.u_value(None, None),
-                    _ => spec.construction.wall.u_value(None, None),
+                    Orientation::Up => {
+                        spec.construction
+                            .roof
+                            .u_value(Some(SurfaceType::Roof), None)
+                    }
+                    Orientation::Down => spec
+                        .construction
+                        .floor
+                        .u_value(Some(SurfaceType::Floor), None),
+                    _ => spec
+                        .construction
+                        .wall
+                        .u_value(Some(SurfaceType::Wall), None),
                 };
 
                 // Create surface with total area and optional window
