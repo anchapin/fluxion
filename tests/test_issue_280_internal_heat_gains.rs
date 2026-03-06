@@ -391,8 +391,8 @@ fn test_thermal_model_convective_fraction() {
         "Default convective fraction should be 0.4"
     );
     assert_eq!(
-        model.solar_distribution_to_air, 0.1,
-        "Default solar distribution to air should be 0.1"
+        model.solar_distribution_to_air, 0.75,
+        "Case 600 is a low-mass case (starts with '6'), solar distribution to air should be 0.75"
     );
 
     // Calculate how loads would be distributed using ASHRAE 140 internal loads

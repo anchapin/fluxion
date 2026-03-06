@@ -74,19 +74,20 @@ fn test_6r2c_model_single_timestep() {
     let mut model = ThermalModel::new(1);
     model.configure_6r2c_model(0.75, 100.0);
 
-    // Run a single timestep
+    // Run a single timestep with a temperature difference to trigger heat transfer
     let initial_temp = model.temperatures.as_ref()[0];
     let initial_env_mass = model.envelope_mass_temperatures.as_ref()[0];
     let initial_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
-    model.step_physics(0, 20.0);
+    // Use outdoor_temp=0°C (different from initial 20°C) to create heat transfer
+    model.step_physics(0, 0.0);
 
     // Check that temperatures have changed
     let new_temp = model.temperatures.as_ref()[0];
     let new_env_mass = model.envelope_mass_temperatures.as_ref()[0];
     let new_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
-    // Temperatures should have changed from initial state
+    // Temperatures should have changed from initial state due to temperature difference
     assert!(
         new_temp != initial_temp
             || new_env_mass != initial_env_mass
