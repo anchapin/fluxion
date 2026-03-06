@@ -227,8 +227,9 @@ class PhysicsInformedLoss(nn.Module):
         total_loss = self.mse_weight * mse_loss
         
         # 2. Energy balance constraint (if physics data provided)
+        next_temps = None
         if (current_temps is not None and 
-            next_temps := predictions[:, 0] if predictions.ndim > 1 else predictions is not None and
+            predictions is not None and
             heating_load is not None and cooling_load is not None):
             
             # Use predictions as next temps if not provided separately
