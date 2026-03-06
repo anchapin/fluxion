@@ -31,6 +31,8 @@ use pyo3::{
 // NumPy types - available when python-bindings feature is enabled
 #[cfg(feature = "python-bindings")]
 use numpy::PyArrayMethods;
+#[cfg(feature = "python-bindings")]
+use ndarray::Array2;
 
 // When not using python-bindings feature, we still need these for tests
 #[cfg(not(feature = "python-bindings"))]
@@ -209,8 +211,8 @@ impl PyVectorField {
     /// Returns a numpy array view of the underlying data when possible,
     /// avoiding unnecessary memory copies for maximum performance.
     fn to_numpy<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
-        // Use from_slice_bound for zero-copy conversion
-        Ok(numpy::PyArray1::from_slice_bound(py, self.inner.as_slice()))
+        // Use from_vec_bound for zero-copy conversion
+        Ok(numpy::PyArray1::from_vec_bound(py, self.inner.as_slice().to_vec()))
     }
 
     /// Compute the sum (integral) of all elements.
@@ -891,7 +893,7 @@ impl BatchOracle {
         }
 
         // Return as numpy array
-        Ok(numpy::PyArray1::from_slice_bound(py, &results))
+        Ok(numpy::PyArray1::from_vec_bound(py, results))
     }
 
     /// Register an ONNX surrogate model for the oracle. This replaces the internal
@@ -1675,39 +1677,46 @@ impl PyGeometryTensor {
     }
 
     /// Convert to numpy arrays (zero-copy view where possible).
-    fn to_numpy(
+    fn to_numpy<'py>(
         &self,
-        py: Python,
+        py: Python<'py>,
     ) -> PyResult<(
-        Bound<'_, numpy::PyArray2<f64>>,
-        Bound<'_, numpy::PyArray2<f64>>,
-        Bound<'_, numpy::PyArray2<f64>>,
-        Bound<'_, numpy::PyArray2<f64>>,
-        Bound<'_, numpy::PyArray2<f64>>,
-        Bound<'_, numpy::PyArray1<f64>>,
+        Bound<'py, numpy::PyArray2<f64>>,
+        Bound<'py, numpy::PyArray2<f64>>,
+        Bound<'py, numpy::PyArray2<f64>>,
+        Bound<'py, numpy::PyArray2<f64>>,
+        Bound<'py, numpy::PyArray2<f64>>,
+        Bound<'py, numpy::PyArray1<f64>>,
     )> {
-        let zone_coords = numpy::PyArray2::from_slice_bound(py, self.inner.zone_coords.as_slice())
-            .reshape(ZONE_COORDS_DIMS)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let zone_coords = numpy::PyArray2::from_owned_array_bound(
+            py,
+            Array2::from_shape_vec(ZONE_COORDS_DIMS, self.inner.zone_coords.clone())
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
+        );
 
-        let wall_matrix = numpy::PyArray2::from_slice_bound(py, self.inner.wall_matrix.as_slice())
-            .reshape(WALL_MATRIX_DIMS)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let wall_matrix = numpy::PyArray2::from_owned_array_bound(
+            py,
+            Array2::from_shape_vec(WALL_MATRIX_DIMS, self.inner.wall_matrix.clone())
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
+        );
 
-        let window_matrix =
-            numpy::PyArray2::from_slice_bound(py, self.inner.window_matrix.as_slice())
-                .reshape(WINDOW_MATRIX_DIMS)
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let window_matrix = numpy::PyArray2::from_owned_array_bound(
+            py,
+            Array2::from_shape_vec(WINDOW_MATRIX_DIMS, self.inner.window_matrix.clone())
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
+        );
 
-        let adjacency_matrix =
-            numpy::PyArray2::from_slice_bound(py, self.inner.adjacency_matrix.as_slice())
-                .reshape(ADJACENCY_MATRIX_DIMS)
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let adjacency_matrix = numpy::PyArray2::from_owned_array_bound(
+            py,
+            Array2::from_shape_vec(ADJACENCY_MATRIX_DIMS, self.inner.adjacency_matrix.clone())
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
+        );
 
-        let zone_properties =
-            numpy::PyArray2::from_slice_bound(py, self.inner.zone_properties.as_slice())
-                .reshape(ZONE_PROPERTIES_DIMS)
-                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        let zone_properties = numpy::PyArray2::from_owned_array_bound(
+            py,
+            Array2::from_shape_vec(ZONE_PROPERTIES_DIMS, self.inner.zone_properties.clone())
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e.to_string()))?,
+        );
 
         let summary = numpy::PyArray1::from_slice_bound(py, self.inner.summary.as_slice());
 
