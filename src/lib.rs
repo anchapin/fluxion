@@ -918,6 +918,7 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMassClass>()?;
     m.add_class::<PySurfaceType>()?;
     m.add_class::<PyWallSurface>()?;
+    m.add_class::<PyGeometryTensor>()?;
     Ok(())
 }
 
@@ -1546,5 +1547,187 @@ impl Default for DistributedInferenceExecutor {
             rayon_workers,
             async_tasks: rayon_workers * 4, // 4x oversubscription for I/O
         }
+    }
+}
+
+// ============================================================================
+// Geometry Tensor Python Bindings (Zero-Copy)
+// ============================================================================
+
+#[cfg(feature = "python-bindings")]
+use crate::physics::geometry_tensor::{
+    GeometryTensor, WallData, ADJACENCY_MATRIX_DIMS, MAX_WALLS, MAX_ZONES, WALL_MATRIX_DIMS,
+    WINDOW_MATRIX_DIMS, ZONE_COORDS_DIMS, ZONE_PROPERTIES_DIMS,
+};
+
+#[cfg(feature = "python-bindings")]
+#[pyclass(name = "GeometryTensor")]
+pub struct PyGeometryTensor {
+    inner: GeometryTensor,
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl PyGeometryTensor {
+    /// Create a new empty GeometryTensor.
+    #[new]
+    fn new() -> PyResult<Self> {
+        Ok(PyGeometryTensor {
+            inner: GeometryTensor::new(),
+        })
+    }
+
+    /// Create a GeometryTensor from numpy arrays.
+    ///
+    /// For optimal performance, use numpy arrays directly.
+    /// This method accepts:
+    /// - zone_coords: (100, 20) zone coordinates
+    /// - wall_matrix: (500, 6) wall geometry
+    /// - window_matrix: (500, 6) window geometry
+    /// - adjacency_matrix: (100, 100) zone adjacency
+    /// - zone_properties: (100, 5) zone properties
+    /// - summary: (6,) summary statistics
+    #[staticmethod]
+    fn from_numpy(
+        zone_coords: &Bound<'_, pyo3::types::PyAny>,
+        wall_matrix: &Bound<'_, pyo3::types::PyAny>,
+        window_matrix: &Bound<'_, pyo3::types::PyAny>,
+        adjacency_matrix: &Bound<'_, pyo3::types::PyAny>,
+        zone_properties: &Bound<'_, pyo3::types::PyAny>,
+        summary: &Bound<'_, pyo3::types::PyAny>,
+    ) -> PyResult<Self> {
+        // Helper to extract numpy array as slice
+        fn extract_f64_slice(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
+            // Try 2D array first
+            if let Ok(pyarr) = arr.downcast::<numpy::PyArray2<f64>>() {
+                let slice = unsafe { pyarr.as_slice()? };
+                return Ok(slice.to_vec());
+            }
+            // Try 1D array
+            if let Ok(pyarr) = arr.downcast::<numpy::PyArray1<f64>>() {
+                let slice = unsafe { pyarr.as_slice()? };
+                return Ok(slice.to_vec());
+            }
+            // Fallback to Python sequence
+            let mut vec = Vec::new();
+            for item in arr.iter()? {
+                let val = item?.extract::<f64>()?;
+                vec.push(val);
+            }
+            Ok(vec)
+        }
+
+        let zone_coords = extract_f64_slice(zone_coords)?;
+        let wall_matrix = extract_f64_slice(wall_matrix)?;
+        let window_matrix = extract_f64_slice(window_matrix)?;
+        let adjacency_matrix = extract_f64_slice(adjacency_matrix)?;
+        let zone_properties = extract_f64_slice(zone_properties)?;
+        let summary = extract_f64_slice(summary)?;
+
+        let inner = GeometryTensor::from_numpy_arrays(
+            &zone_coords,
+            &wall_matrix,
+            &window_matrix,
+            &adjacency_matrix,
+            &zone_properties,
+            &summary,
+        )
+        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        Ok(PyGeometryTensor { inner })
+    }
+
+    /// Get the number of zones.
+    fn num_zones(&self) -> usize {
+        self.inner.num_zones()
+    }
+
+    /// Get the number of walls.
+    fn num_walls(&self) -> usize {
+        self.inner.num_walls()
+    }
+
+    /// Get the total floor area.
+    fn total_area(&self) -> f64 {
+        self.inner.total_area()
+    }
+
+    /// Get the total volume.
+    fn total_volume(&self) -> f64 {
+        self.inner.total_volume()
+    }
+
+    /// Validate the geometry tensor.
+    ///
+    /// Returns a list of validation issues.
+    fn validate(&self) -> Vec<String> {
+        self.inner.validate()
+    }
+
+    /// Get summary statistics as a dictionary.
+    fn get_summary(&self) -> Vec<f64> {
+        self.inner.summary.clone()
+    }
+
+    /// Check if two zones are adjacent.
+    fn zones_adjacent(&self, i: usize, j: usize) -> bool {
+        self.inner.zones_adjacent(i, j)
+    }
+
+    /// Convert to numpy arrays (zero-copy view where possible).
+    fn to_numpy(
+        &self,
+        py: Python,
+    ) -> PyResult<(
+        Bound<'_, numpy::PyArray2<f64>>,
+        Bound<'_, numpy::PyArray2<f64>>,
+        Bound<'_, numpy::PyArray2<f64>>,
+        Bound<'_, numpy::PyArray2<f64>>,
+        Bound<'_, numpy::PyArray2<f64>>,
+        Bound<'_, numpy::PyArray1<f64>>,
+    )> {
+        let zone_coords = numpy::PyArray2::from_slice_bound(py, self.inner.zone_coords.as_slice())
+            .reshape(ZONE_COORDS_DIMS)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        let wall_matrix = numpy::PyArray2::from_slice_bound(py, self.inner.wall_matrix.as_slice())
+            .reshape(WALL_MATRIX_DIMS)
+            .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        let window_matrix =
+            numpy::PyArray2::from_slice_bound(py, self.inner.window_matrix.as_slice())
+                .reshape(WINDOW_MATRIX_DIMS)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        let adjacency_matrix =
+            numpy::PyArray2::from_slice_bound(py, self.inner.adjacency_matrix.as_slice())
+                .reshape(ADJACENCY_MATRIX_DIMS)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        let zone_properties =
+            numpy::PyArray2::from_slice_bound(py, self.inner.zone_properties.as_slice())
+                .reshape(ZONE_PROPERTIES_DIMS)
+                .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+
+        let summary = numpy::PyArray1::from_slice_bound(py, self.inner.summary.as_slice());
+
+        Ok((
+            zone_coords,
+            wall_matrix,
+            window_matrix,
+            adjacency_matrix,
+            zone_properties,
+            summary,
+        ))
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GeometryTensor(zones={}, walls={}, area={:.2}m², volume={:.2}m³)",
+            self.inner.num_zones(),
+            self.inner.num_walls(),
+            self.inner.total_area(),
+            self.inner.total_volume()
+        )
     }
 }
