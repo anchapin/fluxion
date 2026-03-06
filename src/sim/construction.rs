@@ -44,7 +44,7 @@ pub const INTERIOR_FILM_COEFF_FLOOR: f64 = 5.88; // W/m²K (1/0.17)
 /// For wind speeds of 3-4 m/s, the exterior film coefficient typically ranges
 /// from 21-29.3 W/m²K. This default value of 25.0 W/m²K represents a mid-range
 /// condition suitable for most applications.
-pub const EXTERIOR_FILM_COEFF_DEFAULT: f64 = 29.3; // W/m2K
+pub const EXTERIOR_FILM_COEFF_DEFAULT: f64 = 25.0; // W/m²K
 
 /// Surface type for ASHRAE 140 surface-type-specific interior film coefficients.
 ///
@@ -542,13 +542,13 @@ impl Construction {
         let kappa = self.iso_13790_effective_capacitance_per_area();
 
         // Classification per ISO 13790 Table C.2
-        if kappa < 50_000.0 {
+        if kappa < 80_000.0 {
             MassClass::VeryLight
-        } else if kappa < 110_000.0 {
+        } else if kappa < 165_000.0 {
             MassClass::Light
-        } else if kappa < 190_000.0 {
+        } else if kappa < 260_000.0 {
             MassClass::Medium
-        } else if kappa < 300_000.0 {
+        } else if kappa < 370_000.0 {
             MassClass::Heavy
         } else {
             MassClass::VeryHeavy
@@ -604,11 +604,11 @@ impl MassClass {
     /// construction thermal mass classification.
     pub fn a_m_factor(&self) -> f64 {
         match self {
-            MassClass::VeryLight => 2.0,
+            MassClass::VeryLight => 2.5,
             MassClass::Light => 2.5,
-            MassClass::Medium => 3.0,
-            MassClass::Heavy => 3.5,
-            MassClass::VeryHeavy => 4.5,
+            MassClass::Medium => 2.5,
+            MassClass::Heavy => 3.0,
+            MassClass::VeryHeavy => 3.5,
         }
     }
 
@@ -847,11 +847,11 @@ mod tests {
         // R_plasterboard = 0.012 / 0.16 = 0.075
         // R_fiberglass = 0.066 / 0.04 = 1.65
         // R_siding = 0.009 / 0.14 = 0.064286
-        // R_ext = 1 / 29.3 = 0.03413
-        // R_total = 0.120627 + 0.075 + 1.65 + 0.064286 + 0.03413 = 1.944043
+        // R_ext = 1 / 25.0 = 0.04
+        // R_total = 0.120627 + 0.075 + 1.65 + 0.064286 + 0.04 = 1.949913
         let r_total = construction.r_value_total(None, None);
 
-        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 29.3;
+        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 25.0;
         assert!((r_total - expected_r).abs() < EPSILON);
 
         // Check that U = 1/R
@@ -1148,7 +1148,7 @@ mod tests {
                 (
                     "Low Mass Roof",
                     Assemblies::low_mass_roof().u_value(None, None),
-                    std::f64::consts::FRAC_1_PI,
+                    0.318,
                 ),
                 (
                     "Insulated Floor",
@@ -1163,7 +1163,7 @@ mod tests {
                 (
                     "High Mass Roof",
                     Assemblies::high_mass_roof().u_value(None, None),
-                    std::f64::consts::FRAC_1_PI,
+                    0.318,
                 ),
                 (
                     "High Mass Floor",
