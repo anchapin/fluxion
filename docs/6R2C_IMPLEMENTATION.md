@@ -173,6 +173,86 @@ A comprehensive test suite has been added in `tests/test_6r2c_model.rs`:
 
 All 11 new 6R2C tests pass, and all existing tests continue to pass.
 
+## Thermal Mass Energy Accounting
+
+Fluxion implements comprehensive thermal mass energy accounting to accurately model HVAC energy consumption in buildings with different thermal mass characteristics. This addresses Issues #274 and #317.
+
+### Thermal Mass Correction Factor
+
+The `thermal_mass_correction_factor` accounts for the reduced HVAC energy needed in high-mass buildings due to thermal buffering:
+
+```rust
+// In ThermalModel
+pub thermal_mass_correction_factor: f64,
+```
+
+**Calculation:**
+```
+thermal_mass_correction_factor = (1.0 / sqrt(C / C_ref)).clamp(0.2, 1.0)
+```
+
+Where:
+- `C` = Structure thermal capacitance (J/K)
+- `C_ref` = Reference low-mass capacitance (2.4 MJ/K)
+
+**Impact:**
+| Building Type | Series | Correction Factor |
+|--------------|--------|-------------------|
+| Low-mass | 600 | 1.0 (no correction) |
+| High-mass | 900 | ~0.35 (65% reduction) |
+
+This factor is automatically calculated in `from_spec()` when loading ASHRAE 140 cases.
+
+### Thermal Mass Energy Accounting Mode
+
+The `thermal_mass_energy_accounting` flag controls whether thermal mass energy storage/release is subtracted from HVAC energy:
+
+```rust
+pub thermal_mass_energy_accounting: bool,  // Default: true
+```
+
+- **When enabled (true)**: HVAC energy = Zone energy load - Thermal mass energy change
+  - The mass absorbs heat when there's excess and releases it when needed
+  - This is the physically correct behavior for energy reporting
+  
+- **When disabled (false)**: HVAC energy = Zone energy load
+  - Useful for steady-state HVAC validation where thermal storage effects should not affect the thermal balance
+
+This is particularly important for ASHRAE 140 validation where the diagnostic breakdown requires measuring pure building loads without dynamic thermal storage effects.
+
+### Implementation Details
+
+The thermal mass energy accounting is applied in the HVAC energy calculation:
+
+```rust
+// Apply thermal mass correction factor to HVAC power
+let hvac_output = hvac_output_raw * self.thermal_mass_correction_factor;
+
+// Track mass temperature change for energy accounting
+let mass_energy_change = self.thermal_capacitance.clone() * 
+    (self.mass_temperatures.clone() - self.previous_mass_temperatures.clone());
+
+// Net HVAC energy for step (when accounting enabled)
+let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
+    hvac_output * dt - mass_energy_change.clone()
+} else {
+    hvac_output * dt
+};
+```
+
+### Configuration for Different Use Cases
+
+```rust
+// Default: Enable thermal mass energy accounting (physically correct)
+model.thermal_mass_energy_accounting = true;
+
+// Disable for steady-state HVAC validation
+model.thermal_mass_energy_accounting = false;
+
+// Ideal air loads mode (Issue #382) - bypasses HVAC dynamics
+model.ideal_air_loads_mode = true;
+```
+
 ## Benefits
 
 1. **Improved Accuracy**: Better captures thermal lag in high-mass buildings (900 series)

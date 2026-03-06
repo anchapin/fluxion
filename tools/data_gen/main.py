@@ -98,6 +98,30 @@ def main():
     gen_parser.add_argument("--u-value-max", type=float, default=3.0)
     gen_parser.add_argument("--setpoint-min", type=float, default=19.0)
     gen_parser.add_argument("--setpoint-max", type=float, default=24.0)
+    
+    # Subcommand: monte-carlo (new for Issue #325)
+    mc_parser = subparsers.add_parser(
+        "monte-carlo", help="Generate training data using Monte Carlo methods"
+    )
+    mc_parser.add_argument(
+        "--output", "-o", default="data/training_data", help="Output directory for Parquet files"
+    )
+    mc_parser.add_argument(
+        "--count", "-n", type=int, default=1000, help="Number of building configurations to simulate"
+    )
+    mc_parser.add_argument(
+        "--seed", type=int, default=42, help="Random seed for reproducibility"
+    )
+    mc_parser.add_argument(
+        "--batch-size", type=int, default=100, help="Batch size for processing"
+    )
+    mc_parser.add_argument(
+        "--weather-dir", default="assets/weather", help="Directory containing weather files"
+    )
+    mc_parser.add_argument(
+        "--sampling-method", default="LHS", choices=["RANDOM", "LHS", "SOBOL"],
+        help="Sampling method for parameter space"
+    )
 
     args = parser.parse_args()
 

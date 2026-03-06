@@ -1,6 +1,6 @@
 name: Data Generation Tool Integration Test
 
-on: [pull_request]
+on: [pull_request, push]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -21,8 +21,8 @@ jobs:
         # Check python version
         python3 --version
         # Install anything extra if needed (e.g. numpy if we used it)
-        # apt-get update && apt-get install -y python3-pip
-        # pip3 install numpy
+        apt-get update && apt-get install -y python3-pip
+        pip3 install --break-system-packages numpy pandas
 
     - name: Run Tool in Mock Mode (Unit Tests)
       run: |

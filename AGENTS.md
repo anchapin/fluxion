@@ -2,6 +2,36 @@
 
 This document logs common issues encountered while using the `gh` CLI tool and their resolutions, serving as a future reference to avoid repeated mistakes.
 
+## Issue #326: PINN (Physics-Informed Neural Network) Training Implementation
+
+**Implementation Summary:**
+- Extended neural network module using PyTorch to support PINNs
+- Implemented custom loss function: L_total = L_data + λ * L_physics
+- Uses PyTorch's autograd to calculate temperature gradients with respect to time
+- Penalizes network for violating thermodynamic principles (q=mcΔT)
+
+**Files Modified:**
+- `tools/train_pinn.py` - Main PINN training pipeline with ThermalPINN, PINNLoss, PINNConfig, PhysicsConfig classes
+- `tools/physics_informed_loss.py` - Physics-informed loss functions module
+
+**Key Classes:**
+- `ThermalPINN`: PyTorch neural network for thermal prediction
+- `PINNLoss`: Custom loss combining data loss + physics loss + initial/boundary conditions
+- `PhysicsConfig`: Configuration for thermal physics parameters (thermal_capacity, h_transmission, h_ventilation)
+- `PINNConfig`: Training configuration (weights for data, physics, initial_condition, boundary, energy_balance)
+- `ThermalDataGenerator`: Generate training data using 5R1C thermal model
+
+**Verification:**
+- Python compilation: PASSED
+- Import tests: PASSED
+- Forward pass: PASSED
+- Loss computation: PASSED
+- Training loop: PASSED
+
+**Notes:**
+- Physics weight should be small initially (e.g., 0.0001) to allow the network to learn basic patterns before enforcing physics constraints
+- Unit conversion: thermal capacity in kWh/K, heat transfer in W/K, time in hours → convert to seconds for proper energy balance
+
 ## Issue 1: Retrieving Job Logs for a Specific GitHub Actions Run
 
 **Problem:**

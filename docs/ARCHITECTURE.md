@@ -51,6 +51,12 @@ pub struct ThermalModel {
     pub h_tr_is: VectorField, // Transmission: Surface -> Interior
     pub h_tr_w: VectorField,  // Transmission: Exterior -> Interior (Windows)
     pub h_ve: VectorField,    // Ventilation: Exterior -> Interior
+    
+    // Thermal mass parameters (Issues #274, #317)
+    pub thermal_mass_correction_factor: f64,   // HVAC energy correction for high-mass buildings
+    pub thermal_mass_energy_accounting: bool,   // Enable/disable thermal mass energy accounting
+    pub previous_mass_temperatures: VectorField, // Track mass temp change for energy accounting
+    pub mass_energy_change_cumulative: f64,    // Cumulative mass energy change (J)
 }
 ```
 
