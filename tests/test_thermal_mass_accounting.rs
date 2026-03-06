@@ -280,7 +280,7 @@ fn test_thermal_mass_accounting_different_outdoor_temps() {
     for t in 0..24 {
         // Simple diurnal temperature variation: 10°C at night, 30°C during day
         let hour = t % 24;
-        let outdoor_temp = if hour >= 6 && hour < 18 {
+        let outdoor_temp = if (6..18).contains(&hour) {
             // Daytime: ramp from 10°C at 6am to 30°C at noon, back to 10°C at 6pm
             let hours_from_6 = hour - 6;
             let hours_until_18 = 18 - hour;
