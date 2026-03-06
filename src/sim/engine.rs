@@ -4,7 +4,6 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
-use crate::sim::construction::SurfaceType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
@@ -272,9 +271,14 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub ceiling_height: T,    // Ceiling Height (m)
     pub air_density: T,       // Air Density (kg/m³)
     pub heat_capacity: T,     // Specific Heat Capacity of Air (J/kg·K)
-    pub window_ratio: T,      // Window-to-Wall Ratio (0.0-1.0)
+    pub window_ratio: T,     // Window-to-Wall Ratio (0.0-1.0)
     pub aspect_ratio: T,      // Zone Aspect Ratio (Length/Width)
     pub infiltration_rate: T, // Infiltration Rate (ACH)
+
+    // Opaque surface U-values from construction (Issue #375: ASHRAE 140 Case 195)
+    pub wall_u_value: f64,   // Wall construction U-value (W/m²K)
+    pub roof_u_value: f64,   // Roof construction U-value (W/m²K)
+    pub floor_u_value: f64,  // Floor construction U-value (W/m²K)
 
     // Thermal model type (5R1C or 6R2C)
     pub thermal_model_type: ThermalModelType,
@@ -466,6 +470,11 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             thermal_mass_energy_accounting: self.thermal_mass_energy_accounting,
             ideal_air_loads_mode: self.ideal_air_loads_mode,
 
+            // U-values from construction (Issue #375)
+            wall_u_value: self.wall_u_value,
+            roof_u_value: self.roof_u_value,
+            floor_u_value: self.floor_u_value,
+
             // Clone optimization cache
             derived_h_ext: self.derived_h_ext.clone(),
             derived_term_rest_1: self.derived_term_rest_1.clone(),
@@ -513,6 +522,11 @@ impl ThermalModel<VectorField> {
         model.ceiling_height = VectorField::from_scalar(geometry.height, num_zones);
         model.window_ratio = VectorField::from_scalar(total_window_area / wall_area, num_zones);
         model.window_u_value = spec.window_properties.u_value;
+
+        // Issue #375: Set opaque surface U-values from construction
+        model.wall_u_value = spec.construction.wall.u_value(None, None);
+        model.roof_u_value = spec.construction.roof.u_value(None, None);
+        model.floor_u_value = spec.construction.floor.u_value(None, None);
 
         // Access first HVAC schedule
         let hvac = &spec.hvac[0];
@@ -592,19 +606,21 @@ impl ThermalModel<VectorField> {
                     _ => 0.0,
                 };
 
+                // ASHRAE 140 simplified 5R1C model uses single interior film coefficient (8.29 W/m²K)
+                // Do NOT use surface-type-specific coefficients (SurfaceType) - they are for detailed models
                 let u_value = match orientation {
                     Orientation::Up => spec
                         .construction
                         .roof
-                        .u_value(Some(SurfaceType::Ceiling), None),
+                        .u_value(None, None),
                     Orientation::Down => spec
                         .construction
                         .floor
-                        .u_value(Some(SurfaceType::Floor), None),
+                        .u_value(None, None),
                     _ => spec
                         .construction
                         .wall
-                        .u_value(Some(SurfaceType::Wall), None),
+                        .u_value(None, None),
                 };
 
                 // Create surface with total area and optional window
@@ -1117,6 +1133,11 @@ impl ThermalModel<VectorField> {
             aspect_ratio: VectorField::from_scalar(aspect_ratio, num_zones),
             infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
 
+            // Opaque surface U-values from construction (Issue #375)
+            wall_u_value: 0.5,   // Default U-value (will be set from construction)
+            roof_u_value: 0.5,  // Default U-value (will be set from construction)
+            floor_u_value: 0.039, // Default U-value (ASHRAE 140 insulated floor)
+
             // Thermal model type
             thermal_model_type: ThermalModelType::FiveROneC,
 
@@ -1210,15 +1231,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.h_tr_w = window_area * self.window_u_value;
 
         // h_tr_em = U_opaque * (Opaque Wall + Roof)
-        // We use a fixed reference U-value for opaque surfaces (e.g. 0.5 W/m²K)
+        // Issue #375: Use construction U-values from ThermalModel fields
         // Roof is assumed equal to floor area
         let roof_area = self.zone_area.clone();
         let total_opaque_area = opaque_wall_area.clone() + roof_area.clone();
-        self.h_tr_em = total_opaque_area * 0.5;
+        self.h_tr_em = opaque_wall_area.clone() * self.wall_u_value + roof_area.clone() * self.roof_u_value;
 
         // h_tr_floor = U_floor * Floor Area
-        // ASHRAE 140 Case 600: Floor U-value = 0.039 W/m²K (insulated slab)
-        self.h_tr_floor = self.zone_area.clone() * 0.039;
+        // Issue #375: Use construction U-value from ThermalModel field
+        self.h_tr_floor = self.zone_area.clone() * self.floor_u_value;
 
         // h_tr_is = Surface-to-air conductance for simplified 5R1C model
         // Issue #340: Fix ASHRAE 140 regression - use single h_is value
@@ -1246,8 +1267,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// This should be called whenever physical parameters (conductances) are modified.
     pub fn update_optimization_cache(&mut self) {
-        // h_ext = h_tr_w + h_ve
-        self.derived_h_ext = self.h_tr_w.clone() + self.h_ve.clone();
+        // h_ext = h_tr_em + h_tr_w + h_ve
+        // Include h_tr_em (opaque exterior->mass conductance) in addition to windows and ventilation
+        // This is critical for correct sensitivity calculation in the 5R1C/6R2C thermal network
+        self.derived_h_ext = self.h_tr_em.clone() + self.h_tr_w.clone() + self.h_ve.clone();
 
         // term_rest_1 = h_tr_ms + h_tr_is
         self.derived_term_rest_1 = self.h_tr_ms.clone() + self.h_tr_is.clone();
