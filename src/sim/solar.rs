@@ -20,14 +20,18 @@ pub struct SolarPosition {
 
 /// Calculates day of year from year, month, and day.
 pub fn calculate_day_of_year(year: i32, month: u32, day: u32) -> usize {
-    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let mut day_of_year: usize =
-        days_in_month.iter().take((month - 1) as usize).sum::<u32>() as usize;
-    day_of_year += day as usize;
+
+    static MONTH_DAYS_ACCUM: [u32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+
+    // Protect against invalid month inputs
+    let m_idx = (month.max(1).min(12) - 1) as usize;
+    let mut day_of_year = MONTH_DAYS_ACCUM[m_idx] as usize + day as usize;
+
     if is_leap_year && month > 2 {
         day_of_year += 1;
     }
+
     day_of_year
 }
 
@@ -65,10 +69,11 @@ pub fn calculate_solar_position(
     day: u32,
     hour: f64,
 ) -> SolarPosition {
-    let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
     let is_leap_year = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
-    let mut day_of_year: i32 = days_in_month.iter().take((month - 1) as usize).sum();
-    day_of_year += day as i32;
+    static MONTH_DAYS_ACCUM: [i32; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    // Protect against invalid month inputs
+    let m_idx = (month.max(1).min(12) - 1) as usize;
+    let mut day_of_year = MONTH_DAYS_ACCUM[m_idx] + day as i32;
     if is_leap_year && month > 2 {
         day_of_year += 1;
     }

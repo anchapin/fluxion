@@ -1466,24 +1466,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let mut demand_vec = Vec::with_capacity(self.num_zones);
         for i in 0..self.num_zones {
             let t = t_vec[i];
-            let sens = sens_vec[i];
             let h_sp = h_sp_vec[i];
-            let c_sp = c_sp_vec[i];
 
             // Determine HVAC mode based on zone-specific setpoints
             let power = if t < h_sp {
                 // Heating mode
-                let temp_deficit = h_sp - t;
-                let power_needed = temp_deficit / sens;
-                power_needed.clamp(0.0, self.hvac_heating_capacity)
-            } else if t > c_sp {
-                // Cooling mode
-                let temp_excess = t - c_sp;
-                let power_needed = temp_excess / sens;
-                (-power_needed).clamp(-self.hvac_cooling_capacity, 0.0)
+                ((h_sp - t) / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
             } else {
-                // Off/deadband
-                0.0
+                let c_sp = c_sp_vec[i];
+                if t > c_sp {
+                    // Cooling mode
+                    ((c_sp - t) / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
+                } else {
+                    // Off/deadband
+                    0.0
+                }
             };
             demand_vec.push(power);
         }
