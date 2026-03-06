@@ -244,20 +244,37 @@ class PINNLoss(nn.Module):
             retain_graph=True,
         )[0]
         
-        # Thermal capacity (convert from kWh/K to J/K = 3.6e6 J/K)
-        C = self.thermal_capacity * 3.6e6  # J/K
+        # Thermal capacity in kWh/K
+        C_kwh = self.thermal_capacity  # kWh/K
         
-        # Total heat transfer coefficient
-        H = self.h_transmission + self.h_ventilation  # W/K = J/(s·K)
+        # Total heat transfer coefficient in W/K
+        H = self.h_transmission + self.h_ventilation  # W/K
         
-        # Left side: C * dT/dt + H * (T - T_outdoor)
-        # Right side: Q_solar + Q_internal (in Watts = J/s)
+        # Time scaling: input t is in timesteps (0, 1, 2, ...), each timestep = 1 hour
+        # So dt (from autograd) is in K/timestep = K/hour
+        # For physics: we need K/second for proper unit consistency
+        # 1 hour = 3600 seconds
+        hours_to_seconds = 3600.0
+        
+        # Scale dt from K/hour to K/second
+        dt_per_second = dt / hours_to_seconds
+        
+        # Energy balance in Watts:
+        # dT/dt (in K/second) * C (kWh/K) * 1000 (Wh/kW) = heat rate in Watts
+        # heat_rate_W = dT/dt(s) * C_kwh * 1000
+        heat_storage_rate = dt_per_second * C_kwh * 1000.0  # Watts
         
         # Heat gains in Watts
         q_total = q_solar + q_internal  # Assuming already in Watts
         
-        # Physics residual: C * dT/dt - Q_solar - Q_internal + H * (T - T_outdoor)
-        residual = C * dt - q_total + H * (t_pred - t_outdoor)
+        # Heat transfer rate to/from environment (in Watts)
+        q_transfer = H * (t_pred - t_outdoor)
+        
+        # Physics residual based on q = mc * dT/dt (thermal energy balance)
+        # Residual = heat_storage_rate - (Q_solar + Q_internal - Q_transfer)
+        # Or: residual = heat_storage_rate + q_transfer - q_total
+        # This penalizes the network for violating thermodynamic principles (q=mcΔT)
+        residual = heat_storage_rate + q_transfer - q_total
         
         return residual
     
