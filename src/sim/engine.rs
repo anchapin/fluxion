@@ -4,6 +4,7 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
+use crate::sim::construction::SurfaceType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
@@ -592,11 +593,10 @@ impl ThermalModel<VectorField> {
                 };
 
                 let u_value = match orientation {
-                    Orientation::Up => {
-                        spec.construction
-                            .roof
-                            .u_value(Some(SurfaceType::Roof), None)
-                    }
+                    Orientation::Up => spec
+                        .construction
+                        .roof
+                        .u_value(Some(SurfaceType::Ceiling), None),
                     Orientation::Down => spec
                         .construction
                         .floor
