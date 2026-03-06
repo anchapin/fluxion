@@ -1234,7 +1234,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Issue #375: Use construction U-values from ThermalModel fields
         // Roof is assumed equal to floor area
         let roof_area = self.zone_area.clone();
-        let total_opaque_area = opaque_wall_area.clone() + roof_area.clone();
         self.h_tr_em = opaque_wall_area.clone() * self.wall_u_value + roof_area.clone() * self.roof_u_value;
 
         // h_tr_floor = U_floor * Floor Area
