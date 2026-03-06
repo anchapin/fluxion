@@ -20,7 +20,10 @@ fn debug_update_derived() {
 
     println!("\n=== From model surfaces ===");
     for (i, surface) in model.surfaces[0].iter().enumerate() {
-        println!("Surface {}: area={:.2}, u_value={:.4}", i, surface.area, surface.u_value);
+        println!(
+            "Surface {}: area={:.2}, u_value={:.4}",
+            i, surface.area, surface.u_value
+        );
     }
 
     // Expected h_tr_em from simple calculation

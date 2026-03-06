@@ -271,14 +271,14 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub ceiling_height: T,    // Ceiling Height (m)
     pub air_density: T,       // Air Density (kg/m³)
     pub heat_capacity: T,     // Specific Heat Capacity of Air (J/kg·K)
-    pub window_ratio: T,     // Window-to-Wall Ratio (0.0-1.0)
+    pub window_ratio: T,      // Window-to-Wall Ratio (0.0-1.0)
     pub aspect_ratio: T,      // Zone Aspect Ratio (Length/Width)
     pub infiltration_rate: T, // Infiltration Rate (ACH)
 
     // Opaque surface U-values from construction (Issue #375: ASHRAE 140 Case 195)
-    pub wall_u_value: f64,   // Wall construction U-value (W/m²K)
-    pub roof_u_value: f64,   // Roof construction U-value (W/m²K)
-    pub floor_u_value: f64,  // Floor construction U-value (W/m²K)
+    pub wall_u_value: f64,  // Wall construction U-value (W/m²K)
+    pub roof_u_value: f64,  // Roof construction U-value (W/m²K)
+    pub floor_u_value: f64, // Floor construction U-value (W/m²K)
 
     // Thermal model type (5R1C or 6R2C)
     pub thermal_model_type: ThermalModelType,
@@ -609,18 +609,9 @@ impl ThermalModel<VectorField> {
                 // ASHRAE 140 simplified 5R1C model uses single interior film coefficient (8.29 W/m²K)
                 // Do NOT use surface-type-specific coefficients (SurfaceType) - they are for detailed models
                 let u_value = match orientation {
-                    Orientation::Up => spec
-                        .construction
-                        .roof
-                        .u_value(None, None),
-                    Orientation::Down => spec
-                        .construction
-                        .floor
-                        .u_value(None, None),
-                    _ => spec
-                        .construction
-                        .wall
-                        .u_value(None, None),
+                    Orientation::Up => spec.construction.roof.u_value(None, None),
+                    Orientation::Down => spec.construction.floor.u_value(None, None),
+                    _ => spec.construction.wall.u_value(None, None),
                 };
 
                 // Create surface with total area and optional window
@@ -1134,8 +1125,8 @@ impl ThermalModel<VectorField> {
             infiltration_rate: VectorField::from_scalar(0.5, num_zones), // 0.5 ACH
 
             // Opaque surface U-values from construction (Issue #375)
-            wall_u_value: 0.5,   // Default U-value (will be set from construction)
-            roof_u_value: 0.5,  // Default U-value (will be set from construction)
+            wall_u_value: 0.5,    // Default U-value (will be set from construction)
+            roof_u_value: 0.5,    // Default U-value (will be set from construction)
             floor_u_value: 0.039, // Default U-value (ASHRAE 140 insulated floor)
 
             // Thermal model type
@@ -1234,7 +1225,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Issue #375: Use construction U-values from ThermalModel fields
         // Roof is assumed equal to floor area
         let roof_area = self.zone_area.clone();
-        self.h_tr_em = opaque_wall_area.clone() * self.wall_u_value + roof_area.clone() * self.roof_u_value;
+        self.h_tr_em =
+            opaque_wall_area.clone() * self.wall_u_value + roof_area.clone() * self.roof_u_value;
 
         // h_tr_floor = U_floor * Floor Area
         // Issue #375: Use construction U-value from ThermalModel field

@@ -10,7 +10,7 @@ fn check_conductance_values() {
     // Check U-values from construction spec
     let wall_u = spec.construction.wall.u_value(None, None);
     let roof_u = spec.construction.roof.u_value(None, None);
-    
+
     println!("=== U-Values from Construction ===");
     println!("wall_u_value: {:.4}", wall_u);
     println!("roof_u_value: {:.4}", roof_u);
