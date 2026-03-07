@@ -1479,7 +1479,9 @@ impl CaseBuilder {
     pub fn case_650ff() -> CaseSpec {
         Self::new()
             .with_case_id("650FF".to_string())
-            .with_description("Low mass free-floating with night ventilation (no internal loads)".to_string())
+            .with_description(
+                "Low mass free-floating with night ventilation (no internal loads)".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
@@ -1658,7 +1660,9 @@ impl CaseBuilder {
     pub fn case_950ff() -> CaseSpec {
         Self::new()
             .with_case_id("950FF".to_string())
-            .with_description("High mass free-floating with night ventilation (no internal loads)".to_string())
+            .with_description(
+                "High mass free-floating with night ventilation (no internal loads)".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
             .with_construction(

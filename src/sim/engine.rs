@@ -11,7 +11,6 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
-use faer::Mat;
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -2239,18 +2238,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             // Solar irradiance is the same for all surfaces with the same orientation,
             // so we should calculate it once per unique orientation
             let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
-            
+
             for surface in zone_surfaces {
                 let orientation = surface.orientation;
-                
+
                 // Skip floor (Down) for solar gain as it's typically coupled to ground
                 if orientation == Orientation::Down {
                     continue;
                 }
-                
+
                 let win_area = surface.window_area;
                 let opaque_area = (surface.area - win_area).max(0.0);
-                
+
                 // Accumulate areas by orientation
                 surfaces_by_orientation
                     .entry(orientation)
@@ -2260,15 +2259,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     })
                     .or_insert((win_area, opaque_area));
             }
-            
+
             // Now calculate solar gain once per unique orientation
             for (orientation, (total_win_area, total_opaque_area)) in surfaces_by_orientation {
                 // Create temporary window properties with the combined window area for this orientation
                 let oriented_window_props = WindowProperties {
                     area: total_win_area,
-                    ..window_props.clone()
+                    ..*window_props
                 };
-                
+
                 // Use solar module to calculate irradiance for this orientation
                 let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
@@ -2280,9 +2279,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     weather.dni,
                     weather.dhi,
                     &oriented_window_props, // Use combined window area for this orientation
-                    None,         // No window geometry specified
-                    None,         // No overhangs (applied per-surface in original)
-                    &[],          // No fins (applied per-surface in original)
+                    None,                   // No window geometry specified
+                    None,                   // No overhangs (applied per-surface in original)
+                    &[],                    // No fins (applied per-surface in original)
                     orientation,
                     Some(0.2), // Ground reflectance
                 );
@@ -2292,10 +2291,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     if surface.orientation != orientation {
                         continue;
                     }
-                    
+
                     let win_area = surface.window_area;
                     let opaque_area = (surface.area - win_area).max(0.0);
-                    
+
                     // 1. Window Solar Gain
                     // Scale by ratio of per-surface window area to total orientation window area
                     if win_area > 0.0 && total_win_area > 0.0 {
@@ -2310,8 +2309,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                         // Q = alpha * I * Re * U * A
                         // Scale by ratio of per-surface opaque area to total orientation opaque area
                         let area_ratio = opaque_area / total_opaque_area;
-                        total_solar_gain +=
-                            opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re * area_ratio;
+                        total_solar_gain += opaque_area
+                            * surface.u_value
+                            * irradiance.total_wm2
+                            * alpha
+                            * re
+                            * area_ratio;
                     }
                 }
             }
