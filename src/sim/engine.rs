@@ -11,7 +11,6 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
-use faer::Mat;
 use std::sync::OnceLock;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
@@ -1564,8 +1563,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         }
 
         // Convert back to T and apply per-zone HVAC enable flag
-        let hvac_demand = T::from(VectorField::new(demand_vec));
-        hvac_demand * self.hvac_enabled.clone()
+        // Multiply in place to avoid an extra VectorField allocation
+        let enabled_vec = self.hvac_enabled.as_ref();
+        for (power, &enabled) in demand_vec.iter_mut().zip(enabled_vec.iter()) {
+            *power *= enabled;
+        }
+        T::from(VectorField::new(demand_vec))
     }
 
     /// Core physics simulation loop for annual building energy performance.
@@ -2623,35 +2626,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             return vec![0.0; num_zones];
         }
 
-        // Build conductance matrix (N x N)
-        // For symmetric coupling: G[i,j] = h_iz if i != j, G[i,i] = -sum(G[i,j])
-        // Heat flow: Q_i = sum(G[i,j] * (T_j - T_i)) = sum(G[i,j] * T_j) - G[i,i] * T_i
-        // This means G[i,i] should be negative (sum of all conductances from zone i)
-        let mut g_mat = Mat::<f64>::zeros(num_zones, num_zones);
         let total_h_iz =
             h_iz_vec.first().copied().unwrap_or(0.0) + h_iz_rad_vec.first().copied().unwrap_or(0.0);
 
+        // Optimization: avoid matrix allocation and multiplication for simple cases
+        // Solve Q_i = sum(G[i,j] * (T_j - T_i)) directly
+        let mut q_iz = vec![0.0; num_zones];
         for i in 0..num_zones {
             for j in 0..num_zones {
                 if i != j {
-                    // Off-diagonal: positive conductance between zones
-                    g_mat[(i, j)] = total_h_iz;
-                    // Diagonal: accumulate negative of each off-diagonal
-                    g_mat[(i, i)] -= total_h_iz;
+                    q_iz[i] += total_h_iz * (temps[j] - temps[i]);
                 }
             }
         }
-
-        // Solve Q = G * T using matrix multiplication
-        // Create temperature column vector
-        let mut t_mat = Mat::<f64>::zeros(num_zones, 1);
-        for i in 0..num_zones {
-            t_mat[(i, 0)] = temps[i];
-        }
-        let q_mat = &g_mat * &t_mat;
-
-        // Extract results
-        (0..num_zones).map(|i| q_mat[(i, 0)]).collect()
+        q_iz
     }
 
     /// Calculate the free-floating temperature (without HVAC).
