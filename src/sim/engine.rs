@@ -1051,17 +1051,21 @@ impl ThermalModel<VectorField> {
                 total_conductance = convective_coupling + door_conduction;
 
                 // Radiative coupling through door window (if present)
-                // For ASHRAE 960, reduce radiative coupling to match reference values
-                // Reference heating: 1.65-2.45 MWh (our model was 5-8x too high)
+                // For ASHRAE 960, radiative coupling should be ZERO:
+                // - Back-zone window (12 m²) faces SOUTH
+                // - Sunspace window (6 m²) faces SOUTH
+                // - Windows on same side of building cannot exchange radiation with each other
+                // - The sunspace window exchanges radiation with the SKY, not the back-zone
                 let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
-                let window_fraction = 0.2; // Reduced from 0.5 - door is 20% of common wall
+                let window_fraction = 0.0; // FIX: No window-to-window radiative exchange
+
+                // Radiative conductance is now zero since windows face same direction
                 let window_area = common_wall_area * window_fraction;
+                let emissivity = 0.9;
+                let reference_temp = 293.15;
 
                 // Use proper window-to-window view factor for directly opposing windows
                 let view_factor = view_factors::window_to_window_view_factor(window_area);
-
-                let emissivity = 0.9;
-                let reference_temp = 293.15;
 
                 radiative_conductance = Self::calculate_radiative_conductance_with_view_factor(
                     window_area,
