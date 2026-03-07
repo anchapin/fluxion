@@ -67,26 +67,25 @@ fn test_area_weighted_radiative_distribution_different_fractions() {
         radiative_gain_watts
     );
 
-        // Fallback uses solar_distribution_to_air
-        let expected_surface: f64 = radiative_gain_watts * 0.5;
-        let expected_mass: f64 = radiative_gain_watts * (1.0 - 0.5);
+    // Fallback uses solar_distribution_to_air
+    let expected_surface: f64 = radiative_gain_watts * 0.5;
+    let expected_mass: f64 = radiative_gain_watts * (1.0 - 0.5);
 
-        assert!(
-            (radiative_to_surface - expected_surface).abs() < 1e-6,
-            "Distribution failed for fraction {}: got {}, expected {}",
-            0.5,
-            radiative_to_surface,
-            expected_surface
-        );
+    assert!(
+        (radiative_to_surface - expected_surface).abs() < 1e-6,
+        "Distribution failed for fraction {}: got {}, expected {}",
+        0.5,
+        radiative_to_surface,
+        expected_surface
+    );
 
-        assert!(
-            (radiative_to_mass - expected_mass).abs() < 1e-6,
-            "Mass distribution failed for fraction {}: got {}, expected {}",
-            0.5,
-            radiative_to_mass,
-            expected_mass
-        );
-    }
+    assert!(
+        (radiative_to_mass - expected_mass).abs() < 1e-6,
+        "Mass distribution failed for fraction {}: got {}, expected {}",
+        0.5,
+        radiative_to_mass,
+        expected_mass
+    );
 }
 
 #[test]
