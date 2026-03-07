@@ -3,8 +3,6 @@
 //! This module provides zero-copy geometry tensor support for the Python-Rust boundary.
 //! It allows passing CTA geometry tensors from Python to Rust without memory copies.
 
-// Note: Operations are defined in terms of VectorField for future CTA compatibility
-
 /// Maximum number of thermal zones supported
 pub const MAX_ZONES: usize = 100;
 /// Maximum number of walls supported
