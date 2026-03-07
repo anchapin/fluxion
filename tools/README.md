@@ -10,6 +10,51 @@ This directory contains utility scripts for Fluxion development, including train
 - `generate_dummy_surrogate.py`: Create placeholder models for testing.
 - `quantize_model.py`: Optimize ONNX models using quantization.
 - `data_gen/`: Data generation tools for creating training datasets.
+- `compliance_agent/`: Automated code compliance checking for building energy models (ASHRAE 90.1 / IECC).
+
+## Code Compliance Agent (`compliance_agent/`)
+
+The compliance agent provides automated code compliance checking for building energy models against ASHRAE 90.1 and IECC standards using LLMs.
+
+### Features
+
+- **Multiple LLM Backends**: Support for Mock, Ollama, and OpenAI backends
+- **ASHRAE 90.1 Support**: 2019 and 2022 standards
+- **IEC Support**: 2021 and 2024 standards
+- **Rules Engine**: Built-in compliance rules for quick checks
+- **LLM-Powered Analysis**: Uses LLMs for detailed compliance analysis
+
+### Quick Start
+
+```python
+from tools.compliance_agent import CodeComplianceAgent
+
+# Create agent with mock backend
+agent = CodeComplianceAgent(backend="mock")
+
+# Building model data
+model_data = {
+    "model_name": "Office Building",
+    "wall_r_value": 15.0,
+    "window_u_factor": 0.35,
+    "hvac_cop": 3.5,
+}
+
+# Check compliance
+report = agent.check_compliance(
+    model_data=model_data,
+    standard="ASHRAE90.1-2019"
+)
+
+print(report.print_summary())
+```
+
+### Demo
+
+```bash
+# Run the demo script
+python tools/compliance_agent/demo.py
+```
 
 ## Data Generation (`data_gen/`)
 
