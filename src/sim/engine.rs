@@ -1094,7 +1094,10 @@ impl ThermalModel<VectorField> {
                     convective_coupling
                 );
                 println!("  - Conductive (door): {:.2} W/K", door_conduction);
-                println!("  - Radiative (window): {:.2} W/K", radiative_conductance);
+                println!(
+                    "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
+                    radiative_conductance
+                );
             } else {
                 // Generic multi-zone: use common wall conductance
                 for wall in &spec.common_walls {
