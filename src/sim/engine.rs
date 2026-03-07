@@ -1077,27 +1077,10 @@ impl ThermalModel<VectorField> {
                 total_conductance = convective_coupling + door_conduction;
 
                 // Radiative coupling through door window (if present)
-                // For ASHRAE 960, reduce radiative coupling to match reference values
-                // Reference heating: 1.65-2.45 MWh (our model was 5-8x too high)
-                let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
-                let window_fraction = 0.15; // Reduced from 0.2 to fix heating over-prediction (Issue #455)
-                let window_area = common_wall_area * window_fraction;
-
-                // Use proper window-to-window view factor for directly opposing windows
-                let view_factor = view_factors::window_to_window_view_factor(window_area);
-
-                let emissivity = 0.9;
-                let reference_temp = 293.15;
-
-                radiative_conductance = Self::calculate_radiative_conductance_with_view_factor(
-                    window_area,
-                    emissivity,
-                    reference_temp,
-                    view_factor,
-                );
-
-                // Add radiative coupling to total
-                total_conductance += radiative_conductance;
+                // Case 960: Sunspace with back-zone - windows face same direction (SOUTH)
+                // Windows on the same side cannot exchange radiation - they exchange with SKY instead
+                // Therefore, radiative inter-zone conductance should be ZERO
+                radiative_conductance = 0.0;
 
                 println!(
                     "Issue #348: Inter-zone coupling for Case 960: {:.2} W/K",
@@ -1108,7 +1091,10 @@ impl ThermalModel<VectorField> {
                     convective_coupling
                 );
                 println!("  - Conductive (door): {:.2} W/K", door_conduction);
-                println!("  - Radiative (window): {:.2} W/K", radiative_conductance);
+                println!(
+                    "  - Radiative (window): {:.2} W/K (windows face same direction - no exchange)",
+                    radiative_conductance
+                );
             } else {
                 // Generic multi-zone: use common wall conductance
                 for wall in &spec.common_walls {
