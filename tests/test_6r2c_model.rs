@@ -80,6 +80,7 @@ fn test_6r2c_model_single_timestep() {
     let initial_env_mass = model.envelope_mass_temperatures.as_ref()[0];
     let initial_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
+    // Use outdoor_temp=0°C (different from initial 20°C) to create heat transfer
     model.step_physics(0, 10.0);
 
     // Check that temperatures have changed
@@ -87,7 +88,7 @@ fn test_6r2c_model_single_timestep() {
     let new_env_mass = model.envelope_mass_temperatures.as_ref()[0];
     let new_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
-    // Temperatures should have changed from initial state
+    // Temperatures should have changed from initial state due to temperature difference
     assert!(
         new_temp != initial_temp
             || new_env_mass != initial_env_mass

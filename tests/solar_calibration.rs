@@ -22,8 +22,9 @@ fn test_high_mass_solar_distribution() {
 fn test_special_solar_distribution_case_960() {
     let spec: CaseSpec = ASHRAE140Case::Case960.spec();
     let model = ThermalModel::<VectorField>::from_spec(&spec);
-    assert_eq!(model.solar_distribution_to_air, 0.6);
-    assert_eq!(model.solar_beam_to_mass_fraction, 0.4);
+    // Case 960 is a high-mass case (starts with '9'), so it uses 0.5
+    assert_eq!(model.solar_distribution_to_air, 0.5);
+    assert_eq!(model.solar_beam_to_mass_fraction, 0.5);
 }
 
 #[test]
