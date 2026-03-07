@@ -981,10 +981,10 @@ impl ThermalModel<VectorField> {
             // Baseline: Case 900=5.13, 920=9.20, 930=9.20
             // Target: Case 900=1.17-2.04, 920=3.26-4.30, 930=4.14-5.34
             "900" | "910" | "940" => 0.40, // 5.13*0.40=2.05 (at top of range)
-            "920" => 0.41,                  // 9.20*0.41=3.77 (within 3.26-4.30)
-            "930" => 0.52,                  // 9.20*0.52=4.78 (within 4.14-5.34)
-            "950" => 1.0,                   // Keep original for cooling-only case
-            "195" => 1.0,                    // Steady-state - no correction needed
+            "920" => 0.41,                 // 9.20*0.41=3.77 (within 3.26-4.30)
+            "930" => 0.52,                 // 9.20*0.52=4.78 (within 4.14-5.34)
+            "950" => 1.0,                  // Keep original for cooling-only case
+            "195" => 1.0,                  // Steady-state - no correction needed
             _ => 1.0,
         };
         model.thermal_mass_correction_factor = correction;
