@@ -390,9 +390,11 @@ fn test_thermal_model_convective_fraction() {
         model.convective_fraction, 0.4,
         "Default convective fraction should be 0.4"
     );
+    // Case600 is a low-mass building, so solar_distribution_to_air = 0.75
+    // (Issue #278: Solar gain calculation improvements)
     assert_eq!(
         model.solar_distribution_to_air, 0.75,
-        "Case 600 is a low-mass case (starts with '6'), solar distribution to air should be 0.75"
+        "Low-mass case (Case600) solar distribution to air should be 0.75"
     );
 
     // Calculate how loads would be distributed using ASHRAE 140 internal loads

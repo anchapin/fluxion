@@ -75,12 +75,13 @@ fn test_6r2c_model_single_timestep() {
     model.configure_6r2c_model(0.75, 100.0);
 
     // Run a single timestep with a temperature difference to trigger heat transfer
+    // Use outdoor_temp=10°C (different from default 20°C indoor) to ensure heat transfer
     let initial_temp = model.temperatures.as_ref()[0];
     let initial_env_mass = model.envelope_mass_temperatures.as_ref()[0];
     let initial_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
     // Use outdoor_temp=0°C (different from initial 20°C) to create heat transfer
-    model.step_physics(0, 0.0);
+    model.step_physics(0, 10.0);
 
     // Check that temperatures have changed
     let new_temp = model.temperatures.as_ref()[0];
