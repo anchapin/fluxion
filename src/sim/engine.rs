@@ -11,6 +11,8 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
+use faer::Mat;
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
@@ -2233,14 +2235,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let re = 0.034; // Exterior film resistance (m²K/W)
 
         if let Some(zone_surfaces) = self.surfaces.get(zone_idx) {
+            // Group surfaces by orientation to avoid double-counting solar gain
+            // Solar irradiance is the same for all surfaces with the same orientation,
+            // so we should calculate it once per unique orientation
+            let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
+            
             for surface in zone_surfaces {
                 let orientation = surface.orientation;
-
+                
                 // Skip floor (Down) for solar gain as it's typically coupled to ground
                 if orientation == Orientation::Down {
                     continue;
                 }
-
+                
+                let win_area = surface.window_area;
+                let opaque_area = (surface.area - win_area).max(0.0);
+                
+                // Accumulate areas by orientation
+                surfaces_by_orientation
+                    .entry(orientation)
+                    .and_modify(|(w, o)| {
+                        *w += win_area;
+                        *o += opaque_area;
+                    })
+                    .or_insert((win_area, opaque_area));
+            }
+            
+            // Now calculate solar gain once per unique orientation
+            for (orientation, (total_win_area, total_opaque_area)) in surfaces_by_orientation {
+                // Create temporary window properties with the combined window area for this orientation
+                let oriented_window_props = WindowProperties {
+                    area: total_win_area,
+                    ..window_props.clone()
+                };
+                
                 // Use solar module to calculate irradiance for this orientation
                 let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.latitude_deg,
@@ -2251,31 +2279,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     hour,
                     weather.dni,
                     weather.dhi,
-                    window_props, // Note: this contains the TOTAL window area for the zone
+                    &oriented_window_props, // Use combined window area for this orientation
                     None,         // No window geometry specified
-                    surface.overhang.as_ref(),
-                    &surface.fins,
+                    None,         // No overhangs (applied per-surface in original)
+                    &[],          // No fins (applied per-surface in original)
                     orientation,
                     Some(0.2), // Ground reflectance
                 );
 
-                // 1. Window Solar Gain
-                // Use properly calculated solar gain from solar module (includes angular dependence)
-                // Scale by ratio of per-surface window area to total zone window area
-                let win_area = surface.window_area;
-                if win_area > 0.0 && window_props.area > 0.0 {
-                    let area_ratio = win_area / window_props.area;
-                    let window_gain = solar_gain.total_gain_w * area_ratio;
-                    total_solar_gain += window_gain;
-                }
+                // Distribute solar gain to each surface with this orientation
+                for surface in zone_surfaces {
+                    if surface.orientation != orientation {
+                        continue;
+                    }
+                    
+                    let win_area = surface.window_area;
+                    let opaque_area = (surface.area - win_area).max(0.0);
+                    
+                    // 1. Window Solar Gain
+                    // Scale by ratio of per-surface window area to total orientation window area
+                    if win_area > 0.0 && total_win_area > 0.0 {
+                        let area_ratio = win_area / total_win_area;
+                        let window_gain = solar_gain.total_gain_w * area_ratio;
+                        total_solar_gain += window_gain;
+                    }
 
-                // 2. Opaque Solar Gain (Wall/Roof)
-                let opaque_area = (surface.area - win_area).max(0.0);
-                if opaque_area > 0.0 {
-                    // Sol-air temperature method for opaque surfaces
-                    // Q = alpha * I * Re * U * A
-                    total_solar_gain +=
-                        opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
+                    // 2. Opaque Solar Gain (Wall/Roof)
+                    if opaque_area > 0.0 && total_opaque_area > 0.0 {
+                        // Sol-air temperature method for opaque surfaces
+                        // Q = alpha * I * Re * U * A
+                        // Scale by ratio of per-surface opaque area to total orientation opaque area
+                        let area_ratio = opaque_area / total_opaque_area;
+                        total_solar_gain +=
+                            opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re * area_ratio;
+                    }
                 }
             }
         }
