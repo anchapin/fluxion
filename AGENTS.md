@@ -32,6 +32,78 @@ This document logs common issues encountered while using the `gh` CLI tool and t
 - Physics weight should be small initially (e.g., 0.0001) to allow the network to learn basic patterns before enforcing physics constraints
 - Unit conversion: thermal capacity in kWh/K, heat transfer in W/K, time in hours → convert to seconds for proper energy balance
 
+## Issue #448: Automated Geometry Ingestion Pipeline (PDF/CAD-to-BEM) via Vision-Language Models
+
+**Implementation Summary:**
+- Created automated pipeline for extracting building geometry from PDF/CAD files
+- Uses VLM (Vision-Language Models) to parse architectural drawings
+- Converts extracted geometry to CTA (Combined Thermal and Airflow) tensor format
+- Provides zero-copy handoff to Rust core via PyO3 bindings
+
+**Files Created/Modified:**
+- `tools/geometry_extraction.py` - Main geometry extraction pipeline module
+- `src/physics/geometry_tensor.rs` - New Rust module for geometry tensors
+- `src/physics/mod.rs` - Added geometry_tensor module
+- `src/lib.rs` - Added PyGeometryTensor PyO3 bindings
+- `demo_geometry_pipeline.py` - Demo script
+
+**Key Components:**
+
+1. **Python Pipeline** (`tools/geometry_extraction.py`):
+   - `GeometryExtractor`: VLM-based geometry extraction from images/PDFs/DXFs
+   - `GeometryToCTATensorConverter`: Converts geometry to CTA tensors
+   - `GeometryIngestionPipeline`: High-level pipeline combining extraction + conversion
+   - Supports VLM providers: mock (testing), Ollama, OpenAI Vision
+
+2. **Rust Module** (`src/physics/geometry_tensor.rs`):
+   - `GeometryTensor`: Container for CTA geometry tensors
+   - `WallData`: Wall geometry structure
+   - Constants: MAX_ZONES=100, MAX_WALLS=500
+
+3. **PyO3 Bindings** (`src/lib.rs`):
+   - `PyGeometryTensor`: Zero-copy Python bindings
+   - Supports numpy array interop via `from_numpy()` and `to_numpy()`
+
+**CTA Tensor Formats:**
+- `zone_coords`: (100, 20) - Zone coordinates, heights, area, volume
+- `wall_matrix`: (500, 6) - Wall geometry [x1, y1, x2, y2, height, thickness]
+- `window_matrix`: (500, 6) - Window geometry [x1, y1, x2, y2, height, sill_height]
+- `adjacency_matrix`: (100, 100) - Zone adjacency (0/1)
+- `zone_properties`: (100, 5) - Zone thermal properties
+- `summary`: (6,) - Summary statistics
+
+**Verification:**
+- Rust compilation: PASSED (`cargo check --features python-bindings`)
+- Python import: PASSED
+- Demo script: PASSED
+- Tensor validation: PASSED
+
+**Usage:**
+```python
+from tools.geometry_extraction import GeometryIngestionPipeline
+
+# Create pipeline with VLM
+pipeline = GeometryIngestionPipeline(vlm_provider='ollama')
+geometry, tensors = pipeline.ingest('floor_plan.png')
+
+# Pass to Rust (zero-copy)
+import fluxion
+geo_tensor = fluxion.GeometryTensor.from_numpy(
+    tensors['zone_coords'],
+    tensors['wall_matrix'],
+    tensors['window_matrix'],
+    tensors['adjacency_matrix'],
+    tensors['zone_properties'],
+    tensors['summary']
+)
+```
+
+**Notes:**
+- Mock VLM provider available for testing without external dependencies
+- Supports DXF (CAD) direct parsing via ezdxf library
+- PDF support via PyMuPDF (converts to image first)
+- Tensor validation ensures data integrity
+
 ## Issue 1: Retrieving Job Logs for a Specific GitHub Actions Run
 
 **Problem:**

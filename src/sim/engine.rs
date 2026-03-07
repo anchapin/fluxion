@@ -939,10 +939,11 @@ impl ThermalModel<VectorField> {
         // Low-mass buildings: higher fraction to air (0.7-0.8) - less thermal mass to buffer gains
         // High-mass buildings: lower fraction to air (0.5-0.6) - more thermal mass to buffer gains
         // This implements Issue #278: Solar gain calculation accuracy
-        model.solar_distribution_to_air = if spec.case_id.starts_with('9') {
-            0.5 // High-mass: 50% to air, 50% to thermal mass
-        } else {
-            0.75 // Low-mass: 75% to air, 25% to thermal mass
+        model.solar_distribution_to_air = match spec.case_id.as_str() {
+            "960" => 0.6,                 // Sunspace: 60% to air (Zone 1 + Zone 2), 40% to mass
+            "900" | "910" | "940" => 0.5, // High-mass: 50% to air, 50% to thermal mass
+            _ if spec.case_id.starts_with('9') => 0.5, // Other 900-series: 50% to air, 50% to mass
+            _ => 0.75,                    // Low-mass: 75% to air, 25% to thermal mass
         };
         // Ensure the actual physics parameter (solar_beam_to_mass_fraction) matches.
         // This controls the split of radiative gains between surface and mass in the 5R1C/6R2C models.
@@ -2315,6 +2316,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Get surfaces for this zone
         if zone_idx >= self.surfaces.len() || self.surfaces[zone_idx].is_empty() {
             // Fallback to default distribution if no surfaces defined
+            // Use solar_distribution_to_air for diffuse, solar_beam_to_mass_fraction for beam
             let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
             let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);
@@ -2324,6 +2326,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let a_at: f64 = surfaces.iter().map(|s| s.area).sum();
 
         if a_at == 0.0 {
+            // Fallback to default distribution if total area is zero
             let radiative_to_surface = radiative_gain_watts * self.solar_distribution_to_air;
             let radiative_to_mass = radiative_gain_watts * (1.0 - self.solar_distribution_to_air);
             return (radiative_to_surface, radiative_to_mass);

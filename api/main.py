@@ -577,6 +577,319 @@ async def llm_unload():
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ===========================================
+# Compliance Agent Endpoints (ASHRAE 90.1 / IECC)
+# ===========================================
+
+from api.compliance import (
+    ComplianceAgent,
+    ComplianceDataAggregator,
+    ComplianceMetrics,
+    ComplianceStandard,
+    generate_compliance_report,
+    create_prompt_for_llm,
+    create_sample_metrics,
+)
+
+
+class ComplianceCheckRequest(BaseModel):
+    """Request model for compliance check."""
+    # Building info
+    building_name: str = Field(default="Building", description="Name of the building")
+    building_area_m2: float = Field(default=1000.0, description="Conditioned floor area in m²")
+    building_type: str = Field(default="Commercial", description="Type of building")
+    climate_zone: str = Field(default="4A", description="Climate zone")
+    
+    # Energy metrics (required)
+    hourly_temperatures: List[float] = Field(..., description="Hourly zone temperatures (°C), 8760 values")
+    hourly_heating_loads: List[float] = Field(..., description="Hourly heating loads (W), 8760 values")
+    hourly_cooling_loads: List[float] = Field(..., description="Hourly cooling loads (W), 8760 values")
+    
+    # Optional end-use data
+    hourly_lighting: Optional[List[float]] = Field(default=None, description="Hourly lighting loads (W)")
+    hourly_plug_loads: Optional[List[float]] = Field(default=None, description="Hourly plug loads (W)")
+    hourly_internal_gains: Optional[List[float]] = Field(default=None, description="Hourly internal gains (W)")
+    
+    # Baseline comparison (optional)
+    baseline_hourly_temperatures: Optional[List[float]] = Field(default=None, description="Baseline hourly temperatures")
+    baseline_hourly_heating_loads: Optional[List[float]] = Field(default=None, description="Baseline hourly heating loads")
+    baseline_hourly_cooling_loads: Optional[List[float]] = Field(default=None, description="Baseline hourly cooling loads")
+    
+    # Configuration
+    standard: str = Field(default="ASHRAE 90.1-2019", description="Compliance standard")
+    project_name: str = Field(default="Project", description="Name of the project")
+    building_address: str = Field(default="Address", description="Building address")
+
+
+class ComplianceReportRequest(BaseModel):
+    """Request model for compliance report generation."""
+    # Building info
+    building_name: str = Field(default="Building", description="Name of the building")
+    building_area_m2: float = Field(default=1000.0, description="Conditioned floor area in m²")
+    building_type: str = Field(default="Commercial", description="Type of building")
+    climate_zone: str = Field(default="4A", description="Climate zone")
+    
+    # Energy metrics
+    total_energy_kwh: float = Field(..., description="Annual total energy consumption (kWh)")
+    total_eui_kwh_m2: float = Field(..., description="Annual EUI (kWh/m²/year)")
+    peak_heating_kw: float = Field(..., description="Peak heating load (kW)")
+    peak_cooling_kw: float = Field(..., description="Peak cooling load (kW)")
+    unmet_hours: float = Field(..., description="Total unmet hours")
+    heating_energy_kwh: float = Field(default=0.0, description="Annual heating energy (kWh)")
+    cooling_energy_kwh: float = Field(default=0.0, description="Annual cooling energy (kWh)")
+    lighting_energy_kwh: float = Field(default=0.0, description="Annual lighting energy (kWh)")
+    plug_loads_kwh: float = Field(default=0.0, description="Annual plug loads (kWh)")
+    
+    # Baseline (optional)
+    baseline_total_energy_kwh: Optional[float] = Field(default=None, description="Baseline annual energy (kWh)")
+    baseline_total_eui_kwh_m2: Optional[float] = Field(default=None, description="Baseline EUI")
+    baseline_peak_heating_kw: Optional[float] = Field(default=None, description="Baseline peak heating")
+    baseline_peak_cooling_kw: Optional[float] = Field(default=None, description="Baseline peak cooling")
+    baseline_unmet_hours: Optional[float] = Field(default=None, description="Baseline unmet hours")
+    
+    # Configuration
+    standard: str = Field(default="ASHRAE 90.1-2019", description="Compliance standard")
+    project_name: str = Field(default="Project", description="Name of the project")
+    building_address: str = Field(default="Address", description="Building address")
+    output_format: str = Field(default="markdown", description="Output format: markdown, json")
+
+
+@app.post("/compliance/check")
+async def check_compliance(request: ComplianceCheckRequest):
+    """
+    Check building energy model compliance with ASHRAE 90.1 or IECC.
+    
+    Provide hourly simulation data and receive compliance determination.
+    """
+    try:
+        # Create aggregator for proposed building
+        proposed_aggregator = ComplianceDataAggregator(
+            building_area_m2=request.building_area_m2,
+            building_type=request.building_type,
+        )
+        proposed_aggregator.metrics.building_name = request.building_name
+        proposed_aggregator.metrics.climate_zone = request.climate_zone
+        
+        # Process proposed metrics
+        proposed_metrics = proposed_aggregator.process_simulation_results(
+            hourly_temperatures=request.hourly_temperatures,
+            hourly_heating_loads=request.hourly_heating_loads,
+            hourly_cooling_loads=request.hourly_cooling_loads,
+            hourly_lighting=request.hourly_lighting,
+            hourly_plug_loads=request.hourly_plug_loads,
+            hourly_internal_gains=request.hourly_internal_gains,
+        )
+        
+        # Process baseline if provided
+        baseline_metrics = None
+        if request.baseline_hourly_temperatures:
+            baseline_aggregator = ComplianceDataAggregator(
+                building_area_m2=request.building_area_m2,
+                building_type=request.building_type,
+            )
+            baseline_metrics = baseline_aggregator.process_simulation_results(
+                hourly_temperatures=request.baseline_hourly_temperatures,
+                hourly_heating_loads=request.baseline_hourly_heating_loads,
+                hourly_cooling_loads=request.baseline_hourly_cooling_loads,
+            )
+        
+        # Create compliance agent
+        standard_map = {
+            "ASHRAE 90.1-2019": ComplianceStandard.ASHRAE_90_1_2019,
+            "ASHRAE 90.1-2022": ComplianceStandard.ASHRAE_90_1_2022,
+            "IECC 2021": ComplianceStandard.IECC_2021,
+            "IECC 2024": ComplianceStandard.IECC_2024,
+        }
+        standard = standard_map.get(request.standard, ComplianceStandard.ASHRAE_90_1_2019)
+        
+        agent = ComplianceAgent()
+        
+        # Run compliance check
+        result = agent.check_compliance(proposed_metrics, baseline_metrics)
+        
+        # Add metrics to response
+        result["proposed_metrics"] = proposed_aggregator.to_dict()
+        if baseline_metrics:
+            baseline_aggregator2 = ComplianceDataAggregator(
+                building_area_m2=request.building_area_m2,
+                building_type=request.building_type,
+            )
+            baseline_aggregator2.metrics = baseline_metrics
+            result["baseline_metrics"] = baseline_aggregator2.to_dict()
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"Compliance check failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/compliance/report")
+async def generate_report(request: ComplianceReportRequest):
+    """
+    Generate a compliance report (Markdown or JSON).
+    
+    Provide building metrics and receive a formatted compliance report.
+    """
+    try:
+        # Build proposed metrics
+        proposed_metrics = ComplianceMetrics()
+        proposed_metrics.building_name = request.building_name
+        proposed_metrics.building_area_m2 = request.building_area_m2
+        proposed_metrics.building_type = request.building_type
+        proposed_metrics.climate_zone = request.climate_zone
+        proposed_metrics.total_energy_kwh = request.total_energy_kwh
+        proposed_metrics.total_eui_kwh_m2 = request.total_eui_kwh_m2
+        proposed_metrics.peak_heating_load_kw = request.peak_heating_kw
+        proposed_metrics.peak_cooling_load_kw = request.peak_cooling_kw
+        proposed_metrics.total_unmet_hours = request.unmet_hours
+        proposed_metrics.heating_energy_kwh = request.heating_energy_kwh
+        proposed_metrics.cooling_energy_kwh = request.cooling_energy_kwh
+        proposed_metrics.lighting_energy_kwh = request.lighting_energy_kwh
+        proposed_metrics.plug_loads_kwh = request.plug_loads_kwh
+        
+        # Build baseline if provided
+        baseline_metrics = None
+        if request.baseline_total_energy_kwh is not None:
+            baseline_metrics = ComplianceMetrics()
+            baseline_metrics.building_area_m2 = request.building_area_m2
+            baseline_metrics.total_energy_kwh = request.baseline_total_energy_kwh
+            baseline_metrics.total_eui_kwh_m2 = request.baseline_total_eui_kwh_m2
+            baseline_metrics.peak_heating_load_kw = request.baseline_peak_heating_kw or 0
+            baseline_metrics.peak_cooling_load_kw = request.baseline_peak_cooling_kw or 0
+            baseline_metrics.total_unmet_hours = request.baseline_unmet_hours or 0
+        
+        # Generate report
+        if request.output_format == "json":
+            # Return structured data
+            agent = ComplianceAgent()
+            compliance_result = agent.check_compliance(proposed_metrics, baseline_metrics)
+            
+            return {
+                "report_type": "compliance_json",
+                "standard": request.standard,
+                "building": {
+                    "name": request.building_name,
+                    "area_m2": request.building_area_m2,
+                    "type": request.building_type,
+                    "climate_zone": request.climate_zone,
+                },
+                "compliance": compliance_result,
+            }
+        else:
+            # Generate Markdown report
+            standard_map = {
+                "ASHRAE 90.1-2019": ComplianceStandard.ASHRAE_90_1_2019,
+                "ASHRAE 90.1-2022": ComplianceStandard.ASHRAE_90_1_2022,
+                "IECC 2021": ComplianceStandard.IECC_2021,
+                "IECC 2024": ComplianceStandard.IECC_2024,
+            }
+            standard = standard_map.get(request.standard, ComplianceStandard.ASHRAE_90_1_2019)
+            
+            report = generate_compliance_report(
+                proposed_metrics=proposed_metrics,
+                baseline_metrics=baseline_metrics,
+                project_name=request.project_name,
+                building_name=request.building_name,
+                building_address=request.building_address,
+                standard=standard,
+            )
+            
+            return {
+                "report_type": "markdown",
+                "standard": request.standard,
+                "report": report,
+            }
+        
+    except Exception as e:
+        logger.error(f"Report generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/compliance/prompt")
+async def get_llm_prompt(request: ComplianceReportRequest):
+    """
+    Generate an LLM prompt for compliance report generation.
+    
+    Returns the system and user prompts that can be sent to an LLM
+    to generate a natural language compliance report.
+    """
+    try:
+        # Build proposed metrics
+        proposed_metrics = ComplianceMetrics()
+        proposed_metrics.building_name = request.building_name
+        proposed_metrics.building_area_m2 = request.building_area_m2
+        proposed_metrics.building_type = request.building_type
+        proposed_metrics.climate_zone = request.climate_zone
+        proposed_metrics.total_energy_kwh = request.total_energy_kwh
+        proposed_metrics.total_eui_kwh_m2 = request.total_eui_kwh_m2
+        proposed_metrics.peak_heating_load_kw = request.peak_heating_kw
+        proposed_metrics.peak_cooling_load_kw = request.peak_cooling_kw
+        proposed_metrics.total_unmet_hours = request.unmet_hours
+        proposed_metrics.heating_energy_kwh = request.heating_energy_kwh
+        proposed_metrics.cooling_energy_kwh = request.cooling_energy_kwh
+        proposed_metrics.lighting_energy_kwh = request.lighting_energy_kwh
+        proposed_metrics.plug_loads_kwh = request.plug_loads_kwh
+        
+        # Build baseline if provided
+        baseline_metrics = None
+        if request.baseline_total_energy_kwh is not None:
+            baseline_metrics = ComplianceMetrics()
+            baseline_metrics.building_area_m2 = request.building_area_m2
+            baseline_metrics.total_energy_kwh = request.baseline_total_energy_kwh
+            baseline_metrics.total_eui_kwh_m2 = request.baseline_total_eui_kwh_m2
+            baseline_metrics.peak_heating_load_kw = request.baseline_peak_heating_kw or 0
+            baseline_metrics.peak_cooling_load_kw = request.baseline_peak_cooling_kw or 0
+            baseline_metrics.total_unmet_hours = request.baseline_unmet_hours or 0
+        
+        # Generate prompts
+        standard_map = {
+            "ASHRAE 90.1-2019": ComplianceStandard.ASHRAE_90_1_2019,
+            "ASHRAE 90.1-2022": ComplianceStandard.ASHRAE_90_1_2022,
+            "IECC 2021": ComplianceStandard.IECC_2021,
+            "IECC 2024": ComplianceStandard.IECC_2024,
+        }
+        standard = standard_map.get(request.standard, ComplianceStandard.ASHRAE_90_1_2019)
+        
+        prompt = create_prompt_for_llm(
+            metrics=proposed_metrics,
+            baseline_metrics=baseline_metrics,
+            standard=standard,
+        )
+        
+        return {
+            "standard": request.standard,
+            "system_prompt": prompt.system_prompt,
+            "user_prompt": prompt.user_prompt_template,
+        }
+        
+    except Exception as e:
+        logger.error(f"Prompt generation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/compliance/standards")
+async def list_standards():
+    """List available compliance standards."""
+    return {
+        "standards": [
+            {"id": "ASHRAE 90.1-2019", "name": "ASHRAE 90.1-2019", "type": "performance"},
+            {"id": "ASHRAE 90.1-2022", "name": "ASHRAE 90.1-2022", "type": "performance"},
+            {"id": "IECC 2021", "name": "IECC 2021", "type": "prescriptive/performance"},
+            {"id": "IECC 2024", "name": "IECC 2024", "type": "prescriptive/performance"},
+        ]
+    }
+
+
+@app.get("/compliance/sample")
+async def get_sample_metrics():
+    """Get sample compliance metrics for testing."""
+    metrics = create_sample_metrics()
+    aggregator = ComplianceDataAggregator(building_area_m2=1000.0)
+    aggregator.metrics = metrics
+    return aggregator.to_dict()
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

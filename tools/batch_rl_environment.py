@@ -962,6 +962,7 @@ class FluxionVectorEnv:
 
 
 # ============================================================================
+# ============================================================================
 # High-Performance Vectorized RL Environment (Replaces BatchOracle for RL)
 # ============================================================================
 
@@ -1661,6 +1662,17 @@ def register_environments():
         },
     )
     logger.info("Registered FluxionHVAC-Batch-v0 with Gymnasium (10,000 parallel rollouts)")
+    
+    # Register with version
+    register(
+        id="FluxionHVAC-v0.1",
+        entry_point="tools.batch_rl_environment:FluxionBatchRLEnv",
+        max_episode_steps=8760,
+        kwargs={
+            "config": RLEnvConfig(),
+        },
+    )
+    logger.info("Registered FluxionHVAC-v0.1 with Gymnasium")
 
 
 # Auto-register on import
