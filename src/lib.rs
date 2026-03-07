@@ -1561,8 +1561,8 @@ impl Default for DistributedInferenceExecutor {
 
 #[cfg(feature = "python-bindings")]
 use crate::physics::geometry_tensor::{
-    GeometryTensor, ADJACENCY_MATRIX_DIMS, WALL_MATRIX_DIMS, WINDOW_MATRIX_DIMS,
-    ZONE_COORDS_DIMS, ZONE_PROPERTIES_DIMS,
+    GeometryTensor, ADJACENCY_MATRIX_DIMS, WALL_MATRIX_DIMS, WINDOW_MATRIX_DIMS, ZONE_COORDS_DIMS,
+    ZONE_PROPERTIES_DIMS,
 };
 
 #[cfg(feature = "python-bindings")]
