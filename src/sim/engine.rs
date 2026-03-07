@@ -1081,7 +1081,7 @@ impl ThermalModel<VectorField> {
                 // For ASHRAE 960, reduce radiative coupling to match reference values
                 // Reference heating: 1.65-2.45 MWh (our model was 5-8x too high)
                 let common_wall_area: f64 = spec.common_walls.iter().map(|w| w.area).sum();
-                let window_fraction = 0.2; // Reduced from 0.5 - door is 20% of common wall
+                let window_fraction = 0.15; // Reduced from 0.2 to fix heating over-prediction (Issue #455)
                 let window_area = common_wall_area * window_fraction;
 
                 // Use proper window-to-window view factor for directly opposing windows
