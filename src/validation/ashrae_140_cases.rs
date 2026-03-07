@@ -1457,15 +1457,16 @@ impl CaseBuilder {
     }
 
     /// Case 600FF - Low mass free-floating.
+    /// Per ASHRAE 140, free-floating cases have NO internal loads.
     pub fn case_600ff() -> CaseSpec {
         Self::new()
             .with_case_id("600FF".to_string())
-            .with_description("Low mass free-floating (no HVAC)".to_string())
+            .with_description("Low mass free-floating (no HVAC, no internal loads)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1474,15 +1475,18 @@ impl CaseBuilder {
     }
 
     /// Case 650FF - Low mass free-floating with night ventilation.
+    /// Per ASHRAE 140, free-floating cases have NO internal loads.
     pub fn case_650ff() -> CaseSpec {
         Self::new()
             .with_case_id("650FF".to_string())
-            .with_description("Low mass free-floating with night ventilation".to_string())
+            .with_description(
+                "Low mass free-floating with night ventilation (no internal loads)".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
@@ -1629,10 +1633,11 @@ impl CaseBuilder {
     }
 
     /// Case 900FF - High mass free-floating.
+    /// Per ASHRAE 140, free-floating cases have NO internal loads.
     pub fn case_900ff() -> CaseSpec {
         Self::new()
             .with_case_id("900FF".to_string())
-            .with_description("High mass free-floating (no HVAC)".to_string())
+            .with_description("High mass free-floating (no HVAC, no internal loads)".to_string())
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
             .with_construction(
@@ -1642,7 +1647,7 @@ impl CaseBuilder {
             )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
@@ -1651,10 +1656,13 @@ impl CaseBuilder {
     }
 
     /// Case 950FF - High mass free-floating with night ventilation.
+    /// Per ASHRAE 140, free-floating cases have NO internal loads.
     pub fn case_950ff() -> CaseSpec {
         Self::new()
             .with_case_id("950FF".to_string())
-            .with_description("High mass free-floating with night ventilation".to_string())
+            .with_description(
+                "High mass free-floating with night ventilation (no internal loads)".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
             .with_construction(
@@ -1664,7 +1672,7 @@ impl CaseBuilder {
             )
             .with_south_window(12.0)
             .with_window_properties(WindowSpec::double_clear_glass())
-            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
