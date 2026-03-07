@@ -30,9 +30,9 @@ use pyo3::{
 
 // NumPy types - available when python-bindings feature is enabled
 #[cfg(feature = "python-bindings")]
-use numpy::PyArrayMethods;
-#[cfg(feature = "python-bindings")]
 use ndarray::Array2;
+#[cfg(feature = "python-bindings")]
+use numpy::PyArrayMethods;
 
 // When not using python-bindings feature, we still need these for tests
 #[cfg(not(feature = "python-bindings"))]
@@ -212,7 +212,10 @@ impl PyVectorField {
     /// avoiding unnecessary memory copies for maximum performance.
     fn to_numpy<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
         // Use from_vec_bound for zero-copy conversion
-        Ok(numpy::PyArray1::from_vec_bound(py, self.inner.as_slice().to_vec()))
+        Ok(numpy::PyArray1::from_vec_bound(
+            py,
+            self.inner.as_slice().to_vec(),
+        ))
     }
 
     /// Compute the sum (integral) of all elements.
@@ -1558,8 +1561,8 @@ impl Default for DistributedInferenceExecutor {
 
 #[cfg(feature = "python-bindings")]
 use crate::physics::geometry_tensor::{
-    GeometryTensor, WallData, ADJACENCY_MATRIX_DIMS, MAX_WALLS, MAX_ZONES, WALL_MATRIX_DIMS,
-    WINDOW_MATRIX_DIMS, ZONE_COORDS_DIMS, ZONE_PROPERTIES_DIMS,
+    GeometryTensor, ADJACENCY_MATRIX_DIMS, WALL_MATRIX_DIMS, WINDOW_MATRIX_DIMS, ZONE_COORDS_DIMS,
+    ZONE_PROPERTIES_DIMS,
 };
 
 #[cfg(feature = "python-bindings")]
@@ -1634,7 +1637,7 @@ impl PyGeometryTensor {
             &zone_properties,
             &summary,
         )
-        .map_err(|e| pyo3::exceptions::PyValueError::new_err(e))?;
+        .map_err(pyo3::exceptions::PyValueError::new_err)?;
 
         Ok(PyGeometryTensor { inner })
     }
@@ -1677,6 +1680,7 @@ impl PyGeometryTensor {
     }
 
     /// Convert to numpy arrays (zero-copy view where possible).
+    #[allow(clippy::type_complexity)]
     fn to_numpy<'py>(
         &self,
         py: Python<'py>,
