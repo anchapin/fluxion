@@ -1373,12 +1373,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     pub fn update_optimization_cache(&mut self) {
         // Calculate the series conductance of h_tr_is and h_tr_ms
         // This represents the thermal resistance from interior air through interior surface to mass
-        let h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone()) 
+        let h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone())
             / (self.h_tr_is.clone() + self.h_tr_ms.clone());
 
         // Calculate the series conductance of (h_tr_is + h_tr_ms) and h_tr_em
         // This represents the complete opaque envelope path from interior air to exterior
-        let h_opaque = (h_tr_is_ms_series.clone() * self.h_tr_em.clone()) 
+        let h_opaque = (h_tr_is_ms_series.clone() * self.h_tr_em.clone())
             / (h_tr_is_ms_series + self.h_tr_em.clone());
 
         // h_ext = h_opaque + h_tr_w + h_ve
@@ -1852,11 +1852,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_ext = self.derived_h_ext.clone();
         let outdoor_temp_tensor = T::from(VectorField::new(vec![outdoor_temp; self.num_zones]));
         let setpoint_tensor = self.heating_setpoints.clone();
-        
+
         // Steady-state heat loss based power (what HVAC would need to maintain setpoint at outdoor temp)
         // This is the correct way to calculate peak load
         let ss_heat_loss = h_ext * (setpoint_tensor - outdoor_temp_tensor);
-        
+
         // For peak tracking, use steady-state heat loss
         let hvac_power_watts = ss_heat_loss.clone().reduce(0.0, |acc, val| acc + val);
 
