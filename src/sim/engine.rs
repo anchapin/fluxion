@@ -807,13 +807,17 @@ impl ThermalModel<VectorField> {
             // Floor conductance
             // ASHRAE 140 Case 195 uses specified ground coupling value of 0.039 W/m²K
             // Other cases use the construction's u_value
-            // Note: The 1.2 multiplier is applied in derived_ground_coeff, not here
+            // Issue #471: Only apply 1.2 multiplier to 900-series HVAC cases (not FF free-floating)
+            // Free-floating cases (600FF, 650FF, 900FF, 950FF) should use standard ground coupling
             let floor_u = spec.construction.floor.u_value(None, None);
+            let is_900_series_hvac = spec.case_id.starts_with('9') 
+                && !spec.case_id.contains("FF") 
+                && spec.case_id != "195";
             let h_tr_floor_val = if spec.case_id == "195" {
                 // Case 195: Solid conduction - use ASHRAE-specified floor U-value (0.039)
                 // WITHOUT 1.2 multiplier - it's applied in update_optimization_cache
                 0.039 * zone_floor_area
-            } else if spec.case_id.starts_with('9') {
+            } else if is_900_series_hvac {
                 floor_u * zone_floor_area * 1.2
             } else {
                 floor_u * zone_floor_area
@@ -1425,12 +1429,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         self.derived_h_ms_is_prod = self.h_tr_ms.clone() * self.h_tr_is.clone();
 
         // ground_coeff = term_rest_1 * h_tr_floor
-        // For ASHRAE 140 Cases 900/950 (high mass): apply 1.2 ground coupling multiplier
-        // For Cases 600/650 (low mass) and Case 195: use standard ground coupling
+        // Issue #471: Only apply 1.2 ground coupling multiplier to 900-series HVAC cases
+        // Free-floating cases (600FF, 650FF, 900FF, 950FF) should use standard ground coupling
         let h_tr_floor_val = self.h_tr_floor.as_ref()[0];
-        let is_high_mass = self.case_id.starts_with('9') && self.case_id != "195";
-        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 && is_high_mass {
-            // Apply 1.2 multiplier only for high mass cases (900-series)
+        let is_900_series_hvac = self.case_id.starts_with('9') 
+            && !self.case_id.contains("FF") 
+            && self.case_id != "195";
+        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 && is_900_series_hvac {
+            // Apply 1.2 multiplier only for high mass HVAC cases (900-series, not FF)
             1.2
         } else {
             1.0
