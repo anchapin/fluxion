@@ -8,7 +8,9 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::sim::view_factors;
-use crate::validation::ashrae_140_cases::{CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea};
+use crate::validation::ashrae_140_cases::{
+    CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
+};
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
 use std::collections::HashMap;
@@ -810,8 +812,8 @@ impl ThermalModel<VectorField> {
             // Issue #471: Only apply 1.2 multiplier to 900-series HVAC cases (not FF free-floating)
             // Free-floating cases (600FF, 650FF, 900FF, 950FF) should use standard ground coupling
             let floor_u = spec.construction.floor.u_value(None, None);
-            let is_900_series_hvac = spec.case_id.starts_with('9') 
-                && !spec.case_id.contains("FF") 
+            let is_900_series_hvac = spec.case_id.starts_with('9')
+                && !spec.case_id.contains("FF")
                 && spec.case_id != "195";
             let h_tr_floor_val = if spec.case_id == "195" {
                 // Case 195: Solid conduction - use ASHRAE-specified floor U-value (0.039)
@@ -998,8 +1000,8 @@ impl ThermalModel<VectorField> {
             "900" | "910" | "940" => 0.20, // Annual energy: 9.42*0.20=1.88 (within 1.17-2.04)
             "920" => 0.40,                 // Annual energy: 9.35*0.40=3.74 (within 3.26-4.30)
             "930" => 0.50,                 // Annual energy: 9.35*0.50=4.68 (within 4.14-5.34)
-            "950" => 1.0,                 // Keep original for cooling-only case
-            "195" => 1.0,                 // Steady-state - no correction needed
+            "950" => 1.0,                  // Keep original for cooling-only case
+            "195" => 1.0,                  // Steady-state - no correction needed
             _ => 1.0,
         };
         model.thermal_mass_correction_factor = correction;
@@ -1011,8 +1013,8 @@ impl ThermalModel<VectorField> {
             "900" | "910" | "940" => 0.50,
             // Peak ref: 2.20-2.90 (current ~3.96 → factor ~0.56-0.73)
             "920" | "930" => 0.65,
-            "950" => 1.0,                 // Keep original for cooling-only case
-            "195" => 1.0,                 // Steady-state - no correction needed
+            "950" => 1.0, // Keep original for cooling-only case
+            "195" => 1.0, // Steady-state - no correction needed
             _ => 1.0,
         };
         model.peak_thermal_mass_correction_factor = peak_correction;
@@ -1410,12 +1412,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     pub fn update_optimization_cache(&mut self) {
         // Calculate the series conductance of h_tr_is and h_tr_ms
         // This represents the thermal resistance from interior air through interior surface to mass
-        let h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone()) 
+        let h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone())
             / (self.h_tr_is.clone() + self.h_tr_ms.clone());
 
         // Calculate the series conductance of (h_tr_is + h_tr_ms) and h_tr_em
         // This represents the complete opaque envelope path from interior air to exterior
-        let h_opaque = (h_tr_is_ms_series.clone() * self.h_tr_em.clone()) 
+        let h_opaque = (h_tr_is_ms_series.clone() * self.h_tr_em.clone())
             / (h_tr_is_ms_series + self.h_tr_em.clone());
 
         // h_ext = h_opaque + h_tr_w + h_ve
@@ -1432,10 +1434,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Issue #471: Only apply 1.2 ground coupling multiplier to 900-series HVAC cases
         // Free-floating cases (600FF, 650FF, 900FF, 950FF) should use standard ground coupling
         let h_tr_floor_val = self.h_tr_floor.as_ref()[0];
-        let is_900_series_hvac = self.case_id.starts_with('9') 
-            && !self.case_id.contains("FF") 
-            && self.case_id != "195";
-        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0 && h_tr_floor_val > 0.0 && is_900_series_hvac {
+        let is_900_series_hvac =
+            self.case_id.starts_with('9') && !self.case_id.contains("FF") && self.case_id != "195";
+        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0
+            && h_tr_floor_val > 0.0
+            && is_900_series_hvac
+        {
             // Apply 1.2 multiplier only for high mass HVAC cases (900-series, not FF)
             1.2
         } else {
@@ -1883,11 +1887,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_ext = self.derived_h_ext.clone();
         let outdoor_temp_tensor = T::from(VectorField::new(vec![outdoor_temp; self.num_zones]));
         let setpoint_tensor = self.heating_setpoints.clone();
-        
+
         // Steady-state heat loss based power (what HVAC would need to maintain setpoint at outdoor temp)
         // This is the correct way to calculate peak load
         let ss_heat_loss = h_ext * (setpoint_tensor - outdoor_temp_tensor);
-        
+
         // For peak tracking, use steady-state heat loss
         let hvac_power_watts = ss_heat_loss.clone().reduce(0.0, |acc, val| acc + val);
 
