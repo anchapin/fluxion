@@ -24,7 +24,7 @@ fn verify_hext() {
 
     // Now compute sensitivity with h_tr_ms = 0
     let h_tr_is = model.h_tr_is[0];
-    let sens_zero_mass = h_tr_is / (h_tr_is * h_ext_no_ve);
+    let _sens_zero_mass = h_tr_is / (h_tr_is * h_ext_no_ve);
     println!("\nWith h_tr_ms=0 and h_ext=h_tr_em:");
     println!("sensitivity = h_tr_is / (h_tr_is * h_ext)");
     println!("           = {} / ({} * {})", h_tr_is, h_tr_is, h_ext_no_ve);

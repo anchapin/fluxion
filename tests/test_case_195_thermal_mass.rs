@@ -5,7 +5,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 #[test]
 fn debug_thermal_mass() {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Check the construction thermal mass
     let wall_construction = &spec.construction.wall;

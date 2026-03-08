@@ -12,7 +12,7 @@ fn test_debug_h_tr_formula() {
     // Get areas
     let wall_area = 75.6;
     let roof_area = 48.0;
-    let floor_area = 48.0;
+    let _floor_area = 48.0;
     let zone_area = 48.0;
 
     // Get U-values

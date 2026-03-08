@@ -5,7 +5,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 #[test]
 fn debug_sensitivity() {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Print derived parameters
     println!("=== Derived Parameters ===");

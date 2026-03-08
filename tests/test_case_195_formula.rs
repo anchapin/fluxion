@@ -5,7 +5,7 @@ use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 #[test]
 fn debug_formula() {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     let zone_floor_area = 48.0;
     let zone_wall_area = 75.6;
