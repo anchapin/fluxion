@@ -1875,7 +1875,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // 3. HVAC Calculation
         // Use local sensitivity (might be different from cached if night vent is active)
         let sensitivity_val = sensitivity;
-        
+
         let hour_of_day_idx = timestep % 24;
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
         // Issue #272: Track peak heating/cooling power BEFORE correction
