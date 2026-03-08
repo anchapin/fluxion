@@ -36,11 +36,8 @@ fn test_debug_case_195_model2() {
                 }
             }
             println!(
-                "  {}: area={:.2}, u={:.4}, conductance={:.2}",
-                format!("{:?}", surface.orientation),
-                surface.area,
-                surface.u_value,
-                conductance
+                "  {:?}: area={:.2}, u={:.4}, conductance={:.2}",
+                surface.orientation, surface.area, surface.u_value, conductance
             );
         }
     }

@@ -13,7 +13,7 @@ fn debug_zero_mass_formula() {
     let h_tr_w = model.h_tr_w[0];
     let h_ve = model.h_ve[0];
     let h_tr_em = model.h_tr_em[0];
-    let h_tr_floor = model.h_tr_floor[0];
+    let _h_tr_floor = model.h_tr_floor[0];
 
     // Current h_ext (includes h_tr_em)
     let h_ext_current = h_tr_w + h_ve + h_tr_em;

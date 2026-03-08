@@ -1781,7 +1781,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Optimization: Avoid cloning h_ve unconditionally.
         // Also avoid cloning and adding h_tr_w + current_h_ve if night vent is active.
         // Instead use derived_h_ext + h_ve_vent.
-        let modified_h_ext: Option<T>;
+        let mut modified_h_ext: Option<T> = None;
 
         // If h_ve changed, we need to adjust h_ext
         let h_ext = if let Some(night_vent) = &self.night_ventilation {
@@ -1809,17 +1809,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // at each timestep to maintain accuracy (non-linear system behavior)
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
         // Issue #351: Include inter-zone conductance in sensitivity calculation
-        let h_total_with_iz = if self.num_zones > 1 {
-            // Include both conductive and radiative inter-zone conductance
-            h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        let den: T;
+        let sensitivity: T;
+        if let Some(ref mod_h_ext) = modified_h_ext {
+            let h_total_with_iz = if self.num_zones > 1 {
+                // Include both conductive and radiative inter-zone conductance
+                mod_h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+            } else {
+                mod_h_ext.clone()
+            };
+            den = self.derived_h_ms_is_prod.clone()
+                + term_rest_1.clone() * h_total_with_iz
+                + self.derived_ground_coeff.clone();
+            sensitivity = term_rest_1.clone() / den.clone();
         } else {
-            h_ext.clone()
+            den = self.derived_den.clone();
+            sensitivity = self.derived_sensitivity.clone();
         };
-        let den_val = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * h_total_with_iz.clone()
-            + self.derived_ground_coeff.clone();
-        let sens_val = term_rest_1.clone() / den_val.clone();
-        let (den, sensitivity) = (den_val, sens_val);
 
         let num_tm = self.derived_h_ms_is_prod.clone() * self.mass_temperatures.clone();
         let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
@@ -1842,25 +1848,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_iz_rad_vec = self.h_tr_iz_rad.as_ref();
 
         // Use matrix-based solver for coupled zone temperatures (Issue #381)
-        let inter_zone_heat: Vec<f64> = self.solve_coupled_zone_temperatures(
+        let inter_zone_heat: Option<Vec<f64>> = self.solve_coupled_zone_temperatures(
             num_zones,
             self.temperatures.as_ref(),
             h_iz_vec,
             h_iz_rad_vec,
         );
 
-        // Add inter-zone heat transfer to phi_ia (clone to allow reuse)
-        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-
-        // Check if we need to preserve q_iz for superposition later
-        let has_inter_zone = num_zones > 1 && !h_iz_vec.is_empty() && h_iz_vec[0] > 0.0;
-        let _q_iz_clone = if has_inter_zone {
-            Some(q_iz_tensor.clone())
+        let phi_ia_with_iz = if let Some(q_iz) = inter_zone_heat {
+            phi_ia.clone() + VectorField::new(q_iz).into()
         } else {
-            None
+            phi_ia.clone()
         };
-
-        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor;
 
         // Recalculate num_rest with inter-zone heat transfer
         // Optimized: h_ext * t_e -> h_ext * outdoor_temp
@@ -2024,16 +2023,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let term_rest_1 = &self.derived_term_rest_1;
 
         // Handle night ventilation
+        let modified_h_ext: Option<T>;
         let h_ext = if let Some(night_vent) = &self.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
                 let h_ve_vent = air_cap_vent / 3600.0;
-                h_ext_base.clone() + self.temperatures.constant_like(h_ve_vent)
+                let new_h_ext = h_ext_base.clone() + self.temperatures.constant_like(h_ve_vent);
+                modified_h_ext = Some(new_h_ext);
+                modified_h_ext.as_ref().unwrap()
             } else {
-                h_ext_base.clone()
+                modified_h_ext = None;
+                h_ext_base
             }
         } else {
-            h_ext_base.clone()
+            modified_h_ext = None;
+            h_ext_base
         };
 
         // Recalculate sensitivity tensor at each timestep (Issue #301, #366)
@@ -2041,17 +2045,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // as h_ext changes. We recalculate at each timestep for accuracy.
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
         // Issue #351: Include inter-zone conductance in sensitivity calculation
-        let h_total_with_iz = if self.num_zones > 1 {
-            // Include both conductive and radiative inter-zone conductance
-            h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        let den: T;
+        let sensitivity: T;
+        if let Some(ref mod_h_ext) = modified_h_ext {
+            let h_total_with_iz = if self.num_zones > 1 {
+                // Include both conductive and radiative inter-zone conductance
+                mod_h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+            } else {
+                mod_h_ext.clone()
+            };
+            den = self.derived_h_ms_is_prod.clone()
+                + term_rest_1.clone() * h_total_with_iz
+                + self.derived_ground_coeff.clone();
+            sensitivity = term_rest_1.clone() / den.clone();
         } else {
-            h_ext.clone()
+            den = self.derived_den.clone();
+            sensitivity = self.derived_sensitivity.clone();
         };
-        let den_val = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * h_total_with_iz.clone()
-            + self.derived_ground_coeff.clone();
-        let sens_val = term_rest_1.clone() / den_val.clone();
-        let (den, sensitivity) = (den_val, sens_val);
 
         // Use envelope mass temperature instead of single mass temperature
         let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
@@ -2062,7 +2072,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_iz_vec = self.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.h_tr_iz_rad.as_ref();
 
-        let inter_zone_heat: Vec<f64> = if num_zones > 1
+        let inter_zone_heat: Option<Vec<f64>> = if num_zones > 1
             && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
                 || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0)
         {
@@ -2071,24 +2081,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             let h_iz_rad_val = h_iz_rad_vec.first().copied().unwrap_or(0.0);
             let total_h_iz = h_iz_val + h_iz_rad_val;
 
-            (0..num_zones)
-                .map(|i| {
-                    let mut q_iz = 0.0;
-                    for j in 0..num_zones {
-                        if i != j {
-                            // Combined conductive + radiative heat transfer
-                            q_iz += total_h_iz * (temps[j] - temps[i]);
-                        }
-                    }
-                    q_iz
-                })
-                .collect()
+            let sum_t: f64 = temps.iter().sum();
+            let n = num_zones as f64;
+            Some(
+                (0..num_zones)
+                    .map(|i| total_h_iz * (sum_t - n * temps[i]))
+                    .collect(),
+            )
         } else {
-            vec![0.0; num_zones]
+            None
         };
 
-        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-        let phi_ia_with_iz = phi_ia.clone() + q_iz_tensor.clone();
+        let phi_ia_with_iz = if let Some(q_iz) = inter_zone_heat {
+            phi_ia.clone() + VectorField::new(q_iz).into()
+        } else {
+            phi_ia.clone()
+        };
 
         // Ground Coupling: term_rest_1 * h_tr_floor * T_ground = derived_ground_coeff * T_ground
         // Add this to numerator per ISO 13790 5R1C heat balance equation
@@ -2740,12 +2748,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         temps: &[f64],
         h_iz_vec: &[f64],
         h_iz_rad_vec: &[f64],
-    ) -> Vec<f64> {
+    ) -> Option<Vec<f64>> {
         if num_zones <= 1
             || (h_iz_vec.is_empty()
                 || h_iz_vec[0] <= 0.0 && (h_iz_rad_vec.is_empty() || h_iz_rad_vec[0] <= 0.0))
         {
-            return vec![0.0; num_zones];
+            return None;
         }
 
         let total_h_iz =
@@ -2753,15 +2761,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Optimization: avoid matrix allocation and multiplication for simple cases
         // Solve Q_i = sum(G[i,j] * (T_j - T_i)) directly
-        let mut q_iz = vec![0.0; num_zones];
-        for i in 0..num_zones {
-            for j in 0..num_zones {
-                if i != j {
-                    q_iz[i] += total_h_iz * (temps[j] - temps[i]);
-                }
-            }
-        }
-        q_iz
+        let sum_t: f64 = temps.iter().sum();
+        let n = num_zones as f64;
+        let q_iz: Vec<f64> = (0..num_zones)
+            .map(|i| total_h_iz * (sum_t - n * temps[i]))
+            .collect();
+        Some(q_iz)
     }
 
     /// Calculate the free-floating temperature (without HVAC).
@@ -2809,7 +2814,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Use pre-computed cached values to avoid redundant allocations
         let h_ext_base = &self.derived_h_ext;
 
-        let modified_h_ext: Option<T>;
+        let mut modified_h_ext: Option<T> = None;
 
         // If h_ve changed, we need to adjust h_ext
         let h_ext = if let Some(night_vent) = &self.night_ventilation {
@@ -2835,14 +2840,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Dynamic den must include derived_ground_coeff
         // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor + h_tr_iz)
         // Issue #351: Include inter-zone conductance
-        let h_total_with_iz = if self.num_zones > 1 {
-            h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+        let den = if let Some(ref mod_h_ext) = modified_h_ext {
+            let h_total_with_iz = if self.num_zones > 1 {
+                mod_h_ext.clone() + self.h_tr_iz.clone() + self.h_tr_iz_rad.clone()
+            } else {
+                mod_h_ext.clone()
+            };
+            self.derived_h_ms_is_prod.clone()
+                + term_rest_1.clone() * h_total_with_iz
+                + self.derived_ground_coeff.clone()
         } else {
-            h_ext.clone()
+            self.derived_den.clone()
         };
-        let den = self.derived_h_ms_is_prod.clone()
-            + term_rest_1.clone() * h_total_with_iz.clone()
-            + self.derived_ground_coeff.clone();
 
         // Use envelope_mass_temperatures to match step_physics_6r2c
         let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
@@ -2879,8 +2888,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             vec![0.0; num_zones]
         };
 
-        let q_iz_tensor: T = VectorField::new(inter_zone_heat).into();
-        let phi_ia_with_iz = phi_ia + q_iz_tensor;
+        let phi_ia_with_iz = phi_ia + VectorField::new(inter_zone_heat).into();
 
         // Optimization: Use scalar multiplications
         // Ground Coupling: term_rest_1 * h_tr_floor * T_ground = derived_ground_coeff * T_ground
@@ -3725,7 +3733,12 @@ mod inter_zone_tests {
         let h_iz = vec![10.0]; // 10 W/K inter-zone conductance
         let h_iz_rad = vec![5.0]; // 5 W/K radiative conductance
 
-        let q_iz = model.solve_coupled_zone_temperatures(2, &temps, &h_iz, &h_iz_rad);
+        let q_iz_opt = model.solve_coupled_zone_temperatures(2, &temps, &h_iz, &h_iz_rad);
+        assert!(
+            q_iz_opt.is_some(),
+            "solve_coupled_zone_temperatures should return Some"
+        );
+        let q_iz = q_iz_opt.unwrap();
 
         // Expected: Q_iz[0] = (h_iz + h_iz_rad) * (T[1] - T[0]) = 15 * 2 = 30 W
         // Q_iz[1] = (h_iz + h_iz_rad) * (T[0] - T[1]) = 15 * (-2) = -30 W
@@ -3742,7 +3755,12 @@ mod inter_zone_tests {
         let h_iz = vec![10.0]; // Symmetric for now
         let h_iz_rad = vec![5.0];
 
-        let q_iz = model.solve_coupled_zone_temperatures(3, &temps, &h_iz, &h_iz_rad);
+        let q_iz_opt = model.solve_coupled_zone_temperatures(3, &temps, &h_iz, &h_iz_rad);
+        assert!(
+            q_iz_opt.is_some(),
+            "solve_coupled_zone_temperatures should return Some"
+        );
+        let q_iz = q_iz_opt.unwrap();
 
         // Zone 0 should gain heat from both Zone 1 and Zone 2
         assert!(q_iz[0] > 0.0, "Zone 0 should gain net heat");

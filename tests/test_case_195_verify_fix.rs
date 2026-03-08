@@ -2,13 +2,12 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
-use fluxion::weather::WeatherSource;
 
 #[test]
 fn verify_fix_correctness() {
     let spec = ASHRAE140Case::Case195.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let _weather = DenverTmyWeather::new();
 
     // Get conductances from model
     let h_tr_is = model.h_tr_is.as_ref()[0];

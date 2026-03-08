@@ -95,8 +95,8 @@ fn test_area_weighted_diffuse_distribution() {
         model.calculate_area_weighted_radiative_distribution(0, diffuse_gain_watts);
 
     // With empty surfaces, fallback uses solar_distribution_to_air
-    let expected_surface = diffuse_gain_watts * model.solar_distribution_to_air;
-    let expected_mass = diffuse_gain_watts * (1.0 - model.solar_distribution_to_air);
+    let _expected_surface = diffuse_gain_watts * model.solar_distribution_to_air;
+    let _expected_mass = diffuse_gain_watts * (1.0 - model.solar_distribution_to_air);
 
     // Verify energy conservation
     let total_distributed = radiative_to_surface + radiative_to_mass;
