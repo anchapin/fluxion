@@ -11,6 +11,7 @@ pub mod schedule;
 pub mod shading;
 pub mod sky_radiation;
 pub mod solar;
+pub mod thermal_integration;
 pub mod thermal_model;
 pub mod ventilation;
 pub mod view_factors;
