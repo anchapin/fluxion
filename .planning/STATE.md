@@ -18,9 +18,9 @@ progress:
 
 **Last Updated:** 2026-03-09
 **Current Phase:** 3
-**Current Plan:** 03-08b - Annual Energy Correction Investigation
-**Status:** Reverted thermal_mass_correction_factor approach (peak cooling regression fixed), investigated root cause identified (h_tr_em/h_tr_ms ratio too low: 0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference (3.54 kW), annual heating still high (6.86 MWh), annual cooling still low (~0.70 MWh).
-**Session:** Phase 3 Plan 08b completed
+**Current Plan:** 03-09 - HVAC Demand Calculation Investigation
+**Status:** HVAC demand calculation formula validated (correct), sensitivity calculation validated (correct per ISO 13790 5R1C), Ti_free calculation validated (correct per ISO 13790 5R1C). Root cause identified: h_tr_em/h_tr_ms coupling ratio too low (0.0525 < 0.1). Thermal mass exchanges 95% with interior, 5% with exterior. Winter Ti_free = 7.06°C (too low), causing HVAC to run at max capacity constantly. Annual heating = 6.86 MWh (236% above reference), annual cooling = 4.82 MWh (31% above reference). Issue is parameterization, not formula.
+**Session:** Phase 3 Plan 09 completed
 **Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
 **Phase 3 Results (Plans 07, 07b, 07c, 08, 08b):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh).
 **Progress:** [██████████] 100%
@@ -121,6 +121,8 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 
 9. **Phase 2 Complete - Thermal Mass Dynamics Validated:** Implicit integration with thermal capacitance > 500 J/K threshold successfully implemented. Temperature swing reduction (22.4% vs 19.6% expected) confirms thermal mass damping effect. Case 900 annual heating energy (1.77 MWh) within reference range. All free-floating tests (10/10) passing. Remaining failures due to solar gain issues planned for Phase 3. (Plan 04, 2026-03-09)
 
+10. **HVAC Demand Calculation Formula is Correct:** HVAC demand = ΔT / sensitivity is mathematically and thermodynamically correct. Sensitivity = term_rest_1 / den (ISO 13790 5R1C). Ti_free = (num_tm + num_phi_st + num_rest) / den (ISO 13790 5R1C). Root cause is parameterization (h_tr_em/h_tr_ms ratio too low = 0.0525), not formula. (Plan 09, 2026-03-09)
+
 ### Known Systematic Issues
 
 1. **5R1C Conductance Parameterization:** Incorrect window U-value application to h_tr_em and h_tr_w, missing thermal bridge effects
@@ -173,11 +175,12 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 - [x] Complete Phase 2 Plan 03: Thermal Mass Validation
 - [x] Complete Phase 2 Plan 04: Documentation & State Update
 - [x] Complete Phase 3 Plan 00: Test Infrastructure Creation
-- [ ] Complete Phase 3 Plan 01: Solar Radiation Research
+- [x] Complete Phase 3 Plan 09: HVAC Demand Calculation Investigation
 
 ### Next Steps
 
-1. Complete Phase 3 Plan 01: Solar Radiation Research (analyze solar gain calculation issues)
+1. Implement Solution 1 (adjust coupling ratio): Increase h_tr_em / decrease h_tr_ms to fix h_tr_em/h_tr_ms ratio (target > 0.1, current 0.0525)
+2. If Solution 1 insufficient, implement Solution 2 (time constant-based correction)
 2. Fix solar gain calculations to address cooling load under-prediction
 3. Update REQUIREMENTS.md traceability section with Phase 2 completion
 
