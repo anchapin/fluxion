@@ -976,12 +976,12 @@ impl ThermalModel<VectorField> {
         // This controls the split of radiative gains between surface and mass in the 5R1C/6R2C models.
         model.solar_beam_to_mass_fraction = 1.0 - model.solar_distribution_to_air;
 
-        // Override for free-floating cases (Issue #275)
-        // For free-floating, significantly reduce fraction to mass to allow more
-        // immediate temperature response - heat goes to air, not stored in mass
-        if spec.is_free_floating() {
-            model.solar_beam_to_mass_fraction = 0.0; // 0% to mass, 100% to surface/air
-        }
+        // Fix: Remove override for free-floating cases (Plan 03-03 Task 4)
+        // Previous code (Issue #275) set solar_beam_to_mass_fraction = 0.0 for free-floating
+        // This prevented thermal mass from storing solar energy, causing insufficient damping
+        // Temperature swing reduction was 9.9% instead of ~19.6% expected
+        // Thermal mass should receive solar gains to damp temperature swings
+        // Commenting out this override allows proper thermal mass damping effects
 
         // Thermal mass correction factor for HVAC energy (Issue #274)
         // High-mass buildings have more thermal storage, which reduces HVAC runtime
