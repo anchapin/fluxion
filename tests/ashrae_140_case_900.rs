@@ -108,22 +108,29 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let mut peak_cooling = 0.0_f64;
 
     // Run simulation
-    for _step in 0..steps {
-        let weather_data = weather.get_hourly_data(_step).unwrap();
+    for step in 0..steps {
+        let weather_data = weather.get_hourly_data(step).unwrap();
         // Set weather data on model for solar gain calculation
         model.weather = Some(weather_data.clone());
-        model.step_physics(_step, weather_data.dry_bulb_temp);
 
-        // Extract heating and cooling from loads
-        // Heating loads are positive, cooling loads are negative in the loads VectorField
-        if let Some(&load) = model.loads.as_slice().first() {
-            if load > 0.0 {
-                total_heating += load * 3600.0;  // Convert W to J/h
-                peak_heating = peak_heating.max(load);
-            } else {
-                total_cooling += -load * 3600.0;  // Convert W to J/h
-                peak_cooling = peak_cooling.max(-load);
-            }
+        // Get zone temperature before HVAC to determine if heating or cooling is needed
+        let zone_temp_before = model.temperatures.as_slice().first().copied().unwrap_or(20.0);
+
+        // Run physics step (returns HVAC energy in kWh, positive for heating, negative for cooling)
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let energy_joules = energy_kwh * 3.6e6;  // Convert kWh to Joules
+
+        // Separate heating and cooling based on energy sign and zone temperature
+        // Heating: energy > 0 or zone temp below heating setpoint
+        // Cooling: energy < 0 or zone temp above cooling setpoint
+        if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
+            total_heating += energy_joules;
+            let power_watts = energy_joules / 3600.0;  // Convert J/h to W
+            peak_heating = peak_heating.max(power_watts);
+        } else if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
+            total_cooling += -energy_joules;  // Cooling energy is negative
+            let power_watts = -energy_joules / 3600.0;  // Convert J/h to W
+            peak_cooling = peak_cooling.max(power_watts);
         }
     }
 
