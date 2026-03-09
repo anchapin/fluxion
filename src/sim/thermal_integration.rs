@@ -304,12 +304,7 @@ pub fn explicit_euler_update(
 /// let stable = is_explicit_euler_stable(3600.0, 1000.0, 10.0, 100.0);
 /// assert!(!stable); // High mass, likely unstable
 /// ```
-pub fn is_explicit_euler_stable(
-    dt: f64,
-    cm: f64,
-    h_tr_em: f64,
-    h_tr_ms: f64,
-) -> bool {
+pub fn is_explicit_euler_stable(dt: f64, cm: f64, h_tr_em: f64, h_tr_ms: f64) -> bool {
     let total_conductance = h_tr_em + h_tr_ms;
     if total_conductance <= 0.0 {
         return true; // No heat transfer, trivially stable
@@ -364,9 +359,8 @@ mod tests {
         let t_surface = 22.0;
         let phi_m = 500.0;
 
-        let tm_new = backward_euler_update(
-            tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
-        );
+        let tm_new =
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
 
         // Temperature should increase due to heating
         assert!(tm_new > tm_old);
@@ -386,9 +380,8 @@ mod tests {
         let t_surface = 20.0;
         let phi_m = 0.0;
 
-        let tm_new = backward_euler_update(
-            tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
-        );
+        let tm_new =
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
 
         // Temperature should decrease due to cooling
         assert!(tm_new < tm_old);
@@ -410,12 +403,10 @@ mod tests {
         let t_surface = 22.0;
         let phi_m = 500.0;
 
-        let tm_be = backward_euler_update(
-            tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
-        );
-        let tm_cn = crank_nicolson_update(
-            tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
-        );
+        let tm_be =
+            backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
+        let tm_cn =
+            crank_nicolson_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
 
         // Both should give increasing temperatures
         assert!(tm_be > tm_old);
@@ -438,9 +429,8 @@ mod tests {
         let t_surface = 22.0;
         let phi_m = 100.0;
 
-        let tm_new = explicit_euler_update(
-            tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
-        );
+        let tm_new =
+            explicit_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
 
         // Temperature should increase
         assert!(tm_new > tm_old);
@@ -496,9 +486,7 @@ mod tests {
             let t_ext = 20.0 + 10.0 * ((hour as f64 / 24.0) * 2.0 * PI).sin();
 
             let tm_old = tm;
-            tm = backward_euler_update(
-                tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m,
-            );
+            tm = backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);
         }
 
         // Over a full sinusoidal cycle, the net energy should be close to zero
@@ -509,6 +497,12 @@ mod tests {
         let tm_change = (final_tm - initial_tm).abs();
 
         // Temperature change should be small (< 1°C over full cycle)
-        assert!(tm_change < 1.0, "Final temp: {}, Initial: {}, Change: {}", final_tm, initial_tm, tm_change);
+        assert!(
+            tm_change < 1.0,
+            "Final temp: {}, Initial: {}, Change: {}",
+            final_tm,
+            initial_tm,
+            tm_change
+        );
     }
 }

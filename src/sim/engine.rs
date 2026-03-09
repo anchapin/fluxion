@@ -398,6 +398,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Peak cooling power in watts
     pub peak_power_cooling: f64,
 
+    // Separate heating and cooling energy tracking (Plan 03-08d: Diagnostic)
+    /// Cumulative heating energy in kilowatt-hours (kWh)
+    pub annual_heating_energy: f64,
+    /// Cumulative cooling energy in kilowatt-hours (kWh)
+    pub annual_cooling_energy: f64,
+
     // Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, solar radiation, wind, humidity)
     pub weather: Option<HourlyWeatherData>,
@@ -483,6 +489,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             internal_mass_energy_change_cumulative: self.internal_mass_energy_change_cumulative,
             peak_power_heating: self.peak_power_heating,
             peak_power_cooling: self.peak_power_cooling,
+            annual_heating_energy: self.annual_heating_energy,
+            annual_cooling_energy: self.annual_cooling_energy,
             weather: self.weather.clone(),
             latitude_deg: self.latitude_deg,
             longitude_deg: self.longitude_deg,
@@ -523,6 +531,29 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
     pub fn reset_peak_power(&mut self) {
         self.peak_power_heating = 0.0;
         self.peak_power_cooling = 0.0;
+    }
+
+    /// Get cumulative heating energy in kilowatt-hours (kWh)
+    pub fn get_heating_energy_kwh(&self) -> f64 {
+        self.annual_heating_energy
+    }
+
+    /// Get cumulative cooling energy in kilowatt-hours (kWh)
+    pub fn get_cooling_energy_kwh(&self) -> f64 {
+        self.annual_cooling_energy
+    }
+
+    /// Reset heating and cooling energy tracking (Plan 03-08d)
+    pub fn reset_heating_cooling_energy(&mut self) {
+        self.annual_heating_energy = 0.0;
+        self.annual_cooling_energy = 0.0;
+    }
+
+    /// Reset all energy tracking (peak power, heating/cooling energy, thermal mass)
+    pub fn reset_all_energy_tracking(&mut self) {
+        self.reset_peak_power();
+        self.reset_heating_cooling_energy();
+        self.reset_thermal_mass_energy();
     }
 
     /// Reset thermal mass energy tracking (Issue #432)
@@ -1361,6 +1392,10 @@ impl ThermalModel<VectorField> {
             peak_power_heating: 0.0, // Peak heating power in watts
             peak_power_cooling: 0.0, // Peak cooling power in watts
 
+            // Separate heating and cooling energy tracking (Plan 03-08d: Diagnostic)
+            annual_heating_energy: 0.0, // Cumulative heating energy in kWh
+            annual_cooling_energy: 0.0, // Cumulative cooling energy in kWh
+
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
 
@@ -1981,13 +2016,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Solution 2: Apply time constant-based sensitivity correction to ENERGY ONLY
         // Peak power tracking uses hvac_output_raw (no correction to prevent regression)
         // Energy calculation divides by correction to account for higher effective sensitivity
-        let hvac_energy_for_step = if self.time_constant_sensitivity_correction > 1.0 {
+        // Plan 03-08d: Separate heating and cooling energy tracking for diagnostic
+
+        // Calculate total HVAC energy for step
+        let hvac_energy_joules = if self.time_constant_sensitivity_correction > 1.0 {
             // High-mass building: apply correction to reduce annual energy
             hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt / self.time_constant_sensitivity_correction
         } else {
             // Low-mass building: no correction needed
             hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt
         };
+
+        // Separate heating and cooling energy for diagnostic (Plan 03-08d)
+        // hvac_output_raw is positive for heating, negative for cooling
+        let (heating_energy_joules, cooling_energy_joules) = if self.time_constant_sensitivity_correction > 1.0 {
+            let correction = self.time_constant_sensitivity_correction;
+            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt / correction;
+            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt / correction;
+            (heating_j, cooling_j)
+        } else {
+            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt;
+            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt;
+            (heating_j, cooling_j)
+        };
+
+        // Accumulate separate heating and cooling energy
+        self.annual_heating_energy += heating_energy_joules / 3.6e6; // Convert J to kWh
+        self.annual_cooling_energy += cooling_energy_joules / 3.6e6; // Convert J to kWh
+
+        let hvac_energy_for_step = hvac_energy_joules;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change
         // HVAC energy currently includes energy stored in thermal mass, which should be subtracted
@@ -2281,13 +2338,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Solution 2: Apply time constant-based sensitivity correction to ENERGY ONLY
         let hvac_output_power = hvac_output_raw.clone();
-        let hvac_energy_for_step = if self.time_constant_sensitivity_correction > 1.0 {
+
+        // Calculate total HVAC energy for step
+        let hvac_energy_joules = if self.time_constant_sensitivity_correction > 1.0 {
             // High-mass building: apply correction to reduce annual energy
             hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt / self.time_constant_sensitivity_correction
         } else {
             // Low-mass building: no correction needed
             hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt
         };
+
+        // Separate heating and cooling energy for diagnostic (Plan 03-08d)
+        // hvac_output_raw is positive for heating, negative for cooling
+        let (heating_energy_joules, cooling_energy_joules) = if self.time_constant_sensitivity_correction > 1.0 {
+            let correction = self.time_constant_sensitivity_correction;
+            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt / correction;
+            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt / correction;
+            (heating_j, cooling_j)
+        } else {
+            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt;
+            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt;
+            (heating_j, cooling_j)
+        };
+
+        // Accumulate separate heating and cooling energy
+        self.annual_heating_energy += heating_energy_joules / 3.6e6; // Convert J to kWh
+        self.annual_cooling_energy += cooling_energy_joules / 3.6e6; // Convert J to kWh
+
+        let hvac_energy_for_step = hvac_energy_joules;
 
         // Update indoor temperature with superposition
         // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
