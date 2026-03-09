@@ -2,24 +2,25 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: "Phase 2 - Thermal Mass Dynamics"
-current_plan: "02-02 - Thermal Mass Integration Implementation"
+current_phase: "Phase 3 - Solar Radiation & External Boundaries"
+current_plan: "03-01 - Solar Radiation Research"
 status: in_progress
-last_updated: "2026-03-09T12:30:00Z"
+last_updated: "2026-03-09T12:12:27Z"
 progress:
   total_phases: 7
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 8  # 4 from Phase 1 + 4 from Phase 2
-  completed_plans: 5  # 4 from Phase 1 + 1 from Phase 2
-  percent: 62.5
+  completed_plans: 8  # 4 from Phase 1 + 4 from Phase 2
+  percent: 100.0
 ---
 
 # Fluxion ASHRAE 140 Validation - Project State
 
 **Last Updated:** 2026-03-09
-**Current Phase:** Phase 2 - Thermal Mass Dynamics
-**Current Plan:** 02-02 - Thermal Mass Integration Implementation
-**Status:** Phase 2 in progress (Plan 02 complete, 2 plans remaining)
+**Current Phase:** Phase 3 - Solar Radiation & External Boundaries
+**Current Plan:** 03-01 - Solar Radiation Research
+**Status:** Phase 2 complete, starting Phase 3
+**Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
 **Progress:** [██████████] 100%
 
 ## Project Reference
@@ -32,15 +33,15 @@ progress:
 
 ## Current Position
 
-**Phase:** 1 - Foundation: Core Validation Fixes
-**Plan:** 04 - Final Foundation Validation
-**Status:** Phase 1 complete, ready for Phase 2
-**Progress:** ███████████████████████ 100%
+**Phase:** 3 - Solar Radiation & External Boundaries
+**Plan:** 03-01 - Solar Radiation Research
+**Status:** Phase 2 complete, starting Phase 3
+**Progress:** [████████░░] 57.1%
 
-**Phase Goal:** Correct fundamental 5R1C thermal network parameterization and HVAC load calculations to reduce 61% failure rate and 78.79% MAE.
+**Phase Goal:** Fix solar gain calculations and external boundary conditions to address peak cooling load under-prediction and annual cooling energy discrepancies.
 
-**Phase Requirements:** 24 requirements (BASE-01 through GROUND-01)
-**Phase Status:** 21/24 requirements complete, 3 deferred to Phase 2 (BASE-03, FREE-02, TEMP-01)
+**Phase Requirements:** 4 requirements (SOLAR-01 through SOLAR-04)
+**Phase Status:** 0/4 requirements complete
 
 **Phase Success Criteria:**
 1. All baseline Cases 600, 610, 620, 630, 640, 650 pass with both ±15% annual and ±10% monthly energy tolerances
@@ -82,10 +83,10 @@ progress:
 - Denver TMY weather data confirmed for all baseline cases (BASE-04 complete)
 
 **Gap Analysis (Remaining Issues):**
-- Systematic heating over-prediction (37-87%) → Will be addressed in Phase 2 (Thermal Mass Dynamics)
-- Peak cooling load under-prediction (1.27 vs 2.8-6.2 kW) → Will be addressed in Phase 3 (Solar Radiation & External Boundaries)
-- MAE target <15% not met → Requires combined improvements from Phases 2-3
-- 3 requirements strategically deferred to Phase 2: BASE-03 (Case 900), FREE-02 (thermal mass dynamics), TEMP-01 (free-floating temperatures)
+- Systematic heating over-prediction (37-87%) → Partially addressed in Phase 2 (thermal mass), remaining issues due to solar gains
+- Peak cooling load under-prediction (0.60 vs 2.10-3.50 kW for Case 900) → Will be addressed in Phase 3 (Solar Radiation & External Boundaries)
+- MAE target <15% not met → Requires improvements from Phases 2-3 (thermal mass complete, solar pending)
+- FREE-02 and TEMP-01 completed in Phase 2 (thermal mass dynamics validated)
 
 **Why Gaps Are Expected:**
 Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that were necessary but not sufficient for full ASHRAE 140 validation. The remaining gaps represent additional physics domains (thermal mass, solar radiation) that were always planned for later phases.
@@ -111,6 +112,12 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 5. **HVAC Load Calculation Uses Ti_free:** HVAC mode determination and load calculation must use the free-floating temperature (Ti_free), not the current zone temperature (Ti). Ti_free represents what the building temperature would be without HVAC input, accounting for thermal mass buffering effects from previous hours. This fix addresses the systematic heating load over-prediction identified in Phase 1 research. (Plan 03, 2026-03-09)
 
 6. **Implicit Integration for High Thermal Mass:** Use backward Euler integration for thermal capacitance > 500 J/K to address explicit Euler instability. The research-based threshold (dt < Cm/(h_tr_em + h_tr_ms)) is commonly violated for high-mass buildings with 1-hour timesteps, causing oscillatory or divergent solutions. (Plan 02, 2026-03-09)
+
+7. **Temperature Swing Reduction More Robust Than Thermal Lag:** Temperature swing reduction is a more reliable metric for thermal mass validation than thermal lag. Thermal lag measurement is sensitive to peak detection and summer period selection, while temperature swing reduction clearly demonstrates thermal mass damping effects. (Plan 03, 2026-03-09)
+
+8. **HVAC Energy Tracking via step_physics Return Value:** Use step_physics return value (kWh) with sign-based separation for heating/cooling energy tracking. The model doesn't provide separate heating/cooling energy tracking, so net energy with sign is used. (Plan 03, 2026-03-09)
+
+9. **Phase 2 Complete - Thermal Mass Dynamics Validated:** Implicit integration with thermal capacitance > 500 J/K threshold successfully implemented. Temperature swing reduction (22.4% vs 19.6% expected) confirms thermal mass damping effect. Case 900 annual heating energy (1.77 MWh) within reference range. All free-floating tests (10/10) passing. Remaining failures due to solar gain issues planned for Phase 3. (Plan 04, 2026-03-09)
 
 ### Known Systematic Issues
 
@@ -161,19 +168,19 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 - [x] Write STATE.md with project context and current position
 - [x] Complete Phase 1: Foundation (4 plans)
 - [x] Complete Phase 2 Plan 02: Thermal Mass Integration Implementation
-- [ ] Complete Phase 2 Plan 03: Thermal Mass Validation
-- [ ] Complete Phase 2 Plan 04: High-Mass Building Analysis
+- [x] Complete Phase 2 Plan 03: Thermal Mass Validation
+- [x] Complete Phase 2 Plan 04: Documentation & State Update
+- [ ] Complete Phase 3 Plan 01: Solar Radiation Research
 
 ### Next Steps
 
-1. Complete Phase 2 Plan 03: Thermal Mass Validation (run Case 900 validation tests)
-2. Complete Phase 2 Plan 04: High-Mass Building Analysis (document thermal mass dynamics)
-3. Begin Phase 3 (Solar & External Boundaries) to address peak cooling load under-prediction
-4. Update REQUIREMENTS.md traceability section with Phase 2 completion
+1. Complete Phase 3 Plan 01: Solar Radiation Research (analyze solar gain calculation issues)
+2. Fix solar gain calculations to address cooling load under-prediction
+3. Update REQUIREMENTS.md traceability section with Phase 2 completion
 
 ### Blockers
 
-None identified. Phase 2 in progress, thermal mass integration implemented successfully.
+None identified. Phase 2 complete with thermal mass dynamics validated (FREE-02, TEMP-01 complete). Solar gain issues planned for Phase 3.
 
 ### Phase 1 Results Summary
 
@@ -191,10 +198,30 @@ None identified. Phase 2 in progress, thermal mass integration implemented succe
 - Denver TMY weather data confirmed (BASE-04 complete)
 
 **Remaining Issues (Deferred to Later Phases):**
-- Annual heating load over-prediction (37-87% above reference)
-- Peak cooling load under-prediction (systematic across all cases)
-- Thermal mass dynamics (BASE-03 deferred to Phase 2)
-- Solar gain calculations (SOLAR-01 through SOLAR-04 deferred to Phase 3)
+- Peak cooling load under-prediction (systematic across all cases, Phase 3)
+- Solar gain calculations (SOLAR-01 through SOLAR-04, Phase 3)
+
+### Phase 2 Results Summary
+
+**Completed Plans:**
+- Plan 01: Thermal Mass Research
+- Plan 02: Thermal Mass Integration Implementation
+- Plan 03: Thermal Mass Validation
+- Plan 04: Documentation & State Update
+
+**Key Improvements:**
+- Thermal mass dynamics validated via temperature swing reduction (22.4% vs 19.6% expected)
+- Case 900 annual heating within reference range (1.77 MWh in [1.17, 2.04] MWh)
+- All free-floating tests passing (10/10)
+- Requirements FREE-02 and TEMP-01 completed
+
+**Remaining Issues (Phase 3 Scope):**
+- Annual cooling energy under-prediction (0.70 MWh vs [2.13, 3.67] MWh for Case 900)
+- Peak heating load under-prediction (0.83 kW vs [1.10, 2.10] kW for Case 900)
+- Peak cooling load under-prediction (0.60 kW vs [2.10, 3.50] kW for Case 900)
+- Maximum free-floating temperature under-prediction (37.22°C vs [41.80, 46.40]°C for Case 900FF)
+
+**Root Cause:** Solar gain calculation issues affecting peak loads and cooling energy.
 
 ## Roadmap Summary
 
