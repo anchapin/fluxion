@@ -1,100 +1,91 @@
-# Fluxion - Building Energy Modeling Engine
+# Fluxion - ASHRAE 140 Validation Fixes
 
-## Project Overview
+## What This Is
 
-**Fluxion** is a Rust-based Building Energy Modeling (BEM) engine with a **Neuro-Symbolic hybrid architecture** that combines physics-based thermal networks with AI surrogates for 100x-1000x speedups. It's designed to serve as a high-throughput oracle for quantum optimization and genetic algorithms.
+Fluxion is a Rust-based Building Energy Modeling (BEM) engine with a Neuro-Symbolic hybrid architecture. This project focuses on achieving full ASHRAE Standard 140 validation compliance by fixing systematic errors in heating calculations, peak load predictions, and high-mass building cases. The goal is to ensure the physics engine accurately predicts energy consumption within ASHRAE tolerance bands (±15% annual, ±10% monthly).
 
-### Core Capabilities
-- **High-throughput evaluation**: 10,000+ building configurations per second
-- **Physics-based simulation**: ISO 13790-compliant 5R1C Thermal Network
-- **AI acceleration**: ONNX Runtime surrogates for fast inference
-- **Python bindings**: PyO3 + maturin for seamless integration
+## Core Value
 
-### Technology Stack
-- **Language**: Rust (Edition 2021)
-- **Python Bindings**: PyO3 + maturin
-- **Physics Engine**: Continuous Tensor Abstraction (CTA)
-- **AI/ML**: ONNX Runtime, PyTorch
-- **Parallelism**: rayon for data-parallel evaluation
-- **Validation**: ASHRAE Standard 140 (18/18 cases passing)
+Every ASHRAE 140 test case must pass with energy consumption and peak load predictions within ASHRAE tolerance bands. This is the validation foundation for the entire physics engine—without accurate reference validation, the engine cannot be trusted for production building design optimization.
 
----
+## Requirements
 
-## Architecture
+### Validated
 
-### Two-Class API Pattern
+- ✓ ISO 13790 5R1C thermal network implementation — existing
+- ✓ PyO3 Python bindings with BatchOracle/Model classes — existing
+- ✓ ONNX Runtime surrogate integration — existing
+- ✓ CTA VectorField operations — existing
+- ✓ Case 960 multi-zone sunspace — existing (currently passes)
 
-1. **BatchOracle** (the "hot loop")
-   - High-throughput parallel evaluation of population vectors
-   - Used by quantum optimizers and genetic algorithms
-   - Key method: `evaluate_population(population: Vec<Vec<f64>>, use_surrogates: bool) -> Vec<f64>`
+### Active
 
-2. **Model** (detailed single-building analysis)
-   - Single-configuration simulation for validation/inspection
-   - API: `simulate(years: u32, use_surrogates: bool) -> f64`
+- [ ] **ASHRA-01**: All ASHRAE 140 test cases pass with ±15% annual energy tolerance
+- [ ] **ASHRA-02**: All ASHRAE 140 test cases pass with ±10% monthly energy tolerance
+- [ ] **ASHRA-03**: Peak heating loads match ASHRAE reference values (currently 78.79% mean error)
+- [ ] **ASHRA-04**: Peak cooling loads match ASHRAE reference values
+- [ ] **ASHRA-05**: High-mass building cases (900-series) pass validation
+- [ ] **ASHRA-06**: Annual heating load over-prediction corrected (currently systematically high)
+- [ ] **ASHRA-07**: Mean Absolute Error reduced to <15% (currently 78.79%)
+- [ ] **ASHRA-08**: Max Deviation reduced to acceptable range (currently 471.66%)
+- [ ] **ASHRA-09**: 39 failing cases converted to passing or warnings
+- [ ] **ASHRA-10**: 9 warning cases resolved to passing status
+- [ ] **ASHRA-11**: Inter-zone heat transfer calculations verified and corrected
+- [ ] **ASHRA-12**: Thermal mass dynamics response time improved
+- [ ] **ASHRA-13**: Solar gain calculations validated against reference
+- [ ] **ASHRA-14**: External convection boundary conditions verified
 
-### Core Modules
-- `src/sim/` - Thermal modeling, HVAC, solar, boundaries
-- `src/ai/` - ONNX surrogates, neural fields, RL
-- `src/physics/` - CTA, VectorField, geometry tensors
-- `src/validation/` - ASHRAE 140, benchmarks
-- `src/weather/` - EPW parsing, weather data
+### Out of Scope
 
----
+- Adding new building types beyond ASHRAE 140 standard cases
+- Implementing 6R2C thermal model (deferred to future)
+- FMI 3.0 co-simulation support (deferred to future)
+- RL policy integration improvements (deferred to future)
 
-## Current Status
+## Context
 
-### What's Working
-- ✅ 5R1C thermal network implementation
-- ✅ PyO3 Python bindings (BatchOracle, Model classes)
-- ✅ ONNX Runtime surrogate integration
-- ✅ ASHRAE 140 validation (18/18 cases)
-- ✅ CTA VectorField operations
-- ✅ CLI with validate/quantize commands
+**Current Validation Status:**
+- Total validation metrics: 64
+- Passed: 16 (25%)
+- Warnings: 9 (14%)
+- Failed: 39 (61%)
+- Mean Absolute Error: 78.79%
+- Max Deviation: 471.66%
 
-### Key Metrics
-- Per-config latency: ~100ms target
-- Population throughput: ~1,000/sec (target: 10,000/sec)
-- Python-Rust FFI optimized for batch operations
+**Known Systematic Issues:**
+1. **Annual heating loads** - consistently over-predicted across multiple cases
+2. **Peak heating values** - significant deviations from ASHRAE reference values
+3. **High-mass building cases** (900-series) - systematic accuracy problems
+4. **Multiple error types suspected** - heat transfer, HVAC logic, mass dynamics, solar/external
 
-### Known Issues / Technical Debt
-- Multi-zone heat transfer (Case 960) needs improvement
-- Peak load tracking and reporting
-- GPU surrogate acceleration not fully utilized
+**Existing Infrastructure:**
+- ASHRAE 140 test suite with 64 validation metrics
+- Diagnostic tools: `ashrae_140_diagnostic_test.rs`, `ashrae_140_validation.rs`
+- Case-specific tests: Cases 600, 610, 620, 630, 640, 650, 900, 960, 195
+- Data generation tools: `ashrae_140_generator.py`
+- Documentation: `ASHRAE140_RESULTS.md`, `ASHRAE_140_DIAGNOSTICS.md`, `ASHRAE140_MILESTONES.md`
 
----
+**Physics Architecture:**
+- 5R1C thermal network (ISO 13790-compliant)
+- Two-zone heat transfer with inter-zone conduction
+- Thermal mass with continuous time dynamics
+- HVAC setpoint control with load calculation
+- Solar gain with beam/diffuse decomposition
 
-## Goals
+## Constraints
 
-1. **Performance Optimization**
-   - Achieve >10,000 configs/sec throughput
-   - Implement GPU-accelerated surrogates
-   - Reduce per-config latency to <50ms
+- **ASHRAE 140 Tolerance Bands**: ±15% annual energy, ±10% monthly energy
+- **ISO 13790 Compliance**: Must maintain 5R1C thermal network structure
+- **Existing Architecture**: Preserve PyO3 bindings and BatchOracle/Model API pattern
+- **Performance**: Maintain high-throughput evaluation capability (>1,000 configs/sec)
+- **Physics Accuracy**: Fixes must improve accuracy, not reduce performance
+- **Brownfield Constraints**: Work within existing codebase structure without major refactoring
 
-2. **Validation Coverage**
-   - Complete ASHRAE 140 case coverage
-   - Add peak load validation
-   - Improve multi-zone accuracy
+## Key Decisions
 
-3. **Extensibility**
-   - Add 6R2C thermal model option
-   - FMI 3.0 co-simulation support
-   - Enhanced RL policy integration
-
----
-
-## Recent Changes (2026)
-
-- Implemented continuous tensor abstraction (CTA)
-- Added Fourier basis neural fields
-- Enhanced interzone radiation calculations
-- Fixed multiple ASHRAE 140 validation issues
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| Full overhaul approach | Multiple error types suspected across heating, peaks, mass dynamics — comprehensive fixes needed | — Pending |
 
 ---
-
-## Community
-
-- **Documentation**: See `docs/` for architecture deep-dives
-- **Examples**: See `examples/` for usage patterns
-- **Tests**: Run `cargo test` for validation
-- **CLI**: `fluxion validate --all` for ASHRAE 140
+*Last updated: 2026-03-08 after questioning*
