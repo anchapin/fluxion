@@ -1001,12 +1001,12 @@ impl ThermalModel<VectorField> {
         model.solar_distribution_to_air = 0.0;  // Internal radiative gains go to surface, not air
         model.solar_beam_to_mass_fraction = match spec.case_id.as_str() {
             "960" => 0.4,                 // Sunspace: 40% to mass (60% to air + surface)
-            // Plan 03-07: Reduce solar-to-mass fraction from 0.7 to 0.5 for Case 900
-            // to fix annual energy over-prediction (heating 6.86 MWh, cooling 4.82 MWh)
-            // 70% to mass was causing thermal mass to absorb too much solar energy,
-            // which then released slowly, causing HVAC to work against mass heating/cooling
-            "900" | "910" | "920" | "930" | "940" | "950" => 0.5,  // High-mass: 50% to mass (reduced from 0.7)
-            _ if spec.case_id.starts_with('9') => 0.5, // Other 900-series: 50% to mass (reduced from 0.7)
+            // ASHRAE 140 specification: High-mass buildings (900 series) have 70% of beam solar
+            // going to thermal mass, 30% to interior surface. This is the correct value.
+            // Plan 03-07 reduced this to 0.5 but that made cooling worse (4.93 → 5.03 MWh).
+            // Plan 03-07c reverts to 0.7 to maintain ASHRAE 140 specification.
+            "900" | "910" | "920" | "930" | "940" | "950" => 0.7,  // High-mass: 70% to mass (ASHRAE 140 spec)
+            _ if spec.case_id.starts_with('9') => 0.7, // Other 900-series: 70% to mass (ASHRAE 140 spec)
             _ => 0.3,                     // Low-mass: 30% to mass
         };
 
