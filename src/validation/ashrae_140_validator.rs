@@ -488,6 +488,7 @@ impl ASHRAE140Validator {
 
             // Calculate internal loads (solar is now handled internally by step_physics)
             let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
+
             for zone_idx in 0..num_zones {
                 let internal_gains = spec
                     .internal_loads
@@ -504,6 +505,7 @@ impl ASHRAE140Validator {
 
                 internal_loads.push(internal_gains / floor_area);
             }
+
             model.set_loads(&internal_loads);
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
