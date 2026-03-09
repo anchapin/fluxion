@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 03-09 - HVAC Demand Calculation Investigation
-status: "HVAC demand calculation formula validated (correct), sensitivity calculation validated (correct per ISO 13790 5R1C), Ti_free calculation validated (correct per ISO 13790 5R1C). Root cause identified: h_tr_em/h_tr_ms coupling ratio too low (0.0525 < 0.1). Thermal mass exchanges 95% with interior, 5% with exterior. Winter Ti_free = 7.06°C (too low), causing HVAC to run at max capacity constantly. Annual heating = 6.86 MWh (236% above reference), annual cooling = 4.82 MWh (31% above reference). Issue is parameterization, not formula."
-last_updated: "2026-03-09T21:33:16.921Z"
+current_plan: 03-11 - Annual Energy Correction - Option 1 Implementation
+status: "Option 1 (h_tr_em 5x) implementation FAILED - makes annual heating energy worse. Tested enhancement values: 1.15x (6.86 MWh), 2.0x (8.40 MWh), 5.75x (10.70 MWh). Higher h_tr_em causes thermal mass to absorb too much cold from exterior in winter, worsening Ti_free and increasing heating demand. Theoretical analysis in 03-10 was incorrect - better coupling ratios don't always mean better energy. Current state (1.15x enhancement, h_tr_em=57.32 W/K, ratio=0.0525) is optimal for now. Need alternative approach: investigate ASHRAE 140 reference implementation or implement separate heating/cooling coupling parameters."
+last_updated: "2026-03-09T22:20:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 3
@@ -18,11 +18,11 @@ progress:
 
 **Last Updated:** 2026-03-09
 **Current Phase:** 3
-**Current Plan:** 03-09 - HVAC Demand Calculation Investigation
-**Status:** HVAC demand calculation formula validated (correct), sensitivity calculation validated (correct per ISO 13790 5R1C), Ti_free calculation validated (correct per ISO 13790 5R1C). Root cause identified: h_tr_em/h_tr_ms coupling ratio too low (0.0525 < 0.1). Thermal mass exchanges 95% with interior, 5% with exterior. Winter Ti_free = 7.06°C (too low), causing HVAC to run at max capacity constantly. Annual heating = 6.86 MWh (236% above reference), annual cooling = 4.82 MWh (31% above reference). Issue is parameterization, not formula.
-**Session:** Phase 3 Plan 09 completed
+**Current Plan:** 03-11 - Annual Energy Correction - Option 1 Implementation
+**Status:** Option 1 (h_tr_em 5x) implementation FAILED - makes annual heating energy worse. Tested enhancement values: 1.15x (6.86 MWh), 2.0x (8.40 MWh), 5.75x (10.70 MWh). Higher h_tr_em causes thermal mass to absorb too much cold from exterior in winter, worsening Ti_free and increasing heating demand. Theoretical analysis in 03-10 was incorrect - better coupling ratios don't always mean better energy. Current state (1.15x enhancement, h_tr_em=57.32 W/K, ratio=0.0525) is optimal for now. Need alternative approach: investigate ASHRAE 140 reference implementation or implement separate heating/cooling coupling parameters.
+**Session:** Phase 3 Plan 11 completed (failed - Option 1 implementation rejected)
 **Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
-**Phase 3 Results (Plans 07, 07b, 07c, 08, 08b):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh).
+**Phase 3 Results (Plans 07, 07b, 07c, 08, 08b, 08c, 08d, 09, 10, 11):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh). Plan 08c calibrated Solution 2 correction factor (4.0), found heating/cooling trade-off. Plan 08d verified separate heating/cooling energy tracking, confirmed current state: annual heating 6.86 MWh (236% above ref), annual cooling 4.82 MWh (31% above ref), peak heating 2.10 kW (perfect), peak cooling 3.57 kW (within ref). Plan 09 validated HVAC demand calculation formulas (correct per ISO 13790), confirmed root cause is parameterization not formulas. Plan 10 investigated Solution 3 (6R2C model) and Solution 1 Revisited (more aggressive coupling), recommended Option 1 (h_tr_em 5x). Plan 11 implemented Option 1 (h_tr_em 5x) - FAILED. Annual heating increased from 6.86 MWh to 10.70 MWh (56% worse). Root cause: thermal mass absorbs too much cold from exterior in winter. Theoretical analysis was incorrect - better coupling ratios don't always mean better energy.
 **Progress:** [██████████] 100%
 
 ## Project Reference
@@ -179,14 +179,15 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 
 ### Next Steps
 
-1. Implement Solution 1 (adjust coupling ratio): Increase h_tr_em / decrease h_tr_ms to fix h_tr_em/h_tr_ms ratio (target > 0.1, current 0.0525)
-2. If Solution 1 insufficient, implement Solution 2 (time constant-based correction)
-2. Fix solar gain calculations to address cooling load under-prediction
-3. Update REQUIREMENTS.md traceability section with Phase 2 completion
+1. Investigate ASHRAE 140 reference implementation: Compare reference h_tr_em/h_tr_ms ratio and thermal network structure with current implementation
+2. If reference uses different parameters, adjust Case 900 construction parameters accordingly
+3. If reference investigation insufficient, implement separate heating/cooling coupling parameters (h_tr_em_heating, h_tr_em_cooling)
+4. Fix solar gain calculations to address cooling load under-prediction
+5. Update REQUIREMENTS.md traceability section with Phase 2 completion
 
 ### Blockers
 
-None identified. Phase 2 complete with thermal mass dynamics validated (FREE-02, TEMP-01 complete). Solar gain issues planned for Phase 3.
+**Option 1 Implementation Failed:** Increasing h_tr_em from 57.32 W/K to 286.60 W/K (5x) makes annual heating energy 56% worse (10.70 MWh vs 6.86 MWh). Root cause: thermal mass absorbs too much cold from exterior in winter, worsening Ti_free and increasing heating demand. Theoretical analysis was incorrect - better coupling ratios don't always mean better energy. Need alternative approach.
 
 ### Phase 1 Results Summary
 
