@@ -1910,44 +1910,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         let hour_of_day_idx = timestep % 24;
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+
+        // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
+        // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
+        // t_i_free is the free-floating temperature (what temp would be without HVAC)
+        // This captures thermal mass effects more accurately than steady-state heat loss
         // Issue #272: Track peak heating/cooling power BEFORE correction
         // Use hvac_output_raw (not corrected) to get actual HVAC power demand
-        // For peak tracking, use a hybrid approach:
-        // 1. Calculate steady-state temp without HVAC losses factored in (t_i_free + baseline)
-        // 2. This represents what temp would be if HVAC wasn't running but building had infinite mass
-        // The key insight: use the outdoor temp difference to calculate realistic steady-state load
-        let h_ext = self.derived_h_ext.clone();
-        let outdoor_temp_tensor = T::from(VectorField::new(vec![outdoor_temp; self.num_zones]));
-        let setpoint_tensor = self.heating_setpoints.clone();
 
-        // Steady-state heat loss based power (what HVAC would need to maintain setpoint at outdoor temp)
-        // This is the correct way to calculate peak load
-        let ss_heat_loss = h_ext * (setpoint_tensor - outdoor_temp_tensor);
+        // Calculate HVAC demand (already computed above line 1912)
+        // Peak tracking: use actual HVAC demand (not steady-state approximation)
+        let hvac_power_watts = hvac_output_raw.as_ref().to_vec().iter().sum::<f64>();
 
-        // For peak tracking, use steady-state heat loss
-        let hvac_power_watts = ss_heat_loss.clone().reduce(0.0, |acc, val| acc + val);
-
-        // Track peak for Case 960 and low-mass cases
-        // Apply thermal mass correction factor to peak heating (Issue #473)
-        let peak_correction = self.peak_thermal_mass_correction_factor;
+        // Track peak heating/cooling based on actual HVAC demand
+        // Note: hvac_output_raw is positive for heating, negative for cooling
         if hvac_power_watts > 0.0 {
-            // Heating - apply thermal mass correction
-            let corrected_peak = hvac_power_watts * peak_correction;
-            self.peak_power_heating = self.peak_power_heating.max(corrected_peak);
+            // Heating mode
+            // No correction factor needed - hvac_output_raw already includes thermal mass effects
+            self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
         } else if hvac_power_watts < 0.0 {
-            // Cooling (store as positive value)
-            // Issue #470: Apply thermal mass correction to peak cooling as well
-            let peak_cooling_correction = self.peak_thermal_mass_correction_factor;
-            let corrected_peak_cooling = (-hvac_power_watts) * peak_cooling_correction;
-            self.peak_power_cooling = self.peak_power_cooling.max(corrected_peak_cooling);
+            // Cooling mode (store as positive value)
+            let cooling_demand = -hvac_power_watts;
+            // No correction factor needed - hvac_output_raw already includes thermal mass effects
+            self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
         }
 
-        // Diagnostic output for peak load tracking investigation (Plan 03-03 Task 1)
-        // Compare steady-state approximation vs actual HVAC demand
-        let hvac_output_raw_watts = hvac_output_raw.as_ref().to_vec().iter().sum::<f64>();
-        if timestep % 24 == 0 && (hvac_output_raw_watts.abs() > 1000.0 || hvac_power_watts.abs() > 1000.0) {
-            println!("Day {}: ss_heat_loss={:.2} W, hvac_output_raw={:.2} W, t_i_free={:.2}°C, outdoor_temp={:.2}°C, setpoint={:.2}°C",
-                    timestep / 24, hvac_power_watts, hvac_output_raw_watts, t_i_free.as_ref()[0], outdoor_temp, self.heating_setpoints.as_ref()[0]);
+        // Optional: Add diagnostic output for debugging
+        if timestep % 24 == 0 && hvac_power_watts.abs() > 1000.0 {
+            println!("Day {}: hvac_demand={:.2} W, t_i_free={:.2}°C, outdoor_temp={:.2}°C, setpoint={:.2}°C",
+                    timestep / 24, hvac_power_watts, t_i_free.as_ref()[0], outdoor_temp, self.heating_setpoints.as_ref()[0]);
         }
         // Apply thermal mass correction factor (Issue #274, #472)
         // High-mass buildings need less HVAC energy because thermal mass buffers temperature swings
@@ -2216,24 +2207,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let hour_of_day_idx = timestep % 24;
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
 
-        // Issue #272: Track peak heating/cooling power BEFORE correction
-        // Use hvac_output_raw (not corrected) to get actual HVAC power demand
+        // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
+        // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
         // This is needed for high-mass cases (900 series) that use 6R2C model
-        let hvac_power_watts = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val);
+        let hvac_power_watts = hvac_output_raw.as_ref().to_vec().iter().sum::<f64>();
 
         // Track peak for high-mass cases (6R2C model)
-        // Apply thermal mass correction factor to peak heating (Issue #473)
-        let peak_correction = self.peak_thermal_mass_correction_factor;
+        // Note: hvac_output_raw is positive for heating, negative for cooling
         if hvac_power_watts > 0.0 {
-            // Heating - apply thermal mass correction
-            let corrected_peak = hvac_power_watts * peak_correction;
-            self.peak_power_heating = self.peak_power_heating.max(corrected_peak);
+            // Heating mode
+            // No correction factor needed - hvac_output_raw already includes thermal mass effects
+            self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
         } else if hvac_power_watts < 0.0 {
-            // Cooling (store as positive value)
-            // Issue #470: Apply thermal mass correction to peak cooling as well
-            let peak_cooling_correction = self.peak_thermal_mass_correction_factor;
-            let corrected_peak_cooling = (-hvac_power_watts) * peak_cooling_correction;
-            self.peak_power_cooling = self.peak_power_cooling.max(corrected_peak_cooling);
+            // Cooling mode (store as positive value)
+            let cooling_demand = -hvac_power_watts;
+            // No correction factor needed - hvac_output_raw already includes thermal mass effects
+            self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
         }
 
         // Apply thermal mass correction factor (Issue #274, #472)
