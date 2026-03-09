@@ -112,7 +112,7 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 - [x] 02-02-PLAN.md — Thermal Integration Module Implementation
 - [x] 02-03-PLAN.md — Thermal Mass Validation
 - [x] 02-04-PLAN.md — Documentation & State Update
-- [ ] 02-05-PLAN.md — Test Module Gap Closure (update tests to import actual module)
+- [x] 02-05-PLAN.md — Test Module Gap Closure (update tests to import actual module)
 
 **Results Summary**:
 - Thermal mass dynamics validated via temperature swing reduction (22.4% vs 19.6% expected)
@@ -120,10 +120,9 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 - Case 900FF min temperature within reference range (-4.33°C in [-6.40, -1.60]°C)
 - All free-floating tests passing (10/10)
 - Requirements FREE-02 and TEMP-01 completed
-- Gap identified: test_thermal_mass_integration.rs has 5/8 tests failing due to local stubs not importing actual module
 
 **Gap Analysis**:
-The 4 partial/missing passes in success criteria represent **solar gain issues that are expected and will be addressed in Phase 3**:
+The 4 partial/missing passes in success criteria represent **solar gain issues that are expected and will be addressed in Phase3**:
 
 | Gap | Current Status | Phase to Address | Root Cause |
 |------|---------------|-------------------|-------------|
@@ -131,20 +130,18 @@ The 4 partial/missing passes in success criteria represent **solar gain issues t
 | Case 900 peak heating 0.83 kW (ref 1.10-2.10) | Partial Progress | Phase 3 | Solar gain model (peak loads under-predicted) |
 | Case 900 peak cooling 0.60 kW (ref 2.10-3.50) | Partial Progress | Phase 3 | Solar gain model (peak cooling under-predicted) |
 | Case 900FF max temp 37.22°C (ref 41.80-46.40) | Partial Progress | Phase 3 | Solar gain model (max temp under-predicted) |
-| Test module 5/8 tests failing | Gap Closure | Plan 02-05 | Tests use local stubs instead of importing actual thermal_integration module |
 
 **Why These Gaps Are Expected**:
 Phase 2's scope was limited to thermal mass dynamics (implicit integration, mass-air coupling) that was **necessary but not sufficient** for full Case 900 validation:
 - **Phase 3** will address solar radiation and external boundaries (cooling correction, peak loads, max temps)
 - Thermal mass validation is complete; remaining failures are purely solar gain issues
-- **Plan 02-05** will close the test module gap by updating tests to import the actual module implementation
 
 **Achievement Assessment**:
-Phase 2 delivered **significant thermal mass validation** (temperature swing reduction 22.4%, annual heating within reference, 10/10 free-floating tests passing) that validates correctness of implicit integration and mass-air coupling. The remaining gaps represent **solar gain physics** that were always planned for Phase 3, plus a minor test module cleanup needed in Plan 02-05.
+Phase 2 delivered **significant thermal mass validation** (temperature swing reduction 22.4%, annual heating within reference, 10/10 free-floating tests passing) that validates correctness of implicit integration and mass-air coupling. The remaining gaps represent **solar gain physics** that were always planned for Phase 3.
 
 ### Phase 3: Solar Radiation & External Boundaries
 
-**Goal**: Validate solar gain calculations, beam/diffuse decomposition, and shading geometry to fix cooling load under-prediction.
+**Goal**: Integrate solar gain calculations into 5R1C thermal network to fix cooling load under-prediction (67% below reference for Case 900).
 
 **Depends on**: Phase 2
 
@@ -155,12 +152,16 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 - SOLAR-04: Solar radiation modeling supports beam/diffuse decomposition
 
 **Success Criteria** (what must be TRUE):
-1. Solar gain calculations match ASHRAE reference values within ±5% tolerance for all orientations
-2. Peak cooling loads match ASHRAE reference values within ±10% tolerance
-3. Shading cases (610, 630, 910, 930) pass validation with correct shading effects
-4. Beam/diffuse solar decomposition produces accurate hourly radiation values
+1. Solar gains integrated into 5R1C thermal network energy balance (phi_i_solar term added to internal heat source)
+2. Beam-to-mass distribution (0.7 to mass, 0.3 to interior surface) correctly applied to solar gains
+3. Case 900 annual cooling energy increases to within [2.13, 3.67] MWh reference (from 0.70 MWh baseline)
+4. Case 900 peak cooling load increases to within [2.10, 3.50] kW reference (from 0.60 kW baseline)
+5. Case 900 peak heating load increases to within [1.10, 2.10] kW reference (from 0.83 kW baseline)
+6. Case 900FF max temperature increases to within [41.80, 46.40]°C reference (from 37.22°C baseline)
+7. All free-floating tests continue to pass (10/10)
 
-**Plans**: TBD
+**Plans**: 1 plan
+- [ ] 03-01-PLAN.md — Solar Gain Integration into 5R1C Thermal Network
 
 ### Phase 4: Multi-Zone Inter-Zone Transfer
 
@@ -275,8 +276,8 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Partial Success | 2026-03-09 |
-| 2. Thermal Mass Dynamics | 4/5 | Partial Success | 2026-03-09 |
-| 3. Solar Radiation & External Boundaries | 0/0 | Not started | - |
+| 2. Thermal Mass Dynamics | 5/5 | Partial Success | 2026-03-09 |
+| 3. Solar Radiation & External Boundaries | 0/1 | Not started | - |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
 | 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
 | 6. Performance Optimization | 0/0 | Not started | - |
@@ -333,3 +334,4 @@ Phase 7 (Advanced Analysis & Visualization)
 ---
 *Roadmap created: 2026-03-08*
 *Phase 2 plans revised: 2026-03-09 (split Plan 03 into 03 and 04, added Plan 05 for gap closure)*
+*Phase 3 plans added: 2026-03-09 (Plan 01 - Solar Gain Integration)*
