@@ -7,13 +7,13 @@
 | BASE-03 | Phase 1 | Pending |
 | BASE-04 | Phase 1 | Complete |
 | FREE-01 | Phase 1 | Complete |
-| FREE-02 | Phase 2 | Pending |
+| FREE-02 | Phase 2 | Complete |
 | MULTI-01 | Phase 4 | Pending |
 | COND-01 | Phase 1 | Complete |
 | METRIC-01 | Phase 1 | Complete |
 | METRIC-02 | Phase 1 | Complete |
 | REF-01 | Phase 1 | Complete |
-| TEMP-01 | Phase 2 | Pending |
+| TEMP-01 | Phase 2 | Complete |
 | WEATHER-01 | Phase 1 | Complete |
 | SOLAR-01 | Phase 3 | Pending |
 | SOLAR-02 | Phase 3 | Pending |
