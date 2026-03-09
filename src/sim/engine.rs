@@ -365,23 +365,6 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Typical value: 0.8-0.95 (most beam radiation reaches floor)
     pub solar_beam_to_mass_fraction: f64,
 
-    /// Thermal mass sensitivity correction factor for high-mass buildings (Issue #274, #470)
-    /// This factor reduces HVAC demand for high-mass buildings by accounting for
-    /// thermal mass damping effects on HVAC effectiveness.
-    ///
-    /// For high-mass buildings, thermal mass time constant τ >> timestep (1 hour),
-    /// so HVAC effectiveness is reduced by thermal mass buffering.
-    ///   - Sensitivity calculation: sensitivity_corrected = sensitivity * thermal_mass_correction_factor
-    ///   - For high-mass buildings: τ ≈ 4-5 hours, so HVAC effectiveness is reduced
-    ///   - Correction factor = 1.0 / sqrt(τ / timestep) for τ > timestep
-    ///   - Low-mass (600 series): 1.0 (no correction, τ ≈ 1 hour)
-    ///   - High-mass (900 series): ~0.4-0.6 (correction for τ ≈ 4-5 hours)
-    pub thermal_mass_correction_factor: f64,
-
-    /// Thermal mass correction factor for peak heating power (Issue #473)
-    /// This is separate from the energy correction factor because peak load
-    /// and annual energy respond differently to thermal mass buffering.
-    pub peak_thermal_mass_correction_factor: f64,
 
     /// Thermal mass coupling enhancement factor for temperature swing damping (Issue #470)
     /// This factor enhances the h_tr_em conductance for high-mass buildings
@@ -484,8 +467,6 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
             solar_beam_to_mass_fraction: self.solar_beam_to_mass_fraction,
-            thermal_mass_correction_factor: self.thermal_mass_correction_factor,
-            peak_thermal_mass_correction_factor: self.peak_thermal_mass_correction_factor,
             thermal_mass_coupling_enhancement: self.thermal_mass_coupling_enhancement,
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
@@ -796,29 +777,6 @@ impl ThermalModel<VectorField> {
         };
         model.thermal_mass_coupling_enhancement = coupling_enhancement;
 
-        // Calculate thermal mass sensitivity correction factor (Issue #470)
-        // For high-mass buildings, HVAC effectiveness is reduced by thermal mass damping
-        // τ = C / (h_tr_em + h_tr_ms) where C is thermal capacitance
-        // Current sensitivity is too low (0.002065 K/W), causing HVAC demand to be too high
-        // Need to INCREASE sensitivity to reduce HVAC demand and annual energy
-        // Testing different values to find optimal balance between heating and cooling
-        let thermal_mass_correction_factor = match case_id.as_str() {
-            // High-mass cases (900 series): apply correction based on empirical tuning
-            // Testing different values to achieve both heating and cooling within reference range:
-            // - 2.0: Heating 6.12 MWh (high), Cooling 3.52 MWh (good)
-            // - 2.2: Heating 5.95 MWh (high), Cooling 3.35 MWh (good)
-            // - 3.0: Heating 5.20 MWh (high), Cooling 2.79 MWh (good)
-            // - 4.0: Heating 4.33 MWh (high), Cooling 2.31 MWh (good)
-            // - 5.0: Heating 3.70 MWh (high), Cooling 1.97 MWh (too low), Peak cooling regression
-            // Use 4.0 as balanced compromise - good cooling without peak load regression
-            "900" | "910" | "920" | "930" | "940" | "950" => 4.0,
-            // Free-floating high-mass cases: no correction needed (no HVAC)
-            "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => 1.0,
-            // Low-mass cases (600 series): no correction (τ ≈ 1 hour)
-            _ => 1.0,
-        };
-        model.thermal_mass_correction_factor = thermal_mass_correction_factor;
-
         for zone_idx in 0..num_zones {
             let zone_floor_area = if zone_idx < spec.geometry.len() {
                 spec.geometry[zone_idx].floor_area()
@@ -1074,20 +1032,6 @@ impl ThermalModel<VectorField> {
         // DO NOT override the correction factor set above
         // It is applied in hvac_power_demand() to reduce HVAC demand for high-mass buildings
 
-        // Peak thermal mass correction factor (Issue #473)
-        // Separate from energy correction because peak load responds differently
-        // Still used for peak load tracking, but removed from energy calculation
-        let case_id = &spec.case_id;
-        let peak_correction = match case_id.as_str() {
-            // Peak heating ref: 1.80-2.40 (current ~4.18 → factor ~0.43-0.57)
-            "900" | "910" | "940" => 0.50,
-            // Peak ref: 2.20-2.90 (current ~3.96 → factor ~0.56-0.73)
-            "920" | "930" => 0.65,
-            "950" => 1.0, // Keep original for cooling-only case
-            "195" => 1.0, // Steady-state - no correction needed
-            _ => 1.0,
-        };
-        model.peak_thermal_mass_correction_factor = peak_correction;
 
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
@@ -1378,8 +1322,6 @@ impl ThermalModel<VectorField> {
             convective_fraction: 0.4,
             solar_distribution_to_air: 0.1,
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
-            thermal_mass_correction_factor: 1.0, // Default: no correction for low-mass buildings
-            peak_thermal_mass_correction_factor: 1.0, // Default: no peak correction for low-mass
             thermal_mass_coupling_enhancement: 1.0, // Default: no coupling enhancement
 
             // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
@@ -1643,15 +1585,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Calculate HVAC demand per zone, accounting for zone-specific setpoints (Issue #273)
         // For free-floating zones (hvac_enabled = 0), return 0 demand
 
-        // Issue #470: Apply thermal mass correction factor to sensitivity for high-mass buildings
-        // High-mass buildings have τ >> timestep, reducing HVAC effectiveness
-        // Corrected sensitivity = sensitivity * thermal_mass_correction_factor
-        // This reduces HVAC demand for high-mass buildings to match ASHRAE 140 reference
-        let corrected_sensitivity = sensitivity.clone() * self.thermal_mass_correction_factor;
-
         // Convert to VectorField for element-wise operations
         let t_vec = t_i_free.as_ref();
-        let sens_vec = corrected_sensitivity.as_ref();
+        let sens_vec = sensitivity.as_ref();
         let h_sp_vec = self.heating_setpoints.as_ref();
         let c_sp_vec = self.cooling_setpoints.as_ref();
 
