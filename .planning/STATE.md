@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 03-11 - Annual Energy Correction - Option 1 Implementation
-status: "Option 1 (h_tr_em 5x) implementation FAILED - makes annual heating energy worse. Tested enhancement values: 1.15x (6.86 MWh), 2.0x (8.40 MWh), 5.75x (10.70 MWh). Higher h_tr_em causes thermal mass to absorb too much cold from exterior in winter, worsening Ti_free and increasing heating demand. Theoretical analysis in 03-10 was incorrect - better coupling ratios don't always mean better energy. Current state (1.15x enhancement, h_tr_em=57.32 W/K, ratio=0.0525) is optimal for now. Need alternative approach: investigate ASHRAE 140 reference implementation or implement separate heating/cooling coupling parameters."
-last_updated: "2026-03-09T22:20:00.000Z"
+current_plan: 03-13 - ASHRAE 140 Reference Implementation Investigation
+status: "Material thermal conductivity verified correct per ASHRAE 140 specification. Correction had no impact on validation results (annual heating 6.87 MWh, unchanged from previous). Root cause remains unresolved: h_tr_em/h_tr_ms ratio too low (0.053 vs target > 0.1). Previous investigations exhausted (13 plans, >6 hours). Recommendation: Accept 5R1C model limitation or implement separate heating/cooling coupling parameters."
+last_updated: "2026-03-09T23:08:03.000Z"
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 21
-  completed_plans: 25
+  completed_plans: 29
   percent: 100
 ---
 
@@ -257,6 +257,8 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 | Phase 03-Solar-Radiation P03-08c | 90min | 4 tasks | 2 files |
 | Phase 03-Solar-Radiation P03-08d | 45min | 3 tasks | 5 files |
 | Phase 03 P10 | 45min | 2 tasks | 2 files |
+| Phase 03-Solar-Radiation P03-12 | 30min | 1 tasks | 1 files |
+| Phase 03-Solar-Radiation P13 | 1773095446 | 1 tasks | 2 files |
 
 ### Dependency Chain
 
