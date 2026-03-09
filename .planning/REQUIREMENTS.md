@@ -2,11 +2,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | Phase 1 | Pending |
-| BASE-02 | Phase 1 | Pending |
+| BASE-01 | Phase 1 | Complete |
+| BASE-02 | Phase 1 | Complete |
 | BASE-03 | Phase 1 | Pending |
 | BASE-04 | Phase 1 | Pending |
-| FREE-01 | Phase 1 | Pending |
+| FREE-01 | Phase 1 | Complete |
 | FREE-02 | Phase 2 | Pending |
 | MULTI-01 | Phase 4 | Pending |
 | COND-01 | Phase 1 | Pending |
@@ -14,13 +14,13 @@
 | METRIC-02 | Phase 1 | Pending |
 | REF-01 | Phase 1 | Pending |
 | TEMP-01 | Phase 2 | Pending |
-| WEATHER-01 | Phase 1 | Pending |
+| WEATHER-01 | Phase 1 | Complete |
 | SOLAR-01 | Phase 3 | Pending |
 | SOLAR-02 | Phase 3 | Pending |
 | SOLAR-03 | Phase 3 | Pending |
 | SOLAR-04 | Phase 3 | Pending |
-| THERM-01 | Phase 1 | Pending |
-| THERM-02 | Phase 1 | Pending |
+| THERM-01 | Phase 1 | Complete |
+| THERM-02 | Phase 1 | Complete |
 | LAYER-01 | Phase 1 | Complete |
 | LAYER-02 | Phase 1 | Complete |
 | WINDOW-01 | Phase 1 | Complete |

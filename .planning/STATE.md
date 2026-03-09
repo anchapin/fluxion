@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: "Phase 1 - Foundation: Core Validation Fixes"
-current_plan: 01 - Conductance Calculation Test Suite
+current_plan: 03 - HVAC Load Calculation
 status: completed
-last_updated: "2026-03-09T05:26:34.117Z"
+last_updated: "2026-03-09T05:28:16.928Z"
 progress:
   total_phases: 7
   completed_phases: 0
   total_plans: 4
-  completed_plans: 2
-  percent: 50
+  completed_plans: 3
+  percent: 75
 ---
 
 # Fluxion ASHRAE 140 Validation - Project State
 
 **Last Updated:** 2026-03-09
 **Current Phase:** Phase 1 - Foundation: Core Validation Fixes
-**Current Plan:** 01 - Conductance Calculation Test Suite
-**Status:** Plan 01 complete, ready for Plan 02
-**Progress:** [█████░░░░░] 50%
+**Current Plan:** 03 - HVAC Load Calculation
+**Status:** Plan 03 complete, ready for Plan 04
+**Progress:** [██████░░░░] 75%
 
 ## Project Reference
 
@@ -33,9 +33,9 @@ progress:
 ## Current Position
 
 **Phase:** 1 - Foundation: Core Validation Fixes
-**Plan:** 01 - Conductance Calculation Test Suite
-**Status:** Plan 01 complete, ready for Plan 02
-**Progress:** ████████░░░░░░░░░░░░░ 0%
+**Plan:** 03 - HVAC Load Calculation
+**Status:** Plan 03 complete, ready for Plan 04
+**Progress:** ███████████░░░░░░░░░░░ 75%
 
 **Phase Goal:** Correct fundamental 5R1C thermal network parameterization and HVAC load calculations to reduce 61% failure rate and 78.79% MAE.
 
@@ -82,6 +82,8 @@ progress:
 3. **Developer Experience:** Diagnostic tools (Phase 5) come after physics is correct but before optimization, ensuring tools help debug correct behavior.
 
 4. **Performance Last:** GPU acceleration and neural surrogates (Phase 6) are deferred until validation is accurate. Optimizing incorrect physics wastes effort.
+
+5. **HVAC Load Calculation Uses Ti_free:** HVAC mode determination and load calculation must use the free-floating temperature (Ti_free), not the current zone temperature (Ti). Ti_free represents what the building temperature would be without HVAC input, accounting for thermal mass buffering effects from previous hours. This fix addresses the systematic heating load over-prediction identified in Phase 1 research. (Plan 03, 2026-03-09)
 
 ### Known Systematic Issues
 
@@ -130,19 +132,23 @@ progress:
 - [x] Validate 100% requirement coverage
 - [x] Write ROADMAP.md with phases, requirements, and success criteria
 - [x] Write STATE.md with project context and current position
+- [x] Complete Plan 01: Conductance Calculation Test Suite
+- [x] Complete Plan 02: Window U-value Application Fixes
+- [x] Complete Plan 03: HVAC Load Calculation
 - [ ] Update REQUIREMENTS.md traceability section
-- [ ] Present roadmap draft for user approval
+- [ ] Complete Plan 04: Final Foundation Validation
 
 ### Next Steps
 
-1. Present roadmap draft for user approval
-2. Upon approval, begin Phase 1 planning with `/gsd:plan-phase 1`
-3. Schedule `/gsd:research-phase` for Phase 3 (solar & external boundaries) if needed during Phase 1 planning
-4. Schedule `/gsd:research-phase` for Phase 6 (performance optimization) if needed during Phase 5 planning
+1. Complete Plan 04: Final Foundation Validation to verify all Phase 1 fixes
+2. Validate ASHRAE 140 baseline cases pass with improved accuracy
+3. Proceed to Phase 2 (Thermal Mass Dynamics) upon Phase 1 completion
+4. Schedule `/gsd:research-phase` for Phase 3 (solar & external boundaries) if needed during Phase 2 planning
+5. Schedule `/gsd:research-phase` for Phase 6 (performance optimization) if needed during Phase 5 planning
 
 ### Blockers
 
-None identified. Ready to proceed with Phase 1 planning upon user approval.
+None identified. Ready to proceed with Plan 04.
 
 ## Roadmap Summary
 
@@ -159,6 +165,7 @@ None identified. Ready to proceed with Phase 1 planning upon user approval.
 | 5 - Diagnostics & Reporting | Add diagnostic logging and reports | 4 (REPORT-01 through REPORT-04) |
 | 6 - Performance Optimization | Optimize throughput and GPU acceleration | 12 (GPU-01 through REG-04) |
 | 7 - Advanced Analysis | Sensitivity analysis and visualization | 20 (SENS-01 through MREF-03) |
+| Phase 01 P03 | 360 | 2 tasks | 2 files |
 
 ### Dependency Chain
 
