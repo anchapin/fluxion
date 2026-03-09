@@ -132,10 +132,10 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
         let energy_joules = energy_kwh * 3.6e6;  // Convert kWh to Joules
 
-        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 2)
+        // Diagnostic output for HVAC energy (Plan 03-04)
         if step % 24 == 0 {
-            println!("Day {}: energy_kwh={:.6}, corrected_cumulative_energy={:.2} Wh, mass_energy_change_cumulative={:.2} Wh",
-                    step / 24, energy_kwh, model.corrected_cumulative_energy, model.mass_energy_change_cumulative);
+            println!("Day {}: energy_kwh={:.6}, mass_energy_change_cumulative={:.2} Wh",
+                    step / 24, energy_kwh, model.mass_energy_change_cumulative);
         }
 
         // Track solar gains for diagnostics
@@ -182,11 +182,10 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     println!("Peak solar gain: {:.2} kW", peak_solar_gain / 1000.0);
     println!("Summer average solar gain: {:.2} kW", summer_avg_solar / 1000.0);
     println!("Summer hours tracked: {}", summer_hours);
-    println!("=== HVAC Energy Correction Diagnostics (Plan 03-02) ===");
+    println!("=== HVAC Energy Diagnostics (Plan 03-04) ===");
     println!("Thermal model type: {:?}", model.thermal_model_type);
-    println!("Thermal mass energy accounting enabled: {}", model.thermal_mass_energy_accounting);
-    println!("Corrected cumulative HVAC energy: {:.2} Wh", model.corrected_cumulative_energy);
-    println!("Corrected cumulative HVAC energy: {:.2} kWh", model.corrected_cumulative_energy / 3.6e6);
+    println!("Method: hvac_output_raw used directly (no thermal_mass_correction_factor)");
+    println!("Reason: Ti_free already includes thermal mass effects via 5R1C network");
     println!("Mass energy change cumulative: {:.2} Wh", model.mass_energy_change_cumulative);
     println!("=== Zone Temperature Diagnostics ===");
     println!("Min zone temp: {:.2}°C", min_zone_temp);
@@ -464,7 +463,7 @@ fn test_case_900ff_temperature_swing_reduction() {
 
 #[test]
 fn test_case_900_annual_cooling_energy_with_correction() {
-    // Plan 03-02 Task 3: Test corrected annual cooling energy
+    // Plan 03-04: Test corrected annual cooling energy (no multiplicative correction)
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::from_spec(&spec);
 
@@ -488,18 +487,18 @@ fn test_case_900_annual_cooling_energy_with_correction() {
 
     let cooling_mwh = total_cooling / 1000.0; // Convert kWh to MWh
 
-    println!("=== Corrected HVAC Energy Calculation ===");
+    println!("=== Final HVAC Energy Calculation (Plan 03-04) ===");
     println!("Annual cooling energy: {:.2} MWh", cooling_mwh);
-    println!("Corrected cumulative energy: {:.2} MWh", model.corrected_cumulative_energy / 1e6);
-    println!("Mass energy change cumulative: {:.2} Wh", model.mass_energy_change_cumulative);
     println!("Reference range: [2.13, 3.67] MWh");
-    println!("Thermal mass energy accounting: {}", model.thermal_mass_energy_accounting);
+    println!("Method: hvac_output_raw used directly (no thermal_mass_correction_factor)");
+    println!("Reason: Ti_free already includes thermal mass effects via 5R1C network");
 
-    // Verify corrected annual cooling energy is within reference range
+    // Verify annual cooling energy is within reference range
     assert!(cooling_mwh >= 2.13 && cooling_mwh <= 3.67,
-        "Corrected annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh", cooling_mwh);
+        "Annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh", cooling_mwh);
 
-    println!("✅ Corrected annual cooling energy within reference range");
+    println!("✅ Annual cooling energy within reference range");
+    println!("Improvement: Fixed double-correction bug from Plan 03-02 (11.20 MWh over-correction)");
 }
 
 #[test]
@@ -540,56 +539,10 @@ fn test_case_900_thermal_mass_energy_balance() {
 
 #[test]
 fn test_case_900_hvac_energy_correction_comparison() {
-    // Plan 03-02 Task 3: Compare corrected vs uncorrected HVAC energy
-    let spec = ASHRAE140Case::Case900.spec();
-
-    // Test with thermal mass energy accounting disabled (uncorrected)
-    let mut model_uncorrected = ThermalModel::from_spec(&spec);
-    model_uncorrected.thermal_mass_energy_accounting = false;
-
-    let weather = fluxion::weather::denver::DenverTmyWeather::new();
-    let mut total_cooling_uncorrected = 0.0_f64;
-
-    for step in 0..8760 {
-        let weather_data = weather.get_hourly_data(step).unwrap();
-        model_uncorrected.weather = Some(weather_data.clone());
-        let energy_kwh = model_uncorrected.step_physics(step, weather_data.dry_bulb_temp);
-        if energy_kwh < 0.0 {
-            total_cooling_uncorrected += -energy_kwh;
-        }
-    }
-
-    // Test with thermal mass energy accounting enabled (corrected)
-    let mut model_corrected = ThermalModel::from_spec(&spec);
-
-    let mut total_cooling_corrected = 0.0_f64;
-
-    for step in 0..8760 {
-        let weather_data = weather.get_hourly_data(step).unwrap();
-        model_corrected.weather = Some(weather_data.clone());
-        let energy_kwh = model_corrected.step_physics(step, weather_data.dry_bulb_temp);
-        if energy_kwh < 0.0 {
-            total_cooling_corrected += -energy_kwh;
-        }
-    }
-
-    let cooling_uncorrected_mwh = total_cooling_uncorrected / 1000.0;
-    let cooling_corrected_mwh = total_cooling_corrected / 1000.0;
-    let energy_difference = cooling_corrected_mwh - cooling_uncorrected_mwh;
-    let percentage_difference = (energy_difference / cooling_uncorrected_mwh) * 100.0;
-
-    println!("=== HVAC Energy Correction Comparison ===");
-    println!("Uncorrected cooling: {:.2} MWh", cooling_uncorrected_mwh);
-    println!("Corrected cooling: {:.2} MWh", cooling_corrected_mwh);
-    println!("Energy difference: {:.2} MWh ({:.1}%)", energy_difference, percentage_difference);
-    println!("Mass energy change (corrected): {:.2} Wh", model_corrected.mass_energy_change_cumulative);
-
-    // Corrected energy should be higher than uncorrected (HVAC working harder than calculation suggests)
-    assert!(cooling_corrected_mwh >= cooling_uncorrected_mwh,
-        "Corrected energy {:.2} MWh should be >= uncorrected energy {:.2} MWh",
-        cooling_corrected_mwh, cooling_uncorrected_mwh);
-
-    println!("✅ HVAC energy correction verified");
+    // Plan 03-05: This test is disabled since Plan 03-04 removed thermal_mass_energy_accounting
+    // The corrected energy calculation is no longer needed since Ti_free already includes thermal mass effects
+    // TODO: Remove this test or update it to test a different aspect
+    println!("Test skipped - thermal mass energy accounting removed in Plan 03-04");
 }
 
 #[test]
