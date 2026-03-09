@@ -685,6 +685,163 @@ fn test_case_900ff_temperature_swing_reduction_final() {
     println!("Pass: {}", swing_reduction > 12.3);
 }
 
+#[test]
+fn test_case_900_solar_gain_distribution_validation() {
+    // Plan 03-07 Task 2: Validate solar gain distribution parameters for high-mass buildings
+    // ASHRAE 140 specifications for Case 900 solar gain distribution:
+    // - Beam solar: 70% to thermal mass exterior, 30% to thermal mass interior
+    // - Diffuse/ground-reflected: Different distribution (no beam-to-mass split)
+    // - Solar gains should NOT go directly to air (solar_distribution_to_air = 0.0)
+
+    let spec = ASHRAE140Case::Case900.spec();
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
+
+    println!("=== Solar Gain Distribution Validation (Plan 03-07 Task 2) ===");
+    println!("Case 900 Solar Distribution Parameters:");
+    println!("  solar_beam_to_mass_fraction: {:.2}", model.solar_beam_to_mass_fraction);
+    println!("  solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
+    println!();
+
+    // Validate solar_beam_to_mass_fraction (should be 0.7 for Case 900)
+    let expected_beam_to_mass = 0.7;
+    assert!(
+        (model.solar_beam_to_mass_fraction - expected_beam_to_mass).abs() < 0.01,
+        "solar_beam_to_mass_fraction should be {:.2}, got {:.2}",
+        expected_beam_to_mass,
+        model.solar_beam_to_mass_fraction
+    );
+    println!("✅ solar_beam_to_mass_fraction = {:.2} (expected: {:.2})",
+             model.solar_beam_to_mass_fraction, expected_beam_to_mass);
+    println!("   → 70% of beam solar goes to thermal mass exterior");
+    println!("   → 30% of beam solar goes to thermal mass interior");
+    println!();
+
+    // Validate solar_distribution_to_air (should be 0.0 for all ASHRAE 140 cases)
+    let expected_dist_to_air = 0.0;
+    assert!(
+        (model.solar_distribution_to_air - expected_dist_to_air).abs() < 0.01,
+        "solar_distribution_to_air should be {:.2}, got {:.2}",
+        expected_dist_to_air,
+        model.solar_distribution_to_air
+    );
+    println!("✅ solar_distribution_to_air = {:.2} (expected: {:.2})",
+             model.solar_distribution_to_air, expected_dist_to_air);
+    println!("   → Solar gains do NOT go directly to air");
+    println!("   → All solar gains go to mass/surface via distribution parameters");
+    println!();
+
+    // Verify solar distribution for Case 900
+    println!("Solar Gain Distribution for Case 900:");
+    println!("  Beam solar:");
+    println!("    - 70% (0.70) to mass exterior (phi_m_env)");
+    println!("    - 30% (0.30) to mass interior (phi_m_int)");
+    println!("  Diffuse solar:");
+    println!("    - 100% to surface (phi_st), not to mass");
+    println!("  Ground-reflected solar:");
+    println!("    - 100% to surface (phi_st), not to mass");
+    println!("  Internal radiative gains:");
+    println!("    - Split by solar_distribution_to_air = 0.0");
+    println!("    - 100% to surface (phi_st), not to mass");
+    println!();
+
+    println!("✅ Solar gain distribution validation complete");
+}
+
+#[test]
+fn test_case_900_hvac_demand_calculation_analysis() {
+    // Plan 03-07 Task 1: Analyze hvac_power_demand calculation for high-mass buildings
+    // Purpose: Identify if HVAC demand is being over-estimated, causing annual energy over-prediction
+
+    let spec = ASHRAE140Case::Case900.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+
+    // Track HVAC demand statistics
+    let mut _demand_within_deadband = 0_usize;
+    let mut _demand_when_free_within_deadband = 0_usize;
+    let mut total_demand_sum = 0.0_f64;
+    let mut heating_demand_sum = 0.0_f64;
+    let mut cooling_demand_sum = 0.0_f64;
+    let mut heating_hours = 0_usize;
+    let mut cooling_hours = 0_usize;
+    let mut off_hours = 0_usize;
+
+    let heating_setpoint = model.heating_setpoints.as_ref()[0];
+    let cooling_setpoint = model.cooling_setpoints.as_ref()[0];
+
+    println!("=== HVAC Demand Calculation Analysis (Plan 03-07 Task 1) ===");
+    println!("Heating setpoint: {:.1}°C", heating_setpoint);
+    println!("Cooling setpoint: {:.1}°C", cooling_setpoint);
+    println!("Deadband: [{:.1}, {:.1}]°C", heating_setpoint, cooling_setpoint);
+    println!();
+
+    // Run simulation and analyze HVAC demand
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+
+        // Get Ti_free (free-floating temperature before HVAC)
+        // We need to compute this to check if demand is calculated correctly
+        let outdoor_temp = weather_data.dry_bulb_temp;
+
+        // Step physics
+        let energy_kwh = model.step_physics(step, outdoor_temp);
+        let hvac_demand_w = energy_kwh * 1000.0 / 1.0; // kWh to W (approximate)
+
+        // Track demand statistics
+        total_demand_sum += hvac_demand_w.abs();
+
+        if hvac_demand_w > 0.0 {
+            heating_demand_sum += hvac_demand_w;
+            heating_hours += 1;
+        } else if hvac_demand_w < 0.0 {
+            cooling_demand_sum += -hvac_demand_w;
+            cooling_hours += 1;
+        } else {
+            off_hours += 1;
+        }
+    }
+
+    let avg_demand = total_demand_sum / 8760.0;
+    let avg_heating_demand = if heating_hours > 0 { heating_demand_sum / heating_hours as f64 } else { 0.0 };
+    let avg_cooling_demand = if cooling_hours > 0 { cooling_demand_sum / cooling_hours as f64 } else { 0.0 };
+
+    println!("Demand Statistics:");
+    println!("  Total hours: 8760");
+    println!("  Heating hours: {} ({:.1}%)", heating_hours, heating_hours as f64 / 8760.0 * 100.0);
+    println!("  Cooling hours: {} ({:.1}%)", cooling_hours, cooling_hours as f64 / 8760.0 * 100.0);
+    println!("  Off hours: {} ({:.1}%)", off_hours, off_hours as f64 / 8760.0 * 100.0);
+    println!();
+    println!("  Average demand (absolute): {:.2} W", avg_demand);
+    println!("  Average heating demand: {:.2} W", avg_heating_demand);
+    println!("  Average cooling demand: {:.2} W", avg_cooling_demand);
+    println!();
+
+    // Check for over-estimation indicators
+    let heating_capacity = model.hvac_heating_capacity.min(2100.0); // From Plan 03-05
+    let cooling_capacity = model.hvac_cooling_capacity;
+
+    println!("Capacity Constraints:");
+    println!("  Heating capacity: {:.0} W", heating_capacity);
+    println!("  Cooling capacity: {:.0} W", cooling_capacity);
+    println!();
+
+    // Diagnostic insights
+    println!("Diagnostic Insights:");
+    if avg_heating_demand > heating_capacity * 0.5 {
+        println!("  ⚠️  Average heating demand > 50% of capacity - possible over-estimation");
+    }
+    if avg_cooling_demand > cooling_capacity * 0.5 {
+        println!("  ⚠️  Average cooling demand > 50% of capacity - possible over-estimation");
+    }
+    if off_hours < 4000 {
+        println!("  ⚠️  Off hours < 4000 - HVAC may be running when not needed");
+    }
+    println!();
+
+    println!("✅ HVAC demand calculation analysis complete");
+}
+
 fn main() {
     println!("=== ASHRAE 140 Case 900 Reference Values Test Suite ===\n");
     println!("Purpose: TDD RED phase - create failing tests for Case 900 validation");
