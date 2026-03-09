@@ -2870,32 +2870,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let h_iz_vec = self.h_tr_iz.as_ref();
         let h_iz_rad_vec = self.h_tr_iz_rad.as_ref();
 
-        let inter_zone_heat: Vec<f64> = if num_zones > 1
-            && (!h_iz_vec.is_empty() && h_iz_vec[0] > 0.0
-                || !h_iz_rad_vec.is_empty() && h_iz_rad_vec[0] > 0.0)
-        {
-            let temps = self.temperatures.as_ref();
-            let h_iz_val = h_iz_vec.first().copied().unwrap_or(0.0);
-            let h_iz_rad_val = h_iz_rad_vec.first().copied().unwrap_or(0.0);
-            let total_h_iz = h_iz_val + h_iz_rad_val;
+        // Issue #381: Use matrix-based solver for simultaneous boundary conditions
+        // Optimization: Replace O(N^2) nested loop with O(N) grouping solver from step_physics.
+        // Returns Option<Vec> to prevent allocating zero-filled VectorFields when uncoupled.
+        let inter_zone_heat: Option<Vec<f64>> = self.solve_coupled_zone_temperatures(
+            num_zones,
+            self.temperatures.as_ref(),
+            h_iz_vec,
+            h_iz_rad_vec,
+        );
 
-            (0..num_zones)
-                .map(|i| {
-                    let mut q_iz = 0.0;
-                    for j in 0..num_zones {
-                        if i != j {
-                            // Combined conductive + radiative heat transfer
-                            q_iz += total_h_iz * (temps[j] - temps[i]);
-                        }
-                    }
-                    q_iz
-                })
-                .collect()
+        let phi_ia_with_iz = if let Some(q_iz) = inter_zone_heat {
+            phi_ia + VectorField::new(q_iz).into()
         } else {
-            vec![0.0; num_zones]
+            phi_ia
         };
-
-        let phi_ia_with_iz = phi_ia + VectorField::new(inter_zone_heat).into();
 
         // Optimization: Use scalar multiplications
         // Ground Coupling: term_rest_1 * h_tr_floor * T_ground = derived_ground_coeff * T_ground
