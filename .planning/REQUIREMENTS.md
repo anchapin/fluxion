@@ -15,10 +15,10 @@
 | REF-01 | Phase 1 | Complete |
 | TEMP-01 | Phase 2 | Complete |
 | WEATHER-01 | Phase 1 | Complete |
-| SOLAR-01 | Phase 3 | Pending |
-| SOLAR-02 | Phase 3 | Pending |
-| SOLAR-03 | Phase 3 | Pending |
-| SOLAR-04 | Phase 3 | Pending |
+| SOLAR-01 | Phase 3 | Complete |
+| SOLAR-02 | Phase 3 | Complete |
+| SOLAR-03 | Phase 3 | Complete |
+| SOLAR-04 | Phase 3 | Complete |
 | THERM-01 | Phase 1 | Complete |
 | THERM-02 | Phase 1 | Complete |
 | LAYER-01 | Phase 1 | Complete |
