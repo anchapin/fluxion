@@ -99,7 +99,6 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 
 **Requirements**:
 - FREE-02: Free-floating mode tests thermal mass dynamics independently of HVAC
-# NOTE: TEMP-01 deferred to Phase 2
 - TEMP-01: Free-floating cases report min/max/avg temperatures (°C) to validate thermal mass response
 
 **Success Criteria** (what must be TRUE):
@@ -108,10 +107,11 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 3. Thermal mass response time matches ASHRAE reference values within ±10% tolerance
 4. Mass-air coupling (h_tr_em, h_tr_ms) correctly implemented and validated
 
-**Plans**: 3 plans
-- [ ] 02-01-PLAN.md — Thermal Mass Test Scaffolds (TDD)
-- [ ] 02-02-PLAN.md — Thermal Integration Module Implementation (TDD)
+**Plans**: 4 plans
+- [ ] 02-01-PLAN.md — Thermal Mass Test Scaffolds
+- [ ] 02-02-PLAN.md — Thermal Integration Module Implementation
 - [ ] 02-03-PLAN.md — Thermal Mass Validation
+- [ ] 02-04-PLAN.md — Documentation & State Update
 
 ### Phase 3: Solar Radiation & External Boundaries
 
@@ -246,7 +246,7 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Partial Success | 2026-03-09 |
-| 2. Thermal Mass Dynamics | 0/3 | Not started | - |
+| 2. Thermal Mass Dynamics | 0/4 | Not started | - |
 | 3. Solar Radiation & External Boundaries | 0/0 | Not started | - |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
 | 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
@@ -303,4 +303,4 @@ Phase 7 (Advanced Analysis & Visualization)
 
 ---
 *Roadmap created: 2026-03-08*
-*Phase 2 plans added: 2026-03-09*
+*Phase 2 plans revised: 2026-03-09 (split Plan 03 into 03 and 04)*
