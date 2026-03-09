@@ -985,32 +985,19 @@ impl ThermalModel<VectorField> {
         // Issue #472: Adjusted factors based on uncorrected baseline values.
         // Target ranges: Case 900=1.17-2.04, 920=3.26-4.30, 930=4.14-5.34
         // Use correction factor only for energy calculation, not temperature prediction
-        // Plan 03-02: Disable thermal_mass_correction_factor when thermal_mass_energy_accounting is enabled
-        // to avoid double correction (both factor and energy subtraction)
-        let case_id = &spec.case_id;
-        let is_high_mass_case = case_id == "900" || case_id == "900FF" || case_id == "910" || case_id == "940";
-
-        // Thermal mass correction factor for HVAC energy calculation (Issue #274)
-        // This accounts for the reduced HVAC energy needed in high-mass buildings
-        // due to thermal buffering effect
-        let correction = if is_high_mass_case {
-            // Plan 03-02: When thermal_mass_energy_accounting is enabled, set factor to 1.0
-            // to let the energy subtraction handle the correction more accurately
-            1.0
-        } else {
-            match case_id.as_str() {
-                "900" | "910" | "940" => 0.20, // Annual energy: 9.42*0.20=1.88 (within 1.17-2.04)
-                "920" => 0.40,                 // Annual energy: 9.35*0.40=3.74 (within 3.26-4.30)
-                "930" => 0.50,                 // Annual energy: 9.35*0.50=4.68 (within 4.14-5.34)
-                "950" => 1.0,                  // Keep original for cooling-only case
-                "195" => 1.0,                  // Steady-state - no correction needed
-                _ => 1.0,
-            }
-        };
+        // Plan 03-04: Thermal mass correction factor no longer used for energy
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Therefore, correction factor is always 1.0 (no correction)
+        let correction = 1.0;
         model.thermal_mass_correction_factor = correction;
 
         // Peak thermal mass correction factor (Issue #473)
         // Separate from energy correction because peak load responds differently
+        // Still used for peak load tracking, but removed from energy calculation
+        let case_id = &spec.case_id;
         let peak_correction = match case_id.as_str() {
             // Peak heating ref: 1.80-2.40 (current ~4.18 → factor ~0.43-0.57)
             "900" | "910" | "940" => 0.50,
@@ -1036,11 +1023,6 @@ impl ThermalModel<VectorField> {
         // Default to Denver, CO for ASHRAE 140 validation
         model.latitude_deg = 39.83;
         model.longitude_deg = -104.65;
-
-        // Plan 03-02: Enable thermal mass energy accounting for high-mass cases (900, 900FF)
-        // This corrects HVAC energy by subtracting thermal mass energy change
-        let is_high_mass_case = spec.case_id == "900" || spec.case_id == "900FF";
-        model.thermal_mass_energy_accounting = is_high_mass_case;
 
         // Initialize window properties for solar gain calculation (Issue #278)
         // Issue #351: Use zone-specific window areas for accurate solar gains
@@ -1320,8 +1302,6 @@ impl ThermalModel<VectorField> {
             mass_energy_change_cumulative: 0.0, // Cumulative mass energy change (J)
             envelope_mass_energy_change_cumulative: 0.0, // Envelope mass energy change (J)
             internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
-            thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
-            corrected_cumulative_energy: 0.0, // Corrected HVAC energy after thermal mass accounting (Plan 03-02)
             ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
             // Peak power tracking (Issue #272)
@@ -1522,9 +1502,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Notes
     /// - If heating_setpoint >= cooling_setpoint, the values will be swapped to maintain valid deadband.
     pub fn apply_parameters(&mut self, params: &[f64]) {
-        // Reset corrected energy when parameters change (Plan 03-02)
-        self.corrected_cumulative_energy = 0.0;
-
         if !params.is_empty() {
             self.window_u_value = params[0];
             // Surfaces update for metadata/consistency
@@ -1732,11 +1709,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// Issue #351: Calculate solar gains internally if weather data is available
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
-        // Debug: Print first step to verify thermal_mass_energy_accounting is set
-        if timestep == 0 {
-            println!("DEBUG step_physics: timestep={}, thermal_mass_energy_accounting={}, case_id={}",
-                    timestep, self.thermal_mass_energy_accounting, self.case_id);
-        }
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
         if self.weather.is_some() {
@@ -2034,13 +2006,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // No subtraction of mass energy change needed
         let net_hvac_energy_for_step = hvac_energy_for_step;
 
-        // Diagnostic output for HVAC energy (Plan 03-02 Task 2, updated for Plan 03-04)
+        // Diagnostic output for HVAC energy (Plan 03-04)
         if timestep % 24 == 0 {
-            println!("Day {}: hvac_energy={:.2} Wh, accounting={}",
-                    timestep / 24, hvac_energy_for_step, self.thermal_mass_energy_accounting);
+            println!("Day {}: hvac_energy={:.2} Wh (no thermal mass correction)",
+                    timestep / 24, hvac_energy_for_step);
         }
 
-        net_hvac_energy_for_step / 3.6e6 // Return kWh (net or gross energy)
+        net_hvac_energy_for_step / 3.6e6 // Return kWh
     }
 
     /// Solve physics for one timestep using the 6R2C (two mass node) model.
@@ -2376,8 +2348,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             let phi_m_int_sum = phi_m_int.as_ref().to_vec().iter().sum::<f64>();
             let solar_gain_sum = solar_gains_watts.as_ref().to_vec().iter().sum::<f64>();
             let phi_m_solar_sum = solar_gain_sum * self.solar_beam_to_mass_fraction;
-            let mass_energy_env = self.envelope_thermal_capacitance.as_ref()[0] * self.envelope_mass_temperatures.as_ref()[0];
-            let mass_energy_int = self.internal_thermal_capacitance.as_ref()[0] * self.internal_mass_temperatures.as_ref()[0];
             println!("Day {}: Mass temp (env): {:.2}°C, (int): {:.2}°C, Zone temp: {:.2}°C, phi_m_env: {:.2} W, phi_m_int: {:.2} W, solar_gains: {:.2} W, phi_m_solar: {:.2} W",
                     timestep / 24,
                     self.envelope_mass_temperatures.as_ref()[0],

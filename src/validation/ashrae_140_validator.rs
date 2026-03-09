@@ -388,9 +388,11 @@ impl ASHRAE140Validator {
         controller: &IdealHVACController,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Disable thermal mass energy accounting for ASHRAE 140 validation
-        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
-        model.thermal_mass_energy_accounting = false;
+        // Plan 03-04: Thermal mass energy accounting removed
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
@@ -772,9 +774,11 @@ impl ASHRAE140Validator {
 
     fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Disable thermal mass energy accounting for ASHRAE 140 validation
-        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
-        model.thermal_mass_energy_accounting = false;
+        // Plan 03-04: Thermal mass energy accounting removed
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
 
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
@@ -948,9 +952,11 @@ impl ASHRAE140Validator {
         weather: &DenverTmyWeather,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Disable thermal mass energy accounting for ASHRAE 140 validation
-        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
-        model.thermal_mass_energy_accounting = false;
+        // Plan 03-04: Thermal mass energy accounting removed
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
@@ -1180,9 +1186,11 @@ impl ASHRAE140Validator {
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Disable thermal mass energy accounting for ASHRAE 140 validation
-        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
-        model.thermal_mass_energy_accounting = false;
+        // Plan 03-04: Thermal mass energy accounting removed
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
@@ -1403,7 +1411,7 @@ impl ASHRAE140Validator {
             model.envelope_mass_energy_change_cumulative;
         diagnostic.internal_mass_energy_change_joules =
             model.internal_mass_energy_change_cumulative;
-        diagnostic.thermal_mass_energy_accounting_enabled = model.thermal_mass_energy_accounting;
+        diagnostic.thermal_mass_energy_accounting_enabled = false; // Plan 03-04: Removed
 
         if is_free_floating {
             diagnostic.temp_profile.finalize();
