@@ -34,17 +34,17 @@ created: 2026-03-09
 
 ---
 
-## Per-Task Verification Map
+## Per-Plan Verification Map
 
-| Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
-|---------|------|------|-------------|-----------|-------------------|-------------|
-| 02-01-01 | 01 | FREE-02 | unit | `cargo test -- thermal_mass` | tests/test_thermal_mass.rs | ⬜ pending |
-| 02-01-02 | 01 | FREE-02 | unit | `cargo test -- thermal_mass` | tests/test_thermal_mass.rs | ⬜ pending |
-| 02-01-03 | 01 | FREE-02 | integration | `cargo test -- thermal_mass` | tests/test_thermal_mass.rs | ⬜ pending |
-| 02-02-01 | 02 | TEMP-01 | unit | `cargo test -- thermal_mass` | tests/test_thermal_mass.rs | ⬜ pending |
-| 02-02-02 | 02 | TEMP-01 | integration | `cargo test -- thermal_mass` | tests/ashrae_140_validation.rs | ⬜ pending |
-| 02-03-01 | 03 | FREE-02, TEMP-01 | integration | `cargo test -- all` | tests/ashrae_140_validation.rs | ⬜ pending |
-| 02-03-02 | 03 | FREE-02, TEMP-01 | validation | `cargo test -- all` | docs/ASHRAE140_RESULTS.md | ⬜ pending |
+| Plan | Wave | Requirements | Test Type | Automated Command | Test Files | Status |
+|------|------|-------------|-----------|-------------------|------------|--------|
+| 01 | 0 | FREE-02, TEMP-01 | unit | `cargo test -- test_thermal_mass_integration` | tests/test_thermal_mass_integration.rs | ⬜ pending |
+| 01 | 0 | FREE-02, TEMP-01 | unit | `cargo test -- test_thermal_mass_dynamics` | tests/test_thermal_mass_dynamics.rs | ⬜ pending |
+| 01 | 0 | FREE-02, TEMP-01 | unit | `cargo test -- test_thermal_mass_case_900` | tests/ashrae_140_case_900.rs | ⬜ pending |
+| 02 | 1 | FREE-02 | integration | `cargo test -- test_thermal_mass_integration` | tests/test_thermal_mass_integration.rs | ⬜ pending |
+| 02 | 1 | FREE-02 | integration | `cargo test -- test_thermal_mass_dynamics` | tests/test_thermal_mass_dynamics.rs | ⬜ pending |
+| 03 | 2 | FREE-02, TEMP-01 | validation | `cargo test -- test_thermal_mass_case_900` | tests/ashrae_140_case_900.rs | ⬜ pending |
+| 03 | 2 | FREE-02, TEMP-01 | validation | `cargo test --all` | tests/ashrae_140_case_900.rs | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
 
@@ -52,11 +52,11 @@ created: 2026-03-09
 
 ## Wave 0 Requirements
 
-- [ ] `tests/test_thermal_mass.rs` — stubs for FREE-02 (thermal mass dynamics)
-- [ ] `tests/test_thermal_mass_integration.rs` — integration tests for thermal mass + HVAC
-- [ ] `tests/ashrae_140_validation.rs` — existing validation infrastructure covers Case 900, 900FF
+- [ ] `tests/test_thermal_mass_integration.rs` — stubs for FREE-02 (thermal mass integration methods)
+- [ ] `tests/test_thermal_mass_dynamics.rs` — stubs for FREE-02 (mass-air coupling conductances)
+- [ ] `tests/ashrae_140_case_900.rs` — stubs for FREE-02, TEMP-01 (Case 900 reference values)
 
-*If none: "Existing infrastructure covers all phase requirements."*
+*Created by Plan 01 (TDD Wave 0)*
 
 ---
 
@@ -68,6 +68,7 @@ created: 2026-03-09
 | Thermal lag response time (2-6 hours) | FREE-02 | Requires empirical validation against ASHRAE reference thermal response curves | 1. Simulate Case 900FF with step change (e.g., solar pulse); 2. Measure time to reach 90% steady-state; 3. Verify within 2-6 hours per ASHRAE reference |
 | Mass-air coupling correctness | FREE-02 | Requires validating h_tr_em, h_tr_ms conductances match ISO 13790 formulas | 1. Review implementation in `src/sim/engine.rs`; 2. Verify h_tr_em = 1 / ((1/h_tr_op) - (1/(h_ms*A_m))); 3. Validate no negative or unrealistic conductance values |
 | Case 900 annual energy validation | FREE-02 | ASHRAE 140 reference values are in standard document | 1. Run Case 900 simulation; 2. Compare annual heating/cooling energy to ASHRAE reference ranges; 3. Verify within ±15% annual tolerance |
+| Case 900 temperature tracking | TEMP-01 | Free-floating cases report min/max/avg temperatures (°C) to validate thermal mass response | 1. Run Case 900FF simulation; 2. Record min/max/avg temperatures; 3. Compare min [-6.40, -1.60]°C, max [41.80, 46.40]°C to reference ranges |
 
 *If none: "All phase behaviors have automated verification."*
 
@@ -75,9 +76,8 @@ created: 2026-03-09
 
 ## Validation Sign-Off
 
-- [ ] All tasks have `<automated>` verify or Wave 0 dependencies
-- [ ] Sampling continuity: no 3 consecutive tasks without automated verify
-- [ ] Wave 0 covers all MISSING references
+- [ ] All plans have automated verification commands
+- [ ] Wave 0 covers all test file references
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 120s
 - [ ] `nyquist_compliant: true` set in frontmatter
