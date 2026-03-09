@@ -129,8 +129,11 @@ impl IdealHVACController {
     ///
     /// # Returns
     /// HVAC power in Watts (positive = heating, negative = cooling)
-    pub fn calculate_power(&self, zone_temp: f64, free_float_temp: f64, sensitivity: f64) -> f64 {
-        let mode = self.determine_mode(zone_temp);
+    pub fn calculate_power(&self, _zone_temp: f64, free_float_temp: f64, sensitivity: f64) -> f64 {
+        // Research-guided fix: Use free_float_temp (Ti_free) for mode determination, not zone_temp (Ti)
+        // This ensures HVAC responds to the free-floating temperature, not the current zone temperature
+        // which may be buffered by thermal mass from previous hours
+        let mode = self.determine_mode(free_float_temp);
 
         match mode {
             HVACMode::Heating => {

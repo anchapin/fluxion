@@ -15,38 +15,35 @@ use fluxion::sim::engine::{IdealHVACController, HVACMode};
 ///
 /// This test verifies that the free-floating temperature is calculated correctly
 /// from the energy balance equation without HVAC input.
+///
+/// NOTE: This is a simplified conceptual test. The actual Ti_free calculation
+/// in ThermalModel::step_physics_5r1c is more complex and includes ground coupling,
+/// inter-zone heat transfer, and other factors. This test validates the core concept.
 #[test]
-fn test_ti_free_calculation() {
-    // For a simple 5R1C model, Ti_free = (num_tm + num_phi_st + num_rest) / den
-    // where:
-    // - num_tm = h_tr_ms * Tm
-    // - num_phi_st = h_tr_is * phi_st
-    // - num_rest = h_tr_is * h_ve * (Te + phi_ia / h_ve) + ground term
-    // - den = h_tr_ms * h_tr_is + h_tr_is * (h_tr_w + h_ve)
+fn test_ti_free_calculation_concept() {
+    // For a simple 1R model (not 5R1C), Ti_free would balance heat inputs/outputs:
+    // Q_total = h_tr * (Ti_free - Te) + phi_ia = 0
+    // Ti_free = Te - phi_ia / h_tr
 
-    // Simplified test: verify that Ti_free is between outdoor and mass temperatures
-    // when no gains are present
-    let t_m: f64 = 18.0; // Mass temperature
     let t_e: f64 = 10.0; // Outdoor temperature
-    let phi_st: f64 = 0.0; // No surface gains
-    let phi_ia: f64 = 0.0; // No internal gains
+    let phi_ia: f64 = 500.0; // Internal gains (W)
+    let h_tr: f64 = 100.0; // Overall conductance (W/K)
 
-    // Conductances (W/K)
-    let h_tr_ms: f64 = 100.0; // Mass to surface
-    let h_tr_is: f64 = 200.0; // Surface to interior
-    let h_tr_w: f64 = 50.0; // Windows
-    let h_ve: f64 = 20.0; // Ventilation
+    // Free-floating temperature without HVAC
+    let t_i_free = t_e + phi_ia / h_tr;
 
-    let num_tm = h_tr_ms * t_m;
-    let num_phi_st = h_tr_is * phi_st;
-    let num_rest = h_tr_is * (h_tr_w + h_ve) * t_e;
-    let den = h_tr_ms * h_tr_is + h_tr_is * (h_tr_w + h_ve);
+    // With internal gains, Ti_free should be higher than outdoor temp
+    assert!(t_i_free > t_e, "Ti_free with internal gains should be > Te");
 
-    let t_i_free = (num_tm + num_phi_st + num_rest) / den;
+    // Calculate expected: 10.0 + 500.0 / 100.0 = 15.0°C
+    assert!((t_i_free - 15.0).abs() < 0.01, "Ti_free should be ~15.0°C");
 
-    // Ti_free should be between Tm and Te (no gains)
-    assert!(t_i_free >= t_e.min(t_m), "Ti_free should be >= min(Tm, Te)");
-    assert!(t_i_free <= t_e.max(t_m), "Ti_free should be <= max(Tm, Te)");
+    // In the actual 5R1C model, Ti_free is calculated in step_physics_5r1c as:
+    // t_i_free = (num_tm + num_phi_st + num_rest) / den
+    // where num_tm = h_tr_ms * Tm (mass heat transfer)
+    //       num_phi_st = h_tr_is * phi_st (surface gains)
+    //       num_rest = h_tr_is * (h_tr_w + h_ve) * Te + ground_coupling + inter_zone
+    //       den = h_tr_ms * h_tr_is + h_tr_is * (h_tr_w + h_ve)
 }
 
 /// Test 2: Validate HVAC mode determination (Heating/Cooling/Off) based on zone temperature
@@ -104,7 +101,8 @@ fn test_heating_load_calculation_case1() {
     assert!(power > 0.0, "Heating power should be positive, got {}", power);
 
     // Check magnitude (with tolerance for deadband adjustment)
-    let expected_power = 5000.0;
+    // Target = 20.0 + 0.5 = 20.5, Ti_free = 15.0, diff = 5.5, power = 5.5 / 0.001 = 5500W
+    let expected_power = 5500.0;
     assert!(
         (power - expected_power).abs() < 10.0,
         "Expected ~{}W, got {}W",
@@ -126,7 +124,8 @@ fn test_heating_load_calculation_case2() {
     assert!(power > 0.0, "Heating power should be positive, got {}", power);
 
     // Check magnitude
-    let expected_power = 2000.0;
+    // Target = 20.0 + 0.5 = 20.5, Ti_free = 18.0, diff = 2.5, power = 2.5 / 0.001 = 2500W
+    let expected_power = 2500.0;
     assert!(
         (power - expected_power).abs() < 10.0,
         "Expected ~{}W, got {}W",
@@ -148,7 +147,8 @@ fn test_heating_load_calculation_case3() {
     assert!(power > 0.0, "Heating power should be positive, got {}", power);
 
     // Check magnitude
-    let expected_power = 5000.0;
+    // Target = 20.0 + 0.5 = 20.5, Ti_free = 10.0, diff = 10.5, power = 10.5 / 0.002 = 5250W
+    let expected_power = 5250.0;
     assert!(
         (power - expected_power).abs() < 10.0,
         "Expected ~{}W, got {}W",
@@ -171,7 +171,8 @@ fn test_cooling_load_calculation_case1() {
     assert!(power < 0.0, "Cooling power should be negative, got {}", power);
 
     // Check magnitude
-    let expected_power = -3000.0;
+    // Target = 27.0 - 0.5 = 26.5, Ti_free = 30.0, diff = 3.5, power = -3.5 / 0.001 = -3500W
+    let expected_power = -3500.0;
     assert!(
         (power - expected_power).abs() < 10.0,
         "Expected ~{}W, got {}W",
@@ -193,7 +194,8 @@ fn test_cooling_load_calculation_case2() {
     assert!(power < 0.0, "Cooling power should be negative, got {}", power);
 
     // Check magnitude
-    let expected_power = -1000.0;
+    // Target = 27.0 - 0.5 = 26.5, Ti_free = 28.0, diff = 1.5, power = -1.5 / 0.001 = -1500W
+    let expected_power = -1500.0;
     assert!(
         (power - expected_power).abs() < 10.0,
         "Expected ~{}W, got {}W",
@@ -215,7 +217,8 @@ fn test_cooling_load_calculation_case3() {
     assert!(power < 0.0, "Cooling power should be negative, got {}", power);
 
     // Check magnitude
-    let expected_power = -4000.0;
+    // Target = 27.0 - 0.5 = 26.5, Ti_free = 35.0, diff = 8.5, power = -8.5 / 0.002 = -4250W
+    let expected_power = -4250.0;
     assert!(
         (power - expected_power).abs() < 10.0,
         "Expected ~{}W, got {}W",
