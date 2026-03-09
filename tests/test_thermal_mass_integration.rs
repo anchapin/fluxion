@@ -15,6 +15,11 @@
 //!  for stiff systems."
 
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::sim::thermal_integration::{
+    backward_euler_update,
+    crank_nicolson_update,
+    explicit_euler_update,
+};
 
 /// Thermal capacitance test cases for parameterized testing
 #[derive(Debug, Clone, Copy)]
@@ -80,28 +85,50 @@ fn calculate_heat_flux(tm: f64, config: &ThermalCapacitanceConfig) -> f64 {
 /// Tm_new = Tm_old + dt * Q_net / Cm
 #[allow(dead_code)]
 fn explicit_euler_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
-    let q_net = calculate_heat_flux(tm_old, config);
-    tm_old + DT * q_net / config.cm
+    explicit_euler_update(
+        tm_old,
+        DT,
+        config.cm,
+        config.h_tr_em,
+        config.h_tr_ms,
+        config.t_ext,
+        config.t_surface,
+        config.phi_m,
+    )
 }
 
 /// Backward Euler integration (implicit, 1st-order, unconditionally stable)
-/// Expected to be implemented in Phase 2 Plan 02
+/// Wrapper for imported thermal_integration module function
 #[allow(dead_code)]
 fn backward_euler_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
-    // This implementation is expected in Plan 02
-    // For now, this test will fail because it doesn't exist yet
-    // Tm_new * (Cm/dt + h_tr_em + h_tr_ms) = Cm/dt * Tm_old + h_tr_em * T_ext + h_tr_ms * T_surface + phi_m
-    unimplemented!("Backward Euler integration not yet implemented - expected in Plan 02-02")
+    backward_euler_update(
+        tm_old,
+        DT,
+        config.cm,
+        config.h_tr_em,
+        config.h_tr_ms,
+        config.t_ext,
+        config.t_surface,
+        config.phi_m,
+    )
 }
 
 /// Crank-Nicolson integration (semi-implicit, 2nd-order, A-stable)
-/// Expected to be implemented in Phase 2 Plan 02
+/// Wrapper for imported thermal_integration module function
 #[allow(dead_code)]
 fn crank_nicolson_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
-    // This implementation is expected in Plan 02
-    // For now, this test will fail because it doesn't exist yet
-    unimplemented!("Crank-Nicolson integration not yet implemented - expected in Plan 02-02")
+    crank_nicolson_update(
+        tm_old,
+        DT,
+        config.cm,
+        config.h_tr_em,
+        config.h_tr_ms,
+        config.t_ext,
+        config.t_surface,
+        config.phi_m,
+    )
 }
+
 
 /// Check if temperature change is physically reasonable
 /// Prevents oscillations, divergence, or unrealistic jumps
@@ -212,17 +239,16 @@ fn test_backward_euler_correct_temperature_updates() {
     // Use a simple test case where we can calculate expected result analytically
 
     let config = MEDIUM_MASS_CONFIG;
-    let tm_initial = 20.0;
     let tolerance = 0.1;  // ±0.1°C tolerance
 
     // Step through 10 timesteps and verify temperature evolution
-    let mut tm = tm_initial;
+    let mut tm = 20.0;
     for step in 1..=10 {
         tm = backward_euler_step(tm, &config);
 
         // Temperature should be physically reasonable
         assert!(
-            temperature_is_reasonable(tm_initial, tm),
+            temperature_is_reasonable(20.0, tm),
             "Temperature at step {} should be reasonable",
             step
         );
@@ -293,11 +319,11 @@ fn test_integration_methods_preserve_energy_balance() {
     for step in 1..=TOTAL_STEPS {
         let tm_new = backward_euler_step(tm_be, &config);
 
-        // Track energy balance: change in thermal energy = heat flux
-        // Cm * (Tm_new - Tm_old) = Q_net * dt
+        // Track energy balance: change in thermal energy = heat flux at new state
+        // For backward Euler: Cm * (Tm_new - Tm_old) = Q_net(Tm_new) * dt
         let delta_thermal_energy = config.cm * (tm_new - tm_be);
-        let q_net = calculate_heat_flux(tm_be, &config);
-        let energy_in = q_net * DT;
+        let q_net_new = calculate_heat_flux(tm_new, &config); // Heat flux at NEW state
+        let energy_in = q_net_new * DT;
 
         energy_drift_be += (delta_thermal_energy - energy_in).abs();
 
@@ -322,9 +348,11 @@ fn test_integration_methods_preserve_energy_balance() {
     for step in 1..=TOTAL_STEPS {
         let tm_new = crank_nicolson_step(tm_cn, &config);
 
+        // For Crank-Nicolson: Cm * (Tm_new - Tm_old) = 0.5 * (Q_net(Tm_old) + Q_net(Tm_new)) * dt
         let delta_thermal_energy = config.cm * (tm_new - tm_cn);
-        let q_net = calculate_heat_flux(tm_cn, &config);
-        let energy_in = q_net * DT;
+        let q_net_old = calculate_heat_flux(tm_cn, &config); // Heat flux at old state
+        let q_net_new = calculate_heat_flux(tm_new, &config); // Heat flux at new state
+        let energy_in = 0.5 * (q_net_old + q_net_new) * DT;
 
         energy_drift_cn += (delta_thermal_energy - energy_in).abs();
 
