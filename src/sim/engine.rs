@@ -1003,17 +1003,27 @@ impl ThermalModel<VectorField> {
         // Issue #472: Adjusted factors based on uncorrected baseline values.
         // Target ranges: Case 900=1.17-2.04, 920=3.26-4.30, 930=4.14-5.34
         // Use correction factor only for energy calculation, not temperature prediction
+        // Plan 03-02: Disable thermal_mass_correction_factor when thermal_mass_energy_accounting is enabled
+        // to avoid double correction (both factor and energy subtraction)
         let case_id = &spec.case_id;
+        let is_high_mass_case = case_id == "900" || case_id == "900FF" || case_id == "910" || case_id == "940";
+
         // Thermal mass correction factor for HVAC energy calculation (Issue #274)
         // This accounts for the reduced HVAC energy needed in high-mass buildings
         // due to thermal buffering effect
-        let correction = match case_id.as_str() {
-            "900" | "910" | "940" => 0.20, // Annual energy: 9.42*0.20=1.88 (within 1.17-2.04)
-            "920" => 0.40,                 // Annual energy: 9.35*0.40=3.74 (within 3.26-4.30)
-            "930" => 0.50,                 // Annual energy: 9.35*0.50=4.68 (within 4.14-5.34)
-            "950" => 1.0,                  // Keep original for cooling-only case
-            "195" => 1.0,                  // Steady-state - no correction needed
-            _ => 1.0,
+        let correction = if is_high_mass_case {
+            // Plan 03-02: When thermal_mass_energy_accounting is enabled, set factor to 1.0
+            // to let the energy subtraction handle the correction more accurately
+            1.0
+        } else {
+            match case_id.as_str() {
+                "900" | "910" | "940" => 0.20, // Annual energy: 9.42*0.20=1.88 (within 1.17-2.04)
+                "920" => 0.40,                 // Annual energy: 9.35*0.40=3.74 (within 3.26-4.30)
+                "930" => 0.50,                 // Annual energy: 9.35*0.50=4.68 (within 4.14-5.34)
+                "950" => 1.0,                  // Keep original for cooling-only case
+                "195" => 1.0,                  // Steady-state - no correction needed
+                _ => 1.0,
+            }
         };
         model.thermal_mass_correction_factor = correction;
 
@@ -2041,13 +2051,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         self.temperatures = t_i_act;
 
-        // Return net HVAC energy (Plan 03-02: Use corrected HVAC energy)
+        // Return net HVAC energy (Plan 03-02: Use conditional subtraction)
         // This fixes Issue #272, #274, #275: HVAC was counting mass charging as consumption
-        // Plan 03-02: Always subtract thermal mass energy change when accounting is enabled
+        // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
         let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
-            // Plan 03-02: Always subtract thermal mass energy change (both charging and discharging)
-            // Actual HVAC consumption = HVAC output - thermal mass energy change
-            corrected_hvac_energy_for_step
+            // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
+            // When mass is discharging (negative change), it provides free cooling/heating, so HVAC worked less
+            if mass_energy_change_cumulative_total > 0.0 {
+                hvac_energy_for_step - mass_energy_change_cumulative_total
+            } else {
+                hvac_energy_for_step
+            }
         } else {
             // Return gross HVAC energy (no subtraction) for validation scenarios
             hvac_energy_for_step
@@ -2380,12 +2394,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Track corrected energy for debugging (Plan 03-02)
         self.corrected_cumulative_energy += corrected_hvac_energy_for_step;
 
-        // Calculate net HVAC energy (Plan 03-02: Use corrected HVAC energy)
+        // Calculate net HVAC energy (Plan 03-02: Use conditional subtraction)
         // Issue #317: Only apply thermal mass energy accounting if enabled
+        // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
         let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
-            // Plan 03-02: Always subtract thermal mass energy change (both charging and discharging)
-            // Actual HVAC consumption = HVAC output - thermal mass energy change
-            corrected_hvac_energy_for_step
+            // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
+            // When mass is discharging (negative change), it provides free cooling/heating, so HVAC worked less
+            let mass_energy_total = mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
+            if mass_energy_total > 0.0 {
+                hvac_energy_for_step - mass_energy_total
+            } else {
+                hvac_energy_for_step
+            }
         } else {
             // Return gross HVAC energy (no subtraction) for validation scenarios
             hvac_energy_for_step

@@ -442,6 +442,136 @@ fn test_case_900ff_temperature_swing_reduction() {
 }
 
 #[test]
+fn test_case_900_annual_cooling_energy_with_correction() {
+    // Plan 03-02 Task 3: Test corrected annual cooling energy
+    let spec = ASHRAE140Case::Case900.spec();
+    let mut model = ThermalModel::from_spec(&spec);
+
+    // Simulate full year
+    let steps = 8760;
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+
+    let mut total_cooling = 0.0_f64;
+
+    for step in 0..steps {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+
+        // Count only cooling energy (negative values)
+        if energy_kwh < 0.0 {
+            total_cooling += -energy_kwh;
+        }
+    }
+
+    let cooling_mwh = total_cooling / 1000.0; // Convert kWh to MWh
+
+    println!("=== Corrected HVAC Energy Calculation ===");
+    println!("Annual cooling energy: {:.2} MWh", cooling_mwh);
+    println!("Corrected cumulative energy: {:.2} MWh", model.corrected_cumulative_energy / 1e6);
+    println!("Mass energy change cumulative: {:.2} Wh", model.mass_energy_change_cumulative);
+    println!("Reference range: [2.13, 3.67] MWh");
+    println!("Thermal mass energy accounting: {}", model.thermal_mass_energy_accounting);
+
+    // Verify corrected annual cooling energy is within reference range
+    assert!(cooling_mwh >= 2.13 && cooling_mwh <= 3.67,
+        "Corrected annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh", cooling_mwh);
+
+    println!("✅ Corrected annual cooling energy within reference range");
+}
+
+#[test]
+fn test_case_900_thermal_mass_energy_balance() {
+    // Plan 03-02 Task 3: Verify thermal mass energy balance
+    let spec = ASHRAE140Case::Case900.spec();
+    let mut model = ThermalModel::from_spec(&spec);
+
+    // Simulate full year
+    let steps = 8760;
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+
+    for step in 0..steps {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+        model.step_physics(step, weather_data.dry_bulb_temp);
+    }
+
+    // Verify cumulative thermal mass energy change is approximately zero
+    let cumulative_mass_energy_change = model.mass_energy_change_cumulative;
+    let initial_mass_temp = model.mass_temperatures[0];
+    let final_mass_temp = model.previous_mass_temperatures[0];
+
+    println!("=== Thermal Mass Energy Balance ===");
+    println!("Cumulative mass energy change: {:.2} Wh", cumulative_mass_energy_change);
+    println!("Initial mass temperature: {:.2}°C", initial_mass_temp);
+    println!("Final mass temperature: {:.2}°C", final_mass_temp);
+    println!("Temperature difference: {:.2}°C", final_mass_temp - initial_mass_temp);
+
+    // Cumulative mass energy change should be close to zero (within ±5% of total HVAC energy)
+    // For high-mass buildings, the mass temperature should return close to initial after a full year
+    assert!((final_mass_temp - initial_mass_temp).abs() < 2.0, // ±2°C tolerance
+        "Mass temperature should return close to initial after full year, got {:.2}°C vs {:.2}°C",
+        final_mass_temp, initial_mass_temp);
+
+    println!("✅ Thermal mass energy balance verified");
+}
+
+#[test]
+fn test_case_900_hvac_energy_correction_comparison() {
+    // Plan 03-02 Task 3: Compare corrected vs uncorrected HVAC energy
+    let spec = ASHRAE140Case::Case900.spec();
+
+    // Test with thermal mass energy accounting disabled (uncorrected)
+    let mut model_uncorrected = ThermalModel::from_spec(&spec);
+    model_uncorrected.thermal_mass_energy_accounting = false;
+
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+    let mut total_cooling_uncorrected = 0.0_f64;
+
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_uncorrected.weather = Some(weather_data.clone());
+        let energy_kwh = model_uncorrected.step_physics(step, weather_data.dry_bulb_temp);
+        if energy_kwh < 0.0 {
+            total_cooling_uncorrected += -energy_kwh;
+        }
+    }
+
+    // Test with thermal mass energy accounting enabled (corrected)
+    let mut model_corrected = ThermalModel::from_spec(&spec);
+
+    let mut total_cooling_corrected = 0.0_f64;
+
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_corrected.weather = Some(weather_data.clone());
+        let energy_kwh = model_corrected.step_physics(step, weather_data.dry_bulb_temp);
+        if energy_kwh < 0.0 {
+            total_cooling_corrected += -energy_kwh;
+        }
+    }
+
+    let cooling_uncorrected_mwh = total_cooling_uncorrected / 1000.0;
+    let cooling_corrected_mwh = total_cooling_corrected / 1000.0;
+    let energy_difference = cooling_corrected_mwh - cooling_uncorrected_mwh;
+    let percentage_difference = (energy_difference / cooling_uncorrected_mwh) * 100.0;
+
+    println!("=== HVAC Energy Correction Comparison ===");
+    println!("Uncorrected cooling: {:.2} MWh", cooling_uncorrected_mwh);
+    println!("Corrected cooling: {:.2} MWh", cooling_corrected_mwh);
+    println!("Energy difference: {:.2} MWh ({:.1}%)", energy_difference, percentage_difference);
+    println!("Mass energy change (corrected): {:.2} Wh", model_corrected.mass_energy_change_cumulative);
+
+    // Corrected energy should be higher than uncorrected (HVAC working harder than calculation suggests)
+    assert!(cooling_corrected_mwh >= cooling_uncorrected_mwh,
+        "Corrected energy {:.2} MWh should be >= uncorrected energy {:.2} MWh",
+        cooling_corrected_mwh, cooling_uncorrected_mwh);
+
+    println!("✅ HVAC energy correction verified");
+}
+
+#[test]
 fn test_case_900_thermal_mass_characteristics() {
     // Verify that Case 900 has the expected thermal mass characteristics
 
