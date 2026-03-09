@@ -223,7 +223,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation | 4/4 | ✅ Complete | 2026-03-09 |
+| 1. Foundation | 4/4 | Complete   | 2026-03-09 |
 | 2. Thermal Mass Dynamics | 0/0 | Not started | - |
 | 3. Solar Radiation & External Boundaries | 0/0 | Not started | - |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
