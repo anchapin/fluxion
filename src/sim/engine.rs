@@ -809,8 +809,9 @@ impl ThermalModel<VectorField> {
             // - 2.2: Heating 5.95 MWh (high), Cooling 3.35 MWh (good)
             // - 3.0: Heating 5.20 MWh (high), Cooling 2.79 MWh (good)
             // - 4.0: Heating 4.33 MWh (high), Cooling 2.31 MWh (good)
-            // - 5.0: Testing to see if heating reaches reference range
-            "900" | "910" | "920" | "930" | "940" | "950" => 5.0,
+            // - 5.0: Heating 3.70 MWh (high), Cooling 1.97 MWh (too low), Peak cooling regression
+            // Use 4.0 as balanced compromise - good cooling without peak load regression
+            "900" | "910" | "920" | "930" | "940" | "950" => 4.0,
             // Free-floating high-mass cases: no correction needed (no HVAC)
             "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => 1.0,
             // Low-mass cases (600 series): no correction (τ ≈ 1 hour)

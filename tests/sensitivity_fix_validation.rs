@@ -17,13 +17,13 @@ fn test_case_900_thermal_mass_correction_factor() {
         "  thermal_mass_correction_factor: {:.2}",
         model.thermal_mass_correction_factor
     );
-    println!("  Expected: 5.0 (empirically tuned for annual energy)");
+    println!("  Expected: 4.0 (balanced compromise for heating and cooling)");
     println!();
 
-    // Verify correction factor is set to 5.0 for Case 900
+    // Verify correction factor is set to 4.0 for Case 900
     assert!(
-        (model.thermal_mass_correction_factor - 5.0).abs() < 0.01,
-        "thermal_mass_correction_factor should be 5.0 for Case 900, got {:.2}",
+        (model.thermal_mass_correction_factor - 4.0).abs() < 0.01,
+        "thermal_mass_correction_factor should be 4.0 for Case 900, got {:.2}",
         model.thermal_mass_correction_factor
     );
 
