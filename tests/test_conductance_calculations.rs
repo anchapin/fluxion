@@ -196,7 +196,7 @@ fn test_ashrae_140_case_600_reference_values() {
     println!("  h_tr_w: {:.2} W/K", references.h_tr_w);
     println!("  h_tr_ms: {:.2} W/K", references.h_tr_ms);
     println!("  h_tr_is: {:.2} W/K", references.h_tr_is);
-    println!("  h_ve: {:.2} W/K", references.h_tr_e);
+    println!("  h_ve: {:.2} W/K", references.h_ve);
 
     // Validate reference values are positive and reasonable
     assert!(references.h_tr_em > 0.0);
