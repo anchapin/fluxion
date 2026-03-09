@@ -122,7 +122,7 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 - Requirements FREE-02 and TEMP-01 completed
 
 **Gap Analysis**:
-The 4 partial/missing passes in success criteria represent **solar gain issues that are expected and will be addressed in Phase3**:
+The 4 partial/missing passes in success criteria represent **solar gain issues that are expected and will be addressed in Phase 3**:
 
 | Gap | Current Status | Phase to Address | Root Cause |
 |------|---------------|-------------------|-------------|
@@ -160,7 +160,8 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 6. Case 900FF max temperature increases to within [41.80, 46.40]°C reference (from 37.22°C baseline)
 7. All free-floating tests continue to pass (10/10)
 
-**Plans**: 1 plan
+**Plans**: 2 plans
+- [ ] 03-00-PLAN.md — Test Infrastructure (Wave 0: solar_integration.rs, solar_calculation_validation.rs)
 - [ ] 03-01-PLAN.md — Solar Gain Integration into 5R1C Thermal Network
 
 ### Phase 4: Multi-Zone Inter-Zone Transfer
@@ -277,7 +278,7 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Partial Success | 2026-03-09 |
 | 2. Thermal Mass Dynamics | 5/5 | Partial Success | 2026-03-09 |
-| 3. Solar Radiation & External Boundaries | 0/1 | Not started | - |
+| 3. Solar Radiation & External Boundaries | 0/2 | Not started | - |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
 | 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
 | 6. Performance Optimization | 0/0 | Not started | - |
@@ -334,4 +335,4 @@ Phase 7 (Advanced Analysis & Visualization)
 ---
 *Roadmap created: 2026-03-08*
 *Phase 2 plans revised: 2026-03-09 (split Plan 03 into 03 and 04, added Plan 05 for gap closure)*
-*Phase 3 plans added: 2026-03-09 (Plan 01 - Solar Gain Integration)*
+*Phase 3 plans added: 2026-03-09 (Plans 00-01 - Test Infrastructure & Solar Gain Integration)*
