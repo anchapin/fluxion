@@ -336,17 +336,6 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Thermal bridge coefficient (W/K) representing bypass heat transfer
     pub thermal_bridge_coefficient: f64,
 
-    /// Thermal mass energy accounting mode (Issue #317)
-    /// When false: Disables thermal mass energy subtraction from HVAC energy
-    /// This is needed for steady-state HVAC validation scenarios where thermal mass
-    /// energy storage/release should not affect the thermal balance
-    pub thermal_mass_energy_accounting: bool,
-
-    /// Corrected cumulative HVAC energy with thermal mass energy accounting (Plan 03-02)
-    /// Tracks actual HVAC consumption after subtracting thermal mass energy change
-    /// This resolves the issue where HVAC energy was counting mass charging as consumption
-    pub corrected_cumulative_energy: f64,
-
     /// Ideal air loads mode for ASHRAE 140 validation (Issue #382)
     /// When true: HVAC system has infinite capacity with no control lag
     /// Used to measure pure building loads without fictitious dynamic effects
@@ -495,8 +484,6 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_properties: self.window_properties.clone(),
             window_orientations: self.window_orientations.clone(),
             hvac_controller: self.hvac_controller.clone(),
-            thermal_mass_energy_accounting: self.thermal_mass_energy_accounting,
-            corrected_cumulative_energy: self.corrected_cumulative_energy, // Plan 03-02
             ideal_air_loads_mode: self.ideal_air_loads_mode,
 
             // U-values from construction (Issue #375)
@@ -553,11 +540,6 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
     /// Get cumulative internal mass energy change in Joules (Issue #432)
     pub fn get_internal_mass_energy_change_joules(&self) -> f64 {
         self.internal_mass_energy_change_cumulative
-    }
-
-    /// Check if thermal mass energy accounting is enabled (Issue #432)
-    pub fn is_thermal_mass_energy_accounting_enabled(&self) -> bool {
-        self.thermal_mass_energy_accounting
     }
 
     /// Validate energy conservation (Issue #432)
@@ -1940,11 +1922,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             println!("Day {}: hvac_demand={:.2} W, t_i_free={:.2}°C, outdoor_temp={:.2}°C, setpoint={:.2}°C",
                     timestep / 24, hvac_power_watts, t_i_free.as_ref()[0], outdoor_temp, self.heating_setpoints.as_ref()[0]);
         }
-        // Apply thermal mass correction factor (Issue #274, #472)
-        // High-mass buildings need less HVAC energy because thermal mass buffers temperature swings
-        // Split: use uncorrected hvac_output for temperature prediction, corrected for energy
+        // Plan 03-04: Use hvac_output_raw directly for energy calculation
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Therefore, NO multiplicative correction factor should be applied
         let hvac_output_power = hvac_output_raw.clone();
-        let hvac_output_energy = hvac_output_raw * self.thermal_mass_correction_factor;
 
         // 4. Update Temperatures (Optimized via Superposition)
         // t_i_act = t_i_free + sensitivity * hvac_output
@@ -1953,7 +1937,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
         let t_i_act = t_i_free.clone() + sensitivity_val.clone() * hvac_output_power.clone();
 
-        let hvac_energy_for_step = hvac_output_energy.reduce(0.0, |acc, val| acc + val) * dt;
+        // Use hvac_output_raw directly (no thermal_mass_correction_factor)
+        // Ti_free already includes thermal mass effects, so no correction needed
+        let hvac_energy_for_step = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt;
 
         // Issue #272, #274, #275: Calculate thermal mass energy change
         // HVAC energy currently includes energy stored in thermal mass, which should be subtracted
@@ -2037,56 +2023,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     mass_energy);
         }
 
-        // Issue #272, #274, #275: Calculate thermal mass energy change AFTER mass temperature is updated
-        // Mass energy change = Cm × (Tm_new - Tm_old)
-        let mass_temp_change = self.mass_temperatures.clone() - old_mass_temperatures.clone();
-        let mass_energy_change_for_step = self.thermal_capacitance.clone() * mass_temp_change;
-
-        // Track cumulative mass energy change for debugging
-        let mass_energy_change_for_step_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
-        self.mass_energy_change_cumulative += mass_energy_change_for_step_total;
-
-        // Plan 03-02: Calculate corrected HVAC energy by subtracting thermal mass energy change
-        // When mass stores energy (positive change), HVAC worked harder than needed
-        // When mass releases energy (negative change), HVAC worked less than needed
-        // Actual HVAC consumption = HVAC output - thermal mass energy change
-        let mass_energy_change_cumulative_total = mass_energy_change_for_step_total;
-        let corrected_hvac_energy_for_step = hvac_energy_for_step - mass_energy_change_cumulative_total;
-
-        // Track corrected energy for debugging (Plan 03-02)
-        self.corrected_cumulative_energy += corrected_hvac_energy_for_step;
-
-        // Debug: Print first few steps to verify tracking
-        if timestep < 5 {
-            eprintln!("DEBUG step {}: hvac_energy_for_step={:.2}, mass_energy_change={:.2}, corrected={:.2}, cumulative={:.2}",
-                    timestep, hvac_energy_for_step, mass_energy_change_cumulative_total, corrected_hvac_energy_for_step, self.corrected_cumulative_energy);
-        }
-
-        // Update previous mass temperature for next timestep
+        // Plan 03-04: Update previous mass temperature for tracking (kept for diagnostic output)
+        // Mass energy change tracking removed - Ti_free already includes thermal mass effects
         self.previous_mass_temperatures = old_mass_temperatures;
 
         self.temperatures = t_i_act;
 
-        // Return net HVAC energy (Plan 03-02: Use conditional subtraction)
-        // This fixes Issue #272, #274, #275: HVAC was counting mass charging as consumption
-        // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
-        let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
-            // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
-            // When mass is discharging (negative change), it provides free cooling/heating, so HVAC worked less
-            if mass_energy_change_cumulative_total > 0.0 {
-                hvac_energy_for_step - mass_energy_change_cumulative_total
-            } else {
-                hvac_energy_for_step
-            }
-        } else {
-            // Return gross HVAC energy (no subtraction) for validation scenarios
-            hvac_energy_for_step
-        };
+        // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
+        // Thermal mass energy accounting removed - Ti_free calculation already includes thermal mass effects
+        // No subtraction of mass energy change needed
+        let net_hvac_energy_for_step = hvac_energy_for_step;
 
-        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 2)
+        // Diagnostic output for HVAC energy (Plan 03-02 Task 2, updated for Plan 03-04)
         if timestep % 24 == 0 {
-            println!("Day {}: hvac_energy={:.2} Wh, mass_energy_change={:.2} Wh, corrected_hvac={:.2} Wh, accounting={}",
-                    timestep / 24, hvac_energy_for_step, mass_energy_change_cumulative_total, corrected_hvac_energy_for_step, self.thermal_mass_energy_accounting);
+            println!("Day {}: hvac_energy={:.2} Wh, accounting={}",
+                    timestep / 24, hvac_energy_for_step, self.thermal_mass_energy_accounting);
         }
 
         net_hvac_energy_for_step / 3.6e6 // Return kWh (net or gross energy)
@@ -2248,11 +2199,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
         }
 
-        // Apply thermal mass correction factor (Issue #274, #472)
-        // Split: use uncorrected hvac_output for temperature prediction, corrected for energy
+        // Plan 03-04: Use hvac_output_raw directly for energy calculation
+        // Ti_free calculation already includes thermal mass effects via:
+        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
+        // - Thermal capacitance Cm (thermal mass response rate)
+        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Therefore, NO multiplicative correction factor should be applied
         let hvac_output_power = hvac_output_raw.clone();
-        let hvac_output_energy = hvac_output_raw * self.thermal_mass_correction_factor;
-        let hvac_energy_for_step = hvac_output_energy.reduce(0.0, |acc, val| acc + val) * dt;
+        let hvac_energy_for_step = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt;
 
         // Update indoor temperature with superposition
         // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
@@ -2405,33 +2359,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let mass_energy_change_for_step_total = mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
         self.mass_energy_change_cumulative += mass_energy_change_for_step_total;
 
-        // Plan 03-02: Calculate corrected HVAC energy by subtracting thermal mass energy change
-        // When mass stores energy (positive change), HVAC worked harder than needed
-        // When mass releases energy (negative change), HVAC worked less than needed
-        // Actual HVAC consumption = HVAC output - thermal mass energy change
-        let corrected_hvac_energy_for_step = hvac_energy_for_step - mass_energy_change_for_step_total;
-
-        // Track corrected energy for debugging (Plan 03-02)
-        self.corrected_cumulative_energy += corrected_hvac_energy_for_step;
-
-        // Calculate net HVAC energy (Plan 03-02: Use conditional subtraction)
-        // Issue #317: Only apply thermal mass energy accounting if enabled
-        // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
-        let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
-            // Plan 03-02: Subtract thermal mass energy change only when mass is charging (positive change)
-            // When mass is discharging (negative change), it provides free cooling/heating, so HVAC worked less
-            let mass_energy_total = mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
-            if mass_energy_total > 0.0 {
-                hvac_energy_for_step - mass_energy_total
-            } else {
-                hvac_energy_for_step
-            }
-        } else {
-            // Return gross HVAC energy (no subtraction) for validation scenarios
-            hvac_energy_for_step
-        };
-
-        // Update single mass temperature for backward compatibility (average of two masses)
+        // Plan 03-04: Update single mass temperature for backward compatibility (average of two masses)
         let total_cap =
             self.envelope_thermal_capacitance.clone() + self.internal_thermal_capacitance.clone();
         self.mass_temperatures = (self.envelope_mass_temperatures.clone()
@@ -2461,7 +2389,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     phi_m_solar_sum);
         }
 
-        net_hvac_energy_for_step / 3.6e6 // Return kWh (net energy already calculated)
+        // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
+        // Thermal mass energy accounting removed - Ti_free calculation already includes thermal mass effects
+        hvac_energy_for_step / 3.6e6 // Return kWh
     }
 
     /// Solves a single timestep of the thermal simulation.
