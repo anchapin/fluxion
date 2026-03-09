@@ -7,6 +7,7 @@ use crate::sim::components::WallSurface;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
+use crate::sim::thermal_integration::{backward_euler_update, crank_nicolson_update, select_integration_method, ThermalIntegrationMethod};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{
     CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
@@ -1943,13 +1944,54 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Denominator is term_rest_1
         let t_s_act = ts_num_act / term_rest_1.clone();
 
-        // Optimization: Avoid creating t_e vector. Use map with scalar outdoor_temp.
-        // t_e - mass_temperatures = outdoor_temp - mass_temperatures
-        let q_m_net = self.h_tr_em.clone() * self.mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_act - self.mass_temperatures.clone())
-            + phi_m; // Add gain directly to mass node
-        let dt_m = (q_m_net / self.thermal_capacitance.clone()) * dt;
-        self.mass_temperatures = self.mass_temperatures.clone() + dt_m;
+        // Update mass temperatures using implicit integration for high thermal capacitance
+        // This addresses instability with explicit Euler for Cm > 500 J/K
+        let mut new_mass_temperatures = Vec::with_capacity(self.num_zones);
+        let mass_temps_ref = self.mass_temperatures.as_ref();
+        let thermal_cap_ref = self.thermal_capacitance.as_ref();
+        let h_tr_em_ref = self.h_tr_em.as_ref();
+        let h_tr_ms_ref = self.h_tr_ms.as_ref();
+        let t_s_act_ref = t_s_act.as_ref();
+        let phi_m_ref = phi_m.as_ref();
+
+        for i in 0..self.num_zones {
+            let tm_old = mass_temps_ref[i];
+            let cm = thermal_cap_ref[i];
+            let h_tr_em = h_tr_em_ref[i];
+            let h_tr_ms = h_tr_ms_ref[i];
+            let t_s = t_s_act_ref[i];
+            let phi_m_zone = phi_m_ref[i];
+
+            // Select integration method based on thermal capacitance
+            let method = select_integration_method(cm);
+
+            let tm_new = match method {
+                ThermalIntegrationMethod::BackwardEuler => {
+                    // Use implicit backward Euler for high thermal mass
+                    backward_euler_update(
+                        tm_old, dt, cm, h_tr_em, h_tr_ms, outdoor_temp, t_s, phi_m_zone
+                    )
+                }
+                ThermalIntegrationMethod::ExplicitEuler => {
+                    // Use explicit Euler for low thermal mass (faster, still stable)
+                    let q_m_net = h_tr_em * (outdoor_temp - tm_old)
+                        + h_tr_ms * (t_s - tm_old)
+                        + phi_m_zone;
+                    tm_old + (q_m_net / cm) * dt
+                }
+                ThermalIntegrationMethod::CrankNicolson => {
+                    // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
+                    crank_nicolson_update(
+                        tm_old, dt, cm, h_tr_em, h_tr_ms, outdoor_temp, t_s, phi_m_zone
+                    )
+                }
+            };
+
+            new_mass_temperatures.push(tm_new);
+        }
+
+        // Update the mass temperatures with new values (convert Vec to T type)
+        self.mass_temperatures = VectorField::new(new_mass_temperatures).into();
 
         // Issue #272, #274, #275: Calculate thermal mass energy change AFTER mass temperature is updated
         // Mass energy change = Cm × (Tm_new - Tm_old)
@@ -2156,26 +2198,122 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             + phi_st.clone();
         let t_s_act = ts_num_act / term_rest_1.clone();
 
-        // === 6R2C: Update two mass nodes ===
+        // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior, surface, and internal mass
         let old_env_mass_temperatures = self.envelope_mass_temperatures.clone();
-        let q_env_net = self.h_tr_em.clone()
-            * self.envelope_mass_temperatures.map(|m| outdoor_temp - m)
-            + self.h_tr_ms.clone() * (t_s_act - self.envelope_mass_temperatures.clone())
-            + self.h_tr_me.clone()
-                * (self.internal_mass_temperatures.clone()
-                    - self.envelope_mass_temperatures.clone())
-            + phi_m_env;
-        let dt_env = (q_env_net / self.envelope_thermal_capacitance.clone()) * dt;
-        self.envelope_mass_temperatures = self.envelope_mass_temperatures.clone() + dt_env;
+
+        // Update envelope mass temperatures using implicit integration for high thermal capacitance
+        let mut new_env_mass_temperatures = Vec::with_capacity(self.num_zones);
+        let env_mass_temps_ref = self.envelope_mass_temperatures.as_ref();
+        let env_thermal_cap_ref = self.envelope_thermal_capacitance.as_ref();
+        let h_tr_em_ref = self.h_tr_em.as_ref();
+        let h_tr_ms_ref = self.h_tr_ms.as_ref();
+        let h_tr_me_ref = self.h_tr_me.as_ref();
+        let int_mass_temps_ref = self.internal_mass_temperatures.as_ref();
+        let t_s_act_ref = t_s_act.as_ref();
+        let phi_m_env_ref = phi_m_env.as_ref();
+
+        for i in 0..self.num_zones {
+            let tm_env_old = env_mass_temps_ref[i];
+            let cm_env = env_thermal_cap_ref[i];
+            let h_tr_em = h_tr_em_ref[i];
+            let h_tr_ms = h_tr_ms_ref[i];
+            let h_tr_me = h_tr_me_ref[i];
+            let tm_int = int_mass_temps_ref[i];
+            let t_s = t_s_act_ref[i];
+            let phi_m_env_zone = phi_m_env_ref[i];
+
+            // For envelope mass, use implicit integration for high thermal capacitance
+            let method_env = select_integration_method(cm_env);
+
+            let tm_env_new = match method_env {
+                ThermalIntegrationMethod::BackwardEuler => {
+                    // Use implicit backward Euler for high thermal mass
+                    // Heat flux: Q_env = h_tr_em*(T_ext - Tm_env) + h_tr_ms*(T_s - Tm_env) + h_tr_me*(Tm_int - Tm_env) + phi_m_env
+                    // Simplified approach: treat multiple sources as combined thermal link
+                    let effective_conductance = h_tr_em + h_tr_ms + h_tr_me;
+                    let effective_temp = (h_tr_em * outdoor_temp + h_tr_ms * t_s + h_tr_me * tm_int) / effective_conductance;
+                    backward_euler_update(
+                        tm_env_old, dt, cm_env, effective_conductance,
+                        0.0, effective_temp, 0.0, phi_m_env_zone
+                    )
+                }
+                ThermalIntegrationMethod::ExplicitEuler => {
+                    // Use explicit Euler for low thermal mass
+                    let q_env_net = h_tr_em * (outdoor_temp - tm_env_old)
+                        + h_tr_ms * (t_s - tm_env_old)
+                        + h_tr_me * (tm_int - tm_env_old)
+                        + phi_m_env_zone;
+                    tm_env_old + (q_env_net / cm_env) * dt
+                }
+                ThermalIntegrationMethod::CrankNicolson => {
+                    // Use Crank-Nicolson for 2nd-order accuracy
+                    let q_env_net = h_tr_em * (outdoor_temp - tm_env_old)
+                        + h_tr_ms * (t_s - tm_env_old)
+                        + h_tr_me * (tm_int - tm_env_old)
+                        + phi_m_env_zone;
+                    let _old_q = q_env_net;
+                    crank_nicolson_update(
+                        tm_env_old, dt, cm_env, h_tr_em + h_tr_ms + h_tr_me,
+                        0.0, outdoor_temp, t_s + phi_m_env_zone / (h_tr_ms + h_tr_me),
+                        phi_m_env_zone
+                    )
+                }
+            };
+
+            new_env_mass_temperatures.push(tm_env_new);
+        }
+
+        // Clone envelope mass temperatures for internal mass calculation
+        let env_mass_temps_for_int = new_env_mass_temperatures.clone();
+
+        self.envelope_mass_temperatures = VectorField::new(new_env_mass_temperatures).into();
 
         // Internal mass: receives heat from envelope mass and direct gains
         let old_int_mass_temperatures = self.internal_mass_temperatures.clone();
-        let q_int_net = self.h_tr_me.clone()
-            * (self.envelope_mass_temperatures.clone() - self.internal_mass_temperatures.clone())
-            + phi_m_int;
-        let dt_int = (q_int_net / self.internal_thermal_capacitance.clone()) * dt;
-        self.internal_mass_temperatures = self.internal_mass_temperatures.clone() + dt_int;
+
+        // Update internal mass temperatures using implicit integration for high thermal capacitance
+        let mut new_int_mass_temperatures = Vec::with_capacity(self.num_zones);
+        let int_thermal_cap_ref = self.internal_thermal_capacitance.as_ref();
+        let phi_m_int_ref = phi_m_int.as_ref();
+
+        for i in 0..self.num_zones {
+            let tm_int_old = int_mass_temps_ref[i];
+            let cm_int = int_thermal_cap_ref[i];
+            let h_tr_me = h_tr_me_ref[i];
+            let tm_env_new = env_mass_temps_for_int[i]; // Use updated envelope temperature
+            let phi_m_int_zone = phi_m_int_ref[i];
+
+            // For internal mass, use implicit integration for high thermal capacitance
+            let method_int = select_integration_method(cm_int);
+
+            let tm_int_new = match method_int {
+                ThermalIntegrationMethod::BackwardEuler => {
+                    // Use implicit backward Euler for high thermal mass
+                    // Heat flux: Q_int = h_tr_me*(Tm_env - Tm_int) + phi_m_int
+                    backward_euler_update(
+                        tm_int_old, dt, cm_int, h_tr_me, 0.0,
+                        tm_env_new, 0.0, phi_m_int_zone
+                    )
+                }
+                ThermalIntegrationMethod::ExplicitEuler => {
+                    // Use explicit Euler for low thermal mass
+                    let q_int_net = h_tr_me * (tm_env_new - tm_int_old) + phi_m_int_zone;
+                    tm_int_old + (q_int_net / cm_int) * dt
+                }
+                ThermalIntegrationMethod::CrankNicolson => {
+                    // Use Crank-Nicolson for 2nd-order accuracy
+                    crank_nicolson_update(
+                        tm_int_old, dt, cm_int, h_tr_me, 0.0,
+                        tm_env_new, 0.0, phi_m_int_zone
+                    )
+                }
+            };
+
+            new_int_mass_temperatures.push(tm_int_new);
+        }
+
+        self.internal_mass_temperatures = VectorField::new(new_int_mass_temperatures).into();
 
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
