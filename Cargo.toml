@@ -59,6 +59,7 @@ pyo3-build-config = { version = "0.22", optional = true }
 criterion = "0.5"
 tempfile = "3.10"
 approx = "0.5"
+rstest = "0.18"
 
 [[bench]]
 name = "cta_bench"
