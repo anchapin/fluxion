@@ -3,27 +3,27 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 03-08 - HVAC Sensitivity Calculation Investigation
-status: HVAC sensitivity investigated, root cause identified (sensitivity = 0.002065 K/W too low, thermal mass time constant τ = 4.82 hours). Correction factor 4.0 implemented: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix.
-last_updated: "2026-03-09T20:50:02.000Z"
+current_plan: 03-08b - Annual Energy Correction Investigation
+status: "Reverted thermal_mass_correction_factor approach (peak cooling regression fixed), investigated root cause identified (h_tr_em/h_tr_ms ratio too low: 0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference (3.54 kW), annual heating still high (6.86 MWh), annual cooling still low (~0.70 MWh)."
+last_updated: "2026-03-09T21:08:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 2
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Fluxion ASHRAE 140 Validation - Project State
 
 **Last Updated:** 2026-03-09
 **Current Phase:** 3
-**Current Plan:** 03-08 - HVAC Sensitivity Calculation Investigation
-**Status:** HVAC sensitivity investigated, root cause identified (sensitivity = 0.002065 K/W too low, thermal mass time constant τ = 4.82 hours). Correction factor 4.0 implemented: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix.
-**Session:** Phase 3 Plan 08 completed
+**Current Plan:** 03-08b - Annual Energy Correction Investigation
+**Status:** Reverted thermal_mass_correction_factor approach (peak cooling regression fixed), investigated root cause identified (h_tr_em/h_tr_ms ratio too low: 0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference (3.54 kW), annual heating still high (6.86 MWh), annual cooling still low (~0.70 MWh).
+**Session:** Phase 3 Plan 08b completed
 **Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
-**Phase 3 Results (Plans 07, 07b, 07c, 08):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix.
-**Progress:** [██████████] 95%
+**Phase 3 Results (Plans 07, 07b, 07c, 08, 08b):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh).
+**Progress:** [██████████] 100%
 
 ## Project Reference
 
