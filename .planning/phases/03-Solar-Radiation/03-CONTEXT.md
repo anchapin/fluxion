@@ -14,6 +14,25 @@ Validate solar gain calculations, beam/diffuse decomposition, and shading geomet
 
 **Key insight from research:** Solar gain calculations are already implemented correctly in `src/sim/solar.rs` (NOAA solar positioning, Perez sky model, ASHRAE 140 window angular dependence). The bug is that **solar gains are calculated but never integrated into the 5R1C thermal network energy balance**. Phase 3 focuses on this integration point.
 
+---
+
+## Gap Closure Plans
+
+After initial implementation (Plans 03-00 and 03-01), verification identified several issues that require gap closure:
+
+### Plan 03-02: HVAC Energy Over-Correction Fix
+**Issue:** Annual cooling energy under-predicted (53-67% below reference range [2.13, 3.67] MWh).
+**Root Cause:** Double-correction bug - `thermal_mass_correction_factor` (0.20 for Case 900) applied multiplicatively to hvac_output_raw, while energy subtraction approach also tries to subtract thermal mass energy change.
+**Fix:** Remove `thermal_mass_correction_factor` from HVAC energy calculation. Use `hvac_output_raw` directly (Ti_free already includes thermal mass effects via thermal network physics).
+**Expected Outcome:** Case 900 annual cooling energy within [2.13, 3.67] MWh reference.
+
+### Plan 03-03: Peak Load Tracking Correction
+**Issue:** Peak cooling/heating loads under-predicted (66-79% for cooling, 26-55% for heating).
+**Root Cause:** Peak load tracking uses steady-state heat loss approximation (ss_heat_loss = h_ext * (setpoint - outdoor_temp)) which doesn't account for thermal mass buffering.
+**Fix:** Use `hvac_output_raw` directly for peak load tracking instead of steady-state heat loss approximation.
+**Expected Outcome:** Case 900 peak cooling within [2.10, 3.50] kW, peak heating within [1.10, 2.10] kW.
+
+**Gap Closure Philosophy:** These plans address issues discovered during verification by fixing calculation methodology bugs rather than implementing new features. They build on the solar integration work in Plan 03-01 but focus on energy reporting accuracy.
 </domain>
 
 ---
