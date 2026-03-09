@@ -285,7 +285,7 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Partial Success | 2026-03-09 |
 | 2. Thermal Mass Dynamics | 5/5 | Partial Success | 2026-03-09 |
-| 3. Solar Radiation & External Boundaries | 12/12 | Complete   | 2026-03-09 |
+| 3. Solar Radiation & External Boundaries | 13/12 | Complete   | 2026-03-09 |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
 | 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
 | 6. Performance Optimization | 0/0 | Not started | - |
