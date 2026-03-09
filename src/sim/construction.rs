@@ -804,6 +804,14 @@ impl Materials {
         ConstructionLayer::new("Concrete", 1.13, 1400.0, 1000.0, thickness)
     }
 
+    /// Concrete block (ASHRAE 140 Case 900)
+    ///
+    /// Concrete blocks have lower thermal conductivity (k=0.51 W/mK) than normal concrete (k=1.13 W/mK).
+    /// This is specified in ASHRAE 140 Table 7-27 for high-mass construction.
+    pub fn concrete_block(thickness: f64) -> ConstructionLayer {
+        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 1000.0, thickness)
+    }
+
     /// Foam insulation
     pub fn foam(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
@@ -857,9 +865,9 @@ impl Assemblies {
     /// High mass wall construction (ASHRAE 140 Case 900).
     pub fn high_mass_wall() -> Construction {
         Construction::new(vec![
-            Materials::concrete(0.100),
-            Materials::foam(0.066), // Adjusted for U=0.514
-            Materials::wood_siding(0.009),
+            Materials::concrete_block(0.100), // ASHRAE 140: k=0.51 W/mK
+            Materials::foam(0.0615), // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m
+            Materials::wood_siding(0.009), // ASHRAE 140: k=0.16 W/mK
         ])
     }
 
