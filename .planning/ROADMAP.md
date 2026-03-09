@@ -108,7 +108,10 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 3. Thermal mass response time matches ASHRAE reference values within ±10% tolerance
 4. Mass-air coupling (h_tr_em, h_tr_ms) correctly implemented and validated
 
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 02-01-PLAN.md — Thermal Mass Test Scaffolds (TDD)
+- [ ] 02-02-PLAN.md — Thermal Integration Module Implementation (TDD)
+- [ ] 02-03-PLAN.md — Thermal Mass Validation
 
 ### Phase 3: Solar Radiation & External Boundaries
 
@@ -243,7 +246,7 @@ Phase 1 delivered **significant progress** (37.5% MAE improvement, 25%→30% pas
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Partial Success | 2026-03-09 |
-| 2. Thermal Mass Dynamics | 0/0 | Not started | - |
+| 2. Thermal Mass Dynamics | 0/3 | Not started | - |
 | 3. Solar Radiation & External Boundaries | 0/0 | Not started | - |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
 | 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
@@ -300,3 +303,4 @@ Phase 7 (Advanced Analysis & Visualization)
 
 ---
 *Roadmap created: 2026-03-08*
+*Phase 2 plans added: 2026-03-09*
