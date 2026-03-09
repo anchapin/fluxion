@@ -11,10 +11,10 @@
 //! - Temperature swing reduction (~19.6% narrower than 600FF) not captured correctly
 //! - Thermal mass dynamics need proper integration methods
 
-use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::WeatherSource;
 
 /// ASHRAE 140 Case 900 specifications (high-mass concrete building)
 ///
@@ -96,7 +96,7 @@ const W_TO_KW: f64 = 1.0 / 1000.0;
 fn simulate_case_900() -> (f64, f64, f64, f64) {
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     // Simulate 1 year (8760 hours)
     let steps = 8760;
@@ -108,18 +108,22 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let mut peak_cooling = 0.0_f64;
 
     // Run simulation
-    for step in 1..=steps {
-        let energy = model.solve_timesteps(1, &surrogates, false);
+    for _step in 0..steps {
+        let weather_data = weather.get_hourly_data(_step).unwrap();
+        // Set weather data on model for solar gain calculation
+        model.weather = Some(weather_data.clone());
+        model.step_physics(_step, weather_data.dry_bulb_temp);
 
-        // Extract heating and cooling from energy balance
-        // Note: This is a simplified approach - actual implementation should track
-        // heating and cooling separately in the thermal model
-        if energy > 0.0 {
-            total_heating += energy;
-            peak_heating = peak_heating.max(energy / 3600.0);  // Convert J/h to W
-        } else {
-            total_cooling += -energy;
-            peak_cooling = peak_cooling.max(-energy / 3600.0);  // Convert J/h to W
+        // Extract heating and cooling from loads
+        // Heating loads are positive, cooling loads are negative in the loads VectorField
+        if let Some(&load) = model.loads.as_slice().first() {
+            if load > 0.0 {
+                total_heating += load * 3600.0;  // Convert W to J/h
+                peak_heating = peak_heating.max(load);
+            } else {
+                total_cooling += -load * 3600.0;  // Convert W to J/h
+                peak_cooling = peak_cooling.max(-load);
+            }
         }
     }
 
@@ -131,7 +135,7 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
 fn simulate_case_900ff() -> (f64, f64, f64) {
     let spec = ASHRAE140Case::Case900FF.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     // Simulate 1 year (8760 hours)
     let steps = 8760;
@@ -142,17 +146,18 @@ fn simulate_case_900ff() -> (f64, f64, f64) {
     let mut sum_temp = 0.0;
 
     // Run simulation
-    for _ in 1..=steps {
-        let _energy = model.solve_timesteps(1, &surrogates, false);
+    for _step in 0..steps {
+        let weather_data = weather.get_hourly_data(_step).unwrap();
+        // Set weather data on model for solar gain calculation
+        model.weather = Some(weather_data.clone());
+        model.step_physics(_step, weather_data.dry_bulb_temp);
 
         // Get current zone temperature
-        // Note: This is a placeholder - actual implementation should extract
-        // temperature from the thermal model
-        let current_temp = 20.0;  // Placeholder - should be extracted from model
-
-        min_temp = min_temp.min(current_temp);
-        max_temp = max_temp.max(current_temp);
-        sum_temp += current_temp;
+        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+            min_temp = min_temp.min(zone_temp);
+            max_temp = max_temp.max(zone_temp);
+            sum_temp += zone_temp;
+        }
     }
 
     let avg_temp = sum_temp / steps as f64;
@@ -326,20 +331,23 @@ fn test_case_900ff_temperature_swing_reduction() {
     let (min_temp_900, max_temp_900, _) = simulate_case_900ff();
     let swing_900 = calculate_temperature_swing(min_temp_900, max_temp_900);
 
-    // Simulate Case 600FF (low-mass baseline)
+    // Simulate Case 600FF (low-mass baseline) using the same method
     let spec_600 = ASHRAE140Case::Case600FF.spec();
     let mut model_600 = ThermalModel::<VectorField>::from_spec(&spec_600);
-    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     let mut min_temp_600 = f64::MAX;
     let mut max_temp_600 = f64::MIN;
 
-    for _ in 1..=8760 {
-        let _energy = model_600.solve_timesteps(1, &surrogates, false);
-        let current_temp = 20.0;  // Placeholder - should be extracted from model
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_600.weather = Some(weather_data.clone());
+        model_600.step_physics(step, weather_data.dry_bulb_temp);
 
-        min_temp_600 = min_temp_600.min(current_temp);
-        max_temp_600 = max_temp_600.max(current_temp);
+        if let Some(&zone_temp) = model_600.temperatures.as_slice().first() {
+            min_temp_600 = min_temp_600.min(zone_temp);
+            max_temp_600 = max_temp_600.max(zone_temp);
+        }
     }
 
     let swing_600 = calculate_temperature_swing(min_temp_600, max_temp_600);
