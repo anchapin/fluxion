@@ -554,6 +554,119 @@ impl Construction {
             MassClass::VeryHeavy
         }
     }
+
+    /// Calculates exterior-to-mass conductance (h_tr_em) for 5R1C thermal network.
+    ///
+    /// This conductance represents heat transfer between exterior environment and
+    /// thermal mass, accounting for:
+    /// - Window U-value effects on overall envelope conductance
+    /// - Thermal bridge effects (edge conditions, corner effects)
+    /// - Surface area scaling
+    ///
+    /// # Arguments
+    /// * `window_u_value` - Window thermal transmittance in W/m²K
+    /// * `surface_area` - Exterior surface area in m²
+    ///
+    /// # Returns
+    /// Conductance in W/K (thermal conductance, not transmittance)
+    ///
+    /// # Note
+    /// This is a placeholder method that will be implemented in Plan 02.
+    /// The final implementation should combine wall U-value, window U-value,
+    /// and thermal bridge corrections.
+    pub fn calc_h_tr_em(&self, window_u_value: f64, surface_area: f64) -> f64 {
+        // Placeholder implementation - Plan 02 will implement correct formula
+        todo!("calc_h_tr_em not yet implemented - coming in Plan 02")
+    }
+
+    /// Calculates window conductance (h_tr_w) for 5R1C thermal network.
+    ///
+    /// This conductance represents heat transfer through glazed surfaces
+    /// (exterior-to-interior through windows).
+    ///
+    /// # Arguments
+    /// * `window_u_value` - Window thermal transmittance in W/m²K
+    /// * `window_area` - Total window area in m²
+    ///
+    /// # Returns
+    /// Conductance in W/K
+    ///
+    /// # Formula
+    /// h_tr_w = U_window × A_window
+    ///
+    /// # Note
+    /// This is a placeholder method that will be implemented in Plan 02.
+    pub fn calc_h_tr_w(&self, window_u_value: f64, window_area: f64) -> f64 {
+        // Placeholder implementation - Plan 02 will implement correct formula
+        todo!("calc_h_tr_w not yet implemented - coming in Plan 02")
+    }
+
+    /// Calculates mass-to-surface conductance (h_tr_ms) for 5R1C thermal network.
+    ///
+    /// This conductance represents heat transfer between thermal mass
+    /// and interior surface of building envelope.
+    ///
+    /// # Arguments
+    /// * `surface_area` - Interior surface area in m²
+    ///
+    /// # Returns
+    /// Conductance in W/K
+    ///
+    /// # Note
+    /// This is a placeholder method that will be implemented in Plan 02.
+    /// Depends on effective thermal mass and mass-surface coupling.
+    pub fn calc_h_tr_ms(&self, surface_area: f64) -> f64 {
+        // Placeholder implementation - Plan 02 will implement correct formula
+        todo!("calc_h_tr_ms not yet implemented - coming in Plan 02")
+    }
+
+    /// Calculates surface-to-interior conductance (h_tr_is) for 5R1C thermal network.
+    ///
+    /// This conductance represents heat transfer between interior surface
+    /// and zone air, typically dominated by interior film coefficient.
+    ///
+    /// # Arguments
+    /// * `surface_area` - Interior surface area in m²
+    ///
+    /// # Returns
+    /// Conductance in W/K
+    ///
+    /// # Formula
+    /// h_tr_is = h_si × A_si
+    ///
+    /// Where h_si is interior surface film coefficient and A_si is interior surface area.
+    ///
+    /// # Note
+    /// This is a placeholder method that will be implemented in Plan 02.
+    pub fn calc_h_tr_is(&self, surface_area: f64) -> f64 {
+        // Placeholder implementation - Plan 02 will implement correct formula
+        todo!("calc_h_tr_is not yet implemented - coming in Plan 02")
+    }
+
+    /// Calculates exterior-to-mass conductance with thermal bridge correction.
+    ///
+    /// This variant of calc_h_tr_em includes optional thermal bridge effects
+    /// for more accurate modeling of edge conditions and corner effects.
+    ///
+    /// # Arguments
+    /// * `window_u_value` - Window thermal transmittance in W/m²K
+    /// * `surface_area` - Exterior surface area in m²
+    /// * `include_thermal_bridge` - Whether to apply thermal bridge correction
+    ///
+    /// # Returns
+    /// Conductance in W/K
+    ///
+    /// # Note
+    /// This is a placeholder method that will be implemented in Plan 02.
+    pub fn calc_h_tr_em_with_thermal_bridge(
+        &self,
+        window_u_value: f64,
+        surface_area: f64,
+        include_thermal_bridge: bool,
+    ) -> f64 {
+        // Placeholder implementation - Plan 02 will implement correct formula
+        todo!("calc_h_tr_em_with_thermal_bridge not yet implemented - coming in Plan 02")
+    }
 }
 
 /// Thermal mass classification per ISO 13790 Annex C.
@@ -746,6 +859,35 @@ impl Assemblies {
             Materials::concrete_slab(0.080),
             Materials::insulation_high_mass(0.201), // Adjusted for U=0.190
         ])
+    }
+
+    /// Calculates ventilation conductance (h_ve) from air change rate.
+    ///
+    /// This conductance represents heat transfer due to air exchange between
+    /// interior and exterior through ventilation and infiltration.
+    ///
+    /// # Arguments
+    /// * `ach` - Air change rate in air changes per hour (ACH)
+    /// * `zone_volume` - Zone volume in m³
+    ///
+    /// # Returns
+    /// Conductance in W/K
+    ///
+    /// # Formula
+    /// h_ve = ρ × cp × (ACH / 3600) × V
+    ///
+    /// Where:
+    /// - ρ = air density (≈1.2 kg/m³ at standard conditions)
+    /// - cp = air specific heat capacity (≈1005 J/kg·K)
+    /// - ACH = air changes per hour
+    /// - V = zone volume in m³
+    /// - 3600 = seconds per hour conversion
+    ///
+    /// # Note
+    /// This is a placeholder method that will be implemented in Plan 02.
+    pub fn calc_h_ve(&self, ach: f64, zone_volume: f64) -> f64 {
+        // Placeholder implementation - Plan 02 will implement correct formula
+        todo!("calc_h_ve not yet implemented - coming in Plan 02")
     }
 }
 
