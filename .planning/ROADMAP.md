@@ -55,7 +55,11 @@
 5. Mean Absolute Error reduced from 78.79% to <15% across all baseline cases
 6. Annual heating load over-prediction systematically corrected (no consistent bias)
 
-**Plans**: TBD
+**Plans**: 4 plans
+- [ ] 01-01-PLAN.md — Conductance Calculation Unit Tests
+- [ ] 01-02-PLAN.md — Conductance Implementation Fixes
+- [ ] 01-03-PLAN.md — HVAC Load Calculation Tests & Fixes
+- [ ] 01-04-PLAN.md — Lightweight Case Validation
 
 ### Phase 2: Thermal Mass Dynamics
 
