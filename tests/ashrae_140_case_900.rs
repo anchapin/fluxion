@@ -132,6 +132,12 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
         let energy_joules = energy_kwh * 3.6e6;  // Convert kWh to Joules
 
+        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 1)
+        if step % 24 == 0 {
+            println!("Day {}: energy_kwh={:.6}, mass_energy_change_cumulative={:.2} Wh",
+                    step / 24, energy_kwh, model.mass_energy_change_cumulative);
+        }
+
         // Track solar gains for diagnostics
         let solar_gain_watts = model.solar_gains.as_slice().first().copied().unwrap_or(0.0) * model.zone_area.as_slice().first().copied().unwrap_or(1.0);
         total_solar_gain += solar_gain_watts;  // This is in Watts, will convert to MWh later

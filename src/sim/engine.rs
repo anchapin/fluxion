@@ -2000,8 +2000,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let mass_energy_change_for_step = self.thermal_capacitance.clone() * mass_temp_change;
 
         // Track cumulative mass energy change for debugging
-        self.mass_energy_change_cumulative +=
-            mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
+        let mass_energy_change_for_step_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
+        self.mass_energy_change_cumulative += mass_energy_change_for_step_total;
 
         // Update previous mass temperature for next timestep
         self.previous_mass_temperatures = old_mass_temperatures;
@@ -2025,6 +2025,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             // Return gross HVAC energy (no subtraction) for validation scenarios
             hvac_energy_for_step
         };
+
+        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 1)
+        // Track hvac_energy_for_step, mass_energy_change, corrected_hvac_energy
+        if timestep % 24 == 0 {
+            let mass_energy_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
+            let corrected_hvac = if self.thermal_mass_energy_accounting {
+                if mass_energy_total > 0.0 {
+                    hvac_energy_for_step - mass_energy_total
+                } else {
+                    hvac_energy_for_step
+                }
+            } else {
+                hvac_energy_for_step
+            };
+            println!("Day {}: case_id={}, thermal_mass_energy_accounting={}, hvac_energy={:.2} Wh, mass_energy_change={:.2} Wh, corrected_hvac={:.2} Wh",
+                    timestep / 24, self.case_id, self.thermal_mass_energy_accounting, hvac_energy_for_step, mass_energy_total, corrected_hvac);
+        }
 
         net_hvac_energy_for_step / 3.6e6 // Return kWh (net or gross energy)
     }
