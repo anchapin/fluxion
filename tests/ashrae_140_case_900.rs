@@ -588,6 +588,70 @@ fn test_case_900_thermal_mass_characteristics() {
     println!("✅ Case 900 has expected high thermal mass characteristics");
 }
 
+#[test]
+fn test_case_900ff_thermal_mass_coupling_parameters() {
+    // Diagnostic test to check thermal mass coupling parameters for Case 900FF
+    // This helps identify if coupling conductances need tuning for better temperature swing reduction
+    let spec = ASHRAE140Case::Case900FF.spec();
+    let model = ThermalModel::from_spec(&spec);
+
+    println!("=== Case 900FF Thermal Mass Coupling Parameters ===");
+    println!("Number of zones: {}", model.num_zones);
+    println!();
+
+    // Check thermal capacitance (Cm)
+    println!("Thermal capacitance (Cm):");
+    let cm_avg = model.thermal_capacitance.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    println!("  Average: {:.0} J/K", cm_avg);
+    println!();
+
+    // Check coupling conductances
+    println!("Coupling conductances:");
+    let h_tr_em_avg = model.h_tr_em.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let h_tr_ms_avg = model.h_tr_ms.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    println!("  Average h_tr_em: {:.2} W/K", h_tr_em_avg);
+    println!("  Average h_tr_ms: {:.2} W/K", h_tr_ms_avg);
+    println!();
+
+    // Check other 5R1C parameters
+    println!("Other 5R1C parameters:");
+    let h_tr_is_avg = model.h_tr_is.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let h_tr_w_avg = model.h_tr_w.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let h_ve_avg = model.h_ve.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    println!("  Average h_tr_is: {:.2} W/K", h_tr_is_avg);
+    println!("  Average h_tr_w: {:.2} W/K", h_tr_w_avg);
+    println!("  Average h_ve: {:.2} W/K", h_ve_avg);
+    println!();
+
+    // Check solar distribution
+    println!("Solar distribution:");
+    println!("  solar_beam_to_mass_fraction: {:.2}", model.solar_beam_to_mass_fraction);
+    println!("  solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
+    println!();
+
+    // Calculate coupling ratios for analysis
+    let em_ms_ratio = h_tr_em_avg / h_tr_ms_avg;
+    let em_total_ratio = h_tr_em_avg / (h_tr_em_avg + h_tr_ms_avg);
+    println!("Coupling ratios:");
+    println!("  h_tr_em / h_tr_ms ratio: {:.2}", em_ms_ratio);
+    println!("  h_tr_em / (h_tr_em + h_tr_ms): {:.2}", em_total_ratio);
+    println!();
+
+    // Diagnostic insights for tuning
+    println!("Diagnostic Insights:");
+    if h_tr_em_avg < 100.0 {
+        println!("  ⚠️  h_tr_em is low (< 100 W/K) - thermal mass weakly coupled to exterior");
+    }
+    if h_tr_ms_avg < 100.0 {
+        println!("  ⚠️  h_tr_ms is low (< 100 W/K) - thermal mass weakly coupled to zone surface");
+    }
+    if cm_avg < 1_000_000.0 {
+        println!("  ⚠️  Thermal capacitance is low (< 1.0 MJ/K) - may reduce damping effect");
+    }
+    println!();
+    println!("✅ Thermal mass coupling parameters checked");
+}
+
 fn main() {
     println!("=== ASHRAE 140 Case 900 Reference Values Test Suite ===\n");
     println!("Purpose: TDD RED phase - create failing tests for Case 900 validation");
