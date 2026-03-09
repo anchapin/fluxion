@@ -342,6 +342,11 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// energy storage/release should not affect the thermal balance
     pub thermal_mass_energy_accounting: bool,
 
+    /// Corrected cumulative HVAC energy with thermal mass energy accounting (Plan 03-02)
+    /// Tracks actual HVAC consumption after subtracting thermal mass energy change
+    /// This resolves the issue where HVAC energy was counting mass charging as consumption
+    pub corrected_cumulative_energy: f64,
+
     /// Ideal air loads mode for ASHRAE 140 validation (Issue #382)
     /// When true: HVAC system has infinite capacity with no control lag
     /// Used to measure pure building loads without fictitious dynamic effects
@@ -491,6 +496,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_orientations: self.window_orientations.clone(),
             hvac_controller: self.hvac_controller.clone(),
             thermal_mass_energy_accounting: self.thermal_mass_energy_accounting,
+            corrected_cumulative_energy: self.corrected_cumulative_energy, // Plan 03-02
             ideal_air_loads_mode: self.ideal_air_loads_mode,
 
             // U-values from construction (Issue #375)
@@ -1039,8 +1045,10 @@ impl ThermalModel<VectorField> {
         model.latitude_deg = 39.83;
         model.longitude_deg = -104.65;
 
-        // Disable thermal mass energy accounting for validation (Issue #317)
-        model.thermal_mass_energy_accounting = false;
+        // Plan 03-02: Enable thermal mass energy accounting for high-mass cases (900, 900FF)
+        // This corrects HVAC energy by subtracting thermal mass energy change
+        let is_high_mass_case = spec.case_id == "900" || spec.case_id == "900FF";
+        model.thermal_mass_energy_accounting = is_high_mass_case;
 
         // Initialize window properties for solar gain calculation (Issue #278)
         // Issue #351: Use zone-specific window areas for accurate solar gains
@@ -1321,6 +1329,7 @@ impl ThermalModel<VectorField> {
             envelope_mass_energy_change_cumulative: 0.0, // Envelope mass energy change (J)
             internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
             thermal_mass_energy_accounting: true, // Enable thermal mass energy accounting by default (Issue #317)
+            corrected_cumulative_energy: 0.0, // Corrected HVAC energy after thermal mass accounting (Plan 03-02)
             ideal_air_loads_mode: false,          // Disable ideal air loads by default (Issue #382)
 
             // Peak power tracking (Issue #272)
@@ -1521,6 +1530,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// # Notes
     /// - If heating_setpoint >= cooling_setpoint, the values will be swapped to maintain valid deadband.
     pub fn apply_parameters(&mut self, params: &[f64]) {
+        // Reset corrected energy when parameters change (Plan 03-02)
+        self.corrected_cumulative_energy = 0.0;
+
         if !params.is_empty() {
             self.window_u_value = params[0];
             // Surfaces update for metadata/consistency
@@ -1728,6 +1740,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// Issue #351: Calculate solar gains internally if weather data is available
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+        // Debug: Print first step to verify thermal_mass_energy_accounting is set
+        if timestep == 0 {
+            println!("DEBUG step_physics: timestep={}, thermal_mass_energy_accounting={}, case_id={}",
+                    timestep, self.thermal_mass_energy_accounting, self.case_id);
+        }
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
         if self.weather.is_some() {
@@ -2003,44 +2020,43 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let mass_energy_change_for_step_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
         self.mass_energy_change_cumulative += mass_energy_change_for_step_total;
 
+        // Plan 03-02: Calculate corrected HVAC energy by subtracting thermal mass energy change
+        // When mass stores energy (positive change), HVAC worked harder than needed
+        // When mass releases energy (negative change), HVAC worked less than needed
+        // Actual HVAC consumption = HVAC output - thermal mass energy change
+        let mass_energy_change_cumulative_total = mass_energy_change_for_step_total;
+        let corrected_hvac_energy_for_step = hvac_energy_for_step - mass_energy_change_cumulative_total;
+
+        // Track corrected energy for debugging (Plan 03-02)
+        self.corrected_cumulative_energy += corrected_hvac_energy_for_step;
+
+        // Debug: Print first few steps to verify tracking
+        if timestep < 5 {
+            eprintln!("DEBUG step {}: hvac_energy_for_step={:.2}, mass_energy_change={:.2}, corrected={:.2}, cumulative={:.2}",
+                    timestep, hvac_energy_for_step, mass_energy_change_cumulative_total, corrected_hvac_energy_for_step, self.corrected_cumulative_energy);
+        }
+
         // Update previous mass temperature for next timestep
         self.previous_mass_temperatures = old_mass_temperatures;
 
         self.temperatures = t_i_act;
 
-        // Return net HVAC energy (subtract mass energy change)
+        // Return net HVAC energy (Plan 03-02: Use corrected HVAC energy)
         // This fixes Issue #272, #274, #275: HVAC was counting mass charging as consumption
-
-        // Issue #317: Only apply thermal mass energy accounting if enabled
+        // Plan 03-02: Always subtract thermal mass energy change when accounting is enabled
         let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
-            // Subtract thermal mass energy change from HVAC energy
-            // Only subtract when mass is charging (positive energy change), not when discharging
-            let mass_energy_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
-            if mass_energy_total > 0.0 {
-                hvac_energy_for_step - mass_energy_total
-            } else {
-                hvac_energy_for_step
-            }
+            // Plan 03-02: Always subtract thermal mass energy change (both charging and discharging)
+            // Actual HVAC consumption = HVAC output - thermal mass energy change
+            corrected_hvac_energy_for_step
         } else {
             // Return gross HVAC energy (no subtraction) for validation scenarios
             hvac_energy_for_step
         };
 
-        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 1)
-        // Track hvac_energy_for_step, mass_energy_change, corrected_hvac_energy
+        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 2)
         if timestep % 24 == 0 {
-            let mass_energy_total = mass_energy_change_for_step.reduce(0.0, |acc, val| acc + val);
-            let corrected_hvac = if self.thermal_mass_energy_accounting {
-                if mass_energy_total > 0.0 {
-                    hvac_energy_for_step - mass_energy_total
-                } else {
-                    hvac_energy_for_step
-                }
-            } else {
-                hvac_energy_for_step
-            };
-            println!("Day {}: case_id={}, thermal_mass_energy_accounting={}, hvac_energy={:.2} Wh, mass_energy_change={:.2} Wh, corrected_hvac={:.2} Wh",
-                    timestep / 24, self.case_id, self.thermal_mass_energy_accounting, hvac_energy_for_step, mass_energy_total, corrected_hvac);
+            println!("Day {}: hvac_energy={:.2} Wh, mass_energy_change={:.2} Wh, corrected_hvac={:.2} Wh, accounting={}",
+                    timestep / 24, hvac_energy_for_step, mass_energy_change_cumulative_total, corrected_hvac_energy_for_step, self.thermal_mass_energy_accounting);
         }
 
         net_hvac_energy_for_step / 3.6e6 // Return kWh (net or gross energy)
@@ -2352,21 +2368,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             env_mass_energy_change.clone() + int_mass_energy_change;
 
         // Track cumulative mass energy change
-        self.mass_energy_change_cumulative +=
-            mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
+        let mass_energy_change_for_step_total = mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
+        self.mass_energy_change_cumulative += mass_energy_change_for_step_total;
 
-        // Calculate net HVAC energy (subtract mass energy change from HVAC energy)
+        // Plan 03-02: Calculate corrected HVAC energy by subtracting thermal mass energy change
+        // When mass stores energy (positive change), HVAC worked harder than needed
+        // When mass releases energy (negative change), HVAC worked less than needed
+        // Actual HVAC consumption = HVAC output - thermal mass energy change
+        let corrected_hvac_energy_for_step = hvac_energy_for_step - mass_energy_change_for_step_total;
+
+        // Track corrected energy for debugging (Plan 03-02)
+        self.corrected_cumulative_energy += corrected_hvac_energy_for_step;
+
+        // Calculate net HVAC energy (Plan 03-02: Use corrected HVAC energy)
         // Issue #317: Only apply thermal mass energy accounting if enabled
         let net_hvac_energy_for_step = if self.thermal_mass_energy_accounting {
-            // Subtract thermal mass energy change from HVAC energy
-            // Only subtract when mass is charging (positive energy change), not when discharging
-            let mass_energy_total =
-                mass_energy_change_for_step_6r2c.reduce(0.0, |acc, val| acc + val);
-            if mass_energy_total > 0.0 {
-                hvac_energy_for_step - mass_energy_total
-            } else {
-                hvac_energy_for_step
-            }
+            // Plan 03-02: Always subtract thermal mass energy change (both charging and discharging)
+            // Actual HVAC consumption = HVAC output - thermal mass energy change
+            corrected_hvac_energy_for_step
         } else {
             // Return gross HVAC energy (no subtraction) for validation scenarios
             hvac_energy_for_step

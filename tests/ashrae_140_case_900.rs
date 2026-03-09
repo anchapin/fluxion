@@ -132,10 +132,10 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
         let energy_joules = energy_kwh * 3.6e6;  // Convert kWh to Joules
 
-        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 1)
+        // Diagnostic output for HVAC energy correction (Plan 03-02 Task 2)
         if step % 24 == 0 {
-            println!("Day {}: energy_kwh={:.6}, mass_energy_change_cumulative={:.2} Wh",
-                    step / 24, energy_kwh, model.mass_energy_change_cumulative);
+            println!("Day {}: energy_kwh={:.6}, corrected_cumulative_energy={:.2} Wh, mass_energy_change_cumulative={:.2} Wh",
+                    step / 24, energy_kwh, model.corrected_cumulative_energy, model.mass_energy_change_cumulative);
         }
 
         // Track solar gains for diagnostics
@@ -182,6 +182,12 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     println!("Peak solar gain: {:.2} kW", peak_solar_gain / 1000.0);
     println!("Summer average solar gain: {:.2} kW", summer_avg_solar / 1000.0);
     println!("Summer hours tracked: {}", summer_hours);
+    println!("=== HVAC Energy Correction Diagnostics (Plan 03-02) ===");
+    println!("Thermal model type: {:?}", model.thermal_model_type);
+    println!("Thermal mass energy accounting enabled: {}", model.thermal_mass_energy_accounting);
+    println!("Corrected cumulative HVAC energy: {:.2} Wh", model.corrected_cumulative_energy);
+    println!("Corrected cumulative HVAC energy: {:.2} kWh", model.corrected_cumulative_energy / 3.6e6);
+    println!("Mass energy change cumulative: {:.2} Wh", model.mass_energy_change_cumulative);
     println!("=== Zone Temperature Diagnostics ===");
     println!("Min zone temp: {:.2}°C", min_zone_temp);
     println!("Max zone temp: {:.2}°C", max_zone_temp);
