@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 3
-current_plan: 03-08b - Annual Energy Correction Investigation
-status: "Reverted thermal_mass_correction_factor approach (peak cooling regression fixed), investigated root cause identified (h_tr_em/h_tr_ms ratio too low: 0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference (3.54 kW), annual heating still high (6.86 MWh), annual cooling still low (~0.70 MWh)."
-last_updated: "2026-03-09T21:20:40.037Z"
+current_plan: 03-09 - HVAC Demand Calculation Investigation
+status: "HVAC demand calculation formula validated (correct), sensitivity calculation validated (correct per ISO 13790 5R1C), Ti_free calculation validated (correct per ISO 13790 5R1C). Root cause identified: h_tr_em/h_tr_ms coupling ratio too low (0.0525 < 0.1). Thermal mass exchanges 95% with interior, 5% with exterior. Winter Ti_free = 7.06°C (too low), causing HVAC to run at max capacity constantly. Annual heating = 6.86 MWh (236% above reference), annual cooling = 4.82 MWh (31% above reference). Issue is parameterization, not formula."
+last_updated: "2026-03-09T21:33:16.921Z"
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 21
-  completed_plans: 23
+  completed_plans: 25
   percent: 100
 ---
 
@@ -255,6 +255,7 @@ None identified. Phase 2 complete with thermal mass dynamics validated (FREE-02,
 | Phase 03-Solar-Radiation P07 | 45min | 3 tasks | 3 files |
 | Phase 03-Solar-Radiation P03-08c | 90min | 4 tasks | 2 files |
 | Phase 03-Solar-Radiation P03-08d | 45min | 3 tasks | 5 files |
+| Phase 03 P10 | 45min | 2 tasks | 2 files |
 
 ### Dependency Chain
 
