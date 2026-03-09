@@ -160,9 +160,14 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 6. Case 900FF max temperature increases to within [41.80, 46.40]°C reference (from 37.22°C baseline)
 7. All free-floating tests continue to pass (10/10)
 
-**Plans**: 2 plans
-- [ ] 03-00-PLAN.md — Test Infrastructure (Wave 0: solar_integration.rs, solar_calculation_validation.rs)
-- [ ] 03-01-PLAN.md — Solar Gain Integration into 5R1C Thermal Network
+**Plans**: 6 plans
+- [x] 03-00-PLAN.md — Test Infrastructure (Wave 0: solar_integration.rs, solar_calculation_validation.rs)
+- [x] 03-01-PLAN.md — Solar Gain Integration into 5R1C Thermal Network
+- [x] 03-02-PLAN.md — HVAC Energy Calculation Correction (Gap Closure - Over-correction)
+- [x] 03-03-PLAN.md — Peak Load Tracking and Thermal Mass Dynamics (Gap Closure - Peak Loads & Swing)
+- [ ] 03-04-PLAN.md — Remove Thermal Mass Correction Factor (Gap Closure - Annual Energy)
+- [ ] 03-05-PLAN.md — Fix Peak Heating Load Over-prediction (Gap Closure - Heating Specific)
+- [ ] 03-06-PLAN.md — Tune Thermal Mass Coupling for Temperature Swing (Gap Closure - Damping)
 
 ### Phase 4: Multi-Zone Inter-Zone Transfer
 
@@ -278,7 +283,7 @@ Phase 2 delivered **significant thermal mass validation** (temperature swing red
 |-------|----------------|--------|-----------|
 | 1. Foundation | 4/4 | Partial Success | 2026-03-09 |
 | 2. Thermal Mass Dynamics | 5/5 | Partial Success | 2026-03-09 |
-| 3. Solar Radiation & External Boundaries | 0/2 | Not started | - |
+| 3. Solar Radiation & External Boundaries | 3/6 | Gap Closure Needed | - |
 | 4. Multi-Zone Inter-Zone Transfer | 0/0 | Not started | - |
 | 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
 | 6. Performance Optimization | 0/0 | Not started | - |
@@ -336,3 +341,4 @@ Phase 7 (Advanced Analysis & Visualization)
 *Roadmap created: 2026-03-08*
 *Phase 2 plans revised: 2026-03-09 (split Plan 03 into 03 and 04, added Plan 05 for gap closure)*
 *Phase 3 plans added: 2026-03-09 (Plans 00-01 - Test Infrastructure & Solar Gain Integration)*
+*Phase 3 gap closure plans added: 2026-03-09 (Plans 04-06 - Annual Energy, Peak Heating, Temperature Swing)*
