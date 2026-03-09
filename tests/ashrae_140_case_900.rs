@@ -113,6 +113,12 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let mut summer_solar_gain = 0.0_f64;
     let mut summer_hours = 0_usize;
 
+    // Track zone temperatures for diagnostics
+    let mut min_zone_temp = f64::MAX;
+    let mut max_zone_temp = f64::MIN;
+    let mut summer_min_zone_temp = f64::MAX;
+    let mut summer_max_zone_temp = f64::MIN;
+
     // Run simulation
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
@@ -138,6 +144,16 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
             summer_hours += 1;
         }
 
+        // Track zone temperatures for diagnostics
+        if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+            min_zone_temp = min_zone_temp.min(zone_temp);
+            max_zone_temp = max_zone_temp.max(zone_temp);
+            if month >= 6 && month <= 8 {
+                summer_min_zone_temp = summer_min_zone_temp.min(zone_temp);
+                summer_max_zone_temp = summer_max_zone_temp.max(zone_temp);
+            }
+        }
+
         // Separate heating and cooling based on energy sign and zone temperature
         // Heating: energy > 0 or zone temp below heating setpoint
         // Cooling: energy < 0 or zone temp above cooling setpoint
@@ -160,6 +176,11 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     println!("Peak solar gain: {:.2} kW", peak_solar_gain / 1000.0);
     println!("Summer average solar gain: {:.2} kW", summer_avg_solar / 1000.0);
     println!("Summer hours tracked: {}", summer_hours);
+    println!("=== Zone Temperature Diagnostics ===");
+    println!("Min zone temp: {:.2}°C", min_zone_temp);
+    println!("Max zone temp: {:.2}°C", max_zone_temp);
+    println!("Summer min zone temp: {:.2}°C", summer_min_zone_temp);
+    println!("Summer max zone temp: {:.2}°C", summer_max_zone_temp);
 
     (total_heating, total_cooling, peak_heating, peak_cooling)
 }
