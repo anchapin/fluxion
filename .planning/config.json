@@ -1,6 +1,6 @@
 {
   "mode": "yolo",
-  "granularity": "coarse",
+  "granularity": "fine",
   "parallelization": true,
   "commit_docs": true,
   "model_profile": "balanced",
@@ -8,8 +8,6 @@
     "research": true,
     "plan_check": true,
     "verifier": true,
-    "nyquist_validation": true,
-    "auto_advance": true,
-    "_auto_chain_active": true
+    "nyquist_validation": true
   }
 }
