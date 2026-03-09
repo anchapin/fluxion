@@ -574,7 +574,7 @@ impl Construction {
     /// This is a placeholder method that will be implemented in Plan 02.
     /// The final implementation should combine wall U-value, window U-value,
     /// and thermal bridge corrections.
-    pub fn calc_h_tr_em(&self, window_u_value: f64, surface_area: f64) -> f64 {
+    pub fn calc_h_tr_em(&self, _window_u_value: f64, surface_area: f64) -> f64 {
         // Exterior-to-mass conductance = (U_construction + U_window × window_area_fraction) × surface_area
         // This accounts for both the opaque construction conductance and window conductance
         //
