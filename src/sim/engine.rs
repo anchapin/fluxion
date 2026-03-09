@@ -1798,7 +1798,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Solar gains split by beam-to-mass fraction
         let phi_st_solar = solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction);
-        let phi_m_solar = solar_gains_watts * self.solar_beam_to_mass_fraction;
+        let phi_m_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction;
 
         // Total surface and mass gains
         let phi_st = phi_st_internal + phi_st_solar;
@@ -2020,6 +2020,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Update the mass temperatures with new values (convert Vec to T type)
         self.mass_temperatures = VectorField::new(new_mass_temperatures).into();
 
+        // Diagnostic output for thermal mass dynamics investigation (Plan 03-03 Task 3)
+        // Track mass temperature, solar gains to mass, and energy storage
+        if timestep % 24 == 0 && self.num_zones > 0 {
+            let phi_m_sum = phi_m.as_ref().to_vec().iter().sum::<f64>();
+            let solar_gain_sum = solar_gains_watts.as_ref().to_vec().iter().sum::<f64>();
+            let phi_m_solar_sum = solar_gain_sum * self.solar_beam_to_mass_fraction;
+            let mass_energy = self.thermal_capacitance.as_ref()[0] * self.mass_temperatures.as_ref()[0];
+            println!("Day {}: Mass temp: {:.2}°C, Zone temp: {:.2}°C, phi_m: {:.2} W, solar_gains: {:.2} W, phi_m_solar: {:.2} W, Mass energy: {:.2} J",
+                    timestep / 24,
+                    self.mass_temperatures.as_ref()[0],
+                    self.temperatures.as_ref()[0],
+                    phi_m_sum,
+                    solar_gain_sum,
+                    phi_m_solar_sum,
+                    mass_energy);
+        }
+
         // Issue #272, #274, #275: Calculate thermal mass energy change AFTER mass temperature is updated
         // Mass energy change = Cm × (Tm_new - Tm_old)
         let mass_temp_change = self.mass_temperatures.clone() - old_mass_temperatures.clone();
@@ -2094,6 +2111,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let internal_gains_watts = self.loads.clone() * self.zone_area.clone();
         let solar_gains_watts = self.solar_gains.clone() * self.zone_area.clone();
 
+        // Diagnostic: Check if solar gains are available
+        if timestep % 24 == 0 {
+            println!("DEBUG 6R2C: timestep={}, solar_gains[0]={:.2} W/m2, zone_area={:.2} m2",
+                    timestep, self.solar_gains.as_ref()[0], self.zone_area.as_ref()[0]);
+        }
+
         let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
         let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
@@ -2107,7 +2130,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let phi_st_solar =
             solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction);
         let phi_m_env_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction * 0.7;
-        let phi_m_int_solar = solar_gains_watts * self.solar_beam_to_mass_fraction * 0.3;
+        let phi_m_int_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction * 0.3;
 
         // Total surface and mass gains
         let phi_st = phi_st_internal + phi_st_solar;
@@ -2418,6 +2441,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         self.temperatures = t_i_act;
 
+        // Diagnostic output for thermal mass dynamics investigation (Plan 03-03 Task 3)
+        // Track mass temperature, solar gains to mass, and energy storage for 6R2C
+        if timestep % 24 == 0 && self.num_zones > 0 {
+            let phi_m_env_sum = phi_m_env.as_ref().to_vec().iter().sum::<f64>();
+            let phi_m_int_sum = phi_m_int.as_ref().to_vec().iter().sum::<f64>();
+            let solar_gain_sum = solar_gains_watts.as_ref().to_vec().iter().sum::<f64>();
+            let phi_m_solar_sum = solar_gain_sum * self.solar_beam_to_mass_fraction;
+            let mass_energy_env = self.envelope_thermal_capacitance.as_ref()[0] * self.envelope_mass_temperatures.as_ref()[0];
+            let mass_energy_int = self.internal_thermal_capacitance.as_ref()[0] * self.internal_mass_temperatures.as_ref()[0];
+            println!("Day {}: Mass temp (env): {:.2}°C, (int): {:.2}°C, Zone temp: {:.2}°C, phi_m_env: {:.2} W, phi_m_int: {:.2} W, solar_gains: {:.2} W, phi_m_solar: {:.2} W",
+                    timestep / 24,
+                    self.envelope_mass_temperatures.as_ref()[0],
+                    self.internal_mass_temperatures.as_ref()[0],
+                    self.temperatures.as_ref()[0],
+                    phi_m_env_sum,
+                    phi_m_int_sum,
+                    solar_gain_sum,
+                    phi_m_solar_sum);
+        }
+
         net_hvac_energy_for_step / 3.6e6 // Return kWh (net energy already calculated)
     }
 
@@ -2512,6 +2555,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             // so we should calculate it once per unique orientation
             let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
 
+            // Diagnostic: Check if surfaces have window areas
+            if timestep % 24 == 0 {
+                let total_window_area: f64 = zone_surfaces.iter().map(|s| s.window_area).sum();
+                let total_surface_area: f64 = zone_surfaces.iter().map(|s| s.area).sum();
+                println!("DEBUG surfaces: timestep={}, zone_idx={}, num_surfaces={}, total_window_area={:.2}, total_surface_area={:.2}",
+                        timestep, zone_idx, zone_surfaces.len(), total_window_area, total_surface_area);
+            }
+
             for surface in zone_surfaces {
                 let orientation = surface.orientation;
 
@@ -2588,6 +2639,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     orientation,
                     Some(0.2), // Ground reflectance
                 );
+
+                // Diagnostic: Check solar gain calculation results
+                if timestep % 24 == 12 {
+                    println!("DEBUG calculate_hourly_solar: timestep={}, orientation={:?}, dni={:.2}, dhi={:.2}, total_gain_w={:.2}",
+                            timestep, orientation, weather.dni, weather.dhi, solar_gain.total_gain_w);
+                }
 
                 // Distribute solar gain to each surface with this orientation
                 for surface in zone_surfaces {
@@ -2816,6 +2873,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     /// realistic solar gains based on solar position, DNI, DHI, and window properties.
     /// Falls back to trivial sine-wave approximation if weather data is not available.
     fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
+        // Diagnostic: Check if calc_analytical_loads is being called
+        if timestep % 24 == 0 {
+            println!("DEBUG calc_analytical_loads: timestep={}, use_analytical_gains={}, weather.is_some()={}",
+                    timestep, use_analytical_gains, self.weather.is_some());
+        }
+
         if use_analytical_gains {
             // Try to use weather data for solar gain calculation (Issue #278)
             if let Some(ref weather) = self.weather {
@@ -2838,10 +2901,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     let solar_gain_watts =
                         self.calculate_zone_solar_gain(zone_idx, timestep, weather);
                     let floor_area = self.zone_area.as_ref()[zone_idx];
-                    if timestep == 12 {
+                    if timestep == 12 || timestep % 24 == 0 {
                         eprintln!(
-                            "DEBUG solar: zone_idx={}, solar_gain_watts={}, floor_area={}",
-                            zone_idx, solar_gain_watts, floor_area
+                            "DEBUG solar: timestep={}, zone_idx={}, solar_gain_watts={}, floor_area={}",
+                            timestep, zone_idx, solar_gain_watts, floor_area
                         );
                     }
                     zone_solar_gains.push(solar_gain_watts / floor_area);
@@ -2849,6 +2912,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
                 // Apply zone-specific solar gains
                 self.solar_gains = T::from(VectorField::new(zone_solar_gains));
+
+                // Diagnostic: Check solar gains after calculation
+                if timestep % 24 == 0 {
+                    println!("DEBUG after solar_gains update: timestep={}, solar_gains[0]={:.2} W/m2",
+                            timestep, self.solar_gains.as_ref()[0]);
+                }
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
