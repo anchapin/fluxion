@@ -321,10 +321,25 @@ fn test_case_900_peak_cooling_within_reference_range() {
     let (_, _, _, peak_cooling_w) = simulate_case_900();
     let peak_cooling_kw = peak_cooling_w * W_TO_KW;
 
+    // Also check model's internal peak tracking (Plan 03-03 Task 1 investigation)
+    let spec = ASHRAE140Case::Case900.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+
+    // Simulate to populate model peak tracking
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+        model.step_physics(step, weather_data.dry_bulb_temp);
+    }
+
+    let model_peak_cooling_kw = model.peak_power_cooling / 1000.0;
+
     let (ref_min, ref_max) = CASE_900_REFERENCE.peak_cooling;
     let tolerance = (ref_max - ref_min) * PEAK_LOAD_TOLERANCE;
 
-    println!("Case 900 Peak Cooling: {:.2} kW", peak_cooling_kw);
+    println!("Case 900 Peak Cooling (manual tracking): {:.2} kW", peak_cooling_kw);
+    println!("Case 900 Peak Cooling (model tracking): {:.2} kW", model_peak_cooling_kw);
     println!("Reference Range: [{:.2}, {:.2}] kW", ref_min, ref_max);
     println!("Tolerance: ±{:.2} kW", tolerance);
 

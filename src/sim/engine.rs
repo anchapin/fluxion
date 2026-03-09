@@ -1941,6 +1941,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             let corrected_peak_cooling = (-hvac_power_watts) * peak_cooling_correction;
             self.peak_power_cooling = self.peak_power_cooling.max(corrected_peak_cooling);
         }
+
+        // Diagnostic output for peak load tracking investigation (Plan 03-03 Task 1)
+        // Compare steady-state approximation vs actual HVAC demand
+        let hvac_output_raw_watts = hvac_output_raw.as_ref().to_vec().iter().sum::<f64>();
+        if timestep % 24 == 0 && (hvac_output_raw_watts.abs() > 1000.0 || hvac_power_watts.abs() > 1000.0) {
+            println!("Day {}: ss_heat_loss={:.2} W, hvac_output_raw={:.2} W, t_i_free={:.2}°C, outdoor_temp={:.2}°C, setpoint={:.2}°C",
+                    timestep / 24, hvac_power_watts, hvac_output_raw_watts, t_i_free.as_ref()[0], outdoor_temp, self.heating_setpoints.as_ref()[0]);
+        }
         // Apply thermal mass correction factor (Issue #274, #472)
         // High-mass buildings need less HVAC energy because thermal mass buffers temperature swings
         // Split: use uncorrected hvac_output for temperature prediction, corrected for energy
