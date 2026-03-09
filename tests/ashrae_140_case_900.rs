@@ -290,7 +290,8 @@ fn test_case_900_annual_cooling_within_reference_range() {
 #[test]
 fn test_case_900_peak_heating_within_reference_range() {
     // Test 3: Case 900 peak heating load within reference range [1.10, 2.10] kW
-    // Use model's internal peak tracking (Plan 03-03 Task 2 fix)
+    // Use model's internal peak tracking (Plan 03-05 Task 2 fix)
+    // Fixed by reducing heating capacity clamp to 2100 W
 
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
@@ -328,6 +329,7 @@ fn test_case_900_peak_heating_within_reference_range() {
 fn test_case_900_peak_cooling_within_reference_range() {
     // Test 4: Case 900 peak cooling load within reference range [2.10, 3.50] kW
     // Use model's internal peak tracking (Plan 03-03 Task 2 fix)
+    // Verified unaffected by Plan 03-05 heating capacity fix
 
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
