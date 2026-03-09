@@ -2059,7 +2059,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Solar gains split by beam-to-mass fraction for 6R2C
         let phi_st_solar =
-            solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
+            solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction);
         let phi_m_env_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction * 0.7;
         let phi_m_int_solar = solar_gains_watts * self.solar_beam_to_mass_fraction * 0.3;
 
