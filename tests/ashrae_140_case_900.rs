@@ -107,6 +107,12 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let mut peak_heating = 0.0_f64;
     let mut peak_cooling = 0.0_f64;
 
+    // Track solar gains for diagnostics
+    let mut total_solar_gain = 0.0_f64;
+    let mut peak_solar_gain = 0.0_f64;
+    let mut summer_solar_gain = 0.0_f64;
+    let mut summer_hours = 0_usize;
+
     // Run simulation
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
@@ -119,6 +125,18 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         // Run physics step (returns HVAC energy in kWh, positive for heating, negative for cooling)
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
         let energy_joules = energy_kwh * 3.6e6;  // Convert kWh to Joules
+
+        // Track solar gains for diagnostics
+        let solar_gain_watts = model.solar_gains.as_slice().first().copied().unwrap_or(0.0) * model.zone_area.as_slice().first().copied().unwrap_or(1.0);
+        total_solar_gain += solar_gain_watts;  // This is in Watts, will convert to MWh later
+        peak_solar_gain = peak_solar_gain.max(solar_gain_watts);
+
+        // Track summer solar gains (June-August)
+        let month = fluxion::sim::engine::ThermalModel::<VectorField>::timestep_to_date(step).1;
+        if month >= 6 && month <= 8 {
+            summer_solar_gain += solar_gain_watts;
+            summer_hours += 1;
+        }
 
         // Separate heating and cooling based on energy sign and zone temperature
         // Heating: energy > 0 or zone temp below heating setpoint
@@ -133,6 +151,15 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
             peak_cooling = peak_cooling.max(power_watts);
         }
     }
+
+    let summer_avg_solar = if summer_hours > 0 { summer_solar_gain / summer_hours as f64 } else { 0.0 };
+
+    println!("=== Solar Gain Diagnostics ===");
+    println!("Total annual solar gain (raw): {:.2} W*h", total_solar_gain);
+    println!("Total annual solar gain: {:.2} MWh", total_solar_gain / 1e6);  // W*h to MWh
+    println!("Peak solar gain: {:.2} kW", peak_solar_gain / 1000.0);
+    println!("Summer average solar gain: {:.2} kW", summer_avg_solar / 1000.0);
+    println!("Summer hours tracked: {}", summer_hours);
 
     (total_heating, total_cooling, peak_heating, peak_cooling)
 }

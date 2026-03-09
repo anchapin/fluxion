@@ -959,11 +959,12 @@ impl ThermalModel<VectorField> {
         // Low-mass buildings: higher fraction to air (0.7-0.8) - less thermal mass to buffer gains
         // High-mass buildings: lower fraction to air (0.5-0.6) - more thermal mass to buffer gains
         // This implements Issue #278: Solar gain calculation accuracy
+        // ASHRAE 140 specification: 70% of beam solar to mass, 30% to interior surface
         model.solar_distribution_to_air = match spec.case_id.as_str() {
             "960" => 0.6,                 // Sunspace: 60% to air (Zone 1 + Zone 2), 40% to mass
-            "900" | "910" | "940" => 0.5, // High-mass: 50% to air, 50% to thermal mass
-            _ if spec.case_id.starts_with('9') => 0.5, // Other 900-series: 50% to air, 50% to mass
-            _ => 0.75,                    // Low-mass: 75% to air, 25% to thermal mass
+            "900" | "910" | "940" => 0.3, // High-mass: 30% to air, 70% to thermal mass (ASHRAE 140 spec)
+            _ if spec.case_id.starts_with('9') => 0.3, // Other 900-series: 30% to air, 70% to mass
+            _ => 0.3,                     // Low-mass: 30% to air, 70% to thermal mass (ASHRAE 140 spec)
         };
         // Ensure the actual physics parameter (solar_beam_to_mass_fraction) matches.
         // This controls the split of radiative gains between surface and mass in the 5R1C/6R2C models.
@@ -2404,7 +2405,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
     ///
     /// This function converts a timestep (0-8759) to a date and time,
     /// assuming a non-leap year for consistency with ASHRAE 140.
-    fn timestep_to_date(timestep: usize) -> (i32, u32, u32, f64) {
+    pub fn timestep_to_date(timestep: usize) -> (i32, u32, u32, f64) {
         let year = 2024; // Use a fixed year for solar calculations
         let days_in_month = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
