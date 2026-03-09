@@ -792,8 +792,8 @@ impl ThermalModel<VectorField> {
         let sensitivity_correction = match spec.case_id.as_str() {
             "900" | "910" | "920" | "930" | "940" | "950" => {
                 // Calculate time constant: τ = C / (h_tr_em + h_tr_ms)
-                // Will be set after conductances are calculated
-                1.5  // Test with smaller correction (target 40% reduction)
+                // Test with NO correction first to establish baseline
+                1.00
             },
             // Free-floating cases: no correction needed
             "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => 1.0,
