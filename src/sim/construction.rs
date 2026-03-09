@@ -575,8 +575,15 @@ impl Construction {
     /// The final implementation should combine wall U-value, window U-value,
     /// and thermal bridge corrections.
     pub fn calc_h_tr_em(&self, window_u_value: f64, surface_area: f64) -> f64 {
-        // Placeholder implementation - Plan 02 will implement correct formula
-        todo!("calc_h_tr_em not yet implemented - coming in Plan 02")
+        // Exterior-to-mass conductance = (U_construction + U_window × window_area_fraction) × surface_area
+        // This accounts for both the opaque construction conductance and window conductance
+        //
+        // For simplified 5R1C model, we use the construction U-value directly
+        // The window conductance is handled separately in h_tr_w
+        //
+        // Units: W/m²K × m² = W/K
+        let construction_u_value = self.u_value(None, None);
+        construction_u_value * surface_area
     }
 
     /// Calculates window conductance (h_tr_w) for 5R1C thermal network.
@@ -597,8 +604,9 @@ impl Construction {
     /// # Note
     /// This is a placeholder method that will be implemented in Plan 02.
     pub fn calc_h_tr_w(&self, window_u_value: f64, window_area: f64) -> f64 {
-        // Placeholder implementation - Plan 02 will implement correct formula
-        todo!("calc_h_tr_w not yet implemented - coming in Plan 02")
+        // Window conductance = U_value × window_area
+        // Units: W/m²K × m² = W/K
+        window_u_value * window_area
     }
 
     /// Calculates mass-to-surface conductance (h_tr_ms) for 5R1C thermal network.
@@ -616,8 +624,18 @@ impl Construction {
     /// This is a placeholder method that will be implemented in Plan 02.
     /// Depends on effective thermal mass and mass-surface coupling.
     pub fn calc_h_tr_ms(&self, surface_area: f64) -> f64 {
-        // Placeholder implementation - Plan 02 will implement correct formula
-        todo!("calc_h_tr_ms not yet implemented - coming in Plan 02")
+        // Mass-to-surface conductance represents thermal coupling between
+        // thermal mass and interior surface of building envelope
+        //
+        // For simplified 5R1C model with low-mass construction, this is typically
+        // 1.5-2.5 W/m²K times surface area
+        //
+        // Based on ASHRAE 140 Case 600 reference values and typical construction:
+        // h_tr_ms ≈ 2.0 W/m²K for low-mass buildings
+        //
+        // Units: W/m²K × m² = W/K
+        const H_MS: f64 = 2.0; // W/m²K - typical value for low-mass construction
+        H_MS * surface_area
     }
 
     /// Calculates surface-to-interior conductance (h_tr_is) for 5R1C thermal network.
@@ -639,8 +657,12 @@ impl Construction {
     /// # Note
     /// This is a placeholder method that will be implemented in Plan 02.
     pub fn calc_h_tr_is(&self, surface_area: f64) -> f64 {
-        // Placeholder implementation - Plan 02 will implement correct formula
-        todo!("calc_h_tr_is not yet implemented - coming in Plan 02")
+        // Surface-to-interior conductance = h_si × A_si
+        // Where h_si is interior surface film coefficient
+        // For ASHRAE 140 simplified 5R1C model, use h_si = 3.45 W/m²K
+        // Units: W/m²K × m² = W/K
+        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+        H_SI * surface_area
     }
 
     /// Calculates exterior-to-mass conductance with thermal bridge correction.
@@ -664,8 +686,23 @@ impl Construction {
         surface_area: f64,
         include_thermal_bridge: bool,
     ) -> f64 {
-        // Placeholder implementation - Plan 02 will implement correct formula
-        todo!("calc_h_tr_em_with_thermal_bridge not yet implemented - coming in Plan 02")
+        // Exterior-to-mass conductance with optional thermal bridge correction
+        //
+        // Thermal bridges represent additional heat transfer paths through
+        // edge conditions, corner effects, and structural connections
+        //
+        // When thermal bridge correction is enabled, apply a 10-20% increase
+        // to account for these additional heat transfer paths
+        //
+        // Units: W/m²K × m² = W/K
+        let base_conductance = self.calc_h_tr_em(window_u_value, surface_area);
+
+        if include_thermal_bridge {
+            // Apply 15% thermal bridge correction (typical for light-framed construction)
+            base_conductance * 1.15
+        } else {
+            base_conductance
+        }
     }
 }
 
@@ -886,8 +923,17 @@ impl Assemblies {
     /// # Note
     /// This is a placeholder method that will be implemented in Plan 02.
     pub fn calc_h_ve(&self, ach: f64, zone_volume: f64) -> f64 {
-        // Placeholder implementation - Plan 02 will implement correct formula
-        todo!("calc_h_ve not yet implemented - coming in Plan 02")
+        // Ventilation conductance = ρ × cp × (ACH/3600) × V
+        // Where:
+        // - ρ = air density (kg/m³) = 1.2 kg/m³ at standard conditions
+        // - cp = specific heat of air (J/kg·K) = 1005 J/kg·K
+        // - ACH = air changes per hour (1/hr)
+        // - V = zone volume (m³)
+        // - 3600 = seconds per hour (to convert ACH to per second)
+        // Units: kg/m³ × J/kg·K × (1/hr ÷ 3600 s/hr) × m³ = W/K
+        const AIR_DENSITY: f64 = 1.2; // kg/m³
+        const AIR_SPECIFIC_HEAT: f64 = 1005.0; // J/kg·K
+        AIR_DENSITY * AIR_SPECIFIC_HEAT * (ach / 3600.0) * zone_volume
     }
 }
 

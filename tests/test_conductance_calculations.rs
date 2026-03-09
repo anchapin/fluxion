@@ -276,23 +276,28 @@ fn test_layer_by_layer_r_value_calculation() {
 /// Test 10: Validate ASHRAE film coefficient application (LAYER-02)
 #[test]
 fn test_ashrae_film_coefficient_application() {
-    use fluxion::sim::construction::{INTERIOR_FILM_COEFF, EXTERIOR_FILM_COEFF_DEFAULT};
+    use fluxion::sim::construction::{INTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF_WALL, EXTERIOR_FILM_COEFF_DEFAULT};
 
     // Verify film coefficients are defined correctly
     assert!(INTERIOR_FILM_COEFF > 0.0, "Interior film coefficient should be positive");
+    assert!(INTERIOR_FILM_COEFF_WALL > 0.0, "Interior wall film coefficient should be positive");
     assert!(EXTERIOR_FILM_COEFF_DEFAULT > 0.0, "Exterior film coefficient should be positive");
 
     // Verify typical ASHRAE values
-    // Interior: R_si = 0.13 m²K/W → h_si = 7.69 W/m²K
+    // Interior (general): R_si = 0.12 m²K/W → h_si = 8.29 W/m²K
+    // Interior (wall): R_si = 0.13 m²K/W → h_si = 7.69 W/m²K
     // Exterior: R_se = 0.04 m²K/W → h_se = 25.0 W/m²K
-    let expected_interior = 7.69; // W/m²K
+    let expected_interior = 8.29; // W/m²K (1/0.12)
+    let expected_interior_wall = 7.69; // W/m²K (1/0.13)
     let expected_exterior = 25.0; // W/m²K
 
     assert_relative_eq!(INTERIOR_FILM_COEFF, expected_interior, max_relative = 0.01);
+    assert_relative_eq!(INTERIOR_FILM_COEFF_WALL, expected_interior_wall, max_relative = 0.01);
     assert_relative_eq!(EXTERIOR_FILM_COEFF_DEFAULT, expected_exterior, max_relative = 0.01);
 
     println!("ASHRAE film coefficients:");
-    println!("  Interior: {:.2} W/m²K", INTERIOR_FILM_COEFF);
+    println!("  Interior (general): {:.2} W/m²K", INTERIOR_FILM_COEFF);
+    println!("  Interior (wall): {:.2} W/m²K", INTERIOR_FILM_COEFF_WALL);
     println!("  Exterior: {:.2} W/m²K", EXTERIOR_FILM_COEFF_DEFAULT);
 }
 
