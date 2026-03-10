@@ -4,6 +4,10 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
+use crate::sim::interzone::{
+    calculate_stack_effect_ach,
+    calculate_ventilation_heat_transfer,
+};
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
