@@ -1,9 +1,20 @@
 //! Inter-zone heat transfer modules for multi-zone building energy modeling.
 //!
 //! This module provides tools for calculating heat transfer between different thermal zones,
-//! including conductive coupling through common walls and radiative exchange between surfaces.
+//! including conductive coupling through common walls, radiative exchange between surfaces,
+//! and temperature-dependent air exchange through door openings (stack effect).
 
 use crate::sim::construction::Construction;
+
+/// Stack effect coefficient for buoyancy-driven ventilation.
+/// Based on ASHRAE 140 natural ventilation model.
+pub const STACK_COEFFICIENT: f64 = 0.025;
+
+/// Air density at standard conditions (kg/m³).
+pub const AIR_DENSITY: f64 = 1.2;
+
+/// Air specific heat capacity (J/kg·K).
+pub const AIR_SPECIFIC_HEAT: f64 = 1000.0;
 
 /// Calculates directional inter-zone conductance accounting for asymmetric insulation.
 ///
@@ -108,6 +119,88 @@ pub fn calculate_window_radiative_conductance(
     view_factor: f64,
 ) -> f64 {
     calculate_radiative_conductance(window_area, glass_emissivity, mean_temp_k, view_factor)
+}
+
+/// Calculates air exchange rate (ACH) using stack effect for temperature-dependent ventilation.
+///
+/// Stack effect ventilation is driven by thermal buoyancy: warm air rises through door openings,
+/// creating natural airflow between zones at different temperatures.
+///
+/// # Arguments
+/// * `temp_a` - Temperature in zone A (°C)
+/// * `temp_b` - Temperature in zone B (°C)
+/// * `door_height` - Door opening height (m)
+/// * `door_area` - Door opening area (m²)
+///
+/// # Returns
+/// Air exchange rate ACH (air changes per hour, 1/hr)
+///
+/// # Formula
+/// Q_vent = C·A·√(ΔT/h)  (volumetric flow rate, m³/hr)
+/// ACH = Q_vent / V_zone (air changes per hour)
+///
+/// Where:
+/// - C = STACK_COEFFICIENT = 0.025 (empirical coefficient)
+/// - A = door opening area (m²)
+/// - ΔT = |T_A - T_B| (temperature difference, °C)
+/// - h = door opening height (m)
+/// - V_zone = zone volume (m³), approximated as door_area × door_height
+///
+/// # Note
+/// This formula captures thermal buoyancy dynamics critical for sunspace buildings,
+/// where temperature differences can be 20-40°C between zones.
+pub fn calculate_stack_effect_ach(
+    temp_a: f64,
+    temp_b: f64,
+    door_height: f64,
+    door_area: f64,
+) -> f64 {
+    // Temperature difference (absolute value for magnitude)
+    let delta_t = (temp_a - temp_b).abs();
+
+    // Stack effect volumetric flow rate: Q = C·A·√(ΔT/h)
+    let q_vent = STACK_COEFFICIENT * door_area * (delta_t / door_height).sqrt();
+
+    // ACH = Q_vent / V_zone (assuming door height represents zone height)
+    let zone_volume = door_area * door_height;
+    q_vent / zone_volume // Units: 1/hr (if Q in m³/hr)
+}
+
+/// Calculates ventilation heat transfer using air enthalpy method.
+///
+/// # Arguments
+/// * `ach` - Air exchange rate (1/hr)
+/// * `temp_source` - Source zone temperature (°C)
+/// * `temp_target` - Target zone temperature (°C)
+/// * `volume_target` - Target zone volume (m³)
+///
+/// # Returns
+/// Ventilation heat transfer Q_vent (Watts). Positive if heat flows from source to target.
+///
+/// # Formula
+/// Q_vent = ρ·Cp·ACH·V·(T_source - T_target)
+///
+/// Where:
+/// - ρ = AIR_DENSITY = 1.2 kg/m³ (air density)
+/// - Cp = AIR_SPECIFIC_HEAT = 1000.0 J/kg·K (specific heat capacity)
+/// - ACH = air exchange rate (1/hr)
+/// - V = target zone volume (m³)
+/// - T_source, T_target = zone temperatures (°C)
+///
+/// # Note
+/// Air enthalpy method includes air density and specific heat for thermodynamic rigor.
+/// Omitting ρ·Cp gives 1200× error in heat transfer calculation.
+pub fn calculate_ventilation_heat_transfer(
+    ach: f64,
+    temp_source: f64,
+    temp_target: f64,
+    volume_target: f64,
+) -> f64 {
+    let delta_t = temp_source - temp_target;
+    // Air enthalpy method: Q = ρ·Cp·ACH·V·(T_source - T_target)
+    // Note: Units: (kg/m³)·(J/kg·K)·(1/hr)·(m³)·K = W/hr
+    // Need to convert to Watts (divide by 3600 for hours to seconds)
+    AIR_DENSITY * AIR_SPECIFIC_HEAT * ach * volume_target * delta_t / 3600.0
 }
 
 #[cfg(test)]

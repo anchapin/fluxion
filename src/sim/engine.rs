@@ -236,6 +236,36 @@ pub enum ThermalModelType {
     SixRTwoC,
 }
 
+/// Door geometry specification for temperature-dependent air exchange (stack effect).
+///
+/// Used for sunspace buildings (Case 960) where door openings between
+/// conditioned and unconditioned zones have temperature-dependent airflow driven
+/// by thermal buoyancy.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct DoorGeometry {
+    /// Door opening height (meters)
+    pub height: f64,
+    /// Door opening area (square meters)
+    pub area: f64,
+}
+
+impl DoorGeometry {
+    /// Creates a new door geometry specification.
+    ///
+    /// # Arguments
+    /// * `height` - Door opening height (meters)
+    /// * `area` - Door opening area (square meters)
+    ///
+    /// # Example
+    /// Typical door: 2m height, 1.5 m² area (0.75m width × 2m height)
+    /// ```
+    /// let door = DoorGeometry::new(2.0, 1.5);
+    /// ```
+    pub fn new(height: f64, area: f64) -> Self {
+        DoorGeometry { height, area }
+    }
+}
+
 /// Represents a simplified thermal network (RC Network) for building energy modeling.
 ///
 /// This is the core physics engine. It models heat transfer through building zones using
@@ -436,6 +466,11 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Window orientations per zone: list of orientations for windows in each zone
     pub window_orientations: Vec<Vec<Orientation>>,
 
+    // Door geometry for temperature-dependent inter-zone air exchange (stack effect)
+    /// Door opening geometry for sunspace buildings (Case 960)
+    /// Used to calculate temperature-dependent ACH via stack effect
+    pub door_geometry: DoorGeometry,
+
     // Optimization cache (derived from physical parameters)
     // These fields are pre-computed to avoid redundant calculations in step_physics
     pub derived_h_ext: T,
@@ -518,6 +553,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_orientations: self.window_orientations.clone(),
             hvac_controller: self.hvac_controller.clone(),
             ideal_air_loads_mode: self.ideal_air_loads_mode,
+
+            // Door geometry for temperature-dependent inter-zone air exchange
+            door_geometry: self.door_geometry,
 
             // U-values from construction (Issue #375)
             wall_u_value: self.wall_u_value,
@@ -1311,6 +1349,14 @@ impl ThermalModel<VectorField> {
         // Set the ASHRAE 140 case identifier for special handling
         model.case_id = spec.case_id.clone();
 
+        // Configure door geometry for temperature-dependent inter-zone air exchange (stack effect)
+        // Used for sunspace buildings (Case 960)
+        if let (Some(height), Some(area)) = (spec.door_height, spec.door_area) {
+            model.door_geometry = DoorGeometry::new(height, area);
+        } else {
+            model.door_geometry = DoorGeometry::default();
+        }
+
         model.update_optimization_cache();
 
         // Case 195: INFINITE thermal capacitance for steady-state solid conduction
@@ -1476,6 +1522,9 @@ impl ThermalModel<VectorField> {
 
             // Initialize HVAC controller with default setpoints
             hvac_controller: IdealHVACController::new(20.0, 27.0),
+
+            // Door geometry for temperature-dependent inter-zone air exchange (stack effect)
+            door_geometry: DoorGeometry::default(),
 
             // Initialize optimization cache with placeholders (will be updated by update_derived_parameters)
             derived_h_ext: VectorField::from_scalar(0.0, num_zones),

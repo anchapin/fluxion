@@ -829,6 +829,12 @@ pub struct CaseSpec {
     /// Weather data for solar gain calculation (Issue #278)
     /// Hourly weather data (temperature, DNI, DHI, GHI, wind, humidity)
     pub weather_data: Option<HourlyWeatherData>,
+
+    /// Door opening height (meters, for stack effect ACH)
+    pub door_height: Option<f64>,
+
+    /// Door opening area (square meters, for stack effect ACH)
+    pub door_area: Option<f64>,
 }
 
 /// Geometry specification for a building zone.
@@ -1116,6 +1122,10 @@ pub struct CaseBuilder {
     infiltration_ach: f64,
     opaque_absorptance: f64,
     num_zones: usize,
+    /// Door opening height (meters, for stack effect ACH)
+    door_height: Option<f64>,
+    /// Door opening area (square meters, for stack effect ACH)
+    door_area: Option<f64>,
 }
 
 impl Default for CaseBuilder {
@@ -1143,6 +1153,8 @@ impl CaseBuilder {
             infiltration_ach: 0.5,
             opaque_absorptance: 0.6,
             num_zones: 1,
+            door_height: None,
+            door_area: None,
         }
     }
 
@@ -1323,6 +1335,20 @@ impl CaseBuilder {
         self
     }
 
+    /// Configures door geometry for temperature-dependent air exchange (stack effect).
+    ///
+    /// Used for sunspace buildings (Case 960) where door openings between
+    /// conditioned and unconditioned zones have temperature-dependent airflow.
+    ///
+    /// # Arguments
+    /// * `height` - Door opening height (meters)
+    /// * `area` - Door opening area (square meters)
+    pub fn with_door_geometry(mut self, height: f64, area: f64) -> Self {
+        self.door_height = Some(height);
+        self.door_area = Some(area);
+        self
+    }
+
     /// Builds and validates the case specification.
     pub fn build(mut self) -> Result<CaseSpec, String> {
         // Ensure vectors have correct length for num_zones
@@ -1385,6 +1411,8 @@ impl CaseBuilder {
             opaque_absorptance: self.opaque_absorptance,
             num_zones: self.num_zones,
             weather_data: None, // Will be loaded separately for solar calculations
+            door_height: self.door_height,
+            door_area: self.door_area,
         };
 
         // spec.validate()?; // Skip detailed validation for now to save time
