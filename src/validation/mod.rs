@@ -4,9 +4,11 @@ pub mod ashrae_140_validator;
 pub mod benchmark;
 pub mod cross_validator;
 pub mod diagnostic;
+pub mod export;
 pub mod fdd;
 pub mod physics_validator;
 pub mod report;
+pub mod reporter;
 
 // Re-export common types
 pub use ashrae_140_validator::ASHRAE140Validator;
@@ -32,6 +34,7 @@ pub use report::{
     BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
     ValidationStatus, ValidationSuite,
 };
+pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerator};
 
 #[cfg(test)]
 mod tests {
