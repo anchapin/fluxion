@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-03-10 12:46 UTC*
+*Generated: 2026-03-10 14:08 UTC*
 
 ## Summary
 
@@ -60,13 +60,8 @@ The following recurring issues are affecting validation results:
 
 ### Unknown/Unclassified
 
-**Affected metrics:** 900 - Peak Cooling (kW), 600 - Annual Cooling (MWh), 640 - Annual Heating (MWh), 930 - Peak Heating (kW), 940 - Peak Cooling (kW), 600 - Peak Heating (kW), 910 - Peak Cooling (kW), 950 - Peak Cooling (kW), 630 - Annual Cooling (MWh), 630 - Peak Heating (kW), 610 - Annual Heating (MWh), 650FF - Min Free-Float Temp (°C), 620 - Peak Heating (kW), 630 - Annual Heating (MWh), 610 - Peak Heating (kW), 620 - Annual Cooling (MWh), 650FF - Max Free-Float Temp (°C), 640 - Peak Heating (kW), 600FF - Min Free-Float Temp (°C), 600FF - Max Free-Float Temp (°C) |
+**Affected metrics:** 950 - Peak Cooling (kW), 640 - Annual Heating (MWh), 600 - Annual Cooling (MWh), 930 - Peak Heating (kW), 610 - Peak Heating (kW), 630 - Peak Heating (kW), 610 - Annual Heating (MWh), 910 - Peak Cooling (kW), 630 - Annual Cooling (MWh), 620 - Annual Cooling (MWh), 600 - Peak Heating (kW), 600FF - Min Free-Float Temp (°C), 940 - Peak Cooling (kW), 650FF - Max Free-Float Temp (°C), 620 - Peak Heating (kW), 900 - Peak Cooling (kW), 600FF - Max Free-Float Temp (°C), 640 - Peak Heating (kW), 630 - Annual Heating (MWh), 650FF - Min Free-Float Temp (°C) |
 **Count:** 20 metrics
-
-### 5R1C Model Limitation (Accepted)
-
-**Affected metrics:** 920 - Annual Cooling (MWh), 900 - Annual Cooling (MWh), 930 - Annual Cooling (MWh), 950 - Annual Cooling (MWh), 900 - Annual Heating (MWh), 930 - Annual Heating (MWh), 940 - Annual Heating (MWh), 920 - Annual Heating (MWh), 910 - Annual Cooling (MWh), 910 - Annual Heating (MWh), 940 - Annual Cooling (MWh) |
-**Count:** 11 metrics
 
 ### Thermal Mass Dynamics
 
@@ -75,13 +70,23 @@ The following recurring issues are affecting validation results:
 
 ### Solar Gain Calculations
 
-**Affected metrics:** 650 - Peak Cooling (kW), 610 - Peak Cooling (kW), 640 - Peak Cooling (kW) |
+**Affected metrics:** 650 - Peak Cooling (kW), 640 - Peak Cooling (kW), 610 - Peak Cooling (kW) |
 **Count:** 3 metrics
+
+### 5R1C Model Limitation (Accepted)
+
+**Affected metrics:** 930 - Annual Heating (MWh), 940 - Annual Heating (MWh), 920 - Annual Heating (MWh), 950 - Annual Cooling (MWh), 940 - Annual Cooling (MWh), 910 - Annual Heating (MWh), 900 - Annual Heating (MWh), 900 - Annual Cooling (MWh), 910 - Annual Cooling (MWh), 920 - Annual Cooling (MWh), 930 - Annual Cooling (MWh) |
+**Count:** 11 metrics
 
 ### Inter-Zone Heat Transfer
 
 **Affected metrics:** 960 - Annual Cooling (MWh) |
 **Count:** 1 metrics
+
+## References
+
+- **[Quality Metrics Tracker](QUALITY_METRICS.md)** - Detailed metrics dashboard with historical progression
+- **[Known Systematic Issues](KNOWN_ISSUES.md)** - Comprehensive issue catalog with severity, status, and resolution roadmap
 
 ## Phase Progress
 
@@ -91,9 +96,18 @@ The following recurring issues are affecting validation results:
 | Phase 2: Thermal Mass | ✅ Complete | 4/4 plans | Implicit integration validated |
 | Phase 3: Solar & External | ✅ Complete | 3/3 plans | Solar integration, mode-specific coupling |
 | Phase 4: Multi-Zone Transfer | ✅ Complete | 6/6 plans | Inter-zone heat transfer validated |
-| Phase 5: Diagnostics & Reporting | 🔄 In Progress | 1/4 plans | This report |
+| Phase 5: Diagnostics & Reporting | 🔄 In Progress | 4/4 plans | Quality metrics, issue tracking |
 | Phase 6: Performance Optimization | ⏳ Pending | 0/12 requirements | GPU acceleration, throughput |
 | Phase 7: Advanced Analysis | ⏳ Pending | 0/20 requirements | Sensitivity, visualization |
+
+## What's Fixed in Phase 5
+
+This phase delivered systematic diagnostics and reporting infrastructure:
+
+- ✅ **REPORT-01:** Automated quality metrics computation via `analyzer.rs`
+- ✅ **REPORT-02:** Quality metrics dashboard (`QUALITY_METRICS.md`) with historical progression
+- ✅ **REPORT-03:** Comprehensive known issues catalog (`KNOWN_ISSUES.md`) with taxonomy, severity, and GitHub links
+- ✅ **REPORT-04:** Enhanced validation report with issue references and phase summaries
 
 ## Legend
 

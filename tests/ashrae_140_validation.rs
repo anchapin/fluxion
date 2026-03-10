@@ -87,7 +87,8 @@ fn test_all_cases_instantiation() {
 
 #[test]
 fn generate_validation_report() {
-    use fluxion::validation::reporter::{SystematicIssueMap, ValidationReportGenerator};
+    use fluxion::validation::reporter::ValidationReportGenerator;
+    use fluxion::validation::Analyzer;
     use std::path::PathBuf;
 
     let mut validator = ASHRAE140Validator::new();
@@ -96,7 +97,7 @@ fn generate_validation_report() {
     // Classify systematic issues
     let systematic_issues = ValidationReportGenerator::classify_systematic_issues(&report);
 
-    // Generate report
+    // Generate main validation report
     let generator = ValidationReportGenerator::new(PathBuf::from("docs/ASHRAE140_RESULTS.md"));
     generator
         .generate(&report, Some(&systematic_issues))
@@ -112,4 +113,19 @@ fn generate_validation_report() {
     assert!(content.contains("## Detailed Results"));
     assert!(content.contains("## Systematic Issues"));
     assert!(content.contains("## Phase Progress"));
+    assert!(content.contains("## References"));
+    assert!(content.contains("## What's Fixed in Phase 5"));
+
+    // Update quality metrics automatically (Task 5: metrics collection hook)
+    let analyzer = Analyzer::default();
+    match analyzer.update_quality_metrics(&report) {
+        Ok(_) => {
+            // Verify quality metrics file was created
+            let metrics_path = PathBuf::from("docs/QUALITY_METRICS.md");
+            assert!(metrics_path.exists(), "Quality metrics file not generated");
+        }
+        Err(e) => {
+            panic!("Failed to update quality metrics: {}", e);
+        }
+    }
 }
