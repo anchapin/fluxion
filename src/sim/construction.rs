@@ -326,6 +326,22 @@ impl Construction {
         Self { layers }
     }
 
+    /// Calculates the thermal resistance (R-value) of materials only.
+    ///
+    /// This returns the sum of R-values for all material layers, excluding
+    /// interior and exterior film coefficients. This is useful for calculating
+    /// conductances where film coefficients are handled separately (e.g., inter-zone
+    /// walls where both surfaces are interior).
+    ///
+    /// # Returns
+    /// Materials-only thermal resistance in m²K/W
+    ///
+    /// # Formula
+    /// R_materials = Σ(δ/k) for all layers
+    pub fn r_value_materials(&self) -> f64 {
+        self.layers.iter().map(|l| l.r_value()).sum()
+    }
+
     /// Calculates the total thermal resistance (R-value) including film coefficients.
     ///
     /// The total R-value is the sum of:
