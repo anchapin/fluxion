@@ -1794,6 +1794,7 @@ impl CaseBuilder {
             // Common Wall (8m x 2.7m = 21.6 m2)
             .with_common_wall(0, 1, 21.6, Assemblies::concrete_wall(0.200))
             .with_infiltration(0.5)
+            .with_door_geometry(2.0, 1.5) // Door opening: height=2.0m, area=1.5m² (Plan 04-04)
             .with_num_zones(2)
             .build()
             .expect("Case 960 should validate")
