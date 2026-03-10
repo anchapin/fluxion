@@ -1,281 +1,102 @@
 # ASHRAE Standard 140 Validation Results
 
-Latest validation run results for Fluxion v0.1.0.
+*Generated: 2026-03-10 12:46 UTC*
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Total Results | 64 |
-| Passed | 19 (30%) |
-| Warnings | 10 (16%) |
-| Failed | 35 (54%) |
-| Mean Absolute Error | 49.21% |
-| Max Deviation | 512.45% |
-| Status | ⚠️ IN PROGRESS |
+| Pass Rate | 28.1% |
+| Passed | 18 |
+| Warnings | 10 |
+| Failed | 36 |
+| Mean Absolute Error | 61.52% |
+| Max Deviation | 527.03% |
 
 ## Detailed Results
 
+### Baseline Cases (600 Series)
+
 | Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
 |------|----------------|----------------|--------------|--------------|--------|
-| 600 | 10.29 MWh (Ref: 5.50-7.50) | 8.59 MWh (Ref: 8.00-10.50) | 3.30 kW (Ref: 2.80-3.80) | 1.27 kW (Ref: 2.80-4.10) | ⚠️ Partial |
-| 610 | 10.46 MWh (Ref: 4.36-5.79) | 6.26 MWh (Ref: 3.92-6.14) | 3.30 kW | 1.27 kW | ⚠️ Partial |
-| 620 | 8.99 MWh (Ref: 4.50-6.50) | 3.33 MWh (Ref: 3.20-5.00) | 3.30 kW (Ref: 2.80-3.80) | 1.27 kW (Ref: 2.50-3.50) | ⚠️ Partial |
-| 630 | 9.61 MWh (Ref: 5.05-6.47) | 1.79 MWh (Ref: 2.13-3.70) | 3.30 kW | 1.27 kW | ⚠️ Partial |
-| 640 | 10.29 MWh (Ref: 2.75-3.80) | 8.59 MWh (Ref: 5.95-8.10) | 3.30 kW | 1.27 kW | ⚠️ Partial |
-| 650 | 0.00 MWh (Ref: 0.00-0.00) | 7.67 MWh (Ref: 4.82-7.06) | 0.00 kW | 13.47 kW | ⚠️ Partial |
-| 900 | 5.35 MWh (Ref: 1.17-2.04) | 4.75 MWh (Ref: 2.13-3.67) | 2.10 kW (Ref: 1.10-2.10) | 3.56 kW (Ref: 2.10-3.50) | ⚠️ Partial |
-| 960 | 5.78 MWh (Ref: 5.00-15.00) | 4.53 MWh (Ref: 0.00-2.00) | 2.10 kW (Ref: 2.00-8.00) | 3.79 kW (Ref: 0.00-3.00) | ⚠️ Partial |
-| 195 | 4.81 MWh (Ref: 3.50-6.00) | 0.00 MWh (Ref: 0.00-0.00) | 1.61 kW | 0.62 kW | ⚠️ Partial |
+| 600 | 6.78 MWh (Ref: 5.50-7.50) | 6.45 MWh (Ref: 8.00-10.50) | 2.10 kW (Ref: 2.80-3.80) | 5.01 kW (Ref: 4.80-6.20) | ❌ FAIL |
+| 610 | 7.12 MWh (Ref: 4.36-5.79) | 4.54 MWh (Ref: 3.92-6.14) | 2.10 kW (Ref: 4.30-5.70) | 4.10 kW (Ref: 2.20-2.90) | ❌ FAIL |
+| 620 | 6.59 MWh (Ref: 4.50-6.50) | 2.33 MWh (Ref: 3.20-5.00) | 2.10 kW (Ref: 2.80-3.80) | 2.75 kW (Ref: 2.50-3.50) | ❌ FAIL |
+| 630 | 7.55 MWh (Ref: 5.05-6.47) | 1.18 MWh (Ref: 2.13-3.70) | 2.10 kW (Ref: 4.70-6.10) | 1.86 kW (Ref: 1.80-2.40) | ❌ FAIL |
+| 640 | 6.78 MWh (Ref: 2.75-3.80) | 6.45 MWh (Ref: 5.95-8.10) | 2.10 kW (Ref: 4.30-5.70) | 5.01 kW (Ref: 2.80-3.70) | ❌ FAIL |
+| 650 | 0.00 MWh (Ref: 0.00-0.00) | 4.60 MWh (Ref: 4.82-7.06) | 0.00 kW (Ref: 0.00-0.00) | 6.45 kW (Ref: 1.90-2.50) | ❌ FAIL |
 
-*Note: Phase 3 results (after Plan 03-14) show Case 900 with mode-specific coupling: annual heating 5.35 MWh (22% improvement from baseline), peak loads 2.10 kW heating / 3.56 kW cooling (both within reference). Annual energy over-prediction documented in KNOWN_LIMITATIONS.md as 5R1C model limitation.*
+### High-Mass Cases (900 Series)
+
+| Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
+|------|----------------|----------------|--------------|--------------|--------|
+| 900 | 5.35 MWh (Ref: 1.17-2.04) | 4.75 MWh (Ref: 2.13-3.67) | 2.10 kW (Ref: 1.80-2.40) | 3.56 kW (Ref: 1.60-2.10) | ❌ FAIL |
+| 910 | 5.77 MWh (Ref: 1.51-2.28) | 3.26 MWh (Ref: 0.82-1.88) | 2.10 kW (Ref: 1.90-2.50) | 2.91 kW (Ref: 1.20-1.60) | ❌ FAIL |
+| 920 | 4.95 MWh (Ref: 3.26-4.30) | 1.60 MWh (Ref: 1.84-3.31) | 2.10 kW (Ref: 2.10-2.80) | 1.99 kW (Ref: 1.40-1.90) | ❌ FAIL |
+| 930 | 5.91 MWh (Ref: 4.14-5.34) | 0.74 MWh (Ref: 1.04-2.24) | 2.10 kW (Ref: 2.30-3.00) | 1.36 kW (Ref: 1.10-1.50) | ❌ FAIL |
+| 940 | 5.34 MWh (Ref: 0.79-1.41) | 4.75 MWh (Ref: 2.08-3.55) | 2.10 kW (Ref: 1.90-2.50) | 3.55 kW (Ref: 1.70-2.30) | ❌ FAIL |
+| 950 | 0.00 MWh (Ref: 0.00-0.00) | 2.58 MWh (Ref: 0.39-0.92) | 0.00 kW (Ref: 0.00-0.00) | 5.02 kW (Ref: 0.70-0.90) | ❌ FAIL |
 
 ### Free-Floating Cases
 
 | Case | Min Temperature | Max Temperature | Status |
 |------|-----------------|-----------------|--------|
-| 600FF | -8.55°C (Ref: -18.80--15.60) | 56.64°C (Ref: 64.90-75.10) | ✅ PASS |
-| 650FF | -11.70°C (Ref: -23.00--21.00) | 56.34°C (Ref: 63.20-73.50) | ✅ PASS |
-| 900FF | -4.33°C (Ref: -6.40--1.60) | 41.62°C (Ref: 41.80-46.40) | ✅ PASS |
-| 950FF | -9.75°C (Ref: -20.20--17.80) | 34.18°C (Ref: 35.50-38.50) | ⚠️ Partial |
+| 600FF | -5.01°C (Ref: -18.80--15.60) | 47.89°C (Ref: 64.90-75.10) | ❌ FAIL |
+| 650FF | -10.32°C (Ref: -23.00--21.00) | 44.53°C (Ref: 63.20-73.50) | ❌ FAIL |
+| 900FF | -3.56°C (Ref: -6.40--1.60) | 41.60°C (Ref: 41.80-46.40) | ⚠️ WARN |
+| 950FF | -9.37°C (Ref: -20.20--17.80) | 36.81°C (Ref: 35.50-38.50) | ❌ FAIL |
 
-*Note: Results shown are from the latest validation run with 64 total validation metrics. Phase 3 results (after Plan 03-14) show improved Case 900FF max temperature (41.62°C vs 37.22°C baseline, now within reference).*
+### Special Cases
 
-## Phase 1 Progress
+| Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
+|------|----------------|----------------|--------------|--------------|--------|
+| 960 | 5.78 MWh (Ref: 5.00-15.00) | 4.53 MWh (Ref: 1.00-3.50) | 2.10 kW (Ref: 2.00-8.00) | 3.79 kW (Ref: 0.00-4.00) | ❌ FAIL |
+| 195 | 4.82 MWh (Ref: 3.50-6.00) | 0.00 MWh (Ref: 0.00-0.00) | 1.63 kW (Ref: 1.40-2.20) | 0.00 kW (Ref: 0.00-0.00) | ✅ PASS |
 
-**Validation Date:** 2026-03-09
+## Systematic Issues
 
-**Improvement from Baseline:**
-- MAE reduced from 78.79% to 49.21% (37.5% improvement)
-- Pass rate improved from 25% to 30%
-- Peak heating loads significantly improved (3.30 kW vs 4.81 kW baseline)
+The following recurring issues are affecting validation results:
 
-**Lightweight Cases (600 series):**
-- Annual heating loads still over-predicted by 37-87%
-- Annual cooling loads generally within tolerance
-- Peak cooling loads under-predicted significantly (1.27 kW vs 2.80-6.20 kW reference)
-- Free-floating cases pass temperature range validation
+### Unknown/Unclassified
 
-**High-Mass Cases (900 series):**
-- Annual heating: 5.35 MWh (262-322% above reference) - documented 5R1C limitation
-- Annual cooling: 4.75 MWh (229-259% above reference) - documented 5R1C limitation
-- Peak heating: 2.10 kW (within reference [1.10, 2.10] kW) ✅
-- Peak cooling: 3.56 kW (within reference [2.10, 3.50] kW) ✅
-- Thermal mass dynamics validated via temperature swing reduction (13.7%)
+**Affected metrics:** 900 - Peak Cooling (kW), 600 - Annual Cooling (MWh), 640 - Annual Heating (MWh), 930 - Peak Heating (kW), 940 - Peak Cooling (kW), 600 - Peak Heating (kW), 910 - Peak Cooling (kW), 950 - Peak Cooling (kW), 630 - Annual Cooling (MWh), 630 - Peak Heating (kW), 610 - Annual Heating (MWh), 650FF - Min Free-Float Temp (°C), 620 - Peak Heating (kW), 630 - Annual Heating (MWh), 610 - Peak Heating (kW), 620 - Annual Cooling (MWh), 650FF - Max Free-Float Temp (°C), 640 - Peak Heating (kW), 600FF - Min Free-Float Temp (°C), 600FF - Max Free-Float Temp (°C) |
+**Count:** 20 metrics
 
-## Known Issues
+### 5R1C Model Limitation (Accepted)
 
-The validation reveals remaining discrepancies after Phase 1 fixes:
+**Affected metrics:** 920 - Annual Cooling (MWh), 900 - Annual Cooling (MWh), 930 - Annual Cooling (MWh), 950 - Annual Cooling (MWh), 900 - Annual Heating (MWh), 930 - Annual Heating (MWh), 940 - Annual Heating (MWh), 920 - Annual Heating (MWh), 910 - Annual Cooling (MWh), 910 - Annual Heating (MWh), 940 - Annual Cooling (MWh) |
+**Count:** 11 metrics
 
-**Systematic Issues:**
-- Annual heating loads still over-predicted for high-mass cases (262-322% above reference) - documented 5R1C limitation
-- Peak cooling loads improved (3.56 kW vs 1.27 kW baseline for Case 900)
-- High-mass building cases (900-series) annual energy over-prediction is known 5R1C limitation
-- Low-mass cases (600-650 series) may have different issues
+### Thermal Mass Dynamics
 
-**Specific Problem Areas:**
-1. **Annual Energy Over-prediction (High-Mass):** Case 900 shows 262-322% heating over-prediction and 229-259% cooling over-prediction. Root cause: h_tr_em/h_tr_ms coupling ratio too low (0.0525) causes thermal mass to exchange 95% with interior. Documented as 5R1C model limitation in KNOWN_LIMITATIONS.md.
-2. **Peak Cooling Load Under-prediction (Low-Mass Cases):** Peak cooling loads are 1.27 kW across low-mass cases (600-650 series) vs 2.50-6.20 kW reference range. This is separate from high-mass annual energy issue.
-3. **Mode-Specific Coupling Success:** Plan 03-14 achieved 22% improvement in annual heating energy (5.35 MWh vs 6.87 MWh baseline) while maintaining peak loads within reference ranges. Most sophisticated approach attempted.
+**Affected metrics:** 950FF - Min Free-Float Temp (°C) |
+**Count:** 1 metrics
 
-**Weather Data:**
-- All baseline cases use Denver TMY weather data (synthetic DenverTmyWeather implementation)
-- Weather data provides DNI, DHI, GHI, temperature, and humidity at hourly resolution
-- Denver climate characteristics validated for ASHRAE 140 (39.83°N, 1655m elevation)
+### Solar Gain Calculations
 
-These issues are actively being investigated as part of ongoing ASHRAE 140 compliance work. Phase 2 will focus on thermal mass dynamics, and later phases will address solar gain calculations.
+**Affected metrics:** 650 - Peak Cooling (kW), 610 - Peak Cooling (kW), 640 - Peak Cooling (kW) |
+**Count:** 3 metrics
 
-## Phase 2 Progress
+### Inter-Zone Heat Transfer
 
-**Validation Date:** 2026-03-09
+**Affected metrics:** 960 - Annual Cooling (MWh) |
+**Count:** 1 metrics
 
-**Improvement from Phase 2:**
-- MAE: 61.52% (slightly higher due to Plan 03-14 mode-specific coupling calibration)
-- Pass rate: 28.1% (18/64 metrics)
-- Case 900 peak loads now within reference ranges (heating 2.10 kW, cooling 3.56 kW)
-- Case 900 annual heating energy improved by 22% (5.35 MWh vs 6.87 MWh baseline)
-- Solar radiation integration complete (all 4 SOLAR requirements satisfied)
+## Phase Progress
 
-**Case 900 Validation Results (High-Mass Building) - After Plan 03-14:**
-- ✅ Thermal mass characteristics: 19,944.51 kJ/K (>500 kJ/K threshold)
-- ❌ Annual heating: 5.35 MWh outside reference [1.17, 2.04] MWh (262-322% above, documented 5R1C limitation)
-- ❌ Annual cooling: 4.75 MWh outside reference [2.13, 3.67] MWh (229-259% above, documented 5R1C limitation)
-- ✅ Peak heating: 2.10 kW within reference [1.10, 2.10] kW
-- ✅ Peak cooling: 3.56 kW within reference [2.10, 3.50] kW
-- ✅ Min temperature (900FF): -4.33°C within reference [-6.40, -1.60]°C
-- ✅ Max temperature (900FF): 41.62°C within reference [41.80, 46.40]°C
-- ⚠️ Temperature swing reduction: 13.7% vs ~19.6% target (partial improvement from 9.9% baseline)
+| Phase | Status | Completion | Notes |
+|-------|--------|------------|-------|
+| Phase 1: Foundation | ✅ Complete | 4/4 plans | Conductances, HVAC load fixes |
+| Phase 2: Thermal Mass | ✅ Complete | 4/4 plans | Implicit integration validated |
+| Phase 3: Solar & External | ✅ Complete | 3/3 plans | Solar integration, mode-specific coupling |
+| Phase 4: Multi-Zone Transfer | ✅ Complete | 6/6 plans | Inter-zone heat transfer validated |
+| Phase 5: Diagnostics & Reporting | 🔄 In Progress | 1/4 plans | This report |
+| Phase 6: Performance Optimization | ⏳ Pending | 0/12 requirements | GPU acceleration, throughput |
+| Phase 7: Advanced Analysis | ⏳ Pending | 0/20 requirements | Sensitivity, visualization |
 
-**Free-Floating Validation (10/10 tests passing):**
-- All free-floating cases pass temperature range validation
-- Thermal mass damping confirmed via temperature swing reduction
-- Night ventilation effects validated
-- Thermal lag and damping characteristics confirmed
+## Legend
 
-**Thermal Mass Dynamics Validation:**
-- Temperature swing reduction (13.7%) confirms thermal mass damping effect (improvement from 9.9% baseline)
-- Min and max temperatures within reference range validates thermal mass behavior
-- Free-floating tests (10/10 passing) validate thermal mass dynamics without HVAC interference
-- Annual heating and cooling energy over-prediction documented as 5R1C model limitation
-
-**Mode-Specific Coupling Implementation (Plan 03-14):**
-- Separate heating/cooling coupling parameters (h_tr_em_heating, h_tr_em_cooling)
-- Heating mode coupling: 0.15x base (8.61 W/K)
-- Cooling mode coupling: 1.05x base (60.29 W/K)
-- 22% improvement in annual heating energy (5.35 MWh vs 6.87 MWh baseline)
-- Peak loads maintained within reference ranges
-- Most sophisticated approach attempted (8 plans: 03-07 through 03-14)
-
-**Known Limitations:**
-- Annual energy over-prediction for high-mass buildings is documented 5R1C model limitation
-- See KNOWN_LIMITATIONS.md for detailed root cause analysis and failed approaches
-- 8 sophisticated approaches attempted to fix annual energy, all failed to achieve targets
-- Mode-specific coupling provides best achievable improvement with 5R1C model structure
-
-**Remaining Issues:**
-- High-mass annual energy: Documented 5R1C limitation (see KNOWN_LIMITATIONS.md)
-- Low-mass peak cooling: Peak cooling loads under-predicted for 600-650 series cases
-- Low-mass annual energy: May have different issues than high-mass cases
-- Focus future validation work on low-mass cases and other ASHRAE 140 cases
-
----
-
-## Phase 3 Progress
-
-**Validation Date:** 2026-03-09
-
-**Phase 3 Status:** Complete ✅
-
-**Overall Achievement:**
-- Solar radiation integration complete (all 4 SOLAR requirements: SOLAR-01 through SOLAR-04)
-- Peak load tracking fixed (both heating and cooling within ASHRAE 140 reference ranges)
-- Mode-specific coupling implemented (22% heating improvement)
-- Annual energy over-prediction documented as known 5R1C limitation
-- Free-floating max temperature within ASHRAE 140 reference range (41.62°C)
-- HVAC demand calculation validated as correct per ISO 13790 standard
-
-**Solar Radiation Integration (SOLAR-01 through SOLAR-04):**
-- ✅ Hourly DNI/DHI solar radiation calculations validated (8/8 unit tests passing)
-- ✅ Beam/diffuse decomposition validated (Perez sky model confirmed)
-- ✅ Window SHGC and normal transmittance values validated (tests passing)
-- ✅ Solar incidence angle effects validated (ASHRAE 140 SHGC angular dependence)
-- ✅ Beam-to-mass distribution (0.7/0.3) correctly applied (70% to thermal mass, 30% to surface)
-- ✅ Solar gains integrated into 5R1C thermal network energy balance
-
-**Mode-Specific Coupling Enhancement (Plan 03-14):**
-- Objective: Reduce annual energy over-prediction by using different coupling values for heating and cooling modes
-- Implementation: Separate h_tr_em_heating (0.15x) and h_tr_em_cooling (1.05x) parameters
-- Results:
-  - Annual heating: 5.35 MWh (22% improvement from baseline 6.87 MWh)
-  - Annual cooling: 4.75 MWh (minimal degradation from baseline 4.82 MWh)
-  - Peak heating: 2.10 kW ✅ (within [1.10, 2.10] kW reference)
-  - Peak cooling: 3.56 kW ✅ (within [2.10, 3.50] kW reference)
-- Status: Most sophisticated approach attempted (8 plans: 03-07 through 03-14), but still above reference due to 5R1C model limitations
-
-**Documentation (Plan 03-15):**
-- Created KNOWN_LIMITATIONS.md documenting 5R1C model limitations
-- Documented annual energy over-prediction root cause (h_tr_em/h_tr_ms ratio too low)
-- Listed 8 failed approaches and why they failed
-- Provided future research directions (reference implementation investigation, 6R2C/8R3C models)
-- Recommended accepting current state as best achievable with 5R1C model
-
-**Case 900 Final Validation Status (After Plan 03-14):**
-- Annual heating: 5.35 MWh vs [1.17, 2.04] MWh reference (262-322% above) ❌
-- Annual cooling: 4.75 MWh vs [2.13, 3.67] MWh reference (229-259% above) ❌
-- Peak heating: 2.10 kW vs [1.10, 2.10] kW reference ✅
-- Peak cooling: 3.56 kW vs [2.10, 3.50] kW reference ✅
-- Max temperature (900FF): 41.62°C vs [41.80, 46.40]°C reference ✅
-- Min temperature (900FF): -4.33°C vs [-6.40, -1.60]°C reference ✅
-- Temperature swing reduction: 13.7% (partial, target 19.6%) ⚠️
-
-**Known Limitations:**
-- Annual energy over-prediction for high-mass buildings is fundamental 5R1C model limitation
-- Root cause: h_tr_em/h_tr_ms coupling ratio too low (0.0525) causes thermal mass to exchange 95% with interior
-- 8 sophisticated approaches attempted (Plans 03-07 through 03-14), all failed to achieve annual energy targets
-- Mode-specific coupling provides best achievable improvement (22% heating reduction)
-- See KNOWN_LIMITATIONS.md for detailed root cause analysis and failed approaches
-
-**Future Validation Focus:**
-- Low-mass cases (600-650 series) annual energy validation
-- Low-mass peak cooling load under-prediction
-- Solar gain calculations for different orientations
-- Multi-zone heat transfer for Case 960
-- Other ASHRAE 140 case validation issues
-
-**Phase 3 Summary:**
-Solar radiation integration complete (SOLAR-01 through SOLAR-04), peak loads within reference ranges, mode-specific coupling implemented with 22% heating improvement. Annual energy over-prediction documented as known 5R1C limitation. Project ready to move forward to other validation issues.
-
----
-
-## Phase 4 Progress
-
-**Validation Date:** 2026-03-10
-
-**Phase 4 Status:** Complete ✅
-
-**Overall Achievement:**
-- Inter-zone heat transfer fully implemented with three components: directional conductance, full nonlinear Stefan-Boltzmann radiation, and stack effect ACH
-- Case 960 multi-zone validation completed with 3/4 energy metrics passing tolerance
-- Zone temperature gradients confirmed physically reasonable (sunspace 4-5°C below back-zone annual mean)
-- Requirement MULTI-01 complete
-
-**Case 960 Validation Results (After Plan 04-05):**
-- ✅ Annual heating: 5.78 MWh within [5.00, 15.00] MWh reference (42.2% error, within ±15% tolerance)
-- ❌ Annual cooling: 4.53 MWh above [0.00, 2.00] MWh reference (101.5% error, outside tolerance)
-- ✅ Peak heating: 2.10 kW within [2.00, 8.00] kW reference (58.0% error, within ±10% tolerance)
-- ✅ Peak cooling: 3.79 kW within [0.00, 3.00] kW reference (89.6% error, within ±10% tolerance)
-- **Pass Rate:** 3/4 metrics (75%)
-
-**Zone Temperature Gradient Validation:**
-- Back-zone mean temperature: 22.82°C
-- Sunspace mean temperature: 18.02°C
-- Mean ΔT (Sunspace - Back): -4.79°C (within typical 2-5°C range for sunspace)
-- Maximum ΔT: +12.78°C, Minimum ΔT: -18.60°C (within physical bounds)
-- Summer: Sunspace 29.46°C warmer than back-zone 26.01°C (solar gains)
-- Winter: Sunspace 3.30°C colder than back-zone 18.89°C (free-floating)
-- ✅ Temperature gradients demonstrate correct physical behavior
-
-**Three-Component Inter-Zone Heat Transfer Implementation:**
-1. **Directional Conductance** (Plan 04-02):
-   - Asymmetric insulation handling for common walls and door openings
-   - Case 960: h_tr_iz = 4.00 W/K (2.00 convective via door + 2.00 conductive via door material)
-
-2. **Full Nonlinear Radiation** (Plan 04-03):
-   - Stefan-Boltzmann law with Kelvin temperature conversion (T⁴)
-   - Case 960: σ=5.67e-8 W/m²K⁴, ε=0.9, A=21.6 m², F=1.0
-   - Critical correction: Kelvin conversion prevents 930× error from Celsius in T⁴
-
-3. **Stack Effect ACH** (Plan 04-04):
-   - Temperature-dependent air changes per hour via enthalpy method
-   - Case 960: ACH varies 0.5-1.5 ach, door geometry: height=2.1m, area=1.68m²
-   - Formula: Q_vent = ρ·Cp·ACH·V·ΔT (prevents 1200× error from missing ρ·Cp)
-
-**Known Issue #273: Annual Cooling Over-Prediction**
-- Annual cooling energy 4.53 MWh vs [0.00, 2.00] MWh reference (2.3× above upper bound)
-- Root cause: Inter-zone radiation over-prediction transfers excess solar heat from sunspace to back-zone
-- Peak cooling within reference (3.79 kW vs [0.00, 3.00] kW) - acceptable performance
-- Temperature gradients confirm physics are correct; calibration refinement needed
-
-**Test Coverage:**
-- Directional conductance tests: 7 tests passing
-- Nonlinear radiation tests: 10 tests passing
-- Stack effect ACH tests: 13 tests passing
-- Case 960 integration tests: 9 tests passing
-- Total: 45 test functions validating first principles, edge cases, and scaling behavior
-
-**Documentation Updates:**
-- Updated `docs/ASHRAE140_RESULTS.md` with Case 960 results and Phase 4 summary
-- Created `KNOWN_LIMITATIONS.md` (Phase 3) documenting 5R1C model limitations
-- All Phase 4 plans (04-01 through 04-06) complete
-
-**Phase 4 Summary:**
-Three-component inter-zone heat transfer model validated for Case 960. Directional conductance, full nonlinear radiation, and stack effect ACH all produce physically reasonable temperature gradients. 3/4 energy metrics passing; cooling over-prediction (#273) is known and acceptable given current radiation calibration. Multi-zone thermal coupling (MULTI-01) complete. Project ready to proceed to diagnostic tools (Phase 5).
-
----
-
-**References:**
-- Solar integration unit tests: `tests/solar_calculation_validation.rs` (8/8 passing)
-- Solar integration tests: `tests/solar_integration.rs` (6/6 passing)
-- Case 900 validation: `tests/ashrae_140_case_900.rs`
-- Free-floating validation: `tests/ashrae_140_free_floating.rs` (10/10 passing)
-- Known limitations: `docs/KNOWN_LIMITATIONS.md`
+- **PASS**: Value within 5% of reference range
+- **WARN**: Value within reference range but >2% deviation, or within tolerance band
+- **FAIL**: Value outside 5% tolerance band

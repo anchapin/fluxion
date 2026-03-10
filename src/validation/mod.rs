@@ -4,6 +4,7 @@ pub mod ashrae_140_validator;
 pub mod benchmark;
 pub mod cross_validator;
 pub mod diagnostic;
+pub mod diagnostics;
 pub mod export;
 pub mod fdd;
 pub mod physics_validator;

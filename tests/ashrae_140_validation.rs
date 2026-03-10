@@ -84,3 +84,32 @@ fn test_all_cases_instantiation() {
         assert!(spec.validate().is_ok());
     }
 }
+
+#[test]
+fn generate_validation_report() {
+    use fluxion::validation::reporter::{SystematicIssueMap, ValidationReportGenerator};
+    use std::path::PathBuf;
+
+    let mut validator = ASHRAE140Validator::new();
+    let report = validator.validate_analytical_engine();
+
+    // Classify systematic issues
+    let systematic_issues = ValidationReportGenerator::classify_systematic_issues(&report);
+
+    // Generate report
+    let generator = ValidationReportGenerator::new(PathBuf::from("docs/ASHRAE140_RESULTS.md"));
+    generator
+        .generate(&report, Some(&systematic_issues))
+        .expect("Failed to generate report");
+
+    // Verify file was created
+    assert!(generator.output_path.exists());
+
+    // Verify content contains expected sections
+    let content = std::fs::read_to_string(&generator.output_path).expect("Failed to read report");
+    assert!(content.contains("# ASHRAE Standard 140 Validation Results"));
+    assert!(content.contains("## Summary"));
+    assert!(content.contains("## Detailed Results"));
+    assert!(content.contains("## Systematic Issues"));
+    assert!(content.contains("## Phase Progress"));
+}

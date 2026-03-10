@@ -1,0 +1,393 @@
+//! Validation report generation for ASHRAE 140.
+//!
+//! This module provides the `ValidationReportGenerator` which produces
+//! comprehensive Markdown reports from validation results.
+
+use crate::validation::report::{BenchmarkReport, MetricType};
+use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
+
+/// Systematic issue categories for ASHRAE 140 validation failures.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum SystematicIssue {
+    /// Solar gain calculation problems
+    SolarGains,
+    /// Thermal mass dynamics issues
+    ThermalMass,
+    /// Inter-zone heat transfer errors
+    InterZoneTransfer,
+    /// HVAC load calculation errors
+    HvacLoad,
+    /// Weather data issues
+    WeatherData,
+    /// 5R1C model limitation (acceptable)
+    ModelLimitation,
+    /// Unknown or unclassified issue
+    Unknown,
+}
+
+/// Report generator for ASHRAE 140 validation results.
+pub struct ValidationReportGenerator {
+    /// Output path for the generated report
+    pub output_path: PathBuf,
+}
+
+impl ValidationReportGenerator {
+    /// Creates a new report generator with the specified output path.
+    pub fn new(output_path: PathBuf) -> Self {
+        Self { output_path }
+    }
+
+    /// Generates the full validation report and writes it to the output path.
+    pub fn generate(
+        &self,
+        report: &BenchmarkReport,
+        systematic_issues: Option<&SystematicIssueMap>,
+    ) -> Result<(), String> {
+        let markdown = self.render_markdown(report, systematic_issues)?;
+
+        // Ensure the output directory exists
+        if let Some(parent) = self.output_path.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("Failed to create directory: {}", e))?;
+        }
+
+        fs::write(&self.output_path, markdown)
+            .map_err(|e| format!("Failed to write report: {}", e))?;
+
+        Ok(())
+    }
+
+    /// Renders a complete Markdown report from the benchmark report.
+    pub fn render_markdown(
+        &self,
+        report: &BenchmarkReport,
+        systematic_issues: Option<&SystematicIssueMap>,
+    ) -> Result<String, String> {
+        let mut output = String::new();
+
+        // Header
+        output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+        output.push_str(&format!(
+            "*Generated: {}*\n\n",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+        ));
+
+        // Summary Card
+        output.push_str("## Summary\n\n");
+        output.push_str("| Metric | Value |\n");
+        output.push_str("|--------|-------|\n");
+        output.push_str(&format!("| Total Results | {} |\n", report.results.len()));
+        output.push_str(&format!("| Pass Rate | {:.1}% |\n", report.pass_rate()));
+        output.push_str(&format!(
+            "| Passed | {} |\n",
+            report.results.iter().filter(|r| r.passed()).count()
+        ));
+        output.push_str(&format!("| Warnings | {} |\n", report.warning_count()));
+        output.push_str(&format!("| Failed | {} |\n", report.fail_count()));
+        output.push_str(&format!("| Mean Absolute Error | {:.2}% |\n", report.mae()));
+        output.push_str(&format!(
+            "| Max Deviation | {:.2}% |\n",
+            report.max_deviation()
+        ));
+        output.push('\n');
+
+        // Detailed Results Table - grouped by case type
+        output.push_str("## Detailed Results\n\n");
+
+        // Group cases: Baseline, High-Mass, Free-Floating, Special
+        let baseline_cases = ["600", "610", "620", "630", "640", "650"];
+        let high_mass_cases = ["900", "910", "920", "930", "940", "950"];
+        let free_floating_cases = ["600FF", "650FF", "900FF", "950FF"];
+        let special_cases = ["960", "195"];
+
+        output.push_str("### Baseline Cases (600 Series)\n\n");
+        output.push_str(
+            "| Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |\n",
+        );
+        output.push_str(
+            "|------|----------------|----------------|--------------|--------------|--------|\n",
+        );
+        for case_id in &baseline_cases {
+            self.append_case_row(&mut output, report, case_id);
+        }
+        output.push('\n');
+
+        output.push_str("### High-Mass Cases (900 Series)\n\n");
+        output.push_str(
+            "| Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |\n",
+        );
+        output.push_str(
+            "|------|----------------|----------------|--------------|--------------|--------|\n",
+        );
+        for case_id in &high_mass_cases {
+            self.append_case_row(&mut output, report, case_id);
+        }
+        output.push('\n');
+
+        output.push_str("### Free-Floating Cases\n\n");
+        output.push_str("| Case | Min Temperature | Max Temperature | Status |\n");
+        output.push_str("|------|-----------------|-----------------|--------|\n");
+        for case_id in &free_floating_cases {
+            self.append_free_floating_row(&mut output, report, case_id);
+        }
+        output.push('\n');
+
+        output.push_str("### Special Cases\n\n");
+        output.push_str(
+            "| Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |\n",
+        );
+        output.push_str(
+            "|------|----------------|----------------|--------------|--------------|--------|\n",
+        );
+        for case_id in &special_cases {
+            self.append_case_row(&mut output, report, case_id);
+        }
+        output.push('\n');
+
+        // Systematic Issues Section
+        output.push_str("## Systematic Issues\n\n");
+        if let Some(issue_map) = systematic_issues {
+            if issue_map.is_empty() {
+                output.push_str("*No systematic issues identified.*\n\n");
+            } else {
+                output.push_str(
+                    "The following recurring issues are affecting validation results:\n\n",
+                );
+                let mut issues_by_category: HashMap<&SystematicIssue, Vec<String>> = HashMap::new();
+                for (case_metric, issue) in issue_map {
+                    issues_by_category
+                        .entry(issue)
+                        .or_default()
+                        .push(case_metric.clone());
+                }
+
+                for (issue, cases) in issues_by_category.iter() {
+                    output.push_str(&format!("### {}\n\n", issue_display_name(issue)));
+                    output.push_str(&format!("**Affected metrics:** {} |\n", cases.join(", ")));
+                    output.push_str(&format!("**Count:** {} metrics\n\n", cases.len()));
+                }
+            }
+        } else {
+            output.push_str("*Systematic issues taxonomy not yet populated.*\n\n");
+        }
+
+        // Phase Progress (placeholder - will be manually annotated)
+        output.push_str("## Phase Progress\n\n");
+        output.push_str("| Phase | Status | Completion | Notes |\n");
+        output.push_str("|-------|--------|------------|-------|\n");
+        output.push_str(
+            "| Phase 1: Foundation | ✅ Complete | 4/4 plans | Conductances, HVAC load fixes |\n",
+        );
+        output.push_str("| Phase 2: Thermal Mass | ✅ Complete | 4/4 plans | Implicit integration validated |\n");
+        output.push_str("| Phase 3: Solar & External | ✅ Complete | 3/3 plans | Solar integration, mode-specific coupling |\n");
+        output.push_str("| Phase 4: Multi-Zone Transfer | ✅ Complete | 6/6 plans | Inter-zone heat transfer validated |\n");
+        output.push_str(
+            "| Phase 5: Diagnostics & Reporting | 🔄 In Progress | 1/4 plans | This report |\n",
+        );
+        output.push_str("| Phase 6: Performance Optimization | ⏳ Pending | 0/12 requirements | GPU acceleration, throughput |\n");
+        output.push_str("| Phase 7: Advanced Analysis | ⏳ Pending | 0/20 requirements | Sensitivity, visualization |\n");
+        output.push('\n');
+
+        // Legend
+        output.push_str("## Legend\n\n");
+        output.push_str("- **PASS**: Value within 5% of reference range\n");
+        output.push_str("- **WARN**: Value within reference range but >2% deviation, or within tolerance band\n");
+        output.push_str("- **FAIL**: Value outside 5% tolerance band\n");
+
+        Ok(output)
+    }
+
+    /// Appends a single case row to the detailed results table.
+    fn append_case_row(&self, output: &mut String, report: &BenchmarkReport, case_id: &str) {
+        let case_results: Vec<_> = report
+            .results
+            .iter()
+            .filter(|r| r.case_id == case_id)
+            .collect();
+
+        let mut heating_str = String::new();
+        let mut cooling_str = String::new();
+        let mut peak_h_str = String::new();
+        let mut peak_c_str = String::new();
+
+        for result in &case_results {
+            match result.metric {
+                MetricType::AnnualHeating => {
+                    heating_str = format!(
+                        "{:.2} MWh (Ref: {:.2}-{:.2})",
+                        result.fluxion_value, result.ref_min, result.ref_max
+                    );
+                }
+                MetricType::AnnualCooling => {
+                    cooling_str = format!(
+                        "{:.2} MWh (Ref: {:.2}-{:.2})",
+                        result.fluxion_value, result.ref_min, result.ref_max
+                    );
+                }
+                MetricType::PeakHeating => {
+                    peak_h_str = format!(
+                        "{:.2} kW (Ref: {:.2}-{:.2})",
+                        result.fluxion_value, result.ref_min, result.ref_max
+                    );
+                }
+                MetricType::PeakCooling => {
+                    peak_c_str = format!(
+                        "{:.2} kW (Ref: {:.2}-{:.2})",
+                        result.fluxion_value, result.ref_min, result.ref_max
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        // Determine overall status for this case
+        let overall_status = if case_results.is_empty() {
+            "❓ Unknown".to_string()
+        } else {
+            let passes = case_results.iter().filter(|r| r.passed()).count();
+            let warnings = case_results.iter().filter(|r| r.warning()).count();
+            let fails = case_results.iter().filter(|r| r.failed()).count();
+
+            if fails == 0 && passes > 0 {
+                "✅ PASS".to_string()
+            } else if fails > 0 {
+                "❌ FAIL".to_string()
+            } else if warnings > 0 {
+                "⚠️ WARN".to_string()
+            } else {
+                "❓ Unknown".to_string()
+            }
+        };
+
+        output.push_str(&format!(
+            "| {} | {} | {} | {} | {} | {} |\n",
+            case_id, heating_str, cooling_str, peak_h_str, peak_c_str, overall_status
+        ));
+    }
+
+    /// Appends a free-floating case row.
+    fn append_free_floating_row(
+        &self,
+        output: &mut String,
+        report: &BenchmarkReport,
+        case_id: &str,
+    ) {
+        let case_results: Vec<_> = report
+            .results
+            .iter()
+            .filter(|r| r.case_id == case_id)
+            .collect();
+
+        let mut min_str = String::new();
+        let mut max_str = String::new();
+
+        for result in &case_results {
+            match result.metric {
+                MetricType::MinFreeFloat => {
+                    min_str = format!(
+                        "{:.2}°C (Ref: {:.2}-{:.2})",
+                        result.fluxion_value, result.ref_min, result.ref_max
+                    );
+                }
+                MetricType::MaxFreeFloat => {
+                    max_str = format!(
+                        "{:.2}°C (Ref: {:.2}-{:.2})",
+                        result.fluxion_value, result.ref_min, result.ref_max
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        let status = if case_results.iter().all(|r| r.passed()) {
+            "✅ PASS"
+        } else if case_results.iter().any(|r| r.failed()) {
+            "❌ FAIL"
+        } else {
+            "⚠️ WARN"
+        };
+
+        output.push_str(&format!(
+            "| {} | {} | {} | {} |\n",
+            case_id, min_str, max_str, status
+        ));
+    }
+}
+
+/// Maps case+metric pairs to their systematic issue classification.
+pub type SystematicIssueMap = HashMap<String, SystematicIssue>;
+
+impl ValidationReportGenerator {
+    /// Classifies systematic issues from a benchmark report based on heuristics.
+    ///
+    /// This function analyzes failure patterns and assigns known issue categories.
+    /// The mapping is based on current known issues from validation results.
+    pub fn classify_systematic_issues(report: &BenchmarkReport) -> SystematicIssueMap {
+        let mut map = SystematicIssueMap::new();
+
+        for result in &report.results {
+            if result.failed() {
+                let key = format!("{} - {}", result.case_id, result.metric);
+                let issue = classify_issue(result.case_id.as_str(), result.metric);
+                map.insert(key, issue);
+            }
+        }
+
+        map
+    }
+}
+
+/// Classifies a single failed metric to a systematic issue category.
+fn classify_issue(case_id: &str, metric: MetricType) -> SystematicIssue {
+    // Known issue: Case 960 annual cooling over-prediction (issue #273)
+    if case_id == "960" && metric == MetricType::AnnualCooling {
+        return SystematicIssue::InterZoneTransfer;
+    }
+
+    // Known issue: Case 960 peak cooling within ref but high error? Already classified as InterZoneTransfer if failed
+
+    // High-mass building annual energy over-prediction (900 series) - 5R1C model limitation
+    if (case_id == "900"
+        || case_id == "910"
+        || case_id == "920"
+        || case_id == "930"
+        || case_id == "940"
+        || case_id == "950"
+        || case_id == "900FF"
+        || case_id == "950FF")
+        && (metric == MetricType::AnnualHeating || metric == MetricType::AnnualCooling)
+    {
+        return SystematicIssue::ModelLimitation;
+    }
+
+    // Low-mass cases peak cooling under-prediction (600-650 series) - likely solar gains
+    if (case_id.starts_with('6') && case_id != "600FF" && case_id != "650FF")
+        && metric == MetricType::PeakCooling
+    {
+        return SystematicIssue::SolarGains;
+    }
+
+    // Free-floating temperature failures in high-mass could be thermal mass dynamics
+    if (case_id == "900FF" || case_id == "950FF")
+        && (metric == MetricType::MinFreeFloat || metric == MetricType::MaxFreeFloat)
+    {
+        return SystematicIssue::ThermalMass;
+    }
+
+    // Default to unknown for unclassified failures
+    SystematicIssue::Unknown
+}
+
+/// Displays a human-readable name for a systematic issue.
+fn issue_display_name(issue: &SystematicIssue) -> &str {
+    match issue {
+        SystematicIssue::SolarGains => "Solar Gain Calculations",
+        SystematicIssue::ThermalMass => "Thermal Mass Dynamics",
+        SystematicIssue::InterZoneTransfer => "Inter-Zone Heat Transfer",
+        SystematicIssue::HvacLoad => "HVAC Load Calculation",
+        SystematicIssue::WeatherData => "Weather Data",
+        SystematicIssue::ModelLimitation => "5R1C Model Limitation (Accepted)",
+        SystematicIssue::Unknown => "Unknown/Unclassified",
+    }
+}
