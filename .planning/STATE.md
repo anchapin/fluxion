@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 5
-current_plan: "05-03"
+current_plan: "05-04"
 status: stopped
 last_updated: "2026-03-10T13:00:00.000Z"
 progress:
@@ -18,10 +18,14 @@ progress:
 
 **Last Updated:** 2026-03-10
 **Current Phase:** 5
-**Current Plan:** 05-02
-**Status:** In Progress (Phase 5 Plan 05-01 completed)
-**Session:** Phase 5 Plan 05-01 (Validation Report Generation) completed. Automated Markdown reporting implemented and integrated. Next: Plan 05-02.
-**Last Updated:** 2026-03-10T13:15:00Z
+**Current Plan:** 05-04 (Completed)
+**Status:** Phase 5 Complete (all 4 plans finished)
+**Session:** Phase 5 Plan 05-04 (Systematic Issues Analysis and Reporting) completed.
+- ✅ 05-01: Validation Report Generation
+- ✅ 05-02: Diagnostic Logging Enhancement
+- ✅ 05-03: Hourly CSV Export System
+- ✅ 05-04: Systematic Issues Analysis and Reporting
+**Last Updated:** 2026-03-10T14:10:00Z
 **Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
 **Phase 3 Results (Plans 07, 07b, 07c, 08, 08b, 08c, 08d, 09, 10, 11):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh). Plan 08c calibrated Solution 2 correction factor (4.0), found heating/cooling trade-off. Plan 08d verified separate heating/cooling energy tracking, confirmed current state: annual heating 6.86 MWh (236% above ref), annual cooling 4.82 MWh (31% above ref), peak heating 2.10 kW (perfect), peak cooling 3.57 kW (within ref). Plan 09 validated HVAC demand calculation formulas (correct per ISO 13790), confirmed root cause is parameterization not formulas. Plan 10 investigated Solution 3 (6R2C model) and Solution 1 Revisited (more aggressive coupling), recommended Option 1 (h_tr_em 5x). Plan 11 implemented Option 1 (h_tr_em 5x) - FAILED. Annual heating increased from 6.86 MWh to 10.70 MWh (56% worse). Root cause: thermal mass absorbs too much cold from exterior in winter. Theoretical analysis was incorrect - better coupling ratios don't always mean better energy.
 **Progress:** [██████████] 100%
@@ -198,6 +202,10 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 - [x] Complete Phase 2 Plan 04: Documentation & State Update
 - [x] Complete Phase 3 Plan 00: Test Infrastructure Creation
 - [x] Complete Phase 3 Plan 09: HVAC Demand Calculation Investigation
+- [x] Complete Phase 5 Plan 05-01: Validation Report Generation
+- [x] Complete Phase 5 Plan 05-02: Diagnostic Logging Enhancement
+- [x] Complete Phase 5 Plan 05-03: Hourly CSV Export System
+- [x] Complete Phase 5 Plan 05-04: Systematic Issues Analysis and Reporting
 
 ### Next Steps
 
