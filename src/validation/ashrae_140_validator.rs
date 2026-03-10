@@ -1591,7 +1591,7 @@ impl ASHRAE140Validator {
         actual: f64,
         ref_min: f64,
         ref_max: f64,
-        tolerance: f64,
+        _tolerance: f64,
     ) -> ValidationResult {
         // For peak loads, use min/max directly (not midpoint)
         let in_range = (actual >= ref_min) && (actual <= ref_max);
