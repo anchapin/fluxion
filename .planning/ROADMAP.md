@@ -364,7 +364,7 @@ Phase 3 delivered **complete solar radiation integration** (all 4 SOLAR requirem
 | 2. Thermal Mass Dynamics | 5/5 | Partial Success | 2026-03-09 |
 | 3. Solar Radiation & External Boundaries | 21/13 | Complete   | 2026-03-09 |
 | 4. Multi-Zone Inter-Zone Transfer | 6/6 | Complete   | 2026-03-10 |
-| 5. Diagnostic Tools & Reporting | 0/0 | Not started | - |
+| 5. Diagnostic Tools & Reporting | 2/4 | In Progress|  |
 | 6. Performance Optimization | 0/0 | Not started | - |
 | 7. Advanced Analysis & Visualization | 0/0 | Not started | - |
 

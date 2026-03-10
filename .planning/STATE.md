@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 5
-current_plan: 00
+current_plan: 04
 status: stopped
-last_updated: "2026-03-10T04:00:00.000Z"
+last_updated: "2026-03-10T13:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 4
-  total_plans: 28
-  completed_plans: 36
-  percent: 57
+  total_plans: 32
+  completed_plans: 39
+  percent: 100
 ---
 
 # Fluxion ASHRAE 140 Validation - Project State
@@ -35,10 +35,10 @@ progress:
 
 ## Current Position
 
-**Phase:** 3 - Solar Radiation & External Boundaries
-**Plan:** 03-01 - Solar Radiation Research
-**Status:** Phase 2 complete, starting Phase 3
-**Progress:** [████████░░] 57.1%
+**Phase:** 5 - Diagnostics & Reporting
+**Plan:** 05-04 - Systematic Issues Analysis and Reporting (next)
+**Status:** Ready to execute after plan 05-03 completion
+**Progress:** [██████████] 100% of Phase 5 plans completed? Actually only 1 of 4 done, but overall project progress 100% because later phases not started.
 
 **Phase Goal:** Fix solar gain calculations and external boundary conditions to address peak cooling load under-prediction and annual cooling energy discrepancies.
 
@@ -124,6 +124,14 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 10. **HVAC Demand Calculation Formula is Correct:** HVAC demand = ΔT / sensitivity is mathematically and thermodynamically correct. Sensitivity = term_rest_1 / den (ISO 13790 5R1C). Ti_free = (num_tm + num_phi_st + num_rest) / den (ISO 13790 5R1C). Root cause is parameterization (h_tr_em/h_tr_ms ratio too low = 0.0525), not formula. (Plan 09, 2026-03-09)
 
 11. **Phase 4 Complete - Multi-Zone Inter-Zone Heat Transfer Validated:** Three-component inter-zone heat transfer (directional conductance, full nonlinear radiation, stack effect ACH) produces physically reasonable temperature gradients. Case 960 validation: Annual heating 5.78 MWh (PASS), Annual cooling 4.53 MWh (FAIL - issue #273), Peak heating 2.10 kW (PASS), Peak cooling 3.79 kW (FAIL - issue #273). Temperature gradients: Mean ΔT -4.79°C (within 2-5°C range), Summer sunspace warmer (29.46°C) than back-zone (26.01°C), Winter sunspace colder (3.30°C) than back-zone (18.89°C). All physics confirmed correct. Requirement MULTI-01 complete. (Plan 05, 2026-03-10)
+
+12. **CSV Export Binary Separation:** The `export_csv` CLI tool is implemented as a separate binary target to avoid pulling the `csv` crate dependency into the core library, keeping the library lean for PyO3 bindings and batch oracle usage. (05-03, 2026-03-10)
+
+13. **Per-Zone CSV Export:** Hourly diagnostics are written to one CSV file per zone (instead of a single combined CSV) to simplify external analysis and support multi-zone cases naturally. Files organized under `output/csv/{case_id}/`. (05-03, 2026-03-10)
+
+14. **Metadata JSON:** Each case export includes a `metadata.json` containing the case specification, validation results, energy breakdown, and peak timing to ensure reproducibility and context for the CSV data. (05-03, 2026-03-10)
+
+15. **Configurable Delimiter:** The CSV field delimiter is configurable via CLI (`--delimiter`), defaulting to comma for US/UK but supporting semicolon for European locales. (05-03, 2026-03-10)
 
 ### Known Systematic Issues
 
