@@ -3,24 +3,24 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 4
-current_plan: 03
+current_plan: 02
 status: executing
-last_updated: "2026-03-10T01:45:40.741Z"
+last_updated: "2026-03-10T02:18:37.678Z"
 progress:
   total_phases: 7
   completed_phases: 3
   total_plans: 28
-  completed_plans: 32
+  completed_plans: 33
   percent: 100
 ---
 
 # Fluxion ASHRAE 140 Validation - Project State
 
-**Last Updated:** 2026-03-09
+**Last Updated:** 2026-03-10
 **Current Phase:** 4
-**Current Plan:** Not started
-**Status:** Ready to plan
-**Session:** Phase 3 Plan 11 completed (failed - Option 1 implementation rejected)
+**Current Plan:** 02
+**Status:** Executing Plan 02
+**Session:** Phase 4 Plan 01 completed - Test infrastructure for inter-zone heat transfer physics
 **Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
 **Phase 3 Results (Plans 07, 07b, 07c, 08, 08b, 08c, 08d, 09, 10, 11):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh). Plan 08c calibrated Solution 2 correction factor (4.0), found heating/cooling trade-off. Plan 08d verified separate heating/cooling energy tracking, confirmed current state: annual heating 6.86 MWh (236% above ref), annual cooling 4.82 MWh (31% above ref), peak heating 2.10 kW (perfect), peak cooling 3.57 kW (within ref). Plan 09 validated HVAC demand calculation formulas (correct per ISO 13790), confirmed root cause is parameterization not formulas. Plan 10 investigated Solution 3 (6R2C model) and Solution 1 Revisited (more aggressive coupling), recommended Option 1 (h_tr_em 5x). Plan 11 implemented Option 1 (h_tr_em 5x) - FAILED. Annual heating increased from 6.86 MWh to 10.70 MWh (56% worse). Root cause: thermal mass absorbs too much cold from exterior in winter. Theoretical analysis was incorrect - better coupling ratios don't always mean better energy.
 **Progress:** [██████████] 100%
@@ -230,6 +230,8 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 
 **Root Cause:** Solar gain calculation issues affecting peak loads and cooling energy.
 
+**Phase 4 Results (Plan 01):** Test infrastructure created for inter-zone heat transfer physics. Three test scaffolds validate locked decisions before implementation: 1) Full nonlinear Stefan-Boltzmann radiation (10 tests), 2) Stack effect ACH with air enthalpy method (13 tests), 3) Directional conductance for asymmetric insulation (12 tests). Total: 45 test functions validating first principles, edge cases, and scaling behavior. Key insights: Kelvin conversion required (930× error if Celsius used), nonlinear vs linearized differs 200% for ΔT > 20°C, asymmetric insulation causes 12-29× conductance difference. Common pitfalls documented: missing ρ·Cp (1200× error), Celsius in T⁴ (930× error), ignoring directionality (12-29× error).
+
 ## Roadmap Summary
 
 **Total Phases:** 7
@@ -262,7 +264,9 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 | Phase 03 P03-14 | 1773095957 | 2 tasks | 1 files |
 | Phase 03 P03-07b | 10min | 1 tasks | 1 files |
 | Phase 03 P15 | 15 | 3 tasks | 2 files |
+| Phase 04 P01 | 1472 | 4 tasks | 4 files |
 | Phase 04 P02 | 20 | 3 tasks | 5 files |
+| Phase 4 P01 | 1472 | 4 tasks | 4 files |
 
 ### Dependency Chain
 
