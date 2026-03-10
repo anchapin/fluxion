@@ -8,7 +8,7 @@
 | BASE-04 | Phase 1 | Complete |
 | FREE-01 | Phase 1 | Complete |
 | FREE-02 | Phase 2 | Complete |
-| MULTI-01 | Phase 4 | Pending |
+| MULTI-01 | Phase 4 | Complete |
 | COND-01 | Phase 1 | Complete |
 | METRIC-01 | Phase 1 | Complete |
 | METRIC-02 | Phase 1 | Complete |
