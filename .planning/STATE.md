@@ -18,9 +18,10 @@ progress:
 
 **Last Updated:** 2026-03-10
 **Current Phase:** 5
-**Current Plan:** 00
-**Status:** Ready to execute (Phase 4 complete, Phase 5 planned)
-**Session:** Phase 4 complete - Multi-zone inter-zone heat transfer validated. Phase 5 plans created and ready for execution.
+**Current Plan:** 05-02
+**Status:** In Progress (Phase 5 Plan 05-01 completed)
+**Session:** Phase 5 Plan 05-01 (Validation Report Generation) completed. Automated Markdown reporting implemented and integrated. Next: Plan 05-02.
+**Last Updated:** 2026-03-10T13:15:00Z
 **Phase 2 Results:** Thermal mass dynamics validated with implicit integration. Temperature swing reduction (22.4%) and Case 900 annual heating (1.77 MWh) within ASHRAE 140 reference. Solar gain issues (cooling under-prediction) deferred to Phase 3.
 **Phase 3 Results (Plans 07, 07b, 07c, 08, 08b, 08c, 08d, 09, 10, 11):** Plan 07 investigated hvac_power_demand and solar distribution, completed but objective not achieved (annual heating 6.86 MWh, cooling 4.82 MWh). Plan 07b was not executed (Plan 07c directly continued investigation). Plan 07c investigated thermal mass dynamics, reverted solar_beam_to_mass_fraction to 0.7 (ASHRAE 140 spec), analyzed h_tr_em/h_tr_ms ratio (0.052 very low), identified root cause (thermal mass releases energy primarily to interior, HVAC works against mass). Tested coupling enhancement values (1.15x, 1.5x, 2.0x) - found heating-cooling trade-off, simple parameter tuning insufficient. Plan 08 investigated HVAC sensitivity calculation, implemented correction factor 4.0: cooling within reference (2.31 MWh), heating still above reference (4.33 MWh), peak cooling regression (1.39 kW). Single-factor approach insufficient - requires separate heating/cooling factors or free-floating temp fix. Plan 08b reverted thermal_mass_correction_factor approach (peak cooling regression fixed: 3.54 kW), investigated root cause: h_tr_em/h_tr_ms ratio too low (0.0525 < 0.1). Three proposed solutions: 1) Adjust coupling ratio, 2) Time constant-based correction, 3) Free-floating temp fix. Current state: peak cooling within reference, annual heating still high (6.86 MWh). Plan 08c calibrated Solution 2 correction factor (4.0), found heating/cooling trade-off. Plan 08d verified separate heating/cooling energy tracking, confirmed current state: annual heating 6.86 MWh (236% above ref), annual cooling 4.82 MWh (31% above ref), peak heating 2.10 kW (perfect), peak cooling 3.57 kW (within ref). Plan 09 validated HVAC demand calculation formulas (correct per ISO 13790), confirmed root cause is parameterization not formulas. Plan 10 investigated Solution 3 (6R2C model) and Solution 1 Revisited (more aggressive coupling), recommended Option 1 (h_tr_em 5x). Plan 11 implemented Option 1 (h_tr_em 5x) - FAILED. Annual heating increased from 6.86 MWh to 10.70 MWh (56% worse). Root cause: thermal mass absorbs too much cold from exterior in winter. Theoretical analysis was incorrect - better coupling ratios don't always mean better energy.
 **Progress:** [██████████] 100%
@@ -132,6 +133,12 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 14. **Metadata JSON:** Each case export includes a `metadata.json` containing the case specification, validation results, energy breakdown, and peak timing to ensure reproducibility and context for the CSV data. (05-03, 2026-03-10)
 
 15. **Configurable Delimiter:** The CSV field delimiter is configurable via CLI (`--delimiter`), defaulting to comma for US/UK but supporting semicolon for European locales. (05-03, 2026-03-10)
+
+16. **Automated Validation Report Generation:** Comprehensive Markdown validation reports are generated automatically from `BenchmarkReport` data, including summary statistics, detailed case-by-case results, systematic issue classification, and phase progress tables. Reports saved to `docs/ASHRAE140_RESULTS.md`. (05-01, 2026-03-10)
+
+17. **Systematic Issue Classification:** Failed validation metrics are automatically categorized via heuristic analysis to identify recurring root causes (e.g., SolarGains, ModelLimitation, InterZoneTransfer, ThermalMass). This helps prioritize debugging efforts. (05-01, 2026-03-10)
+
+18. **Report Generation Triggered by Tests:** The validation test suite automatically updates the report after completing all case simulations, ensuring the documentation reflects the latest results. (05-01, 2026-03-10)
 
 ### Known Systematic Issues
 
