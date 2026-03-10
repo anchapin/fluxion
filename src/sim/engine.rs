@@ -365,6 +365,15 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Radiative conductance through inter-zone windows (W/K)
     /// This implements Issue #302: Refine Inter-Zone Longwave Radiation
     pub h_tr_iz_rad: T,
+    /// Surface emissivity for Stefan-Boltzmann radiation (dimensionless, 0.0-1.0)
+    /// Used for full nonlinear inter-zone radiative heat transfer
+    pub surface_emissivity: T,
+    /// Zone volume for ventilation heat transfer calculation (m³)
+    /// Used in stack effect ACH calculation for inter-zone air exchange
+    pub zone_volume: T,
+    /// Common wall area for inter-zone conductive heat transfer (m²)
+    /// Total area of walls shared between thermal zones
+    pub common_wall_area: f64,
 
     // ASHRAE 140 specific modes
     /// HVAC system control mode (Controlled or FreeFloat)
@@ -532,6 +541,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             ground_temperature: self.ground_temperature.clone_box(),
             h_tr_iz: self.h_tr_iz.clone(),
             h_tr_iz_rad: self.h_tr_iz_rad.clone(),
+            surface_emissivity: self.surface_emissivity.clone(),
+            zone_volume: self.zone_volume.clone(),
+            common_wall_area: self.common_wall_area,
             hvac_system_mode: self.hvac_system_mode,
             night_ventilation: self.night_ventilation,
             thermal_bridge_coefficient: self.thermal_bridge_coefficient,
@@ -1338,16 +1350,27 @@ impl ThermalModel<VectorField> {
             // Zone 0: back-zone (8x6m = 48 m²), Zone 1: sunspace (8x2m = 16 m²)
             if spec.geometry.len() >= 2 {
                 let mut zone_area_vec = Vec::with_capacity(num_zones);
+                let mut zone_volume_vec = Vec::with_capacity(num_zones);
                 for zone_idx in 0..num_zones {
                     if zone_idx < spec.geometry.len() {
                         zone_area_vec.push(spec.geometry[zone_idx].floor_area());
+                        zone_volume_vec.push(spec.geometry[zone_idx].volume());
                     } else {
                         // Fallback to first zone's area if geometry not specified
                         zone_area_vec.push(spec.geometry[0].floor_area());
+                        zone_volume_vec.push(spec.geometry[0].volume());
                     }
                 }
                 model.zone_area = VectorField::new(zone_area_vec);
+                model.zone_volume = VectorField::new(zone_volume_vec);
+
+                // Calculate common wall area for multi-zone buildings
+                model.common_wall_area = spec.common_walls.iter().map(|w| w.area).sum();
             }
+
+            // Set surface emissivity for inter-zone radiative heat transfer
+            // Default interior surface emissivity = 0.9
+            model.surface_emissivity = VectorField::from_scalar(0.9, num_zones);
         }
 
         // Set the ASHRAE 140 case identifier for special handling
@@ -1487,6 +1510,9 @@ impl ThermalModel<VectorField> {
             )),
             h_tr_iz: VectorField::from_scalar(0.0, num_zones),
             h_tr_iz_rad: VectorField::from_scalar(0.0, num_zones), // Radiative coupling through windows (Issue #302)
+            surface_emissivity: VectorField::from_scalar(0.9, num_zones), // Default interior surface emissivity
+            zone_volume: VectorField::from_scalar(zone_area * ceiling_height, num_zones), // Volume = area × height
+            common_wall_area: 0.0, // Will be set from spec for multi-zone buildings
             hvac_system_mode: HvacSystemMode::Controlled,
             night_ventilation: None,
             thermal_bridge_coefficient: 0.0,
