@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: 5
-current_plan: 04
+current_plan: "05-03"
 status: stopped
 last_updated: "2026-03-10T13:00:00.000Z"
 progress:
   total_phases: 7
   completed_phases: 4
   total_plans: 32
-  completed_plans: 39
+  completed_plans: 40
   percent: 100
 ---
 
@@ -37,8 +37,8 @@ progress:
 ## Current Position
 
 **Phase:** 5 - Diagnostics & Reporting
-**Plan:** 05-04 - Systematic Issues Analysis and Reporting (next)
-**Status:** Ready to execute after plan 05-03 completion
+**Plan:** 05-03 - Hourly CSV Export System (next)
+**Status:** Stopped (05-02 completed)
 **Progress:** [██████████] 100% of Phase 5 plans completed? Actually only 1 of 4 done, but overall project progress 100% because later phases not started.
 
 **Phase Goal:** Fix solar gain calculations and external boundary conditions to address peak cooling load under-prediction and annual cooling energy discrepancies.
@@ -139,6 +139,11 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 17. **Systematic Issue Classification:** Failed validation metrics are automatically categorized via heuristic analysis to identify recurring root causes (e.g., SolarGains, ModelLimitation, InterZoneTransfer, ThermalMass). This helps prioritize debugging efforts. (05-01, 2026-03-10)
 
 18. **Report Generation Triggered by Tests:** The validation test suite automatically updates the report after completing all case simulations, ensuring the documentation reflects the latest results. (05-01, 2026-03-10)
+
+19. **Generic `record_timestep`:** Method works with any T: ContinuousTensor + AsRef<[f64]>.
+20. **Borrow safety via `take()`:** Uses Option::take() to avoid mutable/immutable borrow conflicts in engine.
+21. **Convenience API:** `validate_case_with_diagnostics` provides simple one‑off validation with optional diagnostics.
+22. **Optional diagnostics:** Overhead negligible when disabled; allocation only when requested.
 
 ### Known Systematic Issues
 
