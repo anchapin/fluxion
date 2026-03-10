@@ -278,7 +278,11 @@ Phase 3 delivered **complete solar radiation integration** (all 4 SOLAR requirem
 3. Hourly time series exported to CSV format for external analysis
 4. Report identifies systematic issues across cases and tracks progress toward 100% pass rate
 
-**Plans**: TBD
+**Plans**: 4/4 complete
+- [x] 05-01-PLAN.md — Validation Report Generation
+- [x] 05-02-PLAN.md — Diagnostic Logging Enhancement
+- [x] 05-03-PLAN.md — Hourly CSV Export System
+- [x] 05-04-PLAN.md — Systematic Issues Analysis and Reporting
 
 ### Phase 6: Performance Optimization
 
