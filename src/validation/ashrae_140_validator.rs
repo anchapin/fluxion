@@ -1177,6 +1177,38 @@ impl CaseDiagnostic {
     }
 }
 
+/// Validation result for a single metric.
+pub struct ValidationResult {
+    /// Whether the result is within the reference tolerance range
+    pub in_range: bool,
+    /// Error percentage relative to reference midpoint
+    pub error_pct: f64,
+}
+
+/// Validation report for Case 960.
+pub struct ValidationReport {
+    /// Case identifier
+    pub case_id: String,
+    /// Case description
+    pub description: String,
+    /// Annual heating energy (MWh)
+    pub annual_heating_mwh: f64,
+    /// Annual cooling energy (MWh)
+    pub annual_cooling_mwh: f64,
+    /// Peak heating load (kW)
+    pub peak_heating_kw: f64,
+    /// Peak cooling load (kW)
+    pub peak_cooling_kw: f64,
+    /// Heating energy validation result
+    pub heating_result: ValidationResult,
+    /// Cooling energy validation result
+    pub cooling_result: ValidationResult,
+    /// Peak heating load validation result
+    pub peak_heating_result: ValidationResult,
+    /// Peak cooling load validation result
+    pub peak_cooling_result: ValidationResult,
+}
+
 impl ASHRAE140Validator {
     /// Simulate a case with full diagnostic data collection.
     fn simulate_case_with_diagnostics(
@@ -1435,5 +1467,144 @@ impl ASHRAE140Validator {
         };
 
         (results, diagnostic)
+    }
+
+    /// Validates Case 960 (Sunspace/Multi-zone) against ASHRAE 140 reference.
+    ///
+    /// Tests inter-zone heat transfer between conditioned back-zone and unconditioned sunspace.
+    pub fn validate_case_960(&self) -> ValidationReport {
+        let spec = ASHRAE140Case::Case960.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let weather = DenverTmyWeather::new();
+
+        // Reset peak power tracking
+        model.reset_peak_power();
+
+        let mut annual_heating_joules = 0.0;
+        let mut annual_cooling_joules = 0.0;
+        let mut peak_heating_watts: f64 = 0.0;
+        let mut peak_cooling_watts: f64 = 0.0;
+
+        // Set hvac_enabled per zone based on HVAC configuration
+        let num_zones = model.num_zones;
+        let mut hvac_enabled_vals = vec![1.0; num_zones];
+        for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
+            if zone_idx < num_zones {
+                hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
+            }
+        }
+        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
+
+        // Run simulation
+        for step in 0..8760 {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            model.set_weather(weather_data.clone());
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+
+            if hvac_kwh > 0.0 {
+                annual_heating_joules += hvac_kwh * 3.6e6;
+                peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
+            } else {
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
+            }
+        }
+
+        let annual_heating_mwh = annual_heating_joules / 3.6e9;
+        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+        let peak_heating_kw = peak_heating_watts / 1000.0;
+        let peak_cooling_kw = peak_cooling_watts / 1000.0;
+
+        // Get benchmark data for Case 960
+        let benchmark_data = benchmark::get_benchmark_data("960").unwrap();
+
+        // Use hardcoded tolerances for Case 960 (from plan spec)
+        let annual_tolerance = 0.15; // ±15%
+        let peak_tolerance = 0.10; // ±10%
+
+        // Validate against benchmark
+        let heating_result = self.validate_energy_against_reference(
+            annual_heating_mwh,
+            benchmark_data.annual_heating_min,
+            benchmark_data.annual_heating_max,
+            annual_tolerance,
+        );
+
+        let cooling_result = self.validate_energy_against_reference(
+            annual_cooling_mwh,
+            benchmark_data.annual_cooling_min,
+            benchmark_data.annual_cooling_max,
+            annual_tolerance,
+        );
+
+        let peak_heating_result = self.validate_peak_load_against_reference(
+            peak_heating_kw,
+            benchmark_data.peak_heating_min,
+            benchmark_data.peak_heating_max,
+            peak_tolerance,
+        );
+
+        let peak_cooling_result = self.validate_peak_load_against_reference(
+            peak_cooling_kw,
+            benchmark_data.peak_cooling_min,
+            benchmark_data.peak_cooling_max,
+            peak_tolerance,
+        );
+
+        ValidationReport {
+            case_id: "960".to_string(),
+            description: "Sunspace - 2-zone building (back-zone + sunspace)".to_string(),
+            annual_heating_mwh,
+            annual_cooling_mwh,
+            peak_heating_kw,
+            peak_cooling_kw,
+            heating_result,
+            cooling_result,
+            peak_heating_result,
+            peak_cooling_result,
+        }
+    }
+
+    /// Validates energy value against reference range.
+    fn validate_energy_against_reference(
+        &self,
+        actual: f64,
+        ref_min: f64,
+        ref_max: f64,
+        tolerance: f64,
+    ) -> ValidationResult {
+        let ref_mid = (ref_min + ref_max) / 2.0;
+        let ref_half_range = (ref_max - ref_min) / 2.0;
+        let tolerance_range = ref_half_range * (1.0 + tolerance);
+        let in_range = (actual >= ref_mid - tolerance_range) && (actual <= ref_mid + tolerance_range);
+        let error_pct = ((actual - ref_mid).abs() / ref_mid) * 100.0;
+
+        ValidationResult {
+            in_range,
+            error_pct,
+        }
+    }
+
+    /// Validates peak load against reference range.
+    fn validate_peak_load_against_reference(
+        &self,
+        actual: f64,
+        ref_min: f64,
+        ref_max: f64,
+        tolerance: f64,
+    ) -> ValidationResult {
+        // For peak loads, use min/max directly (not midpoint)
+        let in_range = (actual >= ref_min) && (actual <= ref_max);
+        let ref_mid = (ref_min + ref_max) / 2.0;
+        let error_pct = if ref_mid > 0.0 {
+            ((actual - ref_mid).abs() / ref_mid) * 100.0
+        } else {
+            0.0
+        };
+
+        ValidationResult {
+            in_range,
+            error_pct,
+        }
     }
 }

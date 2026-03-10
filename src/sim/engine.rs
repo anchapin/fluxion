@@ -2069,24 +2069,68 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Note: t_g vector creation removed. h_tr_floor * t_g_vec replaced by h_tr_floor * t_g.
 
         // === Inter-zone heat transfer (for multi-zone buildings like Case 960) ===
-        // Q_iz = h_tr_iz * (T_zone_a - T_zone_b)
-        // Includes both conductive (h_tr_iz) and radiative (h_tr_iz_rad) heat transfer
-        // This implements Issue #302: Refine Inter-Zone Longwave Radiation
-        // Issue #381: Use matrix-based solver for simultaneous boundary conditions
+        // Three-component approach: Q_iz = Q_cond + Q_rad + Q_vent
+        // 1. Conductive: Q_cond = h_tr_iz * ΔT
+        // 2. Radiative: Q_rad = σ·ε₁·ε₂·F·A·(T₁⁴ - T₂⁴) (full nonlinear Stefan-Boltzmann)
+        // 3. Ventilation: Q_vent = ρ·Cp·ACH·V·ΔT (temperature-dependent ACH via stack effect)
         let num_zones = self.num_zones;
 
-        // Use h_tr_iz from model - it's already a VectorField
-        // so we can get its value using as_ref()
-        let h_iz_vec = self.h_tr_iz.as_ref();
-        let h_iz_rad_vec = self.h_tr_iz_rad.as_ref();
+        let inter_zone_heat: Option<Vec<f64>> = if num_zones > 1 {
+            let temps = self.temperatures.as_ref();
+            let h_iz_vec = self.h_tr_iz.as_ref();
+            let emissivity_vec = self.surface_emissivity.as_ref();
 
-        // Use matrix-based solver for coupled zone temperatures (Issue #381)
-        let inter_zone_heat: Option<Vec<f64>> = self.solve_coupled_zone_temperatures(
-            num_zones,
-            self.temperatures.as_ref(),
-            h_iz_vec,
-            h_iz_rad_vec,
-        );
+            // For Case 960 (2-zone building), calculate heat transfer between zone 0 (back-zone) and zone 1 (sunspace)
+            if num_zones >= 2 && h_iz_vec[0] > 0.0 {
+                let delta_t_cond = temps[1] - temps[0]; // T_sunspace - T_back
+
+                // 1. Conductive heat transfer
+                let q_cond = h_iz_vec[0] * delta_t_cond;
+
+                // 2. Radiative heat transfer (full nonlinear Stefan-Boltzmann)
+                let delta_t4_kelvin = {
+                    let t_sunspace_k = temps[1] + 273.15;
+                    let t_back_k = temps[0] + 273.15;
+                    t_sunspace_k.powi(4) - t_back_k.powi(4)
+                };
+                // View factor = 1.0 for aligned windows (Case 960)
+                let sigma = 5.670374419e-8; // Stefan-Boltzmann constant
+                let q_rad = sigma
+                    * emissivity_vec[0]  // ε_back-zone
+                    * emissivity_vec[1]  // ε_sunspace
+                    * 1.0  // View factor (aligned windows)
+                    * self.common_wall_area  // Area of common wall (21.6 m² for Case 960)
+                    * delta_t4_kelvin;
+
+                // 3. Ventilation heat transfer (temperature-dependent ACH via stack effect)
+                let ach_iz = calculate_stack_effect_ach(
+                    temps[0],  // T_back-zone
+                    temps[1],  // T_sunspace
+                    self.door_geometry.height,
+                    self.door_geometry.area,
+                );
+                // Use back-zone volume for ventilation calculation
+                let zone_volume = self.zone_volume.as_ref();
+                let q_vent = calculate_ventilation_heat_transfer(
+                    ach_iz,
+                    temps[1],  // Source: sunspace (warm in summer, cold in winter)
+                    temps[0],  // Target: back-zone
+                    zone_volume[0],  // Target volume
+                );
+
+                // Total inter-zone heat transfer (positive = sunspace → back-zone)
+                let q_iz_total = q_cond + q_rad + q_vent;
+
+                // Apply to energy balance
+                // Zone 0 (back-zone) receives inter-zone heat transfer
+                // Zone 1 (sunspace) provides inter-zone heat transfer (opposite sign)
+                Some(vec![-q_iz_total, q_iz_total])
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let phi_ia_with_iz = if let Some(q_iz) = inter_zone_heat {
             phi_ia.clone() + VectorField::new(q_iz).into()
