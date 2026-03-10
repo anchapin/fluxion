@@ -6,6 +6,7 @@ use crate::validation::diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
     HourlyData, PeakTiming, TemperatureProfile,
 };
+use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::report::{BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
@@ -16,6 +17,10 @@ pub struct ASHRAE140Validator {
     diagnostic_config: DiagnosticConfig,
     /// Diagnostic collector for detailed output
     diagnostic: DiagnosticCollector,
+    /// Flag to enable simulation diagnostics (Phase 5)
+    use_simulation_diagnostics: bool,
+    /// Temporary storage for simulation diagnostics collected during the last run
+    last_simulation_diagnostics: Option<SimulationDiagnostics>,
 }
 
 impl Default for ASHRAE140Validator {
@@ -31,6 +36,8 @@ impl ASHRAE140Validator {
         Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
+            use_simulation_diagnostics: false,
+            last_simulation_diagnostics: None,
         }
     }
 
@@ -39,6 +46,8 @@ impl ASHRAE140Validator {
         Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
+            use_simulation_diagnostics: false,
+            last_simulation_diagnostics: None,
         }
     }
 
@@ -48,6 +57,8 @@ impl ASHRAE140Validator {
         Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
+            use_simulation_diagnostics: false,
+            last_simulation_diagnostics: None,
         }
     }
 
@@ -952,6 +963,12 @@ impl ASHRAE140Validator {
         weather: &DenverTmyWeather,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        // Attach simulation diagnostics if requested (Phase 5)
+        if self.use_simulation_diagnostics {
+            let diag = SimulationDiagnostics::new(model.num_zones, 8760);
+            model.set_diagnostics(Some(diag));
+        }
+
         // Plan 03-04: Thermal mass energy accounting removed
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
@@ -1106,6 +1123,11 @@ impl ASHRAE140Validator {
             }
 
             self.diagnostic.record_hour(hourly_data);
+        }
+
+        // Capture simulation diagnostics if enabled
+        if self.use_simulation_diagnostics {
+            self.last_simulation_diagnostics = model.get_diagnostics().cloned();
         }
 
         CaseResults {
@@ -1576,7 +1598,8 @@ impl ASHRAE140Validator {
         let ref_mid = (ref_min + ref_max) / 2.0;
         let ref_half_range = (ref_max - ref_min) / 2.0;
         let tolerance_range = ref_half_range * (1.0 + tolerance);
-        let in_range = (actual >= ref_mid - tolerance_range) && (actual <= ref_mid + tolerance_range);
+        let in_range =
+            (actual >= ref_mid - tolerance_range) && (actual <= ref_mid + tolerance_range);
         let error_pct = ((actual - ref_mid).abs() / ref_mid) * 100.0;
 
         ValidationResult {
@@ -1607,4 +1630,154 @@ impl ASHRAE140Validator {
             error_pct,
         }
     }
+}
+
+/// Validates a single ASHRAE 140 case with optional simulation diagnostics collection.
+///
+/// This function runs the simulation for the given case and returns both the validation
+/// report and (if requested) the detailed hourly diagnostics.
+pub fn validate_case_with_diagnostics(
+    case: ASHRAE140Case,
+    collect_diags: bool,
+) -> (ValidationReport, Option<SimulationDiagnostics>) {
+    // Use a validator instance to access helper methods
+    let validator = ASHRAE140Validator::new();
+    let spec = case.spec();
+    let case_id = case.number().to_string();
+    
+    // Create model
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    model.reset_peak_power();
+    
+    // Handle free-floating cases
+    if spec.is_free_floating() {
+        model.heating_setpoint = -999.0;
+        model.cooling_setpoint = 999.0;
+        model.hvac_heating_capacity = 0.0;
+        model.hvac_cooling_capacity = 0.0;
+    }
+    
+    // Attach diagnostics if requested
+    if collect_diags {
+        let mut diag = SimulationDiagnostics::new(spec.num_zones, 8760);
+        model.set_diagnostics(Some(diag));
+    }
+    
+    let weather = DenverTmyWeather::new();
+    
+    // Simulation state
+    let mut annual_heating_joules = 0.0;
+    let mut annual_cooling_joules = 0.0;
+    let mut peak_heating_watts: f64 = 0.0;
+    let mut peak_cooling_watts: f64 = 0.0;
+    let mut min_temp_celsius = f64::INFINITY;
+    let mut max_temp_celsius = f64::NEG_INFINITY;
+    
+    // Run simulation for 8760 hours
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.set_weather(weather_data.clone());
+        
+        // Apply dynamic setpoints
+        if let Some(hvac_schedule) = spec.hvac.first() {
+            model.heating_setpoint = hvac_schedule.heating_setpoint;
+            model.cooling_setpoint = hvac_schedule.cooling_setpoint;
+        }
+        
+        // Step physics (includes diagnostics recording if enabled)
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        
+        // Energy tracking (kWh to Joules)
+        if hvac_kwh > 0.0 {
+            annual_heating_joules += hvac_kwh * 3.6e6;
+            peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
+        } else {
+            annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
+        }
+        
+        // Free-floating temperature tracking
+        if spec.is_free_floating() {
+            let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
+            if let Some(&t) = zone_temps.first() {
+                min_temp_celsius = min_temp_celsius.min(t);
+                max_temp_celsius = max_temp_celsius.max(t);
+            }
+        }
+    }
+    
+    let annual_heating_mwh = annual_heating_joules / 3.6e9;
+    let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+    let peak_heating_kw = peak_heating_watts / 1000.0;
+    let peak_cooling_kw = peak_cooling_watts / 1000.0;
+    
+    // Retrieve diagnostics if collected
+    let diagnostics = model.get_diagnostics().cloned();
+    
+    // Load benchmark data for validation
+    let benchmark_data = benchmark::get_benchmark_data(&case_id);
+    
+    // Tolerances
+    let annual_tolerance = 0.15; // ±15%
+    let peak_tolerance = 0.10; // ±10%
+    
+    // Compute validation results using validator's helper methods
+    let (heating_result, cooling_result, peak_heating_result, peak_cooling_result) = if let Some(data) = benchmark_data {
+        let heating_result = validator.validate_energy_against_reference(
+            annual_heating_mwh, 
+            data.annual_heating_min, 
+            data.annual_heating_max, 
+            annual_tolerance
+        );
+        let cooling_result = validator.validate_energy_against_reference(
+            annual_cooling_mwh, 
+            data.annual_cooling_min, 
+            data.annual_cooling_max, 
+            annual_tolerance
+        );
+        let peak_heating_result = if data.peak_heating_min >= 0.0 {
+            validator.validate_peak_load_against_reference(
+                peak_heating_kw, 
+                data.peak_heating_min, 
+                data.peak_heating_max, 
+                peak_tolerance
+            )
+        } else {
+            ValidationResult { in_range: false, error_pct: 0.0 }
+        };
+        let peak_cooling_result = if data.peak_cooling_min >= 0.0 {
+            validator.validate_peak_load_against_reference(
+                peak_cooling_kw, 
+                data.peak_cooling_min, 
+                data.peak_cooling_max, 
+                peak_tolerance
+            )
+        } else {
+            ValidationResult { in_range: false, error_pct: 0.0 }
+        };
+        (heating_result, cooling_result, peak_heating_result, peak_cooling_result)
+    } else {
+        // No reference data available
+        (
+            ValidationResult { in_range: false, error_pct: 0.0 },
+            ValidationResult { in_range: false, error_pct: 0.0 },
+            ValidationResult { in_range: false, error_pct: 0.0 },
+            ValidationResult { in_range: false, error_pct: 0.0 },
+        )
+    };
+    
+    let report = ValidationReport {
+        case_id,
+        description: case.description().to_string(),
+        annual_heating_mwh,
+        annual_cooling_mwh,
+        peak_heating_kw,
+        peak_cooling_kw,
+        heating_result,
+        cooling_result,
+        peak_heating_result,
+        peak_cooling_result,
+    };
+    
+    (report, diagnostics)
 }

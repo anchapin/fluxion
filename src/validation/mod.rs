@@ -12,7 +12,7 @@ pub mod report;
 pub mod reporter;
 
 // Re-export common types
-pub use ashrae_140_validator::ASHRAE140Validator;
+pub use ashrae_140_validator::{ASHRAE140Validator, validate_case_with_diagnostics};
 pub use cross_validator::{
     AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
     EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
