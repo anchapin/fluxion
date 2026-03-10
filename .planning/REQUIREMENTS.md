@@ -29,10 +29,10 @@
 | INTERNAL-01 | Phase 1 | Complete |
 | INTERNAL-02 | Phase 1 | Complete |
 | GROUND-01 | Phase 1 | Complete |
-| REPORT-01 | Phase 5 | Pending |
-| REPORT-02 | Phase 5 | Pending |
-| REPORT-03 | Phase 5 | Pending |
-| REPORT-04 | Phase 5 | Pending |
+| REPORT-01 | Phase 5 | Complete |
+| REPORT-02 | Phase 5 | Complete |
+| REPORT-03 | Phase 5 | Complete |
+| REPORT-04 | Phase 5 | Complete |
 | GPU-01 | Phase 6 | Pending |
 | GPU-02 | Phase 6 | Pending |
 | GPU-03 | Phase 6 | Pending |
