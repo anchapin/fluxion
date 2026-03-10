@@ -55,7 +55,7 @@ impl fmt::Display for MetricType {
 }
 
 /// Validation status for a single metric comparison.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ValidationStatus {
     /// Value within 5% of reference range
     Pass,
@@ -296,14 +296,18 @@ impl ValidationResult {
             status,
         }
     }
+
+    /// Returns true if this result passed validation (within reference range with <10% error).
     pub fn is_pass(&self) -> bool {
         matches!(self.status, ValidationStatus::Pass)
     }
 
+    /// Returns true if this result is a warning (within reference range but >=10% error, or within tolerance band).
     pub fn is_warning(&self) -> bool {
         matches!(self.status, ValidationStatus::Warning)
     }
 
+    /// Returns true if this result failed validation (outside tolerance band).
     pub fn is_fail(&self) -> bool {
         matches!(self.status, ValidationStatus::Fail)
     }

@@ -1,6 +1,7 @@
 pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
+pub mod analyzer;
 pub mod benchmark;
 pub mod cross_validator;
 pub mod diagnostic;
@@ -17,6 +18,7 @@ pub use cross_validator::{
     AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
     EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
 };
+pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
 
 pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
