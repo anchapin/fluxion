@@ -42,22 +42,40 @@ progress:
 
 ## Current Position
 
-**Phase:** 6 - Performance Optimization
-**Plan:** 06-02 - Parallel Execution of ASHRAE 140 Validation Cases (completed)
-**Status:** Complete
-**Progress:** ✅ 06-01 complete (test scaffolding). ✅ 06-02 complete (parallel validation and performance metrics). Next: Pending (06-03+).
+**Phase:** 7 - Advanced Analysis & Visualization
+**Plan:** Not started
+**Status:** Ready for planning
+**Context:** Phase 7 context gathered - all implementation decisions captured in 07-CONTEXT.md
 
-**Phase Goal:** Optimize batch validation throughput to achieve <5 minute execution time for all 18+ cases and add GPU-accelerated calculations.
+**Previous Phase Completion:**
+- ✅ Phase 6: Performance Optimization complete (all 5 plans: GPU acceleration, parallel validation, modular surrogates, guardrails, trend tracking)
+- ✅ Phase 5: Diagnostics & Reporting complete (all 4 plans: validation reports, diagnostic logging, CSV export, systematic issue tracking)
+- ✅ Phase 4: Multi-Zone Inter-Zone Transfer complete (all 6 plans: directional conductance, nonlinear radiation, stack effect ACH, Case 960 validation)
+- ✅ Phase 3: Solar Radiation & External Boundaries complete (all 15 plans: solar integration, gap closure, known limitations documented)
+- ✅ Phase 2: Thermal Mass Dynamics complete (all 5 plans: implicit integration validated, free-floating tests passing)
+- ✅ Phase 1: Foundation complete (all 4 plans: conductance fixes, HVAC corrections, 37.5% MAE improvement)
 
-**Phase Requirements:** 12 requirements (GPU-01 through REG-04)
-**Phase Status:** 1/12 requirements complete (test infrastructure in place)
+**Phase Goal:** Implement sensitivity analysis, delta testing, interactive visualization, component-level breakdowns, and extensible case framework for optimization workflows.
+
+**Phase Requirements:** 20 requirements (SENS-01 through MREF-03)
+**Phase Status:** Ready to plan (context complete)
 
 **Phase Success Criteria:**
-1. Complete validation suite (18+ cases) executes in <5 minutes using rayon parallel execution
-2. GPU-accelerated solar calculations achieve 10-100x speedup for large populations
-3. ONNX Runtime session pool enables concurrent AI surrogate inference without blocking
-4. Performance regression guardrails detect MAE increases >2% or max deviation >10%
-5. Historical performance data stored and trended over time
+1. Sensitivity analysis identifies dominant parameters and produces ranked impact metrics
+2. Delta testing framework supports custom case specifications and variant comparison
+3. Interactive visualization provides real-time plotting with zoom/pan and export to PNG/SVG
+4. Component-level energy breakdown helps diagnose specific energy path errors
+5. Extensible test case framework supports custom geometries, climate zones, and building types
+6. Multi-reference comparison shows consistency across EnergyPlus, ESP-r, and TRNSYS
+
+**Key Decisions for this Phase:**
+- Visualization: Web-based (HTML+JS) with mixed library+subcmd integration, SVG primary export
+- Sensitivity: OAT + Sobol sampling, 10 levels default, CVRMSE/NMBE/slope metrics, hybrid batching
+- Delta testing: YAML-driven CLI, summary+hourly comparison, patch+sweep variants, simple stats
+- Multi-reference: EnergyPlus primary, per-program reporting, versioned data files
+- Extensibility: Simplified geometry + gbXML/IDF import, EPW custom weather, YAML assembly library
+- Component breakdown: By load source first, annual+monthly default, conservation check, long CSV format
+- Animation: 2D combined charts, interactive HTML, post-process only
 
 ## Performance Metrics
 
@@ -209,6 +227,7 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 - [x] Complete Phase 5 Plan 05-04: Systematic Issues Analysis and Reporting
 - [x] Complete Phase 6 Plan 06-01: Create test infrastructure for Phase 6 verification
 - [x] Complete Phase 6 Plan 06-04: Implement modular neural surrogates with separate component models and training pipeline
+- [x] Complete Phase 7 context gathering (07-CONTEXT.md) - Advanced Analysis & Visualization decisions captured
 
 ### Next Steps
 
