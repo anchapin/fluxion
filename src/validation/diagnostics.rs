@@ -21,12 +21,15 @@
 //! diag.export_csv("output/diagnostics.csv").unwrap();
 //! ```
 
-use log::{debug, info};
+use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
+use crate::physics::cta::ContinuousTensor;
+use crate::sim::engine::ThermalModel;
+use std::convert::AsRef;
 
 /// Collected diagnostic data for a single simulation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,5 +259,100 @@ impl SimulationDiagnostics {
 impl Default for SimulationDiagnostics {
     fn default() -> Self {
         Self::new(1, 8760)
+    }
+}
+
+impl SimulationDiagnostics {
+    /// Records data for a single timestep from the given model.
+    /// This should be called at the end of step_physics.
+    pub fn record_timestep<T: ContinuousTensor<f64> + AsRef<[f64]>>(&mut self, hour: usize, model: &ThermalModel<T>) {
+        trace!("Recording diagnostics for hour {}", hour);
+        let num_zones = model.num_zones;
+        self.hours.push(hour);
+
+        // Zone temperatures
+        let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
+        self.zone_temps.push(zone_temps.clone());
+
+        // Mass temperatures
+        let mass_temps: Vec<f64> = model.mass_temperatures.as_ref().to_vec();
+        self.mass_temps.push(mass_temps.clone());
+
+        // Surface temperatures: simple average placeholder
+        let mut surface_est = Vec::with_capacity(num_zones);
+        for i in 0..num_zones {
+            let tm = mass_temps.get(i).copied().unwrap_or(20.0);
+            let ti = zone_temps.get(i).copied().unwrap_or(20.0);
+            surface_est.push((tm + ti) / 2.0);
+        }
+        self.surface_temps.push(surface_est);
+
+        // Loads in Watts
+        let zone_areas: Vec<f64> = model.zone_area.as_ref().to_vec();
+
+        // Solar gains (W)
+        let solar_watts: Vec<f64> = model
+            .solar_gains
+            .as_ref()
+            .iter()
+            .zip(zone_areas.iter())
+            .map(|(s, a)| s * a)
+            .collect();
+        self.loads.solar.push(solar_watts);
+
+        // Internal gains (W)
+        let internal_watts: Vec<f64> = model
+            .loads
+            .as_ref()
+            .iter()
+            .zip(zone_areas.iter())
+            .map(|(l, a)| l * a)
+            .collect();
+        self.loads.internal.push(internal_watts);
+
+        // HVAC per-zone power (W) - from the temporary buffer
+        let hvac_vec = if let Some(ref hvac_tensor) = model.current_hvac_output {
+            hvac_tensor.as_ref().to_vec()
+        } else {
+            vec![0.0; num_zones]
+        };
+        self.loads.hvac.push(hvac_vec.clone());
+
+        // Inter-zone transfer: placeholder zeros
+        let zero_vec = vec![0.0; num_zones];
+        self.loads.inter_zone.push(zero_vec);
+
+        // Infiltration (W): approximate using ACH and zone volume, outdoor temp unknown (use 0)
+        let infiltration_ach: Vec<f64> = model.infiltration_rate.as_ref().to_vec();
+        let ceiling_heights: Vec<f64> = model.ceiling_height.as_ref().to_vec();
+        let mut infiltration_watts = Vec::with_capacity(num_zones);
+        for i in 0..num_zones {
+            let ach = infiltration_ach.get(i).copied().unwrap_or(0.0);
+            let floor_area = zone_areas.get(i).copied().unwrap_or(0.0);
+            let height = ceiling_heights.get(i).copied().unwrap_or(2.5);
+            let volume = floor_area * height;
+            let rho = 1.2; // kg/m³
+            let cp = 1005.0; // J/kg·K
+            let t_zone = zone_temps.get(i).copied().unwrap_or(20.0);
+            let delta_t = (0.0 - t_zone).abs(); // outdoor temp unknown
+            let watts = (ach / 3600.0) * volume * rho * cp * delta_t;
+            infiltration_watts.push(watts);
+        }
+        self.loads.infiltration.push(infiltration_watts);
+
+        // Update cumulative energy per zone (kWh)
+        for i in 0..num_zones {
+            let hvac_power = hvac_vec.get(i).copied().unwrap_or(0.0);
+            let increment = hvac_power / 1000.0; // kWh for 1 hour
+            if increment > 0.0 {
+                self.cumulative_energy.heating_kwh[i] += increment;
+            } else if increment < 0.0 {
+                self.cumulative_energy.cooling_kwh[i] += -increment;
+            }
+            self.cumulative_energy.total_kwh[i] = self.cumulative_energy.heating_kwh[i]
+                + self.cumulative_energy.cooling_kwh[i];
+        }
+
+        trace!("Recorded hour {}: {} zones", hour, num_zones);
     }
 }

@@ -4,10 +4,7 @@ use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
 use crate::sim::components::WallSurface;
-use crate::sim::interzone::{
-    calculate_stack_effect_ach,
-    calculate_ventilation_heat_transfer,
-};
+use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
@@ -21,8 +18,10 @@ use crate::validation::ashrae_140_cases::{
 };
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
+use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::sync::OnceLock;
+use crate::validation::diagnostics::SimulationDiagnostics;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
 
@@ -346,13 +345,13 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub h_tr_me: T,
 
     // 5R1C Conductances (W/K)
-    pub h_tr_em: T, // Transmission: Exterior -> Mass (walls + roof)
+    pub h_tr_em: T,         // Transmission: Exterior -> Mass (walls + roof)
     pub h_tr_em_heating: T, // Exterior-to-mass coupling for heating mode (W/K)
     pub h_tr_em_cooling: T, // Exterior-to-mass coupling for cooling mode (W/K)
-    pub h_tr_ms: T, // Transmission: Mass -> Surface
-    pub h_tr_is: T, // Transmission: Surface -> Interior
-    pub h_tr_w: T,  // Transmission: Exterior -> Interior (Windows)
-    pub h_ve: T,    // Ventilation: Exterior -> Interior
+    pub h_tr_ms: T,         // Transmission: Mass -> Surface
+    pub h_tr_is: T,         // Transmission: Surface -> Interior
+    pub h_tr_w: T,          // Transmission: Exterior -> Interior (Windows)
+    pub h_ve: T,            // Ventilation: Exterior -> Interior
 
     // Ground boundary condition
     pub h_tr_floor: T,                              // Floor conductance (W/K)
@@ -409,7 +408,6 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// This implements Issue #297: Geometric Solar Distribution (Beam-to-Floor Logic)
     /// Typical value: 0.8-0.95 (most beam radiation reaches floor)
     pub solar_beam_to_mass_fraction: f64,
-
 
     /// Thermal mass coupling enhancement factor for temperature swing damping (Issue #470)
     /// This factor enhances the h_tr_em conductance for high-mass buildings
@@ -493,6 +491,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub derived_sensitivity: T,
     /// Cached ground coupling term (term_rest_1 * h_tr_floor) to avoid recomputing in hot loop
     pub derived_ground_coeff: T,
+
+    // Diagnostic data collection (Phase 5)
+    /// Optional diagnostics collector attached to this model
+    pub diagnostics: Option<SimulationDiagnostics>,
+    /// Temporary buffer for per-zone HVAC output during timestep (for diagnostics)
+    pub current_hvac_output: Option<T>,
 }
 
 // Manual Clone implementation for ThermalModel
@@ -585,6 +589,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             derived_den: self.derived_den.clone(),
             derived_sensitivity: self.derived_sensitivity.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
+            diagnostics: None,
+            current_hvac_output: None,
         }
     }
 }
@@ -621,6 +627,17 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
     pub fn reset_heating_cooling_energy(&mut self) {
         self.annual_heating_energy = 0.0;
         self.annual_cooling_energy = 0.0;
+    }
+
+    // Diagnostic hook methods (Phase 5: Diagnostics & Reporting)
+    /// Set a diagnostics collector for this model. Pass `None` to disable.
+    pub fn set_diagnostics(&mut self, diag: Option<SimulationDiagnostics>) {
+        self.diagnostics = diag;
+    }
+
+    /// Get a reference to the attached diagnostics collector, if any.
+    pub fn get_diagnostics(&self) -> Option<&SimulationDiagnostics> {
+        self.diagnostics.as_ref()
     }
 
     /// Reset all energy tracking (peak power, heating/cooling energy, thermal mass)
@@ -689,6 +706,7 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
         }
     }
 }
+
 
 impl ThermalModel<VectorField> {
     /// Create a new ThermalModel from an ASHRAE 140 case specification.
@@ -897,14 +915,14 @@ impl ThermalModel<VectorField> {
         // This addresses the root cause of annual energy over-prediction for high-mass buildings
         let (h_tr_em_heating_factor, h_tr_em_cooling_factor) = match case_id.as_str() {
             // High-mass cases (900 series): use mode-specific coupling
-            "900" | "900FF" | "910" | "910FF" | "920" | "920FF" |
-            "930" | "930FF" | "940" | "940FF" | "950" | "950FF" | "960" => {
+            "900" | "900FF" | "910" | "910FF" | "920" | "920FF" | "930" | "930FF" | "940"
+            | "940FF" | "950" | "950FF" | "960" => {
                 // Heating mode: very significantly reduce coupling to 10-15% of default (reduce cold absorption)
                 // Cooling mode: keep near default to 100-105% of default (improve heat absorption)
-                (0.15, 1.05)  // Tuned for Case 900 to reduce annual heating energy
-            },
+                (0.15, 1.05) // Tuned for Case 900 to reduce annual heating energy
+            }
             // Low-mass cases: no mode-specific coupling needed
-            _ => (1.0, 1.0),  // Use default coupling for all modes
+            _ => (1.0, 1.0), // Use default coupling for all modes
         };
 
         // Store mode-specific coupling factors for use during initialization
@@ -919,7 +937,7 @@ impl ThermalModel<VectorField> {
                 // Calculate time constant: τ = C / (h_tr_em + h_tr_ms)
                 // Test with NO correction first to establish baseline
                 1.00
-            },
+            }
             // Free-floating cases: no correction needed
             "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => 1.0,
             // Low-mass cases: no correction needed (τ ≈ 1 hour)
@@ -1066,26 +1084,42 @@ impl ThermalModel<VectorField> {
         model.h_tr_is = VectorField::new(h_tr_is_vec);
         model.h_tr_ms = VectorField::new(h_tr_ms_vec);
         model.h_tr_em = VectorField::new(h_tr_em_vec.clone()); // Default coupling
-        // Apply mode-specific coupling factors (Plan 03-14)
+                                                               // Apply mode-specific coupling factors (Plan 03-14)
         model.h_tr_em_heating = VectorField::new(
-            h_tr_em_vec.iter().map(|&v| v * model.h_tr_em_heating_factor).collect()
+            h_tr_em_vec
+                .iter()
+                .map(|&v| v * model.h_tr_em_heating_factor)
+                .collect(),
         ); // Heating mode coupling
         model.h_tr_em_cooling = VectorField::new(
-            h_tr_em_vec.iter().map(|&v| v * model.h_tr_em_cooling_factor).collect()
+            h_tr_em_vec
+                .iter()
+                .map(|&v| v * model.h_tr_em_cooling_factor)
+                .collect(),
         ); // Cooling mode coupling
 
         // Diagnostic: Print coupling parameters for Case 900 (Plan 03-14)
         if case_id == "900" || case_id == "900FF" {
             println!("=== Plan 03-14: Mode-Specific Coupling Parameters ===");
             println!("h_tr_em (base): {:.2} W/K", h_tr_em_vec[0]);
-            println!("h_tr_em_heating_factor: {:.2}", model.h_tr_em_heating_factor);
-            println!("h_tr_em_cooling_factor: {:.2}", model.h_tr_em_cooling_factor);
-            println!("h_tr_em_heating: {:.2} W/K ({:.1}% of base)",
-                    model.h_tr_em_heating.as_ref().to_vec()[0],
-                    model.h_tr_em_heating_factor * 100.0);
-            println!("h_tr_em_cooling: {:.2} W/K ({:.1}% of base)",
-                    model.h_tr_em_cooling.as_ref().to_vec()[0],
-                    model.h_tr_em_cooling_factor * 100.0);
+            println!(
+                "h_tr_em_heating_factor: {:.2}",
+                model.h_tr_em_heating_factor
+            );
+            println!(
+                "h_tr_em_cooling_factor: {:.2}",
+                model.h_tr_em_cooling_factor
+            );
+            println!(
+                "h_tr_em_heating: {:.2} W/K ({:.1}% of base)",
+                model.h_tr_em_heating.as_ref().to_vec()[0],
+                model.h_tr_em_heating_factor * 100.0
+            );
+            println!(
+                "h_tr_em_cooling: {:.2} W/K ({:.1}% of base)",
+                model.h_tr_em_cooling.as_ref().to_vec()[0],
+                model.h_tr_em_cooling_factor * 100.0
+            );
             println!("=================================================");
         }
 
@@ -1204,7 +1238,6 @@ impl ThermalModel<VectorField> {
         // For free-floating cases: correction = 1.0 (no HVAC)
         // DO NOT override the correction factor set above
         // It is applied in hvac_power_demand() to reduce HVAC demand for high-mass buildings
-
 
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
@@ -1501,7 +1534,7 @@ impl ThermalModel<VectorField> {
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
             h_tr_em_heating: VectorField::from_scalar(0.0, num_zones), // Heating mode coupling (Plan 03-14)
             h_tr_em_cooling: VectorField::from_scalar(0.0, num_zones), // Cooling mode coupling (Plan 03-14)
-            h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Fixed coupling
+            h_tr_ms: VectorField::from_scalar(1000.0, num_zones),      // Fixed coupling
             h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
@@ -1521,8 +1554,8 @@ impl ThermalModel<VectorField> {
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
             thermal_mass_coupling_enhancement: 1.0, // Default: no coupling enhancement
             time_constant_sensitivity_correction: 1.0, // Default: no correction
-            h_tr_em_heating_factor: 1.0, // Default: no heating mode adjustment (Plan 03-14)
-            h_tr_em_cooling_factor: 1.0, // Default: no cooling mode adjustment (Plan 03-14)
+            h_tr_em_heating_factor: 1.0,      // Default: no heating mode adjustment (Plan 03-14)
+            h_tr_em_cooling_factor: 1.0,      // Default: no cooling mode adjustment (Plan 03-14)
 
             // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
@@ -1563,6 +1596,8 @@ impl ThermalModel<VectorField> {
             derived_den: VectorField::from_scalar(0.0, num_zones),
             derived_sensitivity: VectorField::from_scalar(0.0, num_zones),
             derived_ground_coeff: VectorField::from_scalar(0.0, num_zones),
+            diagnostics: None,
+            current_hvac_output: None,
         };
 
         model.update_derived_parameters();
@@ -2104,8 +2139,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
                 // 3. Ventilation heat transfer (temperature-dependent ACH via stack effect)
                 let ach_iz = calculate_stack_effect_ach(
-                    temps[0],  // T_back-zone
-                    temps[1],  // T_sunspace
+                    temps[0], // T_back-zone
+                    temps[1], // T_sunspace
                     self.door_geometry.height,
                     self.door_geometry.area,
                 );
@@ -2113,9 +2148,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 let zone_volume = self.zone_volume.as_ref();
                 let q_vent = calculate_ventilation_heat_transfer(
                     ach_iz,
-                    temps[1],  // Source: sunspace (warm in summer, cold in winter)
-                    temps[0],  // Target: back-zone
-                    zone_volume[0],  // Target volume
+                    temps[1],       // Source: sunspace (warm in summer, cold in winter)
+                    temps[0],       // Target: back-zone
+                    zone_volume[0], // Target volume
                 );
 
                 // Total inter-zone heat transfer (positive = sunspace → back-zone)
@@ -2211,7 +2246,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Calculate total HVAC energy for step
         let hvac_energy_joules = if self.time_constant_sensitivity_correction > 1.0 {
             // High-mass building: apply correction to reduce annual energy
-            hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt / self.time_constant_sensitivity_correction
+            hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt
+                / self.time_constant_sensitivity_correction
         } else {
             // Low-mass building: no correction needed
             hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt
@@ -2219,16 +2255,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Separate heating and cooling energy for diagnostic (Plan 03-08d)
         // hvac_output_raw is positive for heating, negative for cooling
-        let (heating_energy_joules, cooling_energy_joules) = if self.time_constant_sensitivity_correction > 1.0 {
-            let correction = self.time_constant_sensitivity_correction;
-            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt / correction;
-            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt / correction;
-            (heating_j, cooling_j)
-        } else {
-            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt;
-            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt;
-            (heating_j, cooling_j)
-        };
+        let (heating_energy_joules, cooling_energy_joules) =
+            if self.time_constant_sensitivity_correction > 1.0 {
+                let correction = self.time_constant_sensitivity_correction;
+                let heating_j = hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.max(0.0))
+                    * dt
+                    / correction;
+                let cooling_j = -hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.min(0.0))
+                    * dt
+                    / correction;
+                (heating_j, cooling_j)
+            } else {
+                let heating_j = hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.max(0.0))
+                    * dt;
+                let cooling_j = -hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.min(0.0))
+                    * dt;
+                (heating_j, cooling_j)
+            };
 
         // Accumulate separate heating and cooling energy
         self.annual_heating_energy += heating_energy_joules / 3.6e6; // Convert J to kWh
@@ -2368,6 +2419,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                 timestep / 24,
                 hvac_energy_for_step
             );
+        }
+
+        // Diagnostics recording (if enabled)
+        if self.diagnostics.is_some() {
+            // Store current HVAC output for this timestep (per zone, Watts)
+            self.current_hvac_output = Some(hvac_output_raw.clone());
+            // Temporarily take diagnostics out to avoid borrow conflicts
+            let mut diag = self.diagnostics.take().unwrap();
+            diag.record_timestep(timestep, self);
+            self.diagnostics = Some(diag);
+            // Clear the buffer after use
+            self.current_hvac_output = None;
         }
 
         net_hvac_energy_for_step / 3.6e6 // Return kWh
@@ -2550,7 +2613,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Calculate total HVAC energy for step
         let hvac_energy_joules = if self.time_constant_sensitivity_correction > 1.0 {
             // High-mass building: apply correction to reduce annual energy
-            hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt / self.time_constant_sensitivity_correction
+            hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt
+                / self.time_constant_sensitivity_correction
         } else {
             // Low-mass building: no correction needed
             hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val) * dt
@@ -2558,16 +2622,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Separate heating and cooling energy for diagnostic (Plan 03-08d)
         // hvac_output_raw is positive for heating, negative for cooling
-        let (heating_energy_joules, cooling_energy_joules) = if self.time_constant_sensitivity_correction > 1.0 {
-            let correction = self.time_constant_sensitivity_correction;
-            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt / correction;
-            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt / correction;
-            (heating_j, cooling_j)
-        } else {
-            let heating_j = hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.max(0.0)) * dt;
-            let cooling_j = -hvac_output_raw.clone().reduce(0.0, |acc, val| acc + val.min(0.0)) * dt;
-            (heating_j, cooling_j)
-        };
+        let (heating_energy_joules, cooling_energy_joules) =
+            if self.time_constant_sensitivity_correction > 1.0 {
+                let correction = self.time_constant_sensitivity_correction;
+                let heating_j = hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.max(0.0))
+                    * dt
+                    / correction;
+                let cooling_j = -hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.min(0.0))
+                    * dt
+                    / correction;
+                (heating_j, cooling_j)
+            } else {
+                let heating_j = hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.max(0.0))
+                    * dt;
+                let cooling_j = -hvac_output_raw
+                    .clone()
+                    .reduce(0.0, |acc, val| acc + val.min(0.0))
+                    * dt;
+                (heating_j, cooling_j)
+            };
 
         // Accumulate separate heating and cooling energy
         self.annual_heating_energy += heating_energy_joules / 3.6e6; // Convert J to kWh
@@ -2796,6 +2875,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
                     phi_m_int_sum,
                     solar_gain_sum,
                     phi_m_solar_sum);
+        }
+
+        // Diagnostics recording (if enabled)
+        if self.diagnostics.is_some() {
+            // Store current HVAC output for this timestep (per zone, Watts)
+            self.current_hvac_output = Some(hvac_output_raw.clone());
+            // Temporarily take diagnostics out to avoid borrow conflicts
+            let mut diag = self.diagnostics.take().unwrap();
+            diag.record_timestep(timestep, self);
+            self.diagnostics = Some(diag);
+            // Clear the buffer after use
+            self.current_hvac_output = None;
         }
 
         // Return HVAC energy (Plan 03-04: Use hvac_energy_for_step directly)
