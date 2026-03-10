@@ -5,7 +5,10 @@ use fluxion::ai::surrogate::SurrogateManager;
 #[test]
 fn gpu_supported_cpu_backend() {
     let manager = SurrogateManager::new().expect("Failed to create SurrogateManager");
-    assert!(!manager.gpu_supported(), "GPU should not be supported with CPU backend");
+    assert!(
+        !manager.gpu_supported(),
+        "GPU should not be supported with CPU backend"
+    );
 }
 
 #[test]
@@ -14,15 +17,24 @@ fn gpu_supported_env_override() {
 
     // Test with FLUXION_GPU=0
     std::env::set_var("FLUXION_GPU", "0");
-    assert!(!manager.gpu_supported(), "GPU should be disabled when FLUXION_GPU=0");
+    assert!(
+        !manager.gpu_supported(),
+        "GPU should be disabled when FLUXION_GPU=0"
+    );
 
     // Test with FLUXION_GPU=1 on CPU backend (still false)
     std::env::set_var("FLUXION_GPU", "1");
-    assert!(!manager.gpu_supported(), "GPU should still be false with CPU backend even if FLUXION_GPU=1");
+    assert!(
+        !manager.gpu_supported(),
+        "GPU should still be false with CPU backend even if FLUXION_GPU=1"
+    );
 
     // Test with FLUXION_GPU=false
     std::env::set_var("FLUXION_GPU", "false");
-    assert!(!manager.gpu_supported(), "GPU should be disabled when FLUXION_GPU=false");
+    assert!(
+        !manager.gpu_supported(),
+        "GPU should be disabled when FLUXION_GPU=false"
+    );
 
     // Clean up
     std::env::remove_var("FLUXION_GPU");
@@ -45,13 +57,20 @@ fn gpu_supported_cuda_backend_if_available() {
 
     // Attempt to create a CUDA-backed SurrogateManager.
     // Note: This may fail if CUDA drivers are not present.
-    match SurrogateManager::with_gpu_backend(dummy_model_path, fluxion::ai::surrogate::InferenceBackend::CUDA, 0) {
+    match SurrogateManager::with_gpu_backend(
+        dummy_model_path,
+        fluxion::ai::surrogate::InferenceBackend::CUDA,
+        0,
+    ) {
         Ok(cuda_manager) => {
             // With no environment override, should be true (if we actually have CUDA)
             // However, if the CUDA session creation failed (but returned Ok?), unlikely.
             // But we must respect FLUXION_GPU override.
             std::env::set_var("FLUXION_GPU", "0");
-            assert!(!cuda_manager.gpu_supported(), "FLUXION_GPU=0 should disable GPU support");
+            assert!(
+                !cuda_manager.gpu_supported(),
+                "FLUXION_GPU=0 should disable GPU support"
+            );
             std::env::remove_var("FLUXION_GPU");
 
             // Without override, behavior depends on whether CUDA is actually functional.

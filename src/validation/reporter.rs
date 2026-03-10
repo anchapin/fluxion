@@ -4,9 +4,19 @@
 //! comprehensive Markdown reports from validation results.
 
 use crate::validation::report::{BenchmarkReport, MetricType};
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+
+/// Baseline metrics for performance comparison.
+#[derive(Debug, Clone, Deserialize)]
+pub struct BaselineMetrics {
+    pub mae: f64,
+    pub max_deviation: f64,
+    pub pass_rate: f64,
+    pub validation_time_seconds: f64,
+}
 
 /// Systematic issue categories for ASHRAE 140 validation failures.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -44,8 +54,9 @@ impl ValidationReportGenerator {
         &self,
         report: &BenchmarkReport,
         systematic_issues: Option<&SystematicIssueMap>,
+        baseline: Option<&BaselineMetrics>,
     ) -> Result<(), String> {
-        let markdown = self.render_markdown(report, systematic_issues)?;
+        let markdown = self.render_markdown(report, systematic_issues, baseline)?;
 
         // Ensure the output directory exists
         if let Some(parent) = self.output_path.parent() {
@@ -63,6 +74,7 @@ impl ValidationReportGenerator {
         &self,
         report: &BenchmarkReport,
         systematic_issues: Option<&SystematicIssueMap>,
+        baseline: Option<&BaselineMetrics>,
     ) -> Result<String, String> {
         let mut output = String::new();
 
@@ -96,10 +108,87 @@ impl ValidationReportGenerator {
         output.push_str("## Performance Summary\n\n");
         output.push_str("| Metric | Value |\n");
         output.push_str("|--------|-------|\n");
-        output.push_str(&format!("| Total Validation Duration | {:.2} seconds |\n", report.duration_seconds()));
-        output.push_str(&format!("| Throughput | {:.2} cases/sec |\n", report.cases_per_second()));
-        output.push_str(&format!("| Total Cases | {} |\n", report.benchmark_data.len()));
+        output.push_str(&format!(
+            "| Total Validation Duration | {:.2} seconds |\n",
+            report.duration_seconds()
+        ));
+        output.push_str(&format!(
+            "| Throughput | {:.2} cases/sec |\n",
+            report.cases_per_second()
+        ));
+        output.push_str(&format!(
+            "| Total Cases | {} |\n",
+            report.benchmark_data.len()
+        ));
         output.push('\n');
+
+        // Performance Comparison (if baseline provided)
+        if let Some(baseline) = baseline {
+            output.push_str("## Performance Comparison\n\n");
+            output.push_str("| Metric | Current | Baseline | Change | Status |\n");
+            output.push_str("|--------|---------|----------|--------|--------|\n");
+
+            // Helper to compute percent change
+            let pct_change = |current: f64, base: f64| -> f64 {
+                if base != 0.0 { ((current - base) / base) * 100.0 } else { 0.0 }
+            };
+
+            // Mean Absolute Error (MAE)
+            let mae = report.mae();
+            let mae_change = pct_change(mae, baseline.mae);
+            let mae_emoji = if mae_change.abs() <= 2.0 {
+                "✅"
+            } else if mae_change.abs() <= 10.0 {
+                "⚠️"
+            } else {
+                "❌"
+            };
+            output.push_str(&format!(
+                "| Mean Absolute Error (MAE) | {:.2}% | {:.2}% | {:+.2}% | {} |\n",
+                mae, baseline.mae, mae_change, mae_emoji
+            ));
+
+            // Max Deviation
+            let max_dev = report.max_deviation();
+            let maxdev_change = pct_change(max_dev, baseline.max_deviation);
+            let maxdev_emoji = if maxdev_change.abs() <= 2.0 {
+                "✅"
+            } else if maxdev_change.abs() <= 10.0 {
+                "⚠️"
+            } else {
+                "❌"
+            };
+            output.push_str(&format!(
+                "| Max Deviation | {:.2}% | {:.2}% | {:+.2}% | {} |\n",
+                max_dev, baseline.max_deviation, maxdev_change, maxdev_emoji
+            ));
+
+            // Pass Rate (percentage points)
+            let pass_rate = report.pass_rate();
+            let passrate_change = pass_rate - baseline.pass_rate;
+            let passrate_emoji = if passrate_change >= -2.0 {
+                "✅"
+            } else if passrate_change > -5.0 {
+                "⚠️"
+            } else {
+                "❌"
+            };
+            output.push_str(&format!(
+                "| Pass Rate | {:.1}% | {:.1}% | {:.1}pp | {} |\n",
+                pass_rate, baseline.pass_rate, passrate_change, passrate_emoji
+            ));
+
+            // Validation Time
+            let duration = report.duration_seconds();
+            let time_change = pct_change(duration, baseline.validation_time_seconds);
+            let time_emoji = if time_change <= 10.0 { "✅" } else { "⚠️" };
+            output.push_str(&format!(
+                "| Validation Time | {:.2}s | {:.2}s | {:+.1}% | {} |\n",
+                duration, baseline.validation_time_seconds, time_change, time_emoji
+            ));
+
+            output.push('\n');
+        }
 
         // Detailed Results Table - grouped by case type
         output.push_str("## Detailed Results\n\n");
@@ -206,8 +295,12 @@ impl ValidationReportGenerator {
 
         // What's Fixed in This Phase
         output.push_str("## What's Fixed in Phase 5\n\n");
-        output.push_str("This phase delivered systematic diagnostics and reporting infrastructure:\n\n");
-        output.push_str("- ✅ **REPORT-01:** Automated quality metrics computation via `analyzer.rs`\n");
+        output.push_str(
+            "This phase delivered systematic diagnostics and reporting infrastructure:\n\n",
+        );
+        output.push_str(
+            "- ✅ **REPORT-01:** Automated quality metrics computation via `analyzer.rs`\n",
+        );
         output.push_str("- ✅ **REPORT-02:** Quality metrics dashboard (`QUALITY_METRICS.md`) with historical progression\n");
         output.push_str("- ✅ **REPORT-03:** Comprehensive known issues catalog (`KNOWN_ISSUES.md`) with taxonomy, severity, and GitHub links\n");
         output.push_str("- ✅ **REPORT-04:** Enhanced validation report with issue references and phase summaries\n");

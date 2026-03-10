@@ -1,5 +1,10 @@
+use anyhow::Error;
 use clap::{Parser, Subcommand};
 use fluxion::validation::ASHRAE140Validator;
+use fluxion::validation::guardrails;
+use fluxion::validation::reporter::{BaselineMetrics, SystematicIssueMap, ValidationReportGenerator};
+use std::env;
+use std::path::Path;
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -30,6 +35,10 @@ enum Commands {
         /// Output file path
         #[arg(short, long)]
         output_file: Option<PathBuf>,
+
+        /// Enable CI mode (enforces guardrails and sets exit code on failure)
+        #[arg(short, long)]
+        ci: bool,
     },
 
     /// Quantize an ONNX model for optimized edge inference
@@ -72,25 +81,86 @@ fn main() -> anyhow::Result<()> {
             case: _,
             format,
             output_file,
+            ci,
         } => {
             let mut validator = ASHRAE140Validator::new();
-
-            // For now, we always run the analytical engine validation
             let report = validator.validate_analytical_engine();
 
-            let output = match format.as_str() {
-                "markdown" => report.to_markdown(),
-                "csv" => report.to_csv(),
-                "json" => report.to_json(),
-                "html" => report.to_html(),
-                _ => anyhow::bail!("Unsupported format: {}", format),
+            // Always append historical metrics
+            report.append_history();
+
+            // Classify systematic issues if generating markdown
+            let systematic_issues = if format == "markdown" {
+                Some(ValidationReportGenerator::classify_systematic_issues(&report))
+            } else {
+                None
             };
 
-            if let Some(path) = output_file {
-                std::fs::write(&path, output)?;
-                println!("Report saved to {:?}", path);
+            // Load baseline for reporting and guardrails (if exists)
+            let baseline_path = "docs/performance_baseline.json";
+            let guardrail_baseline: Option<guardrails::GuardrailBaseline> = if Path::new(baseline_path).exists() {
+                match guardrails::GuardrailBaseline::load(baseline_path) {
+                    Ok(b) => Some(b),
+                    Err(e) => {
+                        eprintln!("Warning: Failed to load baseline: {}", e);
+                        None
+                    }
+                }
             } else {
-                println!("{}", output);
+                eprintln!("Warning: Baseline file not found at {}, skipping guardrail checks", baseline_path);
+                None
+            };
+            let baseline_for_report = guardrail_baseline.as_ref().map(|gb| BaselineMetrics {
+                mae: gb.mae,
+                max_deviation: gb.max_deviation,
+                pass_rate: gb.pass_rate,
+                validation_time_seconds: gb.validation_time_seconds,
+            });
+
+            // Generate output in requested format
+            if format == "markdown" {
+                if let Some(ref path) = output_file {
+                    let generator = ValidationReportGenerator::new(path.clone());
+                    generator
+                        .generate(&report, systematic_issues.as_ref(), baseline_for_report.as_ref())
+                        .map_err(Error::msg)?;
+                    println!("Report saved to {:?}", path);
+                } else {
+                    // Render to stdout
+                    let markdown = ValidationReportGenerator::new(PathBuf::from("/dev/null"))
+                        .render_markdown(&report, systematic_issues.as_ref(), baseline_for_report.as_ref())
+                        .map_err(Error::msg)?;
+                    println!("{}", markdown);
+                }
+            } else {
+                // Non-markdown formats use BenchmarkReport methods
+                let output = match format.as_str() {
+                    "csv" => report.to_csv(),
+                    "json" => report.to_json(),
+                    "html" => report.to_html(),
+                    _ => anyhow::bail!("Unsupported format: {}", format),
+                };
+                if let Some(path) = output_file {
+                    std::fs::write(&path, output)?;
+                    println!("Report saved to {:?}", path);
+                } else {
+                    println!("{}", output);
+                }
+            }
+
+            // Guardrail check in CI mode
+            let ci_mode = ci || env::var("CI").map(|v| v == "true").unwrap_or(false);
+            if ci_mode {
+                if let Some(baseline) = guardrail_baseline {
+                    let (passed, failures) = guardrails::check(&report, &baseline);
+                    if !passed {
+                        eprintln!("Guardrail validation failed:");
+                        for failure in failures {
+                            eprintln!("  - {}", failure);
+                        }
+                        std::process::exit(1);
+                    }
+                }
             }
         }
 

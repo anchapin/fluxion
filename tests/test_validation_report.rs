@@ -1,7 +1,7 @@
+use fluxion::validation::report::{BenchmarkData, BenchmarkReport, MetricType};
 use fluxion::validation::reporter::ValidationReportGenerator;
-use fluxion::validation::report::{BenchmarkReport, BenchmarkData, MetricType};
 use std::path::PathBuf;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 
 #[test]
 fn test_validation_report_includes_performance_summary() {
@@ -34,7 +34,9 @@ fn test_validation_report_includes_performance_summary() {
     report.end_time = Some(end);
 
     let generator = ValidationReportGenerator::new(PathBuf::from("/tmp/dummy"));
-    let markdown = generator.render_markdown(&report, None).expect("Should render markdown");
+    let markdown = generator
+        .render_markdown(&report, None, None)
+        .expect("Should render markdown");
 
     assert!(
         markdown.contains("## Performance Summary"),

@@ -111,3 +111,8 @@ harness = true
 name = "test_validation_report"
 path = "tests/test_validation_report.rs"
 harness = true
+
+[[test]]
+name = "test_modular_surrogates"
+path = "tests/test_modular_surrogates.rs"
+harness = true

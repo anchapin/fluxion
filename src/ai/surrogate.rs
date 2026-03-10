@@ -1,5 +1,6 @@
 //! Surrogate manager for fast thermal load predictions.
 
+use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,
@@ -143,6 +144,8 @@ pub struct SurrogateManager {
     pub session_pool: Option<Arc<SessionPool>>,
     pub backend: InferenceBackend,
     pub device_id: usize,
+    /// Optional composite surrogate that aggregates multiple component models
+    pub composite: Option<CompositeSurrogate>,
 }
 
 #[derive(Debug)]
@@ -399,6 +402,7 @@ impl SurrogateManager {
             session_pool: None,
             backend: InferenceBackend::CPU,
             device_id: 0,
+            composite: None,
         })
     }
 
@@ -448,6 +452,7 @@ impl SurrogateManager {
             session_pool: Some(Arc::new(pool)),
             backend,
             device_id,
+            composite: None,
         })
     }
 
@@ -468,6 +473,7 @@ impl SurrogateManager {
                     session_pool: Some(Arc::clone(first_pool)),
                     backend: InferenceBackend::CUDA,
                     device_id: config.device_ids.first().copied().unwrap_or(0),
+                    composite: None,
                 })
             }
             Err(e) => {
@@ -480,7 +486,54 @@ impl SurrogateManager {
         }
     }
 
+    /// Load a modular composite surrogate from multiple component ONNX models.
+    ///
+    /// # Arguments
+    /// * `component_configs` - Slice of tuples: (model_path, backend) for each component
+    ///
+    /// # Returns
+    /// A SurrogateManager configured with a composite surrogate that aggregates
+    /// predictions from all component models.
+    ///
+    /// # Errors
+    /// Returns an error if any component model fails to load.
+    pub fn load_modular(component_configs: &[(&str, InferenceBackend)]) -> Result<Self, String> {
+        if component_configs.is_empty() {
+            return Err("At least one component model required for modular surrogate".to_string());
+        }
+
+        let mut components = Vec::new();
+        for (model_path, backend) in component_configs {
+            let manager = match backend {
+                InferenceBackend::CPU => SurrogateManager::load_onnx(model_path)?,
+                _ => SurrogateManager::with_gpu_backend(model_path, *backend, 0)?,
+            };
+            // Use the model path's basename as the component name
+            let name = std::path::Path::new(model_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(model_path);
+            components.push(ComponentSurrogate::new(name, manager));
+        }
+
+        let composite = CompositeSurrogate::new(components);
+        Ok(SurrogateManager {
+            model_loaded: true,
+            model_path: None,
+            session_pool: None,
+            backend: InferenceBackend::CPU,
+            device_id: 0,
+            composite: Some(composite),
+        })
+    }
+
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
+        // If modular composite is enabled, delegate to it
+        if let Some(ref comp) = self.composite {
+            return comp.predict_loads(current_temps);
+        }
+
+        // Legacy single-model path
         if !self.model_loaded {
             return vec![1.2; current_temps.len()];
         }
@@ -533,6 +586,15 @@ impl SurrogateManager {
     }
 
     pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        // If modular composite is enabled, delegate to it
+        if let Some(ref comp) = self.composite {
+            return batch_temps
+                .iter()
+                .map(|temps| comp.predict_loads(temps))
+                .collect();
+        }
+
+        // Legacy single-model path
         if !self.model_loaded || batch_temps.is_empty() {
             return batch_temps.iter().map(|t| vec![1.2; t.len()]).collect();
         }

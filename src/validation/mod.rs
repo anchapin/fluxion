@@ -8,6 +8,7 @@ pub mod diagnostic;
 pub mod diagnostics;
 pub mod export;
 pub mod fdd;
+pub mod guardrails;
 pub mod physics_validator;
 pub mod report;
 pub mod reporter;

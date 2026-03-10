@@ -5,9 +5,14 @@
 //! and multiple export formats (Markdown, HTML, CSV).
 
 use serde::{Deserialize, Serialize};
+use serde_json;
 use std::collections::HashMap;
 use std::fmt;
+use std::fs;
+use std::path::Path;
 use std::time::Instant;
+use chrono::Utc;
+use std::env;
 
 /// Types of validation metrics for ASHRAE 140.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -819,6 +824,90 @@ impl BenchmarkReport {
         println!("  Mean Absolute Error: {:.2}%", self.mae());
         println!("  Max Deviation: {:.2}%", self.max_deviation());
     }
+
+    /// Appends the report's metrics to the historical performance log.
+    ///
+    /// This method serializes key metrics (timestamp, MAE, max deviation, pass rate,
+    /// duration, throughput) to `target/performance_history.jsonl` as a JSON line.
+    /// It also attempts to include the git SHA if available from environment variables.
+    /// I/O errors are handled gracefully with a warning printed to stderr.
+    pub fn append_history(&self) {
+        use std::fs::OpenOptions;
+        use std::io::Write;
+
+        // Collect metrics
+        let timestamp = Utc::now().to_rfc3339();
+        let mae = self.mae();
+        let max_deviation = self.max_deviation();
+        let pass_rate = self.pass_rate();
+        let validation_time_seconds = self.duration_seconds();
+        let throughput = self.cases_per_second();
+
+        // Get git SHA from common CI environment variables
+        let git_sha = env::var("GIT_SHA")
+            .or_else(|_| env::var("GITHUB_SHA"))
+            .or_else(|_| env::var("CI_COMMIT_SHA"))
+            .ok()
+            .map(String::from);
+
+        // Construct JSON object
+        #[derive(serde::Serialize)]
+        struct HistoryEntry {
+            timestamp: String,
+            mae: f64,
+            max_deviation: f64,
+            pass_rate: f64,
+            validation_time_seconds: f64,
+            throughput: f64,
+            git_sha: Option<String>,
+        }
+
+        let entry = HistoryEntry {
+            timestamp,
+            mae,
+            max_deviation,
+            pass_rate,
+            validation_time_seconds,
+            throughput,
+            git_sha,
+        };
+
+        // Determine file path (target/performance_history.jsonl)
+        let file_path = Path::new("target").join("performance_history.jsonl");
+
+        // Create target directory if it doesn't exist
+        if let Some(parent) = file_path.parent() {
+            if let Err(e) = fs::create_dir_all(parent) {
+                eprintln!("Warning: Failed to create target directory: {}", e);
+                return;
+            }
+        }
+
+        // Append JSON line to file
+        let json_line = match serde_json::to_string(&entry) {
+            Ok(line) => line,
+            Err(e) => {
+                eprintln!("Warning: Failed to serialize history entry: {}", e);
+                return;
+            }
+        };
+
+        let mut file = match OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)
+        {
+            Ok(file) => file,
+            Err(e) => {
+                eprintln!("Warning: Failed to open performance history file for appending: {}", e);
+                return;
+            }
+        };
+
+        if let Err(e) = writeln!(file, "{}", json_line) {
+            eprintln!("Warning: Failed to write to performance history: {}", e);
+        }
+    }
 }
 
 /// A collection of validation results for multiple cases.
@@ -1622,5 +1711,64 @@ mod tests {
         assert!(suite.is_empty());
         assert_eq!(suite.calculate_pass_rate(), 100.0); // Empty suite defaults to 100%
         assert_eq!(suite.calculate_mae(), 0.0);
+    }
+
+    #[test]
+    fn test_append_history() {
+        use tempfile::tempdir;
+        use std::fs;
+        use std::thread::sleep;
+        use std::time::Duration;
+
+        // Create a report with some results
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_benchmark_data("600", BenchmarkData {
+            annual_heating_min: 4.30,
+            annual_heating_max: 5.71,
+            ..Default::default()
+        });
+
+        // Simulate validation timing
+        report.set_start();
+        sleep(Duration::from_millis(10));
+        report.set_end();
+
+        // Setup temporary directory guard to isolate file operations
+        struct DirGuard(PathBuf);
+        impl Drop for DirGuard {
+            fn drop(&mut self) {
+                // Restore original directory on drop, panic-safe
+                let _ = std::env::set_current_dir(&self.0);
+            }
+        }
+
+        let original_dir = std::env::current_dir().unwrap();
+        let temp_dir = tempdir().unwrap();
+        let _guard = DirGuard(original_dir.clone());
+        std::env::set_current_dir(temp_dir.path()).unwrap();
+
+        // Call append_history
+        report.append_history();
+
+        // Verify file creation
+        let log_path = temp_dir.path().join("target").join("performance_history.jsonl");
+        assert!(log_path.exists(), "Performance history file should exist");
+
+        // Read and verify content
+        let content = fs::read_to_string(&log_path).expect("Should read log file");
+        let mut valid_lines = 0;
+        for line in content.lines().filter(|l| !l.trim().is_empty()) {
+            let json: serde_json::Value = serde_json::from_str(line).expect("Valid JSON line");
+            assert!(json.get("timestamp").is_some());
+            assert!(json.get("mae").is_some());
+            assert!(json.get("max_deviation").is_some());
+            assert!(json.get("pass_rate").is_some());
+            assert!(json.get("validation_time_seconds").is_some());
+            assert!(json.get("throughput").is_some());
+            assert!(json.get("git_sha").is_some());
+            valid_lines += 1;
+        }
+        assert_eq!(valid_lines, 1);
     }
 }

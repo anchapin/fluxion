@@ -7,7 +7,7 @@ use crate::validation::diagnostic::{
     HourlyData, PeakTiming, TemperatureProfile,
 };
 use crate::validation::diagnostics::SimulationDiagnostics;
-use crate::validation::report::{BenchmarkReport, BenchmarkData, MetricType};
+use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 
@@ -705,7 +705,9 @@ impl ASHRAE140Validator {
                 let case_id = case.number();
                 let data_opt = benchmark_data.get(&case_id).cloned();
                 let is_free_floating = case.spec().is_free_floating();
-                let results = data_opt.as_ref().map(|_| self.simulate_case(&case.spec(), &weather));
+                let results = data_opt
+                    .as_ref()
+                    .map(|_| self.simulate_case(&case.spec(), &weather));
                 CasePartial {
                     case_id,
                     data: data_opt,
@@ -1175,6 +1177,7 @@ impl ASHRAE140Validator {
     }
 }
 
+#[derive(Debug)]
 struct CaseResults {
     annual_heating_mwh: f64,
     annual_cooling_mwh: f64,
@@ -1669,11 +1672,11 @@ pub fn validate_case_with_diagnostics(
     let validator = ASHRAE140Validator::new();
     let spec = case.spec();
     let case_id = case.number().to_string();
-    
+
     // Create model
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     model.reset_peak_power();
-    
+
     // Handle free-floating cases
     if spec.is_free_floating() {
         model.heating_setpoint = -999.0;
@@ -1681,15 +1684,15 @@ pub fn validate_case_with_diagnostics(
         model.hvac_heating_capacity = 0.0;
         model.hvac_cooling_capacity = 0.0;
     }
-    
+
     // Attach diagnostics if requested
     if collect_diags {
         let mut diag = SimulationDiagnostics::new(spec.num_zones, 8760);
         model.set_diagnostics(Some(diag));
     }
-    
+
     let weather = DenverTmyWeather::new();
-    
+
     // Simulation state
     let mut annual_heating_joules = 0.0;
     let mut annual_cooling_joules = 0.0;
@@ -1697,21 +1700,21 @@ pub fn validate_case_with_diagnostics(
     let mut peak_cooling_watts: f64 = 0.0;
     let mut min_temp_celsius = f64::INFINITY;
     let mut max_temp_celsius = f64::NEG_INFINITY;
-    
+
     // Run simulation for 8760 hours
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.set_weather(weather_data.clone());
-        
+
         // Apply dynamic setpoints
         if let Some(hvac_schedule) = spec.hvac.first() {
             model.heating_setpoint = hvac_schedule.heating_setpoint;
             model.cooling_setpoint = hvac_schedule.cooling_setpoint;
         }
-        
+
         // Step physics (includes diagnostics recording if enabled)
         let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-        
+
         // Energy tracking (kWh to Joules)
         if hvac_kwh > 0.0 {
             annual_heating_joules += hvac_kwh * 3.6e6;
@@ -1720,7 +1723,7 @@ pub fn validate_case_with_diagnostics(
             annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
         }
-        
+
         // Free-floating temperature tracking
         if spec.is_free_floating() {
             let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
@@ -1730,67 +1733,91 @@ pub fn validate_case_with_diagnostics(
             }
         }
     }
-    
+
     let annual_heating_mwh = annual_heating_joules / 3.6e9;
     let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
     let peak_heating_kw = peak_heating_watts / 1000.0;
     let peak_cooling_kw = peak_cooling_watts / 1000.0;
-    
+
     // Retrieve diagnostics if collected
     let diagnostics = model.get_diagnostics().cloned();
-    
+
     // Load benchmark data for validation
     let benchmark_data = benchmark::get_benchmark_data(&case_id);
-    
+
     // Tolerances
     let annual_tolerance = 0.15; // ±15%
     let peak_tolerance = 0.10; // ±10%
-    
+
     // Compute validation results using validator's helper methods
-    let (heating_result, cooling_result, peak_heating_result, peak_cooling_result) = if let Some(data) = benchmark_data {
-        let heating_result = validator.validate_energy_against_reference(
-            annual_heating_mwh, 
-            data.annual_heating_min, 
-            data.annual_heating_max, 
-            annual_tolerance
-        );
-        let cooling_result = validator.validate_energy_against_reference(
-            annual_cooling_mwh, 
-            data.annual_cooling_min, 
-            data.annual_cooling_max, 
-            annual_tolerance
-        );
-        let peak_heating_result = if data.peak_heating_min >= 0.0 {
-            validator.validate_peak_load_against_reference(
-                peak_heating_kw, 
-                data.peak_heating_min, 
-                data.peak_heating_max, 
-                peak_tolerance
+    let (heating_result, cooling_result, peak_heating_result, peak_cooling_result) =
+        if let Some(data) = benchmark_data {
+            let heating_result = validator.validate_energy_against_reference(
+                annual_heating_mwh,
+                data.annual_heating_min,
+                data.annual_heating_max,
+                annual_tolerance,
+            );
+            let cooling_result = validator.validate_energy_against_reference(
+                annual_cooling_mwh,
+                data.annual_cooling_min,
+                data.annual_cooling_max,
+                annual_tolerance,
+            );
+            let peak_heating_result = if data.peak_heating_min >= 0.0 {
+                validator.validate_peak_load_against_reference(
+                    peak_heating_kw,
+                    data.peak_heating_min,
+                    data.peak_heating_max,
+                    peak_tolerance,
+                )
+            } else {
+                ValidationResult {
+                    in_range: false,
+                    error_pct: 0.0,
+                }
+            };
+            let peak_cooling_result = if data.peak_cooling_min >= 0.0 {
+                validator.validate_peak_load_against_reference(
+                    peak_cooling_kw,
+                    data.peak_cooling_min,
+                    data.peak_cooling_max,
+                    peak_tolerance,
+                )
+            } else {
+                ValidationResult {
+                    in_range: false,
+                    error_pct: 0.0,
+                }
+            };
+            (
+                heating_result,
+                cooling_result,
+                peak_heating_result,
+                peak_cooling_result,
             )
         } else {
-            ValidationResult { in_range: false, error_pct: 0.0 }
-        };
-        let peak_cooling_result = if data.peak_cooling_min >= 0.0 {
-            validator.validate_peak_load_against_reference(
-                peak_cooling_kw, 
-                data.peak_cooling_min, 
-                data.peak_cooling_max, 
-                peak_tolerance
+            // No reference data available
+            (
+                ValidationResult {
+                    in_range: false,
+                    error_pct: 0.0,
+                },
+                ValidationResult {
+                    in_range: false,
+                    error_pct: 0.0,
+                },
+                ValidationResult {
+                    in_range: false,
+                    error_pct: 0.0,
+                },
+                ValidationResult {
+                    in_range: false,
+                    error_pct: 0.0,
+                },
             )
-        } else {
-            ValidationResult { in_range: false, error_pct: 0.0 }
         };
-        (heating_result, cooling_result, peak_heating_result, peak_cooling_result)
-    } else {
-        // No reference data available
-        (
-            ValidationResult { in_range: false, error_pct: 0.0 },
-            ValidationResult { in_range: false, error_pct: 0.0 },
-            ValidationResult { in_range: false, error_pct: 0.0 },
-            ValidationResult { in_range: false, error_pct: 0.0 },
-        )
-    };
-    
+
     let report = ValidationReport {
         case_id,
         description: case.description().to_string(),
@@ -1803,6 +1830,6 @@ pub fn validate_case_with_diagnostics(
         peak_heating_result,
         peak_cooling_result,
     };
-    
+
     (report, diagnostics)
 }

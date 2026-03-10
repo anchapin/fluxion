@@ -1,8 +1,10 @@
 //! Test infrastructure for BenchmarkReport performance metrics and aggregation.
 //! This test validates Phase 6 verification requirements for BenchmarkReport.
 
-use fluxion::validation::report::{BenchmarkReport, MetricType, ValidationResult, ValidationStatus};
 use fluxion::validation::benchmark::{get_all_benchmark_data, get_benchmark_data};
+use fluxion::validation::report::{
+    BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
+};
 
 #[test]
 fn test_benchmark_report_with_real_data() {

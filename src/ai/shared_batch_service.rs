@@ -6,7 +6,9 @@
 //! back to requesters via oneshot channels.
 
 use std::sync::mpsc::{self, Receiver, Sender, RecvTimeoutError};
+use std::sync::Arc;
 use std::thread;
+use std::thread::JoinHandle;
 use std::time::Duration;
 use crate::ai::surrogate::SurrogateManager;
 
@@ -47,7 +49,7 @@ pub struct SharedBatchInferenceService {
 
 struct Inner {
     sender: Sender<InferenceRequest>,
-    _thread: JoinHandle<()>,
+    _thread: Option<JoinHandle<()>>,
 }
 
 impl SharedBatchInferenceService {
@@ -57,7 +59,7 @@ impl SharedBatchInferenceService {
         let sender = tx.clone(); // keep a sender for submissions
         let thread = thread::spawn(move || Self::run_worker(rx, surrogate, config));
         Self {
-            inner: Arc::new(Inner { sender, _thread: thread }),
+            inner: Arc::new(Inner { sender, _thread: Some(thread) }),
         }
     }
 
@@ -114,7 +116,7 @@ impl SharedBatchInferenceService {
             let outputs = surrogate.predict_loads_batched(&inputs);
 
             // Send results back to requesters.
-            for (tx, out)) in senders.into_iter().zip(outputs.into_iter()) {
+            for (tx, out) in senders.into_iter().zip(outputs.into_iter()) {
                 // Ignore errors: if receiver dropped, that's okay.
                 let _ = tx.send(out);
             }
@@ -125,7 +127,9 @@ impl SharedBatchInferenceService {
 impl Drop for Inner {
     fn drop(&mut self) {
         // Attempt to join the worker thread. It should have exited due to channel disconnect.
-        let _ = self._thread.join();
+        if let Some(thread) = self._thread.take() {
+            let _ = thread.join();
+        }
     }
 }
 
