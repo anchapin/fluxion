@@ -340,7 +340,7 @@ fn test_case_960_hvac_only_in_back_zone() {
 #[test]
 fn test_case_960_comprehensive_energy_validation() {
     // Comprehensive validation of Case 960 energy metrics against ASHRAE 140 reference ranges
-    let result = validate_case_960_energy();
+    let result = validate_case_960();
 
     println!("\n=== ASHRAE 140 Case 960 Comprehensive Validation ===");
     println!("Annual Heating: {:.2} MWh", result.annual_heating_mwh);
