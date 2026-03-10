@@ -14,29 +14,27 @@
 //!  semi-implicit (Crank-Nicolson) integration, which are unconditionally stable
 //!  for stiff systems."
 
-use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::sim::thermal_integration::{
-    backward_euler_update,
-    crank_nicolson_update,
-    explicit_euler_update,
+    backward_euler_update, crank_nicolson_update, explicit_euler_update,
 };
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// Thermal capacitance test cases for parameterized testing
 #[derive(Debug, Clone, Copy)]
 struct ThermalCapacitanceConfig {
-    cm: f64,           // Thermal capacitance (J/K)
-    h_tr_em: f64,      // Exterior-to-mass conductance (W/K)
-    h_tr_ms: f64,      // Mass-to-surface conductance (W/K)
-    t_ext: f64,        // Exterior temperature (°C)
-    t_surface: f64,    // Surface temperature (°C)
-    phi_m: f64,        // Gains to mass (W)
+    cm: f64,        // Thermal capacitance (J/K)
+    h_tr_em: f64,   // Exterior-to-mass conductance (W/K)
+    h_tr_ms: f64,   // Mass-to-surface conductance (W/K)
+    t_ext: f64,     // Exterior temperature (°C)
+    t_surface: f64, // Surface temperature (°C)
+    phi_m: f64,     // Gains to mass (W)
 }
 
 /// Low thermal capacitance configuration (stable with explicit Euler)
 /// Cm must be > dt * (h_tr_em + h_tr_ms) for stability
 /// dt = 3600s, so Cm > 3600 * 150 = 540,000 J/K
 const LOW_MASS_CONFIG: ThermalCapacitanceConfig = ThermalCapacitanceConfig {
-    cm: 1_000_000.0,     // 1,000 kJ/K - low mass building
+    cm: 1_000_000.0, // 1,000 kJ/K - low mass building
     h_tr_em: 50.0,
     h_tr_ms: 100.0,
     t_ext: -10.0,
@@ -46,7 +44,7 @@ const LOW_MASS_CONFIG: ThermalCapacitanceConfig = ThermalCapacitanceConfig {
 
 /// Medium thermal capacitance configuration (boundary case)
 const MEDIUM_MASS_CONFIG: ThermalCapacitanceConfig = ThermalCapacitanceConfig {
-    cm: 5_000_000.0,     // 5,000 kJ/K - medium mass building
+    cm: 5_000_000.0, // 5,000 kJ/K - medium mass building
     h_tr_em: 50.0,
     h_tr_ms: 100.0,
     t_ext: -10.0,
@@ -57,7 +55,7 @@ const MEDIUM_MASS_CONFIG: ThermalCapacitanceConfig = ThermalCapacitanceConfig {
 /// High thermal capacitance configuration (explicit Euler unstable)
 /// For very high Cm, explicit Euler becomes unstable with dt=3600s
 const HIGH_MASS_CONFIG: ThermalCapacitanceConfig = ThermalCapacitanceConfig {
-    cm: 20_000_000.0,    // 20,000 kJ/K - high mass building (similar to Case 900)
+    cm: 20_000_000.0, // 20,000 kJ/K - high mass building (similar to Case 900)
     h_tr_em: 50.0,
     h_tr_ms: 100.0,
     t_ext: -10.0,
@@ -76,9 +74,7 @@ fn explicit_euler_stable(config: &ThermalCapacitanceConfig) -> bool {
 /// Calculate net heat flux to mass (W)
 /// Q_net = h_tr_em * (T_ext - Tm) + h_tr_ms * (T_surface - Tm) + phi_m
 fn calculate_heat_flux(tm: f64, config: &ThermalCapacitanceConfig) -> f64 {
-    config.h_tr_em * (config.t_ext - tm)
-        + config.h_tr_ms * (config.t_surface - tm)
-        + config.phi_m
+    config.h_tr_em * (config.t_ext - tm) + config.h_tr_ms * (config.t_surface - tm) + config.phi_m
 }
 
 /// Explicit Euler integration (current implementation - will fail for high Cm)
@@ -129,7 +125,6 @@ fn crank_nicolson_step(tm_old: f64, config: &ThermalCapacitanceConfig) -> f64 {
     )
 }
 
-
 /// Check if temperature change is physically reasonable
 /// Prevents oscillations, divergence, or unrealistic jumps
 fn temperature_is_reasonable(tm_old: f64, tm_new: f64) -> bool {
@@ -142,7 +137,7 @@ fn temperature_is_reasonable(tm_old: f64, tm_new: f64) -> bool {
     // No NaN or infinite values
         && tm_new.is_finite()
         && tm_new > -50.0   // Below absolute zero
-        && tm_new < 100.0   // Above boiling point
+        && tm_new < 100.0 // Above boiling point
 }
 
 #[test]
@@ -166,7 +161,10 @@ fn test_explicit_euler_stable_for_low_thermal_capacitance() {
         );
     }
 
-    println!("✅ Test 1 PASSED: Explicit Euler stable for low thermal capacitance (Cm={})", config.cm);
+    println!(
+        "✅ Test 1 PASSED: Explicit Euler stable for low thermal capacitance (Cm={})",
+        config.cm
+    );
 }
 
 #[test]
@@ -230,7 +228,10 @@ fn test_backward_euler_numerically_stable_for_high_thermal_capacitance() {
         );
     }
 
-    println!("✅ Test 3 PASSED: Backward Euler numerically stable for high thermal capacitance (Cm={})", config.cm);
+    println!(
+        "✅ Test 3 PASSED: Backward Euler numerically stable for high thermal capacitance (Cm={})",
+        config.cm
+    );
 }
 
 #[test]
@@ -239,7 +240,7 @@ fn test_backward_euler_correct_temperature_updates() {
     // Use a simple test case where we can calculate expected result analytically
 
     let config = MEDIUM_MASS_CONFIG;
-    let tolerance = 0.1;  // ±0.1°C tolerance
+    let tolerance = 0.1; // ±0.1°C tolerance
 
     // Step through 10 timesteps and verify temperature evolution
     let mut tm = 20.0;
@@ -277,14 +278,20 @@ fn test_crank_nicolson_second_order_accuracy() {
     let mut tm_cn = tm_initial;
     for _ in 0..100 {
         tm_cn = crank_nicolson_step(tm_cn, &config);
-        assert!(temperature_is_reasonable(tm_initial, tm_cn), "Crank-Nicolson should produce reasonable temperatures");
+        assert!(
+            temperature_is_reasonable(tm_initial, tm_cn),
+            "Crank-Nicolson should produce reasonable temperatures"
+        );
     }
 
     // Run simulation with Backward Euler for comparison
     let mut tm_be = tm_initial;
     for _ in 0..100 {
         tm_be = backward_euler_step(tm_be, &config);
-        assert!(temperature_is_reasonable(tm_initial, tm_be), "Backward Euler should produce reasonable temperatures");
+        assert!(
+            temperature_is_reasonable(tm_initial, tm_be),
+            "Backward Euler should produce reasonable temperatures"
+        );
     }
 
     // Crank-Nicolson should be more accurate (smaller error)
@@ -333,7 +340,7 @@ fn test_integration_methods_preserve_energy_balance() {
         if step % 1000 == 0 {
             let avg_drift_per_step = energy_drift_be / step as f64;
             assert!(
-                avg_drift_per_step < 1.0,  // < 1 J drift per step
+                avg_drift_per_step < 1.0, // < 1 J drift per step
                 "Energy drift too high at step {}: {:.6} J/step",
                 step,
                 avg_drift_per_step
@@ -421,7 +428,9 @@ fn test_integration_methods_handle_heat_flux_sign() {
         );
     }
 
-    println!("✅ Test 7 PASSED: Integration methods correctly handle heat flux sign (heating/cooling)");
+    println!(
+        "✅ Test 7 PASSED: Integration methods correctly handle heat flux sign (heating/cooling)"
+    );
 }
 
 #[test]
@@ -454,7 +463,7 @@ fn test_case_900_thermal_mass_requirements() {
 
     // Case 900 should have high thermal capacitance (>500 J/K)
     assert!(
-        total_cm > 500_000.0,  // 500 kJ/K
+        total_cm > 500_000.0, // 500 kJ/K
         "Case 900 should have high thermal capacitance (>500 kJ/K), got {:.2} kJ/K",
         total_cm / 1000.0
     );
@@ -467,7 +476,7 @@ fn test_case_900_thermal_mass_requirements() {
     // However, even when stable, explicit Euler may still produce oscillatory
     // or inaccurate results for such stiff systems
 
-    let h_tr_em = 50.0;  // Typical exterior-to-mass conductance
+    let h_tr_em = 50.0; // Typical exterior-to-mass conductance
     let h_tr_ms = 100.0; // Typical mass-to-surface conductance
     let stability_limit = total_cm / (h_tr_em + h_tr_ms);
 
@@ -483,7 +492,10 @@ fn test_case_900_thermal_mass_requirements() {
     println!("(Backward Euler, Crank-Nicolson) provide better accuracy for");
     println!("high-mass buildings by evaluating heat flux at the new state.");
 
-    println!("\n✅ Case 900 has extremely high thermal capacitance ({:.2} kJ/K)", total_cm / 1000.0);
+    println!(
+        "\n✅ Case 900 has extremely high thermal capacitance ({:.2} kJ/K)",
+        total_cm / 1000.0
+    );
     println!("   Requires implicit integration methods for accurate thermal mass dynamics");
 }
 

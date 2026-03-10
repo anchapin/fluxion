@@ -4,9 +4,9 @@
 //! energy balance, including beam-to-mass distribution and proper application to internal
 //! heat source terms.
 
+use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::physics::cta::VectorField;
 
 /// Test that solar gains are non-zero during daytime hours.
 ///
@@ -23,16 +23,19 @@ fn test_solar_gains_non_zero_daytime() {
     // For now, we'll test the solar gain calculation directly
     // After integration, this should use the thermal model's solar_gains field
     let solar_gains_watts = VectorField::new(vec![
-        0.0, 0.0, 0.0, 0.0, 0.0, 0.0,   // 0-5: Night
-        100.0, 300.0, 500.0, 700.0, 800.0, 850.0,  // 6-11: Morning to noon
-        820.0, 750.0, 650.0, 500.0, 350.0, 150.0,  // 12-17: Afternoon
-        50.0, 0.0, 0.0, 0.0, 0.0, 0.0,   // 18-23: Evening/night
+        0.0, 0.0, 0.0, 0.0, 0.0, 0.0, // 0-5: Night
+        100.0, 300.0, 500.0, 700.0, 800.0, 850.0, // 6-11: Morning to noon
+        820.0, 750.0, 650.0, 500.0, 350.0, 150.0, // 12-17: Afternoon
+        50.0, 0.0, 0.0, 0.0, 0.0, 0.0, // 18-23: Evening/night
     ]);
 
     // Check that solar gains are non-zero during daytime hours (6 AM to 6 PM)
     let daytime_gains: Vec<f64> = solar_gains_watts.iter().skip(6).take(12).cloned().collect();
     let has_non_zero = daytime_gains.iter().any(|&g| g > 0.0);
-    assert!(has_non_zero, "Solar gains should be non-zero during daytime hours");
+    assert!(
+        has_non_zero,
+        "Solar gains should be non-zero during daytime hours"
+    );
 }
 
 /// Test that solar gains are added to phi_i internal heat source.
@@ -51,7 +54,10 @@ fn test_solar_gains_added_to_phi_i() {
     let phi_i_solar = solar_gains_watts.clone() / zone_area.clone();
 
     // Verify that phi_i_solar is non-zero during daytime
-    let max_solar_flux = phi_i_solar.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+    let max_solar_flux = phi_i_solar
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
     assert!(max_solar_flux > 0.0, "Solar flux should be positive");
 
     // Verify that phi_i_internal exists and can be added to solar
@@ -59,9 +65,18 @@ fn test_solar_gains_added_to_phi_i() {
     let phi_i_total = phi_i_internal.clone() + phi_i_solar;
 
     // Check that total is greater than internal alone (when solar is present)
-    let max_internal = phi_i_internal.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    let max_total = phi_i_total.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    assert!(max_total >= max_internal, "Total heat source should include solar contribution");
+    let max_internal = phi_i_internal
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let max_total = phi_i_total
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        max_total >= max_internal,
+        "Total heat source should include solar contribution"
+    );
 }
 
 /// Test beam-to-mass distribution logic.
@@ -131,8 +146,8 @@ fn test_energy_balance_includes_solar() {
 
     // Energy balance with solar contribution
     // This follows the 5R1C thermal network energy balance equation
-    let phi_i = (phi_i_total + phi_si + phi_mi + phi_m_int_solar) * t_a.clone()
-        + phi_m_env_solar * t_m;
+    let phi_i =
+        (phi_i_total + phi_si + phi_mi + phi_m_int_solar) * t_a.clone() + phi_m_env_solar * t_m;
 
     // Verify calculation: (100+50+30+20) * 25 + 10 * 23 = 200 * 25 + 230 = 5000 + 230 = 5230
     let expected: f64 = (100.0 + 50.0 + 30.0 + 20.0) * 25.0 + 10.0 * 23.0;

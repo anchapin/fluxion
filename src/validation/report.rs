@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::time::Instant;
 
 /// Types of validation metrics for ASHRAE 140.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -350,6 +351,12 @@ pub struct BenchmarkReport {
     pub results: Vec<ValidationResult>,
     /// Benchmark data for each case
     pub benchmark_data: HashMap<String, BenchmarkData>,
+    /// Start time for performance measurement (not serialized)
+    #[serde(skip)]
+    pub start_time: Option<Instant>,
+    /// End time for performance measurement (not serialized)
+    #[serde(skip)]
+    pub end_time: Option<Instant>,
 }
 
 impl BenchmarkReport {
@@ -458,6 +465,34 @@ impl BenchmarkReport {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         sorted.into_iter().take(top_n).collect()
+    }
+
+    /// Sets the start time for performance measurement.
+    pub fn set_start(&mut self) {
+        self.start_time = Some(Instant::now());
+    }
+
+    /// Sets the end time for performance measurement.
+    pub fn set_end(&mut self) {
+        self.end_time = Some(Instant::now());
+    }
+
+    /// Returns the duration of the validation in seconds.
+    pub fn duration_seconds(&self) -> f64 {
+        match (self.start_time, self.end_time) {
+            (Some(start), Some(end)) => end.duration_since(start).as_secs_f64(),
+            _ => 0.0,
+        }
+    }
+
+    /// Returns the number of cases validated per second.
+    pub fn cases_per_second(&self) -> f64 {
+        let duration = self.duration_seconds();
+        if duration > 0.0 {
+            self.benchmark_data.len() as f64 / duration
+        } else {
+            0.0
+        }
     }
 
     /// Generates a Markdown report.

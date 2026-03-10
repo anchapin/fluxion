@@ -17,8 +17,10 @@ fn test_solution2_annual_energy_correction() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Verify correction factor is set
-    assert_eq!(model.time_constant_sensitivity_correction, 1.00,
-               "Time constant sensitivity correction should be 1.00 (no correction) for baseline test");
+    assert_eq!(
+        model.time_constant_sensitivity_correction, 1.00,
+        "Time constant sensitivity correction should be 1.00 (no correction) for baseline test"
+    );
 
     // Run 1-year simulation with real weather data
     let weather = DenverTmyWeather::new();
@@ -37,30 +39,42 @@ fn test_solution2_annual_energy_correction() {
     println!("\nAnnual Energy Results:");
     println!("  Total Energy: {:.2} MWh", energy_mwh);
     println!("  Reference Range: [3.30, 5.71] MWh (heating + cooling total)");
-    println!("  Status: {}",
+    println!(
+        "  Status: {}",
         if energy_mwh >= 3.30 && energy_mwh <= 5.71 {
             "✓ WITHIN REFERENCE RANGE"
         } else {
             "✗ Outside reference range"
-        });
+        }
+    );
 
     // Peak loads should remain in range (no correction applied to peak tracking)
     println!("\nPeak Loads:");
-    println!("  Peak Heating: {:.2} kW", model.peak_power_heating / 1000.0);
+    println!(
+        "  Peak Heating: {:.2} kW",
+        model.peak_power_heating / 1000.0
+    );
     println!("  Reference: [1.10, 2.10] kW");
-    println!("  Peak Cooling: {:.2} kW", model.peak_power_cooling / 1000.0);
+    println!(
+        "  Peak Cooling: {:.2} kW",
+        model.peak_power_cooling / 1000.0
+    );
     println!("  Reference: [2.10, 3.50] kW");
 
     // Verify peak loads are in range
-    assert!(model.peak_power_heating >= 1100.0 && model.peak_power_heating <= 2100.0,
-            "Peak heating should be in [1.10, 2.10] kW, got {:.2} kW",
-            model.peak_power_heating / 1000.0);
+    assert!(
+        model.peak_power_heating >= 1100.0 && model.peak_power_heating <= 2100.0,
+        "Peak heating should be in [1.10, 2.10] kW, got {:.2} kW",
+        model.peak_power_heating / 1000.0
+    );
     // Peak cooling may be slightly outside range due to correction factor tuning
     // Current: 3.57 kW (within 2% of upper bound 3.50 kW)
     let peak_cooling_kw = model.peak_power_cooling / 1000.0;
-    assert!(peak_cooling_kw >= 2.10 && peak_cooling_kw <= 3.70,
-            "Peak cooling should be in [2.10, 3.70] kW (slightly relaxed), got {:.2} kW",
-            peak_cooling_kw);
+    assert!(
+        peak_cooling_kw >= 2.10 && peak_cooling_kw <= 3.70,
+        "Peak cooling should be in [2.10, 3.70] kW (slightly relaxed), got {:.2} kW",
+        peak_cooling_kw
+    );
 
     println!("\n✓ Peak loads within reference range");
 

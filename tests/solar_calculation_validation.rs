@@ -20,11 +20,7 @@ fn calculate_variance(values: &[f64]) -> f64 {
     }
 
     let mean = values.iter().sum::<f64>() / values.len() as f64;
-    let variance = values
-        .iter()
-        .map(|&x| (x - mean).powi(2))
-        .sum::<f64>()
-        / values.len() as f64;
+    let variance = values.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / values.len() as f64;
 
     variance
 }
@@ -53,12 +49,12 @@ fn test_hourly_solar_irradiance_for_orientations() {
         // Sample irradiance for noon on summer solstice
         let irradiance = calculate_surface_irradiance(
             &sun_pos,
-            900.0,  // DNI
-            150.0,  // DHI
+            900.0, // DNI
+            150.0, // DHI
             None,
             *orientation,
-            0.2,  // ground reflectance
-            172,   // day of year
+            0.2, // ground reflectance
+            172, // day of year
         );
 
         irradiance_values.push(irradiance.total_wm2);
@@ -99,7 +95,11 @@ fn test_window_shgc_ashrae_140_cases() {
         let spec = case.spec();
 
         // Verify that each case has windows defined
-        assert!(!spec.windows.is_empty(), "{} should have windows", spec.case_id);
+        assert!(
+            !spec.windows.is_empty(),
+            "{} should have windows",
+            spec.case_id
+        );
 
         // Verify window properties are reasonable
         let window_spec = &spec.window_properties;
@@ -160,8 +160,8 @@ fn test_shgc_applied_in_solar_gains() {
     // High irradiance at noon
     let irradiance = calculate_surface_irradiance(
         &sun_pos,
-        900.0,  // DNI
-        150.0,  // DHI
+        900.0, // DNI
+        150.0, // DHI
         None,
         Orientation::South,
         0.2,
@@ -345,8 +345,5 @@ fn test_solar_gain_at_night() {
         irradiance.total_wm2, 0.0,
         "Solar irradiance should be zero at night"
     );
-    assert_eq!(
-        gain.total_gain_w, 0.0,
-        "Solar gain should be zero at night"
-    );
+    assert_eq!(gain.total_gain_w, 0.0, "Solar gain should be zero at night");
 }

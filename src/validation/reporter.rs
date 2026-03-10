@@ -92,6 +92,15 @@ impl ValidationReportGenerator {
         ));
         output.push('\n');
 
+        // Performance Summary
+        output.push_str("## Performance Summary\n\n");
+        output.push_str("| Metric | Value |\n");
+        output.push_str("|--------|-------|\n");
+        output.push_str(&format!("| Total Validation Duration | {:.2} seconds |\n", report.duration_seconds()));
+        output.push_str(&format!("| Throughput | {:.2} cases/sec |\n", report.cases_per_second()));
+        output.push_str(&format!("| Total Cases | {} |\n", report.benchmark_data.len()));
+        output.push('\n');
+
         // Detailed Results Table - grouped by case type
         output.push_str("## Detailed Results\n\n");
 

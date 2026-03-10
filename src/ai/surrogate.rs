@@ -402,6 +402,31 @@ impl SurrogateManager {
         })
     }
 
+    /// Detects if GPU acceleration is available and enabled.
+    ///
+    /// Returns true if all of the following are satisfied:
+    /// - Compiled with the "cuda" feature
+    /// - Backend is set to InferenceBackend::CUDA
+    /// - FLUXION_GPU environment variable is not set to "0" or "false"
+    ///
+    /// The environment variable allows users to override GPU usage even when available.
+    pub fn gpu_supported(&self) -> bool {
+        #[cfg(feature = "cuda")]
+        {
+            if !matches!(self.backend, InferenceBackend::CUDA) {
+                return false;
+            }
+            match std::env::var("FLUXION_GPU").as_deref() {
+                Ok("0") | Ok("false") | Ok("") => false,
+                _ => true,
+            }
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            false
+        }
+    }
+
     pub fn load_onnx(path: &str) -> Result<Self, String> {
         Self::with_gpu_backend(path, InferenceBackend::CPU, 0)
     }

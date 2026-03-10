@@ -34,7 +34,10 @@ fn test_case_900_thermal_mass_time_constant_analysis() {
     let time_constant_hours = thermal_capacitance_j_k / (total_mass_conductance * 3600.0); // Convert W to J/h
 
     println!("Thermal Mass Parameters:");
-    println!("  Thermal capacitance (C): {:.2} J/K", thermal_capacitance_j_k);
+    println!(
+        "  Thermal capacitance (C): {:.2} J/K",
+        thermal_capacitance_j_k
+    );
     println!("  h_tr_em (exterior -> mass): {:.2} W/K", h_tr_em_w_k);
     println!("  h_tr_ms (mass -> surface): {:.2} W/K", h_tr_ms_w_k);
     println!("  h_tr_is (surface -> interior): {:.2} W/K", h_tr_is_w_k);
@@ -42,9 +45,15 @@ fn test_case_900_thermal_mass_time_constant_analysis() {
     println!("  h_ve (ventilation): {:.2} W/K", h_ve_w_k);
     println!();
     println!("Thermal Mass Time Constant:");
-    println!("  Total mass conductance: {:.2} W/K", total_mass_conductance);
+    println!(
+        "  Total mass conductance: {:.2} W/K",
+        total_mass_conductance
+    );
     println!("  Time constant (τ): {:.2} hours", time_constant_hours);
-    println!("  Time constant / timestep: {:.2}x", time_constant_hours / 1.0);
+    println!(
+        "  Time constant / timestep: {:.2}x",
+        time_constant_hours / 1.0
+    );
     println!();
 
     // Calculate sensitivity components
@@ -63,7 +72,10 @@ fn test_case_900_thermal_mass_time_constant_analysis() {
     println!("  h_ms_is_prod: {:.2} W/K", h_ms_is_prod);
     println!("  h_tr_floor: {:.2} W/K", h_tr_floor_w_k);
     println!("  derived_ground_coeff: {:.2} (W/K)²", derived_ground_coeff);
-    println!("  den (h_ms_is_prod + term_rest_1 * h_ext + ground): {:.2} (W/K)²", den);
+    println!(
+        "  den (h_ms_is_prod + term_rest_1 * h_ext + ground): {:.2} (W/K)²",
+        den
+    );
     println!("  sensitivity (term_rest_1 / den): {:.6} K/W", sensitivity);
     println!();
 
@@ -80,17 +92,26 @@ fn test_case_900_thermal_mass_time_constant_analysis() {
     println!("  Sensitivity: {:.6} K/W", sensitivity);
     println!("  HVAC demand: {:.2} W", hvac_demand_w);
     println!("  Heating capacity: 2100.0 W");
-    println!("  HVAC running at capacity: {:.1}%", (hvac_demand_w / 2100.0) * 100.0);
+    println!(
+        "  HVAC running at capacity: {:.1}%",
+        (hvac_demand_w / 2100.0) * 100.0
+    );
     println!();
 
     // Analyze the problem
     println!("=== Problem Analysis ===");
 
     if time_constant_hours > 2.0 {
-        println!("❌ Time constant too large: {:.2} hours > 2 hours", time_constant_hours);
+        println!(
+            "❌ Time constant too large: {:.2} hours > 2 hours",
+            time_constant_hours
+        );
         println!("   This causes thermal mass to dampen HVAC effectiveness");
     } else {
-        println!("✓ Time constant reasonable: {:.2} hours", time_constant_hours);
+        println!(
+            "✓ Time constant reasonable: {:.2} hours",
+            time_constant_hours
+        );
     }
 
     if sensitivity < 0.002 {

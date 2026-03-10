@@ -95,3 +95,19 @@ lto = true
 codegen-units = 1
 split-debuginfo = "packed"
 strip = true
+
+# Explicitly include Phase 6 performance optimization test targets
+[[test]]
+name = "test_parallel_validation"
+path = "tests/test_parallel_validation.rs"
+harness = true
+
+[[test]]
+name = "test_result_aggregation"
+path = "tests/test_result_aggregation.rs"
+harness = true
+
+[[test]]
+name = "test_validation_report"
+path = "tests/test_validation_report.rs"
+harness = true

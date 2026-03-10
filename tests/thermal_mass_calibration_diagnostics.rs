@@ -38,29 +38,58 @@ fn test_case_900_thermal_mass_conductance_analysis() {
     println!();
 
     // Get derived sensitivity
-    let sensitivity_avg = model.derived_sensitivity.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let sensitivity_avg = model
+        .derived_sensitivity
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.num_zones as f64;
     println!("Sensitivity Calculation:");
     println!("  Average sensitivity: {:.6} K/W", sensitivity_avg);
-    println!("  Inverse (1/sensitivity): {:.2} W/K", 1.0 / sensitivity_avg);
+    println!(
+        "  Inverse (1/sensitivity): {:.2} W/K",
+        1.0 / sensitivity_avg
+    );
     println!();
 
     // Analysis and recommendations
     println!("Analysis:");
     println!("Current State:");
     println!("  h_tr_em / h_tr_ms ratio = {:.3} (very low)", em_ms_ratio);
-    println!("  → Thermal mass is strongly coupled to interior (h_tr_ms = {:.2} W/K)", h_tr_ms_avg);
-    println!("  → Thermal mass is weakly coupled to exterior (h_tr_em = {:.2} W/K)", h_tr_em_avg);
-    println!("  → Sensitivity = {:.6} K/W (very low, causing high HVAC demand)", sensitivity_avg);
+    println!(
+        "  → Thermal mass is strongly coupled to interior (h_tr_ms = {:.2} W/K)",
+        h_tr_ms_avg
+    );
+    println!(
+        "  → Thermal mass is weakly coupled to exterior (h_tr_em = {:.2} W/K)",
+        h_tr_em_avg
+    );
+    println!(
+        "  → Sensitivity = {:.6} K/W (very low, causing high HVAC demand)",
+        sensitivity_avg
+    );
     println!();
 
     // Diagnostic hypothesis
     println!("Hypothesis:");
-    println!("The low h_tr_em / h_tr_ms ratio ({:.3}) means thermal mass releases stored energy", em_ms_ratio);
-    println!("primarily to interior (h_tr_ms = {:.2} W/K) rather than to exterior", h_tr_ms_avg);
-    println!("(h_tr_em = {:.2} W/K). This causes HVAC to work against thermal mass energy", h_tr_em_avg);
+    println!(
+        "The low h_tr_em / h_tr_ms ratio ({:.3}) means thermal mass releases stored energy",
+        em_ms_ratio
+    );
+    println!(
+        "primarily to interior (h_tr_ms = {:.2} W/K) rather than to exterior",
+        h_tr_ms_avg
+    );
+    println!(
+        "(h_tr_em = {:.2} W/K). This causes HVAC to work against thermal mass energy",
+        h_tr_em_avg
+    );
     println!("release, increasing annual energy demand.");
     println!();
-    println!("Solution: Increase h_tr_em to allow thermal mass to release more energy to exterior,");
+    println!(
+        "Solution: Increase h_tr_em to allow thermal mass to release more energy to exterior,"
+    );
     println!("reducing HVAC burden. This can be achieved by increasing the");
     println!("thermal_mass_coupling_enhancement factor beyond the current 1.15x.");
     println!();

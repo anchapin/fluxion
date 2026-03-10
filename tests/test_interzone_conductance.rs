@@ -4,7 +4,9 @@
 //! for thermal conductance between adjacent building zones.
 
 use fluxion::sim::construction::Assemblies;
-use fluxion::sim::interzone::{calculate_directional_interzone_conductance, calculate_interzone_conductance};
+use fluxion::sim::interzone::{
+    calculate_directional_interzone_conductance, calculate_interzone_conductance,
+};
 
 /// Common wall area from Case 960 specification (8m x 2.7m)
 const COMMON_WALL_AREA: f64 = 21.6; // m²
@@ -35,12 +37,17 @@ fn test_interzone_conductance_from_first_principles() {
 
     println!("Inter-zone conductance: {:.2} W/K", h_tr_iz);
     println!("Expected: {:.2} W/K", expected);
-    println!("Difference: {:.2}%", ((h_tr_iz - expected).abs() / expected) * 100.0);
+    println!(
+        "Difference: {:.2}%",
+        ((h_tr_iz - expected).abs() / expected) * 100.0
+    );
 
     assert!(
         (h_tr_iz - expected).abs() / expected * 100.0 < TOLERANCE_PCT,
         "Conductance {:.2} W/K differs from expected {:.2} W/K by more than {}%",
-        h_tr_iz, expected, TOLERANCE_PCT
+        h_tr_iz,
+        expected,
+        TOLERANCE_PCT
     );
 }
 
@@ -91,20 +98,28 @@ fn test_directional_conductance_asymmetric() {
     let expected_h_0_to_1 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_0);
     let expected_h_1_to_0 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
-    println!("h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)", h_iz_0_to_1, expected_h_0_to_1);
-    println!("h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)", h_iz_1_to_0, expected_h_1_to_0);
+    println!(
+        "h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_0_to_1, expected_h_0_to_1
+    );
+    println!(
+        "h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_1_to_0, expected_h_1_to_0
+    );
     println!("Ratio: {:.2}×", h_iz_1_to_0 / h_iz_0_to_1);
 
     assert!(
         (h_iz_0_to_1 - expected_h_0_to_1).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_0_to_1, h_iz_0_to_1
+        expected_h_0_to_1,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected_h_1_to_0).abs() < 1.0,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_1_to_0, h_iz_1_to_0
+        expected_h_1_to_0,
+        h_iz_1_to_0
     );
 
     // Verify physical meaning: insulation on zone 0 side reduces heat flow from zone 0 -> 1
@@ -144,13 +159,15 @@ fn test_directional_conductance_symmetric() {
     assert!(
         (h_iz_0_to_1 - expected).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_0_to_1
+        expected,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected).abs() < 0.5,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_1_to_0
+        expected,
+        h_iz_1_to_0
     );
 
     // Verify equality for symmetric construction
@@ -167,12 +184,8 @@ fn test_directional_conductance_no_insulation() {
     let wall = Assemblies::concrete_wall(CONCRETE_THICKNESS);
 
     // No additional insulation on either side
-    let (h_iz_0_to_1, h_iz_1_to_0) = calculate_directional_interzone_conductance(
-        COMMON_WALL_AREA,
-        &wall,
-        0.0,
-        0.0,
-    );
+    let (h_iz_0_to_1, h_iz_1_to_0) =
+        calculate_directional_interzone_conductance(COMMON_WALL_AREA, &wall, 0.0, 0.0);
 
     // Both should equal single-directional calculation
     let expected = calculate_interzone_conductance(COMMON_WALL_AREA, &wall);
@@ -180,13 +193,15 @@ fn test_directional_conductance_no_insulation() {
     assert!(
         (h_iz_0_to_1 - expected).abs() < 1.0,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_0_to_1
+        expected,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected).abs() < 1.0,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_1_to_0
+        expected,
+        h_iz_1_to_0
     );
 
     assert!(

@@ -9,7 +9,7 @@
 //! - Dual setpoint control (heating <20°C, cooling >27°C)
 //! - Free-floating mode (no HVAC when Ti_free in deadband)
 
-use fluxion::sim::engine::{IdealHVACController, HVACMode};
+use fluxion::sim::engine::{HVACMode, IdealHVACController};
 
 /// Test 1: Validate Ti_free calculation from 5R1C thermal network
 ///
@@ -98,7 +98,11 @@ fn test_heating_load_calculation_case1() {
     let power = controller.calculate_power(zone_temp, ti_free, sensitivity);
 
     // Should be positive (heating)
-    assert!(power > 0.0, "Heating power should be positive, got {}", power);
+    assert!(
+        power > 0.0,
+        "Heating power should be positive, got {}",
+        power
+    );
 
     // Check magnitude (with tolerance for deadband adjustment)
     // Target = 20.0 + 0.5 = 20.5, Ti_free = 15.0, diff = 5.5, power = 5.5 / 0.001 = 5500W
@@ -121,7 +125,11 @@ fn test_heating_load_calculation_case2() {
     let power = controller.calculate_power(zone_temp, ti_free, sensitivity);
 
     // Should be positive (heating)
-    assert!(power > 0.0, "Heating power should be positive, got {}", power);
+    assert!(
+        power > 0.0,
+        "Heating power should be positive, got {}",
+        power
+    );
 
     // Check magnitude
     // Target = 20.0 + 0.5 = 20.5, Ti_free = 18.0, diff = 2.5, power = 2.5 / 0.001 = 2500W
@@ -144,7 +152,11 @@ fn test_heating_load_calculation_case3() {
     let power = controller.calculate_power(zone_temp, ti_free, sensitivity);
 
     // Should be positive (heating)
-    assert!(power > 0.0, "Heating power should be positive, got {}", power);
+    assert!(
+        power > 0.0,
+        "Heating power should be positive, got {}",
+        power
+    );
 
     // Check magnitude
     // Target = 20.0 + 0.5 = 20.5, Ti_free = 10.0, diff = 10.5, power = 10.5 / 0.002 = 5250W
@@ -168,7 +180,11 @@ fn test_cooling_load_calculation_case1() {
     let power = controller.calculate_power(zone_temp, ti_free, sensitivity);
 
     // Should be negative (cooling)
-    assert!(power < 0.0, "Cooling power should be negative, got {}", power);
+    assert!(
+        power < 0.0,
+        "Cooling power should be negative, got {}",
+        power
+    );
 
     // Check magnitude
     // Target = 27.0 - 0.5 = 26.5, Ti_free = 30.0, diff = 3.5, power = -3.5 / 0.001 = -3500W
@@ -191,7 +207,11 @@ fn test_cooling_load_calculation_case2() {
     let power = controller.calculate_power(zone_temp, ti_free, sensitivity);
 
     // Should be negative (cooling)
-    assert!(power < 0.0, "Cooling power should be negative, got {}", power);
+    assert!(
+        power < 0.0,
+        "Cooling power should be negative, got {}",
+        power
+    );
 
     // Check magnitude
     // Target = 27.0 - 0.5 = 26.5, Ti_free = 28.0, diff = 1.5, power = -1.5 / 0.001 = -1500W
@@ -214,7 +234,11 @@ fn test_cooling_load_calculation_case3() {
     let power = controller.calculate_power(zone_temp, ti_free, sensitivity);
 
     // Should be negative (cooling)
-    assert!(power < 0.0, "Cooling power should be negative, got {}", power);
+    assert!(
+        power < 0.0,
+        "Cooling power should be negative, got {}",
+        power
+    );
 
     // Check magnitude
     // Target = 27.0 - 0.5 = 26.5, Ti_free = 35.0, diff = 8.5, power = -8.5 / 0.002 = -4250W
@@ -423,8 +447,7 @@ fn test_capacity_limits() {
     // Extreme cold - should cap at heating capacity
     let extreme_heating = controller.calculate_power(0.0, 0.0, sensitivity);
     assert_eq!(
-        extreme_heating,
-        5000.0,
+        extreme_heating, 5000.0,
         "Heating should cap at 5000W, got {}W",
         extreme_heating
     );
@@ -432,8 +455,7 @@ fn test_capacity_limits() {
     // Extreme heat - should cap at cooling capacity
     let extreme_cooling = controller.calculate_power(50.0, 50.0, sensitivity);
     assert_eq!(
-        extreme_cooling,
-        -5000.0,
+        extreme_cooling, -5000.0,
         "Cooling should cap at -5000W, got {}W",
         extreme_cooling
     );
@@ -450,7 +472,10 @@ fn test_deadband_tolerance() {
 
     // Heating threshold = 20 - 0.5 = 19.5°C
     let just_below_heating = controller.calculate_power(19.0, 19.0, sensitivity);
-    assert!(just_below_heating > 0.0, "Should heat at 19°C (< 19.5°C threshold)");
+    assert!(
+        just_below_heating > 0.0,
+        "Should heat at 19°C (< 19.5°C threshold)"
+    );
 
     let at_heating_threshold = controller.calculate_power(19.5, 19.5, sensitivity);
     assert_eq!(
@@ -466,7 +491,10 @@ fn test_deadband_tolerance() {
     );
 
     let just_above_cooling = controller.calculate_power(28.0, 28.0, sensitivity);
-    assert!(just_above_cooling < 0.0, "Should cool at 28°C (> 27.5°C threshold)");
+    assert!(
+        just_above_cooling < 0.0,
+        "Should cool at 28°C (> 27.5°C threshold)"
+    );
 }
 
 /// Test 12: Validate steady-state heating scenario

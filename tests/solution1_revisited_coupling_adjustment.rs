@@ -85,33 +85,51 @@ fn test_solution1_revisited_coupling_adjustment() {
     let option3_tau = thermal_capacitance / ((option3_h_tr_em + option3_h_tr_ms) * 3600.0);
 
     println!("Baseline (current):");
-    println!("  Total mass conductance: {:.2} W/K", baseline_h_tr_em + baseline_h_tr_ms);
+    println!(
+        "  Total mass conductance: {:.2} W/K",
+        baseline_h_tr_em + baseline_h_tr_ms
+    );
     println!("  Time constant (τ): {:.2} hours", baseline_tau);
     println!("  Status: Too large (> 4 hours preferred)");
     println!();
 
     println!("Option 1 (h_tr_em 5x):");
-    println!("  Total mass conductance: {:.2} W/K", option1_h_tr_em + option1_h_tr_ms);
+    println!(
+        "  Total mass conductance: {:.2} W/K",
+        option1_h_tr_em + option1_h_tr_ms
+    );
     println!("  Time constant (τ): {:.2} hours", option1_tau);
-    println!("  Change: {:.2} hours ({:.1}%)",
-             option1_tau - baseline_tau,
-             ((option1_tau - baseline_tau) / baseline_tau) * 100.0);
+    println!(
+        "  Change: {:.2} hours ({:.1}%)",
+        option1_tau - baseline_tau,
+        ((option1_tau - baseline_tau) / baseline_tau) * 100.0
+    );
     println!();
 
     println!("Option 2 (h_tr_ms 50%):");
-    println!("  Total mass conductance: {:.2} W/K", option2_h_tr_em + option2_h_tr_ms);
+    println!(
+        "  Total mass conductance: {:.2} W/K",
+        option2_h_tr_em + option2_h_tr_ms
+    );
     println!("  Time constant (τ): {:.2} hours", option2_tau);
-    println!("  Change: {:.2} hours ({:.1}%)",
-             option2_tau - baseline_tau,
-             ((option2_tau - baseline_tau) / baseline_tau) * 100.0);
+    println!(
+        "  Change: {:.2} hours ({:.1}%)",
+        option2_tau - baseline_tau,
+        ((option2_tau - baseline_tau) / baseline_tau) * 100.0
+    );
     println!();
 
     println!("Option 3 (both):");
-    println!("  Total mass conductance: {:.2} W/K", option3_h_tr_em + option3_h_tr_ms);
+    println!(
+        "  Total mass conductance: {:.2} W/K",
+        option3_h_tr_em + option3_h_tr_ms
+    );
     println!("  Time constant (τ): {:.2} hours", option3_tau);
-    println!("  Change: {:.2} hours ({:.1}%)",
-             option3_tau - baseline_tau,
-             ((option3_tau - baseline_tau) / baseline_tau) * 100.0);
+    println!(
+        "  Change: {:.2} hours ({:.1}%)",
+        option3_tau - baseline_tau,
+        ((option3_tau - baseline_tau) / baseline_tau) * 100.0
+    );
     println!();
 
     // Heat flow analysis
@@ -138,20 +156,32 @@ fn test_solution1_revisited_coupling_adjustment() {
     println!("Option 1 (h_tr_em 5x):");
     println!("  To exterior: {:.1}%", option1_to_exterior);
     println!("  To surface: {:.1}%", option1_to_surface);
-    println!("  Change to exterior: {:.1}%", option1_to_exterior - baseline_to_exterior);
+    println!(
+        "  Change to exterior: {:.1}%",
+        option1_to_exterior - baseline_to_exterior
+    );
     println!();
 
     println!("Option 2 (h_tr_ms 50%):");
     println!("  To exterior: {:.1}%", option2_to_exterior);
     println!("  To surface: {:.1}%", option2_to_surface);
-    println!("  Change to surface: {:.1}%", option2_to_surface - baseline_to_surface);
+    println!(
+        "  Change to surface: {:.1}%",
+        option2_to_surface - baseline_to_surface
+    );
     println!();
 
     println!("Option 3 (both):");
     println!("  To exterior: {:.1}%", option3_to_exterior);
     println!("  To surface: {:.1}%", option3_to_surface);
-    println!("  Change to exterior: {:.1}%", option3_to_exterior - baseline_to_exterior);
-    println!("  Change to surface: {:.1}%", option3_to_surface - baseline_to_surface);
+    println!(
+        "  Change to exterior: {:.1}%",
+        option3_to_exterior - baseline_to_exterior
+    );
+    println!(
+        "  Change to surface: {:.1}%",
+        option3_to_surface - baseline_to_surface
+    );
     println!();
 
     // Recommended approach

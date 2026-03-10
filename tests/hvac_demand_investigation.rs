@@ -33,7 +33,10 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     let thermal_capacitance = model.thermal_capacitance.as_ref()[0]; // J/K
 
     println!("=== 1. Thermal Mass Parameters ===");
-    println!("Thermal capacitance (C): {:.2} MJ/K", thermal_capacitance / 1e6);
+    println!(
+        "Thermal capacitance (C): {:.2} MJ/K",
+        thermal_capacitance / 1e6
+    );
     println!("h_tr_em (exterior -> mass): {:.2} W/K", h_tr_em);
     println!("h_tr_ms (mass -> surface): {:.2} W/K", h_tr_ms);
     println!("h_tr_is (surface -> interior): {:.2} W/K", h_tr_is);
@@ -57,8 +60,14 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     println!("\n=== 3. Coupling Ratio Analysis ===");
     println!("h_tr_em / h_tr_ms: {:.4}", h_tr_em_ms_ratio);
     println!("Target ratio: > 0.1");
-    println!("Thermal mass to exterior: {:.1}% (h_tr_em)", mass_to_exterior_pct);
-    println!("Thermal mass to surface: {:.1}% (h_tr_ms)", mass_to_surface_pct);
+    println!(
+        "Thermal mass to exterior: {:.1}% (h_tr_em)",
+        mass_to_exterior_pct
+    );
+    println!(
+        "Thermal mass to surface: {:.1}% (h_tr_ms)",
+        mass_to_surface_pct
+    );
 
     // Calculate sensitivity
     let term_rest_1 = h_tr_ms + h_tr_is;
@@ -76,7 +85,10 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     println!("h_ms_is_prod: {:.2} (W/K)²", h_ms_is_prod);
     println!("h_tr_floor: {:.2} W/K", h_tr_floor);
     println!("derived_ground_coeff: {:.2} (W/K)²", derived_ground_coeff);
-    println!("den (h_ms_is_prod + term_rest_1 * h_ext + ground): {:.2} (W/K)²", den);
+    println!(
+        "den (h_ms_is_prod + term_rest_1 * h_ext + ground): {:.2} (W/K)²",
+        den
+    );
     println!("sensitivity (term_rest_1 / den): {:.6} K/W", sensitivity);
     println!("Target sensitivity: > 0.002 K/W");
 
@@ -95,19 +107,28 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     println!("Heating setpoint: {:.2}°C", setpoint_heating);
     println!("ΔT (setpoint - Ti_free): {:.2}°C", delta_t_heating);
     println!("Sensitivity: {:.6} K/W", sensitivity);
-    println!("HVAC demand = ΔT / sensitivity: {:.2} W", hvac_demand_heating_w);
+    println!(
+        "HVAC demand = ΔT / sensitivity: {:.2} W",
+        hvac_demand_heating_w
+    );
     println!("Heating capacity: {:.2} W", heating_capacity);
     println!("Capacity usage: {:.1}%", capacity_usage);
 
     println!("\n=== 6. Problem Identification ===");
 
     if h_tr_em_ms_ratio < 0.1 {
-        println!("❌ h_tr_em/h_tr_ms ratio too low: {:.4} < 0.1", h_tr_em_ms_ratio);
+        println!(
+            "❌ h_tr_em/h_tr_ms ratio too low: {:.4} < 0.1",
+            h_tr_em_ms_ratio
+        );
         println!("   → Thermal mass exchanges mostly with interior, not exterior");
         println!("   → Mass temperature follows interior temperature");
         println!("   → Ti_free is too low during winter");
     } else {
-        println!("✓ h_tr_em/h_tr_ms ratio reasonable: {:.4}", h_tr_em_ms_ratio);
+        println!(
+            "✓ h_tr_em/h_tr_ms ratio reasonable: {:.4}",
+            h_tr_em_ms_ratio
+        );
     }
 
     if h_tr_ms > 1000.0 {
@@ -127,7 +148,10 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     }
 
     if t_free_winter < 15.0 {
-        println!("❌ Free-floating temp too low: {:.2}°C < 15°C", t_free_winter);
+        println!(
+            "❌ Free-floating temp too low: {:.2}°C < 15°C",
+            t_free_winter
+        );
         println!("   → HVAC must run constantly to maintain 20°C setpoint");
         println!("   → High annual heating energy");
     } else {
@@ -135,7 +159,10 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     }
 
     if hvac_demand_heating_w > heating_capacity {
-        println!("❌ HVAC demand exceeds capacity: {:.2} W > {:.2} W", hvac_demand_heating_w, heating_capacity);
+        println!(
+            "❌ HVAC demand exceeds capacity: {:.2} W > {:.2} W",
+            hvac_demand_heating_w, heating_capacity
+        );
         println!("   → HVAC clamped to capacity, still not enough");
         println!("   → Runs at max capacity constantly");
     } else {
@@ -144,19 +171,36 @@ fn test_case_900_hvac_demand_calculation_investigation() {
 
     println!("\n=== 7. Root Cause Analysis ===");
 
-    println!("1. High h_tr_ms ({:.2} W/K) causes strong coupling between mass and interior", h_tr_ms);
-    println!("2. Low h_tr_em ({:.2} W/K) causes weak coupling between mass and exterior", h_tr_em);
-    println!("3. Result: Thermal mass exchanges {:.1}% with interior, {:.1}% with exterior",
-        mass_to_surface_pct, mass_to_exterior_pct);
+    println!(
+        "1. High h_tr_ms ({:.2} W/K) causes strong coupling between mass and interior",
+        h_tr_ms
+    );
+    println!(
+        "2. Low h_tr_em ({:.2} W/K) causes weak coupling between mass and exterior",
+        h_tr_em
+    );
+    println!(
+        "3. Result: Thermal mass exchanges {:.1}% with interior, {:.1}% with exterior",
+        mass_to_surface_pct, mass_to_exterior_pct
+    );
     println!("4. During winter: Mass cools down with interior, stays cold");
     println!("5. Ti_free = {:.2}°C (too low)", t_free_winter);
-    println!("6. ΔT = {:.2}°C - {:.2}°C = {:.2}°C (too large)",
-        setpoint_heating, t_free_winter, delta_t_heating);
-    println!("7. HVAC demand = {:.2}°C / {:.6} K/W = {:.2} W",
-        delta_t_heating, sensitivity, hvac_demand_heating_w);
-    println!("8. HVAC clamped to {:.2} W (capacity), runs at max constantly", heating_capacity);
-    println!("9. Annual heating = {:.2} MWh (vs reference [{:.2}, {:.2}] MWh)",
-        6.86, 1.17, 2.04);
+    println!(
+        "6. ΔT = {:.2}°C - {:.2}°C = {:.2}°C (too large)",
+        setpoint_heating, t_free_winter, delta_t_heating
+    );
+    println!(
+        "7. HVAC demand = {:.2}°C / {:.6} K/W = {:.2} W",
+        delta_t_heating, sensitivity, hvac_demand_heating_w
+    );
+    println!(
+        "8. HVAC clamped to {:.2} W (capacity), runs at max constantly",
+        heating_capacity
+    );
+    println!(
+        "9. Annual heating = {:.2} MWh (vs reference [{:.2}, {:.2}] MWh)",
+        6.86, 1.17, 2.04
+    );
 
     println!("\n=== 8. HVAC Demand Formula Verification ===");
 
@@ -193,9 +237,20 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     println!("\n=== 10. Proposed Fixes ===");
 
     println!("Solution 1: Increase h_tr_em / Decrease h_tr_ms ratio");
-    println!("  - Target: h_tr_em/h_tr_ms > 0.1 (current: {:.4})", h_tr_em_ms_ratio);
-    println!("  - Option A: Increase h_tr_em by 2.5x: {:.2} → {:.2} W/K", h_tr_em, h_tr_em * 2.5);
-    println!("  - Option B: Decrease h_tr_ms by 35%: {:.2} → {:.2} W/K", h_tr_ms, h_tr_ms * 0.65);
+    println!(
+        "  - Target: h_tr_em/h_tr_ms > 0.1 (current: {:.4})",
+        h_tr_em_ms_ratio
+    );
+    println!(
+        "  - Option A: Increase h_tr_em by 2.5x: {:.2} → {:.2} W/K",
+        h_tr_em,
+        h_tr_em * 2.5
+    );
+    println!(
+        "  - Option B: Decrease h_tr_ms by 35%: {:.2} → {:.2} W/K",
+        h_tr_ms,
+        h_tr_ms * 0.65
+    );
     println!("  - Expected: Higher winter Ti_free, lower HVAC demand");
 
     println!("\nSolution 2: Time constant-based sensitivity correction");
@@ -212,18 +267,29 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     println!("\n=== 11. ASHRAE 140 Reference Comparison ===");
 
     println!("Case 900 Reference Values:");
-    println!("  Annual heating: [{:.2}, {:.2}] MWh (current: {:.2} MWh, {:.0}% above)",
-        1.17, 2.04, 6.86, 236.0);
-    println!("  Annual cooling: [{:.2}, {:.2}] MWh (current: {:.2} MWh, {:.0}% above)",
-        2.13, 3.67, 4.82, 31.0);
-    println!("  Peak heating: [{:.2}, {:.2}] kW (current: {:.2} kW, ✓)",
-        1.10, 2.10, 2.10);
-    println!("  Peak cooling: [{:.2}, {:.2}] kW (current: {:.2} kW, 2% above)",
-        2.10, 3.70, 3.57);
+    println!(
+        "  Annual heating: [{:.2}, {:.2}] MWh (current: {:.2} MWh, {:.0}% above)",
+        1.17, 2.04, 6.86, 236.0
+    );
+    println!(
+        "  Annual cooling: [{:.2}, {:.2}] MWh (current: {:.2} MWh, {:.0}% above)",
+        2.13, 3.67, 4.82, 31.0
+    );
+    println!(
+        "  Peak heating: [{:.2}, {:.2}] kW (current: {:.2} kW, ✓)",
+        1.10, 2.10, 2.10
+    );
+    println!(
+        "  Peak cooling: [{:.2}, {:.2}] kW (current: {:.2} kW, 2% above)",
+        2.10, 3.70, 3.57
+    );
 
     println!("\n=== Conclusion ===");
 
-    println!("Root cause: h_tr_em/h_tr_ms ratio too low ({:.4} < 0.1)", h_tr_em_ms_ratio);
+    println!(
+        "Root cause: h_tr_em/h_tr_ms ratio too low ({:.4} < 0.1)",
+        h_tr_em_ms_ratio
+    );
     println!("  → Thermal mass exchanges 95% with interior, 5% with exterior");
     println!("  → Winter Ti_free too low (7.06°C)");
     println!("  → High ΔT (12.94°C) and low sensitivity (0.001845 K/W)");
@@ -251,20 +317,38 @@ fn test_case_900_hvac_demand_formula_validation() {
     let setpoint = 20.0;
     let delta_t = setpoint - ti_free_winter;
     let demand = delta_t / sensitivity;
-    println!("  Ti_free = {:.2}°C, setpoint = {:.2}°C", ti_free_winter, setpoint);
-    println!("  ΔT = {:.2}°C, sensitivity = {:.6} K/W", delta_t, sensitivity);
-    println!("  Demand = {:.2} W, capacity = 2100 W, usage = {:.1}%",
-        demand, (demand / 2100.0) * 100.0);
+    println!(
+        "  Ti_free = {:.2}°C, setpoint = {:.2}°C",
+        ti_free_winter, setpoint
+    );
+    println!(
+        "  ΔT = {:.2}°C, sensitivity = {:.6} K/W",
+        delta_t, sensitivity
+    );
+    println!(
+        "  Demand = {:.2} W, capacity = 2100 W, usage = {:.1}%",
+        demand,
+        (demand / 2100.0) * 100.0
+    );
 
     println!("\nTest 2: Summer scenario (high Ti_free)");
     let ti_free_summer = 30.0;
     let cooling_setpoint = 27.0;
     let delta_t_cooling = ti_free_summer - cooling_setpoint;
     let cooling_demand = delta_t_cooling / sensitivity;
-    println!("  Ti_free = {:.2}°C, setpoint = {:.2}°C", ti_free_summer, cooling_setpoint);
-    println!("  ΔT = {:.2}°C, sensitivity = {:.6} K/W", delta_t_cooling, sensitivity);
-    println!("  Demand = {:.2} W, capacity = 3500 W, usage = {:.1}%",
-        cooling_demand, (cooling_demand / 3500.0) * 100.0);
+    println!(
+        "  Ti_free = {:.2}°C, setpoint = {:.2}°C",
+        ti_free_summer, cooling_setpoint
+    );
+    println!(
+        "  ΔT = {:.2}°C, sensitivity = {:.6} K/W",
+        delta_t_cooling, sensitivity
+    );
+    println!(
+        "  Demand = {:.2} W, capacity = 3500 W, usage = {:.1}%",
+        cooling_demand,
+        (cooling_demand / 3500.0) * 100.0
+    );
 
     println!("\nTest 3: Moderate Ti_free (within deadband)");
     let ti_free_moderate = 23.0;
@@ -278,8 +362,11 @@ fn test_case_900_hvac_demand_formula_validation() {
     println!("  Current sensitivity: {:.6} K/W", sensitivity);
     println!("  2x sensitivity: {:.6} K/W", sensitivity_2x);
     println!("  Current demand: {:.2} W", demand);
-    println!("  2x sensitivity demand: {:.2} W ({:.1}% reduction)",
-        demand_2x, ((demand - demand_2x) / demand) * 100.0);
+    println!(
+        "  2x sensitivity demand: {:.2} W ({:.1}% reduction)",
+        demand_2x,
+        ((demand - demand_2x) / demand) * 100.0
+    );
 
     println!("\nFormula validation:");
     println!("✓ HVAC demand = ΔT / sensitivity is mathematically correct");

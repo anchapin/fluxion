@@ -27,11 +27,7 @@ const TOLERANCE_PCT: f64 = 1.0;
 ///
 /// # Returns
 /// Ventilation rate (m³/hr)
-fn calculate_stack_effect_ventilation(
-    door_area: f64,
-    door_height: f64,
-    delta_t: f64,
-) -> f64 {
+fn calculate_stack_effect_ventilation(door_area: f64, door_height: f64, delta_t: f64) -> f64 {
     // Stack effect formula: Q = 0.025 * A * sqrt(ΔT / h)
     STACK_EFFECT_COEFFICIENT * door_area * (delta_t / door_height).sqrt()
 }
@@ -61,11 +57,7 @@ fn calculate_ach(ventilation_rate: f64, zone_volume: f64) -> f64 {
 ///
 /// # Returns
 /// Heat transfer rate (W)
-fn calculate_ventilation_heat_transfer(
-    ach: f64,
-    zone_volume: f64,
-    delta_t: f64,
-) -> f64 {
+fn calculate_ventilation_heat_transfer(ach: f64, zone_volume: f64, delta_t: f64) -> f64 {
     // Q = ρ * Cp * ACH * V * ΔT
     // Result in J/hr, convert to W by dividing by 3600
     (AIR_DENSITY * AIR_SPECIFIC_HEAT * ach * zone_volume * delta_t) / 3600.0
@@ -92,12 +84,17 @@ fn test_stack_effect_ach_formula() {
 
     println!("Stack effect ventilation: {:.4} m³/hr", q_vent);
     println!("Expected: {:.4} m³/hr", expected_ventilation);
-    println!("Difference: {:.2}%", ((q_vent - expected_ventilation).abs() / expected_ventilation) * 100.0);
+    println!(
+        "Difference: {:.2}%",
+        ((q_vent - expected_ventilation).abs() / expected_ventilation) * 100.0
+    );
 
     assert!(
         (q_vent - expected_ventilation).abs() / expected_ventilation * 100.0 < TOLERANCE_PCT,
         "Ventilation {:.4} m³/hr differs from expected {:.4} m³/hr by more than {}%",
-        q_vent, expected_ventilation, TOLERANCE_PCT
+        q_vent,
+        expected_ventilation,
+        TOLERANCE_PCT
     );
 
     // ACH = Q_vent / V_zone = 0.119 / 3.0 = 0.04 /hr (very low, closed door)
@@ -111,7 +108,8 @@ fn test_stack_effect_ach_formula() {
     assert!(
         (ach - expected_ach).abs() < 0.005,
         "ACH {:.4} /hr differs from expected {:.4} /hr",
-        ach, expected_ach
+        ach,
+        expected_ach
     );
 }
 
@@ -132,12 +130,17 @@ fn test_air_enthalpy_method() {
 
     println!("Ventilation heat transfer: {:.2} W", q_vent);
     println!("Expected: {:.2} W", expected_heat_transfer);
-    println!("Difference: {:.2}%", ((q_vent - expected_heat_transfer).abs() / expected_heat_transfer) * 100.0);
+    println!(
+        "Difference: {:.2}%",
+        ((q_vent - expected_heat_transfer).abs() / expected_heat_transfer) * 100.0
+    );
 
     assert!(
         (q_vent - expected_heat_transfer).abs() / expected_heat_transfer * 100.0 < TOLERANCE_PCT,
         "Heat transfer {:.2} W differs from expected {:.2} W by more than {}%",
-        q_vent, expected_heat_transfer, TOLERANCE_PCT
+        q_vent,
+        expected_heat_transfer,
+        TOLERANCE_PCT
     );
 }
 
@@ -174,12 +177,16 @@ fn test_temperature_dependence() {
     let ratio = ach_20 / ach_10;
     let expected_ratio = f64::sqrt(20.0 / 10.0);
 
-    println!("Ratio (ACH_20 / ACH_10): {:.2}× (expected {:.2}×)", ratio, expected_ratio);
+    println!(
+        "Ratio (ACH_20 / ACH_10): {:.2}× (expected {:.2}×)",
+        ratio, expected_ratio
+    );
 
     assert!(
         (ratio - expected_ratio).abs() < 0.01,
         "ACH should scale with √(ΔT), expected ratio {:.2}, got {:.2}",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }
 
@@ -205,12 +212,16 @@ fn test_stack_effect_door_geometry() {
     let ratio_area = q_vent_2 / q_vent_1;
     let expected_ratio_area = 2.0;
 
-    println!("Doubling door area: {:.2}× (expected {:.2}×)", ratio_area, expected_ratio_area);
+    println!(
+        "Doubling door area: {:.2}× (expected {:.2}×)",
+        ratio_area, expected_ratio_area
+    );
 
     assert!(
         (ratio_area - expected_ratio_area).abs() < 0.01,
         "Ventilation should scale linearly with area, expected ratio {:.2}, got {:.2}",
-        expected_ratio_area, ratio_area
+        expected_ratio_area,
+        ratio_area
     );
 
     // Double height (should reduce ventilation by √2)
@@ -222,12 +233,16 @@ fn test_stack_effect_door_geometry() {
     let ratio_height = q_vent_3 / q_vent_1;
     let expected_ratio_height = 1.0 / f64::sqrt(2.0);
 
-    println!("Doubling door height: {:.2}× (expected {:.2}×)", ratio_height, expected_ratio_height);
+    println!(
+        "Doubling door height: {:.2}× (expected {:.2}×)",
+        ratio_height, expected_ratio_height
+    );
 
     assert!(
         (ratio_height - expected_ratio_height).abs() < 0.01,
         "Ventilation should scale inversely with √(height), expected ratio {:.2}, got {:.2}",
-        expected_ratio_height, ratio_height
+        expected_ratio_height,
+        ratio_height
     );
 }
 
@@ -297,7 +312,10 @@ fn test_common_pitfall_missing_rho_cp() {
     let error_factor = q_correct / q_incorrect;
     let expected_error = AIR_DENSITY * AIR_SPECIFIC_HEAT; // 1200
 
-    println!("Error factor: {:.0}× (expected {:.0}×)", error_factor, expected_error);
+    println!(
+        "Error factor: {:.0}× (expected {:.0}×)",
+        error_factor, expected_error
+    );
 
     // Omitting ρ·Cp gives ~1200x error
     assert!(
@@ -327,7 +345,8 @@ fn test_stack_effect_extreme_delta_t() {
     assert!(
         (q_vent - expected_ventilation).abs() / expected_ventilation * 100.0 < TOLERANCE_PCT,
         "Ventilation {:.4} m³/hr differs from expected {:.4} m³/hr",
-        q_vent, expected_ventilation
+        q_vent,
+        expected_ventilation
     );
 
     // Verify √(ΔT) scaling: 50°C should be √(50/20) = √2.5 ≈ 1.58× higher than 20°C
@@ -335,7 +354,10 @@ fn test_stack_effect_extreme_delta_t() {
     let ratio_extreme = q_vent / q_vent_20;
     let expected_ratio = f64::sqrt(50.0 / 20.0);
 
-    println!("Ratio (ΔT=50°C / ΔT=20°C): {:.2}× (expected {:.2}×)", ratio_extreme, expected_ratio);
+    println!(
+        "Ratio (ΔT=50°C / ΔT=20°C): {:.2}× (expected {:.2}×)",
+        ratio_extreme, expected_ratio
+    );
 
     assert!(
         (ratio_extreme - expected_ratio).abs() < 0.01,
@@ -391,7 +413,10 @@ fn test_heat_transfer_negative_delta_t() {
 
     println!("Heat transfer with negative ΔT: {:.2} W", q);
 
-    assert!(q < 0.0, "Negative ΔT should give negative heat transfer (cooling)");
+    assert!(
+        q < 0.0,
+        "Negative ΔT should give negative heat transfer (cooling)"
+    );
 }
 
 #[test]
@@ -413,7 +438,10 @@ fn test_comprehensive_winter_scenario() {
     let q_heat = calculate_ventilation_heat_transfer(ach, backzone_volume, delta_t);
 
     println!("Winter scenario:");
-    println!("  Sunspace: {:.1}°C, Back-zone: {:.1}°C", temp_sunspace, temp_backzone);
+    println!(
+        "  Sunspace: {:.1}°C, Back-zone: {:.1}°C",
+        temp_sunspace, temp_backzone
+    );
     println!("  Door: {:.1} m² × {:.1} m", door_area, door_height);
     println!("  Ventilation: {:.4} m³/hr", q_vent);
     println!("  ACH: {:.4} /hr", ach);
@@ -422,5 +450,8 @@ fn test_comprehensive_winter_scenario() {
     // Verify physical constraints
     assert!(q_vent > 0.0, "Ventilation should be positive");
     assert!(ach > 0.0, "ACH should be positive");
-    assert!(q_heat > 0.0, "Heat transfer should be positive (sunspace -> back-zone)");
+    assert!(
+        q_heat > 0.0,
+        "Heat transfer should be positive (sunspace -> back-zone)"
+    );
 }

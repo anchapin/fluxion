@@ -646,70 +646,114 @@ impl BatchOracle {
         let mut results = vec![f64::NAN; population.len()];
 
         if use_surrogates && !valid_configs.is_empty() {
-            // Coordinator-Worker pattern with Channels
-            let n_workers = valid_configs.len();
-            let mut coord_txs = Vec::with_capacity(n_workers);
-            let mut coord_rxs = Vec::with_capacity(n_workers);
-            let mut worker_channels = Vec::with_capacity(n_workers);
-
-            for _ in 0..n_workers {
-                let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
-                let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
-                coord_rxs.push(rx_from_worker);
-                coord_txs.push(tx_to_worker);
-                worker_channels.push((tx_to_coord, rx_from_coord));
-            }
-
-            let final_worker_data = rayon::scope(|s| {
-                let (result_tx, result_rx) = crossbeam::channel::unbounded();
-
-                // Move models and channels into workers
-                for ((idx, mut model), (tx, rx)) in
-                    valid_configs.drain(..).zip(worker_channels.into_iter())
-                {
-                    let res_tx = result_tx.clone();
-                    s.spawn(move |_| {
-                        let energy = model.solve_timesteps_batched(8760, tx, rx);
-                        let _ = res_tx.send((idx, model, energy));
-                    });
-                }
-                drop(result_tx);
-
-                // Coordinator loop
-                for _t in 0..8760 {
-                    // 1. Collect temperatures from all workers
-                    let mut batch_temps = Vec::with_capacity(n_workers);
-                    for rx in &coord_rxs {
-                        batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
-                    }
-
-                    // 2. Batched inference
-                    let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
-
-                    // 3. Send loads back to workers
-                    for (tx, loads) in coord_txs.iter().zip(batch_loads) {
-                        tx.send(loads).expect("Failed to send loads to worker");
-                    }
-                }
-
-                let mut final_data = Vec::with_capacity(n_workers);
-                while let Ok(data) = result_rx.recv() {
-                    final_data.push(data);
-                }
-                final_data
-            });
-
-            // 3. Normalize and populate results
-            for (idx, model, energy) in final_worker_data {
-                let total_area = model.zone_area.integrate();
-                let eui = if total_area > 0.0 {
-                    energy / total_area
-                } else {
-                    0.0
+            let use_gpu = self.surrogates.gpu_supported();
+            if use_gpu {
+                // GPU path with SharedBatchInferenceService
+                use crate::ai::shared_batch_service::{DynamicBatchConfig, SharedBatchInferenceService};
+                let config = DynamicBatchConfig {
+                    max_batch_size: valid_configs.len(),
+                    wait_ms: 10,
                 };
-                // Clamp negative results to 0.0 (caused by thermal mass energy accounting
-                // when mass charging > HVAC input in deadband)
-                results[idx] = eui.max(0.0);
+                let service = std::sync::Arc::new(SharedBatchInferenceService::new(self.surrogates.clone(), config));
+                let final_worker_data = rayon::scope(|s| {
+                    let (result_tx, result_rx) = crossbeam::channel::unbounded();
+                    for (idx, mut model) in valid_configs.drain(..) {
+                        let service = std::sync::Arc::clone(&service);
+                        let res_tx = result_tx.clone();
+                        s.spawn(move |_| {
+                            let mut energy = 0.0;
+                            // Build daily cycle array
+                            let cycle: [f64; 24] = {
+                                let mut arr = [0.0; 24];
+                                for (h, val) in arr.iter_mut().enumerate() {
+                                    *val = ((h as f64 / 24.0 * 2.0 * std::f64::consts::PI) - std::f64::consts::PI / 2.0).sin();
+                                }
+                                arr
+                            };
+                            for t in 0..8760 {
+                                let hour_of_day = t % 24;
+                                let daily_cycle = cycle[hour_of_day];
+                                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                                let temps = model.get_temperatures();
+                                let rx = service.submit(temps);
+                                let loads = rx.recv().expect("Failed to receive loads from service");
+                                model.set_loads(&loads);
+                                energy += model.step_physics(t, outdoor_temp);
+                            }
+                            let _ = res_tx.send((idx, model, energy));
+                        });
+                    }
+                    drop(result_tx);
+                    let mut final_data = Vec::new();
+                    while let Ok(data) = result_rx.recv() {
+                        final_data.push(data);
+                    }
+                    final_data
+                });
+                for (idx, model, energy) in final_worker_data {
+                    let total_area = model.zone_area.integrate();
+                    let eui = if total_area > 0.0 { energy / total_area } else { 0.0 };
+                    results[idx] = eui.max(0.0);
+                }
+            } else {
+                // CPU path: Coordinator-Worker pattern with Channels
+                let n_workers = valid_configs.len();
+                let mut coord_txs = Vec::with_capacity(n_workers);
+                let mut coord_rxs = Vec::with_capacity(n_workers);
+                let mut worker_channels = Vec::with_capacity(n_workers);
+
+                for _ in 0..n_workers {
+                    let (tx_to_coord, rx_from_worker) = crossbeam::channel::unbounded();
+                    let (tx_to_worker, rx_from_coord) = crossbeam::channel::unbounded();
+                    coord_rxs.push(rx_from_worker);
+                    coord_txs.push(tx_to_worker);
+                    worker_channels.push((tx_to_coord, rx_from_coord));
+                }
+
+                let final_worker_data = rayon::scope(|s| {
+                    let (result_tx, result_rx) = crossbeam::channel::unbounded();
+
+                    // Move models and channels into workers
+                    for ((idx, mut model), (tx, rx)) in
+                        valid_configs.drain(..).zip(worker_channels.into_iter())
+                    {
+                        let res_tx = result_tx.clone();
+                        s.spawn(move |_| {
+                            let energy = model.solve_timesteps_batched(8760, tx, rx);
+                            let _ = res_tx.send((idx, model, energy));
+                        });
+                    }
+                    drop(result_tx);
+
+                    // Coordinator loop
+                    for _t in 0..8760 {
+                        // 1. Collect temperatures from all workers
+                        let mut batch_temps = Vec::with_capacity(n_workers);
+                        for rx in &coord_rxs {
+                            batch_temps.push(rx.recv().expect("Worker disconnected unexpectedly"));
+                        }
+
+                        // 2. Batched inference
+                        let batch_loads = self.surrogates.predict_loads_batched(&batch_temps);
+
+                        // 3. Send loads back to workers
+                        for (tx, loads) in coord_txs.iter().zip(batch_loads) {
+                            tx.send(loads).expect("Failed to send loads to worker");
+                        }
+                    }
+
+                    let mut final_data = Vec::with_capacity(n_workers);
+                    while let Ok(data) = result_rx.recv() {
+                        final_data.push(data);
+                    }
+                    final_data
+                });
+
+                for (idx, model, energy) in final_worker_data {
+                    let total_area = model.zone_area.integrate();
+                    let eui = if total_area > 0.0 { energy / total_area } else { 0.0 };
+                    results[idx] = eui.max(0.0);
+                }
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel

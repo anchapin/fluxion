@@ -184,7 +184,10 @@ fn test_case_900ff_free_floating_high_mass() {
         swing_reduction
     );
 
-    println!("✅ PASSED: Temperature swing reduction {:.1}% in range [10, 25]%", swing_reduction);
+    println!(
+        "✅ PASSED: Temperature swing reduction {:.1}% in range [10, 25]%",
+        swing_reduction
+    );
 
     // High mass should moderate temperature swings
     assert!(min_temp < max_temp, "Min temp should be less than max temp");
@@ -422,10 +425,16 @@ fn test_thermal_mass_lag_and_damping() {
     let temps_900ff = simulate_free_float_with_time_series(ASHRAE140Case::Case900FF);
 
     // Calculate temperature swings
-    let swing_600ff = temps_600ff.iter().cloned().fold(0.0_f64, |a, b| a.max(b)) -
-                    temps_600ff.iter().cloned().fold(f64::INFINITY, |a, b| a.min(b));
-    let swing_900ff = temps_900ff.iter().cloned().fold(0.0_f64, |a, b| a.max(b)) -
-                    temps_900ff.iter().cloned().fold(f64::INFINITY, |a, b| a.min(b));
+    let swing_600ff = temps_600ff.iter().cloned().fold(0.0_f64, |a, b| a.max(b))
+        - temps_600ff
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, |a, b| a.min(b));
+    let swing_900ff = temps_900ff.iter().cloned().fold(0.0_f64, |a, b| a.max(b))
+        - temps_900ff
+            .iter()
+            .cloned()
+            .fold(f64::INFINITY, |a, b| a.min(b));
 
     // Expect ~19.6% reduction due to thermal mass
     let reduction = (swing_600ff - swing_900ff) / swing_600ff * 100.0;
@@ -434,25 +443,40 @@ fn test_thermal_mass_lag_and_damping() {
     println!("Temperature Swing Comparison:");
     println!("  Case 600FF (low mass):  {:.2}°C", swing_600ff);
     println!("  Case 900FF (high mass):  {:.2}°C", swing_900ff);
-    println!("  Reduction due to mass:   {:.1}% (expected: ~19.6%)", reduction);
+    println!(
+        "  Reduction due to mass:   {:.1}% (expected: ~19.6%)",
+        reduction
+    );
 
-    assert!((reduction - 19.6).abs() < 5.0,
-        "Thermal mass reduction {:.1}% differs from expected 19.6%", reduction);
+    assert!(
+        (reduction - 19.6).abs() < 5.0,
+        "Thermal mass reduction {:.1}% differs from expected 19.6%",
+        reduction
+    );
 
     // Analyze thermal lag (2-6 hours for high-mass)
     let lag_hours = calculate_thermal_lag(&temps_900ff);
-    println!("  Thermal lag (900FF):     {:.1}h (expected: 2-6h)", lag_hours);
+    println!(
+        "  Thermal lag (900FF):     {:.1}h (expected: 2-6h)",
+        lag_hours
+    );
 
     // Note: Thermal lag measurement is sensitive to peak detection and summer period selection
     // Temperature swing reduction is the more robust metric for thermal mass validation
     if lag_hours >= 2.0 && lag_hours <= 6.0 {
         println!("  Thermal lag within expected range ✅");
     } else {
-        println!("  ⚠ Thermal lag {:.1}h outside [2, 6]h (may be due to peak detection sensitivity)", lag_hours);
+        println!(
+            "  ⚠ Thermal lag {:.1}h outside [2, 6]h (may be due to peak detection sensitivity)",
+            lag_hours
+        );
         println!("  Temperature swing reduction confirms thermal mass dynamics ✅");
     }
 
-    println!("✅ Thermal mass damping validated (swing reduction: {:.1}%)", reduction);
+    println!(
+        "✅ Thermal mass damping validated (swing reduction: {:.1}%)",
+        reduction
+    );
 }
 
 /// Simulate free-floating case and return full time series of temperatures
@@ -500,18 +524,28 @@ fn calculate_thermal_lag(temperatures: &[f64]) -> f64 {
 
     // Find peak outdoor temperature hour (focus on summer months for clear lag signal)
     let summer_start = 3000; // Approximate start of summer (June/July)
-    let summer_end = 6000;   // Approximate end of summer (August/September)
+    let summer_end = 6000; // Approximate end of summer (August/September)
 
-    let max_outdoor_temp = outdoor_temps[summer_start..summer_end].iter().cloned()
+    let max_outdoor_temp = outdoor_temps[summer_start..summer_end]
+        .iter()
+        .cloned()
         .fold(f64::NEG_INFINITY, |a, b| a.max(b));
-    let outdoor_peak_hour = outdoor_temps[summer_start..summer_end].iter().position(|&t| (t - max_outdoor_temp).abs() < 0.01)
-        .map(|i| i + summer_start).unwrap_or(0);
+    let outdoor_peak_hour = outdoor_temps[summer_start..summer_end]
+        .iter()
+        .position(|&t| (t - max_outdoor_temp).abs() < 0.01)
+        .map(|i| i + summer_start)
+        .unwrap_or(0);
 
     // Find peak indoor temperature hour (same summer period)
-    let max_indoor_temp = temperatures[summer_start..summer_end].iter().cloned()
+    let max_indoor_temp = temperatures[summer_start..summer_end]
+        .iter()
+        .cloned()
         .fold(f64::NEG_INFINITY, |a, b| a.max(b));
-    let indoor_peak_hour = temperatures[summer_start..summer_end].iter().position(|&t| (t - max_indoor_temp).abs() < 0.01)
-        .map(|i| i + summer_start).unwrap_or(0);
+    let indoor_peak_hour = temperatures[summer_start..summer_end]
+        .iter()
+        .position(|&t| (t - max_indoor_temp).abs() < 0.01)
+        .map(|i| i + summer_start)
+        .unwrap_or(0);
 
     // Calculate lag (indoor peak minus outdoor peak, wrapped to [-12, 12] hours)
     let lag_i32 = ((indoor_peak_hour as i32 - outdoor_peak_hour as i32) % 24 + 24) % 24;

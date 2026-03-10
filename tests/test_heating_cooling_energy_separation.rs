@@ -78,11 +78,20 @@ fn test_case_900_separate_heating_cooling_energy() {
 
     println!("\n=== Case 900 Results (Plan 03-08d) ===");
     println!("Annual Heating: {:.2} MWh", annual_heating_mwh);
-    println!("  Reference: [{:.2}, {:.2}] MWh", REFERENCE_ANNUAL_HEATING_MIN, REFERENCE_ANNUAL_HEATING_MAX);
+    println!(
+        "  Reference: [{:.2}, {:.2}] MWh",
+        REFERENCE_ANNUAL_HEATING_MIN, REFERENCE_ANNUAL_HEATING_MAX
+    );
     println!("Annual Cooling: {:.2} MWh", annual_cooling_mwh);
-    println!("  Reference: [{:.2}, {:.2}] MWh", REFERENCE_ANNUAL_COOLING_MIN, REFERENCE_ANNUAL_COOLING_MAX);
+    println!(
+        "  Reference: [{:.2}, {:.2}] MWh",
+        REFERENCE_ANNUAL_COOLING_MIN, REFERENCE_ANNUAL_COOLING_MAX
+    );
     println!("Annual Total: {:.2} MWh", annual_total_mwh);
-    println!("  Reference: [{:.2}, {:.2}] MWh", REFERENCE_TOTAL_MIN, REFERENCE_TOTAL_MAX);
+    println!(
+        "  Reference: [{:.2}, {:.2}] MWh",
+        REFERENCE_TOTAL_MIN, REFERENCE_TOTAL_MAX
+    );
     println!("Peak Heating: {:.2} kW", peak_heating_kw);
     println!("  Reference: [1.10, 2.10] kW");
     println!("Peak Cooling: {:.2} kW", peak_cooling_kw);
@@ -91,25 +100,47 @@ fn test_case_900_separate_heating_cooling_energy() {
 
     // Calculate deviations from reference ranges
     let heating_deviation = if annual_heating_mwh < REFERENCE_ANNUAL_HEATING_MIN {
-        format!("{:.1}% below lower bound", (REFERENCE_ANNUAL_HEATING_MIN - annual_heating_mwh) / REFERENCE_ANNUAL_HEATING_MIN * 100.0)
+        format!(
+            "{:.1}% below lower bound",
+            (REFERENCE_ANNUAL_HEATING_MIN - annual_heating_mwh) / REFERENCE_ANNUAL_HEATING_MIN
+                * 100.0
+        )
     } else if annual_heating_mwh > REFERENCE_ANNUAL_HEATING_MAX {
-        format!("{:.1}% above upper bound", (annual_heating_mwh - REFERENCE_ANNUAL_HEATING_MAX) / REFERENCE_ANNUAL_HEATING_MAX * 100.0)
+        format!(
+            "{:.1}% above upper bound",
+            (annual_heating_mwh - REFERENCE_ANNUAL_HEATING_MAX) / REFERENCE_ANNUAL_HEATING_MAX
+                * 100.0
+        )
     } else {
         "WITHIN reference range ✓".to_string()
     };
 
     let cooling_deviation = if annual_cooling_mwh < REFERENCE_ANNUAL_COOLING_MIN {
-        format!("{:.1}% below lower bound", (REFERENCE_ANNUAL_COOLING_MIN - annual_cooling_mwh) / REFERENCE_ANNUAL_COOLING_MIN * 100.0)
+        format!(
+            "{:.1}% below lower bound",
+            (REFERENCE_ANNUAL_COOLING_MIN - annual_cooling_mwh) / REFERENCE_ANNUAL_COOLING_MIN
+                * 100.0
+        )
     } else if annual_cooling_mwh > REFERENCE_ANNUAL_COOLING_MAX {
-        format!("{:.1}% above upper bound", (annual_cooling_mwh - REFERENCE_ANNUAL_COOLING_MAX) / REFERENCE_ANNUAL_COOLING_MAX * 100.0)
+        format!(
+            "{:.1}% above upper bound",
+            (annual_cooling_mwh - REFERENCE_ANNUAL_COOLING_MAX) / REFERENCE_ANNUAL_COOLING_MAX
+                * 100.0
+        )
     } else {
         "WITHIN reference range ✓".to_string()
     };
 
     let total_deviation = if annual_total_mwh < REFERENCE_TOTAL_MIN {
-        format!("{:.1}% below lower bound", (REFERENCE_TOTAL_MIN - annual_total_mwh) / REFERENCE_TOTAL_MIN * 100.0)
+        format!(
+            "{:.1}% below lower bound",
+            (REFERENCE_TOTAL_MIN - annual_total_mwh) / REFERENCE_TOTAL_MIN * 100.0
+        )
     } else if annual_total_mwh > REFERENCE_TOTAL_MAX {
-        format!("{:.1}% above upper bound", (annual_total_mwh - REFERENCE_TOTAL_MAX) / REFERENCE_TOTAL_MAX * 100.0)
+        format!(
+            "{:.1}% above upper bound",
+            (annual_total_mwh - REFERENCE_TOTAL_MAX) / REFERENCE_TOTAL_MAX * 100.0
+        )
     } else {
         "WITHIN reference range ✓".to_string()
     };
@@ -171,8 +202,16 @@ fn test_case_900_separate_heating_cooling_energy() {
     let peak_cooling_ok = peak_cooling_kw >= 2.10 && peak_cooling_kw <= 3.70;
 
     println!("=== Peak Load Verification ===");
-    println!("Peak Heating: {} ({:.2} kW)", if peak_heating_ok { "✓" } else { "✗" }, peak_heating_kw);
-    println!("Peak Cooling: {} ({:.2} kW)", if peak_cooling_ok { "✓" } else { "✗" }, peak_cooling_kw);
+    println!(
+        "Peak Heating: {} ({:.2} kW)",
+        if peak_heating_ok { "✓" } else { "✗" },
+        peak_heating_kw
+    );
+    println!(
+        "Peak Cooling: {} ({:.2} kW)",
+        if peak_cooling_ok { "✓" } else { "✗" },
+        peak_cooling_kw
+    );
 
     if peak_heating_ok && peak_cooling_ok {
         println!("✓ Peak loads are correct - issue is in energy calculation, not power demand");
@@ -183,16 +222,43 @@ fn test_case_900_separate_heating_cooling_energy() {
     println!();
 
     // Check if energy separation is working correctly
-    assert!(annual_heating_mwh >= 0.0, "Heating energy should be non-negative");
-    assert!(annual_cooling_mwh >= 0.0, "Cooling energy should be non-negative");
-    assert_eq!(annual_total_mwh, annual_heating_mwh + annual_cooling_mwh, "Total should equal heating + cooling");
+    assert!(
+        annual_heating_mwh >= 0.0,
+        "Heating energy should be non-negative"
+    );
+    assert!(
+        annual_cooling_mwh >= 0.0,
+        "Cooling energy should be non-negative"
+    );
+    assert_eq!(
+        annual_total_mwh,
+        annual_heating_mwh + annual_cooling_mwh,
+        "Total should equal heating + cooling"
+    );
 
     // Print summary
     println!("=== Summary ===");
     println!("Separate heating/cooling energy tracking: ✓ Working");
-    println!("Annual heating energy: {:.2} MWh ({})", annual_heating_mwh, heating_deviation);
-    println!("Annual cooling energy: {:.2} MWh ({})", annual_cooling_mwh, cooling_deviation);
-    println!("Annual total energy: {:.2} MWh ({})", annual_total_mwh, total_deviation);
-    println!("Peak heating: {:.2} kW ({})", peak_heating_kw, if peak_heating_ok { "✓" } else { "✗" });
-    println!("Peak cooling: {:.2} kW ({})", peak_cooling_kw, if peak_cooling_ok { "✓" } else { "✗" });
+    println!(
+        "Annual heating energy: {:.2} MWh ({})",
+        annual_heating_mwh, heating_deviation
+    );
+    println!(
+        "Annual cooling energy: {:.2} MWh ({})",
+        annual_cooling_mwh, cooling_deviation
+    );
+    println!(
+        "Annual total energy: {:.2} MWh ({})",
+        annual_total_mwh, total_deviation
+    );
+    println!(
+        "Peak heating: {:.2} kW ({})",
+        peak_heating_kw,
+        if peak_heating_ok { "✓" } else { "✗" }
+    );
+    println!(
+        "Peak cooling: {:.2} kW ({})",
+        peak_cooling_kw,
+        if peak_cooling_ok { "✓" } else { "✗" }
+    );
 }

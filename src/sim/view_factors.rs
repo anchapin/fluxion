@@ -101,7 +101,12 @@ mod tests {
         // Expected: (16/24) * (16/16) = 0.667
         let f = hottels_rectangular_view_factor(8.0, 3.0, 8.0, 2.0, 0.1);
         let expected = (16.0 / 24.0) * (16.0 / 16.0);
-        assert!((f - expected).abs() < 0.01, "Expected {:.3}, got {:.3}", expected, f);
+        assert!(
+            (f - expected).abs() < 0.01,
+            "Expected {:.3}, got {:.3}",
+            expected,
+            f
+        );
     }
 
     #[test]

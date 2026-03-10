@@ -882,8 +882,8 @@ impl Assemblies {
     pub fn high_mass_wall() -> Construction {
         Construction::new(vec![
             Materials::concrete_block(0.100), // ASHRAE 140: k=0.51 W/mK
-            Materials::foam(0.0615), // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m
-            Materials::wood_siding(0.009), // ASHRAE 140: k=0.16 W/mK
+            Materials::foam(0.0615),          // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m
+            Materials::wood_siding(0.009),    // ASHRAE 140: k=0.16 W/mK
         ])
     }
 

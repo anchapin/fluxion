@@ -63,7 +63,13 @@ fn calculate_linearized_radiative_transfer(
     let delta_t = temperature_b_c - temperature_a_c;
 
     // Calculate linearized transfer
-    4.0 * STEFAN_BOLTZMANN_CONST * emissivity * emissivity * view_factor * f64::powi(t_avg_k, 3) * area * delta_t
+    4.0 * STEFAN_BOLTZMANN_CONST
+        * emissivity
+        * emissivity
+        * view_factor
+        * f64::powi(t_avg_k, 3)
+        * area
+        * delta_t
 }
 
 #[test]
@@ -83,17 +89,26 @@ fn test_stefan_boltzmann_nonlinear_large_delta_t() {
     let expected_watts = -2213.0;
 
     let q_nonlinear = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     println!("Nonlinear radiative transfer: {:.2} W", q_nonlinear);
     println!("Expected: {:.2} W", expected_watts);
-    println!("Difference: {:.2}%", ((q_nonlinear - expected_watts).abs() / expected_watts.abs()) * 100.0);
+    println!(
+        "Difference: {:.2}%",
+        ((q_nonlinear - expected_watts).abs() / expected_watts.abs()) * 100.0
+    );
 
     assert!(
         (q_nonlinear - expected_watts).abs() / expected_watts.abs() * 100.0 < TOLERANCE_PCT,
         "Nonlinear transfer {:.2} W differs from expected {:.2} W by more than {}%",
-        q_nonlinear, expected_watts, TOLERANCE_PCT
+        q_nonlinear,
+        expected_watts,
+        TOLERANCE_PCT
     );
 }
 
@@ -111,7 +126,11 @@ fn test_stefan_boltzmann_linearized_large_delta_t() {
     let expected_watts = 2211.0;
 
     let q_linearized = calculate_linearized_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     println!("Linearized radiative transfer: {:.2} W", q_linearized);
@@ -120,7 +139,9 @@ fn test_stefan_boltzmann_linearized_large_delta_t() {
     assert!(
         (q_linearized - expected_watts).abs() / expected_watts * 100.0 < TOLERANCE_PCT,
         "Linearized transfer {:.2} W differs from expected {:.2} W by more than {}%",
-        q_linearized, expected_watts, TOLERANCE_PCT
+        q_linearized,
+        expected_watts,
+        TOLERANCE_PCT
     );
 }
 
@@ -133,23 +154,35 @@ fn test_nonlinear_vs_linearized_small_delta_t() {
     let temp_b = 23.0; // °C
 
     let q_nonlinear = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     let q_linearized = calculate_linearized_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     let difference_pct = (q_nonlinear - q_linearized).abs() / q_nonlinear * 100.0;
 
-    println!("Nonlinear: {:.2} W, Linearized: {:.2} W", q_nonlinear, q_linearized);
+    println!(
+        "Nonlinear: {:.2} W, Linearized: {:.2} W",
+        q_nonlinear, q_linearized
+    );
     println!("Difference: {:.2}%", difference_pct);
 
     // For small ΔT, nonlinear and linearized should match within 1%
     assert!(
         difference_pct < TOLERANCE_PCT,
         "Nonlinear and linearized differ by {:.2}% for small ΔT, expected < {}%",
-        difference_pct, TOLERANCE_PCT
+        difference_pct,
+        TOLERANCE_PCT
     );
 }
 
@@ -163,16 +196,27 @@ fn test_nonlinear_vs_linearized_large_delta_t() {
     let temp_b = 40.0; // °C
 
     let q_nonlinear = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     let q_linearized = calculate_linearized_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     let difference_pct = (q_nonlinear - q_linearized).abs() / q_nonlinear.abs() * 100.0;
 
-    println!("Nonlinear: {:.2} W, Linearized: {:.2} W", q_nonlinear, q_linearized);
+    println!(
+        "Nonlinear: {:.2} W, Linearized: {:.2} W",
+        q_nonlinear, q_linearized
+    );
     println!("Difference: {:.2}%", difference_pct);
 
     // For large ΔT, difference should be noticeable (> 0.5%)
@@ -195,10 +239,20 @@ fn test_kelvin_conversion_required() {
     // Correct: Use Kelvin
     let t_a_k = temp_a_c + 273.15;
     let t_b_k = temp_b_c + 273.15;
-    let q_correct = STEFAN_BOLTZMANN_CONST * EMISSIVITY * EMISSIVITY * VIEW_FACTOR * SURFACE_AREA * (f64::powi(t_a_k, 4) - f64::powi(t_b_k, 4));
+    let q_correct = STEFAN_BOLTZMANN_CONST
+        * EMISSIVITY
+        * EMISSIVITY
+        * VIEW_FACTOR
+        * SURFACE_AREA
+        * (f64::powi(t_a_k, 4) - f64::powi(t_b_k, 4));
 
     // Incorrect: Use Celsius (common mistake)
-    let q_incorrect = STEFAN_BOLTZMANN_CONST * EMISSIVITY * EMISSIVITY * VIEW_FACTOR * SURFACE_AREA * (f64::powi(temp_a_c, 4) - f64::powi(temp_b_c, 4));
+    let q_incorrect = STEFAN_BOLTZMANN_CONST
+        * EMISSIVITY
+        * EMISSIVITY
+        * VIEW_FACTOR
+        * SURFACE_AREA
+        * (f64::powi(temp_a_c, 4) - f64::powi(temp_b_c, 4));
 
     println!("Correct (Kelvin): {:.2} W", q_correct);
     println!("Incorrect (Celsius): {:.2} W", q_incorrect);
@@ -226,7 +280,11 @@ fn test_radiative_conductance_function_exists() {
     assert!(h_rad > 0.0, "Radiative conductance should be positive");
 
     // Conductance should be reasonable (order of magnitude check)
-    assert!(h_rad < 100.0, "Radiative conductance should be < 100 W/K, got {:.2} W/K", h_rad);
+    assert!(
+        h_rad < 100.0,
+        "Radiative conductance should be < 100 W/K, got {:.2} W/K",
+        h_rad
+    );
 }
 
 #[test]
@@ -246,7 +304,11 @@ fn test_radiative_transfer_with_conductance() {
 
     // Direct linearized calculation
     let q_linearized = calculate_linearized_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     println!("Q from conductance: {:.2} W", q_from_conductance);
@@ -256,7 +318,8 @@ fn test_radiative_transfer_with_conductance() {
     assert!(
         (q_from_conductance - q_linearized).abs() < 0.01,
         "Q from conductance ({:.2} W) should match Q from linearized ({:.2} W)",
-        q_from_conductance, q_linearized
+        q_from_conductance,
+        q_linearized
     );
 }
 
@@ -268,12 +331,19 @@ fn test_radiative_transfer_zero_delta_t() {
     let temp_b = 20.0; // °C
 
     let q_nonlinear = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, SURFACE_AREA,
+        temp_a,
+        temp_b,
+        EMISSIVITY,
+        VIEW_FACTOR,
+        SURFACE_AREA,
     );
 
     println!("Radiative transfer with ΔT=0: {:.2} W", q_nonlinear);
 
-    assert_eq!(q_nonlinear, 0.0, "Zero temperature difference should give zero heat transfer");
+    assert_eq!(
+        q_nonlinear, 0.0,
+        "Zero temperature difference should give zero heat transfer"
+    );
 }
 
 #[test]
@@ -284,13 +354,11 @@ fn test_radiative_transfer_emissivity_scaling() {
     let temp_a = 20.0; // °C
     let temp_b = 40.0; // °C
 
-    let q_emissivity_09 = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, 0.9, VIEW_FACTOR, SURFACE_AREA,
-    );
+    let q_emissivity_09 =
+        calculate_nonlinear_radiative_transfer(temp_a, temp_b, 0.9, VIEW_FACTOR, SURFACE_AREA);
 
-    let q_emissivity_05 = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, 0.5, VIEW_FACTOR, SURFACE_AREA,
-    );
+    let q_emissivity_05 =
+        calculate_nonlinear_radiative_transfer(temp_a, temp_b, 0.5, VIEW_FACTOR, SURFACE_AREA);
 
     let ratio = q_emissivity_09 / q_emissivity_05;
     let expected_ratio = f64::powi(0.9 / 0.5, 2); // Square ratio
@@ -302,7 +370,8 @@ fn test_radiative_transfer_emissivity_scaling() {
     assert!(
         (ratio - expected_ratio).abs() < 0.01,
         "Q should scale with ε², expected ratio {:.2}, got {:.2}",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }
 
@@ -314,13 +383,11 @@ fn test_radiative_transfer_area_scaling() {
     let temp_a = 20.0; // °C
     let temp_b = 40.0; // °C
 
-    let q_area_10 = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, 10.0,
-    );
+    let q_area_10 =
+        calculate_nonlinear_radiative_transfer(temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, 10.0);
 
-    let q_area_20 = calculate_nonlinear_radiative_transfer(
-        temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, 20.0,
-    );
+    let q_area_20 =
+        calculate_nonlinear_radiative_transfer(temp_a, temp_b, EMISSIVITY, VIEW_FACTOR, 20.0);
 
     let ratio = q_area_20 / q_area_10;
     let expected_ratio = 2.0;
@@ -332,6 +399,7 @@ fn test_radiative_transfer_area_scaling() {
     assert!(
         (ratio - expected_ratio).abs() < 0.01,
         "Q should scale linearly with area, expected ratio {:.2}, got {:.2}",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }

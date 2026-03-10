@@ -7,9 +7,11 @@ use crate::validation::diagnostic::{
     HourlyData, PeakTiming, TemperatureProfile,
 };
 use crate::validation::diagnostics::SimulationDiagnostics;
-use crate::validation::report::{BenchmarkReport, MetricType};
+use crate::validation::report::{BenchmarkReport, BenchmarkData, MetricType};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
+
+use rayon::prelude::*;
 
 /// Validator for ASHRAE 140 standard cases.
 pub struct ASHRAE140Validator {
@@ -656,8 +658,9 @@ impl ASHRAE140Validator {
     }
 
     /// Validates the analytical engine against the ASHRAE 140 cases.
-    pub fn validate_analytical_engine(&mut self) -> BenchmarkReport {
+    pub fn validate_analytical_engine(&self) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
+        report.set_start(); // Record start time
         let benchmark_data = benchmark::get_all_benchmark_data();
         let weather = DenverTmyWeather::new();
 
@@ -686,16 +689,39 @@ impl ASHRAE140Validator {
             ASHRAE140Case::Case195,
         ];
 
-        for case in cases {
-            let case_id = case.number();
-            if let Some(data) = benchmark_data.get(&case_id) {
-                let spec = case.spec();
-                let results = self.simulate_case(&spec, &weather);
+        // Define a struct to hold partial results from each parallel task
+        #[derive(Debug)]
+        struct CasePartial {
+            case_id: String,
+            data: Option<BenchmarkData>,
+            is_free_floating: bool,
+            results: Option<CaseResults>,
+        }
 
-                if spec.is_free_floating() {
+        // Parallel processing: simulate each case
+        let partials: Vec<CasePartial> = cases
+            .par_iter()
+            .map(|case| {
+                let case_id = case.number();
+                let data_opt = benchmark_data.get(&case_id).cloned();
+                let is_free_floating = case.spec().is_free_floating();
+                let results = data_opt.as_ref().map(|_| self.simulate_case(&case.spec(), &weather));
+                CasePartial {
+                    case_id,
+                    data: data_opt,
+                    is_free_floating,
+                    results,
+                }
+            })
+            .collect();
+
+        // Sequential post-processing: print results and accumulate into report
+        for partial in partials {
+            if let (Some(data), Some(results)) = (partial.data, partial.results) {
+                if partial.is_free_floating {
                     println!(
                         "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
-                        case_id,
+                        partial.case_id,
                         results.min_temp_celsius.unwrap_or(0.0),
                         data.min_free_float_min,
                         data.min_free_float_max,
@@ -704,10 +730,9 @@ impl ASHRAE140Validator {
                         data.max_free_float_max
                     );
 
-                    // Add free-floating temperature metrics
                     if let Some(min_temp) = results.min_temp_celsius {
                         report.add_result_simple(
-                            &case_id,
+                            &partial.case_id,
                             MetricType::MinFreeFloat,
                             min_temp,
                             data.min_free_float_min,
@@ -717,7 +742,7 @@ impl ASHRAE140Validator {
 
                     if let Some(max_temp) = results.max_temp_celsius {
                         report.add_result_simple(
-                            &case_id,
+                            &partial.case_id,
                             MetricType::MaxFreeFloat,
                             max_temp,
                             data.max_free_float_min,
@@ -727,7 +752,7 @@ impl ASHRAE140Validator {
                 } else {
                     println!(
                         "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
-                        case_id,
+                        partial.case_id,
                         results.annual_heating_mwh,
                         data.annual_heating_min,
                         data.annual_heating_max,
@@ -739,7 +764,7 @@ impl ASHRAE140Validator {
                     );
 
                     report.add_result_simple(
-                        &case_id,
+                        &partial.case_id,
                         MetricType::AnnualHeating,
                         results.annual_heating_mwh,
                         data.annual_heating_min,
@@ -747,17 +772,16 @@ impl ASHRAE140Validator {
                     );
 
                     report.add_result_simple(
-                        &case_id,
+                        &partial.case_id,
                         MetricType::AnnualCooling,
                         results.annual_cooling_mwh,
                         data.annual_cooling_min,
                         data.annual_cooling_max,
                     );
 
-                    // Add peak loads if reference data is available
                     if data.peak_heating_min >= 0.0 {
                         report.add_result_simple(
-                            &case_id,
+                            &partial.case_id,
                             MetricType::PeakHeating,
                             results.peak_heating_kw,
                             data.peak_heating_min,
@@ -767,7 +791,7 @@ impl ASHRAE140Validator {
 
                     if data.peak_cooling_min >= 0.0 {
                         report.add_result_simple(
-                            &case_id,
+                            &partial.case_id,
                             MetricType::PeakCooling,
                             results.peak_cooling_kw,
                             data.peak_cooling_min,
@@ -776,10 +800,11 @@ impl ASHRAE140Validator {
                     }
                 }
 
-                report.add_benchmark_data(&case_id, data.clone());
+                report.add_benchmark_data(&partial.case_id, data);
             }
         }
 
+        report.set_end(); // Record end time after all work complete
         report
     }
 

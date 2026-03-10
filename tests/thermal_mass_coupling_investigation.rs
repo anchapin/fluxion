@@ -38,7 +38,10 @@ fn test_thermal_mass_coupling_analysis() {
     let time_constant_hours = thermal_capacitance / (total_mass_conductance * 3600.0);
 
     println!("Time Constant Analysis:");
-    println!("  Total mass conductance: {:.2} W/K", total_mass_conductance);
+    println!(
+        "  Total mass conductance: {:.2} W/K",
+        total_mass_conductance
+    );
     println!("  Time constant (τ): {:.2} hours", time_constant_hours);
     println!("  τ / timestep: {:.2}x", time_constant_hours / 1.0);
     println!();
@@ -54,27 +57,49 @@ fn test_thermal_mass_coupling_analysis() {
 
     // Analyze heat flow pathways
     println!("Heat Flow Pathways (from mass):");
-    println!("  To exterior: h_tr_em = {:.2} W/K ({:.1}%)", h_tr_em, (h_tr_em / total_mass_conductance) * 100.0);
-    println!("  To surface: h_tr_ms = {:.2} W/K ({:.1}%)", h_tr_ms, (h_tr_ms / total_mass_conductance) * 100.0);
+    println!(
+        "  To exterior: h_tr_em = {:.2} W/K ({:.1}%)",
+        h_tr_em,
+        (h_tr_em / total_mass_conductance) * 100.0
+    );
+    println!(
+        "  To surface: h_tr_ms = {:.2} W/K ({:.1}%)",
+        h_tr_ms,
+        (h_tr_ms / total_mass_conductance) * 100.0
+    );
     println!();
 
     // Analyze surface heat flow pathways
     let total_surface_conductance = h_tr_ms + h_tr_is;
     println!("Surface Heat Flow Pathways (to interior):");
-    println!("  From mass: h_tr_ms = {:.2} W/K ({:.1}%)", h_tr_ms, (h_tr_ms / total_surface_conductance) * 100.0);
-    println!("  To interior: h_tr_is = {:.2} W/K ({:.1}%)", h_tr_is, (h_tr_is / total_surface_conductance) * 100.0);
+    println!(
+        "  From mass: h_tr_ms = {:.2} W/K ({:.1}%)",
+        h_tr_ms,
+        (h_tr_ms / total_surface_conductance) * 100.0
+    );
+    println!(
+        "  To interior: h_tr_is = {:.2} W/K ({:.1}%)",
+        h_tr_is,
+        (h_tr_is / total_surface_conductance) * 100.0
+    );
     println!();
 
     // Identify problems
     println!("=== Problem Identification ===");
 
     if h_tr_em_ms_ratio < 0.1 {
-        println!("❌ h_tr_em/h_tr_ms ratio too low: {:.4} < 0.1", h_tr_em_ms_ratio);
+        println!(
+            "❌ h_tr_em/h_tr_ms ratio too low: {:.4} < 0.1",
+            h_tr_em_ms_ratio
+        );
         println!("   Thermal mass exchanges mostly with interior, not exterior");
         println!("   This causes mass temperature to follow interior temperature");
         println!("   Result: Ti_free is too low during winter");
     } else {
-        println!("✓ h_tr_em/h_tr_ms ratio reasonable: {:.4}", h_tr_em_ms_ratio);
+        println!(
+            "✓ h_tr_em/h_tr_ms ratio reasonable: {:.4}",
+            h_tr_em_ms_ratio
+        );
     }
 
     if h_tr_ms > 1000.0 {
@@ -86,18 +111,30 @@ fn test_thermal_mass_coupling_analysis() {
     }
 
     if time_constant_hours > 4.0 {
-        println!("❌ Time constant too large: {:.2} hours > 4 hours", time_constant_hours);
+        println!(
+            "❌ Time constant too large: {:.2} hours > 4 hours",
+            time_constant_hours
+        );
         println!("   Thermal mass responds too slowly to exterior conditions");
         println!("   Result: Thermal inertia causes temperature lag");
     } else {
-        println!("✓ Time constant reasonable: {:.2} hours", time_constant_hours);
+        println!(
+            "✓ Time constant reasonable: {:.2} hours",
+            time_constant_hours
+        );
     }
 
     println!();
     println!("=== Root Cause Analysis ===");
 
-    println!("1. High h_tr_ms ({:.2} W/K) causes strong coupling between mass and interior", h_tr_ms);
-    println!("2. Low h_tr_em ({:.2} W/K) causes weak coupling between mass and exterior", h_tr_em);
+    println!(
+        "1. High h_tr_ms ({:.2} W/K) causes strong coupling between mass and interior",
+        h_tr_ms
+    );
+    println!(
+        "2. Low h_tr_em ({:.2} W/K) causes weak coupling between mass and exterior",
+        h_tr_em
+    );
     println!("3. Result: Thermal mass temperature follows interior temperature");
     println!("4. During winter: Mass cools down with interior, stays cold");
     println!("5. Ti_free is low because mass releases cold to interior via h_tr_ms");
@@ -108,10 +145,21 @@ fn test_thermal_mass_coupling_analysis() {
     println!("=== Proposed Solutions ===");
 
     println!("Solution 1: Increase h_tr_em / Decrease h_tr_ms ratio");
-    println!("  - Target h_tr_em/h_tr_ms ratio: >0.1 (current: {:.4})", h_tr_em_ms_ratio);
+    println!(
+        "  - Target h_tr_em/h_tr_ms ratio: >0.1 (current: {:.4})",
+        h_tr_em_ms_ratio
+    );
     println!("  - Options:");
-    println!("    a) Increase h_tr_em by 2-3x: {:.2} → {:.2} W/K", h_tr_em, h_tr_em * 2.5);
-    println!("    b) Decrease h_tr_ms by 30-40%: {:.2} → {:.2} W/K", h_tr_ms, h_tr_ms * 0.6);
+    println!(
+        "    a) Increase h_tr_em by 2-3x: {:.2} → {:.2} W/K",
+        h_tr_em,
+        h_tr_em * 2.5
+    );
+    println!(
+        "    b) Decrease h_tr_ms by 30-40%: {:.2} → {:.2} W/K",
+        h_tr_ms,
+        h_tr_ms * 0.6
+    );
     println!("    c) Both: Increase h_tr_em 2x, decrease h_tr_ms 30%");
     println!("  - Expected impact:");
     println!("    * Better thermal mass exchange with exterior");

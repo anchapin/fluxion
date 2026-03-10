@@ -34,7 +34,10 @@ fn test_case_900_parameters() {
     let construction = &spec.construction;
     println!("  Wall: {:.3} W/m²K", construction.wall.u_value(None, None));
     println!("  Roof: {:.3} W/m²K", construction.roof.u_value(None, None));
-    println!("  Floor: {:.3} W/m²K", construction.floor.u_value(None, None));
+    println!(
+        "  Floor: {:.3} W/m²K",
+        construction.floor.u_value(None, None)
+    );
     println!();
 
     // HVAC setpoints
@@ -70,11 +73,20 @@ fn test_case_900_parameters() {
     println!("  h_tr_em / h_tr_ms: {:.3}", em_ms_ratio);
     println!("  h_tr_em / (h_tr_em + h_tr_ms): {:.3}", em_total_ratio);
     println!("  Heat flow to exterior: {:.1}%", em_total_ratio * 100.0);
-    println!("  Heat flow to surface: {:.1}%", (1.0 - em_total_ratio) * 100.0);
+    println!(
+        "  Heat flow to surface: {:.1}%",
+        (1.0 - em_total_ratio) * 100.0
+    );
     println!();
 
     // Thermal mass
-    let cm_avg = model.thermal_capacitance.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let cm_avg = model
+        .thermal_capacitance
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.num_zones as f64;
     let time_constant = cm_avg / (h_tr_em_avg + h_tr_ms_avg) / 3600.0; // hours
     println!("Thermal Mass:");
     println!("  Cm (average): {:.0} J/K", cm_avg);
@@ -83,8 +95,14 @@ fn test_case_900_parameters() {
 
     // Solar distribution
     println!("Solar Distribution:");
-    println!("  solar_beam_to_mass_fraction: {:.2}", model.solar_beam_to_mass_fraction);
-    println!("  solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
+    println!(
+        "  solar_beam_to_mass_fraction: {:.2}",
+        model.solar_beam_to_mass_fraction
+    );
+    println!(
+        "  solar_distribution_to_air: {:.2}",
+        model.solar_distribution_to_air
+    );
     println!();
 
     // Environmental inputs

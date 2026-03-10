@@ -41,16 +41,16 @@ use fluxion::weather::WeatherSource;
 #[derive(Debug, Clone)]
 struct Case900Reference {
     /// Annual heating energy (MWh)
-    annual_heating: (f64, f64),  // (min, max)
+    annual_heating: (f64, f64), // (min, max)
 
     /// Annual cooling energy (MWh)
-    annual_cooling: (f64, f64),  // (min, max)
+    annual_cooling: (f64, f64), // (min, max)
 
     /// Peak heating load (kW)
-    peak_heating: (f64, f64),    // (min, max)
+    peak_heating: (f64, f64), // (min, max)
 
     /// Peak cooling load (kW)
-    peak_cooling: (f64, f64),    // (min, max)
+    peak_cooling: (f64, f64), // (min, max)
 
     /// Free-floating minimum temperature (°C)
     free_floating_min: (f64, f64), // (min, max)
@@ -64,13 +64,13 @@ struct Case900Reference {
 
 /// ASHRAE 140 reference values for Case 900
 const CASE_900_REFERENCE: Case900Reference = Case900Reference {
-    annual_heating: (1.17, 2.04),    // MWh
-    annual_cooling: (2.13, 3.67),    // MWh
-    peak_heating: (1.10, 2.10),      // kW
-    peak_cooling: (2.10, 3.50),      // kW
+    annual_heating: (1.17, 2.04),      // MWh
+    annual_cooling: (2.13, 3.67),      // MWh
+    peak_heating: (1.10, 2.10),        // kW
+    peak_cooling: (2.10, 3.50),        // kW
     free_floating_min: (-6.40, -1.60), // °C
     free_floating_max: (41.80, 46.40), // °C
-    swing_reduction: 19.6,           // % reduction vs 600FF
+    swing_reduction: 19.6,             // % reduction vs 600FF
 };
 
 /// Tolerance for annual energy validation (±15% as per ASHRAE 140)
@@ -126,21 +126,31 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         model.weather = Some(weather_data.clone());
 
         // Get zone temperature before HVAC to determine if heating or cooling is needed
-        let zone_temp_before = model.temperatures.as_slice().first().copied().unwrap_or(20.0);
+        let zone_temp_before = model
+            .temperatures
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(20.0);
 
         // Run physics step (returns HVAC energy in kWh, positive for heating, negative for cooling)
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-        let energy_joules = energy_kwh * 3.6e6;  // Convert kWh to Joules
+        let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
 
         // Diagnostic output for HVAC energy (Plan 03-04)
         if step % 24 == 0 {
-            println!("Day {}: energy_kwh={:.6}, mass_energy_change_cumulative={:.2} Wh",
-                    step / 24, energy_kwh, model.mass_energy_change_cumulative);
+            println!(
+                "Day {}: energy_kwh={:.6}, mass_energy_change_cumulative={:.2} Wh",
+                step / 24,
+                energy_kwh,
+                model.mass_energy_change_cumulative
+            );
         }
 
         // Track solar gains for diagnostics
-        let solar_gain_watts = model.solar_gains.as_slice().first().copied().unwrap_or(0.0) * model.zone_area.as_slice().first().copied().unwrap_or(1.0);
-        total_solar_gain += solar_gain_watts;  // This is in Watts, will convert to MWh later
+        let solar_gain_watts = model.solar_gains.as_slice().first().copied().unwrap_or(0.0)
+            * model.zone_area.as_slice().first().copied().unwrap_or(1.0);
+        total_solar_gain += solar_gain_watts; // This is in Watts, will convert to MWh later
         peak_solar_gain = peak_solar_gain.max(solar_gain_watts);
 
         // Track summer solar gains (June-August)
@@ -165,28 +175,38 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         // Cooling: energy < 0 or zone temp above cooling setpoint
         if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
             total_heating += energy_joules;
-            let power_watts = energy_joules / 3600.0;  // Convert J/h to W
+            let power_watts = energy_joules / 3600.0; // Convert J/h to W
             peak_heating = peak_heating.max(power_watts);
         } else if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
-            total_cooling += -energy_joules;  // Cooling energy is negative
-            let power_watts = -energy_joules / 3600.0;  // Convert J/h to W
+            total_cooling += -energy_joules; // Cooling energy is negative
+            let power_watts = -energy_joules / 3600.0; // Convert J/h to W
             peak_cooling = peak_cooling.max(power_watts);
         }
     }
 
-    let summer_avg_solar = if summer_hours > 0 { summer_solar_gain / summer_hours as f64 } else { 0.0 };
+    let summer_avg_solar = if summer_hours > 0 {
+        summer_solar_gain / summer_hours as f64
+    } else {
+        0.0
+    };
 
     println!("=== Solar Gain Diagnostics ===");
     println!("Total annual solar gain (raw): {:.2} W*h", total_solar_gain);
-    println!("Total annual solar gain: {:.2} MWh", total_solar_gain / 1e6);  // W*h to MWh
+    println!("Total annual solar gain: {:.2} MWh", total_solar_gain / 1e6); // W*h to MWh
     println!("Peak solar gain: {:.2} kW", peak_solar_gain / 1000.0);
-    println!("Summer average solar gain: {:.2} kW", summer_avg_solar / 1000.0);
+    println!(
+        "Summer average solar gain: {:.2} kW",
+        summer_avg_solar / 1000.0
+    );
     println!("Summer hours tracked: {}", summer_hours);
     println!("=== HVAC Energy Diagnostics (Plan 03-04) ===");
     println!("Thermal model type: {:?}", model.thermal_model_type);
     println!("Method: hvac_output_raw used directly (no thermal_mass_correction_factor)");
     println!("Reason: Ti_free already includes thermal mass effects via 5R1C network");
-    println!("Mass energy change cumulative: {:.2} Wh", model.mass_energy_change_cumulative);
+    println!(
+        "Mass energy change cumulative: {:.2} Wh",
+        model.mass_energy_change_cumulative
+    );
     println!("=== Zone Temperature Diagnostics ===");
     println!("Min zone temp: {:.2}°C", min_zone_temp);
     println!("Max zone temp: {:.2}°C", max_zone_temp);
@@ -309,13 +329,17 @@ fn test_case_900_peak_heating_within_reference_range() {
     let (ref_min, ref_max) = CASE_900_REFERENCE.peak_heating;
     let tolerance = (ref_max - ref_min) * PEAK_LOAD_TOLERANCE;
 
-    println!("Case 900 Peak Heating (model tracking): {:.2} kW", model_peak_heating_kw);
+    println!(
+        "Case 900 Peak Heating (model tracking): {:.2} kW",
+        model_peak_heating_kw
+    );
     println!("Reference Range: [{:.2}, {:.2}] kW", ref_min, ref_max);
     println!("Tolerance: ±{:.2} kW", tolerance);
 
     // This test should pass after Task 2 fix (using hvac_output_raw instead of steady-state approximation)
     assert!(
-        model_peak_heating_kw >= ref_min - tolerance && model_peak_heating_kw <= ref_max + tolerance,
+        model_peak_heating_kw >= ref_min - tolerance
+            && model_peak_heating_kw <= ref_max + tolerance,
         "Peak heating {:.2} kW outside reference range [{:.2}, {:.2}] kW (±10% tolerance)",
         model_peak_heating_kw,
         ref_min,
@@ -347,13 +371,17 @@ fn test_case_900_peak_cooling_within_reference_range() {
     let (ref_min, ref_max) = CASE_900_REFERENCE.peak_cooling;
     let tolerance = (ref_max - ref_min) * PEAK_LOAD_TOLERANCE;
 
-    println!("Case 900 Peak Cooling (model tracking): {:.2} kW", model_peak_cooling_kw);
+    println!(
+        "Case 900 Peak Cooling (model tracking): {:.2} kW",
+        model_peak_cooling_kw
+    );
     println!("Reference Range: [{:.2}, {:.2}] kW", ref_min, ref_max);
     println!("Tolerance: ±{:.2} kW", tolerance);
 
     // This test should pass after Task 2 fix (using hvac_output_raw instead of steady-state approximation)
     assert!(
-        model_peak_cooling_kw >= ref_min - tolerance && model_peak_cooling_kw <= ref_max + tolerance,
+        model_peak_cooling_kw >= ref_min - tolerance
+            && model_peak_cooling_kw <= ref_max + tolerance,
         "Peak cooling {:.2} kW outside reference range [{:.2}, {:.2}] kW (±10% tolerance)",
         model_peak_cooling_kw,
         ref_min,
@@ -449,7 +477,10 @@ fn test_case_900ff_temperature_swing_reduction() {
     println!("Temperature Swing Comparison:");
     println!("  Case 600FF: {:.2}°C", swing_600);
     println!("  Case 900FF: {:.2}°C", swing_900);
-    println!("  Reduction: {:.1}% (expected: ~{:.1}%)", swing_reduction, expected_reduction);
+    println!(
+        "  Reduction: {:.1}% (expected: ~{:.1}%)",
+        swing_reduction, expected_reduction
+    );
 
     // Plan 03-03 Task 5: Updated tolerance to 10-25% range
     // Our implementation achieves ~12.3%, which is better than baseline (9.9%)
@@ -496,11 +527,16 @@ fn test_case_900_annual_cooling_energy_with_correction() {
     println!("Reason: Ti_free already includes thermal mass effects via 5R1C network");
 
     // Verify annual cooling energy is within reference range
-    assert!(cooling_mwh >= 2.13 && cooling_mwh <= 3.67,
-        "Annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh", cooling_mwh);
+    assert!(
+        cooling_mwh >= 2.13 && cooling_mwh <= 3.67,
+        "Annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh",
+        cooling_mwh
+    );
 
     println!("✅ Annual cooling energy within reference range");
-    println!("Improvement: Fixed double-correction bug from Plan 03-02 (11.20 MWh over-correction)");
+    println!(
+        "Improvement: Fixed double-correction bug from Plan 03-02 (11.20 MWh over-correction)"
+    );
 }
 
 #[test]
@@ -525,16 +561,25 @@ fn test_case_900_thermal_mass_energy_balance() {
     let final_mass_temp = model.previous_mass_temperatures[0];
 
     println!("=== Thermal Mass Energy Balance ===");
-    println!("Cumulative mass energy change: {:.2} Wh", cumulative_mass_energy_change);
+    println!(
+        "Cumulative mass energy change: {:.2} Wh",
+        cumulative_mass_energy_change
+    );
     println!("Initial mass temperature: {:.2}°C", initial_mass_temp);
     println!("Final mass temperature: {:.2}°C", final_mass_temp);
-    println!("Temperature difference: {:.2}°C", final_mass_temp - initial_mass_temp);
+    println!(
+        "Temperature difference: {:.2}°C",
+        final_mass_temp - initial_mass_temp
+    );
 
     // Cumulative mass energy change should be close to zero (within ±5% of total HVAC energy)
     // For high-mass buildings, the mass temperature should return close to initial after a full year
-    assert!((final_mass_temp - initial_mass_temp).abs() < 2.0, // ±2°C tolerance
+    assert!(
+        (final_mass_temp - initial_mass_temp).abs() < 2.0, // ±2°C tolerance
         "Mass temperature should return close to initial after full year, got {:.2}°C vs {:.2}°C",
-        final_mass_temp, initial_mass_temp);
+        final_mass_temp,
+        initial_mass_temp
+    );
 
     println!("✅ Thermal mass energy balance verified");
 }
@@ -579,7 +624,7 @@ fn test_case_900_thermal_mass_characteristics() {
 
     // Verify high thermal mass (>500 kJ/K)
     assert!(
-        total_cap > 500_000.0,  // 500 kJ/K
+        total_cap > 500_000.0, // 500 kJ/K
         "Case 900 should have high thermal capacitance (>500 kJ/K), got {:.2} kJ/K",
         total_cap / 1000.0
     );
@@ -601,7 +646,13 @@ fn test_case_900ff_thermal_mass_coupling_parameters() {
 
     // Check thermal capacitance (Cm)
     println!("Thermal capacitance (Cm):");
-    let cm_avg = model.thermal_capacitance.as_ref().to_vec().iter().sum::<f64>() / model.num_zones as f64;
+    let cm_avg = model
+        .thermal_capacitance
+        .as_ref()
+        .to_vec()
+        .iter()
+        .sum::<f64>()
+        / model.num_zones as f64;
     println!("  Average: {:.0} J/K", cm_avg);
     println!();
 
@@ -625,8 +676,14 @@ fn test_case_900ff_thermal_mass_coupling_parameters() {
 
     // Check solar distribution
     println!("Solar distribution:");
-    println!("  solar_beam_to_mass_fraction: {:.2}", model.solar_beam_to_mass_fraction);
-    println!("  solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
+    println!(
+        "  solar_beam_to_mass_fraction: {:.2}",
+        model.solar_beam_to_mass_fraction
+    );
+    println!(
+        "  solar_distribution_to_air: {:.2}",
+        model.solar_distribution_to_air
+    );
     println!();
 
     // Calculate coupling ratios for analysis
@@ -672,8 +729,11 @@ fn test_case_900ff_temperature_swing_reduction_final() {
     // Target: ~19.6%, but there's a trade-off with max temperature
     // Actual: ~13.7% (1.4% improvement from 12.3% baseline)
     // This is a reasonable compromise to maintain max temperature within reference range
-    assert!(swing_reduction > 12.3,
-        "Temperature swing reduction {:.1}% should be >12.3% (Plan 03-03 baseline)", swing_reduction);
+    assert!(
+        swing_reduction > 12.3,
+        "Temperature swing reduction {:.1}% should be >12.3% (Plan 03-03 baseline)",
+        swing_reduction
+    );
 
     println!("=== Temperature Swing Reduction (Final - Plan 03-06) ===");
     println!("Low-mass swing (600FF): {:.2}°C (known value)", swing_600);
@@ -698,8 +758,14 @@ fn test_case_900_solar_gain_distribution_validation() {
 
     println!("=== Solar Gain Distribution Validation (Plan 03-07 Task 2) ===");
     println!("Case 900 Solar Distribution Parameters:");
-    println!("  solar_beam_to_mass_fraction: {:.2}", model.solar_beam_to_mass_fraction);
-    println!("  solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
+    println!(
+        "  solar_beam_to_mass_fraction: {:.2}",
+        model.solar_beam_to_mass_fraction
+    );
+    println!(
+        "  solar_distribution_to_air: {:.2}",
+        model.solar_distribution_to_air
+    );
     println!();
 
     // Validate solar_beam_to_mass_fraction (should be 0.7 for Case 900)
@@ -710,8 +776,10 @@ fn test_case_900_solar_gain_distribution_validation() {
         expected_beam_to_mass,
         model.solar_beam_to_mass_fraction
     );
-    println!("✅ solar_beam_to_mass_fraction = {:.2} (expected: {:.2})",
-             model.solar_beam_to_mass_fraction, expected_beam_to_mass);
+    println!(
+        "✅ solar_beam_to_mass_fraction = {:.2} (expected: {:.2})",
+        model.solar_beam_to_mass_fraction, expected_beam_to_mass
+    );
     println!("   → 70% of beam solar goes to thermal mass exterior");
     println!("   → 30% of beam solar goes to thermal mass interior");
     println!();
@@ -724,8 +792,10 @@ fn test_case_900_solar_gain_distribution_validation() {
         expected_dist_to_air,
         model.solar_distribution_to_air
     );
-    println!("✅ solar_distribution_to_air = {:.2} (expected: {:.2})",
-             model.solar_distribution_to_air, expected_dist_to_air);
+    println!(
+        "✅ solar_distribution_to_air = {:.2} (expected: {:.2})",
+        model.solar_distribution_to_air, expected_dist_to_air
+    );
     println!("   → Solar gains do NOT go directly to air");
     println!("   → All solar gains go to mass/surface via distribution parameters");
     println!();
@@ -772,7 +842,10 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     println!("=== HVAC Demand Calculation Analysis (Plan 03-07 Task 1) ===");
     println!("Heating setpoint: {:.1}°C", heating_setpoint);
     println!("Cooling setpoint: {:.1}°C", cooling_setpoint);
-    println!("Deadband: [{:.1}, {:.1}]°C", heating_setpoint, cooling_setpoint);
+    println!(
+        "Deadband: [{:.1}, {:.1}]°C",
+        heating_setpoint, cooling_setpoint
+    );
     println!();
 
     // Run simulation and analyze HVAC demand
@@ -803,14 +876,34 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     }
 
     let avg_demand = total_demand_sum / 8760.0;
-    let avg_heating_demand = if heating_hours > 0 { heating_demand_sum / heating_hours as f64 } else { 0.0 };
-    let avg_cooling_demand = if cooling_hours > 0 { cooling_demand_sum / cooling_hours as f64 } else { 0.0 };
+    let avg_heating_demand = if heating_hours > 0 {
+        heating_demand_sum / heating_hours as f64
+    } else {
+        0.0
+    };
+    let avg_cooling_demand = if cooling_hours > 0 {
+        cooling_demand_sum / cooling_hours as f64
+    } else {
+        0.0
+    };
 
     println!("Demand Statistics:");
     println!("  Total hours: 8760");
-    println!("  Heating hours: {} ({:.1}%)", heating_hours, heating_hours as f64 / 8760.0 * 100.0);
-    println!("  Cooling hours: {} ({:.1}%)", cooling_hours, cooling_hours as f64 / 8760.0 * 100.0);
-    println!("  Off hours: {} ({:.1}%)", off_hours, off_hours as f64 / 8760.0 * 100.0);
+    println!(
+        "  Heating hours: {} ({:.1}%)",
+        heating_hours,
+        heating_hours as f64 / 8760.0 * 100.0
+    );
+    println!(
+        "  Cooling hours: {} ({:.1}%)",
+        cooling_hours,
+        cooling_hours as f64 / 8760.0 * 100.0
+    );
+    println!(
+        "  Off hours: {} ({:.1}%)",
+        off_hours,
+        off_hours as f64 / 8760.0 * 100.0
+    );
     println!();
     println!("  Average demand (absolute): {:.2} W", avg_demand);
     println!("  Average heating demand: {:.2} W", avg_heating_demand);
@@ -850,19 +943,34 @@ fn main() {
     println!("Solution: Implement proper thermal mass integration and conductance validation\n");
 
     println!("Reference Values (ASHRAE 140):");
-    println!("  Annual Heating: [{:.2}, {:.2}] MWh",
-             CASE_900_REFERENCE.annual_heating.0, CASE_900_REFERENCE.annual_heating.1);
-    println!("  Annual Cooling: [{:.2}, {:.2}] MWh",
-             CASE_900_REFERENCE.annual_cooling.0, CASE_900_REFERENCE.annual_cooling.1);
-    println!("  Peak Heating: [{:.2}, {:.2}] kW",
-             CASE_900_REFERENCE.peak_heating.0, CASE_900_REFERENCE.peak_heating.1);
-    println!("  Peak Cooling: [{:.2}, {:.2}] kW",
-             CASE_900_REFERENCE.peak_cooling.0, CASE_900_REFERENCE.peak_cooling.1);
-    println!("  Free-Floating Min: [{:.2}, {:.2}]°C",
-             CASE_900_REFERENCE.free_floating_min.0, CASE_900_REFERENCE.free_floating_min.1);
-    println!("  Free-Floating Max: [{:.2}, {:.2}]°C",
-             CASE_900_REFERENCE.free_floating_max.0, CASE_900_REFERENCE.free_floating_max.1);
-    println!("  Temperature Swing Reduction: ~{:.1}%", CASE_900_REFERENCE.swing_reduction);
+    println!(
+        "  Annual Heating: [{:.2}, {:.2}] MWh",
+        CASE_900_REFERENCE.annual_heating.0, CASE_900_REFERENCE.annual_heating.1
+    );
+    println!(
+        "  Annual Cooling: [{:.2}, {:.2}] MWh",
+        CASE_900_REFERENCE.annual_cooling.0, CASE_900_REFERENCE.annual_cooling.1
+    );
+    println!(
+        "  Peak Heating: [{:.2}, {:.2}] kW",
+        CASE_900_REFERENCE.peak_heating.0, CASE_900_REFERENCE.peak_heating.1
+    );
+    println!(
+        "  Peak Cooling: [{:.2}, {:.2}] kW",
+        CASE_900_REFERENCE.peak_cooling.0, CASE_900_REFERENCE.peak_cooling.1
+    );
+    println!(
+        "  Free-Floating Min: [{:.2}, {:.2}]°C",
+        CASE_900_REFERENCE.free_floating_min.0, CASE_900_REFERENCE.free_floating_min.1
+    );
+    println!(
+        "  Free-Floating Max: [{:.2}, {:.2}]°C",
+        CASE_900_REFERENCE.free_floating_max.0, CASE_900_REFERENCE.free_floating_max.1
+    );
+    println!(
+        "  Temperature Swing Reduction: ~{:.1}%",
+        CASE_900_REFERENCE.swing_reduction
+    );
     println!();
 
     println!("Running tests...\n");

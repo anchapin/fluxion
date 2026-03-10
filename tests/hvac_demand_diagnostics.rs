@@ -26,7 +26,8 @@ use fluxion::weather::WeatherSource;
 #[test]
 fn test_case_900_hvac_demand_analysis() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    let mut model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     let steps = 8760; // 1 year
@@ -90,18 +91,45 @@ fn test_case_900_hvac_demand_analysis() {
 
     println!("\n=== Task 1: HVAC Demand Analysis ===");
     println!("Total hours: {}", steps);
-    println!("Heating hours: {} ({:.1}%)", heating_hours, heating_hours as f64 / steps as f64 * 100.0);
-    println!("Cooling hours: {} ({:.1}%)", cooling_hours, cooling_hours as f64 / steps as f64 * 100.0);
-    println!("Off hours: {} ({:.1}%)", off_hours, off_hours as f64 / steps as f64 * 100.0);
+    println!(
+        "Heating hours: {} ({:.1}%)",
+        heating_hours,
+        heating_hours as f64 / steps as f64 * 100.0
+    );
+    println!(
+        "Cooling hours: {} ({:.1}%)",
+        cooling_hours,
+        cooling_hours as f64 / steps as f64 * 100.0
+    );
+    println!(
+        "Off hours: {} ({:.1}%)",
+        off_hours,
+        off_hours as f64 / steps as f64 * 100.0
+    );
     println!();
-    println!("Average heating demand: {:.2} W", heating_demand_sum / heating_hours as f64);
-    println!("Average cooling demand: {:.2} W", cooling_demand_sum / cooling_hours as f64);
+    println!(
+        "Average heating demand: {:.2} W",
+        heating_demand_sum / heating_hours as f64
+    );
+    println!(
+        "Average cooling demand: {:.2} W",
+        cooling_demand_sum / cooling_hours as f64
+    );
     println!("Max heating demand: {:.2} W", max_heating_demand);
     println!("Max cooling demand: {:.2} W", max_cooling_demand);
     println!();
-    println!("Mass temperature below heating setpoint: {} hours", mass_temp_below_setpoint_count);
-    println!("Mass temperature above cooling setpoint: {} hours", mass_temp_above_setpoint_count);
-    println!("HVAC demand when mass temp outside setpoints: {}", demand_in_deadband_count);
+    println!(
+        "Mass temperature below heating setpoint: {} hours",
+        mass_temp_below_setpoint_count
+    );
+    println!(
+        "Mass temperature above cooling setpoint: {} hours",
+        mass_temp_above_setpoint_count
+    );
+    println!(
+        "HVAC demand when mass temp outside setpoints: {}",
+        demand_in_deadband_count
+    );
 
     // Diagnostics:
     // 1. If heating hours are high (>50%), heating demand is over-estimated
@@ -109,8 +137,16 @@ fn test_case_900_hvac_demand_analysis() {
     // 3. If demand_in_deadband_count is high (>1000), HVAC is not responding to thermal mass effects
     // 4. If mass_temp_below/above_setpoint_count are both high, mass is storing too much energy
 
-    assert!(heating_hours < 4000, "Heating hours should be <50% of year, got {}", heating_hours);
-    assert!(cooling_hours < 4000, "Cooling hours should be <50% of year, got {}", cooling_hours);
+    assert!(
+        heating_hours < 4000,
+        "Heating hours should be <50% of year, got {}",
+        heating_hours
+    );
+    assert!(
+        cooling_hours < 4000,
+        "Cooling hours should be <50% of year, got {}",
+        cooling_hours
+    );
 }
 
 /// Task 2: Validate solar gain distribution parameters
@@ -121,11 +157,18 @@ fn test_case_900_hvac_demand_analysis() {
 #[test]
 fn test_case_900_solar_gain_distribution_validation() {
     let spec = ASHRAE140Case::Case900.spec();
-    let model = fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    let model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     println!("\n=== Task 2: Solar Gain Distribution Validation ===");
-    println!("solar_distribution_to_air: {:.2}", model.solar_distribution_to_air);
-    println!("solar_beam_to_mass_fraction: {:.2}", model.solar_beam_to_mass_fraction);
+    println!(
+        "solar_distribution_to_air: {:.2}",
+        model.solar_distribution_to_air
+    );
+    println!(
+        "solar_beam_to_mass_fraction: {:.2}",
+        model.solar_beam_to_mass_fraction
+    );
 
     // ASHRAE 140 specification for Case 900 (high-mass):
     // - 30% of solar gains go to air (solar_distribution_to_air = 0.3)
@@ -175,7 +218,8 @@ fn test_case_900_solar_gain_distribution_validation() {
 #[test]
 fn test_case_900_solar_mass_interaction_analysis() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    let mut model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
     let steps = 8760; // 1 year
@@ -192,7 +236,12 @@ fn test_case_900_solar_mass_interaction_analysis() {
     let mut winter_mass_min_temp = f64::MAX;
     let mut winter_mass_max_temp = f64::MIN;
 
-    let _prev_mass_temp = model.mass_temperatures.as_slice().first().copied().unwrap_or(20.0);
+    let _prev_mass_temp = model
+        .mass_temperatures
+        .as_slice()
+        .first()
+        .copied()
+        .unwrap_or(20.0);
 
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
@@ -203,13 +252,23 @@ fn test_case_900_solar_mass_interaction_analysis() {
         total_solar_gain += solar_gain_w;
 
         // Get previous mass temp before step
-        let prev_mass_temp = model.mass_temperatures.as_slice().first().copied().unwrap_or(20.0);
+        let prev_mass_temp = model
+            .mass_temperatures
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(20.0);
 
         // Run physics step
         model.step_physics(step, weather_data.dry_bulb_temp);
 
         // Get new mass temp
-        let curr_mass_temp = model.mass_temperatures.as_slice().first().copied().unwrap_or(20.0);
+        let curr_mass_temp = model
+            .mass_temperatures
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(20.0);
 
         // Track mass energy change
         let mass_temp_change = curr_mass_temp - prev_mass_temp;
@@ -239,13 +298,28 @@ fn test_case_900_solar_mass_interaction_analysis() {
     println!("\n=== Task 3: Solar-Mass Interaction Analysis ===");
     println!("Total annual solar gain: {:.2} MWh", total_solar_gain / 1e6);
     println!("Solar to mass (70%): {:.2} MWh", solar_to_mass / 1e6);
-    println!("Solar to air (30%): {:.2} MWh", (total_solar_gain * model.solar_distribution_to_air) / 1e6);
+    println!(
+        "Solar to air (30%): {:.2} MWh",
+        (total_solar_gain * model.solar_distribution_to_air) / 1e6
+    );
     println!();
-    println!("Mass temperature range: {:.2}°C to {:.2}°C", mass_min_temp, mass_max_temp);
-    println!("Summer mass temp range: {:.2}°C to {:.2}°C", summer_mass_min_temp, summer_mass_max_temp);
-    println!("Winter mass temp range: {:.2}°C to {:.2}°C", winter_mass_min_temp, winter_mass_max_temp);
+    println!(
+        "Mass temperature range: {:.2}°C to {:.2}°C",
+        mass_min_temp, mass_max_temp
+    );
+    println!(
+        "Summer mass temp range: {:.2}°C to {:.2}°C",
+        summer_mass_min_temp, summer_mass_max_temp
+    );
+    println!(
+        "Winter mass temp range: {:.2}°C to {:.2}°C",
+        winter_mass_min_temp, winter_mass_max_temp
+    );
     println!();
-    println!("Cumulative mass energy change: {:.2} MWh", mass_energy_change / 1e6);
+    println!(
+        "Cumulative mass energy change: {:.2} MWh",
+        mass_energy_change / 1e6
+    );
 
     // Diagnostics:
     // 1. If solar_to_mass is high (>10 MWh), mass absorbs too much solar energy
@@ -275,7 +349,8 @@ fn test_case_900_solar_mass_interaction_analysis() {
 #[test]
 fn test_hvac_power_demand_calculation_issues() {
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
+    let mut model =
+        fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     // Get conductance values to understand sensitivity
     let h_tr_ms = model.h_tr_ms.as_slice().first().copied().unwrap_or(0.0);
@@ -291,7 +366,10 @@ fn test_hvac_power_demand_calculation_issues() {
     let term_rest_1 = h_tr_ms * h_tr_is;
     let expected_sensitivity_base = term_rest_1 / (term_rest_1 + 100.0); // Simplified
 
-    println!("Expected sensitivity base: {:.6} °C/W", expected_sensitivity_base);
+    println!(
+        "Expected sensitivity base: {:.6} °C/W",
+        expected_sensitivity_base
+    );
 
     // For high-mass buildings, sensitivity should be:
     // - High (large temperature change per unit power) because thermal mass buffers temperature

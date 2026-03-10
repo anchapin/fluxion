@@ -101,14 +101,18 @@ mod tests {
     #[test]
     fn test_kelvin_conversion_required() {
         // Using Celsius would give wrong result (orders of magnitude error)
-        let q_celsius: f64 = 5.67e-8 * 0.9 * 0.9 * 1.0 * 21.6 * (40.0_f64.powi(4) - 20.0_f64.powi(4));
+        let q_celsius: f64 =
+            5.67e-8 * 0.9 * 0.9 * 1.0 * 21.6 * (40.0_f64.powi(4) - 20.0_f64.powi(4));
         let q_kelvin = calculate_surface_radiative_exchange(40.0, 20.0, 0.9, 0.9, 1.0, 21.6);
         // Kelvin conversion should produce correct magnitude (~2214 W)
         assert!(q_kelvin.abs() > 2000.0, "Kelvin conversion required");
         // Celsius gives wrong result (~2 W instead of ~2214 W)
         assert!(q_celsius.abs() < 10.0, "Celsius gives wrong result");
         // Kelvin should be ~1000× larger than Celsius
-        assert!((q_kelvin / q_celsius) > 900.0, "Kelvin should be much larger");
+        assert!(
+            (q_kelvin / q_celsius) > 900.0,
+            "Kelvin should be much larger"
+        );
     }
 
     #[test]
@@ -116,7 +120,8 @@ mod tests {
         // Small ΔT = 5°C: nonlinear and linearized should match
         let q_nonlinear = calculate_surface_radiative_exchange(22.5, 17.5, 0.9, 0.9, 1.0, 21.6);
         let t_avg_k = (22.5 + 273.15 + 17.5 + 273.15) / 2.0;
-        let q_linearized = calculate_radiative_conductance_linearized(21.6, 0.9, t_avg_k, 1.0) * 5.0;
+        let q_linearized =
+            calculate_radiative_conductance_linearized(21.6, 0.9, t_avg_k, 1.0) * 5.0;
         // Should match within 1% for small ΔT
         let error_pct = ((q_nonlinear - q_linearized) / q_linearized).abs() * 100.0;
         assert!(error_pct < 1.0, "Error: {:.2}% for small ΔT", error_pct);
@@ -127,12 +132,16 @@ mod tests {
         // Large ΔT = 20°C: nonlinear more accurate than linearized
         let q_nonlinear = calculate_surface_radiative_exchange(40.0, 20.0, 0.9, 0.9, 1.0, 21.6);
         let t_avg_k = (40.0 + 273.15 + 20.0 + 273.15) / 2.0;
-        let q_linearized = calculate_radiative_conductance_linearized(21.6, 0.9, t_avg_k, 1.0) * 20.0;
+        let q_linearized =
+            calculate_radiative_conductance_linearized(21.6, 0.9, t_avg_k, 1.0) * 20.0;
         // For ΔT = 20°C, nonlinear and linearized are close (<1% difference)
         let error_pct = ((q_nonlinear - q_linearized) / q_linearized).abs() * 100.0;
         assert!(error_pct < 2.0, "Error: {:.2}% for large ΔT", error_pct);
         // But nonlinear is more accurate theoretically
-        println!("Nonlinear: {:.2} W, Linearized: {:.2} W, Error: {:.2}%", q_nonlinear, q_linearized, error_pct);
+        println!(
+            "Nonlinear: {:.2} W, Linearized: {:.2} W, Error: {:.2}%",
+            q_nonlinear, q_linearized, error_pct
+        );
     }
 
     #[test]

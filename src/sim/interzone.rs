@@ -66,10 +66,7 @@ pub fn calculate_directional_interzone_conductance(
 /// # Note
 /// Uses materials-only R-value (excludes film coefficients) since both surfaces
 /// are interior for inter-zone walls.
-pub fn calculate_interzone_conductance(
-    common_wall_area: f64,
-    construction: &Construction,
-) -> f64 {
+pub fn calculate_interzone_conductance(common_wall_area: f64, construction: &Construction) -> f64 {
     let r_value = construction.r_value_materials();
     common_wall_area / r_value
 }
@@ -231,8 +228,16 @@ mod tests {
 
         // Expected: h_a_to_b = 21.6 / (0.177 + 2.0) = 9.92 W/K
         //           h_b_to_a = 21.6 / (0.177 + 0.0) = 122.0 W/K
-        assert!((h_a_to_b - 9.92).abs() < 0.5, "Expected ~9.92 W/K, got {}", h_a_to_b);
-        assert!((h_b_to_a - 122.0).abs() < 1.0, "Expected ~122.0 W/K, got {}", h_b_to_a);
+        assert!(
+            (h_a_to_b - 9.92).abs() < 0.5,
+            "Expected ~9.92 W/K, got {}",
+            h_a_to_b
+        );
+        assert!(
+            (h_b_to_a - 122.0).abs() < 1.0,
+            "Expected ~122.0 W/K, got {}",
+            h_b_to_a
+        );
     }
 
     #[test]
@@ -245,9 +250,20 @@ mod tests {
             calculate_directional_interzone_conductance(area, &wall, 2.0, 2.0);
 
         // Expected: h_a_to_b = h_b_to_a = 21.6 / (0.177 + 2.0) = 9.92 W/K
-        assert!((h_a_to_b - 9.92).abs() < 0.5, "Expected ~9.92 W/K, got {}", h_a_to_b);
-        assert!((h_b_to_a - 9.92).abs() < 0.5, "Expected ~9.92 W/K, got {}", h_b_to_a);
-        assert!((h_a_to_b - h_b_to_a).abs() < 0.1, "Expected equal conductances");
+        assert!(
+            (h_a_to_b - 9.92).abs() < 0.5,
+            "Expected ~9.92 W/K, got {}",
+            h_a_to_b
+        );
+        assert!(
+            (h_b_to_a - 9.92).abs() < 0.5,
+            "Expected ~9.92 W/K, got {}",
+            h_b_to_a
+        );
+        assert!(
+            (h_a_to_b - h_b_to_a).abs() < 0.1,
+            "Expected equal conductances"
+        );
     }
 
     #[test]
@@ -260,7 +276,15 @@ mod tests {
             calculate_directional_interzone_conductance(area, &wall, 0.0, 0.0);
 
         // Expected: h_a_to_b = h_b_to_a = 21.6 / 0.177 = 122.0 W/K
-        assert!((h_a_to_b - 122.0).abs() < 1.0, "Expected ~122.0 W/K, got {}", h_a_to_b);
-        assert!((h_b_to_a - 122.0).abs() < 1.0, "Expected ~122.0 W/K, got {}", h_b_to_a);
+        assert!(
+            (h_a_to_b - 122.0).abs() < 1.0,
+            "Expected ~122.0 W/K, got {}",
+            h_a_to_b
+        );
+        assert!(
+            (h_b_to_a - 122.0).abs() < 1.0,
+            "Expected ~122.0 W/K, got {}",
+            h_b_to_a
+        );
     }
 }

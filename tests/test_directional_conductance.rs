@@ -45,20 +45,28 @@ fn test_h_iz_0_to_1() {
     let expected_h_0_to_1 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_0);
     let expected_h_1_to_0 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
-    println!("h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)", h_iz_0_to_1, expected_h_0_to_1);
-    println!("h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)", h_iz_1_to_0, expected_h_1_to_0);
+    println!(
+        "h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_0_to_1, expected_h_0_to_1
+    );
+    println!(
+        "h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_1_to_0, expected_h_1_to_0
+    );
     println!("Ratio: {:.2}×", h_iz_1_to_0 / h_iz_0_to_1);
 
     assert!(
         (h_iz_0_to_1 - expected_h_0_to_1).abs() / expected_h_0_to_1 * 100.0 < TOLERANCE_PCT,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_0_to_1, h_iz_0_to_1
+        expected_h_0_to_1,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected_h_1_to_0).abs() / expected_h_1_to_0 * 100.0 < TOLERANCE_PCT,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_1_to_0, h_iz_1_to_0
+        expected_h_1_to_0,
+        h_iz_1_to_0
     );
 
     // Verify physical meaning: insulation on zone 0 side reduces heat flow from zone 0 -> 1
@@ -69,12 +77,14 @@ fn test_h_iz_0_to_1() {
 
     // Verify the ~12.3× difference due to insulation
     let ratio = h_iz_1_to_0 / h_iz_0_to_1;
-    let expected_ratio = (CONCRETE_R_VALUE + r_insulation_zone_0) / (CONCRETE_R_VALUE + r_insulation_zone_1);
+    let expected_ratio =
+        (CONCRETE_R_VALUE + r_insulation_zone_0) / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
     assert!(
         (ratio - expected_ratio).abs() < 0.5,
         "Expected ~{:.1}× ratio, got {:.1}×",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }
 
@@ -100,12 +110,16 @@ fn test_h_iz_1_to_0() {
     // h_iz_1_to_0 should be high (no insulation on sunspace side)
     let expected_h_1_to_0 = COMMON_WALL_AREA / CONCRETE_R_VALUE;
 
-    println!("h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)", h_iz_1_to_0, expected_h_1_to_0);
+    println!(
+        "h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_1_to_0, expected_h_1_to_0
+    );
 
     assert!(
         (h_iz_1_to_0 - expected_h_1_to_0).abs() / expected_h_1_to_0 * 100.0 < TOLERANCE_PCT,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_1_to_0, h_iz_1_to_0
+        expected_h_1_to_0,
+        h_iz_1_to_0
     );
 
     // Verify h_iz_1_to_0 >> h_iz_0_to_1 (sunspace to back-zone has high conductance)
@@ -141,20 +155,28 @@ fn test_bidirectional_conductance_asymmetric() {
     let expected_h_0_to_1 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_0);
     let expected_h_1_to_0 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
-    println!("h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)", h_iz_0_to_1, expected_h_0_to_1);
-    println!("h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)", h_iz_1_to_0, expected_h_1_to_0);
+    println!(
+        "h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_0_to_1, expected_h_0_to_1
+    );
+    println!(
+        "h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_1_to_0, expected_h_1_to_0
+    );
     println!("Ratio: {:.2}×", h_iz_1_to_0 / h_iz_0_to_1);
 
     assert!(
         (h_iz_0_to_1 - expected_h_0_to_1).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_0_to_1, h_iz_0_to_1
+        expected_h_0_to_1,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected_h_1_to_0).abs() < 1.0,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_1_to_0, h_iz_1_to_0
+        expected_h_1_to_0,
+        h_iz_1_to_0
     );
 
     // Verify physical meaning: insulation on zone 0 side reduces heat flow from zone 0 -> 1
@@ -194,13 +216,15 @@ fn test_symmetric_insulation() {
     assert!(
         (h_iz_0_to_1 - expected).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_0_to_1
+        expected,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected).abs() < 0.5,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_1_to_0
+        expected,
+        h_iz_1_to_0
     );
 
     // Verify equality for symmetric construction
@@ -217,12 +241,8 @@ fn test_no_additional_insulation() {
 
     let wall = Assemblies::concrete_wall(CONCRETE_THICKNESS);
 
-    let (h_iz_0_to_1, h_iz_1_to_0) = calculate_directional_interzone_conductance(
-        COMMON_WALL_AREA,
-        &wall,
-        0.0,
-        0.0,
-    );
+    let (h_iz_0_to_1, h_iz_1_to_0) =
+        calculate_directional_interzone_conductance(COMMON_WALL_AREA, &wall, 0.0, 0.0);
 
     // Both should equal single-directional calculation
     let expected = COMMON_WALL_AREA / CONCRETE_R_VALUE;
@@ -230,13 +250,15 @@ fn test_no_additional_insulation() {
     assert!(
         (h_iz_0_to_1 - expected).abs() < 1.0,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_0_to_1
+        expected,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected).abs() < 1.0,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_1_to_0
+        expected,
+        h_iz_1_to_0
     );
 
     assert!(
@@ -268,20 +290,28 @@ fn test_extreme_asymmetry() {
     let expected_h_0_to_1 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_0);
     let expected_h_1_to_0 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
-    println!("h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)", h_iz_0_to_1, expected_h_0_to_1);
-    println!("h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)", h_iz_1_to_0, expected_h_1_to_0);
+    println!(
+        "h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_0_to_1, expected_h_0_to_1
+    );
+    println!(
+        "h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_1_to_0, expected_h_1_to_0
+    );
     println!("Ratio: {:.2}×", h_iz_1_to_0 / h_iz_0_to_1);
 
     assert!(
         (h_iz_0_to_1 - expected_h_0_to_1).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_0_to_1, h_iz_0_to_1
+        expected_h_0_to_1,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected_h_1_to_0).abs() < 1.0,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_1_to_0, h_iz_1_to_0
+        expected_h_1_to_0,
+        h_iz_1_to_0
     );
 
     // Verify extreme asymmetry (> 25× difference)
@@ -316,30 +346,40 @@ fn test_moderate_asymmetry() {
     let expected_h_0_to_1 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_0);
     let expected_h_1_to_0 = COMMON_WALL_AREA / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
-    println!("h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)", h_iz_0_to_1, expected_h_0_to_1);
-    println!("h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)", h_iz_1_to_0, expected_h_1_to_0);
+    println!(
+        "h_iz_0_to_1: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_0_to_1, expected_h_0_to_1
+    );
+    println!(
+        "h_iz_1_to_0: {:.2} W/K (expected {:.2} W/K)",
+        h_iz_1_to_0, expected_h_1_to_0
+    );
     println!("Ratio: {:.2}×", h_iz_1_to_0 / h_iz_0_to_1);
 
     assert!(
         (h_iz_0_to_1 - expected_h_0_to_1).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_0_to_1, h_iz_0_to_1
+        expected_h_0_to_1,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected_h_1_to_0).abs() < 1.0,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected_h_1_to_0, h_iz_1_to_0
+        expected_h_1_to_0,
+        h_iz_1_to_0
     );
 
     // Verify moderate asymmetry (~3× difference)
     let ratio = h_iz_1_to_0 / h_iz_0_to_1;
-    let expected_ratio = (CONCRETE_R_VALUE + r_insulation_zone_0) / (CONCRETE_R_VALUE + r_insulation_zone_1);
+    let expected_ratio =
+        (CONCRETE_R_VALUE + r_insulation_zone_0) / (CONCRETE_R_VALUE + r_insulation_zone_1);
 
     assert!(
         (ratio - expected_ratio).abs() < 0.5,
         "Expected ~{:.1}× ratio, got {:.1}×",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }
 
@@ -348,9 +388,8 @@ fn test_zero_area() {
     // Test edge case: zero area should give zero conductance
 
     let wall = Assemblies::concrete_wall(CONCRETE_THICKNESS);
-    let (h_iz_0_to_1, h_iz_1_to_0) = calculate_directional_interzone_conductance(
-        0.0, &wall, 2.0, 0.0,
-    );
+    let (h_iz_0_to_1, h_iz_1_to_0) =
+        calculate_directional_interzone_conductance(0.0, &wall, 2.0, 0.0);
 
     assert_eq!(h_iz_0_to_1, 0.0, "Zero area should give zero conductance");
     assert_eq!(h_iz_1_to_0, 0.0, "Zero area should give zero conductance");
@@ -361,12 +400,17 @@ fn test_negative_area() {
     // Test edge case: negative area should give negative conductance (physically invalid but mathematically correct)
 
     let wall = Assemblies::concrete_wall(CONCRETE_THICKNESS);
-    let (h_iz_0_to_1, h_iz_1_to_0) = calculate_directional_interzone_conductance(
-        -10.0, &wall, 2.0, 0.0,
-    );
+    let (h_iz_0_to_1, h_iz_1_to_0) =
+        calculate_directional_interzone_conductance(-10.0, &wall, 2.0, 0.0);
 
-    assert!(h_iz_0_to_1 < 0.0, "Negative area should give negative conductance");
-    assert!(h_iz_1_to_0 < 0.0, "Negative area should give negative conductance");
+    assert!(
+        h_iz_0_to_1 < 0.0,
+        "Negative area should give negative conductance"
+    );
+    assert!(
+        h_iz_1_to_0 < 0.0,
+        "Negative area should give negative conductance"
+    );
 }
 
 #[test]
@@ -391,13 +435,15 @@ fn test_high_insulation_both_sides() {
     assert!(
         (h_iz_0_to_1 - expected).abs() < 0.5,
         "Expected h_iz_0_to_1 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_0_to_1
+        expected,
+        h_iz_0_to_1
     );
 
     assert!(
         (h_iz_1_to_0 - expected).abs() < 0.5,
         "Expected h_iz_1_to_0 ~{:.2} W/K, got {:.2} W/K",
-        expected, h_iz_1_to_0
+        expected,
+        h_iz_1_to_0
     );
 
     // Verify equality and low conductance due to high insulation
@@ -421,23 +467,23 @@ fn test_conductance_scaling_with_area() {
     let area_1 = 10.0; // m²
     let area_2 = 20.0; // m²
 
-    let (h_iz_0_to_1_1, _) = calculate_directional_interzone_conductance(
-        area_1, &wall, 2.0, 0.0,
-    );
+    let (h_iz_0_to_1_1, _) = calculate_directional_interzone_conductance(area_1, &wall, 2.0, 0.0);
 
-    let (h_iz_0_to_1_2, _) = calculate_directional_interzone_conductance(
-        area_2, &wall, 2.0, 0.0,
-    );
+    let (h_iz_0_to_1_2, _) = calculate_directional_interzone_conductance(area_2, &wall, 2.0, 0.0);
 
     let ratio = h_iz_0_to_1_2 / h_iz_0_to_1_1;
     let expected_ratio = 2.0;
 
-    println!("Doubling area: {:.2}× (expected {:.2}×)", ratio, expected_ratio);
+    println!(
+        "Doubling area: {:.2}× (expected {:.2}×)",
+        ratio, expected_ratio
+    );
 
     assert!(
         (ratio - expected_ratio).abs() < 0.01,
         "Conductance should scale linearly with area, expected ratio {:.2}, got {:.2}",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }
 
@@ -450,23 +496,25 @@ fn test_conductance_inverse_with_insulation() {
     let r_insulation_1 = 1.0;
     let r_insulation_2 = 2.0;
 
-    let (h_iz_0_to_1_1, _) = calculate_directional_interzone_conductance(
-        COMMON_WALL_AREA, &wall, r_insulation_1, 0.0,
-    );
+    let (h_iz_0_to_1_1, _) =
+        calculate_directional_interzone_conductance(COMMON_WALL_AREA, &wall, r_insulation_1, 0.0);
 
-    let (h_iz_0_to_1_2, _) = calculate_directional_interzone_conductance(
-        COMMON_WALL_AREA, &wall, r_insulation_2, 0.0,
-    );
+    let (h_iz_0_to_1_2, _) =
+        calculate_directional_interzone_conductance(COMMON_WALL_AREA, &wall, r_insulation_2, 0.0);
 
     // Doubling R should approximately halve conductance
     let ratio = h_iz_0_to_1_1 / h_iz_0_to_1_2;
     let expected_ratio = (CONCRETE_R_VALUE + r_insulation_2) / (CONCRETE_R_VALUE + r_insulation_1);
 
-    println!("Doubling R-value: {:.2}× (expected {:.2}×)", ratio, expected_ratio);
+    println!(
+        "Doubling R-value: {:.2}× (expected {:.2}×)",
+        ratio, expected_ratio
+    );
 
     assert!(
         (ratio - expected_ratio).abs() < 0.1,
         "Conductance should be inversely proportional to R, expected ratio {:.2}, got {:.2}",
-        expected_ratio, ratio
+        expected_ratio,
+        ratio
     );
 }

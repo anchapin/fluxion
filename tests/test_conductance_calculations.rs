@@ -19,9 +19,9 @@
 //! - Internal gain modeling (INTERNAL-01, INTERNAL-02)
 //! - Overall conductance correctness (COND-01)
 
+use approx::assert_relative_eq;
 use fluxion::sim::construction::Assemblies;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use approx::assert_relative_eq;
 
 /// Test 1: Validate h_tr_em (exterior-to-mass) calculation with window U-value applied correctly
 #[test]
@@ -38,14 +38,21 @@ fn test_h_tr_em_calculation() {
         let h_tr_em = construction.calc_h_tr_em(u_value, surface_area);
 
         // Verify units are W/K (conductance, not thermal transmittance)
-        assert!(h_tr_em > 0.0, "h_tr_em should be positive for U-value {}", u_value);
+        assert!(
+            h_tr_em > 0.0,
+            "h_tr_em should be positive for U-value {}",
+            u_value
+        );
 
         // Conductance should scale with surface area
         let h_tr_em_double_area = construction.calc_h_tr_em(u_value, surface_area * 2.0);
         let ratio = h_tr_em_double_area / h_tr_em;
         assert_relative_eq!(ratio, 2.0, epsilon = 0.01);
 
-        println!("h_tr_em for U={}: {:.2} W/K (area: {:.1} m²)", u_value, h_tr_em, surface_area);
+        println!(
+            "h_tr_em for U={}: {:.2} W/K (area: {:.1} m²)",
+            u_value, h_tr_em, surface_area
+        );
     }
 }
 
@@ -69,7 +76,10 @@ fn test_h_tr_w_calculation() {
             let expected = u_value * window_area;
             assert_relative_eq!(h_tr_w, expected, epsilon = 0.01);
 
-            println!("h_tr_w for U={}, A={}: {:.2} W/K", u_value, window_area, h_tr_w);
+            println!(
+                "h_tr_w for U={}, A={}: {:.2} W/K",
+                u_value, window_area, h_tr_w
+            );
         }
     }
 }
@@ -240,7 +250,8 @@ fn test_thermal_bridge_effects() {
         "Thermal bridge should increase h_tr_em"
     );
 
-    println!("Thermal bridge effect: {:.2} W/K → {:.2} W/K (+{:.1}%)",
+    println!(
+        "Thermal bridge effect: {:.2} W/K → {:.2} W/K (+{:.1}%)",
         h_tr_em_no_bridge,
         h_tr_em_with_bridge,
         (h_tr_em_with_bridge / h_tr_em_no_bridge - 1.0) * 100.0
@@ -259,7 +270,11 @@ fn test_layer_by_layer_r_value_calculation() {
 
     // Verify R-value is positive and reasonable for a wall
     assert!(total_r_value > 0.0, "Total R-value should be positive");
-    assert!(total_r_value < 10.0, "Total R-value seems too high for lightweight wall: {}", total_r_value);
+    assert!(
+        total_r_value < 10.0,
+        "Total R-value seems too high for lightweight wall: {}",
+        total_r_value
+    );
 
     // Calculate U-value from R-value (U = 1/R)
     let u_value = 1.0 / total_r_value;
@@ -276,12 +291,23 @@ fn test_layer_by_layer_r_value_calculation() {
 /// Test 10: Validate ASHRAE film coefficient application (LAYER-02)
 #[test]
 fn test_ashrae_film_coefficient_application() {
-    use fluxion::sim::construction::{INTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF_WALL, EXTERIOR_FILM_COEFF_DEFAULT};
+    use fluxion::sim::construction::{
+        EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF_WALL,
+    };
 
     // Verify film coefficients are defined correctly
-    assert!(INTERIOR_FILM_COEFF > 0.0, "Interior film coefficient should be positive");
-    assert!(INTERIOR_FILM_COEFF_WALL > 0.0, "Interior wall film coefficient should be positive");
-    assert!(EXTERIOR_FILM_COEFF_DEFAULT > 0.0, "Exterior film coefficient should be positive");
+    assert!(
+        INTERIOR_FILM_COEFF > 0.0,
+        "Interior film coefficient should be positive"
+    );
+    assert!(
+        INTERIOR_FILM_COEFF_WALL > 0.0,
+        "Interior wall film coefficient should be positive"
+    );
+    assert!(
+        EXTERIOR_FILM_COEFF_DEFAULT > 0.0,
+        "Exterior film coefficient should be positive"
+    );
 
     // Verify typical ASHRAE values
     // Interior (general): R_si = 0.12 m²K/W → h_si = 8.29 W/m²K
@@ -292,8 +318,16 @@ fn test_ashrae_film_coefficient_application() {
     let expected_exterior = 25.0; // W/m²K
 
     assert_relative_eq!(INTERIOR_FILM_COEFF, expected_interior, max_relative = 0.01);
-    assert_relative_eq!(INTERIOR_FILM_COEFF_WALL, expected_interior_wall, max_relative = 0.01);
-    assert_relative_eq!(EXTERIOR_FILM_COEFF_DEFAULT, expected_exterior, max_relative = 0.01);
+    assert_relative_eq!(
+        INTERIOR_FILM_COEFF_WALL,
+        expected_interior_wall,
+        max_relative = 0.01
+    );
+    assert_relative_eq!(
+        EXTERIOR_FILM_COEFF_DEFAULT,
+        expected_exterior,
+        max_relative = 0.01
+    );
 
     println!("ASHRAE film coefficients:");
     println!("  Interior (general): {:.2} W/m²K", INTERIOR_FILM_COEFF);
@@ -307,24 +341,53 @@ fn test_window_property_validation() {
     let case_spec = ASHRAE140Case::Case600.spec();
 
     // Validate window properties
-    assert!(case_spec.window_properties.u_value > 0.0, "Window U-value should be positive");
-    assert!(case_spec.window_properties.shgc >= 0.0 && case_spec.window_properties.shgc <= 1.0, "SHGC should be in [0, 1]");
-    assert!(case_spec.window_properties.normal_transmittance >= 0.0 && case_spec.window_properties.normal_transmittance <= 1.0,
-        "Normal transmittance should be in [0, 1]");
-    assert!(case_spec.window_properties.emissivity >= 0.0 && case_spec.window_properties.emissivity <= 1.0,
-        "Emissivity should be in [0, 1]");
+    assert!(
+        case_spec.window_properties.u_value > 0.0,
+        "Window U-value should be positive"
+    );
+    assert!(
+        case_spec.window_properties.shgc >= 0.0 && case_spec.window_properties.shgc <= 1.0,
+        "SHGC should be in [0, 1]"
+    );
+    assert!(
+        case_spec.window_properties.normal_transmittance >= 0.0
+            && case_spec.window_properties.normal_transmittance <= 1.0,
+        "Normal transmittance should be in [0, 1]"
+    );
+    assert!(
+        case_spec.window_properties.emissivity >= 0.0
+            && case_spec.window_properties.emissivity <= 1.0,
+        "Emissivity should be in [0, 1]"
+    );
 
     // Verify typical ASHRAE 140 Case 600 window properties
     // Double clear glass: U=3.0 W/m²K, SHGC=0.789, τ=0.86156
-    assert_relative_eq!(case_spec.window_properties.u_value, 3.0, max_relative = 0.01);
+    assert_relative_eq!(
+        case_spec.window_properties.u_value,
+        3.0,
+        max_relative = 0.01
+    );
     assert_relative_eq!(case_spec.window_properties.shgc, 0.789, max_relative = 0.01);
-    assert_relative_eq!(case_spec.window_properties.normal_transmittance, 0.86156, max_relative = 0.01);
+    assert_relative_eq!(
+        case_spec.window_properties.normal_transmittance,
+        0.86156,
+        max_relative = 0.01
+    );
 
     println!("Window properties validation:");
-    println!("  U-value: {:.4} W/m²K", case_spec.window_properties.u_value);
+    println!(
+        "  U-value: {:.4} W/m²K",
+        case_spec.window_properties.u_value
+    );
     println!("  SHGC: {:.4}", case_spec.window_properties.shgc);
-    println!("  Normal transmittance: {:.4}", case_spec.window_properties.normal_transmittance);
-    println!("  Emissivity: {:.4}", case_spec.window_properties.emissivity);
+    println!(
+        "  Normal transmittance: {:.4}",
+        case_spec.window_properties.normal_transmittance
+    );
+    println!(
+        "  Emissivity: {:.4}",
+        case_spec.window_properties.emissivity
+    );
 }
 
 /// Test 12: Validate air change rate conversion (INFIL-01)
@@ -358,10 +421,15 @@ fn test_internal_gain_modeling() {
     let case_spec = ASHRAE140Case::Case600.spec();
 
     // Get internal loads for first zone
-    let internal_loads = case_spec.internal_loads[0].as_ref().expect("Case 600 should have internal loads");
+    let internal_loads = case_spec.internal_loads[0]
+        .as_ref()
+        .expect("Case 600 should have internal loads");
 
     // Validate internal gain properties
-    assert!(internal_loads.total_load > 0.0, "Total load should be positive");
+    assert!(
+        internal_loads.total_load > 0.0,
+        "Total load should be positive"
+    );
 
     // Validate convective/radiative split (should sum to 1.0)
     let total_fraction = internal_loads.convective_fraction + internal_loads.radiative_fraction;
@@ -373,8 +441,14 @@ fn test_internal_gain_modeling() {
 
     println!("Internal gains:");
     println!("  Total load: {:.2} W/m²", internal_loads.total_load);
-    println!("  Convective: {:.1}%", internal_loads.convective_fraction * 100.0);
-    println!("  Radiative: {:.1}%", internal_loads.radiative_fraction * 100.0);
+    println!(
+        "  Convective: {:.1}%",
+        internal_loads.convective_fraction * 100.0
+    );
+    println!(
+        "  Radiative: {:.1}%",
+        internal_loads.radiative_fraction * 100.0
+    );
 }
 
 /// Test 14: Validate overall conductance correctness (COND-01)
@@ -384,26 +458,47 @@ fn test_overall_conductance_correctness() {
     let references = case_spec.case600_reference_conductances();
 
     // Verify all conductances are positive and reasonable
-    assert!(references.h_tr_em > 0.0 && references.h_tr_em < 1000.0,
-        "h_tr_em out of range: {}", references.h_tr_em);
-    assert!(references.h_tr_w > 0.0 && references.h_tr_w < 200.0,
-        "h_tr_w out of range: {}", references.h_tr_w);
-    assert!(references.h_tr_ms > 0.0 && references.h_tr_ms < 1000.0,
-        "h_tr_ms out of range: {}", references.h_tr_ms);
-    assert!(references.h_tr_is > 0.0 && references.h_tr_is < 2000.0,
-        "h_tr_is out of range: {}", references.h_tr_is);
-    assert!(references.h_ve >= 0.0 && references.h_ve < 500.0,
-        "h_ve out of range: {}", references.h_ve);
+    assert!(
+        references.h_tr_em > 0.0 && references.h_tr_em < 1000.0,
+        "h_tr_em out of range: {}",
+        references.h_tr_em
+    );
+    assert!(
+        references.h_tr_w > 0.0 && references.h_tr_w < 200.0,
+        "h_tr_w out of range: {}",
+        references.h_tr_w
+    );
+    assert!(
+        references.h_tr_ms > 0.0 && references.h_tr_ms < 1000.0,
+        "h_tr_ms out of range: {}",
+        references.h_tr_ms
+    );
+    assert!(
+        references.h_tr_is > 0.0 && references.h_tr_is < 2000.0,
+        "h_tr_is out of range: {}",
+        references.h_tr_is
+    );
+    assert!(
+        references.h_ve >= 0.0 && references.h_ve < 500.0,
+        "h_ve out of range: {}",
+        references.h_ve
+    );
 
     // Verify conductance hierarchy
     // h_tr_is (interior surface) should be highest (large surface area, high film coefficient)
     // h_tr_w (window) should be lowest (small area)
-    assert!(references.h_tr_is > references.h_tr_em,
-        "h_tr_is should be higher than h_tr_em");
-    assert!(references.h_tr_is > references.h_tr_ms,
-        "h_tr_is should be higher than h_tr_ms");
-    assert!(references.h_tr_w < references.h_tr_em,
-        "h_tr_w should be lower than h_tr_em");
+    assert!(
+        references.h_tr_is > references.h_tr_em,
+        "h_tr_is should be higher than h_tr_em"
+    );
+    assert!(
+        references.h_tr_is > references.h_tr_ms,
+        "h_tr_is should be higher than h_tr_ms"
+    );
+    assert!(
+        references.h_tr_w < references.h_tr_em,
+        "h_tr_w should be lower than h_tr_em"
+    );
 
     println!("Overall conductance validation:");
     println!("  All conductances positive and within expected ranges");
