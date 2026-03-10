@@ -172,7 +172,13 @@ impl ValidationReportGenerator {
             output.push_str("*Systematic issues taxonomy not yet populated.*\n\n");
         }
 
-        // Phase Progress (placeholder - will be manually annotated)
+        // Link to Known Issues
+        output.push_str("## References\n\n");
+        output.push_str("- **[Quality Metrics Tracker](QUALITY_METRICS.md)** - Detailed metrics dashboard with historical progression\n");
+        output.push_str("- **[Known Systematic Issues](KNOWN_ISSUES.md)** - Comprehensive issue catalog with severity, status, and resolution roadmap\n");
+        output.push('\n');
+
+        // Phase Progress
         output.push_str("## Phase Progress\n\n");
         output.push_str("| Phase | Status | Completion | Notes |\n");
         output.push_str("|-------|--------|------------|-------|\n");
@@ -183,10 +189,19 @@ impl ValidationReportGenerator {
         output.push_str("| Phase 3: Solar & External | ✅ Complete | 3/3 plans | Solar integration, mode-specific coupling |\n");
         output.push_str("| Phase 4: Multi-Zone Transfer | ✅ Complete | 6/6 plans | Inter-zone heat transfer validated |\n");
         output.push_str(
-            "| Phase 5: Diagnostics & Reporting | 🔄 In Progress | 1/4 plans | This report |\n",
+            "| Phase 5: Diagnostics & Reporting | 🔄 In Progress | 4/4 plans | Quality metrics, issue tracking |\n",
         );
         output.push_str("| Phase 6: Performance Optimization | ⏳ Pending | 0/12 requirements | GPU acceleration, throughput |\n");
         output.push_str("| Phase 7: Advanced Analysis | ⏳ Pending | 0/20 requirements | Sensitivity, visualization |\n");
+        output.push('\n');
+
+        // What's Fixed in This Phase
+        output.push_str("## What's Fixed in Phase 5\n\n");
+        output.push_str("This phase delivered systematic diagnostics and reporting infrastructure:\n\n");
+        output.push_str("- ✅ **REPORT-01:** Automated quality metrics computation via `analyzer.rs`\n");
+        output.push_str("- ✅ **REPORT-02:** Quality metrics dashboard (`QUALITY_METRICS.md`) with historical progression\n");
+        output.push_str("- ✅ **REPORT-03:** Comprehensive known issues catalog (`KNOWN_ISSUES.md`) with taxonomy, severity, and GitHub links\n");
+        output.push_str("- ✅ **REPORT-04:** Enhanced validation report with issue references and phase summaries\n");
         output.push('\n');
 
         // Legend
