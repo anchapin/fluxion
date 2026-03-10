@@ -15,6 +15,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
 
@@ -38,22 +39,6 @@ mod reference {
     pub const PEAK_TOLERANCE: f64 = 0.50;
 }
 
-/// Validation result for Case 960 energy metrics
-struct EnergyValidationResult {
-    annual_heating_mwh: f64,
-    annual_cooling_mwh: f64,
-    peak_heating_kw: f64,
-    peak_cooling_kw: f64,
-    heating_in_range: bool,
-    cooling_in_range: bool,
-    peak_heating_in_range: bool,
-    peak_cooling_in_range: bool,
-    heating_error_pct: f64,
-    cooling_error_pct: f64,
-    peak_heating_error_pct: f64,
-    peak_cooling_error_pct: f64,
-}
-
 /// Validates energy values against reference ranges
 fn validate_energy_against_reference(
     actual: f64,
@@ -70,55 +55,6 @@ fn validate_energy_against_reference(
 
     (in_range, error_pct)
 }
-
-/// Runs comprehensive validation for Case 960 energy metrics
-fn validate_case_960_energy() -> EnergyValidationResult {
-    let (heating, cooling, peak_h, peak_c) = simulate_case_960();
-
-    let (heating_in_range, heating_error) = validate_energy_against_reference(
-        heating,
-        reference::ANNUAL_HEATING_MIN,
-        reference::ANNUAL_HEATING_MAX,
-        reference::ENERGY_TOLERANCE,
-    );
-
-    let (cooling_in_range, cooling_error) = validate_energy_against_reference(
-        cooling,
-        reference::ANNUAL_COOLING_MIN,
-        reference::ANNUAL_COOLING_MAX,
-        reference::ENERGY_TOLERANCE,
-    );
-
-    let (peak_heating_in_range, peak_heating_error) = validate_energy_against_reference(
-        peak_h,
-        reference::PEAK_HEATING_MIN,
-        reference::PEAK_HEATING_MAX,
-        reference::PEAK_TOLERANCE,
-    );
-
-    let (peak_cooling_in_range, peak_cooling_error) = validate_energy_against_reference(
-        peak_c,
-        reference::PEAK_COOLING_MIN,
-        reference::PEAK_COOLING_MAX,
-        reference::PEAK_TOLERANCE,
-    );
-
-    EnergyValidationResult {
-        annual_heating_mwh: heating,
-        annual_cooling_mwh: cooling,
-        peak_heating_kw: peak_h,
-        peak_cooling_kw: peak_c,
-        heating_in_range,
-        cooling_in_range,
-        peak_heating_in_range,
-        peak_cooling_in_range,
-        heating_error_pct: heating_error,
-        cooling_error_pct: cooling_error,
-        peak_heating_error_pct: peak_heating_error,
-        peak_cooling_error_pct: peak_cooling_error,
-    }
-}
-
 /// Simulates Case 960 and returns annual heating/cooling in MWh
 fn simulate_case_960() -> (f64, f64, f64, f64) {
     let spec = ASHRAE140Case::Case960.spec();
@@ -340,7 +276,8 @@ fn test_case_960_hvac_only_in_back_zone() {
 #[test]
 fn test_case_960_comprehensive_energy_validation() {
     // Comprehensive validation of Case 960 energy metrics against ASHRAE 140 reference ranges
-    let result = fluxion::validation::ashrae_140_validator::validate_case_960();
+    let validator = ASHRAE140Validator::new();
+    let result = validator.validate_case_960();
 
     println!("\n=== ASHRAE 140 Case 960 Comprehensive Validation ===");
     println!("Annual Heating: {:.2} MWh", result.annual_heating_mwh);
@@ -351,7 +288,7 @@ fn test_case_960_comprehensive_energy_validation() {
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
-        result.heating_error_pct, result.heating_in_range
+        result.heating_result.error_pct, result.heating_result.in_range
     );
 
     println!("\nAnnual Cooling: {:.2} MWh", result.annual_cooling_mwh);
@@ -362,7 +299,7 @@ fn test_case_960_comprehensive_energy_validation() {
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
-        result.cooling_error_pct, result.cooling_in_range
+        result.cooling_result.error_pct, result.cooling_result.in_range
     );
 
     println!("\nPeak Heating: {:.2} kW", result.peak_heating_kw);
@@ -373,7 +310,7 @@ fn test_case_960_comprehensive_energy_validation() {
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
-        result.peak_heating_error_pct, result.peak_heating_in_range
+        result.peak_heating_result.error_pct, result.peak_heating_result.in_range
     );
 
     println!("\nPeak Cooling: {:.2} kW", result.peak_cooling_kw);
@@ -384,16 +321,16 @@ fn test_case_960_comprehensive_energy_validation() {
     );
     println!(
         "  Error: {:.1}%, In Range: {}",
-        result.peak_cooling_error_pct, result.peak_cooling_in_range
+        result.peak_cooling_result.error_pct, result.peak_cooling_result.in_range
     );
 
     println!(
         "\nPass Rate: {}/4 metrics within tolerance",
         [
-            result.heating_in_range,
-            result.cooling_in_range,
-            result.peak_heating_in_range,
-            result.peak_cooling_in_range,
+            result.heating_result.in_range,
+            result.cooling_result.in_range,
+            result.peak_heating_result.in_range,
+            result.peak_cooling_result.in_range,
         ]
         .iter()
         .filter(|&&x| x)
@@ -404,7 +341,7 @@ fn test_case_960_comprehensive_energy_validation() {
     // Check at least heating and one of cooling or peak should be reasonable
     // (This allows for the known 20× cooling issue while still testing other metrics)
     assert!(
-        result.heating_in_range,
+        result.heating_result.in_range,
         "Heating energy should be within reference range"
     );
 
