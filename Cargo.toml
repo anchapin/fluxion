@@ -65,6 +65,9 @@ rstest = { version = "0.25", optional = true }
 crossbeam = "0.8.4"
 num-traits = "0.2.19"
 
+# HTTP client for multi-reference updates
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 
@@ -73,6 +76,9 @@ criterion = "0.5"
 tempfile = "3.10"
 approx = "0.5"
 rstest = "0.18"
+
+# Mock HTTP server for tests
+mockito = "0.8"
 
 [[bench]]
 name = "cta_bench"

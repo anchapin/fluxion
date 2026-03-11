@@ -1,17 +1,17 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
 /// Reference range for a single program (EnergyPlus, ESP-r, TRNSYS).
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct ProgramRange {
     pub min: f64,
     pub max: f64,
 }
 
 /// Reference ranges for all metrics of a single test case.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct CaseRefs {
     #[serde(rename = "annual_heating")]
     pub annual_heating: HashMap<String, ProgramRange>,
@@ -24,7 +24,7 @@ pub struct CaseRefs {
 }
 
 /// Multi-reference database containing versioned reference ranges from multiple programs.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct MultiReferenceDB {
     pub version: String,
     pub source: Option<String>,
