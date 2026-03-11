@@ -1755,17 +1755,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Split internal gains into convective and radiative components
         let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
-        let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
         // For 5R1C model, implement beam-to-floor direct radiation mapping (Issue #361)
         // Use solar_beam_to_mass_fraction to route ONLY solar radiation to thermal mass
         // Internal radiative gains are handled separately via area-weighted distribution
-        let phi_st_internal = phi_rad_internal.clone() * (1.0 - self.solar_distribution_to_air);
-        let phi_m_internal = phi_rad_internal * self.solar_distribution_to_air;
+        let st_internal_frac =
+            (1.0 - self.convective_fraction) * (1.0 - self.solar_distribution_to_air);
+        let m_internal_frac = (1.0 - self.convective_fraction) * self.solar_distribution_to_air;
+        let phi_st_internal = internal_gains_watts.clone() * st_internal_frac;
+        let phi_m_internal = internal_gains_watts * m_internal_frac;
 
         // Solar gains split by beam-to-mass fraction
-        let phi_st_solar = solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction);
+        let st_solar_frac = 1.0 - self.solar_beam_to_mass_fraction;
+        let phi_st_solar = solar_gains_watts.clone() * st_solar_frac;
         let phi_m_solar = solar_gains_watts * self.solar_beam_to_mass_fraction;
 
         // Total surface and mass gains
@@ -2003,19 +2006,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let solar_gains_watts = self.solar_gains.clone() * self.zone_area.clone();
 
         let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
-        let phi_rad_internal = internal_gains_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
         // Split internal radiative gains separately from solar gains
         // Internal radiative gains use solar_distribution_to_air
-        let phi_st_internal = phi_rad_internal.clone() * (1.0 - self.solar_distribution_to_air);
-        let phi_m_internal = phi_rad_internal * self.solar_distribution_to_air;
+        let st_internal_frac =
+            (1.0 - self.convective_fraction) * (1.0 - self.solar_distribution_to_air);
+        let m_internal_frac = (1.0 - self.convective_fraction) * self.solar_distribution_to_air;
+        let phi_st_internal = internal_gains_watts.clone() * st_internal_frac;
+        let phi_m_internal = internal_gains_watts * m_internal_frac;
 
         // Solar gains split by beam-to-mass fraction for 6R2C
-        let phi_st_solar =
-            solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
-        let phi_m_env_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction * 0.7;
-        let phi_m_int_solar = solar_gains_watts * self.solar_beam_to_mass_fraction * 0.3;
+        let st_solar_frac = (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
+        let m_env_solar_frac = self.solar_beam_to_mass_fraction * 0.7;
+        let m_int_solar_frac = self.solar_beam_to_mass_fraction * 0.3;
+
+        let phi_st_solar = solar_gains_watts.clone() * st_solar_frac;
+        let phi_m_env_solar = solar_gains_watts.clone() * m_env_solar_frac;
+        let phi_m_int_solar = solar_gains_watts * m_int_solar_frac;
 
         // Total surface and mass gains
         let phi_st = phi_st_internal + phi_st_solar;
@@ -2798,18 +2806,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
 
         // Internal gains split by convective fraction (same as step_physics)
         let phi_ia = loads_watts.clone() * self.convective_fraction;
-        let phi_rad_internal = loads_watts.clone() * (1.0 - self.convective_fraction);
 
         // Solar gains are 100% radiative (Issue #361)
         // For free-floating, use the same solar distribution as step_physics
-        let phi_st_internal = phi_rad_internal.clone() * (1.0 - self.solar_distribution_to_air);
-        let phi_m_internal = phi_rad_internal * self.solar_distribution_to_air;
+        let st_internal_frac =
+            (1.0 - self.convective_fraction) * (1.0 - self.solar_distribution_to_air);
+        let m_internal_frac = (1.0 - self.convective_fraction) * self.solar_distribution_to_air;
+        let phi_st_internal = loads_watts.clone() * st_internal_frac;
+        let phi_m_internal = loads_watts * m_internal_frac;
 
         // Solar gains split by beam-to-mass fraction (same as step_physics_6r2c)
-        let phi_st_solar =
-            solar_gains_watts.clone() * (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
-        let phi_m_env_solar = solar_gains_watts.clone() * self.solar_beam_to_mass_fraction * 0.7;
-        let phi_m_int_solar = solar_gains_watts * self.solar_beam_to_mass_fraction * 0.3;
+        let st_solar_frac = (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
+        let m_env_solar_frac = self.solar_beam_to_mass_fraction * 0.7;
+        let m_int_solar_frac = self.solar_beam_to_mass_fraction * 0.3;
+
+        let phi_st_solar = solar_gains_watts.clone() * st_solar_frac;
+        let phi_m_env_solar = solar_gains_watts.clone() * m_env_solar_frac;
+        let phi_m_int_solar = solar_gains_watts * m_int_solar_frac;
 
         // Total surface and mass gains
         let phi_st = phi_st_internal + phi_st_solar;
