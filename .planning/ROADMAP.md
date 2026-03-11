@@ -7,7 +7,7 @@
 
 ## Milestones
 
-- ✅ **v1.0 MVP** — Phases 1-7: ASHRAE 140 validation complete with diagnostics, performance optimization, and advanced analysis [SHIPPED 2026-03-11](.planning/milestones/v1.0-ROADMAP.md)
+- ✅ **v0.2 Partial Validation** — Phases 1-7: ASHRAE 140 validation with substantial progress but known limitations (high-mass annual energy 229-322% error) [SHIPPED 2026-03-11](.planning/milestones/v0.2-ROADMAP.md)
 
 ## Next Milestone
 

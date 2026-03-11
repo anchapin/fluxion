@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: ASHRAE 140 Validation Complete
+milestone: v0.2
+milestone_name: ASHRAE 140 Partial Validation
 current_phase: null
 current_plan: null
 status: milestone_complete

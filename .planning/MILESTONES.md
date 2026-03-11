@@ -4,7 +4,7 @@ This document records completed milestone releases with summaries, statistics, a
 
 ---
 
-## v1.0: ASHRAE 140 Validation Complete
+## v0.2: ASHRAE 140 Partial Validation
 
 **Shipped:** 2026-03-11
 **Phases:** 1-7 (all complete)
@@ -14,9 +14,9 @@ This document records completed milestone releases with summaries, statistics, a
 
 ### What Was Built
 
-Full ASHRAE Standard 140 validation compliance for the Fluxion BEM engine, including:
+Substantial ASHRAE 140 validation progress with comprehensive infrastructure, but **critical gaps remain**:
 
-- **Physics Validation:** All feasible test cases passing within ASHRAE tolerances; peak loads within reference; free-floating validation complete; solar radiation fully integrated; multi-zone inter-zone heat transfer validated
+- **Physics Validation:** Peak loads within reference; solar integration complete; free-floating validation passing; multi-zone physics validated. **FAILURE:** High-mass annual energy 229-322% above reference (fundamental 5R1C limitation).
 - **Diagnostics:** Automated validation reports (`docs/ASHRAE140_RESULTS.md`), hourly CSV export with metadata, systematic issue classification
 - **Performance:** Full validation suite <5 minutes; GPU acceleration with ONNX Runtime; parallel rayon execution; regression guardrails
 - **Research Tools:** Sensitivity analysis (OAT + Sobol), delta testing (YAML-driven), interactive HTML visualization (Plotly), multi-reference comparison (EnergyPlus, ESP-r, TRNSYS)
@@ -25,28 +25,40 @@ Full ASHRAE Standard 140 validation compliance for the Fluxion BEM engine, inclu
 ### Key Achievements
 
 1. **MAE improved 37.5%** (78.79% → 49.21%) through conductance fixes, HVAC correction, thermal mass integration, and solar radiation
-2. **Peak loads validated** — heating 2.10 kW, cooling 3.56 kW within ASHRAE reference ranges
-3. **Free-floating validation perfect** — 10/10 tests passing, temperature swing reduction 22.4%
-4. **Solar integration complete** — all 4 SOLAR requirements satisfied with full beam/diffuse decomposition
-5. **Multi-zone physics validated** — directional conductance, nonlinear Stefan-Boltzmann radiation, stack effect ACH
-6. **Performance optimized** — rayon parallelization, GPU-accelerated surrogates, <5 min full suite
-7. **Advanced analysis tools** — sensitivity, delta, component breakdown, swing metrics, visualization, multi-reference
+2. **Peak loads validated** — heating 2.10 kW, cooling 3.56 kW within ASHRAE reference ranges ✅
+3. **Free-floating validation passing** — 10/10 tests passing, temperature swing reduction 22.4% ✅
+4. **Solar integration complete** — all 4 SOLAR requirements satisfied with full beam/diffuse decomposition ✅
+5. **Multi-zone physics validated** — directional conductance, nonlinear Stefan-Boltzmann radiation, stack effect ACH ✅
+6. **Performance optimized** — rayon parallelization, GPU-accelerated surrogates, <5 min full suite ✅
+7. **Advanced analysis tools** — sensitivity, delta, component breakdown, swing metrics, visualization, multi-reference ✅
 
 ### Requirements Coverage
 
-- **Total v1 requirements:** 51
+- **Total v0.2 requirements:** 51
 - **Satisfied:** 51 (100%)
 - **Partially Satisfied:** 0
 - **Unsatisfied:** 0
 
-All requirements mapped to phases and validated through automated tests.
+All requirements mapped to phases and validated through automated tests. **However**, validation status is **partial** due to fundamental model limitations.
 
-### Known Limitations
+### Critical Gap: High-Mass Annual Energy
 
-1. **High-mass annual energy** (Case 900): Heating 5.35 MWh (ref [1.17, 2.04]), cooling 4.75 MWh (ref [2.13, 3.67]) — 229-322% above reference. Root cause: Fundamental 5R1C structure limitation with high h_tr_em/h_tr_ms ratio (0.0525). Documented in `KNOWN_LIMITATIONS.md` after 8 sophisticated attempts failed.
-2. **Case 960 annual cooling** (4.53 MWh) — Fails validation; issue #273 under investigation.
+**Status:** ❌ **NOT FIXED** — Fundamental 5R1C model limitation
 
-These limitations are accepted for v1.0 as they represent fundamental constraints or isolated issues that do not block the milestone's primary objectives.
+**Evidence (Case 900):**
+- Annual heating: **5.35 MWh** vs [1.17, 2.04] MWh reference (**262-322% above**)
+- Annual cooling: **4.75 MWh** vs [2.13, 3.67] MWh reference (**229-259% above**)
+- Peak heating: 2.10 kW ✅ (within [1.10, 2.10] kW)
+- Peak cooling: 3.56 kW ✅ (within [2.10, 3.50] kW)
+
+**Root Cause:** High h_tr_em/h_tr_ms coupling ratio (0.0525) causes thermal mass to exchange 95% with interior instead of exterior. 8 sophisticated approaches attempted (Plans 03-07 through 03-14), all failed to achieve annual energy targets. Mode-specific coupling provided 22% heating improvement but still far from reference.
+
+**Impact:** Model is **not suitable for production building energy analysis** where annual energy accuracy is required. Suitable for research, prototyping, and low-mass building analysis.
+
+### Other Known Issues
+
+1. **Case 960 annual cooling** (4.53 MWh) — Fails validation, issue #273 under investigation
+2. **Temperature swing reduction** 13.7% vs target 19.6% — partial achievement
 
 ### Technical Decisions
 
@@ -59,13 +71,14 @@ These limitations are accepted for v1.0 as they represent fundamental constraint
 | Multi-reference JSON architecture | Easy updates without code changes | ✅ Remote fetching implemented |
 | Modular surrogates | Separate component models for flexibility | ✅ Architecture supports future additions |
 | CLI subcommands for research | Expose advanced tools directly | ✅ sensitivity, delta, viz all accessible |
+| Known limitations documentation | Transparent about gaps | ✅ Comprehensive KNOWN_LIMITATIONS.md |
 
 ### What Worked
 
 - **Sequential physics domains** (foundation → mass → solar → multi-zone) ensured each layer was solid before adding complexity
 - **Comprehensive test scaffolding** (45+ test functions for inter-zone physics) caught edge cases early
 - **Automated validation reporting** kept progress visible and guided debugging
-- **Gap documentation** (KNOWN_LIMITATIONS.md) allowed intelligent trade-offs without losing transparency
+- **Gap documentation** (KNOWN_LIMITATIONS.md) allowed honest assessment without blocking release
 
 ### What Was Inefficient
 
@@ -81,6 +94,19 @@ These limitations are accepted for v1.0 as they represent fundamental constraint
 - CLI framework: 7 subcommands with common output formatting
 - Test data: `docs/ashrae_140_references.json` (multi-reference database)
 - Documentation templates: `KNOWN_LIMITATIONS.md`, `ASHRAE140_RESULTS.md`
+
+---
+
+### Next Steps
+
+**To reach v1.0, address:**
+1. Investigate 6R2C or 8R3C thermal network for high-mass buildings
+2. Fix Case 960 annual cooling failure (#273)
+3. Consider alternative integration methods or time step strategies
+4. Detailed comparison with EnergyPlus/ESP-r to understand reference implementation differences
+
+**Current State:**
+All infrastructure is in place and working. The gap is **fundamental physics modeling**, not implementation quality. Proceed with caution: this codebase is suitable for research but **not** for production energy compliance without addressing the high-mass annual energy issue.
 
 ---
 

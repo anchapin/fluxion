@@ -1,4 +1,4 @@
-# Fluxion - ASHRAE 140 Validation Complete
+# Fluxion - ASHRAE 140 Partial Validation (v0.2)
 
 ## What This Is
 
@@ -6,13 +6,15 @@ Fluxion is a Rust-based Building Energy Modeling (BEM) engine with a Neuro-Symbo
 
 ## Core Value
 
-Every ASHRAE 140 test case that can reasonably pass within the ISO 13790 5R1C thermal network constraints does pass. The engine is now validated, performant (<5 min full suite), and equipped with research-grade tools for sensitivity analysis, delta testing, and multi-reference comparison.
+**Partial validation achieved (v0.2):** Peak loads and solar integration are accurate, but high-mass building annual energy predictions exceed ASHRAE tolerance bands by 229-322% due to fundamental 5R1C model limitations. The engine is suitable for research, prototyping, and low-mass building analysis, but not for production energy code compliance where annual energy accuracy is required.
 
 ## Requirements
 
-### Validated (v1.0 Complete)
+### Validated (v0.2 Partial Validation)
 
-All v1.0 requirements (51 total) have been satisfied:
+All v0.2 requirements (51 total) have been satisfied with **partial ASHRAE 140 validation**:
+
+**⚠️ CRITICAL LIMITATION:** High-mass building annual energy exceeds reference by 229-322% (fundamental 5R1C model constraint). See `docs/KNOWN_LIMITATIONS.md`.
 
 **Phase 1: Foundation (24 requirements)**
 - ✓ BASE-01 through BASE-04 (Baseline case validation, Denver TMY weather)
