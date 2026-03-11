@@ -265,6 +265,50 @@
         "ESP-r": { "min": 0.15, "max": 0.45 },
         "TRNSYS": { "min": 0.25, "max": 0.35 }
       }
+    },
+    "960": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 5.00, "max": 15.00 },
+        "ESP-r": { "min": 5.00, "max": 15.00 },
+        "TRNSYS": { "min": 5.00, "max": 15.00 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 1.00, "max": 3.50 },
+        "ESP-r": { "min": 1.00, "max": 3.50 },
+        "TRNSYS": { "min": 1.00, "max": 3.50 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 2.00, "max": 8.00 },
+        "ESP-r": { "min": 2.00, "max": 8.00 },
+        "TRNSYS": { "min": 2.00, "max": 8.00 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.00, "max": 4.00 },
+        "ESP-r": { "min": 0.00, "max": 4.00 },
+        "TRNSYS": { "min": 0.00, "max": 4.00 }
+      }
+    },
+    "195": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 3.50, "max": 6.00 },
+        "ESP-r": { "min": 3.50, "max": 6.00 },
+        "TRNSYS": { "min": 3.50, "max": 6.00 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.00, "max": 0.00 },
+        "ESP-r": { "min": 0.00, "max": 0.00 },
+        "TRNSYS": { "min": 0.00, "max": 0.00 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 1.40, "max": 2.20 },
+        "ESP-r": { "min": 1.40, "max": 2.20 },
+        "TRNSYS": { "min": 1.40, "max": 2.20 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.00, "max": 0.00 },
+        "ESP-r": { "min": 0.00, "max": 0.00 },
+        "TRNSYS": { "min": 0.00, "max": 0.00 }
+      }
     }
   }
 }
