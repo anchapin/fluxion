@@ -7,3 +7,7 @@
 ## 2024-11-14 - [Reusing multi-zone grouping in free-float temp]
 **Learning:** Found that `calculate_free_float_temperature` was still using an O(N^2) loop to calculate multi-zone heat transfer, whereas `step_physics` was already refactored to use the O(N) grouping solver (`solve_coupled_zone_temperatures`). Also, when coupling is inactive, avoiding an explicit `VectorField::new(vec![0.0; num_zones])` initialization and instead relying on an `Option<Vec>` wrapper skips unnecessary allocations entirely.
 **Action:** When working on methods that implement similar physics logic to existing hot-loops, check if optimizations applied to the main loop have been mirrored across all equivalent methods (like `calculate_free_float_temperature`).
+
+## 2024-11-13 - [Optimize Hot Loop Memory Allocations]
+**Learning:** In hot loops, chaining operations on tensors (like `VectorField * scalar * scalar`) creates redundant intermediate vector allocations and causes a measurable slowdown. Calculating combined scalar terms before multiplying the `VectorField` minimizes the allocations needed per iteration.
+**Action:** When working with math routines in `ThermalModel::step_physics`, algebraically group scalars out of vector operations beforehand to minimize the number of `VectorField` instantiations in inner loops.
