@@ -118,6 +118,7 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use mockito::Matcher;
     use serde_json::json;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -166,7 +167,7 @@ mod tests {
         let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
-            .mock("GET", "/")
+            .mock("GET", Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(&mock_db)
@@ -205,7 +206,7 @@ mod tests {
         let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
-            .mock("GET", "/")
+            .mock("GET", Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("invalid json")
@@ -227,7 +228,7 @@ mod tests {
         let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
-            .mock("GET", "/")
+            .mock("GET", Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(&mock_db)
@@ -242,7 +243,7 @@ mod tests {
         let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
-            .mock("GET", "/")
+            .mock("GET", Matcher::Any)
             .with_status(404)
             .with_body("Not Found")
             .create();
@@ -271,7 +272,7 @@ mod tests {
         let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
-            .mock("GET", "/")
+            .mock("GET", Matcher::Any)
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(&mock_db)
