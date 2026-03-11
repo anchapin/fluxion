@@ -3,6 +3,7 @@ use fluxion::validation::{
     multi_reference::MultiReferenceDB, reporter::ValidationReportGenerator, ASHRAE140Validator,
     BenchmarkReport, MetricType,
 };
+use mockito::Matcher;
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -121,7 +122,7 @@ fn test_update_references_with_remote() -> Result<()> {
     let mut server = mockito::Server::new();
     let url = server.url();
     let _mock = server
-        .mock("GET", "/")
+        .mock("GET", Matcher::Any)
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(&mock_db)
