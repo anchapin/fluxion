@@ -118,7 +118,7 @@ fn test_update_references_with_remote() -> Result<()> {
     .to_string();
 
     // Use a dedicated mock server instance for reliable testing
-    let server = mockito::Server::new();
+    let mut server = mockito::Server::new();
     let url = server.url();
     let _mock = server
         .mock("GET", "/")

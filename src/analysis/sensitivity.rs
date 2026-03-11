@@ -111,7 +111,9 @@ pub fn run_sensitivity(
     oracle: &BatchOracle,
     use_surrogates: bool,
 ) -> Vec<f64> {
-    oracle.evaluate_population(design.to_vec(), use_surrogates)
+    oracle
+        .evaluate_population(design.to_vec(), use_surrogates)
+        .expect("Evaluation failed")
 }
 
 /// Compute sensitivity metrics for each parameter in the design matrix.
@@ -392,5 +394,21 @@ mod tests {
         let second = &records[1];
         assert_eq!(second.get(1).unwrap(), "B");
         assert_eq!(second.get(0).unwrap(), "2");
+    }
+
+    #[test]
+    fn test_run_sensitivity_with_batch_oracle() {
+        // Build a simple base model with 1 zone
+        let base_model = crate::sim::engine::ThermalModel::<crate::physics::cta::VectorField>::new(1);
+        let oracle = crate::BatchOracle::from_model(base_model);
+        // Simple design: vary window U-value
+        let design = vec![
+            vec![1.5],
+            vec![2.0],
+        ];
+        // Run with surrogates disabled
+        let outputs = super::run_sensitivity(&design, &oracle, false);
+        assert_eq!(outputs.len(), 2);
+        assert!(outputs.iter().all(|&x| x >= 0.0));
     }
 }
