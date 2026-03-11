@@ -7,11 +7,12 @@ use crate::validation::diagnostic::{
     HourlyData, PeakTiming, TemperatureProfile,
 };
 use crate::validation::diagnostics::SimulationDiagnostics;
+use crate::validation::multi_reference::MultiReferenceDB;
 use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
-
 use rayon::prelude::*;
+use std::path::Path;
 
 /// Validator for ASHRAE 140 standard cases.
 pub struct ASHRAE140Validator {
@@ -23,6 +24,8 @@ pub struct ASHRAE140Validator {
     use_simulation_diagnostics: bool,
     /// Temporary storage for simulation diagnostics collected during the last run
     last_simulation_diagnostics: Option<SimulationDiagnostics>,
+    /// Multi-reference database for per-program validation (Phase 7)
+    multi_ref: Option<MultiReferenceDB>,
 }
 
 impl Default for ASHRAE140Validator {
@@ -35,12 +38,47 @@ impl ASHRAE140Validator {
     /// Creates a new ASHRAE 140 validator.
     pub fn new() -> Self {
         let config = DiagnosticConfig::from_env();
-        Self {
+        let mut validator = Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
             last_simulation_diagnostics: None,
+            multi_ref: None,
+        };
+
+        // Auto-load multi-reference database if available (Phase 7 multi-reference integration)
+        let default_multi_ref_path = Path::new("docs/ashrae_140_references.json");
+        if default_multi_ref_path.exists() {
+            match MultiReferenceDB::from_file(default_multi_ref_path) {
+                Ok(db) => {
+                    validator.multi_ref = Some(db);
+                }
+                Err(e) => {
+                    eprintln!("Warning: Failed to load multi-reference data from {}: {}", default_multi_ref_path.display(), e);
+                }
+            }
         }
+
+        validator
+    }
+
+    /// Sets the multi-reference database for per-program validation.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the JSON file containing reference ranges per program
+    ///
+    /// # Returns
+    /// Self for method chaining
+    pub fn with_multi_reference(mut self, path: &Path) -> Self {
+        match MultiReferenceDB::from_file(path) {
+            Ok(db) => {
+                self.multi_ref = Some(db);
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to load multi-reference data: {}", e);
+            }
+        }
+        self
     }
 
     /// Creates a validator with diagnostic output enabled.
@@ -50,6 +88,7 @@ impl ASHRAE140Validator {
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
             last_simulation_diagnostics: None,
+            multi_ref: None,
         }
     }
 
@@ -61,6 +100,7 @@ impl ASHRAE140Validator {
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
             last_simulation_diagnostics: None,
+            multi_ref: None,
         }
     }
 
@@ -294,6 +334,11 @@ impl ASHRAE140Validator {
 
         diagnostic_report.print_summary();
 
+        // Enrich results with multi-reference per-program status if configured
+        if let Some(ref multi_db) = self.multi_ref {
+            report.enrich_with_multi_reference(multi_db);
+        }
+
         (report, diagnostic_report)
     }
 
@@ -388,6 +433,11 @@ impl ASHRAE140Validator {
             }
 
             report.add_benchmark_data(&case_id, data.clone());
+        }
+
+        // Enrich results with multi-reference per-program status if configured
+        if let Some(ref multi_db) = self.multi_ref {
+            report.enrich_with_multi_reference(multi_db);
         }
 
         report
@@ -807,6 +857,10 @@ impl ASHRAE140Validator {
         }
 
         report.set_end(); // Record end time after all work complete
+        // Enrich results with multi-reference per-program status if configured
+        if let Some(ref multi_db) = self.multi_ref {
+            report.enrich_with_multi_reference(multi_db);
+        }
         report
     }
 
@@ -1178,6 +1232,10 @@ impl ASHRAE140Validator {
 }
 
 #[derive(Debug)]
+/// Results of a single ASHRAE 140 case simulation.
+///
+/// Contains annual heating/cooling energy, peak loads, and for free-floating
+/// cases also the minimum and maximum zone temperatures.
 pub struct CaseResults {
     pub annual_heating_mwh: f64,
     pub annual_cooling_mwh: f64,
@@ -1832,4 +1890,62 @@ pub fn validate_case_with_diagnostics(
     };
 
     (report, diagnostics)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
+
+    #[test]
+    fn test_validator_multireference_enrichment() {
+        // This test verifies that the validator automatically loads multi-reference data
+        // and enriches BenchmarkReport with per-program statuses.
+        let validator = ASHRAE140Validator::new();
+        // Skip if multi-reference data not available (e.g., in test environment without the file)
+        if validator.multi_ref.is_none() {
+            eprintln!("Skipping multi-reference test: multi_ref not loaded (file missing?)");
+            return;
+        }
+        let report = validator.validate_analytical_engine();
+
+        // Find a result for case 600 AnnualHeating
+        let result = report.results.iter()
+            .find(|r| r.case_id == "600" && r.metric == MetricType::AnnualHeating)
+            .expect("600 annual heating result missing");
+
+        assert!(result.per_program.is_some(), "per_program should be populated");
+        let per_prog = result.per_program.as_ref().unwrap();
+        assert!(per_prog.contains_key("EnergyPlus"), "EnergyPlus status missing");
+        assert!(per_prog.contains_key("ESP-r"), "ESP-r status missing");
+        assert!(per_prog.contains_key("TRNSYS"), "TRNSYS status missing");
+
+        // Check overall status consistency:
+        // PASS if EnergyPlus passes, else WARN if any program passes, else FAIL.
+        let ep_status = per_prog.get("EnergyPlus").unwrap();
+        match *ep_status {
+            ValidationStatus::Pass => {
+                assert!(matches!(result.status, ValidationStatus::Pass),
+                    "Overall should be PASS when EnergyPlus passes");
+            }
+            ValidationStatus::Warning => {
+                // EnergyPlus warning - overall could be WARN or FAIL depending on others
+                let any_pass = per_prog.values().any(|s| matches!(s, ValidationStatus::Pass));
+                if any_pass {
+                    assert!(matches!(result.status, ValidationStatus::Warning) || matches!(result.status, ValidationStatus::Pass));
+                } else {
+                    assert!(matches!(result.status, ValidationStatus::Fail));
+                }
+            }
+            ValidationStatus::Fail => {
+                // EnergyPlus fails - overall is WARN if any other passes, else FAIL
+                let any_pass = per_prog.values().any(|s| matches!(s, ValidationStatus::Pass));
+                if any_pass {
+                    assert!(matches!(result.status, ValidationStatus::Warning));
+                } else {
+                    assert!(matches!(result.status, ValidationStatus::Fail));
+                }
+            }
+        }
+    }
 }
