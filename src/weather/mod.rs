@@ -326,6 +326,8 @@ impl fmt::Display for WeatherError {
     }
 }
 
+impl std::error::Error for WeatherError {}
+
 /// Trait for abstracting different weather data sources.
 ///
 /// This trait provides a unified interface for accessing weather data from

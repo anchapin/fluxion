@@ -1,8 +1,8 @@
 use crate::sim::construction::{Construction, ConstructionLayer};
 use serde::Deserialize;
+use serde_yaml;
 use std::collections::HashMap;
 use std::path::Path;
-use serde_yaml;
 
 /// Assembly definition from YAML.
 #[derive(Debug, Clone, Deserialize)]
@@ -14,6 +14,7 @@ pub struct AssemblyYAML {
     pub layers: Vec<LayerYAML>,
 }
 
+/// Layer specification from YAML.
 #[derive(Debug, Clone, Deserialize)]
 pub struct LayerYAML {
     /// Material name (for reference)
@@ -36,6 +37,7 @@ pub struct LayerYAML {
 
 /// Library of reusable construction assemblies.
 #[derive(Debug, Clone)]
+/// Collection of named construction assemblies.
 pub struct AssemblyLibrary {
     assemblies: HashMap<String, Construction>,
 }
@@ -65,7 +67,9 @@ impl AssemblyLibrary {
 }
 
 /// Create a Construction from an assembly definition.
-fn create_construction_from_assembly(assembly: &AssemblyYAML) -> Result<Construction, Box<dyn std::error::Error>> {
+fn create_construction_from_assembly(
+    assembly: &AssemblyYAML,
+) -> Result<Construction, Box<dyn std::error::Error>> {
     let mut layers = Vec::new();
     for layer in &assembly.layers {
         // Use provided emissivity/absorptance or defaults
@@ -111,7 +115,9 @@ mod tests {
         // Try to get a known assembly if exists
         let all_names = lib.list();
         if let Some(&first) = all_names.first() {
-            let construction = lib.get(first).expect(&format!("Assembly '{}' should be retrievable", first));
+            let construction = lib
+                .get(first)
+                .expect(&format!("Assembly '{}' should be retrievable", first));
             // Validate construction has at least one layer
             assert!(!construction.layers.is_empty());
         }

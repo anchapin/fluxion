@@ -70,8 +70,10 @@ pub fn check(report: &BenchmarkReport, baseline: &GuardrailBaseline) -> (bool, V
     // Duration threshold: >110% is a warning, not a failure
     if duration > baseline.validation_time_seconds * 1.10 {
         // Only print a warning; not a failure
-        eprintln!("Warning: Validation time {:.2}s is >10% slower than baseline {:.2}s",
-            duration, baseline.validation_time_seconds);
+        eprintln!(
+            "Warning: Validation time {:.2}s is >10% slower than baseline {:.2}s",
+            duration, baseline.validation_time_seconds
+        );
     }
 
     let success = failures.is_empty();

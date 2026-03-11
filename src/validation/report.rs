@@ -4,15 +4,15 @@
 //! validation reports, including pass/fail determination, delta analysis,
 //! and multiple export formats (Markdown, HTML, CSV).
 
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
+use std::env;
 use std::fmt;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
-use chrono::Utc;
-use std::env;
 
 /// Types of validation metrics for ASHRAE 140.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -250,6 +250,9 @@ pub struct ValidationResult {
     pub percent_error: f64,
     /// Validation status
     pub status: ValidationStatus,
+    /// Per-program validation statuses for multi-reference comparison
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub per_program: Option<HashMap<String, ValidationStatus>>,
 }
 
 impl ValidationResult {
@@ -300,6 +303,7 @@ impl ValidationResult {
             ref_max,
             percent_error,
             status,
+            per_program: None,
         }
     }
 
@@ -899,7 +903,10 @@ impl BenchmarkReport {
         {
             Ok(file) => file,
             Err(e) => {
-                eprintln!("Warning: Failed to open performance history file for appending: {}", e);
+                eprintln!(
+                    "Warning: Failed to open performance history file for appending: {}",
+                    e
+                );
                 return;
             }
         };
@@ -1715,19 +1722,22 @@ mod tests {
 
     #[test]
     fn test_append_history() {
-        use tempfile::tempdir;
         use std::fs;
         use std::thread::sleep;
         use std::time::Duration;
+        use tempfile::tempdir;
 
         // Create a report with some results
         let mut report = BenchmarkReport::new();
         report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
-        report.add_benchmark_data("600", BenchmarkData {
-            annual_heating_min: 4.30,
-            annual_heating_max: 5.71,
-            ..Default::default()
-        });
+        report.add_benchmark_data(
+            "600",
+            BenchmarkData {
+                annual_heating_min: 4.30,
+                annual_heating_max: 5.71,
+                ..Default::default()
+            },
+        );
 
         // Simulate validation timing
         report.set_start();
@@ -1752,7 +1762,10 @@ mod tests {
         report.append_history();
 
         // Verify file creation
-        let log_path = temp_dir.path().join("target").join("performance_history.jsonl");
+        let log_path = temp_dir
+            .path()
+            .join("target")
+            .join("performance_history.jsonl");
         assert!(log_path.exists(), "Performance history file should exist");
 
         // Read and verify content

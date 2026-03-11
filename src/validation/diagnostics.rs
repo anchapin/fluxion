@@ -21,15 +21,15 @@
 //! diag.export_csv("output/diagnostics.csv").unwrap();
 //! ```
 
+use crate::physics::cta::ContinuousTensor;
+use crate::sim::engine::ThermalModel;
 use log::{debug, info, trace};
 use serde::{Deserialize, Serialize};
+use std::convert::AsRef;
 use std::fs::File;
 use std::io::BufWriter;
 use std::io::Write;
 use std::path::Path;
-use crate::physics::cta::ContinuousTensor;
-use crate::sim::engine::ThermalModel;
-use std::convert::AsRef;
 
 /// Collected diagnostic data for a single simulation run.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -265,7 +265,11 @@ impl Default for SimulationDiagnostics {
 impl SimulationDiagnostics {
     /// Records data for a single timestep from the given model.
     /// This should be called at the end of step_physics.
-    pub fn record_timestep<T: ContinuousTensor<f64> + AsRef<[f64]>>(&mut self, hour: usize, model: &ThermalModel<T>) {
+    pub fn record_timestep<T: ContinuousTensor<f64> + AsRef<[f64]>>(
+        &mut self,
+        hour: usize,
+        model: &ThermalModel<T>,
+    ) {
         trace!("Recording diagnostics for hour {}", hour);
         let num_zones = model.num_zones;
         self.hours.push(hour);
@@ -349,8 +353,8 @@ impl SimulationDiagnostics {
             } else if increment < 0.0 {
                 self.cumulative_energy.cooling_kwh[i] += -increment;
             }
-            self.cumulative_energy.total_kwh[i] = self.cumulative_energy.heating_kwh[i]
-                + self.cumulative_energy.cooling_kwh[i];
+            self.cumulative_energy.total_kwh[i] =
+                self.cumulative_energy.heating_kwh[i] + self.cumulative_energy.cooling_kwh[i];
         }
 
         trace!("Recorded hour {}: {} zones", hour, num_zones);

@@ -91,11 +91,8 @@ impl QualityMetrics {
         let mut metrics = Self::new();
 
         // Count unique cases
-        let unique_cases: HashSet<&str> = report
-            .results
-            .iter()
-            .map(|r| r.case_id.as_str())
-            .collect();
+        let unique_cases: HashSet<&str> =
+            report.results.iter().map(|r| r.case_id.as_str()).collect();
         metrics.total_cases = unique_cases.len();
 
         // Track case-level pass/fail (case passes if all its metrics pass)
@@ -110,7 +107,10 @@ impl QualityMetrics {
             }
         }
 
-        metrics.passed_cases = case_status.values().filter(|s| **s == ValidationStatus::Pass).count();
+        metrics.passed_cases = case_status
+            .values()
+            .filter(|s| **s == ValidationStatus::Pass)
+            .count();
         if metrics.total_cases > 0 {
             metrics.pass_rate = (metrics.passed_cases as f64 / metrics.total_cases as f64) * 100.0;
         }
@@ -205,14 +205,22 @@ impl ChangeReport {
 
     /// Returns a human-readable change description.
     pub fn description(&self) -> String {
-        let direction = if self.pass_rate_delta > 0.0 { "↑" } else { "↓" };
+        let direction = if self.pass_rate_delta > 0.0 {
+            "↑"
+        } else {
+            "↓"
+        };
         format!(
             "Pass rate: {:.1}%{} ({:.1} pp), MAE: {:.1}%{}",
             self.pass_rate_delta.abs(),
             direction,
             self.pass_rate_delta,
             self.mae_delta,
-            if self.mae_delta < 0.0 { " (improved)" } else { " (worsened)" }
+            if self.mae_delta < 0.0 {
+                " (improved)"
+            } else {
+                " (worsened)"
+            }
         )
     }
 }
@@ -277,7 +285,10 @@ impl Analyzer {
     /// Computes metrics and generates the quality metrics markdown file.
     ///
     /// This is the main entry point for the metrics collection hook.
-    pub fn update_quality_metrics(&self, report: &BenchmarkReport) -> Result<QualityMetrics, AnalyzerError> {
+    pub fn update_quality_metrics(
+        &self,
+        report: &BenchmarkReport,
+    ) -> Result<QualityMetrics, AnalyzerError> {
         let metrics = self.analyze(report);
 
         if self.config.generate_report {
@@ -298,13 +309,22 @@ impl Analyzer {
         let mut output = String::new();
 
         output.push_str("# Quality Metrics Tracker\n\n");
-        output.push_str(&format!("*Generated: {}\n\n", chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")));
+        output.push_str(&format!(
+            "*Generated: {}\n\n",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+        ));
 
         // Current Status
         output.push_str("## Current Status\n\n");
-        output.push_str(&format!("- **Pass Rate:** {:.1}% ({} / {} cases)\n", metrics.pass_rate, metrics.passed_cases, metrics.total_cases));
+        output.push_str(&format!(
+            "- **Pass Rate:** {:.1}% ({} / {} cases)\n",
+            metrics.pass_rate, metrics.passed_cases, metrics.total_cases
+        ));
         output.push_str(&format!("- **MAE:** {:.2}%\n", metrics.mae));
-        output.push_str(&format!("- **Max Deviation:** {:.2}%\n", metrics.max_deviation));
+        output.push_str(&format!(
+            "- **Max Deviation:** {:.2}%\n",
+            metrics.max_deviation
+        ));
 
         // Status breakdown
         output.push_str("\n### Status Breakdown\n\n");
@@ -326,8 +346,10 @@ impl Analyzer {
         output.push_str("| Phase 2 | 35% | 38.5% | 250% | Thermal mass |\n");
         output.push_str("| Phase 3 | 42% | 32.1% | 200% | Solar improvements |\n");
         output.push_str("| Phase 4 | 47% | 28.4% | 180% | Multi-zone correct |\n");
-        output.push_str(&format!("| Current (Phase 5) | {:.1}% | {:.1}% | {:.0}% | Diagnostics |\n",
-            metrics.pass_rate, metrics.mae, metrics.max_deviation));
+        output.push_str(&format!(
+            "| Current (Phase 5) | {:.1}% | {:.1}% | {:.0}% | Diagnostics |\n",
+            metrics.pass_rate, metrics.mae, metrics.max_deviation
+        ));
         output.push('\n');
 
         // Metric Deviations
@@ -337,10 +359,13 @@ impl Analyzer {
 
         // Sort by absolute error descending
         let mut sorted_deviations = metrics.deviations.clone();
-        sorted_deviations.sort_by(|a, b| b.error_pct.abs().partial_cmp(&a.error_pct.abs()).unwrap());
+        sorted_deviations
+            .sort_by(|a, b| b.error_pct.abs().partial_cmp(&a.error_pct.abs()).unwrap());
 
-        for dev in sorted_deviations.iter().take(30) { // Show top 30 worst errors
-            let ref_range = if let Some(data) = crate::validation::get_benchmark_data(&dev.case_id) {
+        for dev in sorted_deviations.iter().take(30) {
+            // Show top 30 worst errors
+            let ref_range = if let Some(data) = crate::validation::get_benchmark_data(&dev.case_id)
+            {
                 if let Some((min, max)) = data.get_range(dev.metric) {
                     format!("{:.2}-{:.2}", min, max)
                 } else {
@@ -383,17 +408,22 @@ impl Analyzer {
         }
 
         let mut sorted_cases: Vec<_> = case_errors.into_iter().collect();
-        sorted_cases.sort_by(|a, b| b.1.1.partial_cmp(&a.1.1).unwrap()); // Sort by total error
+        sorted_cases.sort_by(|a, b| b.1 .1.partial_cmp(&a.1 .1).unwrap()); // Sort by total error
 
         for (case_id, (fail_count, total_error)) in sorted_cases.iter().take(10) {
-            output.push_str(&format!("| {} | {} | {:.1}% |\n", case_id, fail_count, total_error));
+            output.push_str(&format!(
+                "| {} | {} | {:.1}% |\n",
+                case_id, fail_count, total_error
+            ));
         }
 
         output.push('\n');
 
         // Footer
         output.push_str("---\n");
-        output.push_str("*Note: MAE = Mean Absolute Error of percent deviation from reference midpoints.*\n");
+        output.push_str(
+            "*Note: MAE = Mean Absolute Error of percent deviation from reference midpoints.*\n",
+        );
 
         output
     }
@@ -414,7 +444,8 @@ fn classify_deviation_issue(case_id: &str, metric: MetricType) -> String {
         return "ModelLimitation".to_string();
     }
 
-    if case_id.starts_with('6') && case_id != "600FF" && case_id != "650FF" && metric == PeakCooling {
+    if case_id.starts_with('6') && case_id != "600FF" && case_id != "650FF" && metric == PeakCooling
+    {
         return "SolarGains".to_string();
     }
 
@@ -432,8 +463,8 @@ fn classify_deviation_issue(case_id: &str, metric: MetricType) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::report::{BenchmarkReport, ValidationResult};
     use crate::validation::get_all_benchmark_data;
+    use crate::validation::report::{BenchmarkReport, ValidationResult};
 
     fn make_dummy_result(
         case_id: &str,
@@ -448,8 +479,9 @@ mod tests {
             fluxion_value,
             ref_min,
             ref_max,
-            percent_error: 0.0, // computed internally
+            percent_error: 0.0,             // computed internally
             status: ValidationStatus::Pass, // will be determined
+            per_program: None,
         }
     }
 
@@ -458,6 +490,8 @@ mod tests {
         let mut report = BenchmarkReport {
             results: Vec::new(),
             benchmark_data: get_all_benchmark_data(),
+            start_time: None,
+            end_time: None,
         };
 
         // Add a passing result
@@ -469,6 +503,7 @@ mod tests {
             ref_max: 7.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
+            per_program: None,
         });
 
         let metrics = QualityMetrics::from_benchmark_report(&report);
@@ -493,6 +528,8 @@ mod tests {
                 ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
             ],
             benchmark_data: HashMap::new(),
+            start_time: None,
+            end_time: None,
         };
 
         let metrics = QualityMetrics::from_benchmark_report(&report);
@@ -508,7 +545,10 @@ mod tests {
         assert_eq!(metrics.pass_rate, 0.0);
         // Metrics: 1 fail, 1 warn
         assert_eq!(metrics.status_counts.get(&ValidationStatus::Fail), Some(&1));
-        assert_eq!(metrics.status_counts.get(&ValidationStatus::Warning), Some(&1));
+        assert_eq!(
+            metrics.status_counts.get(&ValidationStatus::Warning),
+            Some(&1)
+        );
     }
 
     #[test]

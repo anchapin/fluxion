@@ -359,7 +359,13 @@ Phase 3 delivered **complete solar radiation integration** (all 4 SOLAR requirem
 5. Extensible test case framework supports custom geometries, climate zones, and building types
 6. Multi-reference comparison shows consistency across EnergyPlus, ESP-r, and TRNSYS
 
-**Plans**: TBD
+**Plans**:
+- [x] 07-01: Sensitivity Analysis (COMPLETE) ✅
+- [x] 07-03: Component Breakdown & Swing Analysis (COMPLETE) ✅
+- [x] 07-02: Delta Testing Framework (COMPLETE) ✅
+- [x] 07-04: Interactive Visualization (Wave 2 - COMPLETE) ✅
+- [x] 07-07: Extended CaseBuilder API (COMPLETE) ✅
+- [ ] 07-06: CLI Integration (Wave 3 - next up) 🔄
 
 ## Progress Table
 
@@ -371,7 +377,7 @@ Phase 3 delivered **complete solar radiation integration** (all 4 SOLAR requirem
 | 4. Multi-Zone Inter-Zone Transfer | 6/6 | Complete   | 2026-03-10 |
 | 5. Diagnostic Tools & Reporting | 4/4 | Complete   | 2026-03-10 |
 | 6. Performance Optimization | 5/5 | Complete | 2026-03-10 |
-| 7. Advanced Analysis & Visualization | 2/7 | In Progress | 2026-03-10 |
+| 7. Advanced Analysis & Visualization | 5/7 | In Progress | 2026-03-11 |
 
 ## Dependencies
 

@@ -5,12 +5,12 @@
 //! that collects requests, calls `predict_loads_batched`, and distributes results
 //! back to requesters via oneshot channels.
 
-use std::sync::mpsc::{self, Receiver, Sender, RecvTimeoutError};
+use crate::ai::surrogate::SurrogateManager;
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
 use std::time::Duration;
-use crate::ai::surrogate::SurrogateManager;
 
 /// Configuration for dynamic batch sizing.
 #[derive(Clone, Debug)]
@@ -59,7 +59,10 @@ impl SharedBatchInferenceService {
         let sender = tx.clone(); // keep a sender for submissions
         let thread = thread::spawn(move || Self::run_worker(rx, surrogate, config));
         Self {
-            inner: Arc::new(Inner { sender, _thread: Some(thread) }),
+            inner: Arc::new(Inner {
+                sender,
+                _thread: Some(thread),
+            }),
         }
     }
 
@@ -109,8 +112,10 @@ impl SharedBatchInferenceService {
             }
 
             // Separate inputs and response senders.
-            let (inputs, senders): (Vec<Vec<f64>>, Vec<Sender<Vec<f64>>>) =
-                batch.into_iter().map(|req| (req.temps, req.response_tx)).unzip();
+            let (inputs, senders): (Vec<Vec<f64>>, Vec<Sender<Vec<f64>>>) = batch
+                .into_iter()
+                .map(|req| (req.temps, req.response_tx))
+                .unzip();
 
             // Perform batched inference.
             let outputs = surrogate.predict_loads_batched(&inputs);
@@ -148,7 +153,7 @@ mod tests {
             wait_ms: 10,
         };
         let service = SharedBatchInferenceService::new(surrogate, config);
-        let temps = vec![vec![20.0, 21.0]];
+        let temps = vec![20.0, 21.0];
         let rx = service.submit(temps);
         let result = rx.recv().expect("No result received");
         assert_eq!(result.len(), 2);
@@ -172,7 +177,7 @@ mod tests {
             let service = service.clone();
             let handle = thread::spawn(move || {
                 let input = vec![20.0 + i as f64, 21.0 + i as f64];
-                let rx = service.submit(vec![input.clone()]);
+                let rx = service.submit(input.clone());
                 let output = rx.recv().expect("Failed to receive output");
                 output
             });

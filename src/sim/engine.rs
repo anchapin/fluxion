@@ -16,12 +16,12 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{
     CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
 };
+use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
 use log::{debug, info, trace, warn};
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use crate::validation::diagnostics::SimulationDiagnostics;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
 
@@ -706,7 +706,6 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
         }
     }
 }
-
 
 impl ThermalModel<VectorField> {
     /// Create a new ThermalModel from an ASHRAE 140 case specification.

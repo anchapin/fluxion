@@ -1,25 +1,28 @@
+pub mod analyzer;
 pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
-pub mod analyzer;
+pub mod assembly_library;
 pub mod benchmark;
+pub mod commands;
 pub mod cross_validator;
 pub mod diagnostic;
 pub mod diagnostics;
 pub mod export;
 pub mod fdd;
 pub mod guardrails;
+pub mod multi_reference;
 pub mod physics_validator;
 pub mod report;
 pub mod reporter;
 
 // Re-export common types
-pub use ashrae_140_validator::{ASHRAE140Validator, validate_case_with_diagnostics};
+pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
+pub use ashrae_140_validator::{validate_case_with_diagnostics, ASHRAE140Validator};
 pub use cross_validator::{
     AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
     EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
 };
-pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
 
 pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
@@ -27,6 +30,7 @@ pub use ashrae_140_cases::{
     HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
 };
 pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
+pub use commands::update_references;
 pub use diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
     HourlyData, PeakTiming, TemperatureProfile,

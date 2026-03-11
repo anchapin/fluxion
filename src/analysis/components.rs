@@ -1,7 +1,8 @@
 use crate::validation::diagnostic::EnergyBreakdown;
-use std::path::Path;
+use anyhow::Result;
 use csv::Writer;
 use serde::Serialize;
+use std::path::Path;
 
 /// Component entry for aggregated energy breakdown.
 #[derive(Debug, Clone, Serialize)]
@@ -18,22 +19,53 @@ where
 {
     let mut entries = Vec::new();
     for (case_id, breakdown) in iter {
-        entries.push(ComponentEntry { case_id: case_id.clone(), component: "envelope_conduction".to_string(), energy_mwh: breakdown.envelope_conduction_mwh });
-        entries.push(ComponentEntry { case_id: case_id.clone(), component: "infiltration".to_string(), energy_mwh: breakdown.infiltration_mwh });
-        entries.push(ComponentEntry { case_id: case_id.clone(), component: "solar_gains".to_string(), energy_mwh: breakdown.solar_gains_mwh });
-        entries.push(ComponentEntry { case_id: case_id.clone(), component: "internal_gains".to_string(), energy_mwh: breakdown.internal_gains_mwh });
-        entries.push(ComponentEntry { case_id: case_id.clone(), component: "heating".to_string(), energy_mwh: breakdown.heating_mwh });
-        entries.push(ComponentEntry { case_id, component: "cooling".to_string(), energy_mwh: breakdown.cooling_mwh });
+        entries.push(ComponentEntry {
+            case_id: case_id.clone(),
+            component: "envelope_conduction".to_string(),
+            energy_mwh: breakdown.envelope_conduction_mwh,
+        });
+        entries.push(ComponentEntry {
+            case_id: case_id.clone(),
+            component: "infiltration".to_string(),
+            energy_mwh: breakdown.infiltration_mwh,
+        });
+        entries.push(ComponentEntry {
+            case_id: case_id.clone(),
+            component: "solar_gains".to_string(),
+            energy_mwh: breakdown.solar_gains_mwh,
+        });
+        entries.push(ComponentEntry {
+            case_id: case_id.clone(),
+            component: "internal_gains".to_string(),
+            energy_mwh: breakdown.internal_gains_mwh,
+        });
+        entries.push(ComponentEntry {
+            case_id: case_id.clone(),
+            component: "heating".to_string(),
+            energy_mwh: breakdown.heating_mwh,
+        });
+        entries.push(ComponentEntry {
+            case_id,
+            component: "cooling".to_string(),
+            energy_mwh: breakdown.cooling_mwh,
+        });
     }
     entries
 }
 
 /// Export component entries to a CSV file.
-pub fn export_component_csv(entries: &[ComponentEntry], path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn export_component_csv(
+    entries: &[ComponentEntry],
+    path: &Path,
+) -> Result<()> {
     let mut wtr = Writer::from_path(path)?;
     wtr.write_record(&["Case", "Component", "Energy_MWh"])?;
     for entry in entries {
-        wtr.write_record(&[&entry.case_id, &entry.component, &format!("{:.4}", entry.energy_mwh)])?;
+        wtr.write_record(&[
+            &entry.case_id,
+            &entry.component,
+            &format!("{:.4}", entry.energy_mwh),
+        ])?;
     }
     wtr.flush()?;
     Ok(())
@@ -49,7 +81,9 @@ pub struct ConservationResult {
 
 /// Check energy conservation: net balance should be near zero within tolerance.
 pub fn check_conservation(breakdown: &EnergyBreakdown, tolerance_pct: f64) -> ConservationResult {
-    let net = breakdown.solar_gains_mwh + breakdown.internal_gains_mwh - breakdown.heating_mwh - breakdown.cooling_mwh;
+    let net = breakdown.solar_gains_mwh + breakdown.internal_gains_mwh
+        - breakdown.heating_mwh
+        - breakdown.cooling_mwh;
     let total_input = breakdown.solar_gains_mwh + breakdown.internal_gains_mwh;
     let tolerance = if total_input > 0.0 {
         total_input * (tolerance_pct / 100.0)
@@ -58,7 +92,11 @@ pub fn check_conservation(breakdown: &EnergyBreakdown, tolerance_pct: f64) -> Co
         0.01
     };
     let is_valid = net.abs() <= tolerance;
-    ConservationResult { net_balance_mwh: net, tolerance_pct, is_valid }
+    ConservationResult {
+        net_balance_mwh: net,
+        tolerance_pct,
+        is_valid,
+    }
 }
 
 #[cfg(test)]
@@ -79,7 +117,10 @@ mod tests {
         let entries = aggregate_from_validator(vec![("600".to_string(), breakdown)].into_iter());
         assert_eq!(entries.len(), 6);
         // Find heating entry
-        let heating_entry = entries.iter().find(|e| e.component == "heating" && e.case_id == "600").unwrap();
+        let heating_entry = entries
+            .iter()
+            .find(|e| e.component == "heating" && e.case_id == "600")
+            .unwrap();
         assert_eq!(heating_entry.energy_mwh, 5.0);
     }
 

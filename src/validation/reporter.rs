@@ -130,7 +130,11 @@ impl ValidationReportGenerator {
 
             // Helper to compute percent change
             let pct_change = |current: f64, base: f64| -> f64 {
-                if base != 0.0 { ((current - base) / base) * 100.0 } else { 0.0 }
+                if base != 0.0 {
+                    ((current - base) / base) * 100.0
+                } else {
+                    0.0
+                }
             };
 
             // Mean Absolute Error (MAE)

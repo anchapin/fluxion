@@ -963,6 +963,32 @@ impl Assemblies {
     }
 }
 
+impl Construction {
+    /// Creates a simple single-layer wall construction with the specified material R-value.
+    ///
+    /// This is a convenience method for quick prototyping. It creates a construction
+    /// with a single insulating layer whose thickness is computed to achieve the desired
+    /// R-value using a typical insulation conductivity (0.04 W/m·K).
+    ///
+    /// # Arguments
+    /// * `r_value` - Desired thermal resistance of the materials (m²K/W)
+    ///
+    /// # Returns
+    /// A Construction with a single layer achieving the specified R-value.
+    pub fn simple_wall(r_value: f64) -> Self {
+        let conductivity = 0.04; // W/m·K, typical for fiberglass insulation
+        let thickness = r_value * conductivity;
+        let layer = ConstructionLayer::new(
+            "Simple Wall",
+            conductivity,
+            30.0,   // density (kg/m³)
+            1000.0, // specific heat (J/kg·K)
+            thickness,
+        );
+        Construction::new(vec![layer])
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

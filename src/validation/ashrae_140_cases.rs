@@ -1210,8 +1210,16 @@ impl CaseBuilder {
     /// * `width` - Zone width (depth in Y direction) in meters
     /// * `height` - Zone height in meters
     /// * `name` - Optional zone identifier; if None, a name like "zone0" is auto-generated
-    pub fn rectangular_zone(mut self, length: f64, width: f64, height: f64, name: Option<&str>) -> Self {
-        let name = name.map(String::from).or_else(|| Some(format!("zone{}", self.geometry.len())));
+    pub fn rectangular_zone(
+        mut self,
+        length: f64,
+        width: f64,
+        height: f64,
+        name: Option<&str>,
+    ) -> Self {
+        let name = name
+            .map(String::from)
+            .or_else(|| Some(format!("zone{}", self.geometry.len())));
         self.geometry.push(GeometrySpec {
             width: length,
             depth: width,
@@ -1249,21 +1257,30 @@ impl CaseBuilder {
     /// * `zone2_id` - Identifier of the second zone
     /// * `area` - Area of the common wall in square meters (m²)
     /// * `r_value` - Desired thermal resistance of the wall materials (m²K/W)
-    pub fn add_common_wall(mut self, zone1_id: &str, zone2_id: &str, area: f64, r_value: f64) -> Self {
+    pub fn add_common_wall(
+        mut self,
+        zone1_id: &str,
+        zone2_id: &str,
+        area: f64,
+        r_value: f64,
+    ) -> Self {
         let idx1 = self.find_zone_index(zone1_id);
         let idx2 = self.find_zone_index(zone2_id);
         // Create a simple insulation wall with the given R-value using fiberglass (k=0.04)
         let thickness = r_value * 0.04;
         let layer = Materials::fiberglass(thickness);
         let construction = Construction::new(vec![layer]);
-        self.common_walls.push(CommonWall::new(idx1, idx2, area, construction));
+        self.common_walls
+            .push(CommonWall::new(idx1, idx2, area, construction));
         self
     }
 
     /// Looks up the geometry index for a given zone name.
     /// Panics if the zone name is not found.
     fn find_zone_index(&self, id: &str) -> usize {
-        self.geometry.iter().position(|g| g.name.as_ref().map(String::as_str) == Some(id))
+        self.geometry
+            .iter()
+            .position(|g| g.name.as_ref().map(String::as_str) == Some(id))
             .unwrap_or_else(|| panic!("Zone '{}' not found in builder", id))
     }
 

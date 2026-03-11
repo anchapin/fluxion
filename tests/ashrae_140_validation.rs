@@ -100,7 +100,7 @@ fn generate_validation_report() {
     // Generate main validation report
     let generator = ValidationReportGenerator::new(PathBuf::from("docs/ASHRAE140_RESULTS.md"));
     generator
-        .generate(&report, Some(&systematic_issues))
+        .generate(&report, Some(&systematic_issues), None)
         .expect("Failed to generate report");
 
     // Verify file was created

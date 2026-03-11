@@ -1,8 +1,14 @@
 use fluxion::validation::guardrails::{self, GuardrailBaseline};
-use fluxion::validation::report::{BenchmarkReport, BenchmarkData, ValidationResult, MetricType, ValidationStatus};
-use std::time::{Instant, Duration};
+use fluxion::validation::report::{
+    BenchmarkData, BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
+};
+use std::time::{Duration, Instant};
 
-fn make_report(percent_errors: &[f64], statuses: &[ValidationStatus], duration_secs: f64) -> BenchmarkReport {
+fn make_report(
+    percent_errors: &[f64],
+    statuses: &[ValidationStatus],
+    duration_secs: f64,
+) -> BenchmarkReport {
     let mut report = BenchmarkReport::new();
     for (i, &pe) in percent_errors.iter().enumerate() {
         report.results.push(ValidationResult {
@@ -13,10 +19,13 @@ fn make_report(percent_errors: &[f64], statuses: &[ValidationStatus], duration_s
             ref_max: 2.0,
             percent_error: pe,
             status: statuses[i],
+            per_program: None,
         });
     }
     // Add benchmark data for throughput (though not used by guardrails)
-    report.benchmark_data.insert("case0".to_string(), BenchmarkData::new());
+    report
+        .benchmark_data
+        .insert("case0".to_string(), BenchmarkData::new());
     // Set timing
     let start = Instant::now();
     report.start_time = Some(start);
@@ -43,15 +52,15 @@ fn test_guardrail_mae_failure() {
 
 #[test]
 fn test_guardrail_maxdev_failure() {
-    // Baseline max_deviation=20.0, report maxdev=22.0 (>10%)
+    // Baseline max_deviation=20.0, report maxdev=22.1 (>10%)
     let baseline = GuardrailBaseline {
         mae: 1000.0,
         max_deviation: 20.0,
         pass_rate: 100.0,
         validation_time_seconds: 50.0,
     };
-    // One result with percent_error=22.0 → maxdev=22.0
-    let report = make_report(&[22.0], &[ValidationStatus::Pass], 50.0);
+    // One result with percent_error=22.1 → maxdev=22.1 (>10% over 20.0)
+    let report = make_report(&[22.1], &[ValidationStatus::Pass], 50.0);
 
     let (passed, failures) = guardrails::check(&report, &baseline);
     assert!(!passed);
@@ -121,7 +130,11 @@ fn test_guardrail_multiple_failures() {
     // Let's have two results: one with high error (status Pass), one with status Fail (any error). Then pass_rate = 50% (<75% if baseline 80? Actually baseline pass_rate=80, drop 30pp >5 -> fail.
     // MaxDev: max percent_error = 15 (>11 -> fail)
     // MAE: if we have both 15 and 15, mae = 15 >10.2 -> fail.
-    let report = make_report(&[15.0, 15.0], &[ValidationStatus::Pass, ValidationStatus::Fail], 50.0);
+    let report = make_report(
+        &[15.0, 15.0],
+        &[ValidationStatus::Pass, ValidationStatus::Fail],
+        50.0,
+    );
 
     let (passed, failures) = guardrails::check(&report, &baseline);
     assert!(!passed);

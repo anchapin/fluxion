@@ -1178,37 +1178,37 @@ impl ASHRAE140Validator {
 }
 
 #[derive(Debug)]
-struct CaseResults {
-    annual_heating_mwh: f64,
-    annual_cooling_mwh: f64,
-    peak_heating_kw: f64,
-    peak_cooling_kw: f64,
+pub struct CaseResults {
+    pub annual_heating_mwh: f64,
+    pub annual_cooling_mwh: f64,
+    pub peak_heating_kw: f64,
+    pub peak_cooling_kw: f64,
     /// Minimum zone temperature (°C) for free-floating cases
-    min_temp_celsius: Option<f64>,
+    pub min_temp_celsius: Option<f64>,
     /// Maximum zone temperature (°C) for free-floating cases
-    max_temp_celsius: Option<f64>,
+    pub max_temp_celsius: Option<f64>,
 }
 
 /// Diagnostic data collected during case simulation.
-struct CaseDiagnostic {
+pub struct CaseDiagnostic {
     /// Energy breakdown by component
-    energy_breakdown: EnergyBreakdown,
+    pub energy_breakdown: EnergyBreakdown,
     /// Peak load timing information
-    peak_timing: PeakTiming,
+    pub peak_timing: PeakTiming,
     /// Temperature profile for free-floating cases
-    temp_profile: TemperatureProfile,
+    pub temp_profile: TemperatureProfile,
     /// Hourly data (if collected)
     #[allow(dead_code)]
-    hourly_data: Vec<HourlyData>,
+    pub hourly_data: Vec<HourlyData>,
     /// Issue #432: Thermal mass energy accounting data
     /// Total cumulative mass energy change (J)
-    mass_energy_change_joules: f64,
+    pub mass_energy_change_joules: f64,
     /// Envelope mass cumulative energy change (J) - for 6R2C model
-    envelope_mass_energy_change_joules: f64,
+    pub envelope_mass_energy_change_joules: f64,
     /// Internal mass cumulative energy change (J) - for 6R2C model
-    internal_mass_energy_change_joules: f64,
+    pub internal_mass_energy_change_joules: f64,
     /// Whether thermal mass energy accounting was enabled
-    thermal_mass_energy_accounting_enabled: bool,
+    pub thermal_mass_energy_accounting_enabled: bool,
 }
 
 impl CaseDiagnostic {
@@ -1261,7 +1261,7 @@ pub struct ValidationReport {
 
 impl ASHRAE140Validator {
     /// Simulate a case with full diagnostic data collection.
-    fn simulate_case_with_diagnostics(
+    pub fn simulate_case_with_diagnostics(
         &self,
         spec: &CaseSpec,
         weather: &DenverTmyWeather,

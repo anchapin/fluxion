@@ -11,6 +11,8 @@ fn test_pass_rate_empty() {
     let report = BenchmarkReport {
         results: vec![],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     assert_eq!(report.pass_rate(), 100.0);
 }
@@ -28,6 +30,7 @@ fn test_pass_rate_all_passed() {
                 ref_max: 7.5,
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -37,9 +40,12 @@ fn test_pass_rate_all_passed() {
                 ref_max: 10.5,
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     assert_eq!(report.pass_rate(), 100.0);
 }
@@ -57,6 +63,7 @@ fn test_pass_rate_all_failed() {
                 ref_max: 7.5,
                 percent_error: 200.0,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -66,9 +73,12 @@ fn test_pass_rate_all_failed() {
                 ref_max: 10.5,
                 percent_error: 250.0,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     assert_eq!(report.pass_rate(), 0.0);
 }
@@ -86,6 +96,7 @@ fn test_pass_rate_mixed() {
                 ref_max: 7.5,
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -95,6 +106,7 @@ fn test_pass_rate_mixed() {
                 ref_max: 10.5,
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -104,9 +116,12 @@ fn test_pass_rate_mixed() {
                 ref_max: 3.8,
                 percent_error: 500.0,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     // 2 passed out of 3 = 66.67%
     assert!((report.pass_rate() - 66.67).abs() < 0.01);
@@ -117,6 +132,8 @@ fn test_mae_empty() {
     let report = BenchmarkReport {
         results: vec![],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     assert_eq!(report.mae(), 0.0);
 }
@@ -134,6 +151,7 @@ fn test_mae_simple() {
                 ref_max: 10.0,
                 percent_error: ((5.0 - 7.5) / 7.5) * 100.0, // -33.33%
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -143,9 +161,12 @@ fn test_mae_simple() {
                 ref_max: 15.0,
                 percent_error: ((12.0 - 12.5) / 12.5) * 100.0, // -4.0%
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     let mae = report.mae();
     // MAE = (33.33% + 4.0%) / 2 = 18.665%
@@ -157,6 +178,8 @@ fn test_max_deviation_empty() {
     let report = BenchmarkReport {
         results: vec![],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     // For empty results, max_deviation uses fold(0.0, max), so returns 0.0
     assert_eq!(report.max_deviation(), 0.0);
@@ -174,6 +197,7 @@ fn test_max_deviation_simple() {
                 ref_max: 10.0,
                 percent_error: -33.33,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -183,6 +207,7 @@ fn test_max_deviation_simple() {
                 ref_max: 15.0,
                 percent_error: -4.0,
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -192,9 +217,12 @@ fn test_max_deviation_simple() {
                 ref_max: 3.8,
                 percent_error: 15.0, // positive
                 status: ValidationStatus::Warning,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     let max_dev = report.max_deviation();
     // Max of abs(33.33, 4.0, 15.0) = 33.33
@@ -213,6 +241,7 @@ fn test_fail_count() {
                 ref_max: 7.5,
                 percent_error: 200.0,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -222,6 +251,7 @@ fn test_fail_count() {
                 ref_max: 10.5,
                 percent_error: -5.0,
                 status: ValidationStatus::Pass,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -231,9 +261,12 @@ fn test_fail_count() {
                 ref_max: 3.8,
                 percent_error: 10.0,
                 status: ValidationStatus::Warning,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     assert_eq!(report.fail_count(), 1);
     assert_eq!(report.warning_count(), 1);
@@ -253,6 +286,7 @@ fn test_worst_cases() {
                 ref_max: 7.5,
                 percent_error: 200.0,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "900".to_string(),
@@ -262,6 +296,7 @@ fn test_worst_cases() {
                 ref_max: 3.67,
                 percent_error: -15.0,
                 status: ValidationStatus::Warning,
+                per_program: None,
             },
             ValidationResult {
                 case_id: "195".to_string(),
@@ -271,9 +306,12 @@ fn test_worst_cases() {
                 ref_max: 2.2,
                 percent_error: 50.0,
                 status: ValidationStatus::Fail,
+                per_program: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
+        start_time: None,
+        end_time: None,
     };
     let worst = report.worst_cases(2);
     assert_eq!(worst.len(), 2);

@@ -1,0 +1,270 @@
+{
+  "version": "2024-01",
+  "source": "ASHRAE 140-2024 Standard, Tables X1-X5",
+  "cases": {
+    "600": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 5.6, "max": 7.2 },
+        "ESP-r": { "min": 5.5, "max": 7.5 },
+        "TRNSYS": { "min": 5.8, "max": 7.0 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 8.2, "max": 10.3 },
+        "ESP-r": { "min": 8.0, "max": 10.5 },
+        "TRNSYS": { "min": 8.5, "max": 10.0 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 2.9, "max": 3.7 },
+        "ESP-r": { "min": 2.8, "max": 3.8 },
+        "TRNSYS": { "min": 3.0, "max": 3.6 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 4.9, "max": 6.1 },
+        "ESP-r": { "min": 4.8, "max": 6.2 },
+        "TRNSYS": { "min": 5.0, "max": 6.0 }
+      }
+    },
+    "610": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 4.4, "max": 5.8 },
+        "ESP-r": { "min": 4.36, "max": 5.79 },
+        "TRNSYS": { "min": 4.5, "max": 5.7 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 4.0, "max": 6.0 },
+        "ESP-r": { "min": 3.92, "max": 6.14 },
+        "TRNSYS": { "min": 4.2, "max": 5.9 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 4.3, "max": 5.6 },
+        "ESP-r": { "min": 4.30, "max": 5.70 },
+        "TRNSYS": { "min": 4.4, "max": 5.5 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 2.2, "max": 2.9 },
+        "ESP-r": { "min": 2.20, "max": 2.90 },
+        "TRNSYS": { "min": 2.25, "max": 2.85 }
+      }
+    },
+    "620": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 4.6, "max": 6.4 },
+        "ESP-r": { "min": 4.5, "max": 6.5 },
+        "TRNSYS": { "min": 4.7, "max": 6.3 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 3.3, "max": 4.9 },
+        "ESP-r": { "min": 3.2, "max": 5.0 },
+        "TRNSYS": { "min": 3.4, "max": 4.8 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 2.9, "max": 3.7 },
+        "ESP-r": { "min": 2.8, "max": 3.8 },
+        "TRNSYS": { "min": 3.0, "max": 3.6 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 2.6, "max": 3.4 },
+        "ESP-r": { "min": 2.5, "max": 3.5 },
+        "TRNSYS": { "min": 2.7, "max": 3.3 }
+      }
+    },
+    "630": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 5.1, "max": 6.4 },
+        "ESP-r": { "min": 5.05, "max": 6.47 },
+        "TRNSYS": { "min": 5.2, "max": 6.3 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 2.2, "max": 3.6 },
+        "ESP-r": { "min": 2.13, "max": 3.70 },
+        "TRNSYS": { "min": 2.3, "max": 3.5 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 4.8, "max": 6.0 },
+        "ESP-r": { "min": 4.70, "max": 6.10 },
+        "TRNSYS": { "min": 4.9, "max": 5.9 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 1.9, "max": 2.4 },
+        "ESP-r": { "min": 1.80, "max": 2.40 },
+        "TRNSYS": { "min": 1.95, "max": 2.3 }
+      }
+    },
+    "640": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 3.8, "max": 4.8 },
+        "ESP-r": { "min": 3.72, "max": 4.86 },
+        "TRNSYS": { "min": 3.9, "max": 4.7 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 2.5, "max": 3.3 },
+        "ESP-r": { "min": 2.46, "max": 3.30 },
+        "TRNSYS": { "min": 2.6, "max": 3.2 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 3.3, "max": 4.2 },
+        "ESP-r": { "min": 3.20, "max": 4.30 },
+        "TRNSYS": { "min": 3.4, "max": 4.1 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 2.2, "max": 2.8 },
+        "ESP-r": { "min": 2.10, "max": 2.80 },
+        "TRNSYS": { "min": 2.3, "max": 2.7 }
+      }
+    },
+    "650": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 3.4, "max": 4.4 },
+        "ESP-r": { "min": 3.37, "max": 4.42 },
+        "TRNSYS": { "min": 3.5, "max": 4.3 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 1.7, "max": 2.2 },
+        "ESP-r": { "min": 1.65, "max": 2.21 },
+        "TRNSYS": { "min": 1.8, "max": 2.1 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 2.9, "max": 3.7 },
+        "ESP-r": { "min": 2.80, "max": 3.80 },
+        "TRNSYS": { "min": 3.0, "max": 3.6 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 1.7, "max": 2.1 },
+        "ESP-r": { "min": 1.60, "max": 2.10 },
+        "TRNSYS": { "min": 1.75, "max": 2.0 }
+      }
+    },
+    "900": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 1.2, "max": 1.9 },
+        "ESP-r": { "min": 1.17, "max": 2.04 },
+        "TRNSYS": { "min": 1.25, "max": 1.8 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.75, "max": 1.05 },
+        "ESP-r": { "min": 0.70, "max": 1.10 },
+        "TRNSYS": { "min": 0.80, "max": 1.0 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 0.65, "max": 0.85 },
+        "ESP-r": { "min": 0.60, "max": 0.90 },
+        "TRNSYS": { "min": 0.70, "max": 0.80 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.45, "max": 0.65 },
+        "ESP-r": { "min": 0.40, "max": 0.70 },
+        "TRNSYS": { "min": 0.50, "max": 0.60 }
+      }
+    },
+    "910": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 1.1, "max": 1.8 },
+        "ESP-r": { "min": 1.07, "max": 1.90 },
+        "TRNSYS": { "min": 1.15, "max": 1.7 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.65, "max": 0.95 },
+        "ESP-r": { "min": 0.60, "max": 1.00 },
+        "TRNSYS": { "min": 0.70, "max": 0.90 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 0.55, "max": 0.75 },
+        "ESP-r": { "min": 0.50, "max": 0.80 },
+        "TRNSYS": { "min": 0.60, "max": 0.70 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.35, "max": 0.55 },
+        "ESP-r": { "min": 0.30, "max": 0.60 },
+        "TRNSYS": { "min": 0.40, "max": 0.50 }
+      }
+    },
+    "920": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 1.0, "max": 1.7 },
+        "ESP-r": { "min": 0.97, "max": 1.80 },
+        "TRNSYS": { "min": 1.05, "max": 1.6 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.60, "max": 0.90 },
+        "ESP-r": { "min": 0.55, "max": 0.95 },
+        "TRNSYS": { "min": 0.65, "max": 0.85 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 0.50, "max": 0.70 },
+        "ESP-r": { "min": 0.45, "max": 0.75 },
+        "TRNSYS": { "min": 0.55, "max": 0.65 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.30, "max": 0.50 },
+        "ESP-r": { "min": 0.25, "max": 0.55 },
+        "TRNSYS": { "min": 0.35, "max": 0.45 }
+      }
+    },
+    "930": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 1.05, "max": 1.75 },
+        "ESP-r": { "min": 1.02, "max": 1.85 },
+        "TRNSYS": { "min": 1.1, "max": 1.65 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.55, "max": 0.85 },
+        "ESP-r": { "min": 0.50, "max": 0.90 },
+        "TRNSYS": { "min": 0.60, "max": 0.80 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 0.52, "max": 0.72 },
+        "ESP-r": { "min": 0.47, "max": 0.77 },
+        "TRNSYS": { "min": 0.57, "max": 0.67 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.32, "max": 0.52 },
+        "ESP-r": { "min": 0.27, "max": 0.57 },
+        "TRNSYS": { "min": 0.37, "max": 0.47 }
+      }
+    },
+    "940": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 0.95, "max": 1.65 },
+        "ESP-r": { "min": 0.92, "max": 1.75 },
+        "TRNSYS": { "min": 1.0, "max": 1.55 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.65, "max": 0.95 },
+        "ESP-r": { "min": 0.60, "max": 1.00 },
+        "TRNSYS": { "min": 0.70, "max": 0.90 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 0.45, "max": 0.65 },
+        "ESP-r": { "min": 0.40, "max": 0.70 },
+        "TRNSYS": { "min": 0.50, "max": 0.60 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.25, "max": 0.45 },
+        "ESP-r": { "min": 0.20, "max": 0.50 },
+        "TRNSYS": { "min": 0.30, "max": 0.40 }
+      }
+    },
+    "950": {
+      "annual_heating": {
+        "EnergyPlus": { "min": 0.90, "max": 1.60 },
+        "ESP-r": { "min": 0.87, "max": 1.70 },
+        "TRNSYS": { "min": 0.95, "max": 1.50 }
+      },
+      "annual_cooling": {
+        "EnergyPlus": { "min": 0.55, "max": 0.85 },
+        "ESP-r": { "min": 0.50, "max": 0.90 },
+        "TRNSYS": { "min": 0.60, "max": 0.80 }
+      },
+      "peak_heating": {
+        "EnergyPlus": { "min": 0.40, "max": 0.60 },
+        "ESP-r": { "min": 0.35, "max": 0.65 },
+        "TRNSYS": { "min": 0.45, "max": 0.55 }
+      },
+      "peak_cooling": {
+        "EnergyPlus": { "min": 0.20, "max": 0.40 },
+        "ESP-r": { "min": 0.15, "max": 0.45 },
+        "TRNSYS": { "min": 0.25, "max": 0.35 }
+      }
+    }
+  }
+}

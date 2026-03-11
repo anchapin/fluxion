@@ -1,7 +1,7 @@
 use crate::validation::diagnostic::TemperatureProfile;
-use std::path::Path;
 use csv::Writer;
 use serde::Serialize;
+use std::path::Path;
 
 /// Swing metrics for a free-floating case.
 #[derive(Debug, Clone, Serialize)]
@@ -49,7 +49,10 @@ pub fn calculate_swing_metrics(
 }
 
 /// Export swing metrics to CSV.
-pub fn export_swing_csv(metrics: &[SwingMetrics], path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+pub fn export_swing_csv(
+    metrics: &[SwingMetrics],
+    path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
     let mut wtr = Writer::from_path(path)?;
     wtr.write_record(&[
         "Case",
@@ -88,7 +91,9 @@ pub struct SwingInterpretation {
 /// Generate interpretation from swing metrics.
 pub fn interpret_swing_metrics(metrics: &SwingMetrics) -> SwingInterpretation {
     // Thermal mass effectiveness based on swing range and comfort percentage
-    let (thermal_mass_effectiveness, mut recs) = if metrics.swing_range < 5.0 && metrics.comfort_hours_pct >= 80.0 {
+    let (thermal_mass_effectiveness, mut recs) = if metrics.swing_range < 5.0
+        && metrics.comfort_hours_pct >= 80.0
+    {
         ("High".to_string(), vec![])
     } else if metrics.swing_range < 10.0 && metrics.comfort_hours_pct >= 50.0 {
         ("Moderate".to_string(), vec![])
@@ -99,7 +104,10 @@ pub fn interpret_swing_metrics(metrics: &SwingMetrics) -> SwingInterpretation {
     };
 
     // Passive cooling potential
-    let passive_cooling_potential = if metrics.comfort_hours_pct >= 70.0 && metrics.avg_temp >= 18.0 && metrics.avg_temp <= 26.0 {
+    let passive_cooling_potential = if metrics.comfort_hours_pct >= 70.0
+        && metrics.avg_temp >= 18.0
+        && metrics.avg_temp <= 26.0
+    {
         "High"
     } else if metrics.comfort_hours_pct >= 40.0 && metrics.avg_temp <= 28.0 {
         "Moderate"
@@ -108,7 +116,8 @@ pub fn interpret_swing_metrics(metrics: &SwingMetrics) -> SwingInterpretation {
     };
 
     // Passive heating potential
-    let passive_heating_potential = if metrics.comfort_hours_pct >= 70.0 && metrics.avg_temp >= 18.0 {
+    let passive_heating_potential = if metrics.comfort_hours_pct >= 70.0 && metrics.avg_temp >= 18.0
+    {
         "High"
     } else if metrics.comfort_hours_pct >= 40.0 && metrics.avg_temp >= 15.0 {
         "Moderate"
@@ -143,7 +152,11 @@ pub fn generate_swing_report(interpretations: &[SwingInterpretation]) -> String 
         let recs = interp.recommendations.join("; ");
         out.push_str(&format!(
             "| {} | {} | {} | {} | {} |\n",
-            interp.case_id, interp.thermal_mass_effectiveness, interp.passive_cooling_potential, interp.passive_heating_potential, recs
+            interp.case_id,
+            interp.thermal_mass_effectiveness,
+            interp.passive_cooling_potential,
+            interp.passive_heating_potential,
+            recs
         ));
     }
     out
@@ -168,7 +181,7 @@ mod tests {
         assert_eq!(metrics.swing_range, 10.0);
         // Comfort hours: only 18 (within 18-26) maybe also? temps: 15 -> not, 25-> yes (between 18-26), 18-> yes. That's 2/3 = 66.67%
         assert_eq!(metrics.comfort_hours, 2);
-        assert!((metrics.comfort_hours_pct - (2.0/3.0)*100.0).abs() < 0.1);
+        assert!((metrics.comfort_hours_pct - (2.0 / 3.0) * 100.0).abs() < 0.1);
     }
 
     #[test]

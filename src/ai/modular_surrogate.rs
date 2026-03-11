@@ -218,7 +218,7 @@ mod tests {
         // In practice, all components should return same length, but we handle it safely
         let manager = SurrogateManager::new().unwrap();
         let comp = ComponentSurrogate::new("test", manager);
-        let composite = CompositeSurrogate::new(vec![comp, comp]);
+        let composite = CompositeSurrogate::new(vec![comp.clone(), comp]);
 
         let temps = vec![20.0, 21.0, 22.0];
         let loads = composite.predict_loads(&temps);

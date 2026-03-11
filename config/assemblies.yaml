@@ -1,0 +1,103 @@
+# Default assembly library for Fluxion validation cases.
+# Each entry defines a construction assembly with material layers.
+# Layers are ordered from interior to exterior.
+
+# Wood frame wall with fiberglass insulation (approx R-20)
+wood_frame_wall:
+  layers:
+    - material: "Gypsum Board"
+      thickness: 0.0127  # 1/2 inch (0.013 m)
+      conductivity: 0.16
+      density: 950.0
+      specific_heat: 840.0
+    - material: "Fiberglass Insulation"
+      thickness: 0.0889   # R-20 with k=0.04 => ~0.09m
+      conductivity: 0.04
+      density: 12.0
+      specific_heat: 840.0
+    - material: "Wood Siding"
+      thickness: 0.009
+      conductivity: 0.14
+      density: 500.0
+      specific_heat: 1300.0
+
+# Concrete masonry unit (CMU) wall (approx R-10)
+cmu_wall:
+  layers:
+    - material: "Plaster"
+      thickness: 0.012
+      conductivity: 0.16
+      density: 1400.0
+      specific_heat: 1000.0
+    - material: "CMU"
+      thickness: 0.15
+      conductivity: 0.8
+      density: 1400.0
+      specific_heat: 1000.0
+    - material: "Insulation Board"
+      thickness: 0.02
+      conductivity: 0.03
+      density: 30.0
+      specific_heat: 1000.0
+
+# Insulated concrete form (ICF) wall (approx R-30)
+icf_wall:
+  layers:
+    - material: "Gypsum Board"
+      thickness: 0.0127
+      conductivity: 0.16
+      density: 950.0
+      specific_heat: 840.0
+    - material: "Concrete"
+      thickness: 0.15
+      conductivity: 1.4
+      density: 2400.0
+      specific_heat: 1000.0
+    - material: "EPS Insulation"
+      thickness: 0.08
+      conductivity: 0.033
+      density: 30.0
+      specific_heat: 1000.0
+    - material: "Wood Siding"
+      thickness: 0.009
+      conductivity: 0.14
+      density: 500.0
+      specific_heat: 1300.0
+
+# Insulated roof assembly (approx R-40)
+insulated_roof:
+  layers:
+    - material: "Roof Deck"
+      thickness: 0.02
+      conductivity: 0.15
+      density: 500.0
+      specific_heat: 1200.0
+    - material: "Fiberglass Batts"
+      thickness: 0.12
+      conductivity: 0.04
+      density: 12.0
+      specific_heat: 840.0
+    - material: "Roofing"
+      thickness: 0.01
+      conductivity: 0.16
+      density: 1100.0
+      specific_heat: 1000.0
+
+# Insulated slab floor (approx R-15)
+insulated_slab:
+  layers:
+    - material: "Concrete Slab"
+      thickness: 0.1
+      conductivity: 1.4
+      density: 2400.0
+      specific_heat: 1000.0
+    - material: "EPS Insulation"
+      thickness: 0.05
+      conductivity: 0.033
+      density: 30.0
+      specific_heat: 1000.0
+    - material: "Finish Floor"
+      thickness: 0.02
+      conductivity: 0.15
+      density: 600.0
+      specific_heat: 1200.0

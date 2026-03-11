@@ -1,0 +1,19 @@
+# OpenHands ignore file to prevent directory listing overflows
+target/
+**/target/
+venv/
+.venv/
+**/venv/
+worktrees/
+.planning/
+.planning.backup.*/
+.git/
+.github/
+.claude/
+.jules/
+.opencode/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+**/__pycache__/
+tmp/

@@ -2,6 +2,7 @@
 
 use fluxion::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use fluxion::ai::surrogate::SurrogateManager;
+use rand::Rng;
 
 #[cfg(test)]
 mod tests {
@@ -101,8 +102,14 @@ mod tests {
         }
 
         let component_configs = vec![
-            ("models/solar.onnx", fluxion::ai::surrogate::InferenceBackend::CPU),
-            ("models/hvac.onnx", fluxion::ai::surrogate::InferenceBackend::CPU),
+            (
+                "models/solar.onnx",
+                fluxion::ai::surrogate::InferenceBackend::CPU,
+            ),
+            (
+                "models/hvac.onnx",
+                fluxion::ai::surrogate::InferenceBackend::CPU,
+            ),
         ];
 
         let manager = SurrogateManager::load_modular(&component_configs).unwrap();

@@ -1,5 +1,6 @@
 #![allow(clippy::useless_conversion)]
 pub mod ai;
+pub mod analysis;
 pub mod physics;
 pub mod sim;
 pub mod validation;
@@ -649,12 +650,17 @@ impl BatchOracle {
             let use_gpu = self.surrogates.gpu_supported();
             if use_gpu {
                 // GPU path with SharedBatchInferenceService
-                use crate::ai::shared_batch_service::{DynamicBatchConfig, SharedBatchInferenceService};
+                use crate::ai::shared_batch_service::{
+                    DynamicBatchConfig, SharedBatchInferenceService,
+                };
                 let config = DynamicBatchConfig {
                     max_batch_size: valid_configs.len(),
                     wait_ms: 10,
                 };
-                let service = std::sync::Arc::new(SharedBatchInferenceService::new(self.surrogates.clone(), config));
+                let service = std::sync::Arc::new(SharedBatchInferenceService::new(
+                    self.surrogates.clone(),
+                    config,
+                ));
                 let final_worker_data = rayon::scope(|s| {
                     let (result_tx, result_rx) = crossbeam::channel::unbounded();
                     for (idx, mut model) in valid_configs.drain(..) {
@@ -666,7 +672,9 @@ impl BatchOracle {
                             let cycle: [f64; 24] = {
                                 let mut arr = [0.0; 24];
                                 for (h, val) in arr.iter_mut().enumerate() {
-                                    *val = ((h as f64 / 24.0 * 2.0 * std::f64::consts::PI) - std::f64::consts::PI / 2.0).sin();
+                                    *val = ((h as f64 / 24.0 * 2.0 * std::f64::consts::PI)
+                                        - std::f64::consts::PI / 2.0)
+                                        .sin();
                                 }
                                 arr
                             };
@@ -676,7 +684,8 @@ impl BatchOracle {
                                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                                 let temps = model.get_temperatures();
                                 let rx = service.submit(temps);
-                                let loads = rx.recv().expect("Failed to receive loads from service");
+                                let loads =
+                                    rx.recv().expect("Failed to receive loads from service");
                                 model.set_loads(&loads);
                                 energy += model.step_physics(t, outdoor_temp);
                             }
@@ -692,7 +701,11 @@ impl BatchOracle {
                 });
                 for (idx, model, energy) in final_worker_data {
                     let total_area = model.zone_area.integrate();
-                    let eui = if total_area > 0.0 { energy / total_area } else { 0.0 };
+                    let eui = if total_area > 0.0 {
+                        energy / total_area
+                    } else {
+                        0.0
+                    };
                     results[idx] = eui.max(0.0);
                 }
             } else {
@@ -751,7 +764,11 @@ impl BatchOracle {
 
                 for (idx, model, energy) in final_worker_data {
                     let total_area = model.zone_area.integrate();
-                    let eui = if total_area > 0.0 { energy / total_area } else { 0.0 };
+                    let eui = if total_area > 0.0 {
+                        energy / total_area
+                    } else {
+                        0.0
+                    };
                     results[idx] = eui.max(0.0);
                 }
             }
@@ -1611,6 +1628,7 @@ use crate::physics::geometry_tensor::{
 
 #[cfg(feature = "python-bindings")]
 #[pyclass(name = "GeometryTensor")]
+/// Python-accessible wrapper for GeometryTensor to expose to PyO3.
 pub struct PyGeometryTensor {
     inner: GeometryTensor,
 }
