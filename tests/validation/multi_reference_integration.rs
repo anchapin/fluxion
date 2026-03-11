@@ -1,9 +1,12 @@
 use anyhow::Result;
 use fluxion::validation::{
-    ASHRAE140Validator, multi_reference::MultiReferenceDB, reporter::ValidationReportGenerator,
+    multi_reference::MultiReferenceDB, reporter::ValidationReportGenerator, ASHRAE140Validator,
     BenchmarkReport, MetricType,
 };
-use std::{fs, path::{Path, PathBuf}};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 use tempfile::tempdir;
 
 #[test]
@@ -74,7 +77,10 @@ fn test_multi_reference_enrichment_and_report() -> Result<()> {
         "Multi-Reference Comparison section missing"
     );
     // Check that table includes some cases
-    assert!(markdown.contains("| 600 |"), "Case 600 not in multi-ref table");
+    assert!(
+        markdown.contains("| 600 |"),
+        "Case 600 not in multi-ref table"
+    );
     assert!(markdown.contains("EnergyPlus"), "EnergyPlus column missing");
     assert!(markdown.contains("ESP-r"), "ESP-r column missing");
     assert!(markdown.contains("TRNSYS"), "TRNSYS column missing");
@@ -85,7 +91,6 @@ fn test_multi_reference_enrichment_and_report() -> Result<()> {
 #[test]
 fn test_update_references_with_remote() -> Result<()> {
     use fluxion::validation::commands::update_references;
-    use mockito::mock;
     use serde_json::json;
 
     // Prepare a mock response with a different version
@@ -109,15 +114,16 @@ fn test_update_references_with_remote() -> Result<()> {
                 }
             }
         }
-    }).to_string();
+    })
+    .to_string();
 
-    let _mock = mock("GET", "/")
+    // Use a dedicated mock server instance for reliable testing
+    let url = mockito::SERVER_URL;
+    let _mock = mockito::mock("GET", "/")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(&mock_db)
         .create();
-
-    let url = mockito::SERVER_URL;
 
     // Use a temporary directory to avoid affecting the real repository
     let temp = tempdir()?;

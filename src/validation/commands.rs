@@ -27,9 +27,7 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
                 anyhow::bail!("HTTP request failed with status: {}", response.status());
             }
             // Parse JSON into MultiReferenceDB
-            let db: MultiReferenceDB = response
-                .json()
-                .context("Failed to parse JSON response")?;
+            let db: MultiReferenceDB = response.json().context("Failed to parse JSON response")?;
             // Validate structure
             if db.version.is_empty() {
                 anyhow::bail!("Invalid reference data: version is empty");
@@ -38,7 +36,11 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
                 anyhow::bail!("Invalid reference data: no cases found");
             }
             // Sample check: ensure at least one case has annual_heating with EnergyPlus
-            let (_, sample_case) = db.cases.iter().next().ok_or_else(|| anyhow::anyhow!("Cases map is empty"))?;
+            let (_, sample_case) = db
+                .cases
+                .iter()
+                .next()
+                .ok_or_else(|| anyhow::anyhow!("Cases map is empty"))?;
             if sample_case.annual_heating.is_empty() {
                 anyhow::bail!("Invalid reference data: sample case has no annual_heating programs");
             }
@@ -76,7 +78,8 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
             }
 
             // Write new file
-            let json = serde_json::to_string_pretty(&db).context("Failed to serialize reference data")?;
+            let json =
+                serde_json::to_string_pretty(&db).context("Failed to serialize reference data")?;
             fs::write(output_path, json).context("Failed to write reference data to file")?;
             println!(
                 "Updated reference data to version {} from {}. Cases: {}.",
@@ -89,7 +92,10 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
             // Validate local file
             let default_path = Path::new("docs/ashrae_140_references.json");
             if !default_path.exists() {
-                anyhow::bail!("Reference data file not found at {}", default_path.display());
+                anyhow::bail!(
+                    "Reference data file not found at {}",
+                    default_path.display()
+                );
             }
             match MultiReferenceDB::from_file(default_path) {
                 Ok(db) => {
@@ -112,7 +118,6 @@ pub fn update_references(url: Option<&str>) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use mockito::mock;
     use serde_json::json;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -155,15 +160,17 @@ mod tests {
                     }
                 }
             }
-        }).to_string();
+        })
+        .to_string();
 
-        let _mock = mock("GET", "/")
+        let server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(&mock_db)
             .create();
-
-        let url = mockito::SERVER_URL;
 
         // Run in a temporary directory to avoid affecting the real repository
         let temp = tempdir()?;
@@ -175,7 +182,11 @@ mod tests {
 
         // Call update_references
         let result = update_references(Some(&url));
-        assert!(result.is_ok(), "update_references failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "update_references failed: {:?}",
+            result.err()
+        );
 
         // Verify file written
         let output_path = Path::new("docs/ashrae_140_references.json");
@@ -191,13 +202,15 @@ mod tests {
 
     #[test]
     fn test_update_references_invalid_json() {
-        let _mock = mock("GET", "/")
+        let server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body("invalid json")
             .create();
 
-        let url = mockito::SERVER_URL;
         let result = update_references(Some(&url));
         assert!(result.is_err(), "Expected error for invalid JSON");
     }
@@ -208,27 +221,32 @@ mod tests {
         let mock_db = json!({
             "source": "Test",
             "cases": {}
-        }).to_string();
+        })
+        .to_string();
 
-        let _mock = mock("GET", "/")
+        let server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(&mock_db)
             .create();
 
-        let url = mockito::SERVER_URL;
         let result = update_references(Some(&url));
         assert!(result.is_err(), "Expected error for schema validation");
     }
 
     #[test]
     fn test_update_references_http_error() {
-        let _mock = mock("GET", "/")
+        let server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", "/")
             .with_status(404)
             .with_body("Not Found")
             .create();
 
-        let url = mockito::SERVER_URL;
         let result = update_references(Some(&url));
         assert!(result.is_err(), "Expected error for HTTP 404");
     }
@@ -247,15 +265,17 @@ mod tests {
                     "peak_cooling": { "EnergyPlus": { "min": 5.0, "max": 6.0 } }
                 }
             }
-        }).to_string();
+        })
+        .to_string();
 
-        let _mock = mock("GET", "/")
+        let server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", "/")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(&mock_db)
             .create();
-
-        let url = mockito::SERVER_URL;
 
         let temp = tempdir()?;
         let original_cwd = std::env::current_dir()?;
@@ -272,7 +292,11 @@ mod tests {
         fs::write(output_path, serde_json::to_string_pretty(&old_db)?)?;
 
         let result = update_references(Some(&url));
-        assert!(result.is_ok(), "update_references failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "update_references failed: {:?}",
+            result.err()
+        );
 
         // Verify file updated
         assert!(output_path.exists());
