@@ -78,7 +78,7 @@ approx = "0.5"
 rstest = "0.18"
 
 # Mock HTTP server for tests
-mockito = "0.8"
+mockito = "1.7"
 
 [[bench]]
 name = "cta_bench"
