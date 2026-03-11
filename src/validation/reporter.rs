@@ -3,7 +3,7 @@
 //! This module provides the `ValidationReportGenerator` which produces
 //! comprehensive Markdown reports from validation results.
 
-use crate::validation::report::{BenchmarkReport, MetricType};
+use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
@@ -47,6 +47,69 @@ impl ValidationReportGenerator {
     /// Creates a new report generator with the specified output path.
     pub fn new(output_path: PathBuf) -> Self {
         Self { output_path }
+    }
+
+    /// Appends a multi-reference comparison table to the markdown output.
+    ///
+    /// This table shows per-program validation results (EnergyPlus, ESP-r, TRNSYS)
+    /// for each case/metric combination where multi-reference data is available.
+    /// Results are grouped by case series (600, 900, special) with overall status
+    /// determined by the fallback rule (PASS if EnergyPlus passes, else WARN if any
+    /// program passes, else FAIL).
+    fn add_multireference_table(&self, output: &mut String, report: &BenchmarkReport) {
+        // Check if any results have per-program data
+        let has_multiref = report.results.iter().any(|r| r.per_program.is_some());
+        if !has_multiref {
+            return;
+        }
+
+        output.push_str("## Multi-Reference Comparison\n\n");
+        output.push_str(
+            "| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |\n",
+        );
+        output.push_str(
+            "|------|--------|------------|-------|--------|---------|\n",
+        );
+
+        // Sort results by case id and metric for consistent ordering
+        let mut sorted_results: Vec<_> = report
+            .results
+            .iter()
+            .filter(|r| r.per_program.is_some())
+            .collect();
+        sorted_results.sort_by(|a, b| {
+            a.case_id.cmp(&b.case_id).then_with(|| a.metric.cmp(&b.metric))
+        });
+
+        for result in sorted_results {
+            if let Some(per_prog) = &result.per_program {
+                let case_cell = result.case_id.to_string();
+                let metric_cell = result.metric.display_name().to_string();
+
+                let ep = per_prog
+                    .get("EnergyPlus")
+                    .map(|s| format!("{} ({:.2})", s, result.fluxion_value))
+                    .unwrap_or_else(|| "-".to_string());
+                let espr = per_prog
+                    .get("ESP-r")
+                    .map(|s| format!("{} ({:.2})", s, result.fluxion_value))
+                    .unwrap_or_else(|| "-".to_string());
+                let trnsys = per_prog
+                    .get("TRNSYS")
+                    .map(|s| format!("{} ({:.2})", s, result.fluxion_value))
+                    .unwrap_or_else(|| "-".to_string());
+
+                let overall = match result.status {
+                    crate::validation::report::ValidationStatus::Pass => "PASS",
+                    crate::validation::report::ValidationStatus::Warning => "WARN",
+                    crate::validation::report::ValidationStatus::Fail => "FAIL",
+                };
+
+                output.push_str(&format!("| {} | {} | {} | {} | {} | {} |\n",
+                    case_cell, metric_cell, ep, espr, trnsys, overall));
+            }
+        }
+        output.push('\n');
     }
 
     /// Generates the full validation report and writes it to the output path.
@@ -246,6 +309,9 @@ impl ValidationReportGenerator {
             self.append_case_row(&mut output, report, case_id);
         }
         output.push('\n');
+
+        // Multi-reference comparison table (if available)
+        self.add_multireference_table(&mut output, report);
 
         // Systematic Issues Section
         output.push_str("## Systematic Issues\n\n");
@@ -510,5 +576,70 @@ fn issue_display_name(issue: &SystematicIssue) -> &str {
         SystematicIssue::WeatherData => "Weather Data",
         SystematicIssue::ModelLimitation => "5R1C Model Limitation (Accepted)",
         SystematicIssue::Unknown => "Unknown/Unclassified",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::validation::report::{BenchmarkReport, MetricType, ValidationResult, ValidationStatus};
+    use std::fs;
+
+    #[test]
+    fn test_multireference_table() {
+        // Create a BenchmarkReport with some results that have per_program data
+        let mut report = BenchmarkReport::new();
+
+        // Add a result with multi-reference enrichment
+        // We'll simulate the enrichment by manually constructing a result with per_program
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 6.0,
+            ref_min: 5.5,
+            ref_max: 7.0,
+            percent_error: 0.0,
+            status: ValidationStatus::Pass,
+            per_program: Some(
+                vec![
+                    ("EnergyPlus".to_string(), ValidationStatus::Pass),
+                    ("ESP-r".to_string(), ValidationStatus::Pass),
+                    ("TRNSYS".to_string(), ValidationStatus::Warning),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        };
+        report.add_result(result);
+
+        // Add a result without per_program (should be skipped)
+        let result2 = ValidationResult::new("900FF", MetricType::MaxFreeFloat, 45.0, 40.0, 50.0);
+        report.add_result(result2);
+
+        // Create generator and render
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_multiref.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator.render_markdown(&report, None, None).unwrap();
+
+        // Verify table appears
+        assert!(markdown.contains("## Multi-Reference Comparison"));
+        assert!(markdown.contains("| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |"));
+        assert!(markdown.contains("| 600 | Annual Heating (MWh) | PASS (6.00) | PASS (6.00) | WARN (6.00) | PASS |"));
+
+        // Extract the Multi-Reference Comparison section to verify 900FF not included
+        let section_start = markdown.find("## Multi-Reference Comparison").unwrap();
+        let next_section = markdown[section_start..]
+            .find("\n##")
+            .map(|pos| section_start + pos)
+            .unwrap_or(markdown.len());
+        let section = &markdown[section_start..next_section];
+
+        // Within the multi-reference table section, 600 should appear, but 900FF should not
+        assert!(section.contains("600"));
+        assert!(!section.contains("900FF"), "900FF should not appear in multi-reference table but it does. Section content:\n{}", section);
+
+        // Clean up
+        let _ = fs::remove_file(output_path);
     }
 }

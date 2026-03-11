@@ -14,8 +14,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
+
 /// Types of validation metrics for ASHRAE 140.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum MetricType {
     /// Annual heating energy consumption (MWh)
     AnnualHeating,
@@ -98,6 +100,36 @@ impl ValidationStatus {
             ValidationStatus::Warning => "orange",
             ValidationStatus::Fail => "red",
         }
+    }
+}
+
+/// Computes validation status for a given value against a reference range.
+///
+/// Status determination:
+/// - Pass: value within [min, max] with <10% deviation from midpoint
+/// - Warning: within [min, max] but >=10% deviation, OR within tolerance band [min*0.95, max*1.05]
+/// - Fail: outside tolerance band
+pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatus {
+    let ref_mid = (ref_min + ref_max) / 2.0;
+    let percent_error = if ref_mid != 0.0 {
+        ((value - ref_mid) / ref_mid.abs()) * 100.0
+    } else {
+        0.0
+    };
+
+    let tolerance_min = ref_min * 0.95;
+    let tolerance_max = ref_max * 1.05;
+
+    if value >= ref_min && value <= ref_max {
+        if percent_error.abs() >= 10.0 {
+            ValidationStatus::Warning
+        } else {
+            ValidationStatus::Pass
+        }
+    } else if value >= tolerance_min && value <= tolerance_max {
+        ValidationStatus::Warning
+    } else {
+        ValidationStatus::Fail
     }
 }
 
@@ -397,9 +429,158 @@ impl BenchmarkReport {
         self.add_result(result);
     }
 
+    /// Adds a validation result using multi-reference data, populating per-program statuses.
+    ///
+    /// This method looks up per-program reference ranges from the provided MultiReferenceDB,
+    /// computes individual program validation statuses, determines the overall status using
+    /// the rule: PASS if EnergyPlus passes, else WARN if any program passes, else FAIL.
+    ///
+    /// The aggregated ref_min and ref_max are computed as the envelope of all programs.
+    pub fn add_result_with_multi(
+        &mut self,
+        case_id: &str,
+        metric: MetricType,
+        fluxion_value: f64,
+        db: &MultiReferenceDB,
+    ) {
+        // Look up case references
+        let case_refs = match db.cases.get(case_id) {
+            Some(c) => c,
+            None => {
+                // If case not found in multi-ref DB, fall back to simple method with zeros?
+                // To avoid panics, we'll create a result with per_program=None and zero refs.
+                let result = ValidationResult {
+                    case_id: case_id.to_string(),
+                    metric,
+                    fluxion_value,
+                    ref_min: 0.0,
+                    ref_max: 0.0,
+                    percent_error: 0.0,
+                    status: ValidationStatus::Fail,
+                    per_program: None,
+                };
+                self.results.push(result);
+                return;
+            }
+        };
+
+        // Get the program ranges for this metric
+        let program_ranges: &std::collections::HashMap<String, ProgramRange> = match metric {
+            MetricType::AnnualHeating => &case_refs.annual_heating,
+            MetricType::AnnualCooling => &case_refs.annual_cooling,
+            MetricType::PeakHeating => &case_refs.peak_heating,
+            MetricType::PeakCooling => &case_refs.peak_cooling,
+            _ => {
+                // For free-floating metrics, multi-reference may not be defined; fall back to no per_program
+                let result = ValidationResult::new(case_id, metric, fluxion_value, 0.0, 0.0);
+                self.results.push(result);
+                return;
+            }
+        };
+
+        // Compute aggregated ref_min and ref_max as envelope of all programs
+        let agg_min = program_ranges
+            .values()
+            .map(|r| r.min)
+            .fold(f64::INFINITY, f64::min);
+        let agg_max = program_ranges
+            .values()
+            .map(|r| r.max)
+            .fold(f64::NEG_INFINITY, f64::max);
+
+        // Compute percent error based on aggregated midpoint
+        let agg_mid = (agg_min + agg_max) / 2.0;
+        let percent_error = if agg_mid != 0.0 {
+            ((fluxion_value - agg_mid) / agg_mid.abs()) * 100.0
+        } else {
+            0.0
+        };
+
+        // Compute per-program statuses
+        let mut per_program = std::collections::HashMap::new();
+        for (prog_name, range) in program_ranges {
+            let status = compute_status(fluxion_value, range.min, range.max);
+            per_program.insert(prog_name.clone(), status);
+        }
+
+        // Determine overall status based on EnergyPlus primary, then any pass
+        let overall_status = if let Some(ep_status) = per_program.get("EnergyPlus") {
+            if *ep_status == ValidationStatus::Pass {
+                ValidationStatus::Pass
+            } else if per_program.values().any(|s| *s == ValidationStatus::Pass) {
+                ValidationStatus::Warning
+            } else {
+                ValidationStatus::Fail
+            }
+        } else {
+            // EnergyPlus not in the list; use aggregated envelope status
+            compute_status(fluxion_value, agg_min, agg_max)
+        };
+
+        let result = ValidationResult {
+            case_id: case_id.to_string(),
+            metric,
+            fluxion_value,
+            ref_min: agg_min,
+            ref_max: agg_max,
+            percent_error,
+            status: overall_status,
+            per_program: Some(per_program),
+        };
+        self.add_result(result);
+    }
+
     /// Adds benchmark data for a case.
     pub fn add_benchmark_data(&mut self, case_id: &str, data: BenchmarkData) {
         self.benchmark_data.insert(case_id.to_string(), data);
+    }
+
+    /// Enriches existing validation results with multi-reference per-program statuses.
+    ///
+    /// This method processes all results currently in the report. For each result with a metric
+    /// that has multi-reference data (AnnualHeating, AnnualCooling, PeakHeating, PeakCooling),
+    /// it adds per-program PASS/WARN/FAIL statuses by looking up the reference ranges in the
+    /// provided MultiReferenceDB. Results for metrics without multi-reference data (e.g., free-floating
+    /// temperatures) or for cases not found in the database are left unchanged.
+    ///
+    /// The overall status for enriched results is determined by:
+    /// - PASS if EnergyPlus passes
+    /// - WARN if EnergyPlus fails but any other program passes
+    /// - FAIL if all programs fail
+    ///
+    /// The aggregated ref_min and ref_max are computed as the envelope (min of mins, max of maxes)
+    /// across all reference programs.
+    pub fn enrich_with_multi_reference(&mut self, db: &MultiReferenceDB) {
+        let mut enriched = Vec::new();
+
+        for result in &self.results {
+            // Determine if this metric can be enriched with multi-reference data
+            let can_enrich = match result.metric {
+                MetricType::AnnualHeating
+                | MetricType::AnnualCooling
+                | MetricType::PeakHeating
+                | MetricType::PeakCooling => true,
+                _ => false,
+            };
+
+            if can_enrich {
+                // Use the add_result_with_multi method to create an enriched version
+                // We create a temporary BenchmarkReport to reuse the logic
+                let mut temp_report = BenchmarkReport::new();
+                temp_report.add_result_with_multi(&result.case_id, result.metric, result.fluxion_value, db);
+                if let Some(enriched_result) = temp_report.results.into_iter().next() {
+                    enriched.push(enriched_result);
+                } else {
+                    // Shouldn't happen, but preserve original if it does
+                    enriched.push(result.clone());
+                }
+            } else {
+                // Metrics without multi-reference (free-floating temps, etc.) stay unchanged
+                enriched.push(result.clone());
+            }
+        }
+
+        self.results = enriched;
     }
 
     /// Calculates delta analysis: difference between cases vs baseline.

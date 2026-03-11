@@ -127,3 +127,8 @@ harness = true
 name = "test_modular_surrogates"
 path = "tests/test_modular_surrogates.rs"
 harness = true
+
+[[test]]
+name = "validation-multi_reference_integration"
+path = "tests/validation/multi_reference_integration.rs"
+harness = true
