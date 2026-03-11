@@ -31,9 +31,10 @@
 //!     .unwrap();
 //! ```
 
-use crate::sim::construction::{Assemblies, Construction};
+use crate::sim::construction::{Assemblies, Construction, ConstructionLayer, Materials};
 use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 
 /// Window specification with U-value, SHGC, and optical properties.
 ///
@@ -835,10 +836,13 @@ pub struct CaseSpec {
 
     /// Door opening area (square meters, for stack effect ACH)
     pub door_area: Option<f64>,
+
+    /// Optional path to custom EPW weather file.
+    pub epw_path: Option<PathBuf>,
 }
 
 /// Geometry specification for a building zone.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GeometrySpec {
     /// Zone width in meters (m)
     pub width: f64,
@@ -846,6 +850,8 @@ pub struct GeometrySpec {
     pub depth: f64,
     /// Zone height in meters (m)
     pub height: f64,
+    /// Optional zone identifier for referencing zones in multi-zone configurations.
+    pub name: Option<String>,
 }
 
 impl GeometrySpec {
@@ -855,6 +861,7 @@ impl GeometrySpec {
             width,
             depth,
             height,
+            name: None,
         }
     }
 
@@ -1126,6 +1133,8 @@ pub struct CaseBuilder {
     door_height: Option<f64>,
     /// Door opening area (square meters, for stack effect ACH)
     door_area: Option<f64>,
+    /// Custom EPW weather file path (if using non-default weather)
+    epw_path: Option<PathBuf>,
 }
 
 impl Default for CaseBuilder {
@@ -1155,6 +1164,7 @@ impl CaseBuilder {
             num_zones: 1,
             door_height: None,
             door_area: None,
+            epw_path: None,
         }
     }
 
@@ -1190,6 +1200,31 @@ impl CaseBuilder {
         self
     }
 
+    /// Adds a rectangular zone with specified dimensions.
+    ///
+    /// This is a convenience method for creating simple zones with optional naming.
+    /// Zones are automatically assigned sequential IDs if not named.
+    ///
+    /// # Arguments
+    /// * `length` - Zone length (width in X direction) in meters
+    /// * `width` - Zone width (depth in Y direction) in meters
+    /// * `height` - Zone height in meters
+    /// * `name` - Optional zone identifier; if None, a name like "zone0" is auto-generated
+    pub fn rectangular_zone(mut self, length: f64, width: f64, height: f64, name: Option<&str>) -> Self {
+        let name = name.map(String::from).or_else(|| Some(format!("zone{}", self.geometry.len())));
+        self.geometry.push(GeometrySpec {
+            width: length,
+            depth: width,
+            height,
+            name,
+        });
+        self.windows.push(Vec::new());
+        self.internal_loads.push(None);
+        self.hvac.push(HvacSchedule::constant(20.0, 27.0));
+        self.num_zones = self.geometry.len();
+        self
+    }
+
     /// Adds a common wall between two zones.
     pub fn with_common_wall(
         mut self,
@@ -1201,6 +1236,35 @@ impl CaseBuilder {
         self.common_walls
             .push(CommonWall::new(zone_a, zone_b, area, construction));
         self
+    }
+
+    /// Adds a common wall between two zones using a simple wall construction specified by R-value.
+    ///
+    /// This is a convenience method that creates a wall construction with the desired
+    /// material R-value using a default insulating layer. The zones are referenced by
+    /// their assigned names (see `rectangular_zone`).
+    ///
+    /// # Arguments
+    /// * `zone1_id` - Identifier of the first zone
+    /// * `zone2_id` - Identifier of the second zone
+    /// * `area` - Area of the common wall in square meters (m²)
+    /// * `r_value` - Desired thermal resistance of the wall materials (m²K/W)
+    pub fn add_common_wall(mut self, zone1_id: &str, zone2_id: &str, area: f64, r_value: f64) -> Self {
+        let idx1 = self.find_zone_index(zone1_id);
+        let idx2 = self.find_zone_index(zone2_id);
+        // Create a simple insulation wall with the given R-value using fiberglass (k=0.04)
+        let thickness = r_value * 0.04;
+        let layer = Materials::fiberglass(thickness);
+        let construction = Construction::new(vec![layer]);
+        self.common_walls.push(CommonWall::new(idx1, idx2, area, construction));
+        self
+    }
+
+    /// Looks up the geometry index for a given zone name.
+    /// Panics if the zone name is not found.
+    fn find_zone_index(&self, id: &str) -> usize {
+        self.geometry.iter().position(|g| g.name.as_ref().map(String::as_str) == Some(id))
+            .unwrap_or_else(|| panic!("Zone '{}' not found in builder", id))
     }
 
     /// Sets the construction type to low mass.
@@ -1263,6 +1327,18 @@ impl CaseBuilder {
     /// Sets window properties.
     pub fn with_window_properties(mut self, window_properties: WindowSpec) -> Self {
         self.window_properties = window_properties;
+        self
+    }
+
+    /// Sets custom EPW weather file for the case.
+    ///
+    /// The path should point to a valid EPW file. The file will be loaded
+    /// during simulation setup. This overrides the default Denver TMY weather.
+    ///
+    /// # Arguments
+    /// * `path` - Path to the EPW weather file (string path)
+    pub fn with_weather_epw(mut self, path: &str) -> Self {
+        self.epw_path = Some(PathBuf::from(path));
         self
     }
 
@@ -1413,6 +1489,7 @@ impl CaseBuilder {
             weather_data: None, // Will be loaded separately for solar calculations
             door_height: self.door_height,
             door_area: self.door_area,
+            epw_path: self.epw_path.clone(),
         };
 
         // spec.validate()?; // Skip detailed validation for now to save time
