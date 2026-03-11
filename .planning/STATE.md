@@ -240,7 +240,7 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 - [x] Complete Phase 7 Plan 07-03: Component-Level Energy Breakdown & Swing Analysis (component aggregation, conservation checks, swing metrics, interpretation)
 - [ ] Complete Phase 7 Plan 07-02: Delta Testing Framework (Wave 2 - in progress)
 - [ ] Complete Phase 7 Plan 07-04: Interactive Visualization (Wave 2 - in progress)
-- [x] Complete Phase 7 Plan 07-07: Extended CaseBuilder API (Wave 2 - in progress)
+- [ ] Complete Phase 7 Plan 07-07: Extended CaseBuilder API (Wave 2 - in progress)
 - [ ] Complete Phase 7 Plan 07-06: CLI Integration and Integration Tests
 
 ### Next Steps
@@ -252,7 +252,7 @@ Phase 1's scope was foundation fixes (conductances, HVAC load calculation) that 
 
 ### Blockers
 
-**None.** Plans 07-01, 07-03, and 07-07 complete. All tests passing. Wave 2 (07-02, 07-04) in progress.
+**None.** Plans 07-01 and 07-03 complete. All tests passing. Wave 2 (07-02, 07-04, 07-07) in progress.
 
 
 ### Phase 1 Results Summary
