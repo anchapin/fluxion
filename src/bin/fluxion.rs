@@ -259,6 +259,9 @@ enum Commands {
         /// Output directory (default: current directory)
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Use AI surrogates for faster evaluation
+        #[arg(long)]
+        use_surrogates: bool,
     },
 
     /// Run delta testing comparison
@@ -479,7 +482,7 @@ fn main() -> Result<()> {
         }
 
         // New commands
-        Commands::Sensitivity { config, output: _ } => {
+        Commands::Sensitivity { config, output: _, use_surrogates } => {
             // Read sensitivity config
             let config_content = std::fs::read_to_string(config)?;
             let sens_config: SensitivityConfig = serde_yaml::from_str(&config_content)?;
@@ -503,7 +506,7 @@ fn main() -> Result<()> {
                 _ => anyhow::bail!("Unknown method: {}", sens_config.method),
             };
             // Run sensitivity simulation (use_surrogates hardcoded to false for now)
-            let outputs = sensitivity::run_sensitivity(&design, &oracle, false);
+            let outputs = sensitivity::run_sensitivity(&design, &oracle, use_surrogates);
             // Compute metrics
             let report = sensitivity::compute_metrics(&design, &outputs);
             // Write CSV report
