@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use serde::Serialize;
 use serde_json;
 use std::path::Path;
@@ -50,10 +50,7 @@ fn dataset_to_trace(dataset: &Dataset, timestamps: &[usize]) -> serde_json::Valu
 /// - Responsive layout
 /// - Zoom/pan toolbar
 /// - Export to PNG/SVG buttons
-pub fn generate_html(
-    data: &TimeSeriesData,
-    output: &Path,
-) -> Result<()> {
+pub fn generate_html(data: &TimeSeriesData, output: &Path) -> Result<()> {
     let json_data = serde_json::json!({
         "data": data.datasets.iter().map(|d| {
             serde_json::json!({
@@ -114,10 +111,7 @@ pub fn generate_html(
 /// This creates a two-panel chart:
 /// - Upper: temperature series (one or more zones)
 /// - Lower: HVAC heating/cooling and solar gains
-pub fn generate_animation(
-    data: &TimeSeriesData,
-    output: &Path,
-) -> Result<()> {
+pub fn generate_animation(data: &TimeSeriesData, output: &Path) -> Result<()> {
     // Split datasets based on panel assignment
     let temp_datasets: Vec<&Dataset> = data
         .datasets
@@ -132,7 +126,9 @@ pub fn generate_animation(
 
     // Ensure we have at least some data
     if temp_datasets.is_empty() && bottom_datasets.is_empty() {
-        return Err(anyhow!("No datasets provided for animation (set panel on datasets)"));
+        return Err(anyhow!(
+            "No datasets provided for animation (set panel on datasets)"
+        ));
     }
 
     // Convert to Plotly traces

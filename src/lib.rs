@@ -579,57 +579,36 @@ impl BatchOracle {
     pub fn from_model(base_model: ThermalModel<VectorField>) -> Self {
         BatchOracle {
             base_model,
-            surrogates: SurrogateManager::new(),
+            surrogates: SurrogateManager::new().expect("Failed to create SurrogateManager"),
         }
-    }
-}
-
-#[cfg(feature = "python-bindings")]
-#[pymethods]
-impl BatchOracle {
-    /// Create a new BatchOracle instance.
-    ///
-    /// Initializes the base thermal model template and surrogate manager.
-    #[new]
-    fn new() -> PyResult<Self> {
-        Ok(BatchOracle {
-            base_model: ThermalModel::<VectorField>::new(10), // The "template" building
-            surrogates: SurrogateManager::new()
-                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
-        })
     }
 
     /// Evaluate a population of building design configurations in parallel.
     ///
-    /// This is the critical "hot loop" for optimization. The function crosses the Python-Rust
-    /// boundary once with all population data, then uses Rayon for multi-threaded evaluation.
-    ///
-    /// When using surrogates, this implements a time-first loop architecture:
-    /// - Time loop (0..8760) runs sequentially on main thread
-    /// - Batched inference ONCE per timestep (full GPU utilization)
-    /// - Physics updates run in parallel with rayon
-    ///
-    /// This avoids nested parallelism and maximizes GPU tensor core utilization.
+    /// This is the critical "hot loop" for optimization. The function uses Rayon for
+    /// multi-threaded evaluation. When using surrogates, it implements a time-first loop
+    /// architecture for optimal GPU utilization.
     ///
     /// # Arguments
-    /// * `population` - Vec of parameter vectors, each representing one design candidate.
-    ///   Each vector should have at least 3 elements:
+    /// * `population` - Vector of parameter vectors. Each inner vector should contain at least:
     ///   - `[0]`: Window U-value (W/m²K, range: 0.1-5.0)
     ///   - `[1]`: Heating setpoint (°C, range: 15-25)
     ///   - `[2]`: Cooling setpoint (°C, range: 22-32)
-    /// * `use_surrogates` - If true, use neural network surrogates for faster (~100x) evaluation;
-    ///   if false, use physics-based analytical calculations (slower but exact)
+    /// * `use_surrogates` - If true, use neural network surrogates for faster evaluation;
+    ///   if false, use analytical physics calculations.
     ///
     /// # Returns
-    /// Vector of fitness values (EUI in kWh/m²/year) corresponding to each candidate.
+    /// `Result<Vec<f64>, String>` where the vector contains EUI values (kWh/m²/yr) for each candidate.
+    /// On validation failure, returns `Err(String)`.
     ///
     /// # Performance
-    /// Target throughput: >10,000 configs/sec on 8-core CPU (~100µs per config)
-    fn evaluate_population(
+    /// Target throughput: >10,000 configs/sec on 8-core CPU (~100µs per config).
+    pub fn evaluate_population(
         &self,
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
-    ) -> PyResult<Vec<f64>> {
+    ) -> Result<Vec<f64>, String> {
+        use crate::physics::cta::ContinuousTensor;
         use rayon::prelude::*;
 
         // 1. Validate and initialize all models upfront (parallel)
@@ -804,6 +783,58 @@ impl BatchOracle {
         }
 
         Ok(results)
+    }
+}
+
+#[cfg(feature = "python-bindings")]
+#[pymethods]
+impl BatchOracle {
+    /// Create a new BatchOracle instance.
+    ///
+    /// Initializes the base thermal model template and surrogate manager.
+    #[new]
+    fn new() -> PyResult<Self> {
+        Ok(BatchOracle {
+            base_model: ThermalModel::<VectorField>::new(10), // The "template" building
+            surrogates: SurrogateManager::new()
+                .map_err(pyo3::exceptions::PyRuntimeError::new_err)?,
+        })
+    }
+
+    /// Evaluate a population of building design configurations in parallel.
+    ///
+    /// This is the critical "hot loop" for optimization. The function crosses the Python-Rust
+    /// boundary once with all population data, then uses Rayon for multi-threaded evaluation.
+    ///
+    /// When using surrogates, this implements a time-first loop architecture:
+    /// - Time loop (0..8760) runs sequentially on main thread
+    /// - Batched inference ONCE per timestep (full GPU utilization)
+    /// - Physics updates run in parallel with rayon
+    ///
+    /// This avoids nested parallelism and maximizes GPU tensor core utilization.
+    ///
+    /// # Arguments
+    /// * `population` - Vec of parameter vectors, each representing one design candidate.
+    ///   Each vector should have at least 3 elements:
+    ///   - `[0]`: Window U-value (W/m²K, range: 0.1-5.0)
+    ///   - `[1]`: Heating setpoint (°C, range: 15-25)
+    ///   - `[2]`: Cooling setpoint (°C, range: 22-32)
+    /// * `use_surrogates` - If true, use neural network surrogates for faster (~100x) evaluation;
+    ///   if false, use physics-based analytical calculations (slower but exact)
+    ///
+    /// # Returns
+    /// Vector of fitness values (EUI in kWh/m²/year) corresponding to each candidate.
+    ///
+    /// # Performance
+    /// Target throughput: >10,000 configs/sec on 8-core CPU (~100µs per config)
+    #[pyo3(name = "evaluate_population")]
+    pub fn evaluate_population_py(
+        &self,
+        population: Vec<Vec<f64>>,
+        use_surrogates: bool,
+    ) -> PyResult<Vec<f64>> {
+        Self::evaluate_population(&self, population, use_surrogates)
+            .map_err(|e| pyo3::PyErr::new::<pyo3::exceptions::PyRuntimeError>(e.into()))
     }
 
     /// Evaluate a population of building design configurations using numpy arrays.

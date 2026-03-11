@@ -64,12 +64,8 @@ impl ValidationReportGenerator {
         }
 
         output.push_str("## Multi-Reference Comparison\n\n");
-        output.push_str(
-            "| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |\n",
-        );
-        output.push_str(
-            "|------|--------|------------|-------|--------|---------|\n",
-        );
+        output.push_str("| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |\n");
+        output.push_str("|------|--------|------------|-------|--------|---------|\n");
 
         // Sort results by case id and metric for consistent ordering
         let mut sorted_results: Vec<_> = report
@@ -78,7 +74,9 @@ impl ValidationReportGenerator {
             .filter(|r| r.per_program.is_some())
             .collect();
         sorted_results.sort_by(|a, b| {
-            a.case_id.cmp(&b.case_id).then_with(|| a.metric.cmp(&b.metric))
+            a.case_id
+                .cmp(&b.case_id)
+                .then_with(|| a.metric.cmp(&b.metric))
         });
 
         for result in sorted_results {
@@ -105,8 +103,10 @@ impl ValidationReportGenerator {
                     crate::validation::report::ValidationStatus::Fail => "FAIL",
                 };
 
-                output.push_str(&format!("| {} | {} | {} | {} | {} | {} |\n",
-                    case_cell, metric_cell, ep, espr, trnsys, overall));
+                output.push_str(&format!(
+                    "| {} | {} | {} | {} | {} | {} |\n",
+                    case_cell, metric_cell, ep, espr, trnsys, overall
+                ));
             }
         }
         output.push('\n');
@@ -582,7 +582,9 @@ fn issue_display_name(issue: &SystematicIssue) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::report::{BenchmarkReport, MetricType, ValidationResult, ValidationStatus};
+    use crate::validation::report::{
+        BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
+    };
     use std::fs;
 
     #[test]
@@ -625,7 +627,9 @@ mod tests {
         // Verify table appears
         assert!(markdown.contains("## Multi-Reference Comparison"));
         assert!(markdown.contains("| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |"));
-        assert!(markdown.contains("| 600 | Annual Heating (MWh) | PASS (6.00) | PASS (6.00) | WARN (6.00) | PASS |"));
+        assert!(markdown.contains(
+            "| 600 | Annual Heating (MWh) | PASS (6.00) | PASS (6.00) | WARN (6.00) | PASS |"
+        ));
 
         // Extract the Multi-Reference Comparison section to verify 900FF not included
         let section_start = markdown.find("## Multi-Reference Comparison").unwrap();
@@ -637,7 +641,11 @@ mod tests {
 
         // Within the multi-reference table section, 600 should appear, but 900FF should not
         assert!(section.contains("600"));
-        assert!(!section.contains("900FF"), "900FF should not appear in multi-reference table but it does. Section content:\n{}", section);
+        assert!(
+            !section.contains("900FF"),
+            "900FF should not appear in multi-reference table but it does. Section content:\n{}",
+            section
+        );
 
         // Clean up
         let _ = fs::remove_file(output_path);

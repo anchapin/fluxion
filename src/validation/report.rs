@@ -567,7 +567,12 @@ impl BenchmarkReport {
                 // Use the add_result_with_multi method to create an enriched version
                 // We create a temporary BenchmarkReport to reuse the logic
                 let mut temp_report = BenchmarkReport::new();
-                temp_report.add_result_with_multi(&result.case_id, result.metric, result.fluxion_value, db);
+                temp_report.add_result_with_multi(
+                    &result.case_id,
+                    result.metric,
+                    result.fluxion_value,
+                    db,
+                );
                 if let Some(enriched_result) = temp_report.results.into_iter().next() {
                     enriched.push(enriched_result);
                 } else {

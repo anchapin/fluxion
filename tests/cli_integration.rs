@@ -5,8 +5,8 @@ use tempfile::tempdir;
 
 use fluxion::analysis::delta::{DeltaConfig, Variant};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use std::collections::HashMap;
 use serde_yaml;
+use std::collections::HashMap;
 
 fn fluxion_bin() -> PathBuf {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
@@ -43,7 +43,11 @@ parameters:
         .current_dir(temp_dir.path())
         .output()
         .expect("Failed to execute fluxion sensitivity");
-    assert!(output.status.success(), "Sensitivity command failed: stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Sensitivity command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let csv_path = temp_dir.path().join("sensitivity_report.csv");
     let md_path = temp_dir.path().join("sensitivity_report.md");
@@ -62,7 +66,10 @@ fn test_delta_command() {
     // Build a simple DeltaConfig
     let base_spec = ASHRAE140Case::Case600.spec();
     let mut patch = HashMap::new();
-    patch.insert("infiltration_ach".to_string(), serde_yaml::to_value(1.5).unwrap());
+    patch.insert(
+        "infiltration_ach".to_string(),
+        serde_yaml::to_value(1.5).unwrap(),
+    );
     let delta_config = DeltaConfig {
         base: base_spec,
         variants: vec![Variant {
@@ -83,7 +90,11 @@ fn test_delta_command() {
         .current_dir(temp_dir.path())
         .output()
         .expect("Failed to execute fluxion delta");
-    assert!(output.status.success(), "Delta command failed: stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Delta command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let md_path = temp_dir.path().join("delta_report.md");
     let csv_path = temp_dir.path().join("hourly_differences.csv");
@@ -103,10 +114,18 @@ fn test_components_command() {
         .current_dir(temp_dir.path())
         .output()
         .expect("Failed to execute fluxion components");
-    assert!(output.status.success(), "Components command failed: stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Components command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let expected_csv = temp_dir.path().join(format!("{}_components.csv", case_id));
-    assert!(expected_csv.exists(), "Components CSV not found: {:?}", expected_csv);
+    assert!(
+        expected_csv.exists(),
+        "Components CSV not found: {:?}",
+        expected_csv
+    );
 }
 
 #[test]
@@ -121,10 +140,17 @@ fn test_swing_command() {
         .current_dir(temp_dir.path())
         .output()
         .expect("Failed to execute fluxion swing");
-    assert!(output.status.success(), "Swing command failed: stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Swing command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Swing Analysis Report"), "Missing swing report header");
+    assert!(
+        stdout.contains("Swing Analysis Report"),
+        "Missing swing report header"
+    );
 }
 
 #[test]
@@ -145,7 +171,11 @@ fn test_visualize_command() {
         .current_dir(temp_dir.path())
         .output()
         .expect("Failed to execute fluxion visualize");
-    assert!(output.status.success(), "Visualize command failed: stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Visualize command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let html_path = temp_dir.path().join("diag.html");
     assert!(html_path.exists(), "Visualization HTML not found");
@@ -170,13 +200,20 @@ fn test_animate_command() {
         .current_dir(temp_dir.path())
         .output()
         .expect("Failed to execute fluxion animate");
-    assert!(output.status.success(), "Animate command failed: stderr: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "Animate command failed: stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let html_path = temp_dir.path().join("diag.html");
     assert!(html_path.exists(), "Animation HTML not found");
     let html_content = std::fs::read_to_string(&html_path).unwrap();
     assert!(html_content.contains("playBtn"), "HTML missing play button");
-    assert!(html_content.contains("pauseBtn"), "HTML missing pause button");
+    assert!(
+        html_content.contains("pauseBtn"),
+        "HTML missing pause button"
+    );
     assert!(html_content.contains("scrubber"), "HTML missing scrubber");
 }
 
@@ -189,5 +226,13 @@ fn test_references_update_command() {
         .expect("Failed to execute fluxion references update");
     assert!(output.status.success(), "References update command failed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("Reference update not yet implemented"), "Unexpected output");
+    assert!(
+        stdout.contains("Reference data is valid"),
+        "Expected successful validation message, got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Version:"),
+        "Expected version line in output"
+    );
 }

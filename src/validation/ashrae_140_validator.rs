@@ -54,7 +54,11 @@ impl ASHRAE140Validator {
                     validator.multi_ref = Some(db);
                 }
                 Err(e) => {
-                    eprintln!("Warning: Failed to load multi-reference data from {}: {}", default_multi_ref_path.display(), e);
+                    eprintln!(
+                        "Warning: Failed to load multi-reference data from {}: {}",
+                        default_multi_ref_path.display(),
+                        e
+                    );
                 }
             }
         }
@@ -857,7 +861,7 @@ impl ASHRAE140Validator {
         }
 
         report.set_end(); // Record end time after all work complete
-        // Enrich results with multi-reference per-program status if configured
+                          // Enrich results with multi-reference per-program status if configured
         if let Some(ref multi_db) = self.multi_ref {
             report.enrich_with_multi_reference(multi_db);
         }
@@ -1910,13 +1914,21 @@ mod tests {
         let report = validator.validate_analytical_engine();
 
         // Find a result for case 600 AnnualHeating
-        let result = report.results.iter()
+        let result = report
+            .results
+            .iter()
             .find(|r| r.case_id == "600" && r.metric == MetricType::AnnualHeating)
             .expect("600 annual heating result missing");
 
-        assert!(result.per_program.is_some(), "per_program should be populated");
+        assert!(
+            result.per_program.is_some(),
+            "per_program should be populated"
+        );
         let per_prog = result.per_program.as_ref().unwrap();
-        assert!(per_prog.contains_key("EnergyPlus"), "EnergyPlus status missing");
+        assert!(
+            per_prog.contains_key("EnergyPlus"),
+            "EnergyPlus status missing"
+        );
         assert!(per_prog.contains_key("ESP-r"), "ESP-r status missing");
         assert!(per_prog.contains_key("TRNSYS"), "TRNSYS status missing");
 
@@ -1925,21 +1937,30 @@ mod tests {
         let ep_status = per_prog.get("EnergyPlus").unwrap();
         match *ep_status {
             ValidationStatus::Pass => {
-                assert!(matches!(result.status, ValidationStatus::Pass),
-                    "Overall should be PASS when EnergyPlus passes");
+                assert!(
+                    matches!(result.status, ValidationStatus::Pass),
+                    "Overall should be PASS when EnergyPlus passes"
+                );
             }
             ValidationStatus::Warning => {
                 // EnergyPlus warning - overall could be WARN or FAIL depending on others
-                let any_pass = per_prog.values().any(|s| matches!(s, ValidationStatus::Pass));
+                let any_pass = per_prog
+                    .values()
+                    .any(|s| matches!(s, ValidationStatus::Pass));
                 if any_pass {
-                    assert!(matches!(result.status, ValidationStatus::Warning) || matches!(result.status, ValidationStatus::Pass));
+                    assert!(
+                        matches!(result.status, ValidationStatus::Warning)
+                            || matches!(result.status, ValidationStatus::Pass)
+                    );
                 } else {
                     assert!(matches!(result.status, ValidationStatus::Fail));
                 }
             }
             ValidationStatus::Fail => {
                 // EnergyPlus fails - overall is WARN if any other passes, else FAIL
-                let any_pass = per_prog.values().any(|s| matches!(s, ValidationStatus::Pass));
+                let any_pass = per_prog
+                    .values()
+                    .any(|s| matches!(s, ValidationStatus::Pass));
                 if any_pass {
                     assert!(matches!(result.status, ValidationStatus::Warning));
                 } else {

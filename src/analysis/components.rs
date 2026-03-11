@@ -54,10 +54,7 @@ where
 }
 
 /// Export component entries to a CSV file.
-pub fn export_component_csv(
-    entries: &[ComponentEntry],
-    path: &Path,
-) -> Result<()> {
+pub fn export_component_csv(entries: &[ComponentEntry], path: &Path) -> Result<()> {
     let mut wtr = Writer::from_path(path)?;
     wtr.write_record(&["Case", "Component", "Energy_MWh"])?;
     for entry in entries {

@@ -399,13 +399,11 @@ mod tests {
     #[test]
     fn test_run_sensitivity_with_batch_oracle() {
         // Build a simple base model with 1 zone
-        let base_model = crate::sim::engine::ThermalModel::<crate::physics::cta::VectorField>::new(1);
+        let base_model =
+            crate::sim::engine::ThermalModel::<crate::physics::cta::VectorField>::new(1);
         let oracle = crate::BatchOracle::from_model(base_model);
         // Simple design: vary window U-value
-        let design = vec![
-            vec![1.5],
-            vec![2.0],
-        ];
+        let design = vec![vec![1.5], vec![2.0]];
         // Run with surrogates disabled
         let outputs = super::run_sensitivity(&design, &oracle, false);
         assert_eq!(outputs.len(), 2);

@@ -482,7 +482,11 @@ fn main() -> Result<()> {
         }
 
         // New commands
-        Commands::Sensitivity { config, output: _, use_surrogates } => {
+        Commands::Sensitivity {
+            config,
+            output: _,
+            use_surrogates,
+        } => {
             // Read sensitivity config
             let config_content = std::fs::read_to_string(config)?;
             let sens_config: SensitivityConfig = serde_yaml::from_str(&config_content)?;
