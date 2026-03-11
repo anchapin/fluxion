@@ -1,7 +1,4 @@
-use crate::ai::surrogate::SurrogateManager;
-use crate::physics::cta::ContinuousTensor;
-use crate::sim::engine::ThermalModel;
-use crate::validation::ashrae_140_cases::CaseSpec;
+use crate::BatchOracle;
 use anyhow::Result;
 use csv::{Reader, Writer};
 use rayon::prelude::*;
@@ -95,40 +92,26 @@ pub struct SensitivityReport {
 // The internal rayon parallel loop will be replaced by oracle.evaluate().
 // Call sites will be updated accordingly.
 
-/// Evaluate a design matrix using a base building configuration.
+/// Evaluate a design matrix using a BatchOracle.
 ///
-/// This function creates a thermal model from the provided `CaseBuilder` and evaluates each
-/// design point in parallel using the model. The returned vector contains the EUI (kWh/m²/yr)
-/// for each design point.
+/// The oracle must be pre-configured with a base model (e.g., from an ASHRAE case).
+/// This function forwards the design matrix to the oracle's batch evaluation method.
 ///
-/// # Panics
+/// # Arguments
 ///
-/// Panics if the `CaseBuilder` fails to build a valid case specification.
-pub fn run_sensitivity(design: &[Vec<f64>], spec: &CaseSpec, use_surrogates: bool) -> Vec<f64> {
-    // Build the base model from the specification
-    let base_model = ThermalModel::from_spec(spec);
-    let surrogate = SurrogateManager::new().expect("Failed to create surrogate manager");
-
-    use rayon::prelude::*;
-    design
-        .par_iter()
-        .map(|params| {
-            let mut model = base_model.clone();
-            model.apply_parameters(params);
-            // Use fixed simulation horizon of 1 year (8760 hours)
-            let steps = 8760;
-            // Energy returned by solve_timesteps: likely in kWh/m²? Actually returns total energy? We'll compute EUI as energy/area.
-            let energy = model.solve_timesteps(steps, &surrogate, use_surrogates);
-            // Compute total floor area
-            let total_area = model.zone_area.integrate();
-            if total_area > 0.0 {
-                // energy / area gives EUI (kWh per m² per year if steps=8760 hours)
-                (energy / total_area).max(0.0)
-            } else {
-                0.0
-            }
-        })
-        .collect()
+/// * `design` - Design matrix (each inner Vec is a parameter vector).
+/// * `oracle` - BatchOracle instance configured for the specific case.
+/// * `use_surrogates` - Whether to use AI surrogates for faster evaluation.
+///
+/// # Returns
+///
+/// Vector of EUI values (kWh/m²/yr) for each design point.
+pub fn run_sensitivity(
+    design: &[Vec<f64>],
+    oracle: &BatchOracle,
+    use_surrogates: bool,
+) -> Vec<f64> {
+    oracle.evaluate_population(design.to_vec(), use_surrogates)
 }
 
 /// Compute sensitivity metrics for each parameter in the design matrix.

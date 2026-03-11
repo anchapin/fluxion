@@ -163,7 +163,7 @@ mod tests {
         })
         .to_string();
 
-        let server = mockito::Server::new();
+        let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
             .mock("GET", "/")
@@ -202,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_update_references_invalid_json() {
-        let server = mockito::Server::new();
+        let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
             .mock("GET", "/")
@@ -224,7 +224,7 @@ mod tests {
         })
         .to_string();
 
-        let server = mockito::Server::new();
+        let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
             .mock("GET", "/")
@@ -239,7 +239,7 @@ mod tests {
 
     #[test]
     fn test_update_references_http_error() {
-        let server = mockito::Server::new();
+        let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
             .mock("GET", "/")
@@ -268,7 +268,7 @@ mod tests {
         })
         .to_string();
 
-        let server = mockito::Server::new();
+        let mut server = mockito::Server::new();
         let url = server.url();
         let _mock = server
             .mock("GET", "/")

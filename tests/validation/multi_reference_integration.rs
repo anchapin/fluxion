@@ -118,8 +118,10 @@ fn test_update_references_with_remote() -> Result<()> {
     .to_string();
 
     // Use a dedicated mock server instance for reliable testing
-    let url = mockito::SERVER_URL;
-    let _mock = mockito::mock("GET", "/")
+    let server = mockito::Server::new();
+    let url = server.url();
+    let _mock = server
+        .mock("GET", "/")
         .with_status(200)
         .with_header("content-type", "application/json")
         .with_body(&mock_db)

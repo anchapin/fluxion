@@ -15,33 +15,23 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
-#[cfg(feature = "python-bindings")]
-use crate::physics::cta::{ContinuousTensor, VectorField};
-#[cfg(feature = "python-bindings")]
+use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
-#[cfg(feature = "python-bindings")]
 use sim::engine::ThermalModel;
 
+#[cfg(feature = "python-bindings")]
+use crate::physics::cta::ContinuousTensor;
+use anyhow::Result;
+#[cfg(feature = "python-bindings")]
+use ndarray::Array2;
+#[cfg(feature = "python-bindings")]
+use numpy::PyArrayMethods;
 #[cfg(feature = "python-bindings")]
 use pyo3::{
     prelude::{pyclass, pymethods, pymodule, PyModule},
     types::{PyAnyMethods, PyModuleMethods},
     Bound, PyResult, Python,
 };
-
-// NumPy types - available when python-bindings feature is enabled
-#[cfg(feature = "python-bindings")]
-use ndarray::Array2;
-#[cfg(feature = "python-bindings")]
-use numpy::PyArrayMethods;
-
-// When not using python-bindings feature, we still need these for tests
-#[cfg(not(feature = "python-bindings"))]
-#[allow(unused_imports)]
-use ai::surrogate::SurrogateManager;
-#[cfg(not(feature = "python-bindings"))]
-#[allow(unused_imports)]
-use sim::engine::ThermalModel;
 
 // Re-export things for easier access in other modules
 // pub use ai::tensor_wrapper::TorchScalar; // REMOVED
@@ -525,14 +515,12 @@ impl PyWallSurface {
 /// This is the core API for bulk evaluation of building design populations. It accepts
 /// thousands of parameter vectors and returns fitness values (EUI) using data parallelism
 /// across CPU cores. Critical for integrating with D-Wave quantum annealers and GA frameworks.
-#[cfg(feature = "python-bindings")]
-#[pyclass]
-struct BatchOracle {
+#[cfg_attr(feature = "python-bindings", pyclass)]
+pub struct BatchOracle {
     base_model: ThermalModel<VectorField>,
     surrogates: SurrogateManager,
 }
 
-#[cfg(feature = "python-bindings")]
 impl BatchOracle {
     // Physical constraints for optimization parameters
     const MIN_U_VALUE: f64 = 0.1; // Minimum realistic U-value (W/m²K)
@@ -549,36 +537,50 @@ impl BatchOracle {
 
     /// Validates a parameter vector against physical constraints.
     fn validate_parameters(params: &[f64]) -> Result<(), String> {
-        if params.len() < 3 {
-            return Err("Parameter vector must have at least 3 elements.".to_string());
+        // Validate parameters that are present; allow shorter vectors for partial parameter sweeps
+        if let Some(&u_value) = params.get(0) {
+            if !(Self::MIN_U_VALUE..=Self::MAX_U_VALUE).contains(&u_value) {
+                return Err(format!("U-value out of range: {}", u_value));
+            }
         }
-        let u_value = params[Self::U_VALUE_INDEX];
-        let heating_setpoint = params[Self::HEATING_SETPOINT_INDEX];
-        let cooling_setpoint = params[Self::COOLING_SETPOINT_INDEX];
-
-        if !(Self::MIN_U_VALUE..=Self::MAX_U_VALUE).contains(&u_value) {
-            return Err(format!("U-value out of range: {}", u_value));
+        if let Some(&heating_setpoint) = params.get(1) {
+            if !(Self::MIN_HEATING_SETPOINT..=Self::MAX_HEATING_SETPOINT)
+                .contains(&heating_setpoint)
+            {
+                return Err(format!(
+                    "Heating setpoint out of range: {}",
+                    heating_setpoint
+                ));
+            }
         }
-        if !(Self::MIN_HEATING_SETPOINT..=Self::MAX_HEATING_SETPOINT).contains(&heating_setpoint) {
-            return Err(format!(
-                "Heating setpoint out of range: {}",
-                heating_setpoint
-            ));
-        }
-        if !(Self::MIN_COOLING_SETPOINT..=Self::MAX_COOLING_SETPOINT).contains(&cooling_setpoint) {
-            return Err(format!(
-                "Cooling setpoint out of range: {}",
-                cooling_setpoint
-            ));
-        }
-        // Validate that heating < cooling (deadband must exist)
-        if heating_setpoint >= cooling_setpoint {
-            return Err(format!(
-                "Heating setpoint ({}) must be less than cooling setpoint ({})",
-                heating_setpoint, cooling_setpoint
-            ));
+        if let Some(&cooling_setpoint) = params.get(2) {
+            if !(Self::MIN_COOLING_SETPOINT..=Self::MAX_COOLING_SETPOINT)
+                .contains(&cooling_setpoint)
+            {
+                return Err(format!(
+                    "Cooling setpoint out of range: {}",
+                    cooling_setpoint
+                ));
+            }
+            // Check heating/cooling relationship if heating is also provided
+            if let Some(&heating_setpoint) = params.get(1) {
+                if heating_setpoint >= cooling_setpoint {
+                    return Err(format!(
+                        "Heating setpoint ({}) must be less than cooling setpoint ({})",
+                        heating_setpoint, cooling_setpoint
+                    ));
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Creates a new BatchOracle from a base thermal model.
+    pub fn from_model(base_model: ThermalModel<VectorField>) -> Self {
+        BatchOracle {
+            base_model,
+            surrogates: SurrogateManager::new(),
+        }
     }
 }
 
