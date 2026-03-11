@@ -87,6 +87,14 @@ pub struct SensitivityReport {
     pub metrics: Vec<MetricSet>,
 }
 
+// DESIGN REFACTOR (Task 2 - 07-11):
+// This function will be refactored to use BatchOracle for batch evaluation.
+// New signature: run_sensitivity(design: &[Vec<f64>], oracle: &BatchOracle, use_surrogates: bool) -> Vec<f64>
+// The oracle's base model should be configured for the specific ASHRAE case.
+// This aligns with the two-class API (BatchOracle for population, Model for single).
+// The internal rayon parallel loop will be replaced by oracle.evaluate().
+// Call sites will be updated accordingly.
+
 /// Evaluate a design matrix using a base building configuration.
 ///
 /// This function creates a thermal model from the provided `CaseBuilder` and evaluates each
@@ -96,11 +104,7 @@ pub struct SensitivityReport {
 /// # Panics
 ///
 /// Panics if the `CaseBuilder` fails to build a valid case specification.
-pub fn run_sensitivity(
-    design: &[Vec<f64>],
-    spec: &CaseSpec,
-    use_surrogates: bool,
-) -> Vec<f64> {
+pub fn run_sensitivity(design: &[Vec<f64>], spec: &CaseSpec, use_surrogates: bool) -> Vec<f64> {
     // Build the base model from the specification
     let base_model = ThermalModel::from_spec(spec);
     let surrogate = SurrogateManager::new().expect("Failed to create surrogate manager");
