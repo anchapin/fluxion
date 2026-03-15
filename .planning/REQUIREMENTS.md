@@ -26,7 +26,7 @@ Requirements for v0.5 Production Foundation milestone. Each maps to roadmap phas
 - [ ] **VAL-04**: 8R3C maintains ≥1,000 configs/sec throughput (baseline: ~2,575 for 5R1C)
 - [ ] **VAL-05**: 8R3C maintains ≥90% pass rate for low-mass cases (600-series, 800-series)
 - [ ] **VAL-06**: High-mass annual energy accuracy improved from 229-322% error baseline (thermal mass energy accounting validated)
-- [ ] **VAL-07**: 900-series regression test runs all cases (920, 930, 940, 960) together to prevent Case 960 fix from breaking other cases
+- [x] **VAL-07**: 900-series regression test runs all cases (920, 930, 940, 960) together to prevent Case 960 fix from breaking other cases
 - [ ] **VAL-08**: Thermal mass energy accounting validated (energy_in = energy_out + mass_energy_change)
 - [ ] **VAL-09**: A/B testing framework quantifies improvement for validation gap fixes
 
@@ -99,7 +99,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | VAL-04 | Phase 22 | Pending |
 | VAL-05 | Phase 22 | Pending |
 | VAL-06 | Phase 22 | Pending |
-| VAL-07 | Phase 22 | Pending |
+| VAL-07 | Phase 22 | Complete |
 | VAL-08 | Phase 22 | Pending |
 | VAL-09 | Phase 22 | Pending |
 | PROD-01 | Phase 23 | Pending |

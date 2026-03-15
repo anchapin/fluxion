@@ -84,7 +84,7 @@
 4. High-mass annual energy accuracy improved from 229-322% error baseline (verified through thermal mass energy accounting)
 5. A/B testing framework quantifies improvement for each validation gap fix before adoption
 
-**Plans:** 5/5 executed, 2 gap closure plans
+**Plans:** 6/7 plans executed
 
 - [x] 22-01-PLAN.md — 900-series regression test to prevent Case 960 fix from breaking other cases
 - [x] 22-02-PLAN.md — Thermal mass energy accounting validation (diagnose physics correctness)
@@ -125,7 +125,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | 2026-03-15 |
-| 22. Validation Gap Resolution | 5/5 executed, 2 gap closure plans | Gap closure mode | 2026-03-15 |
+| 22. Validation Gap Resolution | 6/7 | In Progress|  |
 | 23. Production Readiness | 0/0 | Not started | - |
 
 **Overall Progress:** 67% (2/3 phases complete)
