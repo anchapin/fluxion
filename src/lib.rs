@@ -48,6 +48,7 @@ pub mod analysis;
 pub mod api;
 pub mod physics;
 pub mod sim;
+pub mod testing;
 pub mod validation;
 pub mod weather;
 
