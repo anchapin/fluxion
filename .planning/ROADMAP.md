@@ -2,14 +2,14 @@
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
 **Milestone:** v0.5 Production Foundation
-**Current Phase:** Phase 21 (gap closure mode)
+**Current Phase:** Phase 22 (executing)
 **Last Updated:** 2026-03-15
 
 ---
 
 ## Milestones
 
-- 🔄 **v0.5 Production Foundation** — Phases 21-23 (in progress)
+- 🔄 **v0.5 Production Foundation** — Phases 21-23 (in progress, 14/15 plans complete)
 - ✅ **v0.4 ASHRAE 140 Compliance** — Phases 14-20 (shipped 2026-03-15) — See `.planning/milestones/v0.4-ROADMAP.md`
 - ✅ **v0.2 Partial Validation** — Phases 1-7 (shipped 2026-03-11) — See `.planning/milestones/v0.2-ROADMAP.md`
 
@@ -26,7 +26,7 @@
 ## Phases
 
 - [x] **Phase 21: Integration Testing Framework** - E2E tests, wiring validation, regression test suite (completed 2026-03-15, gap closure mode)
-- [ ] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy
+- [~] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy (14/15 plans complete, in progress)
 - [ ] **Phase 23: Production Readiness** - Complete docs, benchmarks, stability guarantees
 
 ---
