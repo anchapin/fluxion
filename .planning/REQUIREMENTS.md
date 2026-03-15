@@ -14,7 +14,7 @@ Requirements for v0.5 Production Foundation milestone. Each maps to roadmap phas
 - [ ] **INTEG-03**: E2E tests detect wiring issues between modules (validation, simulation, AI surrogates)
 - [ ] **INTEG-04**: Python-side integration tests validate PyO3 bindings with real NumPy arrays
 - [ ] **INTEG-05**: Regression test suite runs full ASHRAE 140 validation (18 cases) on every commit
-- [ ] **INTEG-06**: Test data management provides centralized repository with versioning for EPW files, reference results
+- [x] **INTEG-06**: Test data management provides centralized repository with versioning for EPW files, reference results
 - [ ] **INTEG-07**: CI/CD integration runs integration tests and benchmarks on every PR, fails on regressions
 - [ ] **INTEG-08**: Wiring validation system automatically checks module dependencies and integration points
 
@@ -90,7 +90,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | INTEG-03 | Phase 21 | Pending |
 | INTEG-04 | Phase 21 | Pending |
 | INTEG-05 | Phase 21 | Pending |
-| INTEG-06 | Phase 21 | Pending |
+| INTEG-06 | Phase 21 | Complete |
 | INTEG-07 | Phase 21 | Pending |
 | INTEG-08 | Phase 21 | Pending |
 | VAL-01 | Phase 22 | Pending |
