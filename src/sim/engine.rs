@@ -1870,17 +1870,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             * (h_ext.clone() * outdoor_temp + phi_ia_with_iz.clone())
             + self.derived_ground_coeff.clone() * t_g;
 
-        // t_i_free = (num_tm + num_phi_st + num_rest_with_iz) / den
-        // Optimized: Avoid chained VectorField arithmetic by using explicit scalar loop
-        let num_tm_ref = num_tm.as_ref();
-        let num_phi_st_ref = num_phi_st.as_ref();
-        let num_rest_ref = num_rest_with_iz.as_ref();
-        let den_ref = den.as_ref();
-        let mut t_i_free_vec = Vec::with_capacity(num_zones);
-        for i in 0..num_zones {
-            t_i_free_vec.push((num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i]) / den_ref[i]);
-        }
-        let t_i_free = T::from(VectorField::new(t_i_free_vec));
+        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
 
         // 3. HVAC Calculation
         // Use local sensitivity (might be different from cached if night vent is active)
@@ -1930,14 +1920,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // This avoids re-calculating the entire thermal network state.
         // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
         // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
-        let t_i_free_ref = t_i_free.as_ref();
-        let sens_ref = sensitivity_val.as_ref();
-        let hvac_power_ref = hvac_output_power.as_ref();
-        let mut t_i_act_vec = Vec::with_capacity(num_zones);
-        for i in 0..num_zones {
-            t_i_act_vec.push(t_i_free_ref[i] + sens_ref[i] * hvac_power_ref[i]);
-        }
-        let t_i_act = T::from(VectorField::new(t_i_act_vec));
+        let t_i_act = t_i_free.clone() + sensitivity_val.clone() * hvac_output_power.clone();
 
         let hvac_energy_for_step = hvac_output_energy.reduce(0.0, |acc, val| acc + val) * dt;
 
@@ -2126,15 +2109,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
             + self.derived_ground_coeff.clone() * t_g;
 
         // Calculate free-floating indoor temperature
-        let num_tm_ref = num_tm.as_ref();
-        let num_phi_st_ref = num_phi_st.as_ref();
-        let num_rest_ref = num_rest_with_iz.as_ref();
-        let den_ref = den.as_ref();
-        let mut t_i_free_vec = Vec::with_capacity(num_zones);
-        for i in 0..num_zones {
-            t_i_free_vec.push((num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i]) / den_ref[i]);
-        }
-        let t_i_free = T::from(VectorField::new(t_i_free_vec));
+        let t_i_free = (num_tm.clone() + num_phi_st.clone() + num_rest_with_iz) / den.clone();
 
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
@@ -2169,30 +2144,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         // Update indoor temperature with superposition
         // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
         // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
-        let t_i_free_ref = t_i_free.as_ref();
-        let sens_ref = sensitivity.as_ref();
-        let hvac_power_ref = hvac_output_power.as_ref();
-        let mut t_i_act_vec = Vec::with_capacity(num_zones);
-        for i in 0..num_zones {
-            t_i_act_vec.push(t_i_free_ref[i] + sens_ref[i] * hvac_power_ref[i]);
-        }
-        let t_i_act = T::from(VectorField::new(t_i_act_vec));
+        let t_i_act = t_i_free.clone() + sensitivity.clone() * hvac_output_power.clone();
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
-        let env_mass_ref = self.envelope_mass_temperatures.as_ref();
-        let t_i_act_ref = t_i_act.as_ref();
-        let phi_st_ref = phi_st.as_ref();
-        let h_tr_ms_ref = self.h_tr_ms.as_ref();
-        let h_tr_is_ref = self.h_tr_is.as_ref();
-        let term_rest_1_ref = term_rest_1.as_ref();
-
-        let mut t_s_act_vec = Vec::with_capacity(num_zones);
-        for i in 0..num_zones {
-            let ts_num = h_tr_ms_ref[i] * env_mass_ref[i] + h_tr_is_ref[i] * t_i_act_ref[i] + phi_st_ref[i];
-            t_s_act_vec.push(ts_num / term_rest_1_ref[i]);
-        }
-        let t_s_act = T::from(VectorField::new(t_s_act_vec));
+        let ts_num_act = self.h_tr_ms.clone() * self.envelope_mass_temperatures.clone()
+            + self.h_tr_is.clone() * t_i_act.clone()
+            + phi_st.clone();
+        let t_s_act = ts_num_act / term_rest_1.clone();
 
         // === 6R2C: Update two mass nodes ===
         // Envelope mass: receives heat from exterior, surface, and internal mass
@@ -2944,16 +2903,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]>> ThermalModel<T
         let num_rest = term_rest_1.clone() * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
             + self.derived_ground_coeff.clone() * t_g;
 
-        let num_tm_ref = num_tm.as_ref();
-        let num_phi_st_ref = num_phi_st.as_ref();
-        let num_rest_ref = num_rest.as_ref();
-        let den_ref = den.as_ref();
-
-        let mut t_i_free_vec = Vec::with_capacity(num_zones);
-        for i in 0..num_zones {
-            t_i_free_vec.push((num_tm_ref[i] + num_phi_st_ref[i] + num_rest_ref[i]) / den_ref[i]);
-        }
-        let t_i_free = T::from(VectorField::new(t_i_free_vec));
+        let t_i_free = (num_tm + num_phi_st + num_rest) / den;
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]
