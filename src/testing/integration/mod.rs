@@ -11,3 +11,15 @@ pub mod wiring;
 
 #[cfg(test)]
 pub mod scenarios;
+
+// Re-export public types for convenience
+#[cfg(test)]
+pub use fixtures::{BuildingScenario, HvacType};
+
+#[cfg(test)]
+pub use wiring::WiringTracer;
+
+#[cfg(test)]
+pub use scenarios::{
+    heat_pump_scenario, high_mass_scenario, low_mass_scenario, multi_zone_scenario, vav_scenario,
+};
