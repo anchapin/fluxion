@@ -14,6 +14,10 @@ fn test_pass_rate_empty() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     assert_eq!(report.pass_rate(), 100.0);
 }
@@ -48,6 +52,10 @@ fn test_pass_rate_all_passed() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     assert_eq!(report.pass_rate(), 100.0);
 }
@@ -82,6 +90,10 @@ fn test_pass_rate_all_failed() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     assert_eq!(report.pass_rate(), 0.0);
 }
@@ -126,6 +138,10 @@ fn test_pass_rate_mixed() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     // 2 passed out of 3 = 66.67%
     assert!((report.pass_rate() - 66.67).abs() < 0.01);
@@ -139,6 +155,10 @@ fn test_mae_empty() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     assert_eq!(report.mae(), 0.0);
 }
@@ -173,6 +193,10 @@ fn test_mae_simple() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     let mae = report.mae();
     // MAE = (33.33% + 4.0%) / 2 = 18.665%
@@ -187,6 +211,10 @@ fn test_max_deviation_empty() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     // For empty results, max_deviation uses fold(0.0, max), so returns 0.0
     assert_eq!(report.max_deviation(), 0.0);
@@ -231,6 +259,10 @@ fn test_max_deviation_simple() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     let max_dev = report.max_deviation();
     // Max of abs(33.33, 4.0, 15.0) = 33.33
@@ -276,6 +308,10 @@ fn test_fail_count() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     assert_eq!(report.fail_count(), 1);
     assert_eq!(report.warning_count(), 1);
@@ -322,6 +358,10 @@ fn test_worst_cases() {
         interpretations: std::collections::HashMap::new(),
         start_time: None,
         end_time: None,
+        statistical_metrics: None,
+        statistical_p_values: None,
+        statistical_corrected: None,
+        group_validation: None,
     };
     let worst = report.worst_cases(2);
     assert_eq!(worst.len(), 2);
