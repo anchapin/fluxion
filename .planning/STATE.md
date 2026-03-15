@@ -4,12 +4,12 @@ milestone: v0.5
 milestone_name: milestone
 current_phase: Phase 21 - Integration Testing Framework (in progress)
 status: completed
-last_updated: "2026-03-15T19:50:26.757Z"
+last_updated: "2026-03-15T19:59:50.159Z"
 progress:
   total_phases: 3
   completed_phases: 0
   total_plans: 10
-  completed_plans: 8
+  completed_plans: 9
 ---
 
 # Fluxion Project State
@@ -48,16 +48,16 @@ progress:
 ## Current Position
 
 **Phase:** 21 - Integration Testing Framework (in progress)
-**Plan:** 06 - Refactor Integration Tests to Use Testing Framework
+**Plan:** 07 - Document PyO3 Test Acceptance Decision
 **Status:** Completed (2026-03-15)
 
 ### Progress Bar
 
 ```
-Phase 21: [█████░░░░░░] 80% (6/10 plans complete)
+Phase 21: [████████░░] 90% (9/10 plans complete)
 Phase 22: [░░░░░░░░░░] 0% (0/0 plans complete)
 Phase 23: [░░░░░░░░░░] 0% (0/0 plans complete)
-Overall:  [█░░░░░░░░░░] 7% (0.2/3 phases complete)
+Overall:  [█░░░░░░░░░░] 7% (0.3/3 phases complete)
 ```
 
 ### Phase 21 Context
@@ -130,9 +130,11 @@ Overall:  [█░░░░░░░░░░] 7% (0.2/3 phases complete)
 | Phase 21 P03 | Comprehensive ASHRAE 140 regression test suite | ✅ Successful — 5 minutes, 2 tasks, 3 files |
 | Phase 21 P05 | 15 minutes | 4 tasks | 6 files |
 | Phase 21 P06 | Refactor integration tests to use BuildingScenario builder and WiringTracer | ✅ Successful — 3 minutes, 2 tasks, 6 files, 11/11 tests passing |
+| Phase 21 P07 | Accept Python-side tests as sufficient for INTEG-04 requirement | ✅ Successful — 5 minutes, 2 tasks, 2 files, comprehensive rationale documented |
+| Python-side test acceptance | Accept Python-side tests as sufficient for INTEG-04 (comprehensive FFI boundary coverage, Rust-side tests high-effort/low-value) | ✅ Correct — Documented rationale: Python-side tests validate observable FFI contract, Rust-side conversion logic already tested, PyO3 boilerplate tests low value |
 | Phase 21 P08 | 1min | 1 tasks | 1 files |
-| Phase 21 P06 | 188 | 2 tasks | 6 files |
 | Phase 21 P09 | 1 minute | 1 tasks | 2 files |
+| Phase 21 P07 | 53 | 2 tasks | 2 files |
 
 ### Research Insights (from research/SUMMARY.md)
 
