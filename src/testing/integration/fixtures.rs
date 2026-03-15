@@ -5,6 +5,7 @@
 
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use std::sync::Arc;
 
 /// HVAC equipment types for test scenarios
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -24,6 +25,7 @@ pub struct BuildingScenario {
     window_u_value: Option<f64>,
     heating_setpoint: Option<f64>,
     cooling_setpoint: Option<f64>,
+    tracer: Option<Arc<super::wiring::WiringTracer>>,
 }
 
 impl BuildingScenario {
@@ -36,6 +38,7 @@ impl BuildingScenario {
             window_u_value: None,
             heating_setpoint: None,
             cooling_setpoint: None,
+            tracer: None,
         }
     }
 
@@ -75,6 +78,12 @@ impl BuildingScenario {
         self
     }
 
+    /// Set a wiring tracer for automatic call recording
+    pub fn with_tracer(mut self, tracer: Arc<super::wiring::WiringTracer>) -> Self {
+        self.tracer = Some(tracer);
+        self
+    }
+
     /// Build and validate the scenario
     pub fn build(&self) -> Result<Self, String> {
         // Validate parameters
@@ -106,6 +115,11 @@ impl BuildingScenario {
     /// Create a ThermalModel from this scenario
     pub fn create_model(&self) -> ThermalModel<VectorField> {
         let mut model = ThermalModel::new(self.num_zones);
+
+        // Apply tracer if provided
+        if let Some(ref tracer) = self.tracer {
+            model.set_tracer(Arc::clone(tracer));
+        }
 
         // Apply window U-value or use default
         let u_value = self.window_u_value.unwrap_or(1.5);

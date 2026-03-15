@@ -6,6 +6,7 @@
 use std::sync::{Arc, Mutex};
 
 /// Runtime tracer for detecting wiring issues
+#[derive(Debug)]
 pub struct WiringTracer {
     calls: Arc<Mutex<Vec<String>>>,
 }

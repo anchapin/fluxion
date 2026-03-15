@@ -17,6 +17,8 @@ default = []
 python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
 # Feature flag for CUDA support
 cuda = []
+# Feature flag for wiring tracing in integration tests (Plan 21-10)
+wiring-tracing = []
 
 [dependencies]
 # Core Logic

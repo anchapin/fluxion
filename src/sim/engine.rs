@@ -440,6 +440,10 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Conductance between interior and partition mass (W/K) - for 8R3C model
     pub h_tr_partition: Option<T>,
 
+    /// Wiring tracer for test-only integration validation (Plan 21-10)
+    /// This field is public but only used in test builds
+    pub tracer: Option<std::sync::Arc<crate::testing::integration::wiring::WiringTracer>>,
+
     // 5R1C Conductances (W/K)
     pub h_tr_em: T,         // Transmission: Exterior -> Mass (walls + roof)
     pub h_tr_em_heating: T, // Exterior-to-mass coupling for heating mode (W/K)
@@ -718,6 +722,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             derived_ground_coeff: self.derived_ground_coeff.clone(),
             diagnostics: None,
             current_hvac_output: None,
+
+            // Wiring tracer for test-only integration validation (Plan 21-10)
+            tracer: self.tracer.clone(),
         }
     }
 }
@@ -2054,6 +2061,9 @@ impl ThermalModel<VectorField> {
 
             // Internal radiative heat gains to thermal mass (Plan 17-04)
             internal_radiative_to_mass: 0.0,
+
+            // Wiring tracer for test-only integration validation (Plan 21-10)
+            tracer: None,
         };
 
         model.update_derived_parameters();
@@ -2574,6 +2584,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         equipment: Option<&[Box<dyn Equipment>]>,
         occupancy: Option<&OccupancyProfile>,
     ) -> f64 {
+        // Record call for wiring validation (Plan 21-10)
+        #[cfg(feature = "wiring-tracing")]
+        if let Some(ref tracer) = self.tracer {
+            tracer.record_call("solve_timesteps");
+        }
+
         info!(
             "Starting simulation for {} timesteps, use_ai={}",
             steps, use_ai
@@ -2781,6 +2797,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// Issue #351: Calculate solar gains internally if weather data is available
     pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+        // Record call for wiring validation (Plan 21-10)
+        #[cfg(feature = "wiring-tracing")]
+        if let Some(ref tracer) = self.tracer {
+            tracer.record_call("step_physics");
+        }
+
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
         if self.weather.is_some() {
@@ -3944,6 +3966,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> f64 {
         // 1. Calculate External Loads
         if use_ai {
+            // Record call for wiring validation (Plan 21-10)
+            #[cfg(feature = "wiring-tracing")]
+            if let Some(ref tracer) = self.tracer {
+                tracer.record_call("predict_loads");
+            }
+
             // Try ONNX with fallback to analytical mode
             match surrogates.predict_loads_with_fallback(self.temperatures.as_ref()) {
                 Ok(pred) => {
@@ -4690,6 +4718,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]
+    }
+}
+
+impl<T: ContinuousTensor<f64>> ThermalModel<T> {
+    /// Set a wiring tracer for automatic call recording (test-only)
+    ///
+    /// This method enables automatic tracing of integration points during tests.
+    /// The tracer will record calls to critical functions like solve_timesteps,
+    /// predict_loads, step_physics, etc.
+    ///
+    /// # Note
+    /// This method is only useful in test builds. In production, the tracer
+    /// field is always None and call recording is disabled.
+    pub fn set_tracer(
+        &mut self,
+        tracer: std::sync::Arc<crate::testing::integration::wiring::WiringTracer>,
+    ) {
+        self.tracer = Some(tracer);
     }
 }
 
