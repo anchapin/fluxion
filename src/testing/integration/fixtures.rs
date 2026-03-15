@@ -122,8 +122,8 @@ impl BuildingScenario {
         model.mass_temperatures = VectorField::from_scalar(20.0, self.num_zones);
 
         // Initialize other required fields
-        model.loads = VectorField::from_scalar(0.0, 8760 * self.num_zones);
-        model.solar_gains = VectorField::from_scalar(0.0, 8760 * self.num_zones);
+        model.loads = VectorField::from_scalar(0.0, self.num_zones);
+        model.solar_gains = VectorField::from_scalar(0.0, self.num_zones);
 
         // Set default zone area and building parameters
         let zone_area = 100.0; // 100 m² per zone

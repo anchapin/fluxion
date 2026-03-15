@@ -3,23 +3,21 @@
 //! Tests validate complete workflows from input to output using real implementations
 //! (not mocks) to catch wiring issues and integration bugs.
 
-use fluxion::physics::cta::VectorField;
-use fluxion::sim::engine::ThermalModel;
+use fluxion::testing::integration::BuildingScenario;
 use fluxion::BatchOracle;
 use std::time::Instant;
 
 /// Test BatchOracle throughput with 1000 configurations
 #[test]
 fn test_batch_oracle_throughput() {
-    let mut model = ThermalModel::<VectorField>::new(1);
+    let scenario = BuildingScenario::new()
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid scenario");
 
-    // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
-
+    let model = scenario.create_model();
     let oracle = BatchOracle::from_model(model);
 
     // Generate 1000 configurations with known valid parameters
@@ -60,13 +58,14 @@ fn test_python_api_batch_oracle() {
     // In a real environment, this would use PyO3 bindings
     // For now, we just verify the Rust API works as expected
 
-    let mut model = ThermalModel::<VectorField>::new(1);
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    let scenario = BuildingScenario::new()
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid scenario");
 
+    let model = scenario.create_model();
     let oracle = BatchOracle::from_model(model);
 
     // Test with a small population
@@ -86,13 +85,14 @@ fn test_python_api_model() {
     // In a real environment, this would use PyO3 bindings
     // For now, we verify the ThermalModel can simulate
 
-    let mut model = ThermalModel::<VectorField>::new(1);
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    let scenario = BuildingScenario::new()
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid scenario");
 
+    let mut model = scenario.create_model();
     let surrogates =
         fluxion::ai::surrogate::SurrogateManager::new().expect("Failed to create SurrogateManager");
 
@@ -107,13 +107,14 @@ fn test_python_api_model() {
 /// Test surrogate integration with mock predictions
 #[test]
 fn test_surrogate_integration() {
-    let mut model = ThermalModel::<VectorField>::new(1);
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
+    let scenario = BuildingScenario::new()
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid scenario");
 
+    let mut model = scenario.create_model();
     let surrogates =
         fluxion::ai::surrogate::SurrogateManager::new().expect("Failed to create SurrogateManager");
 
@@ -147,15 +148,14 @@ fn test_psychrometrics() {
 /// Test internal loads
 #[test]
 fn test_internal_loads() {
-    let mut model = ThermalModel::<VectorField>::new(1);
+    let scenario = BuildingScenario::new()
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid scenario");
 
-    // Initialize model with sensible defaults
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, 1);
-    model.mass_temperatures = VectorField::from_scalar(20.0, 1);
-
+    let mut model = scenario.create_model();
     let surrogates =
         fluxion::ai::surrogate::SurrogateManager::new().expect("Failed to create SurrogateManager");
 
@@ -170,15 +170,15 @@ fn test_internal_loads() {
 #[test]
 fn test_multi_zone_physics() {
     let num_zones = 3;
-    let mut model = ThermalModel::<VectorField>::new(num_zones);
+    let scenario = BuildingScenario::new()
+        .with_zone_count(num_zones)
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid scenario");
 
-    // Initialize model with sensible defaults for each zone
-    model.window_u_value = 1.5;
-    model.heating_setpoint = 20.0;
-    model.cooling_setpoint = 26.0;
-    model.temperatures = VectorField::from_scalar(20.0, num_zones);
-    model.mass_temperatures = VectorField::from_scalar(20.0, num_zones);
-
+    let mut model = scenario.create_model();
     let surrogates =
         fluxion::ai::surrogate::SurrogateManager::new().expect("Failed to create SurrogateManager");
 

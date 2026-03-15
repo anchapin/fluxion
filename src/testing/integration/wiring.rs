@@ -5,13 +5,11 @@
 
 use std::sync::{Arc, Mutex};
 
-#[cfg(test)]
 /// Runtime tracer for detecting wiring issues
 pub struct WiringTracer {
     calls: Arc<Mutex<Vec<String>>>,
 }
 
-#[cfg(test)]
 impl WiringTracer {
     /// Create a new wiring tracer
     pub fn new() -> Self {
@@ -42,7 +40,6 @@ impl WiringTracer {
     }
 }
 
-#[cfg(test)]
 impl Clone for WiringTracer {
     fn clone(&self) -> Self {
         Self {
