@@ -3,7 +3,7 @@
 ## Task List
 
 - [ ] Issue #103: Complete all 18 ASHRAE 140 test cases
-- [ ] Issue #104: Add reference range validation with pass/fail criteria  
+- [ ] Issue #104: Add reference range validation with pass/fail criteria
 - [ ] Issue #105: Implement multi-zone thermal model for Case 960
 - [ ] Issue #106: Phase 5 - Retrain surrogate with ASHRAE physics
 - [ ] Issue #107: Add CI integration for ASHRAE 140 validation

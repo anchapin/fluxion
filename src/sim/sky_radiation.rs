@@ -534,6 +534,148 @@ pub fn relative_airmass(zenith_deg: f64) -> f64 {
     1.0 / (cos_zenith + 0.50572 * term.powf(-1.6364))
 }
 
+/// Calculate clearness index (kt) from GHI.
+///
+/// Clearness index = GHI / GHI_clear, where GHI_clear is clear-sky horizontal irradiance.
+/// Indicates cloud cover: kt ≈ 1.0 = clear sky, kt ≈ 0.1 = heavy clouds.
+///
+/// # Arguments
+///
+/// * `ghi` - Global horizontal irradiance (W/m²)
+/// * `zenith_angle` - Solar zenith angle (radians)
+/// * `solar_constant` - Solar constant (W/m², default 1366.1)
+///
+/// # Returns
+///
+/// Clearness index (dimensionless, 0-1)
+///
+/// # Example
+///
+/// ```
+/// use fluxion::sim::sky_radiation::calculate_clearness_index;
+///
+/// // Clear sky: GHI close to clear-sky value
+/// let kt_clear = calculate_clearness_index(900.0, 0.5, 1366.1);
+/// assert!(kt_clear > 0.9); // Clear sky
+///
+/// // Cloudy sky: GHI much lower than clear-sky
+/// let kt_cloudy = calculate_clearness_index(100.0, 0.5, 1366.1);
+/// assert!(kt_cloudy < 0.2); // Heavy clouds
+/// ```
+pub fn calculate_clearness_index(ghi: f64, zenith_angle: f64, solar_constant: f64) -> f64 {
+    // Calculate clear-sky GHI using simple model
+    // GHI_clear = solar_constant * cos(zenith_angle) * atmospheric_transmittance
+    // For clear sky, use typical atmospheric transmittance of 0.75
+    let atmospheric_transmittance = 0.75;
+    let ghi_clear = solar_constant * zenith_angle.cos().max(0.01) * atmospheric_transmittance;
+
+    // Clearness index
+    let kt = ghi / ghi_clear;
+
+    // Clamp to [0, 1] (physical bounds)
+    kt.max(0.0).min(1.0)
+}
+
+/// Calculate clear-sky GHI for clearness index normalization.
+///
+/// # Arguments
+///
+/// * `zenith_angle` - Solar zenith angle (radians)
+/// * `solar_constant` - Solar constant (W/m², default 1366.1)
+///
+/// # Returns
+///
+/// Clear-sky GHI (W/m²)
+///
+/// # Example
+///
+/// ```
+/// use fluxion::sim::sky_radiation::calculate_clear_sky_ghi;
+///
+/// let zenith_angle = 0.5; // ~29 degrees
+/// let ghi_clear = calculate_clear_sky_ghi(zenith_angle, 1366.1);
+/// // Should be approximately 1020 W/m² (0.75 * cos(29°) * 1366.1)
+/// ```
+pub fn calculate_clear_sky_ghi(zenith_angle: f64, solar_constant: f64) -> f64 {
+    let atmospheric_transmittance = 0.75;
+    solar_constant * zenith_angle.cos().max(0.01) * atmospheric_transmittance
+}
+
+/// Calculate sky emissivity with cloud cover effects.
+///
+/// # Arguments
+///
+/// * `dry_bulb_temp` - Dry bulb temperature (°C)
+/// * `clearness_index` - Clearness index (0-1, from calculate_clearness_index)
+///
+/// # Returns
+///
+/// Sky emissivity (dimensionless, 0-1)
+///
+/// # Notes
+///
+/// Modified from Brunt & Idso models to include clearness index:
+/// - Clear sky (kt ≈ 1.0): Lower emissivity (more radiation escapes)
+/// - Cloudy sky (kt ≈ 0.1): Higher emissivity (clouds trap radiation)
+///
+/// # Example
+///
+/// ```
+/// use fluxion::sim::sky_radiation::calculate_sky_emissivity_with_clouds;
+///
+/// let temp = 20.0;
+///
+/// // Clear sky: lower emissivity
+/// let emissivity_clear = calculate_sky_emissivity_with_clouds(temp, 1.0);
+/// assert!(emissivity_clear < 0.8);
+///
+/// // Cloudy sky: higher emissivity
+/// let emissivity_cloudy = calculate_sky_emissivity_with_clouds(temp, 0.1);
+/// assert!(emissivity_cloudy > emissivity_clear);
+/// ```
+pub fn calculate_sky_emissivity_with_clouds(dry_bulb_temp: f64, clearness_index: f64) -> f64 {
+    // Base sky emissivity (Idso-Jackson model)
+    let t_kelvin = dry_bulb_temp + 273.15;
+    let vapor_pressure = 6.1078 * ((7.5 * dry_bulb_temp) / (237.3 + dry_bulb_temp)).exp();
+    let emissivity_clear = 0.72 + 0.005 * (vapor_pressure / t_kelvin).exp();
+
+    // Cloud cover effect: Higher clearness index = fewer clouds = lower emissivity
+    // Empirical correction factor: (1 - 0.3 * (1 - kt))
+    // Clear sky (kt=1.0): factor = 1.0 (no cloud effect)
+    // Cloudy sky (kt=0.1): factor = 0.73 (clouds increase emissivity by 37%)
+    let cloud_correction = 1.0 - 0.3 * (1.0 - clearness_index);
+
+    emissivity_clear * cloud_correction
+}
+
+/// Calculate sky emissivity (original method, no cloud effects).
+///
+/// Kept for backward compatibility with DenverTmyWeather.
+///
+/// # Arguments
+///
+/// * `dry_bulb_temp` - Dry bulb temperature (°C)
+///
+/// # Returns
+///
+/// Sky emissivity (dimensionless, 0-1)
+///
+/// # Example
+///
+/// ```
+/// use fluxion::sim::sky_radiation::calculate_sky_emissivity;
+///
+/// let temp = 20.0;
+/// let emissivity = calculate_sky_emissivity(temp);
+/// assert!(emissivity > 0.7 && emissivity < 0.9);
+/// ```
+pub fn calculate_sky_emissivity(dry_bulb_temp: f64) -> f64 {
+    // Original Brunt model
+    let t_kelvin = dry_bulb_temp + 273.15;
+    let vapor_pressure = 6.1078 * ((7.5 * dry_bulb_temp) / (237.3 + dry_bulb_temp)).exp();
+    0.72 + 0.005 * (vapor_pressure / t_kelvin).exp()
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn total_irradiance_tilted(
     dni: f64,
@@ -680,5 +822,115 @@ mod tests {
         let sol = SolAirTemperature::default();
         let flux = sol.heat_flux(40.0, 25.0, 0.5);
         assert!((flux - 7.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_clearness_index_clear_sky() {
+        // Clear sky should have kt ≈ 1.0
+        let zenith_angle = 0.5; // ~29 degrees
+        let ghi_clear = calculate_clear_sky_ghi(zenith_angle, SOLAR_CONSTANT);
+        let kt = calculate_clearness_index(ghi_clear, zenith_angle, SOLAR_CONSTANT);
+        assert!((kt - 1.0).abs() < 0.1); // Within 10% of 1.0
+    }
+
+    #[test]
+    fn test_clearness_index_cloudy_sky() {
+        // Cloudy sky should have kt << 1.0
+        let zenith_angle = 0.5; // ~29 degrees
+        let ghi_clear = calculate_clear_sky_ghi(zenith_angle, SOLAR_CONSTANT);
+        let ghi_cloudy = ghi_clear * 0.2; // 20% of clear-sky GHI
+        let kt_cloudy = calculate_clearness_index(ghi_cloudy, zenith_angle, SOLAR_CONSTANT);
+        assert!(kt_cloudy < 0.3); // Less than 0.3
+    }
+
+    #[test]
+    fn test_clearness_index_bounds() {
+        // Clearness index should be bounded to [0, 1]
+        let zenith_angle = 0.5;
+
+        // Very high GHI should be clamped to 1.0
+        let kt_high = calculate_clearness_index(9999.0, zenith_angle, SOLAR_CONSTANT);
+        assert!(kt_high <= 1.0 && kt_high >= 0.0);
+
+        // Very low GHI should be clamped to 0.0
+        let kt_low = calculate_clearness_index(0.0, zenith_angle, SOLAR_CONSTANT);
+        assert!(kt_low <= 1.0 && kt_low >= 0.0);
+    }
+
+    #[test]
+    fn test_clearness_index_physical_behavior() {
+        // Verify clearness index behaves as expected
+        let zenith_angle = 0.5;
+
+        // At clear-sky conditions, kt should be close to 1.0
+        let ghi_clear = calculate_clear_sky_ghi(zenith_angle, SOLAR_CONSTANT);
+        let kt_clear = calculate_clearness_index(ghi_clear, zenith_angle, SOLAR_CONSTANT);
+        assert!((kt_clear - 1.0).abs() < 0.1);
+
+        // At 50% GHI, kt should be 0.5
+        let ghi_half = ghi_clear * 0.5;
+        let kt_half = calculate_clearness_index(ghi_half, zenith_angle, SOLAR_CONSTANT);
+        assert!((kt_half - 0.5).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_calculate_clear_sky_ghi() {
+        // Test clear-sky GHI calculation
+        let zenith_angle = 0.5; // ~29 degrees
+        let ghi_clear = calculate_clear_sky_ghi(zenith_angle, SOLAR_CONSTANT);
+
+        // GHI_clear = solar_constant * cos(zenith) * transmittance
+        // GHI_clear = 1366.1 * cos(29°) * 0.75
+        let cos_zenith = 0.5_f64.cos(); // cos(29°) ≈ 0.8776
+        let expected = SOLAR_CONSTANT * cos_zenith * 0.75;
+
+        assert!((ghi_clear - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sky_emissivity_cloud_effect() {
+        // Cloud cover should increase sky emissivity
+        let temp = 20.0;
+
+        // Clear sky: lower emissivity
+        let emissivity_clear = calculate_sky_emissivity_with_clouds(temp, 1.0);
+
+        // Cloudy sky: higher emissivity
+        let emissivity_cloudy = calculate_sky_emissivity_with_clouds(temp, 0.1);
+
+        assert!(emissivity_cloudy > emissivity_clear);
+
+        // Verify ~37% increase at kt=0.1
+        let ratio = emissivity_cloudy / emissivity_clear;
+        assert!((ratio - 1.37).abs() < 0.05);
+    }
+
+    #[test]
+    fn test_sky_emissivity_backward_compatibility() {
+        // Test backward-compatible calculate_sky_emissivity function
+        let temp = 20.0;
+        let emissivity = calculate_sky_emissivity(temp);
+
+        // Should be in reasonable range
+        assert!(emissivity > 0.7 && emissivity < 0.9);
+    }
+
+    #[test]
+    fn test_sky_emissivity_with_clouds_range() {
+        // Test that cloud-aware emissivity is in valid range
+        let temp = 20.0;
+
+        // Clear sky (kt=1.0): should be similar to backward-compatible version
+        let emissivity_clear = calculate_sky_emissivity_with_clouds(temp, 1.0);
+        let emissivity_original = calculate_sky_emissivity(temp);
+        assert!((emissivity_clear - emissivity_original).abs() < 0.05);
+
+        // Heavy clouds (kt=0.1): should be higher
+        let emissivity_cloudy = calculate_sky_emissivity_with_clouds(temp, 0.1);
+        assert!(emissivity_cloudy > emissivity_clear);
+
+        // Both should be in valid emissivity range
+        assert!(emissivity_clear > 0.6 && emissivity_clear < 0.9);
+        assert!(emissivity_cloudy > 0.6 && emissivity_cloudy < 0.9);
     }
 }

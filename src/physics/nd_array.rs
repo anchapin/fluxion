@@ -194,6 +194,22 @@ impl ContinuousTensor<f64> for NDArrayField {
     fn elementwise_max(&self, other: &Self) -> Self {
         self.zip_with(other, |a, b| a.max(b))
     }
+
+    fn add_assign(&mut self, other: &Self) {
+        self.arr = &self.arr + &other.arr;
+    }
+
+    fn sub_assign(&mut self, other: &Self) {
+        self.arr = &self.arr - &other.arr;
+    }
+
+    fn mul_assign(&mut self, other: &Self) {
+        self.arr = &self.arr * &other.arr;
+    }
+
+    fn div_assign(&mut self, other: &Self) {
+        self.arr = &self.arr / &other.arr;
+    }
 }
 
 impl From<crate::physics::cta::VectorField> for NDArrayField {

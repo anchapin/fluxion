@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Denver",
+    "latitude": 39.7392,
+    "longitude": -104.9903,
+    "elevation": 1655.0,
+    "tmy3_url": "https://energyplus.net/weather-download/usa/co/USA_CO_Denver.Intl.AP.725650_TMY3.zip",
+    "epw_url": "https://energyplus.net/weather-download/usa/co/USA_CO_Denver.Intl.AP.725650_TMY3/USA_CO_Denver.Intl.AP.725650_TMY3.epw",
+    "climate_zone": "5B"
+  },
+  {
+    "name": "Boston",
+    "latitude": 42.3601,
+    "longitude": -71.0589,
+    "elevation": 5.0,
+    "tmy3_url": "https://energyplus.net/weather-download/usa/ma/USA_MA_Boston-Logan.Intl.AP.725045_TMY3.zip",
+    "epw_url": "https://energyplus.net/weather-download/usa/ma/USA_MA_Boston-Logan.Intl.AP.725045_TMY3/USA_MA_Boston-Logan.Intl.AP.725045_TMY3.epw",
+    "climate_zone": "5A"
+  }
+]

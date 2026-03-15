@@ -45,7 +45,7 @@ Case 960 is a multi-zone test case featuring an attached sunspace. It tests the 
   - Heating setpoint: 20°C
   - Cooling setpoint: 27°C
   - Full HVAC capacity (heating + cooling)
-  
+
 - **Sunspace (Zone 1):**
   - Free-floating (no HVAC)
   - Temperature tracks naturally
@@ -175,15 +175,15 @@ fn test_case_960_multizone() {
     let mut validator = ASHRAE140Validator::new();
     let spec = ASHRAE140Case::Case960.spec();
     let results = validator.simulate_case(&spec, &weather);
-    
+
     // Verify back-zone (0) has both heating and cooling
     assert!(results.annual_heating_mwh > 0.0);
     assert!(results.annual_cooling_mwh > 0.0);
-    
+
     // Verify within reference ranges
     assert!(results.annual_heating_mwh >= 1.65 && results.annual_heating_mwh <= 2.45);
     assert!(results.annual_cooling_mwh >= 1.55 && results.annual_cooling_mwh <= 2.78);
-    
+
     // Verify sunspace exists and has no HVAC energy
     assert_eq!(results.hvac_energy_per_zone[1], 0.0); // Zone 1 is free-floating
 }

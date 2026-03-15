@@ -1,0 +1,7 @@
+Case,Component,Energy_MWh
+600,envelope_conduction,4.0952
+600,infiltration,1.8584
+600,solar_gains,0.0000
+600,internal_gains,1.7520
+600,heating,0.0000
+600,cooling,0.0000

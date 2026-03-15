@@ -182,8 +182,6 @@ fn test_heat_flow_symmetry() {
     model_heating.temperatures = VectorField::from_scalar(10.0, model_heating.num_zones);
     model_heating.mass_temperatures = VectorField::from_scalar(10.0, model_heating.num_zones);
     model_heating.set_ground_temp(15.0);
-    // Disable thermal mass energy accounting for symmetry test
-    model_heating.thermal_mass_energy_accounting = false;
 
     // Test cooling scenario
     let mut model_cooling = ThermalModel::<VectorField>::from_spec(&spec);
@@ -192,8 +190,6 @@ fn test_heat_flow_symmetry() {
     model_cooling.temperatures = VectorField::from_scalar(20.0, model_cooling.num_zones);
     model_cooling.mass_temperatures = VectorField::from_scalar(20.0, model_cooling.num_zones);
     model_cooling.set_ground_temp(15.0);
-    // Disable thermal mass energy accounting for symmetry test
-    model_cooling.thermal_mass_energy_accounting = false;
 
     let outdoor_temp = 15.0; // Midpoint temperature
     let steps = 100;

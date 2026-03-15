@@ -71,13 +71,13 @@ jobs:
         run: |
           # Start container in background
           docker run -d --name fluxion-test --pull=never ${{ steps.meta.outputs.tags }} sleep 30
-          
+
           # Wait for container to start
           sleep 5
-          
+
           # Check if container is running
           docker ps | grep fluxion-test
-          
+
           # Stop and remove container
           docker stop fluxion-test
           docker rm fluxion-test

@@ -64,7 +64,7 @@ This document details the implementation of comprehensive ASHRAE 140 validation 
    - Captures all output to text file
    - Continues on test failure (to generate report)
 
-3. **Extract Results** 
+3. **Extract Results**
    - Parses test output with regex patterns
    - Extracts case-by-case results
    - Summarizes statistics (pass rate, MAE, etc.)
@@ -220,6 +220,6 @@ When new ASHRAE 140 cases are added:
 
 ---
 
-**Created**: 2026-02-17  
-**Branch**: feat/issue-241-ashrae-140-ci-integration  
+**Created**: 2026-02-17
+**Branch**: feat/issue-241-ashrae-140-ci-integration
 **Status**: Ready for PR

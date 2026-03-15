@@ -220,6 +220,13 @@ impl DenverTmyWeather {
             humidity,
             horizontal_infrared,
             hour_of_year: hour,
+            ground_temperature: None,
+            horizontal_illuminance: None,
+            diffuse_illuminance: None,
+            snow_depth: None,
+            snow_cover: None,
+            present_weather: None,
+            present_weather_code: None,
         }
     }
 

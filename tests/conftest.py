@@ -1,14 +1,13 @@
 import pytest
-import sys
-from pathlib import Path
 
 
 def pytest_configure(config):
     pytest.fluxion_available = False
     try:
-        import fluxion
+        import importlib.util
 
-        pytest.fluxion_available = True
+        if importlib.util.find_spec("fluxion") is not None:
+            pytest.fluxion_available = True
     except ImportError:
         pass
 

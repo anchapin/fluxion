@@ -7,7 +7,6 @@ Run with: pytest tools/data_gen/test_monte_carlo.py -v
 import os
 import tempfile
 
-import numpy as np
 import pandas as pd
 import pytest
 

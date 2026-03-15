@@ -11,17 +11,15 @@ Supported LLM Backends:
 
 Usage:
     from tools.compliance_agent import CodeComplianceAgent
-    
+
     agent = CodeComplianceAgent(backend="mock")
     result = agent.check_compliance(model_data, standard="ASHRAE90.1")
 """
 
 import json
 import logging
-from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -29,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 class Standard(str, Enum):
     """Supported compliance standards."""
+
     ASHRAE90_1_2019 = "ASHRAE90.1-2019"
     ASHRAE90_1_2022 = "ASHRAE90.1-2022"
     IECC_2021 = "IECC-2021"
@@ -37,6 +36,7 @@ class Standard(str, Enum):
 
 class ComplianceStatus(str, Enum):
     """Compliance check result status."""
+
     COMPLIANT = "COMPLIANT"
     NON_COMPLIANT = "NON_COMPLIANT"
     NEEDS_REVIEW = "NEEDS_REVIEW"
@@ -47,6 +47,7 @@ class ComplianceStatus(str, Enum):
 @dataclass
 class ComplianceRule:
     """Represents a single compliance rule from a standard."""
+
     rule_id: str
     title: str
     description: str
@@ -59,6 +60,7 @@ class ComplianceRule:
 @dataclass
 class ComplianceCheckResult:
     """Result of a single compliance check."""
+
     rule_id: str
     rule_title: str
     status: ComplianceStatus
@@ -71,6 +73,7 @@ class ComplianceCheckResult:
 @dataclass
 class ComplianceReport:
     """Complete compliance report for a building energy model."""
+
     model_name: str
     standard: str
     timestamp: str
@@ -78,7 +81,7 @@ class ComplianceReport:
     checks: List[ComplianceCheckResult]
     summary: Dict[str, int] = field(default_factory=dict)
     metadata: Dict[str, Any] = field(default_factory=dict)
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert report to dictionary."""
         return {
@@ -101,31 +104,33 @@ class ComplianceReport:
             ],
             "metadata": self.metadata,
         }
-    
+
     def to_json(self, indent: int = 2) -> str:
         """Convert report to JSON string."""
         return json.dumps(self.to_dict(), indent=indent)
-    
+
     def print_summary(self) -> str:
         """Generate a human-readable summary."""
         lines = [
-            f"\n{'='*60}",
+            f"\n{'=' * 60}",
             f"COMPLIANCE REPORT: {self.model_name}",
-            f"{'='*60}",
+            f"{'=' * 60}",
             f"Standard: {self.standard}",
             f"Timestamp: {self.timestamp}",
-            f"\nSUMMARY:",
+            "\nSUMMARY:",
             f"  Total Checks: {self.summary.get('total', 0)}",
             f"  Compliant: {self.summary.get('compliant', 0)}",
             f"  Non-Compliant: {self.summary.get('non_compliant', 0)}",
             f"  Needs Review: {self.summary.get('needs_review', 0)}",
             f"  Not Applicable: {self.summary.get('not_applicable', 0)}",
             f"\nOVERALL STATUS: {self.overall_status.value}",
-            f"{'='*60}\n",
+            f"{'=' * 60}\n",
         ]
-        
+
         # Add non-compliant items
-        non_compliant = [c for c in self.checks if c.status == ComplianceStatus.NON_COMPLIANT]
+        non_compliant = [
+            c for c in self.checks if c.status == ComplianceStatus.NON_COMPLIANT
+        ]
         if non_compliant:
             lines.append("NON-COMPLIANT ITEMS:")
             for check in non_compliant:
@@ -134,7 +139,7 @@ class ComplianceReport:
                 if check.recommendation:
                     lines.append(f"    Recommendation: {check.recommendation}")
                 lines.append("")
-        
+
         return "\n".join(lines)
 
 

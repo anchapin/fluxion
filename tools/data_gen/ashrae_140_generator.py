@@ -21,9 +21,9 @@ References:
 import json
 import logging
 import random
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from enum import Enum
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +274,9 @@ class CaseSpec:
                 "glass_type": self.window_properties.glass_type.value,
             },
             "shading": asdict(self.shading) if self.shading else None,
-            "internal_loads": [asdict(l) if l else None for l in self.internal_loads],
+            "internal_loads": [
+                asdict(load) if load else None for load in self.internal_loads
+            ],
             "hvac": [
                 {
                     "heating_setpoint": h.heating_setpoint,
@@ -286,9 +288,9 @@ class CaseSpec:
                 }
                 for h in self.hvac
             ],
-            "night_ventilation": asdict(self.night_ventilation)
-            if self.night_ventilation
-            else None,
+            "night_ventilation": (
+                asdict(self.night_ventilation) if self.night_ventilation else None
+            ),
             "infiltration_ach": self.infiltration_ach,
             "opaque_absorptance": self.opaque_absorptance,
             "num_zones": self.num_zones,

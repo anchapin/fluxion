@@ -127,7 +127,7 @@ GET /compliance/sample
 ## Supported Standards
 
 - **ASHRAE 90.1-2019** - Energy Standard for Buildings
-- **ASHRAE 90.1-2022** - Energy Standard for Buildings  
+- **ASHRAE 90.1-2022** - Energy Standard for Buildings
 - **IECC 2021** - International Energy Conservation Code
 - **IECC 2024** - International Energy Conservation Code
 

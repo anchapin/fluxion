@@ -5,18 +5,18 @@ This module provides an LLM-powered agent that checks building energy models
 for compliance with ASHRAE 90.1 and IECC standards.
 """
 
-from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
+from typing import Any, Dict, Optional
 
 from api.compliance.data_aggregation import (
-    ComplianceMetrics,
     ComplianceDataAggregator,
+    ComplianceMetrics,
     create_sample_metrics,
 )
 from api.compliance.prompt_engine import (
+    CompliancePromptEngine,
     ComplianceStandard,
     ReportFormat,
-    CompliancePromptEngine,
     create_prompt_for_llm,
 )
 from api.compliance.report_generator import (
@@ -29,6 +29,7 @@ from api.compliance.report_generator import (
 @dataclass
 class ComplianceAgentConfig:
     """Configuration for the compliance agent."""
+
     standard: str = "ASHRAE 90.1-2019"
     output_format: str = "markdown"
     electricity_rate: float = 0.12  # $/kWh
@@ -41,22 +42,22 @@ class ComplianceAgentConfig:
 class ComplianceAgent:
     """
     LLM-powered agent for building energy code compliance.
-    
+
     This agent processes building energy simulation results and generates
     human-readable compliance reports using LLM technology.
     """
-    
+
     def __init__(self, config: Optional[ComplianceAgentConfig] = None):
         """
         Initialize the compliance agent.
-        
+
         Args:
             config: Agent configuration
         """
         self.config = config or ComplianceAgentConfig()
         self._standard = self._parse_standard(self.config.standard)
         self._format = self._parse_format(self.config.output_format)
-    
+
     def _parse_standard(self, standard: str) -> ComplianceStandard:
         """Parse standard string to enum."""
         mapping = {
@@ -66,7 +67,7 @@ class ComplianceAgent:
             "IECC 2024": ComplianceStandard.IECC_2024,
         }
         return mapping.get(standard, ComplianceStandard.ASHRAE_90_1_2019)
-    
+
     def _parse_format(self, format: str) -> ReportFormat:
         """Parse format string to enum."""
         mapping = {
@@ -76,7 +77,7 @@ class ComplianceAgent:
             "html": ReportFormat.HTML,
         }
         return mapping.get(format, ReportFormat.MARKDOWN)
-    
+
     def check_compliance(
         self,
         proposed_metrics: ComplianceMetrics,
@@ -84,86 +85,114 @@ class ComplianceAgent:
     ) -> Dict[str, Any]:
         """
         Check compliance with the configured standard.
-        
+
         Args:
             proposed_metrics: Proposed building metrics
             baseline_metrics: Optional baseline metrics
-        
+
         Returns:
             Dictionary with compliance determination and details
         """
-        result = {
+        result: Dict[str, Any] = {
             "compliant": False,
             "standard": self.config.standard,
             "checks": [],
             "summary": "",
         }
-        
+
         # Check if baseline is required
         if self.config.require_baseline and baseline_metrics is None:
-            result["checks"].append({
-                "name": "Baseline Comparison",
-                "status": "FAIL",
-                "message": "Baseline metrics required for compliance check"
-            })
+            result["checks"].append(
+                {
+                    "name": "Baseline Comparison",
+                    "status": "FAIL",
+                    "message": "Baseline metrics required for compliance check",
+                }
+            )
             result["summary"] = "Cannot determine compliance without baseline"
             return result
-        
+
         if baseline_metrics:
             # Energy improvement check
             energy_reduction = (
-                (baseline_metrics.total_energy_kwh - proposed_metrics.total_energy_kwh) /
-                baseline_metrics.total_energy_kwh * 100
-            ) if baseline_metrics.total_energy_kwh > 0 else 0
-            
-            result["checks"].append({
-                "name": "Energy Cost Improvement",
-                "threshold": f">={self.config.min_improvement_percent}%",
-                "actual": f"{energy_reduction:.1f}%",
-                "status": "PASS" if energy_reduction >= self.config.min_improvement_percent else "FAIL",
-            })
-            
+                (
+                    (
+                        baseline_metrics.total_energy_kwh
+                        - proposed_metrics.total_energy_kwh
+                    )
+                    / baseline_metrics.total_energy_kwh
+                    * 100
+                )
+                if baseline_metrics.total_energy_kwh > 0
+                else 0
+            )
+
+            result["checks"].append(
+                {
+                    "name": "Energy Cost Improvement",
+                    "threshold": f">={self.config.min_improvement_percent}%",
+                    "actual": f"{energy_reduction:.1f}%",
+                    "status": (
+                        "PASS"
+                        if energy_reduction >= self.config.min_improvement_percent
+                        else "FAIL"
+                    ),
+                }
+            )
+
             # Unmet hours check
             unmet = proposed_metrics.total_unmet_hours
-            result["checks"].append({
-                "name": "Unmet Hours",
-                "threshold": f"<={self.config.max_unmet_hours}",
-                "actual": f"{unmet:.0f} hours",
-                "status": "PASS" if unmet <= self.config.max_unmet_hours else "FAIL",
-            })
-            
+            result["checks"].append(
+                {
+                    "name": "Unmet Hours",
+                    "threshold": f"<={self.config.max_unmet_hours}",
+                    "actual": f"{unmet:.0f} hours",
+                    "status": (
+                        "PASS" if unmet <= self.config.max_unmet_hours else "FAIL"
+                    ),
+                }
+            )
+
             # Peak demand check
-            peak_heat_ok = proposed_metrics.peak_heating_load_kw <= baseline_metrics.peak_heating_load_kw
-            peak_cool_ok = proposed_metrics.peak_cooling_load_kw <= baseline_metrics.peak_cooling_load_kw
-            
-            result["checks"].append({
-                "name": "Peak Heating Demand",
-                "threshold": "<=Baseline",
-                "actual": f"{proposed_metrics.peak_heating_load_kw:.1f} kW",
-                "status": "PASS" if peak_heat_ok else "FAIL",
-            })
-            
-            result["checks"].append({
-                "name": "Peak Cooling Demand",
-                "threshold": "<=Baseline",
-                "actual": f"{proposed_metrics.peak_cooling_load_kw:.1f} kW",
-                "status": "PASS" if peak_cool_ok else "FAIL",
-            })
-            
+            peak_heat_ok = (
+                proposed_metrics.peak_heating_load_kw
+                <= baseline_metrics.peak_heating_load_kw
+            )
+            peak_cool_ok = (
+                proposed_metrics.peak_cooling_load_kw
+                <= baseline_metrics.peak_cooling_load_kw
+            )
+
+            result["checks"].append(
+                {
+                    "name": "Peak Heating Demand",
+                    "threshold": "<=Baseline",
+                    "actual": f"{proposed_metrics.peak_heating_load_kw:.1f} kW",
+                    "status": "PASS" if peak_heat_ok else "FAIL",
+                }
+            )
+
+            result["checks"].append(
+                {
+                    "name": "Peak Cooling Demand",
+                    "threshold": "<=Baseline",
+                    "actual": f"{proposed_metrics.peak_cooling_load_kw:.1f} kW",
+                    "status": "PASS" if peak_cool_ok else "FAIL",
+                }
+            )
+
             # Calculate cost savings
             cost_savings = (
-                baseline_metrics.annual_energy_cost_usd - proposed_metrics.annual_energy_cost_usd
+                baseline_metrics.annual_energy_cost_usd
+                - proposed_metrics.annual_energy_cost_usd
             )
             result["annual_savings_usd"] = cost_savings
             result["energy_reduction_percent"] = energy_reduction
-            
+
             # Overall compliance
-            all_passed = all(
-                check["status"] == "PASS"
-                for check in result["checks"]
-            )
+            all_passed = all(check["status"] == "PASS" for check in result["checks"])
             result["compliant"] = all_passed
-            
+
             if all_passed:
                 result["summary"] = (
                     f"COMPLIANT: Building meets {self.config.standard} requirements "
@@ -173,9 +202,9 @@ class ComplianceAgent:
             else:
                 failed = [c["name"] for c in result["checks"] if c["status"] == "FAIL"]
                 result["summary"] = f"NON-COMPLIANT: Failed checks: {', '.join(failed)}"
-        
+
         return result
-    
+
     def generate_prompt(
         self,
         proposed_metrics: ComplianceMetrics,
@@ -183,11 +212,11 @@ class ComplianceAgent:
     ) -> Dict[str, Any]:
         """
         Generate an LLM prompt for compliance report generation.
-        
+
         Args:
             proposed_metrics: Proposed building metrics
             baseline_metrics: Optional baseline metrics
-        
+
         Returns:
             Dictionary with system_prompt and user_prompt
         """
@@ -197,12 +226,12 @@ class ComplianceAgent:
             baseline_metrics=baseline_metrics,
             report_format=self._format,
         )
-        
+
         return {
             "system_prompt": template.system_prompt,
             "user_prompt": template.user_prompt_template,
         }
-    
+
     def generate_markdown_report(
         self,
         proposed_metrics: ComplianceMetrics,
@@ -213,14 +242,14 @@ class ComplianceAgent:
     ) -> str:
         """
         Generate a Markdown compliance report.
-        
+
         Args:
             proposed_metrics: Proposed building metrics
             baseline_metrics: Optional baseline metrics
             project_name: Name of the project
             building_name: Name of the building
             building_address: Address of the building
-        
+
         Returns:
             Markdown-formatted compliance report
         """
@@ -232,7 +261,7 @@ class ComplianceAgent:
             building_address=building_address,
             standard=self._standard,
         )
-    
+
     def run(
         self,
         proposed_metrics: ComplianceMetrics,
@@ -241,35 +270,37 @@ class ComplianceAgent:
     ) -> Dict[str, Any]:
         """
         Run the full compliance agent workflow.
-        
+
         Args:
             proposed_metrics: Proposed building metrics
             baseline_metrics: Optional baseline metrics
             llm_client: Optional LLM client for generating natural language reports
-        
+
         Returns:
             Complete results including compliance check, report, and LLM response
         """
-        results = {
+        results: Dict[str, Any] = {
             "compliance": self.check_compliance(proposed_metrics, baseline_metrics),
             "metrics": {
                 "proposed": proposed_metrics,
                 "baseline": baseline_metrics,
             },
         }
-        
+
         # Generate markdown report
-        results["markdown_report"] = self.generate_markdown_report(
+        markdown_report = self.generate_markdown_report(
             proposed_metrics=proposed_metrics,
             baseline_metrics=baseline_metrics,
         )
-        
+        results["markdown_report"] = markdown_report
+
         # Generate LLM prompt
-        results["llm_prompt"] = self.generate_prompt(
+        llm_prompt = self.generate_prompt(
             proposed_metrics=proposed_metrics,
             baseline_metrics=baseline_metrics,
         )
-        
+        results["llm_prompt"] = llm_prompt
+
         # Optionally call LLM
         if llm_client:
             try:
@@ -280,7 +311,7 @@ class ComplianceAgent:
                 results["llm_response"] = response
             except Exception as e:
                 results["llm_error"] = str(e)
-        
+
         return results
 
 
@@ -290,11 +321,11 @@ def create_compliance_agent(
 ) -> ComplianceAgent:
     """
     Convenience function to create a compliance agent.
-    
+
     Args:
         standard: Compliance standard to use
         output_format: Output format (markdown, json)
-    
+
     Returns:
         Configured ComplianceAgent
     """

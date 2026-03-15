@@ -157,13 +157,13 @@ Ventilation schedule:
 pub struct HvacSchedule {
     /// Heating setpoint (°C) by hour of day
     heating_setpoint_by_hour: [f64; 24],
-    
+
     /// Cooling setpoint (°C) by hour of day
     cooling_setpoint_by_hour: [f64; 24],
-    
+
     /// Whether heating is enabled
     heating_enabled: bool,
-    
+
     /// Whether cooling is enabled
     cooling_enabled: bool,
 }
@@ -174,10 +174,10 @@ pub struct HvacSchedule {
 pub struct VentilationSchedule {
     /// Whether ventilation is active by hour of day
     active_by_hour: [bool; 24],
-    
+
     /// Ventilation rate when active (ACH)
     ventilation_rate_ach: f64,
-    
+
     /// Type of ventilation (natural, fan, heat recovery, etc.)
     ventilation_type: VentilationType,
 }
@@ -251,11 +251,11 @@ fn test_case_640_setback() {
     let mut validator = ASHRAE140Validator::new();
     let spec = ASHRAE140Case::Case640.spec();
     let results = validator.simulate_case(&spec, &weather);
-    
+
     // Verify heating is less than baseline (Case 600)
     assert!(results.annual_heating_mwh < 5.71);  // Less than Case 600 max
     assert!(results.annual_heating_mwh >= 2.50); // Within reference
-    
+
     // Verify cooling similar to baseline
     assert!(results.annual_cooling_mwh >= 6.14 && results.annual_cooling_mwh <= 8.45);
 }
@@ -265,10 +265,10 @@ fn test_case_650_night_vent() {
     let mut validator = ASHRAE140Validator::new();
     let spec = ASHRAE140Case::Case650.spec();
     let results = validator.simulate_case(&spec, &weather);
-    
+
     // Verify heating is disabled
     assert_eq!(results.annual_heating_mwh, 0.0);
-    
+
     // Verify cooling is much less than baseline
     assert!(results.annual_cooling_mwh < 6.14);  // Much less than Case 600 min
     assert!(results.annual_cooling_mwh >= 2.50); // Within reference
@@ -279,10 +279,10 @@ fn test_case_950_high_mass_night_vent() {
     let mut validator = ASHRAE140Validator::new();
     let spec = ASHRAE140Case::Case950.spec();
     let results = validator.simulate_case(&spec, &weather);
-    
+
     // Verify heating is disabled
     assert_eq!(results.annual_heating_mwh, 0.0);
-    
+
     // Verify cooling is minimal (high-mass stores coolth well)
     assert!(results.annual_cooling_mwh < 0.92);
     assert!(results.annual_cooling_mwh >= 0.39);

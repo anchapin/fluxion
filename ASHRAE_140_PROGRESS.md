@@ -4,7 +4,7 @@
 
 This document tracks the progress of implementing ASHRAE 140 standard validation into Fluxion. ASHRAE 140 specifies 18 test cases for validating thermal simulation engines.
 
-**Last Updated**: 2026-02-17  
+**Last Updated**: 2026-02-17
 **Target Completion**: 18 cases fully validated
 
 ## Current Status Summary
@@ -292,7 +292,7 @@ Issue #235 (Fixed)
 ## Testing Checklist
 
 - [x] ASHRAE 140 test compiles without errors
-- [x] All 18 cases instantiate successfully  
+- [x] All 18 cases instantiate successfully
 - [x] Peak loads calculated and reported
 - [x] CI workflow syntax validated
 - [x] PR comments format correctly
@@ -322,6 +322,6 @@ Issue #235 (Fixed)
 
 ---
 
-**Created by**: Amp Agent  
-**Timestamp**: 2026-02-17 13:00 UTC  
+**Created by**: Amp Agent
+**Timestamp**: 2026-02-17 13:00 UTC
 **Session**: ASHRAE 140 CI & Validation Enhancements

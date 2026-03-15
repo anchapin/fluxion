@@ -309,11 +309,11 @@ fn test_case_600ff_free_floating() {
     let mut validator = ASHRAE140Validator::new();
     let spec = ASHRAE140Case::Case600FF.spec();
     let results = validator.simulate_case(&spec, &weather);
-    
+
     // Verify no HVAC energy
     assert_eq!(results.annual_heating_mwh, 0.0);
     assert_eq!(results.annual_cooling_mwh, 0.0);
-    
+
     // Verify temperature ranges
     let min_temp = results.min_temp_celsius.unwrap();
     let max_temp = results.max_temp_celsius.unwrap();
@@ -326,19 +326,19 @@ fn test_case_900ff_high_mass_free_floating() {
     let mut validator = ASHRAE140Validator::new();
     let spec = ASHRAE140Case::Case900FF.spec();
     let results = validator.simulate_case(&spec, &weather);
-    
+
     // Verify no HVAC energy
     assert_eq!(results.annual_heating_mwh, 0.0);
     assert_eq!(results.annual_cooling_mwh, 0.0);
-    
+
     // Verify high-mass shows smaller temperature swings
     let min_temp = results.min_temp_celsius.unwrap();
     let max_temp = results.max_temp_celsius.unwrap();
     let range = max_temp - min_temp;
-    
+
     // High-mass should have ~30-40°C range vs 60-80°C for low-mass
     assert!(range < 45.0);
-    
+
     // Verify within reference
     assert!(min_temp >= -6.40 && min_temp <= -1.60);
     assert!(max_temp >= 41.80 && max_temp <= 46.40);
@@ -349,15 +349,15 @@ fn test_case_950ff_night_vent_effectiveness() {
     let mut validator = ASHRAE140Validator::new();
     let spec_base = ASHRAE140Case::Case900FF.spec();
     let spec_vent = ASHRAE140Case::Case950FF.spec();
-    
+
     let results_base = validator.simulate_case(&spec_base, &weather);
     let results_vent = validator.simulate_case(&spec_vent, &weather);
-    
+
     // Night ventilation should reduce peak temperature
     let max_base = results_base.max_temp_celsius.unwrap();
     let max_vent = results_vent.max_temp_celsius.unwrap();
     assert!(max_vent < max_base);
-    
+
     // Verify within references
     assert!(max_vent >= 35.50 && max_vent <= 38.50);
 }

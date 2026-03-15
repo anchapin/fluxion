@@ -2,6 +2,7 @@
 
 # Core tools
 maturin>=1.0,<2.0
+patchelf
 pytest
 
 # Core ML Framework

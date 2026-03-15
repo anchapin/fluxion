@@ -1,6 +1,5 @@
-import pytest
 import numpy as np
-from typing import List
+import pytest
 
 
 @pytest.fixture(scope="module")
@@ -255,7 +254,7 @@ class TestConstruction:
             thickness=0.2,
         )
         construction = fluxion_module.Construction([layer])
-        mass_class = construction.mass_class()
+        _ = construction.mass_class()
         assert hasattr(fluxion_module, "MassClass")
 
     def test_thermal_capacitance_per_area(self, fluxion_module):
@@ -322,7 +321,7 @@ class TestModelCreation:
         model.set_ground_temp(15.0)
         temp_at_0 = model.ground_temperature_at(0)
         assert temp_at_0 == 15.0
-        temp_at_100 = model.ground_temperature_at(100)
+        _ = model.ground_temperature_at(100)
         assert temp_at_0 == 15.0
 
 
@@ -380,9 +379,7 @@ class TestBatchOracle:
         assert all(r >= 0.0 for r in results)
 
     def test_large_population(self, batch_oracle):
-        population = [
-            [1.0 + (i % 40) * 0.1, 20.0, 27.0] for i in range(100)
-        ]
+        population = [[1.0 + (i % 40) * 0.1, 20.0, 27.0] for i in range(100)]
         results = batch_oracle.evaluate_population(population, use_surrogates=False)
 
         assert len(results) == 100
@@ -458,18 +455,12 @@ class TestParameterValidation:
 
 class TestSurrogateLoading:
     def test_load_surrogate_model(self, batch_oracle):
-        import tempfile
-        import os
-
         try:
             batch_oracle.load_surrogate("tests_tmp_dummy.onnx")
         except Exception as e:
             pytest.skip(f"Could not load surrogate model: {e}")
 
     def test_model_load_surrogate(self, model):
-        import tempfile
-        import os
-
         try:
             model.load_surrogate("tests_tmp_dummy.onnx")
         except Exception as e:

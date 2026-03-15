@@ -1,0 +1,43 @@
+# Building Assembly Definitions
+#
+# This file contains predefined building assemblies composed of material layers.
+# Assemblies are loaded from YAML and validated for physical correctness.
+#
+# Structure:
+#   - Each assembly has a name (key) and list of layers
+#   - Each layer specifies material type and thickness
+#   - Material properties are looked up from materials.yaml
+#   - Thermal mass and classification are auto-calculated per ISO 13790 Annex C
+#
+# ISO 13790 Annex C Thermal Mass Classification:
+#   - VeryLight: < 50 kJ/m²K
+#   - Light: 50-150 kJ/m²K
+#   - Medium: 150-260 kJ/m²K
+#   - Heavy: 260-370 kJ/m²K
+#   - VeryHeavy: > 370 kJ/m²K
+
+# Light mass wall for low thermal inertia buildings
+# Typical construction: Concrete + Insulation + Gypsum board
+# Thermal mass: ~195 kJ/m²K (Light)
+light_mass_wall:
+  layers:
+    - material: Concrete
+      thickness: 0.1   # 10 cm concrete
+    - material: Insulation
+      thickness: 0.05   # 5 cm insulation
+    - material: Gypsum
+      thickness: 0.012  # 12 mm gypsum board
+
+# Heavy mass wall for high thermal inertia buildings
+# Typical construction: Brick + Concrete + Insulation + Gypsum
+# Thermal mass: ~480 kJ/m²K (VeryHeavy)
+heavy_mass_wall:
+  layers:
+    - material: Brick
+      thickness: 0.2   # 20 cm brick
+    - material: Concrete
+      thickness: 0.15  # 15 cm concrete
+    - material: Insulation
+      thickness: 0.1   # 10 cm insulation
+    - material: Gypsum
+      thickness: 0.013 # 13 mm gypsum board

@@ -1,0 +1,159 @@
+ruff check...............................................................Passed
+ruff format..............................................................Passed
+black....................................................................Passed
+isort....................................................................Failed
+- hook id: isort
+- files were modified by this hook
+
+Fixing /home/alex/Projects/fluxion/examples/risk_aware_optimization.py
+
+mypy.....................................................................Failed
+- hook id: mypy
+- exit code: 1
+
+examples/risk_aware_optimization.py:314: error: Incompatible default for argument "zone_names" (default has type "None", argument has type "list[Any]")  [assignment]
+examples/risk_aware_optimization.py:314: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+examples/risk_aware_optimization.py:314: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+tools/quantize_model.py:25: error: Incompatible default for argument "op_types_to_quantize" (default has type "None", argument has type "list[Any]")  [assignment]
+tools/quantize_model.py:25: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+tools/quantize_model.py:25: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+tools/benchmark_throughput_gpu.py:12: error: Incompatible default for argument "batch_sizes" (default has type "None", argument has type "list[int]")  [assignment]
+tools/benchmark_throughput_gpu.py:12: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+tools/benchmark_throughput_gpu.py:12: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+tools/benchmark_throughput_gpu.py:116: error: Argument 3 to "benchmark_gpu_crossover" has incompatible type "list[int] | None"; expected "list[int]"  [arg-type]
+tools/benchmark_batch_inference.py:71: error: Incompatible return value type (got "list[dict[str, float]]", expected "dict[Any, Any]")  [return-value]
+tools/train_rl_policy.py:258: error: Incompatible types in assignment (expression has type "Path", variable has type "str")  [assignment]
+tools/train_rl_policy.py:259: error: "str" has no attribute "parent"  [attr-defined]
+tools/train_rl_policy.py:323: error: "str" has no attribute "with_suffix"  [attr-defined]
+tools/train_pinn.py:480: error: Need type annotation for "X"  [var-annotated]
+tools/train_ml_surrogate.py:297: error: Incompatible return value type (got "tuple[Any, Any, Any, dict[str, Any]]", expected "tuple[Any, Any, Any]")  [return-value]
+tools/train_ml_surrogate.py:377: error: Need type annotation for "history"  [var-annotated]
+tools/physics_informed_loss.py:281: error: Function "builtins.any" is not valid as a type  [valid-type]
+tools/physics_informed_loss.py:281: note: Perhaps you meant "typing.Any" instead of "any"?
+tools/physics_informed_loss.py:482: error: any? has no attribute "items"  [attr-defined]
+tools/physics_informed_loss.py:486: error: any? has no attribute "items"  [attr-defined]
+tools/integrate_ml_surrogate_pipeline.py:382: error: Incompatible default for argument "test_data_path" (default has type "None", argument has type "Path")  [assignment]
+tools/integrate_ml_surrogate_pipeline.py:382: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+tools/integrate_ml_surrogate_pipeline.py:382: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+tools/gymnasium_env.py:486: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/gymnasium_env.py:487: error: Cannot determine type of "_solar_radiation"  [has-type]
+tools/gymnasium_env.py:741: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/gymnasium_env.py:744: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/gymnasium_env.py:749: error: Cannot determine type of "_solar_radiation"  [has-type]
+tools/gymnasium_env.py:751: error: Cannot determine type of "_solar_radiation"  [has-type]
+tools/gymnasium_env.py:777: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/gymnasium_env.py:792: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/gymnasium_env.py:793: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/gymnasium_env.py:797: error: Cannot determine type of "_solar_radiation"  [has-type]
+tools/gymnasium_env.py:798: error: Cannot determine type of "_solar_radiation"  [has-type]
+tools/gymnasium_env.py:826: error: Cannot determine type of "_outdoor_temps"  [has-type]
+tools/geometry_extraction.py:542: error: "int" has no attribute "get_pixmap"  [attr-defined]
+tools/geometry_extraction.py:699: error: "None" has no attribute "chat"  [attr-defined]
+tools/geometry_extraction.py:728: error: "None" has no attribute "chat"  [attr-defined]
+tools/ensemble_training.py:232: error: Need type annotation for "history"  [var-annotated]
+tools/ensemble_training.py:403: error: "None" not callable  [misc]
+tools/ensemble_training.py:433: error: Need type annotation for "history"  [var-annotated]
+tools/data_gen/sampler.py:334: error: Argument 1 to "uniform" of "Random" has incompatible type "float | None"; expected "float"  [arg-type]
+tools/data_gen/sampler.py:334: error: Argument 2 to "uniform" of "Random" has incompatible type "float | None"; expected "float"  [arg-type]
+tools/data_gen/sampler.py:338: error: Argument 1 to "gauss" of "Random" has incompatible type "float | None"; expected "float"  [arg-type]
+tools/data_gen/sampler.py:338: error: Argument 2 to "gauss" of "Random" has incompatible type "float | None"; expected "float"  [arg-type]
+tools/data_gen/sampler.py:346: error: Argument 1 to "log" has incompatible type "float | None"; expected "SupportsFloat | SupportsIndex"  [arg-type]
+tools/data_gen/sampler.py:347: error: Argument 1 to "log" has incompatible type "float | None"; expected "SupportsFloat | SupportsIndex"  [arg-type]
+tools/data_gen/sampler.py:351: error: Argument 1 to "triangular" of "Random" has incompatible type "float | None"; expected "float"  [arg-type]
+tools/data_gen/sampler.py:351: error: Argument 2 to "triangular" of "Random" has incompatible type "float | None"; expected "float"  [arg-type]
+tools/data_gen/sampler.py:371: error: Unsupported operand types for + ("None" and "float")  [operator]
+tools/data_gen/sampler.py:371: note: Both left and right operands are unions
+tools/data_gen/sampler.py:371: error: Unsupported operand types for - ("float" and "None")  [operator]
+tools/data_gen/sampler.py:371: error: Unsupported operand types for - ("None" and "float")  [operator]
+tools/data_gen/sampler.py:371: error: Unsupported left operand type for - ("None")  [operator]
+tools/data_gen/sampler.py:375: error: Argument 1 to "log" has incompatible type "float | None"; expected "SupportsFloat | SupportsIndex"  [arg-type]
+tools/data_gen/sampler.py:376: error: Argument 1 to "log" has incompatible type "float | None"; expected "SupportsFloat | SupportsIndex"  [arg-type]
+tools/data_gen/sampler.py:396: error: Unsupported operand types for + ("None" and "float")  [operator]
+tools/data_gen/sampler.py:396: note: Both left and right operands are unions
+tools/data_gen/sampler.py:396: error: Unsupported operand types for - ("float" and "None")  [operator]
+tools/data_gen/sampler.py:396: error: Unsupported operand types for - ("None" and "float")  [operator]
+tools/data_gen/sampler.py:396: error: Unsupported left operand type for - ("None")  [operator]
+tools/data_gen/sampler.py:401: error: Unsupported operand types for - ("float" and "None")  [operator]
+tools/data_gen/sampler.py:401: error: Unsupported operand types for - ("None" and "float")  [operator]
+tools/data_gen/sampler.py:401: error: Unsupported left operand type for - ("None")  [operator]
+tools/data_gen/sampler.py:401: note: Both left and right operands are unions
+tools/data_gen/sampler.py:405: error: Unsupported operand types for + ("None" and "float")  [operator]
+tools/data_gen/sampler.py:405: note: Left operand is of type "float | None"
+tools/data_gen/sampler.py:405: error: Unsupported operand types for - ("float" and "None")  [operator]
+tools/data_gen/sampler.py:405: error: Unsupported operand types for - ("None" and "float")  [operator]
+tools/data_gen/sampler.py:405: error: Unsupported left operand type for - ("None")  [operator]
+tools/data_gen/sampler.py:405: note: Both left and right operands are unions
+tools/data_gen/sampler.py:408: error: Unsupported operand types for - ("None" and "float")  [operator]
+tools/data_gen/sampler.py:408: note: Left operand is of type "float | None"
+tools/data_gen/sampler.py:408: error: Unsupported operand types for - ("float" and "None")  [operator]
+tools/data_gen/sampler.py:408: error: Unsupported left operand type for - ("None")  [operator]
+tools/data_gen/sampler.py:408: note: Both left and right operands are unions
+tools/batch_rl_environment.py:928: error: List item 0 has incompatible type "None"; expected "int"  [list-item]
+tools/batch_rl_environment.py:937: error: Unsupported target for indexed assignment ("None")  [index]
+tools/batch_rl_environment.py:939: error: "None" has no attribute "copy"  [attr-defined]
+tools/batch_rl_environment.py:965: error: Value of type "None" is not indexable  [index]
+tools/batch_rl_environment.py:968: error: Unsupported target for indexed assignment ("None")  [index]
+tools/batch_rl_environment.py:974: error: Unsupported target for indexed assignment ("None")  [index]
+tools/batch_rl_environment.py:1488: error: Dict entry 0 has incompatible type "str": "str"; expected "str": "float"  [dict-item]
+tools/batch_rl_environment.py:1578: error: Incompatible types in assignment (expression has type "float", variable has type "int")  [assignment]
+api/llm.py:101: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/llm.py:102: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/llm.py:218: error: Argument 1 to "append" of "list" has incompatible type "dict[str, list[dict[str, Collection[str]]] | str | None]"; expected "dict[str, str]"  [arg-type]
+api/compliance/data_aggregation.py:255: error: Unsupported target for indexed assignment ("object")  [index]
+api/compliance/data_aggregation.py:262: error: Unsupported target for indexed assignment ("object")  [index]
+api/compliance/data_aggregation.py:270: error: Unsupported target for indexed assignment ("object")  [index]
+api/compliance/data_aggregation.py:388: error: Argument "hourly_heating_loads" to "process_simulation_results" of "ComplianceDataAggregator" has incompatible type "list[int]"; expected "list[float]"  [arg-type]
+api/compliance/data_aggregation.py:388: note: "list" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+api/compliance/data_aggregation.py:388: note: Consider using "Sequence" instead, which is covariant
+api/compliance/data_aggregation.py:389: error: Argument "hourly_cooling_loads" to "process_simulation_results" of "ComplianceDataAggregator" has incompatible type "list[int]"; expected "list[float]"  [arg-type]
+api/compliance/data_aggregation.py:389: note: "list" is invariant -- see https://mypy.readthedocs.io/en/stable/common_issues.html#variance
+api/compliance/data_aggregation.py:389: note: Consider using "Sequence" instead, which is covariant
+tools/data_gen/monte_carlo.py:650: error: Item "None" of "ParameterSampler | None" has no attribute "sample"  [union-attr]
+tools/data_gen/monte_carlo.py:996: error: Need type annotation for "samples" (hint: "samples: list[<type>] = ...")  [var-annotated]
+tools/compliance_agent/demo.py:145: error: Argument 1 to "CodeComplianceAgent" has incompatible type "**dict[str, str]"; expected "float"  [arg-type]
+tools/compliance_agent/demo.py:145: error: Argument 1 to "CodeComplianceAgent" has incompatible type "**dict[str, str]"; expected "int"  [arg-type]
+api/compliance/report_generator.py:373: error: Argument 1 to "generate_report" of "ComplianceReportGenerator" has incompatible type "ReportMetadata"; expected "ComplianceMetrics"  [arg-type]
+tools/data_gen/simulation.py:29: error: Incompatible default for argument "params" (default has type "None", argument has type "dict[Any, Any]")  [assignment]
+tools/data_gen/simulation.py:29: note: PEP 484 prohibits implicit Optional. Accordingly, mypy has changed its default to no_implicit_optional=True
+tools/data_gen/simulation.py:29: note: Use https://github.com/hauntsaninja/no_implicit_optional to automatically upgrade your codebase
+api/compliance/agent.py:105: error: "object" has no attribute "append"  [attr-defined]
+api/compliance/agent.py:130: error: "object" has no attribute "append"  [attr-defined]
+api/compliance/agent.py:145: error: "object" has no attribute "append"  [attr-defined]
+api/compliance/agent.py:166: error: "object" has no attribute "append"  [attr-defined]
+api/compliance/agent.py:175: error: "object" has no attribute "append"  [attr-defined]
+api/compliance/agent.py:193: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+api/compliance/agent.py:203: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable)  [attr-defined]
+api/compliance/agent.py:291: error: Incompatible types in assignment (expression has type "str", target has type "dict[str, Any]")  [assignment]
+api/compliance/agent.py:311: error: Incompatible types in assignment (expression has type "str", target has type "dict[str, Any]")  [assignment]
+api/monitoring.py:94: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/monitoring.py:95: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/monitoring.py:152: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/monitoring.py:153: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/monitoring.py:154: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/monitoring.py:155: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/distributed_inference.py:143: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/distributed_inference.py:154: error: Invalid index type "int" for "dict[str, int]"; expected type "str"  [index]
+api/distributed_inference.py:157: error: Invalid index type "int" for "dict[str, int]"; expected type "str"  [index]
+api/distributed_inference.py:159: error: Invalid index type "int" for "dict[str, int]"; expected type "str"  [index]
+api/distributed_inference.py:196: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/distributed_inference.py:215: error: Invalid index type "int" for "dict[str, int]"; expected type "str"  [index]
+api/distributed_inference.py:218: error: Invalid index type "int" for "dict[str, int]"; expected type "str"  [index]
+api/distributed_inference.py:220: error: Invalid index type "int" for "dict[str, int]"; expected type "str"  [index]
+api/distributed_inference_config.py:14: error: Library stubs not installed for "yaml"  [import-untyped]
+api/distributed_inference_config.py:14: note: Hint: "python3 -m pip install types-PyYAML"
+api/distributed_inference_config.py:14: note: (or run "mypy --install-types" to install all missing stub packages)
+api/distributed_inference_config.py:14: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
+api/main.py:132: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+api/main.py:732: error: Argument "hourly_heating_loads" to "process_simulation_results" of "ComplianceDataAggregator" has incompatible type "list[float] | None"; expected "list[float]"  [arg-type]
+api/main.py:733: error: Argument "hourly_cooling_loads" to "process_simulation_results" of "ComplianceDataAggregator" has incompatible type "list[float] | None"; expected "list[float]"  [arg-type]
+api/main.py:799: error: Incompatible types in assignment (expression has type "float | None", variable has type "float")  [assignment]
+api/main.py:890: error: Incompatible types in assignment (expression has type "float | None", variable has type "float")  [assignment]
+Found 101 errors in 24 files (checked 70 source files)
+
+fix end of files.........................................................Passed
+trim trailing whitespace.................................................Passed
+fmt......................................................................Passed
+cargo check..............................................................Passed
+BatchOracle Pattern Compliance...........................................Passed
+Rust Doc Comments........................................................Passed
+Cargo Audit..............................................................Passed

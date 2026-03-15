@@ -214,7 +214,7 @@ pub thermal_mass_energy_accounting: bool,  // Default: true
 - **When enabled (true)**: HVAC energy = Zone energy load - Thermal mass energy change
   - The mass absorbs heat when there's excess and releases it when needed
   - This is the physically correct behavior for energy reporting
-  
+
 - **When disabled (false)**: HVAC energy = Zone energy load
   - Useful for steady-state HVAC validation where thermal storage effects should not affect the thermal balance
 
@@ -229,7 +229,7 @@ The thermal mass energy accounting is applied in the HVAC energy calculation:
 let hvac_output = hvac_output_raw * self.thermal_mass_correction_factor;
 
 // Track mass temperature change for energy accounting
-let mass_energy_change = self.thermal_capacitance.clone() * 
+let mass_energy_change = self.thermal_capacitance.clone() *
     (self.mass_temperatures.clone() - self.previous_mass_temperatures.clone());
 
 // Net HVAC energy for step (when accounting enabled)

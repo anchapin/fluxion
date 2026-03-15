@@ -8,15 +8,17 @@ import argparse
 import logging
 import os
 import sys
+from typing import Tuple
+
 import numpy as np
 import pandas as pd
-from typing import Tuple
 
 # Setup logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger("fluxion.data_collection")
+
 
 class ASHRAELoader:
     """Loads ASHRAE 140 reference data."""
@@ -39,6 +41,7 @@ class ASHRAELoader:
 
         return df
 
+
 class WeatherDataLoader:
     """Loads EPW weather data."""
 
@@ -53,17 +56,41 @@ class WeatherDataLoader:
 
         # EPW column names (standard subset)
         names = [
-            "Year", "Month", "Day", "Hour", "Minute", "Data Source and Uncertainty Flags",
-            "Dry Bulb Temperature", "Dew Point Temperature", "Relative Humidity",
-            "Atmospheric Station Pressure", "Extraterrestrial Horizontal Radiation",
-            "Extraterrestrial Direct Normal Radiation", "Horizontal Infrared Radiation Intensity",
-            "Global Horizontal Radiation", "Direct Normal Radiation", "Diffuse Horizontal Radiation",
-            "Global Horizontal Illuminance", "Direct Normal Illuminance", "Diffuse Horizontal Illuminance",
-            "Zenith Luminance", "Wind Direction", "Wind Speed", "Total Sky Cover",
-            "Opaque Sky Cover", "Visibility", "Ceiling Height", "Present Weather Observation",
-            "Present Weather Codes", "Precipitable Water", "Aerosol Optical Depth",
-            "Snow Depth", "Days Since Last Snowfall", "Albedo", "Liquid Precipitation Depth",
-            "Liquid Precipitation Quantity"
+            "Year",
+            "Month",
+            "Day",
+            "Hour",
+            "Minute",
+            "Data Source and Uncertainty Flags",
+            "Dry Bulb Temperature",
+            "Dew Point Temperature",
+            "Relative Humidity",
+            "Atmospheric Station Pressure",
+            "Extraterrestrial Horizontal Radiation",
+            "Extraterrestrial Direct Normal Radiation",
+            "Horizontal Infrared Radiation Intensity",
+            "Global Horizontal Radiation",
+            "Direct Normal Radiation",
+            "Diffuse Horizontal Radiation",
+            "Global Horizontal Illuminance",
+            "Direct Normal Illuminance",
+            "Diffuse Horizontal Illuminance",
+            "Zenith Luminance",
+            "Wind Direction",
+            "Wind Speed",
+            "Total Sky Cover",
+            "Opaque Sky Cover",
+            "Visibility",
+            "Ceiling Height",
+            "Present Weather Observation",
+            "Present Weather Codes",
+            "Precipitable Water",
+            "Aerosol Optical Depth",
+            "Snow Depth",
+            "Days Since Last Snowfall",
+            "Albedo",
+            "Liquid Precipitation Depth",
+            "Liquid Precipitation Quantity",
         ]
 
         # Read CSV with pandas, skipping first 8 rows of metadata
@@ -71,11 +98,14 @@ class WeatherDataLoader:
         df = pd.read_csv(filepath, skiprows=8, header=None, names=names)
         return df
 
+
 class DataPreprocessor:
     """Aligns and preprocesses data."""
 
     @staticmethod
-    def process(building_df: pd.DataFrame, weather_df: pd.DataFrame) -> Tuple[np.ndarray, np.ndarray]:
+    def process(
+        building_df: pd.DataFrame, weather_df: pd.DataFrame
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Aligns building and weather data and converts to numpy arrays.
         Returns:
@@ -94,10 +124,17 @@ class DataPreprocessor:
         # Prepare Inputs X: (N, 2)
         # using Dry Bulb Temp and Global Horizontal Radiation
         # Ensure columns exist
-        if 'Dry Bulb Temperature' not in weather_df.columns or 'Global Horizontal Radiation' not in weather_df.columns:
-             raise ValueError("Weather data missing required columns: 'Dry Bulb Temperature' or 'Global Horizontal Radiation'")
+        if (
+            "Dry Bulb Temperature" not in weather_df.columns
+            or "Global Horizontal Radiation" not in weather_df.columns
+        ):
+            raise ValueError(
+                "Weather data missing required columns: 'Dry Bulb Temperature' or 'Global Horizontal Radiation'"
+            )
 
-        X = weather_df[['Dry Bulb Temperature', 'Global Horizontal Radiation']].values.astype(np.float32)
+        X = weather_df[
+            ["Dry Bulb Temperature", "Global Horizontal Radiation"]
+        ].values.astype(np.float32)
 
         # Prepare Outputs y: (N, 10)
         # We need to extract the relevant metric from building_df.
@@ -105,7 +142,7 @@ class DataPreprocessor:
 
         target_col = None
         for col in building_df.columns:
-            if 'Temperature' in col and 'Zone' in col:
+            if "Temperature" in col and "Zone" in col:
                 target_col = col
                 break
 
@@ -125,11 +162,18 @@ class DataPreprocessor:
 
         return X, y
 
+
 def main():
     parser = argparse.ArgumentParser(description="Fluxion Data Collection Tool")
-    parser.add_argument("--ashrae-file", required=True, help="Path to ASHRAE 140 CSV file")
-    parser.add_argument("--weather-file", required=True, help="Path to EPW weather file")
-    parser.add_argument("--out", default="assets/real_building_data.npz", help="Output .npz file path")
+    parser.add_argument(
+        "--ashrae-file", required=True, help="Path to ASHRAE 140 CSV file"
+    )
+    parser.add_argument(
+        "--weather-file", required=True, help="Path to EPW weather file"
+    )
+    parser.add_argument(
+        "--out", default="assets/real_building_data.npz", help="Output .npz file path"
+    )
 
     args = parser.parse_args()
 
@@ -155,6 +199,7 @@ def main():
     except Exception as e:
         logger.error(f"Error: {e}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

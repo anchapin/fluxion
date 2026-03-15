@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Building types for occupancy modeling
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum BuildingType {
     /// Office building
     Office,

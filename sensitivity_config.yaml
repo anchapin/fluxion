@@ -1,0 +1,10 @@
+case_id: "600"
+method: "oat"
+levels: 10
+parameters:
+  - name: "window_u_value"
+    min: 1.0
+    max: 5.0
+  - name: "hvac_setpoint"
+    min: 18.0
+    max: 24.0

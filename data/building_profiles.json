@@ -1,0 +1,81 @@
+{
+  "version": "1.0",
+  "profiles": {
+    "office": {
+      "lighting": {
+        "power_density_w_m2": 10.0,
+        "convective_fraction": 0.2,
+        "radiative_fraction": 0.8
+      },
+      "equipment": [
+        {
+          "equipment_type": "ComputerEquipment",
+          "id": "office-computers",
+          "rated_power_w": 150.0,
+          "count": 50,
+          "radiative_fraction": 0.3,
+          "convective_fraction": 0.7,
+          "mass_coupling_factor": 0.2,
+          "schedule_type": "daily"
+        },
+        {
+          "equipment_type": "ServerRack",
+          "id": "office-servers",
+          "rated_power_w": 500.0,
+          "count": 2,
+          "radiative_fraction": 0.5,
+          "convective_fraction": 0.5,
+          "mass_coupling_factor": 0.8,
+          "schedule_type": "constant"
+        }
+      ],
+      "occupancy": {
+        "max_occupancy": 100.0
+      }
+    },
+    "retail": {
+      "lighting": {
+        "power_density_w_m2": 12.0,
+        "convective_fraction": 0.3,
+        "radiative_fraction": 0.7
+      },
+      "equipment": [
+        {
+          "equipment_type": "GenericEquipment",
+          "id": "pos-systems",
+          "rated_power_w": 200.0,
+          "count": 5,
+          "radiative_fraction": 0.5,
+          "convective_fraction": 0.5,
+          "mass_coupling_factor": 0.5,
+          "schedule_type": "daily"
+        }
+      ],
+      "occupancy": {
+        "max_occupancy": 50.0
+      }
+    },
+    "school": {
+      "lighting": {
+        "power_density_w_m2": 8.0,
+        "convective_fraction": 0.25,
+        "radiative_fraction": 0.75
+      },
+      "equipment": [
+        {
+          "equipment_type": "ComputerEquipment",
+          "id": "classroom-computers",
+          "rated_power_w": 150.0,
+          "count": 30,
+          "radiative_fraction": 0.3,
+          "convective_fraction": 0.7,
+          "mass_coupling_factor": 0.2,
+          "schedule_type": "daily"
+        }
+      ],
+      "occupancy": {
+        "max_occupancy": 200.0
+      }
+    }
+  }
+}
