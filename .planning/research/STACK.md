@@ -1,279 +1,153 @@
-# Technology Stack for ASHRAE 140 Full Compliance
+# Stack Research
 
-**Project:** Fluxion v0.4 - ASHRAE 140 Compliance
-**Researched:** 2026-03-13
-**Overall confidence:** MEDIUM
-
-## Executive Summary
-
-Fluxion currently achieves partial ASHRAE 140 compliance (28.1% pass rate, 18/18 cases fully validated). To achieve FULL compliance, minimal stack additions are required. The existing Rust core (5R1C/6R2C thermal networks, EPW weather parsing, HVAC modeling, solar radiation calculations) provides 95% of needed functionality. Key gaps are: (1) Psychrometric calculations for HVAC equipment verification, (2) Enhanced statistical testing framework for ASHRAE acceptance criteria, (3) Optional Python psychrometric library for cross-validation.
-
-**Recommended approach:** Add minimal, focused Rust psychrometric module (no external dependencies) and leverage existing Python scientific stack (scipy.stats) for statistical validation. Avoid new Rust dependencies where possible to maintain performance characteristics.
+**Domain:** Building Energy Modeling (BEM) - Rust-based Physics Engine with Integration Testing
+**Researched:** 2026-03-15
+**Confidence:** MEDIUM
 
 ## Recommended Stack
 
-### Core Framework (Existing - No Changes Needed)
+### Core Technologies
 
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| **Rust** | Edition 2021 | Physics engine core | Memory safety, zero-cost abstractions, >10K configs/sec throughput required for optimization workloads |
-| **PyO3** | 0.22 | Python bindings | Established FFI bridge, abi3-py310 stability for BatchOracle/Model APIs |
-| **rayon** | 1.10 | Data parallelism | Industry-standard for data parallelism, critical for BatchOracle population-level parallelism |
-| **ort (ONNX Runtime)** | 2.0.0-rc.10 | AI surrogate inference | Thread-safe SessionPool, concurrent inference, GPU backends (CUDA/CoreML) |
-| **ndarray** | 0.16 | Numerical computing | De facto standard for n-dimensional arrays, serde feature for diagnostic output |
-| **faer** | 0.23.2 | Linear algebra | High-performance LA for CTA operations, optimized for scientific computing |
-| **tokio** | 1.40 | Async runtime | Multi-threaded scheduler for concurrent ONNX inference |
+| Technology | Version | Purpose | Why Recommended |
+|------------|---------|---------|-----------------|
+| Rust | 2021 edition | Core language for physics engine | Memory safety, zero-cost abstractions, excellent performance for numerical computing |
+| criterion | 0.5 | Statistical benchmarking framework | Industry standard for Rust benchmarking, provides statistical confidence in detecting performance regressions, supports baseline comparison and variance testing |
+| proptest | 1.5 | Property-based testing | Standard Rust property-based testing library, excels at finding edge cases through random input generation, already in use for thermal invariants |
+| tempfile | 3.10 | Temporary file management | Rust standard for testing with temporary files/directories, essential for E2E tests that need file I/O |
+| approx | 0.5 | Floating-point comparison | Standard for approximate floating-point comparisons in scientific computing, handles NaN/Inf properly |
+| rand | 0.8 | Random number generation | Essential for generating test populations and synthetic data, used in existing benchmarks |
 
-### Required Additions for Full ASHRAE 140 Compliance
-
-| Technology | Version | Purpose | Why Needed |
-|------------|---------|---------|-----------|
-| **Custom Rust Psychrometric Module** | New (src/physics/psychrometrics.rs) | Dewpoint, wetbulb, enthalpy calculations | ASHRAE 140 Cases 195, 236, 237, 470 require HVAC equipment verification with psychrometric properties. Currently missing from codebase. Custom implementation preferred over Rust libraries (none mature enough) to avoid dependency bloat. |
-| **Python scipy.stats** | 1.3+ | Statistical testing for acceptance criteria | ASHRAE 140 requires statistical acceptance criteria (NMBE, CV(RMSE)) for monthly energy validation. Already in requirements-dev.txt, leverage for validation report generation. |
-
-### Existing Weather & Solar (No Changes Needed)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| **EPW Parser** (src/weather/epw.rs) | Built-in | Weather data ingestion | Fully functional TMY3/EPW parsing with DNI/DHI/GHI, humidity, wind speed, horizontal infrared radiation |
-| **Solar Position Calculator** (src/sim/solar.rs) | Built-in | Sun position & insolation | NOAA algorithm implementation for solar altitude/azimuth, incidence angles, shading calculations |
-| **Sky Radiation Model** (src/sim/sky_radiation.rs) | Built-in | Extraterrestrial irradiance | Implements relative airmass and ET irradiance for solar gain calculations |
-
-### Existing HVAC Modeling (No Changes Needed)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| **HVAC System Types** (src/sim/hvac.rs) | Built-in | VAV, CAV, HeatPump, Ideal systems | Full ASHRAE 140 equipment modeling support (VAV terminal reheat, fan power, COP curves) |
-| **Ideal HVAC Controller** (src/sim/engine.rs) | Built-in | Setpoint-based demand calculation | Used for ASHRAE 140 baseline validation (infinite capacity system) |
-
-### Validation Infrastructure (Existing - Minor Enhancements)
-
-| Technology | Version | Purpose | Why |
-|------------|---------|---------|-----|
-| **ASHRAE140Validator** (src/validation/ashrae_140_validator.rs) | Built-in | Multi-reference validation | Supports EnergyPlus, ESP-r, TRNSYS comparison, toleranced pass/warning/fail criteria (±15% annual, ±10% monthly, ±1°C free-float) |
-| **DiagnosticCollector** (src/validation/diagnostic.rs) | Built-in | Hourly trace collection | Temperature profiles, energy breakdowns, peak timing for debugging |
-| **BenchmarkReport** (src/validation/report.rs) | Built-in | Report generation | Markdown/CSV output for CI/CD integration, multi-reference comparison |
-
-### Supporting Libraries (Existing - No Changes Needed)
+### Testing Framework Additions
 
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
-| **scikit-learn** | 1.3+ | ML utilities | Surrogate training, MSE/MAE/R² metrics calculation. Already in requirements-dev.txt. |
-| **pandas** | 2.0+ | Data analysis | Validation result analysis, comparison reports. Already in requirements-dev.txt. |
-| **numpy** | 1.24+ | Numerical computing | Statistical analysis of validation metrics. Already in requirements-dev.txt. |
-| **matplotlib** | 3.7+ | Plotting | Temperature profile visualizations, energy breakdown charts. Already in requirements-dev.txt. |
-| **seaborn** | 0.12+ | Statistical plots | Enhanced visualizations of metrics distribution. Already in requirements-dev.txt. |
+| rstest | 0.25 | Parameterized testing | Table-driven tests, fixtures with parameters, test cases with multiple inputs (already in dev-dependencies, optional in Cargo.toml) |
+| serial_test | 1.0 | Sequential test execution | Prevents race conditions in tests with shared state, useful for parallel test debugging |
+| mockito | 1.7 | HTTP mocking | For integration tests that mock external HTTP services (weather downloads, reference data fetches) |
+| anyhow | 1.0 | Error handling | Already in dependencies, use for test error aggregation and reporting |
 
-## Alternatives Considered
+### Validation Gap Resolution Tools
 
-| Category | Recommended | Alternative | Why Not |
-|----------|-------------|-------------|---------|
-| **Psychrometrics** | Custom Rust module | psychrolib (Python) | Cross-language FFI overhead negates performance gains. Use for cross-validation only. |
-| **Psychrometrics** | Custom Rust module | CoolProp (C++/Python) | Heavy dependency (2MB+), overkill for simple dewpoint/wetbulb/enthalpy. |
-| **Psychrometrics** | Custom Rust module | Rust crates (none mature) | No well-maintained Rust psychrometric libraries available (searched crates.io). |
-| **Statistical Testing** | scipy.stats (Python) | Rust statrs crate | statrs is incomplete (missing NMBE, CV(RMSE) formulas). scipy.stats is industry standard. |
-| **Solar Radiation** | Existing NOAA algorithm | pysolar (Python) | Rust implementation is faster, already validated against ASHRAE 140. |
-| **Weather Parsing** | Existing EPW parser | eppy (Python) | Rust parser is faster, already supports all required EPW fields. |
+| Technology | Version | Purpose | Why Needed |
+|------------|---------|---------|-------------|
+| statrs | 0.18.0 | Statistical computing | Already in dependencies, used for NMBE, CV(RMSE), FDR calculations in validation framework |
+| faer | 0.23.2 | Linear algebra | Already in dependencies, used for thermal network matrix operations and 8R3C evaluations |
+| ndarray | 0.16 | Numerical arrays | Already in dependencies, compatible with CTA VectorField for thermal mass accuracy improvements |
+
+### Development Tools
+
+| Tool | Purpose | Notes |
+|------|---------|-------|
+| cargo test | Built-in test runner | Run unit tests, integration tests, benchmarks |
+| cargo bench | Built-in benchmark runner | Criterion-based benchmarking, uses release profile automatically |
+| cargo flamegraph | Performance profiling | Generate flamegraphs for hot path identification |
+| dhat | Heap profiling | Track memory allocations in hot loops (already in dev-dependencies) |
 
 ## Installation
 
 ```bash
-# Core Rust dependencies (no changes needed - already in Cargo.toml)
-# Existing:
-rayon = "1.10"
-tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time", "macros"] }
-ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
-pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py310"], optional = true }
-ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
-faer = { version = "0.23.2", default-features = false, features = ["std"] }
+# Core testing (already in Cargo.toml)
+cargo test
 
-# NEW: No new Rust dependencies required
+# Property-based testing (already in dev-dependencies)
+cargo test thermal_invariants
 
-# Python dependencies (already in requirements-dev.txt - no changes needed)
-# Existing:
-maturin>=1.0,<2.0
-pytest
-numpy>=1.24.0
-pandas>=2.0.0
-scikit-learn>=1.3.0
-matplotlib>=3.7.0
-seaborn>=0.12.0
-onnx>=1.14.0
-onnxruntime>=1.15.0
+# Benchmarks (already in dev-dependencies)
+cargo bench --bench performance_regression -- --baseline phase10
 
-# NEW: scipy (already in requirements-dev.txt, but ensure version)
-scipy>=1.10.0  # For scipy.stats statistical testing
+# Integration testing additions
+cargo add --dev rstest serial_test
+cargo add --dev mockito # if mocking HTTP services
 
-# OPTIONAL: psychrolib (Python) - for cross-validation only
-# pip install psychrolib
+# For E2E test framework
+# No additional crates needed - use existing:
+# - tempfile for temp file management
+# - approx for floating-point comparison
+# - proptest for property-based testing
 ```
+
+## Alternatives Considered
+
+| Recommended | Alternative | When to Use Alternative |
+|-------------|-------------|-------------------------|
+| criterion | divan | divan provides faster benchmarking but less mature ecosystem, criterion has better CI integration |
+| proptest | quickcheck | quickcheck is older with fewer strategies, proptest has better documentation and more active maintenance |
+| approx | float-cmp | float-cmp is more complex, approx is simpler and sufficient for ASHRAE 140 tolerance bands (±15%) |
+| rstest | test-case | test-case is less maintained, rstest has better async support and fixture composition |
+| tempfile | std::fs::remove_dir_all | Manual cleanup is error-prone, tempfile ensures RAII-style cleanup |
 
 ## What NOT to Use
 
 | Avoid | Why | Use Instead |
 |-------|-----|-------------|
-| **New Rust psychrometric crates** | None are mature or well-maintained (searched crates.io: psychro, hvac, thermodynamic are unmaintained or incomplete). | Custom Rust implementation (src/physics/psychrometrics.rs) with ASHRAE Handbook formulas. |
-| **CoolProp for simple psychrometrics** | Heavy dependency (2MB+), complex C++ build, overkill for dewpoint/wetbulb/enthalpy. | Custom Rust formulas (10-20 lines per property). |
-| **Python psychrometrics in hot loop** | FFI overhead (10-100μs per call) destroys performance for population-level optimization. | Rust implementation for hot path, Python for cross-validation/testing. |
-| **Statistical testing in Rust** | statrs crate lacks ASHRAE-specific metrics (NMBE, CV(RMSE)). | scipy.stats in Python validation scripts. |
-| **External solar radiation libraries** | Existing NOAA algorithm in src/sim/solar.rs is validated against ASHRAE 140. | Leverage existing implementation; add missing interpolation if needed. |
-| **Heavy ML frameworks for statistical testing** | PyTorch/TensorFlow are overkill for NMBE/CV(RMSE) calculations (simple arithmetic). | scipy.stats (lightweight, purpose-built). |
-| **Breaking changes to existing APIs** | Would require v1.0 major version bump, break existing BatchOracle/Model users. | Additive changes only (new psychrometric module, enhanced validation reporting). |
-
-## Psychrometric Module Implementation Plan
-
-**Location:** `src/physics/psychrometrics.rs`
-
-**Required Functions (based on ASHRAE Handbook - Fundamentals):**
-
-```rust
-// Dew point temperature (°C) from dry bulb and relative humidity
-pub fn dew_point_temperature(dry_bulb_c: f64, relative_humidity_percent: f64) -> f64
-
-// Wet bulb temperature (°C) from dry bulb and relative humidity
-// Approximation method (Magnus formula or iterative approach)
-pub fn wet_bulb_temperature(dry_bulb_c: f64, relative_humidity_percent: f64) -> f64
-
-// Specific enthalpy of moist air (kJ/kg) from dry bulb and humidity ratio
-pub fn specific_enthalpy(dry_bulb_c: f64, humidity_ratio_kg_kg: f64) -> f64
-
-// Humidity ratio (kg water/kg dry air) from dry bulb and relative humidity
-pub fn humidity_ratio(dry_bulb_c: f64, relative_humidity_percent: f64) -> f64
-
-// Specific volume of moist air (m³/kg) from dry bulb and humidity ratio
-pub fn specific_volume(dry_bulb_c: f64, humidity_ratio_kg_kg: f64) -> f64
-```
-
-**Rationale:**
-- Zero external dependencies (use std::f64::consts::PI for π, etc.)
-- Implements ASHRAE Handbook Chapter 1 formulas (industry standard)
-- Returns f64 (double precision) for BEM accuracy requirements
-- No complex state, pure functions (easy to test, cacheable)
-
-**Integration Points:**
-- HVAC equipment verification (Cases 195, 236, 237, 470)
-- Coil capacity calculations (heating/cooling at different air conditions)
-- Ventilation load calculations (enthalpy difference between outdoor and indoor air)
-- Supply air temperature setpoint calculations
-
-## Statistical Testing Framework for ASHRAE Acceptance
-
-**Required Metrics (ASHRAE 140 Standard):**
-
-```python
-from scipy import stats
-import numpy as np
-
-# Normalized Mean Bias Error (NMBE)
-def calculate_nmbe(predicted, reference):
-    """ASHRAE Guideline 14 metric for monthly energy validation."""
-    mean_ref = np.mean(reference)
-    mean_diff = np.mean(predicted - reference)
-    return (mean_diff / mean_ref) * 100  # Percentage
-
-# Coefficient of Variation of Root Mean Square Error (CV(RMSE))
-def calculate_cvrmse(predicted, reference):
-    """ASHRAE Guideline 14 metric for monthly energy validation."""
-    mean_ref = np.mean(reference)
-    rmse = np.sqrt(np.mean((predicted - reference) ** 2))
-    return (rmse / mean_ref) * 100  # Percentage
-
-# ASHRAE 140 Acceptance Criteria (Guideline 14)
-# Monthly energy: NMBE ±10%, CV(RMSE) ±30%
-# Annual energy: NMBE ±10%, CV(RMSE) ±20%
-# Peak loads: ±15% tolerance (already implemented)
-
-def ashrae_140_acceptance(predicted_monthly, reference_monthly):
-    nmbe = calculate_nmbe(predicted_monthly, reference_monthly)
-    cvrmse = calculate_cvrmse(predicted_monthly, reference_monthly)
-
-    monthly_pass = (abs(nmbe) <= 10.0) and (abs(cvrmse) <= 30.0)
-
-    # Annual metrics (sum of monthly)
-    predicted_annual = np.sum(predicted_monthly)
-    reference_annual = np.sum(reference_monthly)
-    nmbe_annual = calculate_nmbe(predicted_annual, reference_annual)
-    cvrmse_annual = calculate_cvrmse(predicted_annual, reference_annual)
-    annual_pass = (abs(nmbe_annual) <= 10.0) and (abs(cvrmse_annual) <= 20.0)
-
-    return {
-        'monthly': {'nmbe': nmbe, 'cvrmse': cvrmse, 'pass': monthly_pass},
-        'annual': {'nmbe': nmbe_annual, 'cvrmse': cvrmse_annual, 'pass': annual_pass}
-    }
-```
-
-**Integration:**
-- Add to `tools/ashrae_140_statistics.py`
-- Call from `ASHRAE140Validator` post-validation
-- Enhance `docs/ASHRAE140_RESULTS.md` with NMBE/CV(RMSE) columns
+| custom test frameworks | Reinvents wheel, maintenance burden | Use built-in cargo test + established libraries (criterion, proptest) |
+| assert! for floating-point | Fails due to precision | Use approx::assert_relative_eq with tolerance parameter |
+| manual variance testing | Inconsistent results | Use Criterion's built-in statistical analysis (mean, median, std dev) |
+| hardcoded test data | Doesn't catch edge cases | Use proptest for random generation or rstest for table-driven tests |
+| mockall for HTTP mocking | Overkill for simple cases | Use mockito for HTTP mocks, mockall only if trait mocking needed |
 
 ## Stack Patterns by Variant
 
-**If implementing ASHRAE 140 Cases 195, 236, 237, 470 (HVAC equipment verification):**
-- Add psychrometric calculations to HVAC coil capacity verification
-- Use dew point/wet bulb for condensation risk assessment
-- Calculate enthalpy differences for coil energy transfer rates
-- Because these cases require psychrometric properties currently missing from codebase
+**If testing thermal mass accuracy improvements:**
+- Use proptest with thermal capacitance strategies (LOW_MASS_CONFIG, MEDIUM_MASS_CONFIG, HIGH_MASS_CONFIG)
+- Benchmark with criterion to compare explicit vs implicit integration methods
+- Use statrs for statistical validation metrics (NMBE, CV(RMSE))
 
-**If validating monthly energy against ASHRAE Guideline 14:**
-- Use scipy.stats for NMBE and CV(RMSE) calculation
-- Apply ±10% NMBE and ±30% CV(RMSE) acceptance criteria for monthly
-- Apply ±10% NMBE and ±20% CV(RMSE) for annual
-- Because ASHRAE 140 references ASHRAE Guideline 14 for statistical validation
+**If testing Case 960 sunspace validation:**
+- Use tempfile for temporary weather file generation
+- Use approx::assert_relative_eq with ±15% annual energy tolerance
+- Use rstest for table-driven tests across different shading configurations
 
-**If cross-validating psychrometric calculations:**
-- Use psychrolib (Python) as reference implementation
-- Compare Rust implementation against psychrolib for 0.1°C dewpoint tolerance
-- Run cross-validation only in test suite, not production
-- Because psychrolib is well-vetted but Rust implementation is needed for performance
+**If testing 8R3C thermal network evaluation:**
+- Use faer for matrix operations (eigenvalue decomposition, linear solving)
+- Use ndarray for multi-dimensional thermal state arrays
+- Benchmark against 5R1C baseline using criterion baseline comparison
 
-**If benchmarking performance with psychrometrics:**
-- Profile psychrometric function calls in hot path
-- If >5% of runtime, consider caching/memoization
-- Benchmark with criterion before/after optimization
-- Because psychrometrics should be <1% of total simulation time
+**If testing E2E integration workflow:**
+- Use mockito to mock weather downloads and reference data fetches
+- Use tempfile for temporary simulation output files
+- Use serial_test for tests that share global state or require sequential execution
 
 ## Version Compatibility
 
 | Package A | Compatible With | Notes |
 |-----------|-----------------|-------|
-| Custom psychrometric module | Rust Edition 2021, no external deps | Pure f64 arithmetic, no breaking changes expected |
-| scipy.stats | numpy 1.24+, Python 3.10+ | Already in requirements-dev.txt, tested integration |
-| psychrolib (optional) | Python 3.7+, NumPy | For cross-validation only, not runtime dependency |
-| ASHRAE140Validator | Existing Rust stack | No breaking changes, additive enhancements only |
-| BenchmarkReport | serde 1.0, serde_json 1.0 | Existing serialization, extend with NMBE/CV(RMSE) fields |
+| criterion@0.5 | Rust 2021 edition | Requires stable Rust, no nightly features needed |
+| proptest@1.5 | std library only | No external dependencies, works with all Rust editions |
+| statrs@0.18.0 | faer@0.23.2 | Used together for validation metrics and linear algebra |
+| ndarray@0.16 | faer@0.23.2 | Compatible array types for thermal mass calculations |
+| tempfile@3.10 | Rust 1.70+ | Requires recent std library features |
+
+## Integration Points
+
+### Existing Integration (No Changes Needed)
+- **Validation Framework**: `src/validation/` module with ASHRAE140Validator, already uses statrs
+- **Property-Based Testing**: `tests/thermal_invariants.rs` uses proptest 1.5, no changes needed
+- **Benchmarking**: `benches/performance_regression.rs` uses criterion 0.5, baseline system established
+- **Statistical Validation**: `tests/test_statistical_validation.rs` uses statrs 0.18.0 for NMBE/CV(RMSE)
+
+### New Integration Points for v0.5
+- **E2E Test Framework**: Create `tests/e2e/` directory with tempfile and approx
+- **Integration Test Orchestration**: Use rstest for fixture composition across multiple test modules
+- **Mock Infrastructure**: Add mockito for weather API and reference data service mocking
+- **Test Parallelization**: Use serial_test for sequential execution where needed, rayon for population-level parallelism (already in dependencies)
+
+### Python Integration (No Changes Needed)
+- **PyO3 Bindings**: Already integrated, Python tests in `api/tests/` use pytest
+- **ONNX Runtime**: Already using ort@2.0.0-rc.10, no changes needed for surrogate testing
 
 ## Sources
 
-### Existing Codebase Analysis (HIGH confidence)
-- `/home/alex/Projects/fluxion/src/validation/ashrae_140_validator.rs` - Validation framework, current tolerance bands
-- `/home/alex/Projects/fluxion/docs/ASHRAE140_RESULTS.md` - Current validation status (28.1% pass rate, systematic issues)
-- `/home/alex/Projects/fluxion/src/weather/epw.rs` - EPW parser with humidity, temperature, solar fields
-- `/home/alex/Projects/fluxion/src/sim/hvac.rs` - VAV/CAV/HeatPump/Ideal equipment modeling
-- `/home/alex/Projects/fluxion/src/sim/solar.rs` - Solar position calculator (NOAA algorithm)
-- `/home/alex/Projects/fluxion/Cargo.toml` - Current Rust dependencies
-- `/home/alex/Projects/fluxion/requirements-dev.txt` - Python scientific stack (scipy, numpy, pandas, sklearn)
-
-### Domain Knowledge (MEDIUM confidence - training data, verified by codebase inspection)
-- ASHRAE Handbook - Fundamentals Chapter 1 (psychrometric formulas) - Industry standard for dewpoint, wetbulb, enthalpy calculations
-- ASHRAE Standard 140 validation requirements - Annual (±15%), monthly (±10%), peak loads (±15%), free-float (±1°C)
-- ASHRAE Guideline 14 statistical metrics - NMBE (Normalized Mean Bias Error), CV(RMSE) (Coefficient of Variation of RMSE)
-
-### Verification Notes
-- Web search services were unavailable during research (rate limiting)
-- Recommendations based on:
-  1. Direct codebase inspection (HIGH confidence - verified stack completeness)
-  2. ASHRAE Standard 140 validation requirements (HIGH confidence - documented in project)
-  3. Domain knowledge about BEM validation patterns (MEDIUM confidence - not verified with 2025 sources)
-- No external Rust psychrometric libraries found on crates.io (manual search)
-- scipy.stats is industry standard for statistical testing (verified by presence in requirements-dev.txt)
-
-### Recommended Verification Before Implementation
-- Cross-check psychrometric formulas against ASHRAE Handbook - Fundamentals (2021 edition)
-- Validate scipy.stats NMBE/CV(RMSE) calculations against ASHRAE Guideline 14 examples
-- Benchmark psychrometric module performance (<100ns per call target)
-- Test psychrometric accuracy against psychrolib (0.1°C dewpoint tolerance)
+- [criterion - Rust Documentation](https://docs.rs/criterion/latest/criterion/) - HIGH confidence (official docs)
+- [proptest - Rust Documentation](https://docs.rs/proptest/latest/proptest/) - HIGH confidence (official docs)
+- [The Rust Programming Language - Test Organization](https://doc.rust-lang.org/book/ch11-03-test-organization.html) - HIGH confidence (official docs)
+- [Fluxion Existing Stack](/home/alex/Projects/fluxion/Cargo.toml) - HIGH confidence (actual project configuration)
+- [Fluxion Testing Patterns](/home/alex/Projects/fluxion/.planning/TESTING.md) - HIGH confidence (internal documentation)
+- [Fluxion Contributing Guide](/home/alex/Projects/fluxion/docs/CONTRIBUTING.md) - HIGH confidence (internal documentation)
+- [Fluxion Performance Benchmarks](/home/alex/Projects/fluxion/docs/PERFORMANCE_BENCHMARKS.md) - HIGH confidence (internal documentation)
+- [Fluxion Architecture](/home/alex/Projects/fluxion/docs/ARCHITECTURE.md) - HIGH confidence (internal documentation)
+- [Phase 10 Baseline System](/home/alex/Projects/fluxion/benches/baseline/phase10/README.md) - HIGH confidence (internal documentation)
 
 ---
-*Stack research for: ASHRAE 140 Full Compliance*
-*Researched: 2026-03-13*
+*Stack research for: Building Energy Modeling - Integration Testing & Validation*
+*Researched: 2026-03-15*

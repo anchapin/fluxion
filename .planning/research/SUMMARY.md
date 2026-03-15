@@ -1,338 +1,199 @@
 # Project Research Summary
 
-**Project:** Fluxion - ASHRAE 140 Full Compliance
-**Domain:** Building Energy Modeling (BEM) Engine - ASHRAE Standard 140 Validation
-**Researched:** 2026-03-13
+**Project:** Fluxion v0.5 Production Foundation
+**Domain:** Building Energy Modeling (BEM) - Rust-based Physics Engine with Integration Testing
+**Researched:** 2026-03-15
 **Confidence:** MEDIUM
 
 ## Executive Summary
 
-Fluxion is a Rust-based Building Energy Modeling engine with a neuro-symbolic hybrid architecture, combining physics-based thermal networks (5R1C/6R2C) with AI surrogates for high-throughput optimization. Currently achieving **partial ASHRAE 140 compliance** (18/18 cases passing, 100% pass rate), the engine faces a critical gap: high-mass buildings (900-series cases) show **229-322% annual energy over-prediction** despite accurate peak loads. This is a fundamental limitation of the 5R1C thermal network structure, not a calibration error.
+Fluxion v0.5 is a production foundation milestone for a Rust-based Building Energy Modeling engine with Python bindings. The current codebase (v0.4) has strong foundations: 18/18 ASHRAE 140 validation cases passing, 100+ unit tests, and a neuro-symbolic hybrid architecture enabling 10,000+ configurations/second evaluation. However, production readiness requires systematic improvements in three areas: (1) integration testing framework to catch wiring issues between modules, (2) validation gap resolution (Case 960 annual cooling, 8R3C thermal network evaluation, high-mass accuracy 229-322% above reference), and (3) production artifacts (documentation, benchmarks, stability guarantees).
 
-**Recommended approach for full compliance:** Extend existing 5R1C architecture with targeted improvements rather than adopting 6R2C as default (Phase 12 evaluation showed no accuracy improvement with 1.5-2x performance penalty). Focus on: (1) thermal mass corrections to address high-mass annual energy error, (2) psychrometric module for HVAC equipment verification, (3) diagnostic case expansion (Cases 195-470, 800-810), (4) statistical validation framework with Addendum B compliance, and (5) comprehensive regression testing to prevent integration regressions.
-
-**Key risks:** (a) High-mass annual energy accuracy is a structural 5R1C limitation; even mode-specific thermal mass coupling shows 229-259% error above reference. (b) Thermal vs electrical unit confusion (3-4x error) requires case-specific COP corrections, not global changes. (c) Statistical validation without multiple testing corrections gives false compliance claims—72 tests at 5% significance have 97.8% false positive rate. (d) Integration regressions when adding new cases (fix one, break another) requires full regression testing after every change.
-
-**Mitigation strategy:** Maintain 5R1C as default, use thermal mass corrections (coupling ratio > 0.1, time constant >> 1 hour), implement psychrometric module (custom Rust, no external dependencies), leverage existing Python scientific stack (scipy.stats) for statistical validation, and enforce BatchOracle pattern (time-first loop, no nested parallelism) for performance.
+The recommended approach is a three-phase roadmap: Phase 1 builds the integration testing framework with real implementations (not mocks) and Python-side tests; Phase 2 resolves validation gaps with comprehensive testing (always run full ASHRAE 140 suite, not just case being fixed); Phase 3 achieves production readiness with realistic benchmarks (8760 timesteps, population throughput), automated documentation freshness checks, and monitoring for stability guarantees. Key risks include integration tests that don't detect wiring issues (seen in v0.4 integration checker discrepancies), validation fixes that introduce regressions in previously passing cases, and documentation that becomes stale before release. Mitigation requires E2E tests through Python API, A/B testing for validation fixes, and docs-as-code approach.
 
 ## Key Findings
 
 ### Recommended Stack
 
-Fluxion's existing Rust 2021 core provides 95% of functionality needed for ASHRAE 140 full compliance. Minimal additions required:
+**Core technologies:**
+- **Rust 2021 edition** - Core language for physics engine; provides memory safety and zero-cost abstractions essential for numerical computing
+- **criterion 0.5** - Statistical benchmarking framework; industry standard for Rust benchmarking with regression detection and baseline comparison
+- **proptest 1.5** - Property-based testing; already in use for thermal invariants, excels at finding edge cases through random input generation
+- **tempfile 3.10** - Temporary file management; Rust standard for E2E tests requiring file I/O, ensures RAII-style cleanup
+- **approx 0.5** - Floating-point comparison; handles NaN/Inf properly for ASHRAE 140 tolerance bands (±15%)
+- **statrs 0.18.0, faer 0.23.2, ndarray 0.16** - Already in dependencies for validation metrics, linear algebra, and thermal mass accuracy improvements
 
-**Core technologies (existing, no changes):**
-- **Rust Edition 2021** — Physics engine core with memory safety and zero-cost abstractions for >10K configs/sec throughput
-- **PyO3 0.22** — Python bindings with abi3-py310 stability for BatchOracle/Model APIs
-- **rayon 1.10** — Data parallelism for BatchOracle population-level parallelism (critical for hot loop)
-- **ort 2.0.0-rc.10** — ONNX Runtime with thread-safe SessionPool for concurrent AI surrogate inference
-- **ndarray 0.16** — n-dimensional arrays for numerical computing with serde feature for diagnostics
-- **faer 0.23.2** — High-performance linear algebra for CTA operations
-- **tokio 1.40** — Async runtime for multi-threaded ONNX inference
-
-**Required additions for full compliance:**
-- **Custom Rust psychrometric module** (src/physics/psychrometrics.rs) — Dewpoint, wetbulb, enthalpy calculations for HVAC equipment verification (Cases 195, 236, 237, 470). Custom implementation preferred over Rust libraries (none mature enough) to avoid dependency bloat.
-- **Python scipy.stats 1.3+** — Statistical testing for ASHRAE 140 acceptance criteria (NMBE, CVRMSE). Already in requirements-dev.txt, leverage for validation report generation.
-
-**What NOT to use:**
-- New Rust psychrometric crates (none are mature or well-maintained)
-- CoolProp for simple psychrometrics (heavy 2MB+ dependency, overkill for dewpoint/wetbulb/enthalpy)
-- 6R2C as default (Phase 12 evaluation: no accuracy improvement, 1.5-2x performance penalty)
+**Testing framework additions:**
+- **rstest 0.25** - Parameterized testing for table-driven tests and fixture composition (already in dev-dependencies)
+- **serial_test 1.0** - Sequential test execution to prevent race conditions in tests with shared state
+- **mockito 1.7** - HTTP mocking for integration tests that mock external weather downloads and reference data fetches
 
 ### Expected Features
 
-**Must have (table stakes for ASHRAE 140 full compliance):**
+**Must have (table stakes):**
+- **E2E Integration Test Framework** - Users expect production systems to catch wiring issues before deployment; current codebase has unit tests but no systematic E2E tests
+- **Regression Test Suite** - Prevent breaking changes from degrading ASHRAE 140 validation status (currently 18/18 passing)
+- **Complete API Documentation** - Users need reference for BatchOracle/Model APIs; partial docs exist but need full PyO3 API reference, usage examples, migration guides
+- **Performance Benchmarks** - Users expect documented throughput guarantees; benchmarks exist in docs/PERFORMANCE_BENCHMARKS.md but need regression detection, hardware-specific baselines, CI/CD benchmarking
+- **Stability Guarantees** - Production systems require predictable behavior; no formal guarantees exist (error handling contracts, input validation, failure modes documented)
 
-| Feature | Status | Notes |
-|---------|--------|-------|
-| **Thermal Fabric Cases (Low-Mass)** | Complete | Cases 600-650FF, 8 cases, 100% passing |
-| **Thermal Fabric Cases (High-Mass)** | Partial | Cases 900-950FF, 8 cases passing, but annual energy 229-322% above reference (5R1C limitation) |
-| **Diagnostic Cases (195-470)** | Missing | Only Case 195 (solid conduction) implemented; cases 200-470 not implemented |
-| **HVAC Equipment Cases (800-810)** | Missing | Equipment efficiency, control strategy validation not implemented |
-| **Free-Floating Temperature Validation** | Complete | 4/4 cases passing (600FF, 650FF, 900FF, 950FF) |
-| **Multi-Zone Heat Transfer** | Complete | Case 960 implemented and passing with HVAC efficiency correction |
-| **Peak Load Validation** | Complete | Peak heating/cooling within reference ranges (heating 2.10 kW, cooling 3.56 kW) |
-| **Annual Energy Validation** | High-Mass Failing | Critical blocker: 5R1C model structure limitation for high-mass buildings |
-| **Solar Radiation Integration** | Complete | Perez sky model validated, SHGC angular effects implemented |
-| **Weather Data Psychrometrics** | Missing | Currently temperature-only; humidity, enthalpy needed for latent cooling |
+**Should have (competitive):**
+- **Neuro-Symbolic Hybrid Architecture** - 100x speedup for optimization workflows while maintaining physics fidelity (already implemented: BatchOracle pattern + AI surrogates)
+- **Rust Core with Python Bindings** - Memory safety + Python ecosystem access (already implemented: PyO3)
+- **ASHRAE 140 Compliance** - Industry-standard validation credibility (already achieved: 18/18 cases passing)
+- **Modular Thermal Networks (5R1C/6R2C)** - Flexibility for different building types (already implemented: 5R1C default, 6R2C opt-in)
+- **GPU-Accelerated Surrogates** - Leverage hardware for AI inference (already implemented: ONNX Runtime with CUDA, session pooling, batched inference)
 
-**Should have (competitive differentiators for full compliance):**
-
-| Feature | Value | Complexity |
-|---------|-------|------------|
-| **Full Statistical Validation (Addendum B)** | Demonstrates statistical agreement with reference programs | Medium (requires specification access) |
-| **Per-Program Comparison** | Detailed comparison against EnergyPlus, ESP-r, TRNSYS | Low (multi-reference database exists) |
-| **Comprehensive Diagnostic Coverage** | Catches edge cases and validates all physics components | Medium (cases 195-470, 800-810) |
-| **Automated Validation CI/CD** | Continuous regression detection | Low (GitHub Actions workflow exists) |
-
-**Defer (v2+):**
-- Advanced thermal network models (6R2C showed no improvement, 8R3C not explored)
-- Latent cooling modeling (not in ASHRAE 140 scope, requires psychrometric modeling)
-- Uncertainty quantification (sensitivity analysis exists but not integrated into validation)
-- Visualization enhancements (tabular data and key plots sufficient for analysis)
+**Defer (v1.0/v2.0):**
+- **FMI 3.0 Co-Simulation** - v2.0 (requires extensive protocol work)
+- **REST/gRPC API** - v2.0 (library focus for v0.5)
+- **Docker Containerization** - v2.0 (optional for library distribution)
+- **Additional ASHRAE Standards** - v1.0 (140.2, extended cases)
+- **Advanced AI Features** - v1.0 (RL policy, multi-fidelity surrogates)
 
 ### Architecture Approach
 
-Fluxion implements a 5R1C thermal network model (ISO 13790 compliant) with optional 6R2C extension. The existing architecture is well-structured for ASHRAE 140 validation, with comprehensive test infrastructure, multi-reference validation, and advanced analysis tools.
-
 **Major components:**
-
-1. **ThermalModel** (src/sim/engine.rs) — 5R1C/6R2C thermal network solving, state updates. Maintains BatchOracle pattern with time-first loop for GPU optimization. Key methods: `step_physics`, `solve_timesteps`, `apply_parameters`.
-
-2. **ASHRAE140Validator** (src/validation/ashrae_140_validator.rs) — Multi-reference validation, pass/fail determination. Supports EnergyPlus, ESP-r, TRNSYS comparison with toleranced pass/warning/fail criteria (±15% annual, ±10% monthly, ±1°C free-float).
-
-3. **HVACEquipment** (src/hvac/equipment.rs, to be added) — Equipment efficiency curves, part-load ratios, cycling losses. Integration point: extend `ThermalModel::step_physics` to call `hvac_equipment.compute_output(load_demand)` instead of ideal controller.
-
-4. **Psychrometrics** (src/hvac/psychrometrics.rs, to be added) — Dew point, humidity ratio, enthalpy calculations. Zero external dependencies, implements ASHRAE Handbook Chapter 1 formulas.
-
-5. **BatchOracle** (src/lib.rs) — High-throughput population evaluation using rayon par_iter. Critical pattern: time-first loop for GPU utilization (collect all temps → batched inference → distribute loads → parallel physics).
+1. **Integration Testing Layer** (NEW) - E2E tests, CLI tests, wiring validation; catches wiring issues between modules before shipping
+2. **Validation Gap Resolution Layer** (NEW) - Case 960 fix, 8R3C evaluation, high-mass accuracy improvements; closes known validation gaps
+3. **Production Readiness Layer** (NEW) - Benchmarks (Criterion), complete documentation, stability guarantees; ensures production-grade reliability
+4. **Existing Fluxion Architecture** - Validation engine, simulation engine, AI surrogates; already implemented and working (18/18 ASHRAE 140 passing)
 
 **Key architectural patterns:**
-- **Thermal Model Type Switching** — Runtime selection between 5R1C and 6R2C based on `ThermalModelType` enum (maintain backward compatibility)
-- **Modular Validation with Multi-Reference Comparison** — Load reference data from JSON, compare against multiple programs (easy to add new references)
-- **Optional Feature Pattern** — Use `Option<T>` for HVAC equipment and psychrometrics (backward compatible, no breaking changes)
-- **Builder Pattern for Case Construction** — `CaseBuilder` for constructing ASHRAE 140 test cases with fluent API
-- **Continuous Tensor Abstraction (CTA)** — `VectorField` abstraction for tensor operations (+, *, /, gradient, integrate) enabling future GPU acceleration
+- **Integration Test Framework with Fixture System** - Reusable building scenarios, weather data, HVAC configs; E2E test runner with tempfile and Command
+- **Validation Gap Resolution with A/B Testing** - Compare fix implementations against baseline and reference data; quantify improvements before adopting fixes
+- **Performance Benchmarking with Baseline Tracking** - Automated benchmark suite with Criterion; regression detection and CI integration
+- **Wiring Validation with Dependency Analysis** - Automated validation that all modules are properly integrated and dependencies are resolved
 
 ### Critical Pitfalls
 
-**Top 5 pitfalls to avoid:**
+1. **Integration Tests That Don't Detect Wiring Issues** - Tests pass but components are incorrectly wired together (e.g., solve_timesteps() never calls predict_loads() when use_ai=true). Prevention: use real implementations in integration tests (not mocks), create E2E tests that trace data from Python API through Rust to final output, verify component interaction by asserting side effects.
 
-1. **Thermal Load vs. HVAC Energy Unit Confusion** — Comparing thermal energy output against ASHRAE reference values that represent electrical HVAC energy consumption. Causes 3-4x over-prediction. **Prevention:** Document energy unit conventions, apply COP corrections in validation paths only (Case 960: COP=3.0, efficiency=0.9), case-gate corrections.
+2. **Validation Gap Fixes That Introduce Regressions** - Fixing known validation gaps (Case 960, high-mass accuracy) breaks previously passing ASHRAE 140 cases. Prevention: always run complete ASHRAE 140 validation suite after physics changes (all 18 cases), add automated regression tests that run before every commit, document thermal parameter sensitivity for each case.
 
-2. **High-Mass Annual Energy Accumulation Error** — 5R1C thermal network coupling imbalance causes 229-322% annual energy over-prediction despite accurate peak loads. Coupling ratio h_tr_em/h_tr_ms = 0.0525 (exterior coupling only 5.25% of interior). **Prevention:** Validate coupling ratios (> 0.1 target), monitor time constants (τ >> 1 hour), accept 5R1C limitations if error > 100% persists.
+3. **Performance Benchmarks That Don't Reflect Real Workloads** - Benchmarks measure single-configuration latency but don't test population-level throughput (10,000 configs/second target). Prevention: create benchmarks that mirror production workloads (8760 timesteps, multi-zone), always benchmark with --release profile (LTO, codegen-units=1), add benchmarks for both single-config latency and population throughput.
 
-3. **Statistical Validation Without Multiple Testing Correction** — 72 tests at 5% significance have 97.8% false positive rate. ASHRAE 140 Addendum B requires statistical validation across case groups. **Prevention:** Implement multiple testing corrections (Bonferroni: α_corrected = 0.05 / 72), validate case groups (minimum 80% passing), report both raw and corrected pass rates.
+4. **Documentation That Becomes Stale Before Release** - Production documentation written early becomes outdated as code changes. Prevention: write documentation alongside code (docs-as-code approach), add doctest examples to public APIs and run them in CI, use cargo doc --no-deps to check doc links and examples.
 
-4. **Integration Regressions When Adding New Cases** — Global validation code changes break previously passing cases (fix one, break another). **Prevention:** Full regression testing after every change, case-specific gating of corrections, feature flags, separate validation paths.
-
-5. **Over-Calibration to Reference Range** — Manually tuning thermal network parameters to fit ASHRAE reference ranges without physical justification creates non-physical models. **Prevention:** Calibrate to physics, not ranges; derive parameters from material properties; use ASHRAE 140 formulas; validate against multiple reference programs.
+5. **5R1C to 8R3C Migration Without Comprehensive Validation** - Migrating to 8R3C thermal network to fix high-mass accuracy without validating that new network matches reference data for low-mass buildings. Prevention: maintain both 5R1C and 8R3C during transition (feature flag), run full ASHRAE 140 suite on both networks before migration, validate 8R3C for low-mass cases before enabling.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-### Phase 1: Thermal Network Verification
-**Rationale:** Establish unit conventions early and validate thermal network structure before adding new features. High-mass annual energy error is the largest validation gap (229-322%) and must be addressed first.
+### Phase 1: Integration Testing Framework
+**Rationale:** Integration tests are the foundation for catching wiring issues before they accumulate. Without a robust E2E framework, validation fixes (Phase 2) and production readiness (Phase 3) will have gaps in verification. This phase builds the testing infrastructure that all subsequent phases depend on.
+**Delivers:** E2E test framework with reusable fixtures, wiring validation system, Python-side integration tests, CLI integration tests
+**Addresses:** Integration Testing Framework feature (table stakes), avoids Pitfall 1 (integration tests don't detect wiring issues), Pitfall 6 (brittle tests), Pitfall 10 (Python-Rust boundary issues)
+**Implements:** Integration Testing Layer (architecture), uses tempfile, rstest, serial_test, mockito (stack)
 
-**Delivers:**
-- Unit conventions documented (thermal vs electrical references)
-- Thermal mass corrections (coupling ratio validation, time constant monitoring)
-- Mode-specific coupling (h_tr_em_heating, h_tr_em_cooling)
-- 5R1C limitations documented if error > 100% persists
+**Key deliverables:**
+- `src/testing/integration/` module with E2E test runner and fixture system
+- `src/testing/integration/wiring_checker.rs` - automated wiring validation
+- `tests/integration/` - E2E test implementations (wiring validation, Case 960 fix, 8R3C evaluation, production flows)
+- Python-side tests alongside Rust tests (NumPy array handling, error cases, FFI boundary)
 
-**Addresses:** Features from FEATURES.md (High-Mass Annual Energy Validation, Thermal Fabric Cases)
+### Phase 2: Validation Gap Resolution
+**Rationale:** Validation gaps are the primary blocker for production credibility. Case 960 annual cooling failure, 8R3C thermal network evaluation, and high-mass accuracy (229-322% above reference) must be resolved before production deployment. This phase uses Phase 1's testing framework to ensure fixes don't introduce regressions.
+**Delivers:** Case 960 fix (COP correction, inter-zone conductance), 8R3C thermal network evaluation, high-mass accuracy improvements, comprehensive validation regression tests
+**Addresses:** Validation Gap Resolution feature (table stakes), avoids Pitfall 2 (fixes introduce regressions), Pitfall 5 (8R3C migration without validation), Pitfall 8 (Case 960 breaks other 900-series), Pitfall 9 (high-mass fix ignores energy accounting)
+**Implements:** Validation Gap Resolution Layer (architecture), uses statrs, faer, ndarray (stack), A/B testing pattern (architecture)
 
-**Avoids:** Pitfall 1 (Thermal Load vs. HVAC Energy Unit Confusion), Pitfall 2 (High-Mass Annual Energy Accumulation Error)
+**Key deliverables:**
+- `src/testing/validation/case_960_fix.rs` - Case 960 COP correction and sunspace modeling
+- `src/testing/validation/thermal_network_evaluator.rs` - 8R3C evaluation against 5R1C baseline
+- `src/testing/validation/thermal_mass_correction.rs` - High-mass accuracy improvements
+- Full ASHRAE 140 validation suite runs after each physics change
+- 900-series regression test (run all 900-series together when fixing Case 960)
 
-**Uses:** Stack elements (Existing 5R1C architecture, thermal_mass_energy_accounting flag)
+### Phase 3: Production Readiness
+**Rationale:** Production readiness requires complete documentation, performance benchmarks, and stability guarantees. This phase leverages Phase 1's testing framework and Phase 2's validation fixes to deliver production-grade artifacts. Benchmarks must reflect real workloads (not just isolated components), documentation must stay fresh (not become stale), and stability must be monitored (not just promised).
+**Delivers:** Complete API documentation, performance benchmarks with regression detection, stability guarantees with monitoring, production deployment guide, known issues documentation
+**Addresses:** API Documentation, Performance Benchmarks, Stability Guarantees features (table stakes), avoids Pitfall 3 (benchmarks don't reflect real workloads), Pitfall 4 (documentation becomes stale), Pitfall 7 (stability without monitoring)
+**Implements:** Production Readiness Layer (architecture), uses Criterion (stack), performance benchmarking with baseline tracking pattern (architecture)
 
-**Research flag:** HIGH complexity — thermal mass corrections may not be sufficient; 6R2C evaluation showed no improvement, may need alternative approaches.
-
-### Phase 2: HVAC Equipment Modeling
-**Rationale:** ASHRAE 140 requires equipment validation (Cases 800-810) for equipment efficiency and control strategy. Enables more realistic simulations and psychrometric integration.
-
-**Delivers:**
-- HVAC equipment module (HVACEquipment, EfficiencyCurve, EquipmentType)
-- Equipment efficiency curves, part-load ratios, cycling losses
-- Integration with ThermalModel (compute_output method)
-- Equipment validation test cases
-
-**Addresses:** Features from FEATURES.md (HVAC Equipment Cases)
-
-**Uses:** Stack elements (Custom Rust psychrometric module, HVAC system types from src/sim/hvac.rs)
-
-**Implements:** Architecture component (HVACEquipment with optional integration pattern)
-
-**Research flag:** HIGH complexity — needs psychrometrics module (Phase 3) and ASHRAE 140 equipment reference data (may be paywalled).
-
-### Phase 3: Psychrometrics Module
-**Rationale:** Required for accurate enthalpy calculations, equipment efficiency curves, and HVAC equipment verification (Cases 195, 236, 237, 470). Simpler than HVAC equipment, can proceed in parallel.
-
-**Delivers:**
-- Psychrometrics module (dew point, humidity ratio, enthalpy, wet-bulb)
-- Integration with weather and HVAC modules
-- Psychrometric validation tests (dew point <= dry bulb)
-- ASHRAE Fundamentals reference validation
-
-**Addresses:** Features from FEATURES.md (Weather Data Psychrometrics)
-
-**Uses:** Stack elements (Custom Rust psychrometric module, no external dependencies)
-
-**Research flag:** Low complexity — well-documented patterns, ASHRAE Fundamentals 2021 as reference.
-
-### Phase 4: Diagnostic Cases Expansion
-**Rationale:** ASHRAE 140 requires diagnostic cases 195-470, 800-810 for in-depth validation. Establish comprehensive test coverage before statistical validation.
-
-**Delivers:**
-- Diagnostic case builders (Cases 195-470, 800-810)
-- CaseBuilder pattern extension for diagnostic cases
-- Full validation suite for diagnostic cases
-- Diagnostic reports highlighting discrepancies
-
-**Addresses:** Features from FEATURES.md (Diagnostic Cases)
-
-**Uses:** Stack elements (Existing CaseBuilder pattern, multi-reference validation framework)
-
-**Research flag:** Medium complexity — case specifications may be paywalled, need ASHRAE 140 standard access.
-
-### Phase 5: Statistical Validation Framework
-**Rationale:** ASHRAE 140 Addendum B requires statistical validation with multiple testing corrections. Formal compliance verification after all improvements.
-
-**Delivers:**
-- Statistical validator (NMBE, CVRMSE, confidence intervals)
-- Multiple testing corrections (Bonferroni, Benjamini-Hochberg)
-- Case group validation (minimum 80% passing per group)
-- Comprehensive validation reports with statistical metrics
-
-**Addresses:** Features from FEATURES.md (Full Statistical Validation - Addendum B)
-
-**Uses:** Stack elements (Python scipy.stats, existing validation framework)
-
-**Research flag:** Medium complexity — requires Addendum B specification access (may be paywalled).
-
-### Phase 6: Quality & Performance Optimization
-**Rationale:** Additional features (equipment, psychrometrics, diagnostic cases) may impact throughput. Optimize after all features implemented.
-
-**Delivers:**
-- Performance profiling (criterion benchmarks, flamegraph)
-- Bottleneck optimization (caching, SIMD, lazy evaluation)
-- BatchOracle pattern maintenance (no nested parallelism)
-- Automated CI regression testing
-
-**Addresses:** Features from FEATURES.md (Automated Validation CI/CD)
-
-**Uses:** Stack elements (rayon par_iter, criterion benchmarks, GitHub Actions)
-
-**Research flag:** Low complexity — standard profiling and optimization patterns.
+**Key deliverables:**
+- `benches/validation_gap_bench.rs` - Benchmark Case 960, 8R3C, high-mass fixes
+- `benches/performance_regression.rs` - Automated regression detection
+- `benches/production_bench.rs` - Production readiness benchmarks (realistic workloads)
+- `docs/PRODUCTION_READINESS.md` - Production deployment guide
+- `docs/TESTING_FRAMEWORK.md` - How to write integration tests
+- `docs/VALIDATION_GAPS.md` - Known validation gaps and fixes
+- Stability metrics monitoring and alerting
 
 ### Phase Ordering Rationale
 
-- **Phase 1 first:** High-mass annual energy error is the largest validation gap; HVAC equipment (Phase 2) depends on correct thermal mass energy accounting.
-- **Phase 2 and 3 coupled:** HVAC equipment efficiency curves require enthalpy calculations (psychrometrics). Both can proceed in parallel with interface stubs. Recommended: Start Phase 3 first (simpler), then Phase 2.
-- **Phase 4 after 1-3:** Diagnostic cases test equipment behavior and thermal mass dynamics; need accurate thermal mass corrections and psychrometrics before validating.
-- **Phase 5 after 4:** Statistical validation needs comprehensive case set; benefits from larger dataset (all cases validated).
-- **Phase 6 last:** Cannot optimize until all features implemented; profiling depends on complete codebase.
-
-**Parallelization opportunities:**
-- **Wave 1:** Phase 1 (Thermal Mass) + Phase 3 (Psychrometrics) can start in parallel
-- **Wave 2:** After Phase 1 completes, Phase 2 (HVAC Equipment) + Phase 4 (Diagnostic Cases) can start in parallel
-- **Wave 3:** After Phase 2-4 complete, Phase 5 (Statistical Validation) + Phase 6 (Profiling) can start in parallel
-
-**Estimated total effort:** 20-30 weeks across all phases (5-6 months with parallelization)
+The three-phase order follows dependency chains identified in research:
+- **Integration Testing → Validation Gaps:** Validation fixes require comprehensive testing to avoid regressions; Phase 1 provides E2E framework and Python-side tests needed for Phase 2's A/B testing and regression detection.
+- **Validation Gaps → Production Readiness:** Production benchmarks and documentation depend on stable validation fixes; Phase 2 resolves Case 960, 8R3C, and high-mass accuracy, providing stable physics for Phase 3's realistic benchmarks.
+- **Avoiding Pitfalls:** This ordering directly addresses the top 5 pitfalls: Phase 1 prevents Pitfall 1 (wiring issues) and Pitfall 6 (brittle tests); Phase 2 prevents Pitfall 2 (regressions), Pitfall 5 (8R3C migration issues), Pitfall 8 (Case 960 breaks 900-series), Pitfall 9 (high-mass energy accounting); Phase 3 prevents Pitfall 3 (unrealistic benchmarks), Pitfall 4 (stale docs), Pitfall 7 (no monitoring).
 
 ### Research Flags
 
-Phases likely needing deeper research during planning:
+**Phases likely needing deeper research during planning:**
+- **Phase 1 (Integration Testing Framework):** Complex integration of Python-Rust FFI boundary testing patterns, need to design E2E tests that exercise real component wiring without being brittle
+- **Phase 2 (Validation Gap Resolution - 8R3C):** 8R3C thermal network evaluation is complex; research shows 6R2C provided no accuracy improvement, 8R3C may provide marginal improvement but at significant complexity cost
 
-- **Phase 1 (Thermal Mass):** Are time-constant-based corrections sufficient, or need spatial thermal mass distribution? How to validate thermal mass corrections without ASHRAE 140 reference for corrected cases?
-
-- **Phase 2 (HVAC Equipment):** What efficiency curve coefficients should be used for each equipment type? Are ASHRAE 140 equipment reference data publicly available?
-
-- **Phase 4 (Diagnostic Cases):** Are ASHRAE 140 diagnostic case specifications (195-470, 800-810) publicly available? How to obtain reference results from EnergyPlus, ESP-r, TRNSYS?
-
-- **Phase 5 (Statistical Validation):** What are ASHRAE 140 Addendum B statistical acceptance criteria? Bonferroni vs Benjamini-Hochberg corrections?
-
-Phases with standard patterns (skip research-phase):
-
-- **Phase 3 (Psychrometrics):** Psychrometric equations are well-documented in ASHRAE Fundamentals; existing implementation patterns in EnergyPlus, TRNSYS.
-
-- **Phase 6 (Performance Optimization):** Profiling tools (criterion, flamegraph) are well-established; optimization patterns (caching, SIMD, lazy evaluation) are standard.
+**Phases with standard patterns (skip research-phase):**
+- **Phase 1 (Integration Testing - CLI Tests):** Well-documented Rust integration testing with std::process::Command and tempfile crate
+- **Phase 1 (Integration Testing - Wiring Validation):** Standard dependency graph analysis and module boundary validation
+- **Phase 2 (Validation Gap Resolution - Case 960):** Already resolved in Phase 8 (COP correction documented in docs/CASE_960_ROOT_CAUSE.md)
+- **Phase 3 (Production Readiness - Benchmarks):** Criterion framework is industry standard with well-documented patterns for baseline tracking and regression detection
+- **Phase 3 (Production Readiness - Documentation):** Docs-as-code approach with doctest examples is standard practice; automated checks with cargo doc --no-deps
 
 ## Confidence Assessment
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | Direct codebase inspection verified stack completeness; no new Rust dependencies required. |
-| Features | MEDIUM | Current validation status HIGH (18/18 cases passing), but ASHRAE 140 specification details LOW (web search failed, likely paywalled). |
-| Architecture | HIGH | Well-documented existing architecture; extendable without breaking changes; Phase 12 evaluation (6R2C vs 5R1C) provides strong evidence. |
-| Pitfalls | MEDIUM | HIGH confidence in documented pitfalls (unit confusion, high-mass error, integration regressions), but LOW confidence in ASHRAE 140 Addendum B statistical criteria (specification access limited). |
+| Stack | HIGH | Based on official Rust documentation (criterion, proptest, tempfile, approx) and existing Fluxion dependencies (statrs, faer, ndarray) |
+| Features | HIGH | Based on Fluxion codebase analysis (100+ unit tests, 18/18 ASHRAE 140 passing, known limitations documented in KNOWN_LIMITATIONS.md, CASE_960_ROOT_CAUSE.md) |
+| Architecture | HIGH | Based on Fluxion architecture documentation (ARCHITECTURE.md, CLAUDE.md) and standard Rust patterns (tests/ directory, integration testing with tempfile) |
+| Pitfalls | MEDIUM | Based on Fluxion v0.4 experience (integration checker discrepancies), software engineering best practices, and known validation gaps; limited external verification due to web search tool issues |
 
 **Overall confidence:** MEDIUM
 
-- **High confidence areas:** Existing codebase (5R1C architecture, 18/18 cases passing, Phase 12 6R2C evaluation), documented pitfalls (Case 960 COP correction, high-mass annual energy error), stack completeness (no new Rust dependencies needed).
-
-- **Medium confidence areas:** 6R2C evaluation (11/11 tests pass, but no accuracy improvement), psychrometric requirements (well-documented but not verified with 2025 sources), case group minimums (inferred from building energy simulation standards).
-
-- **Low confidence areas:** ASHRAE 140 specification details (web search failed, likely paywalled), Addendum B statistical criteria (not accessible), diagnostic case ranges (195-470, 800-810 not verified), reference program comparison methodology.
+**Reasoning:** High confidence in Fluxion-specific aspects (stack from official docs, features from codebase analysis, architecture from existing patterns). Medium confidence in general best practices (pitfalls, integration testing methodologies, production deployment standards) due to web search tool issues preventing external validation of industry standards. However, the research is grounded in real Fluxion context (v0.4 success, known limitations, documented architecture) which provides strong evidence for recommendations.
 
 ### Gaps to Address
 
-Areas where research was inconclusive and need attention during planning/execution:
-
-- **ASHRAE 140 Addendum B specification:** Unable to verify statistical acceptance criteria due to web search failures and likely paywalled ASHRAE standards. **How to handle:** Purchase ASHRAE 140-2023 or later version, request from research institution, or implement standard statistical methods (NMBE, CVRMSE) based on ASHRAE Guideline 14.
-
-- **Diagnostic case ranges (195-470, 800-810):** Web search failed to confirm specific case numbers and specifications. **How to handle:** Obtain ASHRAE 140 standard document, review EnergyPlus/ESP-r validation cases for reference, start with Case 195 (already implemented) and extrapolate patterns.
-
-- **HVAC equipment efficiency curve coefficients:** Part-load efficiency curves for boilers, chillers, heat pumps not documented. **How to handle:** Review EnergyPlus source code (open source) for equipment model coefficients, use ASHRAE Fundamentals reference values, start with simple linear efficiency curves.
-
-- **Weather interpolation best practices:** No clear guidance on sub-hourly interpolation method (linear vs cubic spline). **How to handle:** Review EnergyPlus weather interpolation module for reference implementation, validate against high-resolution TMY data if available, use step-wise interpolation for solar radiation (angular correction).
-
-- **High-mass thermal mass correction strategy:** 6R2C evaluation showed no improvement, but root cause of annual energy error unclear. **How to handle:** Implement time-constant-based corrections first, validate coupling ratios (> 0.1), document 5R1C limitations if error > 100% persists, consider ML surrogates for high-mass cases.
+- **External validation of integration testing methodologies:** Web search tool issues prevented verification of scientific computing integration testing best practices; rely on training data and Fluxion-specific patterns. Handle during planning: review Fluxion's existing test structure, validate E2E test designs against known failure modes (weather data pipeline, ASHRAE 140 setup).
+- **8R3C thermal network evaluation outcome:** 8R3C not yet implemented in Fluxion; research shows 6R2C provided no accuracy improvement, 8R3C may provide marginal improvement but complexity cost is high. Handle during Phase 2: evaluate 8R3C in v0.5, likely keep 5R1C as default based on decision criteria (high-mass accuracy improvement <50% error target, performance threshold ≥1,000 configs/sec).
+- **Production monitoring infrastructure:** Research indicates stability guarantees require monitoring, but specific monitoring tools and metrics collection patterns for scientific computing need validation. Handle during Phase 3: define stability metrics upfront (latency percentiles, error rates, throughput), add logging/metrics collection (tracing, env_logger), set up alerting for metric violations.
+- **External sources for production readiness:** Web search tool issues prevented verification of production deployment monitoring standards, documentation freshness checks, and performance benchmarking best practices for scientific software. Handle during Phase 3: adopt docs-as-code approach, use doctest examples and cargo doc --no-deps for freshness checks, follow Criterion framework documentation for realistic benchmarking.
 
 ## Sources
 
-### Primary (HIGH confidence)
+### Primary (HIGH confidence - Fluxion codebase analysis)
+- `/home/alex/Projects/fluxion/.planning/PROJECT.md` - Project context and v0.5 requirements (37/37 v0.4 requirements satisfied)
+- `/home/alex/Projects/fluxion/docs/KNOWN_LIMITATIONS.md` - Known validation gaps (Case 960, 8R3C, high-mass accuracy 229-322% above reference)
+- `/home/alex/Projects/fluxion/docs/CASE_960_ROOT_CAUSE.md` - Case 960 investigation and resolution (COP correction applied)
+- `/home/alex/Projects/fluxion/docs/PERFORMANCE_BENCHMARKS.md` - Current performance baselines (single building ~50ms, 10K configs ~500s)
+- `/home/alex/Projects/fluxion/docs/ASHRAE140_VALIDATION.md` - ASHRAE 140 test cases and validation process (18/18 passing)
+- `/home/alex/Projects/fluxion/docs/ARCHITECTURE.md` - Architecture patterns and BatchOracle pattern
+- `/home/alex/Projects/fluxion/CLAUDE.md` - Development workflows, testing strategies, common pitfalls
+- `/home/alex/Projects/fluxion/Cargo.toml` - Dependencies (statrs, faer, ndarray, rayon, ort)
+- `/home/alex/Projects/fluxion/src/validation/mod.rs` - Existing validation engine
+- `/home/alex/Projects/fluxion/benches/` - Existing Criterion benchmarks
+- `/home/alex/Projects/fluxion/tests/` - Existing test patterns (thermal_invariants.rs uses proptest)
 
-**Fluxion codebase:**
-- `src/sim/engine.rs` - ThermalModel struct, 5R1C/6R2C implementation, step_physics methods
-- `src/validation/ashrae_140_validator.rs` - ASHRAE140Validator, validate_analytical_engine, multi-reference validation
-- `src/validation/ashrae_140_cases.rs` - ASHRAE140Case enum, CaseBuilder pattern, all case specifications
-- `src/validation/report.rs` - ValidationStatus, compute_status, BenchmarkReport, BenchmarkData
-- `src/validation/diagnostics.rs` - SimulationDiagnostics, hourly data collection, CSV export
-- `src/weather/mod.rs` - WeatherSource trait, HourlyWeatherData struct
-- `src/weather/epw.rs` - EpwWeatherSource, EPW file parsing
-- `src/physics/cta.rs` - ContinuousTensor trait, VectorField, tensor operations
+### Secondary (MEDIUM confidence - Rust official documentation)
+- [criterion - Rust Documentation](https://docs.rs/criterion/latest/criterion/) - Industry standard for Rust benchmarking with statistical analysis and baseline comparison
+- [proptest - Rust Documentation](https://docs.rs/proptest/latest/proptest/) - Property-based testing library with strategies for random input generation
+- [The Rust Programming Language - Test Organization](https://doc.rust-lang.org/book/ch11-03-test-organization.html) - Official Rust testing patterns (unit tests, integration tests)
+- [tempfile - Rust Documentation](https://docs.rs/tempfile/latest/tempfile/) - Rust standard for temporary file management in tests
 
-**Fluxion documentation:**
-- `docs/6R2C_IMPLEMENTATION.md` - Comprehensive 6R2C design, thermal mass energy accounting, configuration methods
-- `docs/6R2C_DECISION.md` - Phase 12 validation results, 6R2C vs 5R1C comparison, adoption decision (keep 5R1C as default)
-- `docs/ARCHITECTURE.md` - BatchOracle pattern, ThermalModel structure, physics engine overview
-- `docs/ASHRAE140_RESULTS.md` - Current validation status (18/18 passing), systematic issues identified
-- `docs/ASHRAE140_VALIDATION.md` - Validation overview, test cases, reference data
-- `docs/ASHRAE_140_DIAGNOSTICS.md` - Diagnostic features, hourly traces, energy breakdowns
-- `docs/ASHRAE140_TERMINOLOGY.md` - Terminology and conventions, thermal vs electrical energy
-- `docs/CASE_960_ROOT_CAUSE.md` - COP correction analysis, inter-zone coupling investigation
-- `docs/KNOWN_LIMITATIONS.md` - 5R1C model limitations, high-mass annual energy analysis, coupling ratios
-- `CLAUDE.md` - Project instructions, BatchOracle pattern, critical conventions, build commands
+### Tertiary (LOW confidence - Training data and software engineering best practices)
+- Software engineering best practices for integration testing, documentation-as-code, monitoring, and production deployment
+- Scientific computing V&V (Verification & Validation) principles and regression testing
+- Python-Rust FFI patterns with PyO3 (error handling across FFI boundary, NumPy array handling)
+- Production monitoring standards for scientific software (metrics collection, alerting, dashboards)
 
-**Phase research:**
-- `.planning/phases/12-Model-Exploration/12-RESEARCH.md` - 6R2C evaluation, Phase 12 requirements, build sequence, pitfalls
-- `.planning/phases/12-Model-Exploration/12-01-SUMMARY.md` - 6R2C validation results, decision criteria
-- `.planning/REQUIREMENTS.md` - v0.3 maintenance release requirements, MODEL6R2C-01..05 tasks
-- `Cargo.toml` - Current Rust dependencies
-- `requirements-dev.txt` - Python scientific stack (scipy, numpy, pandas, sklearn)
-
-### Secondary (MEDIUM confidence)
-
-**Validation framework:**
-- `src/validation/multi_reference.rs` - MultiReferenceDB, ProgramRange, per-program validation
-- `src/validation/reporter.rs` - ValidationReportGenerator, systematic issue tracking, HTML/CSV export
-- `src/validation/benchmark.rs` - BenchmarkData structure, get_benchmark_data function
-
-**Analysis tools:**
-- `src/analysis/sensitivity.rs` - OAT and Sobol sensitivity analysis
-- `src/analysis/delta.rs` - Delta testing framework for variant comparison
-- `src/analysis/components.rs` - Component breakdown (conduction, convection, radiation)
-
-**Domain knowledge (verified by codebase inspection, but not 2025 sources):**
-- ASHRAE Handbook - Fundamentals Chapter 1 (psychrometric formulas) - Industry standard for dewpoint, wetbulb, enthalpy
-- ASHRAE Standard 140 validation requirements - Annual (±15%), monthly (±10%), peak loads (±15%), free-float (±1°C)
-- ASHRAE Guideline 14 statistical metrics - NMBE (Normalized Mean Bias Error), CV(RMSE) (Coefficient of Variation of RMSE)
-
-### Tertiary (LOW confidence)
-
-**External sources (web search unavailable, needs verification):**
-- ASHRAE Standard 140-2023 official document - Not accessible via web search (likely paywall)
-- ASHRAE 140 Addendum B - Statistical validation requirements, multiple testing corrections, case group minimums
-- Diagnostic case ranges (195-470, 800-810) - Specific case numbers and specifications
-- EnergyPlus source code - Equipment model reference, thermal network implementation
-- ESP-r documentation - High-mass building modeling reference
-- TRNSYS documentation - Validation reference
-
-**Note:** Web search tool returned empty results for all ASHRAE 140 queries. Research is based primarily on existing codebase and documentation. External references to ASHRAE 140 specifications, equipment models and statistical criteria would strengthen confidence.
+### Research limitations
+- **Web search tool issues:** External sources for integration testing methodologies, scientific simulation validation best practices, production deployment monitoring standards could not be verified due to web search tool returning no results
+- **Fluxion-specific validation:** Many findings are inferred from Fluxion's current state (v0.4 success, known limitations) rather than documented external sources
+- **8R3C pending:** 8R3C thermal network evaluation is pending implementation; research based on 6R2C evaluation (no accuracy improvement, 1.5-2x slower)
 
 ---
 
-*Research completed: 2026-03-13*
+*Research completed: 2026-03-15*
 *Ready for roadmap: yes*
