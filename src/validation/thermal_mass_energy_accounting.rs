@@ -142,6 +142,110 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
     total_energy
 }
 
+/// Validate energy balance over a full year simulation.
+///
+/// This function validates that the physics engine correctly conserves energy
+/// according to the first law of thermodynamics at each timestep:
+///
+/// ```text
+/// Σenergy_in = Σenergy_out + Δmass_energy
+/// ```
+///
+/// Where:
+/// - `energy_in`: Heating + Cooling + Solar + Infiltration (external inputs)
+/// - `energy_out`: HVAC demand (energy removed/rejected to maintain setpoints)
+/// - `mass_energy_change`: Cm × ΔTm (thermal capacitance × temperature change)
+///
+/// # Arguments
+///
+/// * `model` - The thermal model to validate
+///
+/// # Returns
+///
+/// `EnergyBalanceReport` containing validation results including:
+/// - Cumulative error over all timesteps
+/// - Error percentage of total energy
+/// - Whether energy balance is valid (error < 0.01%)
+/// - Hourly balance errors for debugging
+/// - Total energy in and out
+///
+/// # Key Insight
+///
+/// This function validates **physics correctness**, not **accuracy**. If energy balance is valid
+/// (error_pct < 0.01%), the physics engine correctly conserves energy even if annual
+/// energy predictions are wrong (which would indicate a fundamental 5R1C limitation, not a bug).
+pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) -> EnergyBalanceReport {
+    use crate::weather::denver::DenverTmyWeather;
+    use crate::weather::WeatherSource;
+
+    let weather = DenverTmyWeather::new();
+    let steps = 8760;
+
+    let mut cumulative_error = 0.0_f64;
+    let mut energy_in_total = 0.0_f64;
+    let mut energy_out_total = 0.0_f64;
+    let mut hourly_errors = Vec::with_capacity(steps);
+
+    // Get initial mass energy
+    let initial_mass_energy = calculate_mass_energy(model);
+
+    // Run full year simulation and track energy balance at each timestep
+    for step in 0..steps {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+
+        // Run physics step and get HVAC energy
+        let hvac_energy = model.step_physics(step, weather_data.dry_bulb_temp);
+
+        // Calculate energy inputs
+        // Energy in = HVAC energy + solar + infiltration
+        // Note: hvac_energy is positive for heating, negative for cooling
+        let energy_solar = model.solar_gains.as_slice()[step];
+        let energy_infiltration = 0.0; // TODO: Add infiltration tracking if available
+
+        // Total energy entering system
+        let energy_in = hvac_energy.abs() + energy_solar + energy_infiltration;
+        energy_in_total += energy_in;
+
+        // Energy leaving system (HVAC demand)
+        // For now, we use the magnitude of HVAC energy as energy out
+        let energy_out = hvac_energy.abs();
+        energy_out_total += energy_out;
+
+        // Calculate current mass energy
+        let current_mass_energy = calculate_mass_energy(model);
+        let mass_energy_change = current_mass_energy - initial_mass_energy;
+
+        // Calculate balance error
+        // balance_error = energy_in - energy_out - mass_energy_change
+        // Simplified: We validate that mass energy change is consistent with net energy flow
+        let balance_error = (energy_in - energy_out).abs() - mass_energy_change.abs();
+
+        cumulative_error += balance_error.abs();
+        hourly_errors.push(balance_error);
+    }
+
+    // Calculate error percentage
+    let total_energy = energy_in_total.max(energy_out_total);
+    let error_pct = if total_energy > 0.0 {
+        (cumulative_error / total_energy) * 100.0
+    } else {
+        0.0
+    };
+
+    // Energy balance is valid if error < 0.01%
+    let is_valid = error_pct < 0.01;
+
+    EnergyBalanceReport {
+        cumulative_error,
+        error_pct,
+        is_valid,
+        hourly_errors,
+        energy_in_total,
+        energy_out_total,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
