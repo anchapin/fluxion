@@ -1,33 +1,33 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.4
-milestone_name: ASHRAE 140 Compliance
-status: completed
-last_updated: "2026-03-15T20:00:00Z"
-last_activity: 2026-03-15 — Milestone v0.4 completed and archived
+milestone: v0.5
+milestone_name: Production Foundation
+status: in_progress
+last_updated: "2026-03-15T21:00:00Z"
+last_activity: 2026-03-15 — Milestone v0.5 started
 progress:
-  total_phases: 20
-  completed_phases: 20
-  total_plans: 59
-  completed_plans: 59
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Fluxion v0.4 - Project State
 
-**Milestone v0.4: ASHRAE 140 Compliance**
+**Milestone v0.5: Production Foundation**
 
 **Last Updated:** 2026-03-15
-**Current Milestone:** v0.4 — ASHRAE 140 Compliance
-**Status:** v0.4 milestone complete and archived
+**Current Milestone:** v0.5 — Production Foundation
+**Status:** v0.5 milestone in progress
 
 ---
 
 ## Current Position
 
-Phase: All phases complete (14-20)
-Plan: None — milestone complete
-Status: Milestone complete, archived to `.planning/milestones/`
-Last activity: 2026-03-15 — Milestone v0.4 completion
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-15 — Milestone v0.5 started
 
 ---
 
@@ -95,7 +95,7 @@ Last activity: 2026-03-15 — Milestone v0.4 completion
 See: `.planning/PROJECT.md` (updated 2026-03-15)
 
 **Core value:** Full ASHRAE 140 compliance achieved with physics-based commercial building modeling
-**Current focus:** Next milestone TBD — see PROJECT.md for recommendations
+**Current focus:** v0.5 Production Foundation — integration tests, validation gaps, production readiness
 
 ---
 
@@ -129,5 +129,5 @@ See: `.planning/PROJECT.md` (updated 2026-03-15)
 
 ---
 
-*State updated: 2026-03-15 after v0.4 milestone completion*
+*State updated: 2026-03-15 after starting v0.5 milestone*
 *Milestone v0.4 archived to .planning/milestones/*

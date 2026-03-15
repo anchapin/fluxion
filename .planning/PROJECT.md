@@ -30,9 +30,11 @@ Shipped 2026-03-15. Thermal network verification complete (PHYS-01, PHYS-04, PHY
 
 ### Active
 
-**None** — All v0.4 requirements satisfied.
-
-**Next milestone TBD — see PROJECT.md for recommendations**
+**v0.5 — Production Foundation** (TBD — requirements to be defined):
+- Integration testing framework
+- Validation gap resolution
+- Production readiness artifacts
+- v1.0 roadmap documentation
 
 ### Out of Scope
 
@@ -82,26 +84,28 @@ Items deferred to v2.0 (future major release):
 
 ---
 
+## Current Milestone: v0.5 Production Foundation
+
+**Goal:** Comprehensive production readiness with integration tests, validation gap resolution, and stability guarantees.
+
+**Target features:**
+- Integration testing framework with E2E tests to catch wiring issues before shipping
+- Validation gap resolution: Case 960 fix, 8R3C thermal network evaluation, high-mass accuracy improvements
+- Production readiness: complete documentation, performance benchmarks, stability guarantees
+- v1.0 roadmap documentation (optional/nice-to-have)
+
+**Critical must-haves:**
+- Integration tests (E2E tests for wiring issues)
+- Validation gaps (Case 960, 8R3C, high-mass accuracy)
+- Production readiness (docs, benchmarks, stability)
+
+---
+
 ## Next Milestone Goals (v1.0 - Planning)
 
-The following areas are recommended for v1.0, pending stakeholder prioritization:
+The following areas are planned for v1.0 after v0.5 foundation:
 
-**1. Resolve Integration Checker Discrepancies**
-- Investigate and resolve partial integration findings for weather and statistical features
-- Align verification criteria between integration checker and phase verification reports
-- Ensure all exported features are demonstrably wired in production code
-
-**2. Address Residual Validation Gaps**
-- Investigate any remaining ASHRAE 140 case failures not covered in v0.4
-- Consider whether 8R3C thermal network evaluation (PHYS-06) needs additional work
-- Evaluate high-mass building annual energy predictions for potential improvements
-
-**3. Production Readiness**
-- Resolve integration gaps to ensure all features are production-ready
-- Consider adding more comprehensive integration tests
-- Evaluate need for additional documentation or API polish
-
-**4. Future v2.0 Planning**
+**1. Future v2.0 Planning**
 - FMI 3.0 co-simulation integration
 - Production deployment features (REST/gRPC API, Docker)
 - Extended ASHRAE standard coverage
@@ -154,4 +158,4 @@ This section records architectural and process decisions made during v0.4.
 
 ---
 
-*Last updated: 2026-03-15 after v0.4 milestone*
+*Last updated: 2026-03-15 after starting v0.5 milestone*
