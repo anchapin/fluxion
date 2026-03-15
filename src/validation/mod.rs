@@ -1,3 +1,4 @@
+pub mod ab_testing;
 pub mod analyzer;
 pub mod ashrae_140;
 pub mod ashrae_140_cases;
@@ -17,8 +18,11 @@ pub mod physics_validator;
 pub mod report;
 pub mod reporter;
 pub mod statistical;
+pub mod thermal_mass;
+pub mod thermal_mass_energy_accounting;
 
 // Re-export common types
+pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetworkVariant};
 pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
 pub use ashrae_140_validator::{validate_case_with_diagnostics, ASHRAE140Validator};
 pub use config::{validate_assembly, validate_constants, ConfigValidationResult, ValidationError};
@@ -52,6 +56,7 @@ pub use report::{
     ValidationStatus, ValidationSuite,
 };
 pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerator};
+pub use thermal_mass_energy_accounting::{calculate_mass_energy, EnergyBalanceReport};
 
 #[cfg(test)]
 mod tests {

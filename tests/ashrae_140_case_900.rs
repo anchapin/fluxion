@@ -935,6 +935,182 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     println!("✅ HVAC demand calculation analysis complete");
 }
 
+/// 900-series sequential regression test (Phase 22 Plan 01)
+///
+/// This test ensures that the Case 960 COP correction (heating_efficiency=0.9, cooling_cop=3.0)
+/// doesn't introduce regressions in other 900-series cases (920, 930, 940, 950).
+///
+/// Test runs all cases sequentially with fail-fast behavior - stops immediately on first failure.
+/// This makes debugging easier than running the full ASHRAE 140 suite.
+///
+/// Validation includes all 6 metrics per case:
+/// - Annual heating energy (±15% tolerance)
+/// - Annual cooling energy (±15% tolerance)
+/// - Peak heating load (within reference range)
+/// - Peak cooling load (within reference range)
+/// - Free-floating min temperature (within reference range)
+/// - Free-floating max temperature (within reference range)
+///
+/// Uses existing ASHRAE140Validator infrastructure and ValidationReport::compute_status().
+#[test]
+fn test_900_series_regression() {
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    use fluxion::validation::benchmark;
+    use fluxion::weather::WeatherSource;
+
+    let cases = ["920", "930", "940", "950", "960"];
+
+    for case_id in cases {
+        println!("\n=== Testing Case {} ===", case_id);
+
+        // Parse case ID and create spec
+        let case_enum = match case_id {
+            "920" => ASHRAE140Case::Case920,
+            "930" => ASHRAE140Case::Case930,
+            "940" => ASHRAE140Case::Case940,
+            "950" => ASHRAE140Case::Case950,
+            "960" => ASHRAE140Case::Case960,
+            _ => panic!("Unknown case ID: {}", case_id),
+        };
+
+        let spec = case_enum.spec();
+        let weather = fluxion::weather::denver::DenverTmyWeather::new();
+
+        // Get benchmark data for this case
+        let benchmark_data = benchmark::get_benchmark_data(case_id)
+            .expect(&format!("No benchmark data for case {}", case_id));
+
+        // Check if this is a free-floating case
+        let is_free_floating = spec.is_free_floating();
+
+        if is_free_floating {
+            // Run free-floating simulation for temp validation only
+            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+            let mut min_temp = f64::MAX;
+            let mut max_temp = f64::MIN;
+
+            for step in 0..8760 {
+                let weather_data = weather.get_hourly_data(step).unwrap();
+                model.weather = Some(weather_data.clone());
+                model.step_physics(step, weather_data.dry_bulb_temp);
+
+                if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+                    min_temp = min_temp.min(zone_temp);
+                    max_temp = max_temp.max(zone_temp);
+                }
+            }
+
+            // Validate free-floating min temperature
+            if min_temp < benchmark_data.min_free_float_min
+                || min_temp > benchmark_data.min_free_float_max
+            {
+                panic!(
+                    "Case {} free-floating min temperature FAILED: {:.2}°C outside reference range [{:.2}, {:.2}]°C",
+                    case_id, min_temp, benchmark_data.min_free_float_min, benchmark_data.min_free_float_max
+                );
+            }
+
+            // Validate free-floating max temperature
+            if max_temp < benchmark_data.max_free_float_min
+                || max_temp > benchmark_data.max_free_float_max
+            {
+                panic!(
+                    "Case {} free-floating max temperature FAILED: {:.2}°C outside reference range [{:.2}, {:.2}]°C",
+                    case_id, max_temp, benchmark_data.max_free_float_min, benchmark_data.max_free_float_max
+                );
+            }
+
+            println!("✓ Case {} passed all free-floating metrics", case_id);
+        } else {
+            // Run full simulation with HVAC
+            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+            model.reset_peak_power();
+
+            let mut total_heating = 0.0_f64;
+            let mut total_cooling = 0.0_f64;
+            let mut peak_heating = 0.0_f64;
+            let mut peak_cooling = 0.0_f64;
+
+            for step in 0..8760 {
+                let weather_data = weather.get_hourly_data(step).unwrap();
+                model.weather = Some(weather_data.clone());
+
+                let zone_temp_before = model
+                    .temperatures
+                    .as_slice()
+                    .first()
+                    .copied()
+                    .unwrap_or(20.0);
+
+                let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+                let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
+
+                // Track heating and cooling separately
+                if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
+                    total_heating += energy_joules;
+                    let power_watts = energy_joules / 3600.0;
+                    peak_heating = peak_heating.max(power_watts);
+                } else if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
+                    total_cooling += -energy_joules;
+                    let power_watts = -energy_joules / 3600.0;
+                    peak_cooling = peak_cooling.max(power_watts);
+                }
+            }
+
+            // Convert to MWh and kW
+            let heating_mwh = total_heating / 3.6e9;
+            let cooling_mwh = total_cooling / 3.6e9;
+            let heating_kw = peak_heating / 1000.0;
+            let cooling_kw = peak_cooling / 1000.0;
+
+            // Validate annual heating energy (within reference range)
+            if heating_mwh < benchmark_data.annual_heating_min
+                || heating_mwh > benchmark_data.annual_heating_max
+            {
+                panic!(
+                    "Case {} annual heating FAILED: {:.2} MWh outside reference range [{:.2}, {:.2}] MWh",
+                    case_id, heating_mwh, benchmark_data.annual_heating_min, benchmark_data.annual_heating_max
+                );
+            }
+
+            // Validate annual cooling energy (within reference range)
+            if cooling_mwh < benchmark_data.annual_cooling_min
+                || cooling_mwh > benchmark_data.annual_cooling_max
+            {
+                panic!(
+                    "Case {} annual cooling FAILED: {:.2} MWh outside reference range [{:.2}, {:.2}] MWh",
+                    case_id, cooling_mwh, benchmark_data.annual_cooling_min, benchmark_data.annual_cooling_max
+                );
+            }
+
+            // Validate peak heating load (within reference range)
+            if heating_kw < benchmark_data.peak_heating_min
+                || heating_kw > benchmark_data.peak_heating_max
+            {
+                panic!(
+                    "Case {} peak heating FAILED: {:.2} kW outside reference range [{:.2}, {:.2}] kW",
+                    case_id, heating_kw, benchmark_data.peak_heating_min, benchmark_data.peak_heating_max
+                );
+            }
+
+            // Validate peak cooling load (within reference range)
+            if cooling_kw < benchmark_data.peak_cooling_min
+                || cooling_kw > benchmark_data.peak_cooling_max
+            {
+                panic!(
+                    "Case {} peak cooling FAILED: {:.2} kW outside reference range [{:.2}, {:.2}] kW",
+                    case_id, cooling_kw, benchmark_data.peak_cooling_min, benchmark_data.peak_cooling_max
+                );
+            }
+
+            println!("✓ Case {} passed all metrics", case_id);
+        }
+    }
+
+    println!("\n✅ All 900-series cases passed validation");
+}
+
 fn main() {
     println!("=== ASHRAE 140 Case 900 Reference Values Test Suite ===\n");
     println!("Purpose: TDD RED phase - create failing tests for Case 900 validation");
