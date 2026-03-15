@@ -9,8 +9,8 @@ Requirements for v0.5 Production Foundation milestone. Each maps to roadmap phas
 
 ### Integration Testing Framework (INTEG)
 
-- [ ] **INTEG-01**: User can run E2E integration tests that validate full system workflows
-- [ ] **INTEG-02**: Integration test framework provides reusable test fixtures for building scenarios, weather data, HVAC configs
+- [x] **INTEG-01**: User can run E2E integration tests that validate full system workflows
+- [x] **INTEG-02**: Integration test framework provides reusable test fixtures for building scenarios, weather data, HVAC configs
 - [ ] **INTEG-03**: E2E tests detect wiring issues between modules (validation, simulation, AI surrogates)
 - [ ] **INTEG-04**: Python-side integration tests validate PyO3 bindings with real NumPy arrays
 - [ ] **INTEG-05**: Regression test suite runs full ASHRAE 140 validation (18 cases) on every commit
@@ -85,8 +85,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| INTEG-01 | Phase 21 | Pending |
-| INTEG-02 | Phase 21 | Pending |
+| INTEG-01 | Phase 21 | Complete |
+| INTEG-02 | Phase 21 | Complete |
 | INTEG-03 | Phase 21 | Pending |
 | INTEG-04 | Phase 21 | Pending |
 | INTEG-05 | Phase 21 | Pending |
