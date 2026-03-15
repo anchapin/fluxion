@@ -84,9 +84,13 @@
 4. High-mass annual energy accuracy improved from 229-322% error baseline (verified through thermal mass energy accounting)
 5. A/B testing framework quantifies improvement for each validation gap fix before adoption
 
-**Plans:** TBD
+**Plans:** 5 plans
 
----
+- [ ] 22-01-PLAN.md — 900-series regression test to prevent Case 960 fix from breaking other cases
+- [ ] 22-02-PLAN.md — Thermal mass energy accounting validation (diagnose physics correctness)
+- [ ] 22-03-PLAN.md — A/B testing framework for variant comparison
+- [ ] 22-04-PLAN.md — Case 960 validation with COP correction
+- [ ] 22-05-PLAN.md — 8R3C thermal network research and evaluation---
 
 ### Phase 23: Production Readiness
 
@@ -113,7 +117,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | - |
-| 22. Validation Gap Resolution | 0/0 | Not started | - |
+| 22. Validation Gap Resolution |  5/5 planned (Wave 1: 3 plans, Wave 2: 2 plans) | Not started | - |
 | 23. Production Readiness | 0/0 | Not started | - |
 
 **Overall Progress:** 0% (0/3 phases complete)
