@@ -200,7 +200,8 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
         // Calculate energy inputs
         // Energy in = HVAC energy + solar + infiltration
         // Note: hvac_energy is positive for heating, negative for cooling
-        let energy_solar = model.solar_gains.as_slice()[step];
+        let solar_slice = model.solar_gains.as_slice();
+        let energy_solar = if step < solar_slice.len() { solar_slice[step] } else { 0.0 };
         let energy_infiltration = 0.0; // TODO: Add infiltration tracking if available
 
         // Total energy entering system
@@ -209,7 +210,8 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
 
         // Energy leaving system (HVAC demand)
         // For now, we use the magnitude of HVAC energy as energy out
-        let energy_out = hvac_energy.abs();
+        let loads_slice = model.loads.as_slice();
+        let energy_out = if step < loads_slice.len() { loads_slice[step] } else { hvac_energy.abs() };
         energy_out_total += energy_out;
 
         // Calculate current mass energy
@@ -247,6 +249,71 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
 }
 
 #[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::validation::ashrae_140_cases::ASHRAE140Case;
+
+    #[test]
+    fn test_calculate_mass_energy_5r1c() {
+        let spec = ASHRAE140Case::Case600.spec();
+        let model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        let mass_energy = calculate_mass_energy(&model);
+
+        // Mass energy should be positive and reasonable
+        assert!(
+            mass_energy > 0.0,
+            "Mass energy should be positive, got {}",
+            mass_energy
+        );
+
+        // Mass energy should be on order of MJ (millions of Joules)
+        assert!(
+            mass_energy > 1.0e6 && mass_energy < 1.0e12,
+            "Mass energy should be 1e6-1e12 J, got {:.2e} J",
+            mass_energy
+        );
+    }
+
+    #[test]
+    fn test_energy_balance_report_default() {
+        let report = EnergyBalanceReport::default();
+
+        assert_eq!(report.cumulative_error, 0.0);
+        assert_eq!(report.error_pct, 0.0);
+        assert!(!report.is_valid);
+        assert!(report.hourly_errors.is_empty());
+        assert_eq!(report.energy_in_total, 0.0);
+        assert_eq!(report.energy_out_total, 0.0);
+    }
+
+    #[test]
+    fn test_energy_balance_report_to_summary() {
+        let mut report = EnergyBalanceReport::new();
+        report.cumulative_error = 1000.0;
+        report.error_pct = 0.005;
+        report.is_valid = true;
+        report.energy_in_total = 100000.0;
+        report.energy_out_total = 99000.0;
+        report.hourly_errors = vec![0.1, -0.2, 0.1];
+
+        let summary = report.to_summary();
+
+        // Just check that it contains the key parts
+        assert!(summary.contains("PASSED"));
+        assert!(summary.contains("0.005"));
+        assert!(summary.contains("1000"));
+        assert!(summary.contains("Hourly Errors: 3"));
+        assert!(summary.contains("1000.00"));
+    }
+
+    /// Test Case 900 (high-mass) energy accounting.
+    ///
+    /// Case 900 is the high-mass version of Case 600 with thick concrete walls
+    /// and floors providing significant thermal mass. This test validates that the
+    /// physics engine correctly conserves energy for high-mass buildings.
+    #[test]
+    fn test_case_900_energy_accounting() {
         println!("\n=== Testing Case 900 (high-mass) Energy Accounting ===");
 
         let spec = ASHRAE140Case::Case900.spec();
@@ -535,7 +602,7 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
         println!("✅ Case 650 energy accounting: {:.6}% error", report.error_pct);
     }
 
-    /// Test all 900-series cases energy accounting.
+    /// Parameterized test for all 900-series cases.
     ///
     /// This test validates energy accounting for all high-mass cases in the
     /// 900-series to ensure the physics engine correctly conserves energy
@@ -575,7 +642,7 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
         println!("\n✅ All 900-series cases passed energy accounting validation");
     }
 
-    /// Test all 600-series cases energy accounting.
+    /// Parameterized test for all 600-series cases.
     ///
     /// This test validates energy accounting for all low-mass cases in the
     /// 600-series to ensure the physics engine correctly conserves energy
@@ -613,63 +680,5 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
         }
 
         println!("\n✅ All 600-series cases passed energy accounting validation");
-    }
-}
-mod tests {
-    use super::*;
-    use crate::validation::ashrae_140_cases::ASHRAE140Case;
-
-    #[test]
-    fn test_calculate_mass_energy_5r1c() {
-        let spec = ASHRAE140Case::Case600.spec();
-        let model = ThermalModel::<VectorField>::from_spec(&spec);
-
-        let mass_energy = calculate_mass_energy(&model);
-
-        // Mass energy should be positive and reasonable
-        assert!(
-            mass_energy > 0.0,
-            "Mass energy should be positive, got {}",
-            mass_energy
-        );
-
-        // Mass energy should be on order of MJ (millions of Joules)
-        assert!(
-            mass_energy > 1.0e6 && mass_energy < 1.0e12,
-            "Mass energy should be 1e6-1e12 J, got {:.2e} J",
-            mass_energy
-        );
-    }
-
-    #[test]
-    fn test_energy_balance_report_default() {
-        let report = EnergyBalanceReport::default();
-
-        assert_eq!(report.cumulative_error, 0.0);
-        assert_eq!(report.error_pct, 0.0);
-        assert!(!report.is_valid);
-        assert!(report.hourly_errors.is_empty());
-        assert_eq!(report.energy_in_total, 0.0);
-        assert_eq!(report.energy_out_total, 0.0);
-    }
-
-    #[test]
-    fn test_energy_balance_report_to_summary() {
-        let mut report = EnergyBalanceReport::new();
-        report.cumulative_error = 1000.0;
-        report.error_pct = 0.005;
-        report.is_valid = true;
-        report.energy_in_total = 100000.0;
-        report.energy_out_total = 99000.0;
-        report.hourly_errors = vec![0.1, -0.2, 0.1];
-
-        let summary = report.to_summary();
-
-        // Just check that it contains the key parts
-        assert!(summary.contains("PASSED"));
-        assert!(summary.contains("0.005"));
-        assert!(summary.contains("1000"));
-        assert!(summary.contains("Hourly Errors: 3"));
-        assert!(summary.contains("1000.00"));
     }
 }
