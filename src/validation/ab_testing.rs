@@ -429,10 +429,10 @@ impl ABTestRunner {
         let _annual_energy_kwh = model.solve_timesteps(8760, false, false);
 
         // Extract results from the model
-        let annual_heating_mwh = model.annual_heating_energy_mwh();
-        let annual_cooling_mwh = model.annual_cooling_energy_mwh();
-        let peak_heating_kw = model.peak_heating_load_kw();
-        let peak_cooling_kw = model.peak_cooling_load_kw();
+        let annual_heating_mwh = model.get_heating_energy_kwh() / 1000.0;
+        let annual_cooling_mwh = model.get_cooling_energy_kwh() / 1000.0;
+        let peak_heating_kw = model.get_peak_heating_power_kw();
+        let peak_cooling_kw = model.get_peak_cooling_power_kw();
 
         TestResults {
             variant,
