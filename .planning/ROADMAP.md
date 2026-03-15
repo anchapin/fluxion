@@ -9,7 +9,7 @@
 
 ## Milestones
 
-- 🔄 **v0.5 Production Foundation** — Phases 21-23 (in progress, 14/15 plans complete)
+- ✅ **v0.5 Production Foundation** — Phases 21-23 (complete, 15/15 plans complete)
 - ✅ **v0.4 ASHRAE 140 Compliance** — Phases 14-20 (shipped 2026-03-15) — See `.planning/milestones/v0.4-ROADMAP.md`
 - ✅ **v0.2 Partial Validation** — Phases 1-7 (shipped 2026-03-11) — See `.planning/milestones/v0.2-ROADMAP.md`
 
@@ -26,7 +26,7 @@
 ## Phases
 
 - [x] **Phase 21: Integration Testing Framework** - E2E tests, wiring validation, regression test suite (completed 2026-03-15, gap closure mode)
-- [~] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy (14/15 plans complete, in progress)
+- [x] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy (15/15 plans complete, executed)
 - [ ] **Phase 23: Production Readiness** - Complete docs, benchmarks, stability guarantees
 
 ---
@@ -84,13 +84,13 @@
 4. High-mass annual energy accuracy improved from 229-322% error baseline (verified through thermal mass energy accounting)
 5. A/B testing framework quantifies improvement for each validation gap fix before adoption
 
-**Plans:** 3/5 plans executed
+**Plans:** 5/5 plans executed
 
 - [ ] 22-01-PLAN.md — 900-series regression test to prevent Case 960 fix from breaking other cases
-- [ ] 22-02-PLAN.md — Thermal mass energy accounting validation (diagnose physics correctness)
-- [ ] 22-03-PLAN.md — A/B testing framework for variant comparison
-- [ ] 22-04-PLAN.md — Case 960 validation with COP correction
-- [ ] 22-05-PLAN.md — 8R3C thermal network research and evaluation---
+- [x] 22-02-PLAN.md — Thermal mass energy accounting validation (diagnose physics correctness)
+- [x] 22-03-PLAN.md — A/B testing framework for variant comparison
+- [x] 22-04-PLAN.md — Case 960 validation with COP correction
+- [x] 22-05-PLAN.md — 8R3C thermal network research and evaluation---
 
 ### Phase 23: Production Readiness
 
@@ -116,11 +116,11 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | - |
-| 22. Validation Gap Resolution | 3/5 | In Progress|  |
+| 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | 2026-03-15 |
+| 22. Validation Gap Resolution | 5/5 complete | Complete | 2026-03-15 |
 | 23. Production Readiness | 0/0 | Not started | - |
 
-**Overall Progress:** 0% (0/3 phases complete)
+**Overall Progress:** 67% (2/3 phases complete)
 
 ---
 
