@@ -42,7 +42,7 @@ created: 2026-03-15
 | 22-02-01 | 02 | 1 | VAL-08, VAL-06 | unit | `cargo test test_thermal_mass_energy_accounting` | ❌ W0 | ⬜ pending |
 | 22-02-02 | 02 | 1 | VAL-08, VAL-06 | unit | `cargo test test_case_600_energy_accounting` | ❌ W0 | ⬜ pending |
 | 22-03-01 | 03 | 1 | VAL-09 | integration | `cargo test ab_testing -- --nocapture` | ❌ W0 | ⬜ pending |
-| 22-04-01 | 04 | 2 | VAL-01, VAL-07 | integration | `cargo test test_case_960_comprehensive_energy_validation` | ✅ existing | ⬜ pending |
+| 22-04-01 | 04 | 2 | VAL-01 | integration | `cargo test test_case_960_comprehensive_energy_validation` | ✅ existing | ⬜ pending |
 | 22-05-01 | 05 | 2 | VAL-02, VAL-03 | integration | `cargo test ab_testing_8r3c -- --nocapture` | ❌ W0 | ⬜ pending |
 | 22-05-02 | 05 | 2 | VAL-04 | benchmark | `cargo test --bench batch_oracle -- --bench` | ✅ existing | ⬜ pending |
 | 22-05-03 | 05 | 2 | VAL-05 | integration | `cargo test ab_testing_8r3c -- --nocapture` | ❌ W0 | ⬜ pending |
@@ -59,6 +59,8 @@ created: 2026-03-15
 - [ ] `tests/validation/ab_testing.rs` — A/B test runner and comparison reports (VAL-09)
 - [ ] `tests/ashrae_140_case_900.rs` — extend with 900-series sequential regression test (VAL-07)
 - [ ] `src/sim/engine_8r3c.rs` — 8R3C thermal network implementation stub (VAL-02, VAL-03)
+
+**Note:** Wave 0 files must be created as stubs/placeholder implementations before phase execution to enable fast feedback loops during implementation. This is required by Nyquist validation.
 
 ---
 
@@ -79,6 +81,8 @@ created: 2026-03-15
 - [ ] Wave 0 covers all MISSING references
 - [ ] No watch-mode flags
 - [ ] Feedback latency < 60s
-- [ ] `nyquist_compliant: true` set in frontmatter
+- [ ] `nyquist_compliant: true` set in frontmatter (after Wave 0 files created)
 
 **Approval:** pending
+
+**Note:** `nyquist_compliant: false` because Wave 0 files are missing. Phase is blocked until Wave 0 files are created as stubs.
