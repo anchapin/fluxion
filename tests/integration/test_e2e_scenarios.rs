@@ -3,8 +3,9 @@
 //! Tests validate complete workflows from input to output using real implementations
 //! (not mocks) to catch wiring issues and integration bugs.
 
-use fluxion::testing::integration::BuildingScenario;
+use fluxion::testing::integration::{BuildingScenario, HvacType};
 use fluxion::BatchOracle;
+use rstest::*;
 use std::time::Instant;
 
 /// Test BatchOracle throughput with 1000 configurations
@@ -191,4 +192,42 @@ fn test_multi_zone_physics() {
     // Verify all zones have temperatures
     assert_eq!(model.temperatures.len(), num_zones);
     println!("Multi-zone energy: {:.2} kWh ({} zones)", energy, num_zones);
+}
+
+/// Test all HVAC variants with parameterization
+#[rstest]
+#[case(HvacType::VAV)]
+#[case(HvacType::CAV)]
+#[case(HvacType::HeatPump)]
+#[case(HvacType::Chiller)]
+fn test_hvac_variants(#[case] hvac_type: HvacType) {
+    let scenario = BuildingScenario::new()
+        .with_zone_count(1)
+        .with_hvac(hvac_type)
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("Invalid HVAC scenario");
+
+    let mut model = scenario.create_model();
+    let surrogates =
+        fluxion::ai::surrogate::SurrogateManager::new().expect("Failed to create SurrogateManager");
+
+    // Run simulation for 1 year
+    // Note: HVAC type is currently stored but not differentiated in solve_timesteps
+    // This test validates that all 4 HVAC types can be configured and simulated without errors
+    let energy = model.solve_timesteps(8760, &surrogates, false, None, None, None);
+
+    // Verify energy is finite (simulation completed successfully)
+    assert!(
+        energy.is_finite(),
+        "Energy is infinite or NaN for HVAC type {:?}",
+        hvac_type
+    );
+
+    println!(
+        "HVAC variant {:?} annual energy: {:.2} kWh",
+        hvac_type, energy
+    );
 }

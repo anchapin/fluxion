@@ -52,3 +52,27 @@ pub fn heat_pump_scenario() -> BuildingScenario {
         .build()
         .expect("heat_pump_scenario validation failed")
 }
+
+/// Create a scenario with CAV HVAC
+pub fn cav_scenario() -> BuildingScenario {
+    BuildingScenario::new()
+        .with_zone_count(1)
+        .with_hvac(HvacType::CAV)
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("cav_scenario validation failed")
+}
+
+/// Create a scenario with Chiller HVAC
+pub fn chiller_scenario() -> BuildingScenario {
+    BuildingScenario::new()
+        .with_zone_count(1)
+        .with_hvac(HvacType::Chiller)
+        .with_window_u_value(1.5)
+        .with_heating_setpoint(20.0)
+        .with_cooling_setpoint(26.0)
+        .build()
+        .expect("chiller_scenario validation failed")
+}
