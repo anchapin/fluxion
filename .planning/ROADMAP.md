@@ -2,7 +2,7 @@
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
 **Milestone:** v0.5 Production Foundation
-**Current Phase:** Phase 22 (executing)
+**Current Phase:** Phase 22 (gap closure)
 **Last Updated:** 2026-03-15
 
 ---
@@ -18,15 +18,15 @@
 ## Current Status
 
 **Milestone:** v0.5 Production Foundation
-**Phase:** Phase 21 - Integration Testing Framework
-**Status:** Gap closure plans created (21-06 through 21-10)
+**Phase:** Phase 22 - Validation Gap Resolution
+**Status:** Gap closure plans created (22-06, 22-07)
 
 ---
 
 ## Phases
 
 - [x] **Phase 21: Integration Testing Framework** - E2E tests, wiring validation, regression test suite (completed 2026-03-15, gap closure mode)
-- [x] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy (15/15 plans complete, executed)
+- [x] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy (5/5 plans executed, 2 gap closure plans)
 - [ ] **Phase 23: Production Readiness** - Complete docs, benchmarks, stability guarantees
 
 ---
@@ -84,13 +84,21 @@
 4. High-mass annual energy accuracy improved from 229-322% error baseline (verified through thermal mass energy accounting)
 5. A/B testing framework quantifies improvement for each validation gap fix before adoption
 
-**Plans:** 5/5 plans executed
+**Plans:** 5/5 executed, 2 gap closure plans
 
-- [ ] 22-01-PLAN.md — 900-series regression test to prevent Case 960 fix from breaking other cases
+- [x] 22-01-PLAN.md — 900-series regression test to prevent Case 960 fix from breaking other cases
 - [x] 22-02-PLAN.md — Thermal mass energy accounting validation (diagnose physics correctness)
 - [x] 22-03-PLAN.md — A/B testing framework for variant comparison
 - [x] 22-04-PLAN.md — Case 960 validation with COP correction
-- [x] 22-05-PLAN.md — 8R3C thermal network research and evaluation---
+- [x] 22-05-PLAN.md — 8R3C thermal network research and evaluation
+- [ ] 22-06-PLAN.md — Fix compilation issues and verify 900-series regression test execution (gap closure)
+- [ ] 22-07-PLAN.md — Investigate and fix thermal mass energy balance calculation (gap closure)
+
+**Gap Closure Mode:** 2 plans created to address verification gaps from 22-VERIFICATION.md
+- 22-06: VAL-07 - 900-series regression test (compilation issues blocking verification)
+- 22-07: VAL-06, VAL-08 - Thermal mass energy accounting (1100%+ energy balance errors requiring physics investigation)
+
+---
 
 ### Phase 23: Production Readiness
 
@@ -117,7 +125,7 @@
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | 2026-03-15 |
-| 22. Validation Gap Resolution | 5/5 complete | Complete | 2026-03-15 |
+| 22. Validation Gap Resolution | 5/5 executed, 2 gap closure plans | Gap closure mode | 2026-03-15 |
 | 23. Production Readiness | 0/0 | Not started | - |
 
 **Overall Progress:** 67% (2/3 phases complete)
@@ -129,7 +137,7 @@
 ```
 Phase 21 (Integration Testing - gap closure mode)
     ↓
-Phase 22 (Validation Gap Resolution)
+Phase 22 (Validation Gap Resolution - gap closure mode)
     ↓
 Phase 23 (Production Readiness)
 ```
@@ -166,3 +174,4 @@ Each phase delivers a coherent, verifiable capability that unblocks the next pha
 
 *Roadmap created: 2026-03-15*
 *Updated: 2026-03-15 - Added gap closure plans (21-06 through 21-10)*
+*Updated: 2026-03-15 - Added gap closure plans (22-06 through 22-07)*
