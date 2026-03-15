@@ -48,7 +48,7 @@
 4. Python-side integration tests validate NumPy array handling and error cases across FFI boundary
 5. User can run wiring validation check that reports module dependency issues before commit
 
-**Plans:** 3/5 plans executed
+**Plans:** 4/5 plans executed
 - [ ] 21-01-PLAN.md — E2E framework with BuildingScenario builder and WiringTracer
 - [ ] 21-02-PLAN.md — Python PyO3 integration tests with NumPy array validation
 - [ ] 21-03-PLAN.md — ASHRAE 140 regression test suite with nightly GitHub Actions
@@ -94,7 +94,7 @@
 **Plans:** TBD
 
 ---
-| 21. Integration Testing Framework | 3/5 | In Progress|  |
+| 21. Integration Testing Framework | 4/5 | In Progress|  |
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
