@@ -92,6 +92,14 @@ Each task was committed atomically:
 
 - **Python-side vs Rust-side Tests:** Python-side tests provide comprehensive FFI boundary coverage. Rust-side PyO3 integration tests were moved to tests/test_pyo3_bindings.rs and documented as TODO due to Python symbol linking issues. Python-side tests in test_numpy_arrays.py fully validate the FFI boundary including shape preservation, dtype conversion, large arrays, empty arrays, and NaN handling.
 
+- **Decision to Accept Python-side Tests (Phase 21 Plan 07):** INTEG-04 requirement is fully satisfied by Python-side tests. Rust-side PyO3 integration tests are intentionally not implemented due to Python symbol linking issues (high-effort/low-value). Decision documented in tests/test_pyo3_bindings.rs with comprehensive rationale explaining:
+  1. Python-side tests fully validate the observable FFI contract
+  2. Rust-side conversion logic in src/physics/cta.rs already has its own tests
+  3. Proposed Rust-side PyO3 tests would have low value (testing PyO3 boilerplate)
+  4. Python symbol linking blocker makes Rust-side tests high-effort/low-value
+  5. INTEG-04 requirement is satisfied: "Python-side integration tests validate PyO3 bindings with real NumPy arrays"
+  6. Rust-side tests can be added in the future if specific edge cases are discovered that Python-side tests don't catch
+
 - **Module-scoped Fixture:** fluxion_module fixture uses scope="module" for efficiency. This imports the fluxion Python module once per test session rather than once per test, reducing overhead for test suites with many tests.
 
 - **NumPy Array Validation Strategy:** Tests validate 1D, 2D, and 3D arrays (flattened to 1D for VectorField), f32 and f64 dtypes (both convert to f64 internally), large arrays (10,000+ elements), empty arrays, and NaN/Inf values. This comprehensive coverage ensures the FFI boundary handles all edge cases correctly.
