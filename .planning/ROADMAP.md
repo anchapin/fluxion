@@ -2,7 +2,7 @@
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
 **Milestone:** v0.5 Production Foundation
-**Current Phase:** Phase 21 (starting)
+**Current Phase:** Phase 21 (gap closure mode)
 **Last Updated:** 2026-03-15
 
 ---
@@ -19,13 +19,13 @@
 
 **Milestone:** v0.5 Production Foundation
 **Phase:** Phase 21 - Integration Testing Framework
-**Status:** Not started (roadmap created)
+**Status:** Gap closure plans created (21-06 through 21-10)
 
 ---
 
 ## Phases
 
-- [x] **Phase 21: Integration Testing Framework** - E2E tests, wiring validation, regression test suite (completed 2026-03-15)
+- [x] **Phase 21: Integration Testing Framework** - E2E tests, wiring validation, regression test suite (completed 2026-03-15, gap closure mode)
 - [ ] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy
 - [ ] **Phase 23: Production Readiness** - Complete docs, benchmarks, stability guarantees
 
@@ -48,12 +48,24 @@
 4. Python-side integration tests validate NumPy array handling and error cases across FFI boundary
 5. User can run wiring validation check that reports module dependency issues before commit
 
-**Plans:** 5/5 plans complete
-- [ ] 21-01-PLAN.md — E2E framework with BuildingScenario builder and WiringTracer
-- [ ] 21-02-PLAN.md — Python PyO3 integration tests with NumPy array validation
-- [ ] 21-03-PLAN.md — ASHRAE 140 regression test suite with nightly GitHub Actions
-- [ ] 21-04-PLAN.md — Test data management with versioned directories
-- [ ] 21-05-PLAN.md — Wiring validation, E2E scenarios, CI/CD integration
+**Plans:** 5/5 complete, 5 gap closure plans created
+- [x] 21-01-PLAN.md — E2E framework with BuildingScenario builder and WiringTracer
+- [x] 21-02-PLAN.md — Python PyO3 integration tests with NumPy array validation
+- [x] 21-03-PLAN.md — ASHRAE 140 regression test suite with nightly GitHub Actions
+- [x] 21-04-PLAN.md — Test data management with versioned directories
+- [x] 21-05-PLAN.md — Wiring validation, E2E scenarios, CI/CD integration
+- [ ] 21-06-PLAN.md — Refactor integration tests to use BuildingScenario and WiringTracer
+- [ ] 21-07-PLAN.md — Implement Rust-side PyO3 tests OR document blocker
+- [ ] 21-08-PLAN.md — Correct verification error in VERIFICATION.md
+- [ ] 21-09-PLAN.md — Add HVAC variant tests with parameterization
+- [ ] 21-10-PLAN.md — Add automated dependency checking OR accept manual tracing
+
+**Gap Closure Mode:** 5 plans created to address verification gaps from 21-VERIFICATION.md
+- 21-06: Framework-test disconnect (tests don't use BuildingScenario/WiringTracer)
+- 21-07: Missing Rust-side PyO3 tests (test_pyo3_bindings.rs is TODO stub)
+- 21-08: Performance verification error (22 seconds IS under 5 minutes)
+- 21-09: Missing HVAC variant tests (VAV, CAV, HeatPump, Chiller)
+- 21-10: Automated dependency checking missing (only manual runtime tracing exists)
 
 ---
 
@@ -94,12 +106,13 @@
 **Plans:** TBD
 
 ---
-| 21. Integration Testing Framework | 5/5 | Complete   | 2026-03-15 |
+
+| 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans created | Gap closure mode | 2026-03-15 |
 ## Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 21. Integration Testing Framework | 0/0 | Not started | - |
+| 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | - |
 | 22. Validation Gap Resolution | 0/0 | Not started | - |
 | 23. Production Readiness | 0/0 | Not started | - |
 
@@ -110,7 +123,7 @@
 ## Dependencies
 
 ```
-Phase 21 (Integration Testing)
+Phase 21 (Integration Testing - gap closure mode)
     ↓
 Phase 22 (Validation Gap Resolution)
     ↓
@@ -148,3 +161,4 @@ Each phase delivers a coherent, verifiable capability that unblocks the next pha
 ---
 
 *Roadmap created: 2026-03-15*
+*Updated: 2026-03-15 - Added gap closure plans (21-06 through 21-10)*
