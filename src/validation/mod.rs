@@ -56,7 +56,7 @@ pub use report::{
     ValidationStatus, ValidationSuite,
 };
 pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerator};
-pub use thermal_mass_energy_accounting::{calculate_mass_energy, EnergyBalanceReport};
+pub use thermal_mass_energy_accounting::{calculate_mass_energy, EnergyBalanceReport, validate_energy_balance_over_year};
 
 #[cfg(test)]
 mod tests {
