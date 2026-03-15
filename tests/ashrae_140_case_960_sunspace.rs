@@ -280,49 +280,57 @@ fn test_case_960_comprehensive_energy_validation() {
     let result = validator.validate_case_960();
 
     println!("\n=== ASHRAE 140 Case 960 Comprehensive Validation ===");
-    println!("Annual Heating: {:.2} MWh", result.annual_heating_mwh);
     println!(
-        "  Reference: {:.2}-{:.2} MWh",
+        "Annual Heating: {:.2} MWh (ref: {:.2}-{:.2} MWh) {}",
+        result.annual_heating_mwh,
         reference::ANNUAL_HEATING_MIN,
-        reference::ANNUAL_HEATING_MAX
+        reference::ANNUAL_HEATING_MAX,
+        if result.heating_result.in_range {
+            "✓"
+        } else {
+            "✗"
+        }
     );
-    println!(
-        "  Error: {:.1}%, In Range: {}",
-        result.heating_result.error_pct, result.heating_result.in_range
-    );
+    println!("  Error: {:.1}%", result.heating_result.error_pct);
 
-    println!("\nAnnual Cooling: {:.2} MWh", result.annual_cooling_mwh);
     println!(
-        "  Reference: {:.2}-{:.2} MWh",
+        "\nAnnual Cooling: {:.2} MWh (ref: {:.2}-{:.2} MWh) {}",
+        result.annual_cooling_mwh,
         reference::ANNUAL_COOLING_MIN,
-        reference::ANNUAL_COOLING_MAX
+        reference::ANNUAL_COOLING_MAX,
+        if result.cooling_result.in_range {
+            "✓"
+        } else {
+            "✗"
+        }
     );
-    println!(
-        "  Error: {:.1}%, In Range: {}",
-        result.cooling_result.error_pct, result.cooling_result.in_range
-    );
+    println!("  Error: {:.1}%", result.cooling_result.error_pct);
 
-    println!("\nPeak Heating: {:.2} kW", result.peak_heating_kw);
     println!(
-        "  Reference: {:.2}-{:.2} kW",
+        "\nPeak Heating: {:.2} kW (ref: {:.2}-{:.2} kW) {}",
+        result.peak_heating_kw,
         reference::PEAK_HEATING_MIN,
-        reference::PEAK_HEATING_MAX
+        reference::PEAK_HEATING_MAX,
+        if result.peak_heating_result.in_range {
+            "✓"
+        } else {
+            "✗"
+        }
     );
-    println!(
-        "  Error: {:.1}%, In Range: {}",
-        result.peak_heating_result.error_pct, result.peak_heating_result.in_range
-    );
+    println!("  Error: {:.1}%", result.peak_heating_result.error_pct);
 
-    println!("\nPeak Cooling: {:.2} kW", result.peak_cooling_kw);
     println!(
-        "  Reference: {:.2}-{:.2} kW",
+        "\nPeak Cooling: {:.2} kW (ref: {:.2}-{:.2} kW) {}",
+        result.peak_cooling_kw,
         reference::PEAK_COOLING_MIN,
-        reference::PEAK_COOLING_MAX
+        reference::PEAK_COOLING_MAX,
+        if result.peak_cooling_result.in_range {
+            "✓"
+        } else {
+            "✗"
+        }
     );
-    println!(
-        "  Error: {:.1}%, In Range: {}",
-        result.peak_cooling_result.error_pct, result.peak_cooling_result.in_range
-    );
+    println!("  Error: {:.1}%", result.peak_cooling_result.error_pct);
 
     println!(
         "\nPass Rate: {}/4 metrics within tolerance",
@@ -336,6 +344,7 @@ fn test_case_960_comprehensive_energy_validation() {
         .filter(|&&x| x)
         .count()
     );
+    println!("COP correction applied: cooling/3.0, heating/0.9");
     println!("=== End ===\n");
 
     // Check at least heating and one of cooling or peak should be reasonable
