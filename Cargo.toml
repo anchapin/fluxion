@@ -159,3 +159,28 @@ harness = true
 name = "validation-multi_reference_integration"
 path = "tests/validation/multi_reference_integration.rs"
 harness = true
+
+[[test]]
+name = "integration"
+path = "tests/integration/test_ashrae_140_regression.rs"
+harness = true
+
+[[test]]
+name = "integration-wiring"
+path = "tests/integration/test_wiring.rs"
+harness = true
+
+[[test]]
+name = "integration-e2e-scenarios"
+path = "tests/integration/test_e2e_scenarios.rs"
+harness = true
+
+[[test]]
+name = "integration-batch-oracle"
+path = "tests/integration/test_batch_oracle.rs"
+harness = true
+
+[[test]]
+name = "integration-cli"
+path = "tests/integration/test_cli.rs"
+harness = true
