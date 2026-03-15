@@ -1958,21 +1958,25 @@ impl ASHRAE140Validator {
             model.set_weather(weather_data.clone());
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
-            // step_physics() returns Watts (instantaneous power), not kWh
-            // Convert Watts × 3600 seconds = Joules for hourly timesteps
+            // step_physics() returns kWh (energy for the timestep), not Watts
+            // Convert kWh to Joules: kWh × 3.6e6 = Joules
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3600.0;
-                peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
+                annual_heating_joules += hvac_kwh * 3.6e6;
+                // Peak tracking: Use the model's internal peak tracking (more accurate)
+                // The returned hvac_kwh is already energy, not power
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3600.0;
-                peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             }
         }
 
+        // Use model's internal peak tracking (more accurate than manual calculation)
+        // model.peak_power_heating and model.peak_power_cooling are in Watts, convert to kW
+        let peak_heating_kw = model.peak_power_heating / 1000.0;
+        let peak_cooling_kw = model.peak_power_cooling / 1000.0;
+
         let annual_heating_mwh = annual_heating_joules / 3.6e9;
         let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
-        let peak_heating_kw = peak_heating_watts / 1000.0;
-        let peak_cooling_kw = peak_cooling_watts / 1000.0;
+        // peak_heating_kw and peak_cooling_kw already set above from model's internal tracking
 
         // Case 960: Convert thermal energy to electrical energy to match ASHRAE reference.
         // The reference values (EnergyPlus, ESP-r, TRNSYS) report HVAC electricity consumption.
@@ -2022,11 +2026,13 @@ impl ASHRAE140Validator {
             peak_tolerance,
         );
 
+        // Phase 8: COP correction for Case 960 (cooling_cop=3.0, heating_efficiency=0.9)
+        // The ValidationReport stores electrical energy values for Case 960 to match ASHRAE 140 reference
         ValidationReport {
             case_id: "960".to_string(),
             description: "Sunspace - 2-zone building (back-zone + sunspace)".to_string(),
-            annual_heating_mwh,
-            annual_cooling_mwh,
+            annual_heating_mwh: annual_heating_electrical_mwh, // Electrical equivalent (thermal / 0.9)
+            annual_cooling_mwh: annual_cooling_electrical_mwh, // Electrical equivalent (thermal / 3.0)
             peak_heating_kw,
             peak_cooling_kw,
             heating_result,

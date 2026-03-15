@@ -174,7 +174,9 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
 /// This function validates **physics correctness**, not **accuracy**. If energy balance is valid
 /// (error_pct < 0.01%), the physics engine correctly conserves energy even if annual
 /// energy predictions are wrong (which would indicate a fundamental 5R1C limitation, not a bug).
-pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) -> EnergyBalanceReport {
+pub fn validate_energy_balance_over_year(
+    model: &mut ThermalModel<VectorField>,
+) -> EnergyBalanceReport {
     use crate::weather::denver::DenverTmyWeather;
     use crate::weather::WeatherSource;
 
@@ -201,7 +203,11 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
         // Energy in = HVAC energy + solar + infiltration
         // Note: hvac_energy is positive for heating, negative for cooling
         let solar_slice = model.solar_gains.as_slice();
-        let energy_solar = if step < solar_slice.len() { solar_slice[step] } else { 0.0 };
+        let energy_solar = if step < solar_slice.len() {
+            solar_slice[step]
+        } else {
+            0.0
+        };
         let energy_infiltration = 0.0; // TODO: Add infiltration tracking if available
 
         // Total energy entering system
@@ -211,7 +217,11 @@ pub fn validate_energy_balance_over_year(model: &mut ThermalModel<VectorField>) 
         // Energy leaving system (HVAC demand)
         // For now, we use the magnitude of HVAC energy as energy out
         let loads_slice = model.loads.as_slice();
-        let energy_out = if step < loads_slice.len() { loads_slice[step] } else { hvac_energy.abs() };
+        let energy_out = if step < loads_slice.len() {
+            loads_slice[step]
+        } else {
+            hvac_energy.abs()
+        };
         energy_out_total += energy_out;
 
         // Calculate current mass energy
@@ -325,7 +335,10 @@ mod tests {
         // Print diagnostic output
         println!("  Cumulative Error: {:.6e} J", report.cumulative_error);
         println!("  Error Percentage: {:.6}%", report.error_pct);
-        println!("  Status: {}", if report.is_valid { "PASSED" } else { "FAILED" });
+        println!(
+            "  Status: {}",
+            if report.is_valid { "PASSED" } else { "FAILED" }
+        );
         println!("  Energy In Total: {:.6e} J", report.energy_in_total);
         println!("  Energy Out Total: {:.6e} J", report.energy_out_total);
         println!("  Hourly Errors: {} timesteps", report.hourly_errors.len());
@@ -337,7 +350,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 900 energy accounting: {:.6}% error (status: PASSED)", report.error_pct);
+        println!(
+            "✅ Case 900 energy accounting: {:.6}% error (status: PASSED)",
+            report.error_pct
+        );
     }
 
     /// Test Case 600 (low-mass) energy accounting.
@@ -357,7 +373,10 @@ mod tests {
         // Print diagnostic output
         println!("  Cumulative Error: {:.6e} J", report.cumulative_error);
         println!("  Error Percentage: {:.6}%", report.error_pct);
-        println!("  Status: {}", if report.is_valid { "PASSED" } else { "FAILED" });
+        println!(
+            "  Status: {}",
+            if report.is_valid { "PASSED" } else { "FAILED" }
+        );
         println!("  Energy In Total: {:.6e} J", report.energy_in_total);
         println!("  Energy Out Total: {:.6e} J", report.energy_out_total);
         println!("  Hourly Errors: {} timesteps", report.hourly_errors.len());
@@ -369,7 +388,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 600 energy accounting: {:.6}% error (status: PASSED)", report.error_pct);
+        println!(
+            "✅ Case 600 energy accounting: {:.6}% error (status: PASSED)",
+            report.error_pct
+        );
     }
 
     /// Test Case 920 energy accounting.
@@ -392,7 +414,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 920 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 920 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 930 energy accounting.
@@ -415,7 +440,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 930 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 930 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 940 energy accounting.
@@ -438,7 +466,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 940 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 940 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 950 energy accounting.
@@ -461,7 +492,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 950 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 950 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 960 energy accounting.
@@ -484,7 +518,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 960 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 960 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 610 energy accounting.
@@ -507,7 +544,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 610 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 610 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 620 energy accounting.
@@ -530,7 +570,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 620 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 620 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 630 energy accounting.
@@ -553,7 +596,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 630 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 630 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 640 energy accounting.
@@ -576,7 +622,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 640 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 640 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Test Case 650 energy accounting.
@@ -599,7 +648,10 @@ mod tests {
             report.error_pct
         );
 
-        println!("✅ Case 650 energy accounting: {:.6}% error", report.error_pct);
+        println!(
+            "✅ Case 650 energy accounting: {:.6}% error",
+            report.error_pct
+        );
     }
 
     /// Parameterized test for all 900-series cases.
