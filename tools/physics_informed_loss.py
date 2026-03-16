@@ -12,8 +12,9 @@ Related to Issue #172: Phase 8: Implement physics-informed loss functions
 """
 
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Callable
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,7 +28,7 @@ class TemperatureBounds:
 
     # Common temperature limits in Celsius
     MIN_INDOOR_TEMP = -30.0  # Very cold
-    MAX_INDOOR_TEMP = 50.0  # Very hot
+    MAX_INDOOR_TEMP = 50.0   # Very hot
     MIN_OUTDOOR_TEMP = -50.0
     MAX_OUTDOOR_TEMP = 55.0
 
@@ -109,12 +110,7 @@ class EnergyBalanceValidator:
 
         # Expected temperature change due to heat transfer
         # Q = H * A * delta_T, convert to kWh
-        heat_transfer = (
-            self.heat_transfer_coeff
-            * (current_temps - outdoor_temps)
-            * self.time_step
-            / 1000.0
-        )
+        heat_transfer = self.heat_transfer_coeff * (current_temps - outdoor_temps) * self.time_step / 1000.0
 
         # Expected temperature change
         # C * delta_T = (Q_heat - Q_cool - Q_transfer) * dt
@@ -195,8 +191,8 @@ class PhysicsInformedLoss(nn.Module):
         )
 
         # Register bounds as buffers
-        self.register_buffer("min_temp", torch.tensor(min_temp))
-        self.register_buffer("max_temp", torch.tensor(max_temp))
+        self.register_buffer('min_temp', torch.tensor(min_temp))
+        self.register_buffer('max_temp', torch.tensor(max_temp))
 
     def forward(
         self,
@@ -232,12 +228,10 @@ class PhysicsInformedLoss(nn.Module):
 
         # 2. Energy balance constraint (if physics data provided)
         next_temps = None
-        if (
-            current_temps is not None
-            and predictions is not None
-            and heating_load is not None
-            and cooling_load is not None
-        ):
+        if (current_temps is not None and
+            predictions is not None and
+            heating_load is not None and cooling_load is not None):
+
             # Use predictions as next temps if not provided separately
             if predictions.ndim > 1:
                 next_temps = predictions[:, 0]
@@ -249,7 +243,7 @@ class PhysicsInformedLoss(nn.Module):
             )
 
             # Soft penalty for energy balance violation
-            energy_loss = torch.mean(residual**2)
+            energy_loss = torch.mean(residual ** 2)
             loss_components["energy_balance"] = energy_loss.item()
 
             total_loss = total_loss + self.energy_balance_weight * energy_loss
@@ -278,7 +272,7 @@ class PhysicsInformedLoss(nn.Module):
         heating_load: Optional[torch.Tensor] = None,
         cooling_load: Optional[torch.Tensor] = None,
         outdoor_temps: Optional[torch.Tensor] = None,
-    ) -> Dict[str, Any]:
+    ) -> Dict[str, any]:
         """
         Validate that predictions satisfy physics constraints.
 
@@ -299,25 +293,15 @@ class PhysicsInformedLoss(nn.Module):
         results["temperature"] = temp_metrics
 
         # Energy balance validation
-        if (
-            current_temps is not None
-            and heating_load is not None
-            and cooling_load is not None
-        ):
+        if (current_temps is not None and heating_load is not None and cooling_load is not None):
             if predictions.ndim > 1:
                 next_temps = predictions[:, 0]
             else:
                 next_temps = predictions
 
-            energy_satisfied, energy_metrics = (
-                self.energy_validator.validate_energy_balance(
-                    current_temps,
-                    next_temps,
-                    heating_load,
-                    cooling_load,
-                    outdoor_temps,
-                    tolerance=self.energy_tolerance,
-                )
+            energy_satisfied, energy_metrics = self.energy_validator.validate_energy_balance(
+                current_temps, next_temps, heating_load, cooling_load, outdoor_temps,
+                tolerance=self.energy_tolerance
             )
             results["energy_balance"] = energy_metrics
 
@@ -363,9 +347,7 @@ class CustomPhysicsLoss(nn.Module):
         # Apply custom constraints
         for constraint_fn, weight in zip(self.constraints, self.constraint_weights):
             constraint_loss = constraint_fn(predictions, targets)
-            loss_components[f"constraint_{len(loss_components)}"] = (
-                constraint_loss.item()
-            )
+            loss_components[f"constraint_{len(loss_components)}"] = constraint_loss.item()
             total_loss = total_loss + weight * constraint_loss
 
         loss_components["total"] = total_loss.item()
@@ -374,9 +356,7 @@ class CustomPhysicsLoss(nn.Module):
 
 
 # Example constraint functions
-def monotonicity_constraint(
-    predictions: torch.Tensor, targets: torch.Tensor
-) -> torch.Tensor:
+def monotonicity_constraint(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     """
     Enforce monotonic relationship between input and output.
 
@@ -393,16 +373,14 @@ def monotonicity_constraint(
     return monotonic_penalty
 
 
-def smoothness_constraint(
-    predictions: torch.Tensor, targets: torch.Tensor
-) -> torch.Tensor:
+def smoothness_constraint(predictions: torch.Tensor, targets: torch.Tensor) -> torch.Tensor:
     """Enforce smoothness in predictions (temporal or spatial)."""
     if predictions.ndim < 2:
         return torch.tensor(0.0, device=predictions.device)
 
     # Finite difference for smoothness
     diff = predictions[:, 1:] - predictions[:, :-1]
-    smoothness = torch.mean(diff**2)
+    smoothness = torch.mean(diff ** 2)
 
     return smoothness
 
@@ -414,10 +392,10 @@ def physical_bounds_constraint(
     max_val: float = 1e6,
 ) -> torch.Tensor:
     """Enforce physical bounds on predictions."""
-    _ = F.relu(torch.tensor(min_val, device=predictions.device) - predictions)
+    below_min = F.relu(torch.tensor(min_val, device=predictions.device) - predictions)
     above_max = F.relu(predictions - torch.tensor(max_val, device=predictions.device))
 
-    return _.mean() + above_max.mean()
+    return below_max.mean() + above_max.mean()
 
 
 # CLI for testing

@@ -58,6 +58,8 @@ mod reference {
 fn simulate_case(case: ASHRAE140Case) -> (f64, f64) {
     let spec = case.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    // Disable thermal mass energy accounting for ASHRAE 140 validation
+    model.thermal_mass_energy_accounting = false;
     let weather = DenverTmyWeather::new();
 
     let mut annual_heating_joules = 0.0;

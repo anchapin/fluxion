@@ -1,8 +1,6 @@
-import json
 import os
-
+import json
 import requests
-
 
 def main():
     token = os.environ.get("GITHUB_TOKEN")
@@ -17,7 +15,7 @@ def main():
         # Try to get from event payload if not in env
         event_path = os.environ.get("GITHUB_EVENT_PATH")
         if event_path:
-            with open(event_path, "r") as f:
+            with open(event_path, 'r') as f:
                 event_data = json.load(f)
                 pr_number = event_data.get("pull_request", {}).get("number")
 
@@ -28,7 +26,7 @@ def main():
     # Read validation report
     report_content = "### ASHRAE 140 Validation Results\n\n"
     if os.path.exists("validation_report.md"):
-        with open("validation_report.md", "r") as f:
+        with open("validation_report.md", 'r') as f:
             report_content += f.read()
     else:
         report_content += "⚠️ Validation report not found."
@@ -37,9 +35,11 @@ def main():
     url = f"https://api.github.com/repos/{repo}/issues/{pr_number}/comments"
     headers = {
         "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json",
+        "Accept": "application/vnd.github.v3+json"
     }
-    data = {"body": report_content}
+    data = {
+        "body": report_content
+    }
 
     response = requests.post(url, headers=headers, json=data)
     if response.status_code == 201:
@@ -47,7 +47,6 @@ def main():
     else:
         print(f"Failed to post comment: {response.status_code}")
         print(response.text)
-
 
 if __name__ == "__main__":
     main()

@@ -11,6 +11,7 @@ This module provides infrastructure for online/incremental learning:
 Related to Issue #169: Phase 9: Implement online learning framework
 """
 
+import json
 import logging
 import threading
 import time
@@ -22,6 +23,7 @@ from typing import (
     Deque,
     Dict,
     Iterator,
+    List,
     Optional,
     Tuple,
 )
@@ -68,8 +70,8 @@ class StreamingDataBuffer:
 
             if batch_size > self.max_size:
                 # Handle case where batch is larger than buffer
-                features = features[-self.max_size :]
-                targets = targets[-self.max_size :]
+                features = features[-self.max_size:]
+                targets = targets[-self.max_size:]
                 batch_size = self.max_size
 
             # Calculate wrap-around positions
@@ -77,13 +79,13 @@ class StreamingDataBuffer:
 
             if end_pos > self._head or batch_size == 0:
                 # No wrap-around
-                self.features[self._head : end_pos] = features
-                self.targets[self._head : end_pos] = targets
+                self.features[self._head:end_pos] = features
+                self.targets[self._head:end_pos] = targets
             else:
                 # Wrap-around case
                 first_part = self.max_size - self._head
-                self.features[self._head :] = features[:first_part]
-                self.targets[self._head :] = targets[:first_part]
+                self.features[self._head:] = features[:first_part]
+                self.targets[self._head:] = targets[:first_part]
                 self.features[:end_pos] = features[first_part:]
                 self.targets[:end_pos] = targets[first_part:]
 
@@ -108,8 +110,8 @@ class StreamingDataBuffer:
             if start_pos <= self._head or n == 0:
                 # No wrap-around
                 return (
-                    self.features[start_pos : self._head].copy(),
-                    self.targets[start_pos : self._head].copy(),
+                    self.features[start_pos:self._head].copy(),
+                    self.targets[start_pos:self._head].copy(),
                 )
             else:
                 # Wrap-around
@@ -119,8 +121,8 @@ class StreamingDataBuffer:
                 first_part = self.max_size - start_pos
                 result_features[:first_part] = self.features[start_pos:]
                 result_targets[:first_part] = self.targets[start_pos:]
-                result_features[first_part:] = self.features[: self._head]
-                result_targets[first_part:] = self.targets[: self._head]
+                result_features[first_part:] = self.features[:self._head]
+                result_targets[first_part:] = self.targets[:self._head]
 
                 return result_features, result_targets
 
@@ -190,10 +192,10 @@ class PerformanceMonitor:
             return {}
 
         return {
-            "recent_loss_mean": np.mean(self.loss_history),
-            "recent_loss_std": np.std(self.loss_history),
-            "recent_mae_mean": np.mean(self.mae_history),
-            "recent_mae_std": np.std(self.mae_history),
+            'recent_loss_mean': np.mean(self.loss_history),
+            'recent_loss_std': np.std(self.loss_history),
+            'recent_mae_mean': np.mean(self.mae_history),
+            'recent_mae_std': np.std(self.mae_history),
         }
 
     def get_full_stats(self) -> Dict[str, float]:
@@ -202,11 +204,11 @@ class PerformanceMonitor:
             return {}
 
         return {
-            "total_loss_mean": np.mean(self.full_loss_history),
-            "total_loss_std": np.std(self.full_loss_history),
-            "total_mae_mean": np.mean(self.full_mae_history),
-            "total_mae_std": np.std(self.full_mae_history),
-            "num_predictions": len(self.full_loss_history),
+            'total_loss_mean': np.mean(self.full_loss_history),
+            'total_loss_std': np.std(self.full_loss_history),
+            'total_mae_mean': np.mean(self.full_mae_history),
+            'total_mae_std': np.std(self.full_mae_history),
+            'num_predictions': len(self.full_loss_history),
         }
 
     def get_update_stats(self) -> Dict[str, float]:
@@ -215,9 +217,9 @@ class PerformanceMonitor:
             return {}
 
         return {
-            "avg_update_time_ms": np.mean(self.update_times) * 1000,
-            "min_update_time_ms": np.min(self.update_times) * 1000,
-            "max_update_time_ms": np.max(self.update_times) * 1000,
+            'avg_update_time_ms': np.mean(self.update_times) * 1000,
+            'min_update_time_ms': np.min(self.update_times) * 1000,
+            'max_update_time_ms': np.max(self.update_times) * 1000,
         }
 
     def check_drift(self, threshold: float = 1.5) -> Tuple[bool, str]:
@@ -388,10 +390,10 @@ class OnlineLearner:
 
             # Create metrics dict
             metrics = {
-                "update_number": self._update_count,
-                "samples_seen": self._sample_count,
-                "training_loss": avg_loss,
-                "update_duration_ms": duration * 1000,
+                'update_number': self._update_count,
+                'samples_seen': self._sample_count,
+                'training_loss': avg_loss,
+                'update_duration_ms': duration * 1000,
                 **self.monitor.get_recent_stats(),
             }
 
@@ -407,9 +409,9 @@ class OnlineLearner:
     def get_metrics(self) -> Dict[str, Any]:
         """Get current performance metrics."""
         return {
-            "sample_count": self._sample_count,
-            "update_count": self._update_count,
-            "buffer_size": len(self.buffer),
+            'sample_count': self._sample_count,
+            'update_count': self._update_count,
+            'buffer_size': len(self.buffer),
             **self.monitor.get_recent_stats(),
             **self.monitor.get_full_stats(),
             **self.monitor.get_update_stats(),
@@ -425,15 +427,12 @@ class OnlineLearner:
             raise ValueError("Checkpoint directory not set")
 
         path = self.checkpoint_dir / filename
-        torch.save(
-            {
-                "model_state_dict": self.model.state_dict(),
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "sample_count": self._sample_count,
-                "update_count": self._update_count,
-            },
-            path,
-        )
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'sample_count': self._sample_count,
+            'update_count': self._update_count,
+        }, path)
 
         logger.info(f"Saved checkpoint to {path}")
         return path
@@ -446,10 +445,10 @@ class OnlineLearner:
         path = self.checkpoint_dir / filename
         checkpoint = torch.load(path)
 
-        self.model.load_state_dict(checkpoint["model_state_dict"])
-        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-        self._sample_count = checkpoint["sample_count"]
-        self._update_count = checkpoint["update_count"]
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        self._sample_count = checkpoint['sample_count']
+        self._update_count = checkpoint['update_count']
 
         logger.info(f"Loaded checkpoint from {path}")
 
@@ -482,15 +481,14 @@ class DataStreamer:
 
     def _load_data(self, path: Path) -> None:
         """Load data from file."""
-        if path.suffix == ".npz":
+        if path.suffix == '.npz':
             data = np.load(path)
-            self._data = (data["X"], data["y"])
-        elif path.suffix == ".csv":
+            self._data = (data['X'], data['y'])
+        elif path.suffix == '.csv':
             import pandas as pd
-
             df = pd.read_csv(path)
             # Assume last columns are targets
-            target_cols = [c for c in df.columns if "target" in c.lower()]
+            target_cols = [c for c in df.columns if 'target' in c.lower()]
             if target_cols:
                 X = df.drop(columns=target_cols).values
                 y = df[target_cols].values
@@ -509,8 +507,8 @@ class DataStreamer:
         X, y = self._data
 
         for i in range(0, len(X), self.batch_size):
-            batch_X = X[i : i + self.batch_size]
-            batch_y = y[i : i + self.batch_size]
+            batch_X = X[i:i + self.batch_size]
+            batch_y = y[i:i + self.batch_size]
 
             if self.callback:
                 self.callback(batch_X, batch_y)
@@ -521,7 +519,10 @@ class DataStreamer:
         """Reset the streamer to the beginning."""
         self._index = 0
 
-    def set_callback(self, callback: Callable[[np.ndarray, np.ndarray], None]) -> None:
+    def set_callback(
+        self,
+        callback: Callable[[np.ndarray, np.ndarray], None]
+    ) -> None:
         """Set callback function for each batch."""
         self.callback = callback
 
@@ -576,23 +577,13 @@ if __name__ == "__main__":
     for i in range(args.num_samples // args.batch_size):
         # Generate random batch
         features = np.random.randn(args.batch_size, input_dim).astype(np.float32)
-        targets = (
-            (
-                features[:, 0]
-                + features[:, 1] * 0.5
-                + np.random.randn(args.batch_size) * 0.1
-            )
-            .reshape(-1, 1)
-            .astype(np.float32)
-        )
+        targets = (features[:, 0] + features[:, 1] * 0.5 + np.random.randn(args.batch_size) * 0.1).reshape(-1, 1).astype(np.float32)
 
         # Process sample
         result = learner.process_sample(features, targets)
 
         if result:
-            print(
-                f"Update #{result['update_number']}: loss={result['training_loss']:.4f}"
-            )
+            print(f"Update #{result['update_number']}: loss={result['training_loss']:.4f}")
 
     # Get final metrics
     print("\nFinal Metrics:")

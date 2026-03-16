@@ -3,21 +3,6 @@
 //! This module provides advanced HVAC system modeling capabilities including
 //! Variable Air Volume (VAV), Constant Air Volume (CAV), and heat pump systems.
 
-pub mod control;
-pub mod cycling;
-pub mod economizer;
-pub mod efficiency_curves;
-pub mod equipment;
-
-// Re-export common types for convenience
-pub use control::PredictiveController;
-pub use cycling::CyclingTracker;
-pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
-pub use efficiency_curves::{
-    default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
-};
-pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
-
 use serde::{Deserialize, Serialize};
 
 /// HVAC system types supported by the simulation
@@ -50,8 +35,6 @@ pub struct VAVTerminal {
     pub reheat_capacity: f64,
     /// Current airflow setpoint (m³/s)
     pub airflow_setpoint: f64,
-    /// Current part-load ratio (0.0 to 1.0)
-    pub current_plr: f64,
 }
 
 impl VAVTerminal {
@@ -64,7 +47,6 @@ impl VAVTerminal {
             min_airflow: max_airflow * 0.3, // Minimum 30% of max
             reheat_capacity: 5000.0,        // Default 5kW reheat
             airflow_setpoint: max_airflow,
-            current_plr: 0.0,
         }
     }
 
@@ -99,8 +81,6 @@ pub struct CAVSystem {
     pub heating_capacity: f64,
     /// Cooling coil capacity (W)
     pub cooling_capacity: f64,
-    /// Current part-load ratio (0.0 to 1.0)
-    pub current_plr: f64,
 }
 
 impl CAVSystem {
@@ -113,7 +93,6 @@ impl CAVSystem {
             fan_efficiency: 0.7,
             heating_capacity: 10000.0, // Default 10kW
             cooling_capacity: 10000.0, // Default 10kW
-            current_plr: 0.0,
         }
     }
 
@@ -153,12 +132,6 @@ pub struct HeatPump {
     pub design_temp_cooling: f64,
     /// Current operating mode
     pub mode: HeatPumpMode,
-    /// Current part-load ratio (0.0 to 1.0)
-    pub current_plr: f64,
-    /// Polynomial efficiency curve for heating mode
-    pub efficiency_curve_heating: efficiency_curves::EfficiencyCurve,
-    /// Polynomial efficiency curve for cooling mode
-    pub efficiency_curve_cooling: efficiency_curves::EfficiencyCurve,
 }
 
 impl HeatPump {
@@ -170,9 +143,6 @@ impl HeatPump {
         heating_cop: f64,
         cooling_cop: f64,
     ) -> Self {
-        // Use default AHRI coefficients for now
-        let default_coeffs = efficiency_curves::default_ahri_coefficients();
-
         Self {
             id,
             heating_capacity,
@@ -182,9 +152,6 @@ impl HeatPump {
             design_temp_heating: -5.0, // Design heating temp
             design_temp_cooling: 35.0, // Design cooling temp
             mode: HeatPumpMode::Off,
-            current_plr: 0.0,
-            efficiency_curve_heating: (&default_coeffs.heatpump_heating).into(),
-            efficiency_curve_cooling: (&default_coeffs.heatpump_cooling).into(),
         }
     }
 

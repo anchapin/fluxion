@@ -21,6 +21,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -39,13 +40,12 @@ class MCDropoutModel(nn.Module):
     and also during inference (without updating weights) to generate
     multiple stochastic forward passes for uncertainty estimation.
     """
-
     def __init__(
         self,
         input_dim: int,
         output_dim: int,
         hidden_dims: List[int],
-        dropout_rate: float = 0.1,
+        dropout_rate: float = 0.1
     ):
         super().__init__()
         layers = []
@@ -89,14 +89,15 @@ class MCDropoutLoss(nn.Module):
     - MSE loss for prediction accuracy
     - Variance regularization to encourage confident predictions
     """
-
     def __init__(self, lambda_variance: float = 0.01):
         super().__init__()
         self.lambda_variance = lambda_variance
         self.mse = nn.MSELoss()
 
     def forward(
-        self, pred: torch.Tensor, target: torch.Tensor
+        self,
+        pred: torch.Tensor,
+        target: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Main prediction loss
         data_loss = self.mse(pred, target)
@@ -163,7 +164,11 @@ def train_mc_dropout_model(
     logger.info("Starting training...")
 
     best_val_loss = float("inf")
-    history: Dict[str, List[float]] = {"loss": [], "val_loss": [], "variance_loss": []}
+    history: Dict[str, List[float]] = {
+        "loss": [],
+        "val_loss": [],
+        "variance_loss": []
+    }
 
     for epoch in range(epochs):
         model.train()
@@ -227,7 +232,7 @@ def train_mc_dropout_model(
                 mc_samples.append(mc_pred)
 
         mc_samples = np.array(mc_samples)  # Shape: (20, batch, output)
-        _ = np.mean(mc_samples, axis=0)
+        mc_mean = np.mean(mc_samples, axis=0)
         mc_std = np.std(mc_samples, axis=0)
 
     mse = np.mean((y_val - test_pred) ** 2)
@@ -241,7 +246,7 @@ def train_mc_dropout_model(
         "mse": float(mse),
         "mae": float(mae),
         "r2": float(r2),
-        "avg_uncertainty": float(avg_uncertainty),
+        "avg_uncertainty": float(avg_uncertainty)
     }
 
     logger.info(f"Validation Metrics: MAE={mae:.4f}, R2={r2:.4f}")
@@ -253,9 +258,7 @@ def train_mc_dropout_model(
     return model, metrics
 
 
-def export_mc_dropout_onnx(
-    model: nn.Module, sample_input: np.ndarray, output_path: Path
-):
+def export_mc_dropout_onnx(model: nn.Module, sample_input: np.ndarray, output_path: Path):
     """Export MC Dropout model to ONNX."""
     logger.info(f"Exporting MC Dropout model to {output_path}...")
     model.eval()
@@ -281,7 +284,9 @@ def export_mc_dropout_onnx(
 
 
 def mc_dropout_inference(
-    model: nn.Module, X: np.ndarray, num_samples: int = 20
+    model: nn.Module,
+    X: np.ndarray,
+    num_samples: int = 20
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Run Monte Carlo Dropout inference.
@@ -370,6 +375,7 @@ def main():
 
     # Get Data (use simplified generation for demo)
     if args.input_file:
+        import pandas as pd
         path = Path(args.input_file)
         if path.suffix == ".npz":
             data = np.load(path)
@@ -377,21 +383,13 @@ def main():
         else:
             logger.warning("Using synthetic data generation for demo")
             X = np.random.randn(args.num_samples, 3).astype(np.float32)
-            y = (
-                (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1)
-                .reshape(-1, 1)
-                .astype(np.float32)
-            )
+            y = (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
     else:
         # Generate synthetic data
         np.random.seed(args.seed)
         X = np.random.randn(args.num_samples, 3).astype(np.float32)
         # Simple linear relationship with noise
-        y = (
-            (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1)
-            .reshape(-1, 1)
-            .astype(np.float32)
-        )
+        y = (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
 
     # Train
     model, metrics = train_mc_dropout_model(
@@ -422,9 +420,7 @@ def main():
 
     logger.info("MC Dropout training complete!")
     logger.info(f"Model saved to {output_dir}")
-    logger.info(
-        f"Use {config['num_mc_samples']} forward passes at inference for uncertainty"
-    )
+    logger.info(f"Use {config['num_mc_samples']} forward passes at inference for uncertainty")
 
 
 if __name__ == "__main__":

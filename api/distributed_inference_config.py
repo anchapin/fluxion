@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import yaml  # type: ignore
+import yaml
 
 from api.distributed_inference import (
     DistributedInferenceManager,
@@ -26,7 +26,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DistributedInferenceConfig:
     """Configuration for distributed inference system."""
-
     endpoints: List[EndpointConfig] = field(default_factory=list)
     strategy: LoadBalancingStrategy = LoadBalancingStrategy.ROUND_ROBIN
     health_check_interval: float = 30.0
@@ -74,7 +73,6 @@ def load_from_yaml(file_path: Union[str, Path]) -> DistributedInferenceConfig:
 def load_from_json(file_path: Union[str, Path]) -> DistributedInferenceConfig:
     """Load configuration from JSON file."""
     import json
-
     with open(file_path, "r") as f:
         config = json.load(f)
     return load_from_dict(config)

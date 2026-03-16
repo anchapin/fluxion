@@ -14,11 +14,12 @@ Supports:
 import argparse
 import json
 import logging
+import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Union
+from typing import Dict, List, Optional
 
 import numpy as np
 
@@ -42,20 +43,17 @@ try:
         CheckpointCallback,
         EvalCallback,
     )
+    from stable_baselines3.common.env_util import make_vec_env
     from stable_baselines3.common.monitor import Monitor
-    from stable_baselines3.common.vec_env import DummyVecEnv
-
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
     SB3_AVAILABLE = True
 except ImportError:
-    logger.warning(
-        "Stable Baselines3 not installed. Run: pip install stable-baselines3"
-    )
+    logger.warning("Stable Baselines3 not installed. Run: pip install stable-baselines3")
     PPO = None
 
 # Import Fluxion environment
 try:
-    from rl_environment import EnvConfig, FluxionEnv
-
+    from rl_environment import FluxionEnv, EnvConfig
     ENV_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"Could not import FluxionEnv: {e}")
@@ -117,7 +115,6 @@ def create_env(config: RLTrainingConfig, seed: int = 0):
 
 def make_training_env(config: RLTrainingConfig, seed: int = 0):
     """Create vectorized training environment."""
-
     def make_env():
         return create_env(config, seed)
 
@@ -137,14 +134,10 @@ def train_ppo(config: RLTrainingConfig) -> PPO:
         Trained PPO model
     """
     if not SB3_AVAILABLE:
-        raise RuntimeError(
-            "Stable Baselines3 is required for training. Install with: pip install stable-baselines3"
-        )
+        raise RuntimeError("Stable Baselines3 is required for training. Install with: pip install stable-baselines3")
 
     if not ENV_AVAILABLE:
-        raise RuntimeError(
-            "Fluxion environment is required. Ensure rl_environment.py is available."
-        )
+        raise RuntimeError("Fluxion environment is required. Ensure rl_environment.py is available.")
 
     # Create output directory
     output_dir = Path(config.output_dir)
@@ -159,7 +152,9 @@ def train_ppo(config: RLTrainingConfig) -> PPO:
 
     # PPO Policy kwargs
     policy_kwargs = {
-        "net_arch": [{"pi": config.policy_layers, "vf": config.policy_layers}],
+        "net_arch": [
+            {"pi": config.policy_layers, "vf": config.policy_layers}
+        ],
         "activation_fn": "ReLU",
     }
 
@@ -239,7 +234,7 @@ def train_ppo(config: RLTrainingConfig) -> PPO:
     return model
 
 
-def export_to_onnx(output_path_str: str = "models/rl_policy/policy.onnx") -> str:
+def export_to_onnx(output_path: str = "models/rl_policy/policy.onnx"):
     """
     Export a simple ONNX policy for testing without full training.
 
@@ -247,7 +242,7 @@ def export_to_onnx(output_path_str: str = "models/rl_policy/policy.onnx") -> str
     for basic HVAC control in the Rust engine.
 
     Args:
-        output_path_str: Path to save ONNX model
+        output_path: Path to save ONNX model
 
     Returns:
         Path to exported ONNX model
@@ -255,7 +250,7 @@ def export_to_onnx(output_path_str: str = "models/rl_policy/policy.onnx") -> str
     import torch
     from torch import nn
 
-    output_path = Path(output_path_str)
+    output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     # Observation dimension from FluxionEnv
@@ -277,10 +272,8 @@ def export_to_onnx(output_path_str: str = "models/rl_policy/policy.onnx") -> str
                 nn.Tanh(),  # Bound to [-1, 1]
             )
             # Scale and bias for action space
-            self.register_buffer(
-                "scale", torch.tensor([5.0, 5.0])
-            )  # Heating: 15-25, Cooling: 20-30
-            self.register_buffer("bias", torch.tensor([20.0, 25.0]))
+            self.register_buffer('scale', torch.tensor([5.0, 5.0]))  # Heating: 15-25, Cooling: 20-30
+            self.register_buffer('bias', torch.tensor([20.0, 25.0]))
 
         def forward(self, x):
             out = self.net(x)
@@ -320,16 +313,14 @@ def export_to_onnx(output_path_str: str = "models/rl_policy/policy.onnx") -> str
         "framework": "pytorch",
     }
 
-    metadata_path = output_path.with_suffix(".json")
+    metadata_path = output_path.with_suffix('.json')
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    return str(output_path)
+    return output_path
 
 
-def export_policy_to_onnx(
-    model: PPO, output_path_input: Union[str, Path], config: RLTrainingConfig
-) -> str:
+def export_policy_to_onnx(model: PPO, output_path: Path, config: RLTrainingConfig):
     """
     Export trained PPO policy to ONNX format.
 
@@ -338,13 +329,12 @@ def export_policy_to_onnx(
 
     Args:
         model: Trained PPO model
-        output_path_input: Path to save ONNX model
+        output_path: Path to save ONNX model
         config: Training configuration
     """
     import torch
     from torch import nn
 
-    output_path = Path(output_path_input)
     logger.info(f"Exporting policy to ONNX: {output_path}")
 
     # Extract the policy network from PPO
@@ -353,11 +343,11 @@ def export_policy_to_onnx(
     policy = model.policy
 
     # Get the feature extractor
-    if hasattr(policy, "features_extractor"):
-        _ = policy.features_extractor.features_dim
+    if hasattr(policy, 'features_extractor'):
+        feature_dim = policy.features_extractor.features_dim
     else:
         # Default feature dimension
-        _ = 64
+        feature_dim = 64
 
     # Get action space dimension
     action_dim = policy.action_space.shape[0]
@@ -381,12 +371,8 @@ def export_policy_to_onnx(
             self.mean_net = nn.Linear(prev_dim, action_dim)
 
             # Temperature scaling (for action bounds)
-            self.register_buffer(
-                "action_scale", torch.tensor([(25.0 - 15.0) / 2.0, (30.0 - 20.0) / 2.0])
-            )
-            self.register_buffer(
-                "action_bias", torch.tensor([(25.0 + 15.0) / 2.0, (30.0 + 20.0) / 2.0])
-            )
+            self.register_buffer('action_scale', torch.tensor([(25.0 - 15.0) / 2.0, (30.0 - 20.0) / 2.0]))
+            self.register_buffer('action_bias', torch.tensor([(25.0 + 15.0) / 2.0, (30.0 + 20.0) / 2.0]))
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             # Encode observations
@@ -398,11 +384,7 @@ def export_policy_to_onnx(
             return mean
 
     # Get observation dimension from environment
-    obs_dim = (
-        config.num_observation_features
-        if hasattr(config, "num_observation_features")
-        else 5
-    )
+    obs_dim = config.num_observation_features if hasattr(config, 'num_observation_features') else 5
 
     # Create ONNX model
     onnx_policy = ONNXPolicy(
@@ -416,19 +398,19 @@ def export_policy_to_onnx(
     # you might want more sophisticated weight mapping
     try:
         # Try to extract and copy the policy network weights
-        if hasattr(policy, "mlp_extractor"):
+        if hasattr(policy, 'mlp_extractor'):
             # SB3 structure
-            if hasattr(policy.mlp_extractor, "policy_net"):
+            if hasattr(policy.mlp_extractor, 'policy_net'):
                 # Copy policy network weights
                 policy_state_dict = policy.state_dict()
                 onnx_policy_state = onnx_policy.state_dict()
 
                 # Map SB3 weights to our ONNX model
                 for key in onnx_policy_state:
-                    if "encoder" in key:
+                    if 'encoder' in key:
                         # Map encoder layers
-                        idx = key.split(".")[1] if len(key.split(".")) > 1 else 0
-                        sb3_key = f"mlp_extractor.policy_net.{idx}.0.weight"
+                        idx = key.split('.')[1] if len(key.split('.')) > 1 else 0
+                        sb3_key = f'mlp_extractor.policy_net.{idx}.0.weight'
                         if sb3_key in policy_state_dict:
                             onnx_policy_state[key] = policy_state_dict[sb3_key].clone()
 
@@ -436,9 +418,7 @@ def export_policy_to_onnx(
                 logger.info("Copied policy weights from SB3 model")
     except Exception as e:
         logger.warning(f"Could not copy weights directly: {e}")
-        logger.info(
-            "Using randomly initialized ONNX policy - training required to improve"
-        )
+        logger.info("Using randomly initialized ONNX policy - training required to improve")
 
     # Export to ONNX
     onnx_policy.eval()
@@ -476,18 +456,16 @@ def export_policy_to_onnx(
         "framework": "stable-baselines3",
     }
 
-    metadata_path = output_path.with_suffix(".json")
+    metadata_path = output_path.with_suffix('.json')
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
     logger.info(f"Saved metadata to {metadata_path}")
 
-    return str(output_path)
+    return output_path
 
 
-def export_simple_onxx_policy(
-    output_path_input: Union[str, Path], config: RLTrainingConfig
-) -> str:
+def export_simple_onxx_policy(output_path: Path, config: RLTrainingConfig):
     """
     Export a simple deterministic policy network to ONNX.
 
@@ -497,7 +475,6 @@ def export_simple_onxx_policy(
     import torch
     from torch import nn
 
-    output_path = Path(output_path_input)
     logger.info(f"Creating simple ONNX policy at {output_path}")
 
     obs_dim = 5  # [outdoor_temp, zone_temp, solar_rad, hour, day]
@@ -519,10 +496,8 @@ def export_simple_onxx_policy(
                 nn.Tanh(),  # Bound to [-1, 1]
             )
             # Scale and bias for action space
-            self.register_buffer(
-                "scale", torch.tensor([5.0, 5.0])
-            )  # Heating: 15-25, Cooling: 20-30
-            self.register_buffer("bias", torch.tensor([20.0, 25.0]))
+            self.register_buffer('scale', torch.tensor([5.0, 5.0]))  # Heating: 15-25, Cooling: 20-30
+            self.register_buffer('bias', torch.tensor([20.0, 25.0]))
 
         def forward(self, x):
             out = self.net(x)
@@ -562,16 +537,14 @@ def export_simple_onxx_policy(
         "framework": "pytorch",
     }
 
-    metadata_path = output_path.with_suffix(".json")
+    metadata_path = output_path.with_suffix('.json')
     with open(metadata_path, "w") as f:
         json.dump(metadata, f, indent=2)
 
-    return str(output_path)
+    return output_path
 
 
-def evaluate_policy(
-    model: PPO, config: RLTrainingConfig, num_episodes: int = 3
-) -> Dict[str, float]:
+def evaluate_policy(model: PPO, config: RLTrainingConfig, num_episodes: int = 3) -> Dict:
     """
     Evaluate trained policy.
 
@@ -603,11 +576,11 @@ def evaluate_policy(
         episode_rewards.append(episode_reward)
 
         # Get info from monitor
-        if hasattr(eval_env, "envs") and eval_env.envs:
+        if hasattr(eval_env, 'envs') and eval_env.envs:
             info = eval_env.envs[0].get_episode_rewards()
             if info:
-                episode_energies.append(info.get("episode_energy", 0))
-                episode_discomforts.append(info.get("episode_discomfort", 0))
+                episode_energies.append(info.get('episode_energy', 0))
+                episode_discomforts.append(info.get('episode_discomfort', 0))
 
     eval_env.close()
 
@@ -740,9 +713,7 @@ def main():
 
     # Full training + export
     if not SB3_AVAILABLE:
-        logger.error(
-            "Stable Baselines3 is required. Install with: pip install stable-baselines3"
-        )
+        logger.error("Stable Baselines3 is required. Install with: pip install stable-baselines3")
         sys.exit(1)
 
     # Train

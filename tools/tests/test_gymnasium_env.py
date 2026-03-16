@@ -6,13 +6,11 @@ Issue: GitHub #328 - Develop Gymnasium Environment Wrapper (FluxionEnv)
 """
 
 import sys
-
-sys.path.insert(0, ".")
+sys.path.insert(0, '.')
 
 import numpy as np
 import pytest
-
-from tools.gymnasium_env import GYMNASIUM_AVAILABLE, EnvConfig, FluxionEnv
+from tools.gymnasium_env import FluxionEnv, EnvConfig, GYMNASIUM_AVAILABLE
 
 
 class TestFluxionEnv:
@@ -123,9 +121,7 @@ class TestFluxionEnv:
 
         # Action with values outside bounds
         action = {
-            "continuous": np.array(
-                [10.0, 35.0, 150.0], dtype=np.float32
-            ),  # Out of range
+            "continuous": np.array([10.0, 35.0, 150.0], dtype=np.float32),  # Out of range
             "discrete": np.array([1, 1, 1, 0], dtype=np.int8),
         }
 
@@ -204,7 +200,7 @@ class TestGymnasiumCompatibility:
         import gymnasium as gym
 
         # Import to trigger registration
-        from tools.gymnasium_env import EnvConfig
+        from tools.gymnasium_env import FluxionEnv, EnvConfig
 
         # Create config first
         config = EnvConfig(num_zones=1, steps_per_episode=24)

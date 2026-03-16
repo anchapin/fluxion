@@ -4,7 +4,7 @@
 //! using rayon for running thousands of building variants simultaneously.
 //! This is essential for high-throughput building energy analysis and optimization.
 
-use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
+use crate::sim::thermal_model::{ThermalModelTrait, ThermalModelMode};
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -120,14 +120,7 @@ impl ParallelThermalEvaluator {
                 model.apply_parameters(&variant.parameters);
 
                 // Run a simplified simulation (8760 hourly timesteps = 1 year)
-                let eui = model.solve_timesteps(
-                    8760,
-                    &crate::ai::surrogate::default(),
-                    false,
-                    None,
-                    None,
-                    None,
-                );
+                let eui = model.solve_timesteps(8760, &crate::ai::surrogate::SurrogateManager::default(), false);
 
                 VariantResult {
                     id: variant.id,
@@ -157,29 +150,23 @@ impl ParallelThermalEvaluator {
     {
         let chunk_size = self.config.chunk_size;
 
-        let chunks: Vec<Vec<BuildingVariant>> =
-            population.chunks(chunk_size).map(|c| c.to_vec()).collect();
+        let chunks: Vec<Vec<BuildingVariant>> = population
+            .chunks(chunk_size)
+            .map(|c| c.to_vec())
+            .collect();
 
         let results: Vec<Vec<VariantResult>> = chunks
             .par_iter()
             .map(|chunk| {
                 // Create a new model factory for each parallel chunk to avoid borrow issues
                 // This works because we create a fresh closure that captures nothing
-                let mut chunk_model: Box<dyn ThermalModelTrait> =
-                    Box::new(crate::sim::thermal_model::PhysicsThermalModel::new(1));
+                let mut chunk_model: Box<dyn ThermalModelTrait> = Box::new(crate::sim::thermal_model::PhysicsThermalModel::new(1));
 
                 chunk
                     .iter()
                     .map(|variant| {
                         chunk_model.apply_parameters(&variant.parameters);
-                        let eui = chunk_model.solve_timesteps(
-                            8760,
-                            &crate::ai::surrogate::default(),
-                            false,
-                            None,
-                            None,
-                            None,
-                        );
+                        let eui = chunk_model.solve_timesteps(8760, &crate::ai::surrogate::SurrogateManager::default(), false);
 
                         VariantResult {
                             id: variant.id,
@@ -493,8 +480,10 @@ impl DistributedInferenceExecutor {
     pub fn execute_chunked(&self, population: Vec<Vec<f64>>, use_surrogates: bool) -> Vec<f64> {
         let chunk_size = self.config.chunk_size;
 
-        let chunks: Vec<Vec<Vec<f64>>> =
-            population.chunks(chunk_size).map(|c| c.to_vec()).collect();
+        let chunks: Vec<Vec<Vec<f64>>> = population
+            .chunks(chunk_size)
+            .map(|c| c.to_vec())
+            .collect();
 
         let chunk_results: Vec<Vec<f64>> = chunks
             .par_iter()
@@ -562,9 +551,7 @@ where
     let _ = manager.submit_batch(population).await;
 
     // Collect results
-    let results = manager
-        .collect_results(manager.tasks_submitted() as usize)
-        .await;
+    let results = manager.collect_results(manager.tasks_submitted() as usize).await;
 
     results
 }

@@ -12,13 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-from . import (
-    ComplianceCheckResult,
-    ComplianceReport,
-    ComplianceStatus,
-    Standard,
-    get_rules_for_standard,
-)
+from . import ComplianceCheckResult, ComplianceReport, ComplianceStatus, Standard, get_rules_for_standard
 from .llm_backend import LLMBackend, LLMResponse, create_backend
 
 logger = logging.getLogger(__name__)
@@ -89,7 +83,7 @@ class CodeComplianceAgent:
         system_prompt: Optional[str] = None,
         temperature: float = 0.3,
         max_tokens: int = 2048,
-        **backend_kwargs,
+        **backend_kwargs
     ):
         """
         Initialize the compliance agent.
@@ -106,9 +100,7 @@ class CodeComplianceAgent:
         self._temperature = temperature
         self._max_tokens = max_tokens
 
-        logger.info(
-            f"Initialized CodeComplianceAgent with backend: {self._backend.name}"
-        )
+        logger.info(f"Initialized CodeComplianceAgent with backend: {self._backend.name}")
 
     @property
     def backend(self) -> LLMBackend:
@@ -119,7 +111,11 @@ class CodeComplianceAgent:
         """Check if the LLM backend is available."""
         return self._backend.is_available()
 
-    def _build_prompt(self, model_data: Dict[str, Any], rules: List[Any]) -> str:
+    def _build_prompt(
+        self,
+        model_data: Dict[str, Any],
+        rules: List[Any]
+    ) -> str:
         """Build the compliance checking prompt."""
         # Format the rules
         rules_text = []
@@ -167,7 +163,7 @@ Return your findings in JSON format."""
             pass
 
         # Try to find JSON in the response (might be wrapped in markdown)
-        json_pattern = r"\{[\s\S]*\}"
+        json_pattern = r'\{[\s\S]*\}'
         matches = re.findall(json_pattern, content)
 
         for match in matches:
@@ -184,7 +180,7 @@ Return your findings in JSON format."""
             "compliance_checks": [],
             "overall_status": "ERROR",
             "summary": {"error": "Failed to parse LLM response"},
-            "raw_response": content[:500],
+            "raw_response": content[:500]
         }
 
     def check_compliance(
@@ -226,19 +222,17 @@ Return your findings in JSON format."""
 
                 messages = [
                     {"role": "system", "content": self._system_prompt},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": prompt}
                 ]
 
                 response = self._backend.generate(
                     messages=messages,
                     temperature=self._temperature,
-                    max_tokens=self._max_tokens,
+                    max_tokens=self._max_tokens
                 )
 
                 llm_results = self._parse_llm_response(response)
-                logger.info(
-                    f"LLM compliance check completed in {response.latency_ms:.0f}ms"
-                )
+                logger.info(f"LLM compliance check completed in {response.latency_ms:.0f}ms")
             else:
                 logger.warning(f"LLM backend ({self._backend.name}) is not available")
                 llm_error = f"Backend {self._backend.name} is not available"
@@ -257,16 +251,14 @@ Return your findings in JSON format."""
                 except ValueError:
                     status = ComplianceStatus.NEEDS_REVIEW
 
-                checks.append(
-                    ComplianceCheckResult(
-                        rule_id=check_data.get("rule_id", "UNKNOWN"),
-                        rule_title=check_data.get("rule_title", "Unknown Rule"),
-                        status=status,
-                        message=check_data.get("message", ""),
-                        details=check_data.get("details", {}),
-                        recommendation=check_data.get("recommendation"),
-                    )
-                )
+                checks.append(ComplianceCheckResult(
+                    rule_id=check_data.get("rule_id", "UNKNOWN"),
+                    rule_title=check_data.get("rule_title", "Unknown Rule"),
+                    status=status,
+                    message=check_data.get("message", ""),
+                    details=check_data.get("details", {}),
+                    recommendation=check_data.get("recommendation")
+                ))
 
         # If no LLM results or also running rules engine, use rule-based checks
         if use_rules_engine or not checks:
@@ -284,27 +276,17 @@ Return your findings in JSON format."""
         # Calculate summary
         summary = {
             "total": len(checks),
-            "compliant": sum(
-                1 for c in checks if c.status == ComplianceStatus.COMPLIANT
-            ),
-            "non_compliant": sum(
-                1 for c in checks if c.status == ComplianceStatus.NON_COMPLIANT
-            ),
-            "needs_review": sum(
-                1 for c in checks if c.status == ComplianceStatus.NEEDS_REVIEW
-            ),
-            "not_applicable": sum(
-                1 for c in checks if c.status == ComplianceStatus.NOT_APPLICABLE
-            ),
+            "compliant": sum(1 for c in checks if c.status == ComplianceStatus.COMPLIANT),
+            "non_compliant": sum(1 for c in checks if c.status == ComplianceStatus.NON_COMPLIANT),
+            "needs_review": sum(1 for c in checks if c.status == ComplianceStatus.NEEDS_REVIEW),
+            "not_applicable": sum(1 for c in checks if c.status == ComplianceStatus.NOT_APPLICABLE),
             "error": sum(1 for c in checks if c.status == ComplianceStatus.ERROR),
         }
 
         # Determine overall status
         if llm_results and "overall_status" in llm_results:
             try:
-                overall_status = ComplianceStatus(
-                    llm_results.get("overall_status", "NEEDS_REVIEW")
-                )
+                overall_status = ComplianceStatus(llm_results.get("overall_status", "NEEDS_REVIEW"))
             except ValueError:
                 overall_status = ComplianceStatus.NEEDS_REVIEW
         elif summary["non_compliant"] > 0:
@@ -333,11 +315,13 @@ Return your findings in JSON format."""
             overall_status=overall_status,
             checks=checks,
             summary=summary,
-            metadata=metadata,
+            metadata=metadata
         )
 
     def _run_rules_engine(
-        self, model_data: Dict[str, Any], rules: List[Any]
+        self,
+        model_data: Dict[str, Any],
+        rules: List[Any]
     ) -> List[ComplianceCheckResult]:
         """
         Run rule-based compliance checks.
@@ -363,16 +347,14 @@ Return your findings in JSON format."""
 
             # If no relevant parameters found, mark as needs review
             if not params:
-                checks.append(
-                    ComplianceCheckResult(
-                        rule_id=rule.rule_id,
-                        rule_title=rule.title,
-                        status=ComplianceStatus.NEEDS_REVIEW,
-                        message="No relevant parameters found in model data for this rule.",
-                        details={"applicable_parameters": rule.applicable_parameters},
-                        severity="low",
-                    )
-                )
+                checks.append(ComplianceCheckResult(
+                    rule_id=rule.rule_id,
+                    rule_title=rule.title,
+                    status=ComplianceStatus.NEEDS_REVIEW,
+                    message=f"No relevant parameters found in model data for this rule.",
+                    details={"applicable_parameters": rule.applicable_parameters},
+                    severity="low"
+                ))
                 continue
 
             # Check each parameter against thresholds
@@ -386,46 +368,24 @@ Return your findings in JSON format."""
 
                         # Determine if it's a minimum or maximum requirement
                         # Based on common conventions for building standards
-                        if (
-                            "u_factor" in param_name.lower()
-                            or "shgc" in param_name.lower()
-                        ):
+                        if "u_factor" in param_name.lower() or "shgc" in param_name.lower():
                             # Lower is better (maximum allowed)
                             if value > threshold:
-                                non_compliant_params.append(
-                                    (param_name, value, threshold, "max")
-                                )
+                                non_compliant_params.append((param_name, value, threshold, "max"))
                             else:
-                                compliant_params.append(
-                                    (param_name, value, threshold, "max")
-                                )
-                        elif (
-                            "r_value" in param_name.lower()
-                            or "efficiency" in param_name.lower()
-                            or "cop" in param_name.lower()
-                        ):
+                                compliant_params.append((param_name, value, threshold, "max"))
+                        elif "r_value" in param_name.lower() or "efficiency" in param_name.lower() or "cop" in param_name.lower():
                             # Higher is better (minimum required)
                             if value < threshold:
-                                non_compliant_params.append(
-                                    (param_name, value, threshold, "min")
-                                )
+                                non_compliant_params.append((param_name, value, threshold, "min"))
                             else:
-                                compliant_params.append(
-                                    (param_name, value, threshold, "min")
-                                )
-                        elif (
-                            "density" in param_name.lower()
-                            or "power" in param_name.lower()
-                        ):
+                                compliant_params.append((param_name, value, threshold, "min"))
+                        elif "density" in param_name.lower() or "power" in param_name.lower():
                             # Lower is better (maximum allowed)
                             if value > threshold:
-                                non_compliant_params.append(
-                                    (param_name, value, threshold, "max")
-                                )
+                                non_compliant_params.append((param_name, value, threshold, "max"))
                             else:
-                                compliant_params.append(
-                                    (param_name, value, threshold, "max")
-                                )
+                                compliant_params.append((param_name, value, threshold, "max"))
 
             # Determine status
             if non_compliant_params:
@@ -446,70 +406,49 @@ Return your findings in JSON format."""
                 if non_compliant_params:
                     param_name = non_compliant_params[0][0]
                     if "u_factor" in param_name.lower():
-                        recommendation = (
-                            "Consider using higher performance insulation or glazing."
-                        )
+                        recommendation = "Consider using higher performance insulation or glazing."
                     elif "r_value" in param_name.lower():
                         recommendation = "Consider adding more insulation to meet the R-value requirement."
-                    elif (
-                        "efficiency" in param_name.lower()
-                        or "cop" in param_name.lower()
-                    ):
-                        recommendation = (
-                            "Consider upgrading to more efficient HVAC equipment."
-                        )
+                    elif "efficiency" in param_name.lower() or "cop" in param_name.lower():
+                        recommendation = "Consider upgrading to more efficient HVAC equipment."
                     elif "density" in param_name.lower():
-                        recommendation = (
-                            "Consider using more efficient lighting systems."
-                        )
+                        recommendation = "Consider using more efficient lighting systems."
 
-                checks.append(
-                    ComplianceCheckResult(
-                        rule_id=rule.rule_id,
-                        rule_title=rule.title,
-                        status=status,
-                        message="; ".join(messages),
-                        details={
-                            "non_compliant": dict(
-                                (p, v) for p, v, t, rt in non_compliant_params
-                            ),
-                            "compliant": dict(
-                                (p, v) for p, v, t, rt in compliant_params
-                            ),
-                            "thresholds": rule.threshold,
-                        },
-                        severity="high",
-                        recommendation=recommendation,
-                    )
-                )
+                checks.append(ComplianceCheckResult(
+                    rule_id=rule.rule_id,
+                    rule_title=rule.title,
+                    status=status,
+                    message="; ".join(messages),
+                    details={
+                        "non_compliant": dict((p, v) for p, v, t, rt in non_compliant_params),
+                        "compliant": dict((p, v) for p, v, t, rt in compliant_params),
+                        "thresholds": rule.threshold
+                    },
+                    severity="high",
+                    recommendation=recommendation
+                ))
             elif compliant_params:
                 status = ComplianceStatus.COMPLIANT
-                checks.append(
-                    ComplianceCheckResult(
-                        rule_id=rule.rule_id,
-                        rule_title=rule.title,
-                        status=status,
-                        message="All checked parameters meet requirements.",
-                        details={
-                            "compliant": dict(
-                                (p, v) for p, v, t, rt in compliant_params
-                            ),
-                            "thresholds": rule.threshold,
-                        },
-                        severity="low",
-                    )
-                )
+                checks.append(ComplianceCheckResult(
+                    rule_id=rule.rule_id,
+                    rule_title=rule.title,
+                    status=status,
+                    message=f"All checked parameters meet requirements.",
+                    details={
+                        "compliant": dict((p, v) for p, v, t, rt in compliant_params),
+                        "thresholds": rule.threshold
+                    },
+                    severity="low"
+                ))
             else:
-                checks.append(
-                    ComplianceCheckResult(
-                        rule_id=rule.rule_id,
-                        rule_title=rule.title,
-                        status=ComplianceStatus.NEEDS_REVIEW,
-                        message="Parameters present but could not determine compliance.",
-                        details={"parameters": params},
-                        severity="medium",
-                    )
-                )
+                checks.append(ComplianceCheckResult(
+                    rule_id=rule.rule_id,
+                    rule_title=rule.title,
+                    status=ComplianceStatus.NEEDS_REVIEW,
+                    message="Parameters present but could not determine compliance.",
+                    details={"parameters": params},
+                    severity="medium"
+                ))
 
         return checks
 
@@ -517,7 +456,7 @@ Return your findings in JSON format."""
         self,
         report: ComplianceReport,
         output_path: Union[str, Path],
-        format: str = "json",
+        format: str = "json"
     ) -> None:
         """
         Save a compliance report to file.
@@ -540,7 +479,10 @@ Return your findings in JSON format."""
 
         logger.info(f"Report saved to {output_path}")
 
-    def load_model_data(self, file_path: Union[str, Path]) -> Dict[str, Any]:
+    def load_model_data(
+        self,
+        file_path: Union[str, Path]
+    ) -> Dict[str, Any]:
         """
         Load building model data from a file.
 
@@ -562,7 +504,6 @@ Return your findings in JSON format."""
                 return json.load(f)
         elif file_path.suffix == ".csv":
             import pandas as pd
-
             df = pd.read_csv(file_path)
             # Convert DataFrame to dict, taking first row if multiple
             if len(df) > 1:
