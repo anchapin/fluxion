@@ -2835,55 +2835,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;
 
-        // Use area-weighted distribution for radiative gains (Issue #303)
-        let mut internal_gains_watts = self.loads.clone();
-        internal_gains_watts.mul_assign(&self.zone_area);
-        let mut solar_gains_watts = self.solar_gains.clone();
-        solar_gains_watts.mul_assign(&self.zone_area);
-        // Precompute solar gain sum for diagnostic (avoid use-after-move)
-        let solar_gain_sum = solar_gains_watts.as_ref().iter().sum::<f64>();
+        // Combine fractions to avoid multiple intermediate VectorField allocations
+        let conv_frac = self.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+        let st_int_frac = rad_frac * (1.0 - self.solar_distribution_to_air);
+        let m_int_frac = rad_frac * self.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.solar_beam_to_mass_fraction;
+        let m_sol_frac = self.solar_beam_to_mass_fraction;
 
-        // Split internal gains into convective and radiative components
-        let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
-        // Move internal_gains_watts to avoid second clone
-        let phi_rad_internal = internal_gains_watts * (1.0 - self.convective_fraction);
+        let loads_ref = self.loads.as_ref();
+        let solar_ref = self.solar_gains.as_ref();
+        let area_ref = self.zone_area.as_ref();
 
-        // Solar gains are 100% radiative (Issue #361)
-        // For 5R1C model, implement beam-to-floor direct radiation mapping (Issue #361)
-        // Use solar_beam_to_mass_fraction to route ONLY solar radiation to thermal mass
-        // Internal radiative gains are handled separately via area-weighted distribution
-        let st_internal_frac =
-            (1.0 - self.convective_fraction) * (1.0 - self.solar_distribution_to_air);
-        let m_internal_frac = (1.0 - self.convective_fraction) * self.solar_distribution_to_air;
-        // Clone since internal_gains_watts was moved above
-        let phi_st_internal = internal_gains_watts.clone() * st_internal_frac;
-        let phi_m_internal = internal_gains_watts.clone() * m_internal_frac;
+        let mut phi_ia_data = Vec::with_capacity(self.num_zones);
+        let mut phi_st_data = Vec::with_capacity(self.num_zones);
+        let mut phi_m_data = Vec::with_capacity(self.num_zones);
 
-        // Solar gains split by beam-to-mass fraction
-        // Move solar_gains_watts to avoid second clone
-        let st_solar_frac = 1.0 - self.solar_beam_to_mass_fraction;
-        let phi_st_solar = solar_gains_watts.clone() * st_solar_frac;
-        let phi_m_solar = solar_gains_watts * self.solar_beam_to_mass_fraction;
-
-        // Total surface and mass gains
-        let phi_st = phi_st_internal + phi_st_solar;
-
-        // Add internal radiative heat gains to mass (Plan 17-04)
-        // Convert Watts to W/m² by dividing by zone_area (distributed per zone)
-        let mut internal_rad_mass_per_zone = Vec::with_capacity(self.num_zones);
-        let zone_areas = self.zone_area.as_ref();
-        let total_area = zone_areas.iter().sum::<f64>();
         for i in 0..self.num_zones {
-            if total_area > 0.0 {
-                let zone_fraction = zone_areas[i] / total_area;
-                internal_rad_mass_per_zone
-                    .push(self.internal_radiative_to_mass * zone_fraction / zone_areas[i]);
-            } else {
-                internal_rad_mass_per_zone.push(0.0);
-            }
+            let load_w = loads_ref[i] * area_ref[i];
+            let sol_w = solar_ref[i] * area_ref[i];
+
+            phi_ia_data.push(load_w * conv_frac);
+            phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
+            phi_m_data.push(load_w * m_int_frac + sol_w * m_sol_frac);
         }
-        let phi_m_internal_loads = VectorField::new(internal_rad_mass_per_zone);
-        let phi_m = phi_m_internal + phi_m_solar + T::from(phi_m_internal_loads);
+
+        let phi_ia = T::from(VectorField::new(phi_ia_data));
+        let phi_st = T::from(VectorField::new(phi_st_data));
+        let phi_m = T::from(VectorField::new(phi_m_data));
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -3409,36 +3388,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let hour_of_day = (timestep % 24) as u8;
 
-        // Split gains using solar distribution and convective fraction
-        let mut internal_gains_watts = self.loads.clone();
-        internal_gains_watts.mul_assign(&self.zone_area);
-        let mut solar_gains_watts = self.solar_gains.clone();
-        solar_gains_watts.mul_assign(&self.zone_area);
+        // Combine fractions to avoid multiple intermediate VectorField allocations
+        let conv_frac = self.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+        let st_int_frac = rad_frac * (1.0 - self.solar_distribution_to_air);
+        let m_int_frac = rad_frac * self.solar_distribution_to_air;
+        let st_sol_frac = (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
+        let m_env_sol_frac = self.solar_beam_to_mass_fraction * 0.7;
+        let m_int_sol_frac = self.solar_beam_to_mass_fraction * 0.3;
 
-        let phi_ia = internal_gains_watts.clone() * self.convective_fraction;
+        let loads_ref = self.loads.as_ref();
+        let solar_ref = self.solar_gains.as_ref();
+        let area_ref = self.zone_area.as_ref();
 
-        // Solar gains are 100% radiative (Issue #361)
-        // Split internal radiative gains separately from solar gains
-        // Internal radiative gains use solar_distribution_to_air
-        let st_internal_frac =
-            (1.0 - self.convective_fraction) * (1.0 - self.solar_distribution_to_air);
-        let m_internal_frac = (1.0 - self.convective_fraction) * self.solar_distribution_to_air;
-        let phi_st_internal = internal_gains_watts.clone() * st_internal_frac;
-        let phi_m_internal = internal_gains_watts * m_internal_frac;
+        let mut phi_ia_data = Vec::with_capacity(self.num_zones);
+        let mut phi_st_data = Vec::with_capacity(self.num_zones);
+        let mut phi_m_env_data = Vec::with_capacity(self.num_zones);
+        let mut phi_m_int_data = Vec::with_capacity(self.num_zones);
 
-        // Solar gains split by beam-to-mass fraction for 6R2C
-        let st_solar_frac = (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
-        let m_env_solar_frac = self.solar_beam_to_mass_fraction * 0.7;
-        let m_int_solar_frac = self.solar_beam_to_mass_fraction * 0.3;
+        for i in 0..self.num_zones {
+            let load_w = loads_ref[i] * area_ref[i];
+            let sol_w = solar_ref[i] * area_ref[i];
 
-        let phi_st_solar = solar_gains_watts.clone() * st_solar_frac;
-        let phi_m_env_solar = solar_gains_watts.clone() * m_env_solar_frac;
-        let phi_m_int_solar = solar_gains_watts * m_int_solar_frac;
+            phi_ia_data.push(load_w * conv_frac);
+            phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
+            phi_m_env_data.push(load_w * m_int_frac + sol_w * m_env_sol_frac);
+            phi_m_int_data.push(sol_w * m_int_sol_frac);
+        }
 
-        // Total surface and mass gains
-        let phi_st = phi_st_internal + phi_st_solar;
-        let phi_m_env = phi_m_internal.clone() + phi_m_env_solar;
-        let phi_m_int = phi_m_int_solar;
+        let phi_ia = T::from(VectorField::new(phi_ia_data));
+        let phi_st = T::from(VectorField::new(phi_st_data));
+        let phi_m_env = T::from(VectorField::new(phi_m_env_data));
+        let phi_m_int = T::from(VectorField::new(phi_m_int_data));
 
         // Use pre-computed cached values
         let h_ext_base = &self.derived_h_ext;
@@ -4620,33 +4601,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // --- Dynamic Ventilation (Night Ventilation) ---
         let hour_of_day = (timestep % 24) as u8;
 
-        let loads_watts = self.loads.clone() * self.zone_area.clone();
-        let solar_gains_watts = self.solar_gains.clone() * self.zone_area.clone();
+        // Combine fractions to avoid multiple intermediate VectorField allocations
+        let conv_frac = self.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+        let st_int_frac = rad_frac * (1.0 - self.solar_distribution_to_air);
+        let st_sol_frac = (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
 
-        // Internal gains split by convective fraction (same as step_physics)
-        let phi_ia = loads_watts.clone() * self.convective_fraction;
+        let loads_ref = self.loads.as_ref();
+        let solar_ref = self.solar_gains.as_ref();
+        let area_ref = self.zone_area.as_ref();
 
-        // Solar gains are 100% radiative (Issue #361)
-        // For free-floating, use the same solar distribution as step_physics
-        let st_internal_frac =
-            (1.0 - self.convective_fraction) * (1.0 - self.solar_distribution_to_air);
-        let m_internal_frac = (1.0 - self.convective_fraction) * self.solar_distribution_to_air;
-        let phi_st_internal = loads_watts.clone() * st_internal_frac;
-        let phi_m_internal = loads_watts * m_internal_frac;
+        let mut phi_ia_data = Vec::with_capacity(self.num_zones);
+        let mut phi_st_data = Vec::with_capacity(self.num_zones);
 
-        // Solar gains split by beam-to-mass fraction (same as step_physics_6r2c)
-        let st_solar_frac = (1.0 - self.solar_beam_to_mass_fraction) * 0.6;
-        let m_env_solar_frac = self.solar_beam_to_mass_fraction * 0.7;
-        let m_int_solar_frac = self.solar_beam_to_mass_fraction * 0.3;
+        for i in 0..self.num_zones {
+            let load_w = loads_ref[i] * area_ref[i];
+            let sol_w = solar_ref[i] * area_ref[i];
 
-        let phi_st_solar = solar_gains_watts.clone() * st_solar_frac;
-        let phi_m_env_solar = solar_gains_watts.clone() * m_env_solar_frac;
-        let phi_m_int_solar = solar_gains_watts * m_int_solar_frac;
+            phi_ia_data.push(load_w * conv_frac);
+            phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
+        }
 
-        // Total surface and mass gains
-        let phi_st = phi_st_internal + phi_st_solar;
-        let _phi_m_env = phi_m_internal.clone() + phi_m_env_solar;
-        let _phi_m_int = phi_m_int_solar;
+        let phi_ia = T::from(VectorField::new(phi_ia_data));
+        let phi_st = T::from(VectorField::new(phi_st_data));
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
