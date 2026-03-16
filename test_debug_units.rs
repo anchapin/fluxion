@@ -1,6 +1,6 @@
-use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::CaseSpec;
+use fluxion::physics::cta::VectorField;
 
 fn main() {
     let spec = CaseSpec::case_600_baseline();

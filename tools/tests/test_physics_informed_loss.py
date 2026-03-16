@@ -5,24 +5,24 @@ Tests for Physics-Informed Loss Functions
 Tests for Issue #172: Phase 8: Implement physics-informed loss functions
 """
 
-import sys
-from pathlib import Path
-
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+import sys
+from pathlib import Path
 
 # Add tools directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from physics_informed_loss import (
-    CustomPhysicsLoss,
+    TemperatureBounds,
     EnergyBalanceValidator,
     PhysicsInformedLoss,
-    TemperatureBounds,
+    CustomPhysicsLoss,
     monotonicity_constraint,
-    physical_bounds_constraint,
     smoothness_constraint,
+    physical_bounds_constraint,
 )
 
 
@@ -45,9 +45,9 @@ class TestTemperatureBounds:
         valid, metrics = TemperatureBounds.validate(temps, min_temp=18.0, max_temp=28.0)
 
         assert not valid.all()
-        assert metrics["valid_fraction"] == pytest.approx(1 / 3, rel=0.1)
-        assert metrics["below_min_fraction"] == pytest.approx(1 / 3, rel=0.1)
-        assert metrics["above_max_fraction"] == pytest.approx(1 / 3, rel=0.1)
+        assert metrics["valid_fraction"] == pytest.approx(1/3, rel=0.1)
+        assert metrics["below_min_fraction"] == pytest.approx(1/3, rel=0.1)
+        assert metrics["above_max_fraction"] == pytest.approx(1/3, rel=0.1)
 
     def test_validate_default_bounds(self):
         """Test validation with default bounds."""
@@ -192,8 +192,7 @@ class TestPhysicsInformedLoss:
         outdoor_temps = torch.randn(10) * 15 + 10
 
         loss, components = loss_fn(
-            predictions,
-            targets,
+            predictions, targets,
             current_temps=current_temps,
             heating_load=heating_load,
             cooling_load=cooling_load,
@@ -215,9 +214,7 @@ class TestPhysicsInformedLoss:
         )
 
         # Predictions outside bounds
-        predictions = torch.tensor(
-            [[30.0], [15.0], [22.0]]
-        )  # One out of bounds each side
+        predictions = torch.tensor([[30.0], [15.0], [22.0]])  # One out of bounds each side
         targets = torch.zeros(3, 1)
 
         loss, components = loss_fn(predictions, targets)
@@ -236,7 +233,7 @@ class TestPhysicsInformedLoss:
         results = loss_fn.validate_predictions(predictions)
 
         assert "temperature" in results
-        assert results["temperature"]["valid_fraction"] == pytest.approx(1 / 3, rel=0.1)
+        assert results["temperature"]["valid_fraction"] == pytest.approx(1/3, rel=0.1)
 
     def test_validate_with_physics(self):
         """Test validation with physics data."""
@@ -336,9 +333,7 @@ class TestConstraintFunctions:
         predictions = torch.tensor([[-100.0], [0.0], [100.0]])
         targets = torch.zeros(3, 1)
 
-        loss = physical_bounds_constraint(
-            predictions, targets, min_val=-50.0, max_val=50.0
-        )
+        loss = physical_bounds_constraint(predictions, targets, min_val=-50.0, max_val=50.0)
 
         assert loss > 0
 
@@ -347,9 +342,7 @@ class TestConstraintFunctions:
         predictions = torch.tensor([[10.0], [20.0], [30.0]])
         targets = torch.zeros(3, 1)
 
-        loss = physical_bounds_constraint(
-            predictions, targets, min_val=-50.0, max_val=50.0
-        )
+        loss = physical_bounds_constraint(predictions, targets, min_val=-50.0, max_val=50.0)
 
         assert loss == 0.0
 
@@ -360,7 +353,11 @@ class TestIntegration:
     def test_training_loop_with_physics_loss(self):
         """Test a full training loop with physics-informed loss."""
         # Create simple model
-        model = nn.Sequential(nn.Linear(5, 32), nn.ReLU(), nn.Linear(32, 1))
+        model = nn.Sequential(
+            nn.Linear(5, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1)
+        )
 
         # Create loss function
         loss_fn = PhysicsInformedLoss(

@@ -8,12 +8,7 @@ using EnergyPlus and OpenStudio.
 __version__ = "0.2.0"
 
 from .ashrae_140_generator import ASHRAE140CaseGenerator, save_cases_to_json
-from .monte_carlo import (
-    BuildingConfig,
-    MonteCarloDataGenerator,
-    SimulationResult,
-    TrainingSample,
-)
+from .monte_carlo import MonteCarloDataGenerator, BuildingConfig, SimulationResult, TrainingSample
 
 __all__ = [
     "ASHRAE140CaseGenerator",

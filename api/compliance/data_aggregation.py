@@ -5,10 +5,10 @@ This module extracts and aggregates building energy simulation data for complian
 It processes simulation outputs to generate metrics required for ASHRAE 90.1 and IECC compliance.
 """
 
-import json
 from dataclasses import dataclass, field
+from typing import List, Dict, Any, Optional
+import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -87,9 +87,7 @@ class ComplianceDataAggregator:
     BASELINE_SHGC = 0.39  # Solar Heat Gain Coefficient
     BASELINE_LPD = 10.76  # Lighting Power Density W/m²
 
-    def __init__(
-        self, building_area_m2: float = 1000.0, building_type: str = "Commercial"
-    ):
+    def __init__(self, building_area_m2: float = 1000.0, building_type: str = "Commercial"):
         """
         Initialize the compliance data aggregator.
 
@@ -99,9 +97,7 @@ class ComplianceDataAggregator:
         """
         self.building_area_m2 = building_area_m2
         self.building_type = building_type
-        self.metrics = ComplianceMetrics(
-            building_area_m2=building_area_m2, building_type=building_type
-        )
+        self.metrics = ComplianceMetrics(building_area_m2=building_area_m2, building_type=building_type)
 
     def process_simulation_results(
         self,
@@ -156,43 +152,32 @@ class ComplianceDataAggregator:
 
         # Calculate total HVAC energy
         self.metrics.total_energy_kwh = (
-            self.metrics.heating_energy_kwh
-            + self.metrics.cooling_energy_kwh
-            + self.metrics.ventilation_energy_kwh
-            + self.metrics.lighting_energy_kwh
-            + self.metrics.plug_loads_kwh
+            self.metrics.heating_energy_kwh +
+            self.metrics.cooling_energy_kwh +
+            self.metrics.ventilation_energy_kwh +
+            self.metrics.lighting_energy_kwh +
+            self.metrics.plug_loads_kwh
         )
 
         # Calculate EUI
         if self.building_area_m2 > 0:
-            self.metrics.total_eui_kwh_m2 = (
-                self.metrics.total_energy_kwh / self.building_area_m2
-            )
+            self.metrics.total_eui_kwh_m2 = self.metrics.total_energy_kwh / self.building_area_m2
             self.metrics.electricity_eui_kwh_m2 = (
-                self.metrics.total_energy_kwh - self.metrics.heating_energy_kwh
-            ) / self.building_area_m2
+                (self.metrics.total_energy_kwh - self.metrics.heating_energy_kwh) /
+                self.building_area_m2
+            )
 
         # Calculate peak loads
-        self.metrics.peak_heating_load_kw = (
-            max(hourly_heating_loads) / 1000.0 if hourly_heating_loads else 0.0
-        )
-        self.metrics.peak_cooling_load_kw = (
-            max([-min(0, load) for load in hourly_cooling_loads])
-            if hourly_cooling_loads
-            else 0.0
-        )
+        self.metrics.peak_heating_load_kw = max(hourly_heating_loads) / 1000.0 if hourly_heating_loads else 0.0
+        self.metrics.peak_cooling_load_kw = max([-min(0, load) for load in hourly_cooling_loads]) if hourly_cooling_loads else 0.0
 
         # Calculate unmet hours (when temperature is outside acceptable range)
         heating_setpoint = 21.0  # Default
         cooling_setpoint = 24.0  # Default
         tolerance = 0.5  # ±0.5°C tolerance
 
-        unmet_heat = sum(
-            1 for t in hourly_temperatures if t < heating_setpoint - tolerance
-        )
-        unmet_cool = sum(
-            1 for t in hourly_temperatures if t > cooling_setpoint + tolerance
-        )
+        unmet_heat = sum(1 for t in hourly_temperatures if t < heating_setpoint - tolerance)
+        unmet_cool = sum(1 for t in hourly_temperatures if t > cooling_setpoint + tolerance)
 
         self.metrics.unmet_heating_hours = float(unmet_heat)
         self.metrics.unmet_cooling_hours = float(unmet_cool)
@@ -213,7 +198,7 @@ class ComplianceDataAggregator:
     def add_baseline_metrics(
         self,
         baseline_metrics: "ComplianceMetrics",
-        proposed_metrics: "ComplianceMetrics",
+        proposed_metrics: "ComplianceMetrics"
     ) -> Dict[str, Any]:
         """
         Create a comparison between baseline and proposed designs.
@@ -227,8 +212,7 @@ class ComplianceDataAggregator:
         Returns:
             Dictionary with comparison data
         """
-        # Use Dict[str, Any] to satisfy mypy for nested dicts
-        comparison: Dict[str, Any] = {
+        comparison = {
             "building_area_m2": proposed_metrics.building_area_m2,
             "climate_zone": proposed_metrics.climate_zone,
             "building_type": proposed_metrics.building_type,
@@ -254,23 +238,17 @@ class ComplianceDataAggregator:
         # Calculate improvements
         if baseline_metrics.total_energy_kwh > 0:
             comparison["performance_improvement"]["energy_reduction_percent"] = (
-                (baseline_metrics.total_energy_kwh - proposed_metrics.total_energy_kwh)
-                / baseline_metrics.total_energy_kwh
-                * 100
+                (baseline_metrics.total_energy_kwh - proposed_metrics.total_energy_kwh) /
+                baseline_metrics.total_energy_kwh * 100
             )
 
         if baseline_metrics.annual_energy_cost_usd > 0:
             comparison["performance_improvement"]["cost_savings_percent"] = (
-                (
-                    baseline_metrics.annual_energy_cost_usd
-                    - proposed_metrics.annual_energy_cost_usd
-                )
-                / baseline_metrics.annual_energy_cost_usd
-                * 100
+                (baseline_metrics.annual_energy_cost_usd - proposed_metrics.annual_energy_cost_usd) /
+                baseline_metrics.annual_energy_cost_usd * 100
             )
             comparison["performance_improvement"]["annual_savings_usd"] = (
-                baseline_metrics.annual_energy_cost_usd
-                - proposed_metrics.annual_energy_cost_usd
+                baseline_metrics.annual_energy_cost_usd - proposed_metrics.annual_energy_cost_usd
             )
 
         return comparison
@@ -345,7 +323,6 @@ def create_sample_metrics() -> ComplianceMetrics:
         ComplianceMetrics with sample data
     """
     import random
-
     random.seed(42)
 
     # Create sample hourly data (one year = 8760 hours)
@@ -364,21 +341,20 @@ def create_sample_metrics() -> ComplianceMetrics:
     # Heating loads in Watts (typical commercial building ~50-100 W/m²)
     # For 1000 m² building: 50,000-100,000 W = 50-100 kW
     hourly_heating = [
-        float(max(0, 50000 + 30000 * (1 if h % 24 < 8 or h % 24 > 18 else 0)))  # W
+        max(0, 50000 + 30000 * (1 if h % 24 < 8 or h % 24 > 18 else 0))  # W
         for h in range(n_hours)
     ]
 
     # Cooling loads in Watts (typical commercial building ~40-80 W/m²)
     hourly_cooling = [
-        float(
-            -max(0, 40000 + 20000 * (1 if h % 24 > 8 and h % 24 < 18 else 0))
-        )  # W (negative)
+        -max(0, 40000 + 20000 * (1 if h % 24 > 8 and h % 24 < 18 else 0))  # W (negative)
         for h in range(n_hours)
     ]
 
     # Create aggregator
     aggregator = ComplianceDataAggregator(
-        building_area_m2=1000.0, building_type="Commercial"
+        building_area_m2=1000.0,
+        building_type="Commercial"
     )
     aggregator.metrics.building_name = "Sample Office Building"
     aggregator.metrics.climate_zone = "4A"

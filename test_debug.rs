@@ -10,8 +10,7 @@ fn main() {
     println!("-----|--------|---------|---------|---------|--------");
 
     for result in &report.results {
-        println!(
-            "{} | {:?} | {:.2} | {:.2} | {:.2} | {:?}",
+        println!("{} | {:?} | {:.2} | {:.2} | {:.2} | {:?}",
             result.case_id,
             result.metric,
             result.fluxion_value,

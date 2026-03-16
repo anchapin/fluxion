@@ -103,9 +103,10 @@ pub fn validate_thermal_mass() -> ThermalMassValidationResult {
         "High mass thermal capacitance: {:.2e} J/K",
         high_structure_cap
     ));
-    result
-        .messages
-        .push(format!("Capacitance ratio (high/low): {:.2}", ratio));
+    result.messages.push(format!(
+        "Capacitance ratio (high/low): {:.2}",
+        ratio
+    ));
 
     // Validate that high-mass has significantly more thermal capacitance
     // ASHRAE 140 requires at least 3x difference
@@ -116,9 +117,7 @@ pub fn validate_thermal_mass() -> ThermalMassValidationResult {
             ratio
         ));
     } else {
-        result
-            .messages
-            .push("✓ Thermal capacitance ratio meets ASHRAE 140 requirements".to_string());
+        result.messages.push("✓ Thermal capacitance ratio meets ASHRAE 140 requirements".to_string());
     }
 
     // Calculate thermal mass correction factors
@@ -128,9 +127,10 @@ pub fn validate_thermal_mass() -> ThermalMassValidationResult {
     result.low_mass_correction_factor = low_correction;
     result.high_mass_correction_factor = high_correction;
 
-    result
-        .messages
-        .push(format!("Low mass correction factor: {:.3}", low_correction));
+    result.messages.push(format!(
+        "Low mass correction factor: {:.3}",
+        low_correction
+    ));
     result.messages.push(format!(
         "High mass correction factor: {:.3}",
         high_correction
@@ -139,28 +139,22 @@ pub fn validate_thermal_mass() -> ThermalMassValidationResult {
     // Validate correction factors are in reasonable range
     if !(0.2..=1.0).contains(&low_correction) {
         all_passed = false;
-        result
-            .messages
-            .push("ERROR: Low mass correction factor out of range [0.2, 1.0]".to_string());
+        result.messages.push("ERROR: Low mass correction factor out of range [0.2, 1.0]".to_string());
     }
 
     if !(0.2..=1.0).contains(&high_correction) {
         all_passed = false;
-        result
-            .messages
-            .push("ERROR: High mass correction factor out of range [0.2, 1.0]".to_string());
+        result.messages.push("ERROR: High mass correction factor out of range [0.2, 1.0]".to_string());
     }
 
     // High mass should have lower correction factor than low mass
     if high_correction >= low_correction {
         all_passed = false;
-        result
-            .messages
-            .push("ERROR: High mass should have lower correction factor than low mass".to_string());
+        result.messages.push(
+            "ERROR: High mass should have lower correction factor than low mass".to_string()
+        );
     } else {
-        result
-            .messages
-            .push("✓ Thermal mass correction factors correctly ordered".to_string());
+        result.messages.push("✓ Thermal mass correction factors correctly ordered".to_string());
     }
 
     result.passed = all_passed;
@@ -182,24 +176,16 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
     // Verify envelope and internal mass are initialized
     if model.envelope_mass_temperatures.as_ref().is_empty() {
         all_passed = false;
-        result
-            .messages
-            .push("ERROR: Envelope mass temperatures not initialized".to_string());
+        result.messages.push("ERROR: Envelope mass temperatures not initialized".to_string());
     } else {
-        result
-            .messages
-            .push("✓ Envelope mass temperatures initialized".to_string());
+        result.messages.push("✓ Envelope mass temperatures initialized".to_string());
     }
 
     if model.internal_mass_temperatures.as_ref().is_empty() {
         all_passed = false;
-        result
-            .messages
-            .push("ERROR: Internal mass temperatures not initialized".to_string());
+        result.messages.push("ERROR: Internal mass temperatures not initialized".to_string());
     } else {
-        result
-            .messages
-            .push("✓ Internal mass temperatures initialized".to_string());
+        result.messages.push("✓ Internal mass temperatures initialized".to_string());
     }
 
     // Verify thermal capacitances are set
@@ -212,19 +198,20 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
 
     if total_cap <= 0.0 {
         all_passed = false;
-        result
-            .messages
-            .push("ERROR: Total thermal capacitance is zero or negative".to_string());
+        result.messages.push("ERROR: Total thermal capacitance is zero or negative".to_string());
     } else {
-        result
-            .messages
-            .push(format!("Envelope thermal capacitance: {:.2e} J/K", env_cap));
-        result
-            .messages
-            .push(format!("Internal thermal capacitance: {:.2e} J/K", int_cap));
-        result
-            .messages
-            .push(format!("Total thermal capacitance: {:.2e} J/K", total_cap));
+        result.messages.push(format!(
+            "Envelope thermal capacitance: {:.2e} J/K",
+            env_cap
+        ));
+        result.messages.push(format!(
+            "Internal thermal capacitance: {:.2e} J/K",
+            int_cap
+        ));
+        result.messages.push(format!(
+            "Total thermal capacitance: {:.2e} J/K",
+            total_cap
+        ));
 
         // Verify envelope fraction is approximately 0.75
         let env_fraction = env_cap / total_cap;
@@ -251,12 +238,10 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
 
     // Run a few timesteps
     for step in 0..10 {
-        let energy = model.solve_timesteps(step + 1, &surrogates, false, None, None, None);
+        let energy = model.solve_timesteps(step + 1, &surrogates, false);
         if energy.is_nan() {
             all_passed = false;
-            result
-                .messages
-                .push(format!("ERROR: NaN energy at step {}", step + 1));
+            result.messages.push(format!("ERROR: NaN energy at step {}", step + 1));
             break;
         }
     }
@@ -326,33 +311,22 @@ mod tests {
         // Test low mass correction factor
         let low_mass_cap = 2.4e6; // Reference low mass
         let low_correction = calculate_thermal_mass_correction(low_mass_cap);
-        assert!(
-            (low_correction - 1.0).abs() < 0.01,
-            "Low mass should have correction factor ~1.0, got {}",
-            low_correction
-        );
+        assert!((low_correction - 1.0).abs() < 0.01,
+            "Low mass should have correction factor ~1.0, got {}", low_correction);
 
         // Test high mass correction factor (5x more capacitance)
         let high_mass_cap = 12.0e6; // 5x low mass
         let high_correction = calculate_thermal_mass_correction(high_mass_cap);
-        assert!(
-            high_correction < low_correction,
-            "High mass should have lower correction factor"
-        );
-        assert!(
-            (high_correction - 0.447).abs() < 0.1,
-            "High mass (5x) should have correction factor ~0.45, got {}",
-            high_correction
-        );
+        assert!(high_correction < low_correction,
+            "High mass should have lower correction factor");
+        assert!((high_correction - 0.447).abs() < 0.1,
+            "High mass (5x) should have correction factor ~0.45, got {}", high_correction);
 
         // Test clamping at very high capacitance
         let very_high_mass_cap = 100.0e6;
         let very_high_correction = calculate_thermal_mass_correction(very_high_mass_cap);
-        assert!(
-            very_high_correction >= 0.2,
-            "Very high mass should be clamped to minimum 0.2, got {}",
-            very_high_correction
-        );
+        assert!(very_high_correction >= 0.2,
+            "Very high mass should be clamped to minimum 0.2, got {}", very_high_correction);
     }
 
     #[test]
@@ -361,15 +335,9 @@ mod tests {
 
         println!("\n{}", generate_thermal_mass_report(&result));
 
-        assert!(
-            result.passed,
-            "Thermal mass validation failed: {:?}",
-            result.messages
-        );
-        assert!(
-            result.capacitance_ratio >= 3.0,
-            "High mass should have at least 3x thermal capacitance"
-        );
+        assert!(result.passed, "Thermal mass validation failed: {:?}", result.messages);
+        assert!(result.capacitance_ratio >= 3.0,
+            "High mass should have at least 3x thermal capacitance");
     }
 
     #[test]
@@ -377,24 +345,18 @@ mod tests {
         let result = validate_thermal_mass();
 
         // Low mass should have correction factor close to 1.0
-        assert!(
-            (result.low_mass_correction_factor - 1.0).abs() < 0.1,
+        assert!((result.low_mass_correction_factor - 1.0).abs() < 0.1,
             "Low mass correction factor should be ~1.0, got {}",
-            result.low_mass_correction_factor
-        );
+            result.low_mass_correction_factor);
 
         // High mass should have significantly lower correction factor
-        assert!(
-            result.high_mass_correction_factor < 0.6,
+        assert!(result.high_mass_correction_factor < 0.6,
             "High mass correction factor should be < 0.6, got {}",
-            result.high_mass_correction_factor
-        );
+            result.high_mass_correction_factor);
 
         // High mass should have lower correction than low mass
-        assert!(
-            result.high_mass_correction_factor < result.low_mass_correction_factor,
-            "High mass should have lower correction factor than low mass"
-        );
+        assert!(result.high_mass_correction_factor < result.low_mass_correction_factor,
+            "High mass should have lower correction factor than low mass");
     }
 
     #[test]
@@ -403,11 +365,7 @@ mod tests {
 
         println!("\n{}", generate_thermal_mass_report(&result));
 
-        assert!(
-            result.passed,
-            "6R2C validation failed: {:?}",
-            result.messages
-        );
+        assert!(result.passed, "6R2C validation failed: {:?}", result.messages);
     }
 
     #[test]
@@ -424,18 +382,12 @@ mod tests {
 
         let env_fraction = env_cap / total;
 
-        assert!(
-            (env_fraction - 0.75).abs() < 0.01,
-            "Envelope fraction should be 0.75, got {}",
-            env_fraction
-        );
+        assert!((env_fraction - 0.75).abs() < 0.01,
+            "Envelope fraction should be 0.75, got {}", env_fraction);
 
         let int_fraction = int_cap / total;
-        assert!(
-            (int_fraction - 0.25).abs() < 0.01,
-            "Internal fraction should be 0.25, got {}",
-            int_fraction
-        );
+        assert!((int_fraction - 0.25).abs() < 0.01,
+            "Internal fraction should be 0.25, got {}", int_fraction);
     }
 
     #[test]
@@ -452,20 +404,15 @@ mod tests {
 
         // Run simulation for a day (24 hours)
         for hour in 0..24 {
-            model.solve_timesteps(hour + 1, &surrogates, false, None, None, None);
+            model.solve_timesteps(hour + 1, &surrogates, false);
         }
 
         // Check that mass temperatures are still valid
         let final_mass_temp: f64 = model.mass_temperatures.as_ref()[0];
 
-        assert!(
-            !final_mass_temp.is_nan(),
-            "Mass temperature should not be NaN"
-        );
-        assert!(
-            final_mass_temp > -50.0 && final_mass_temp < 100.0,
-            "Mass temperature should be in reasonable range"
-        );
+        assert!(!final_mass_temp.is_nan(), "Mass temperature should not be NaN");
+        assert!(final_mass_temp > -50.0 && final_mass_temp < 100.0,
+            "Mass temperature should be in reasonable range");
 
         println!("Initial mass temp: {}°C", initial_mass_temp);
         println!("Final mass temp: {}°C", final_mass_temp);

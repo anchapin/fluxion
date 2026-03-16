@@ -27,15 +27,12 @@ logger = logging.getLogger(__name__)
 # Module-level flag
 FLUXION_AVAILABLE = False
 
-
 def _fluxion_available_global():
     """Get the global FLUXION_AVAILABLE flag."""
     return FLUXION_AVAILABLE
 
-
 try:
     import fluxion
-
     FLUXION_AVAILABLE = True
 except ImportError:
     logger.warning("Fluxion not available - using mock mode for testing")
@@ -44,7 +41,6 @@ except ImportError:
 @dataclass
 class EnvConfig:
     """Configuration for the Fluxion RL environment."""
-
     # Action space
     heating_setpoint_min: float = 15.0  # °C
     heating_setpoint_max: float = 25.0  # °C
@@ -103,13 +99,9 @@ class FluxionEnv:
         if _fluxion_available_global():
             try:
                 self.model = fluxion.Model(num_zones=self.config.num_zones)
-                logger.info(
-                    f"Fluxion model initialized with {self.config.num_zones} zone(s)"
-                )
+                logger.info(f"Fluxion model initialized with {self.config.num_zones} zone(s)")
             except Exception as e:
-                logger.warning(
-                    f"Failed to initialize Fluxion model: {e}. Using mock mode."
-                )
+                logger.warning(f"Failed to initialize Fluxion model: {e}. Using mock mode.")
                 self.model = None
 
         # Weather data (simplified - use dummy sinusoidal patterns)
@@ -121,50 +113,36 @@ class FluxionEnv:
         self.episode_discomfort = 0.0
 
         # Action space bounds
-        self.action_space_low = np.array(
-            [
-                self.config.heating_setpoint_min,
-                self.config.cooling_setpoint_min,
-            ],
-            dtype=np.float32,
-        )
+        self.action_space_low = np.array([
+            self.config.heating_setpoint_min,
+            self.config.cooling_setpoint_min,
+        ], dtype=np.float32)
 
-        self.action_space_high = np.array(
-            [
-                self.config.heating_setpoint_max,
-                self.config.cooling_setpoint_max,
-            ],
-            dtype=np.float32,
-        )
+        self.action_space_high = np.array([
+            self.config.heating_setpoint_max,
+            self.config.cooling_setpoint_max,
+        ], dtype=np.float32)
 
         # Observation space bounds
         # [outdoor_temp, zone_temp, solar_radiation, hour_of_day, day_of_year_norm]
-        obs_low = np.array(
-            [
-                -20.0,  # Cold outdoor temp
-                10.0,  # Cold zone temp
-                0.0,  # No solar
-                0.0,  # Hour 0
-                0.0,  # Day 0
-            ],
-            dtype=np.float32,
-        )
+        obs_low = np.array([
+            -20.0,  # Cold outdoor temp
+            10.0,   # Cold zone temp
+            0.0,    # No solar
+            0.0,    # Hour 0
+            0.0,    # Day 0
+        ], dtype=np.float32)
 
-        obs_high = np.array(
-            [
-                45.0,  # Hot outdoor temp
-                35.0,  # Hot zone temp
-                1000.0,  # High solar (W/m²)
-                23.0,  # Hour 23
-                364.0,  # Day 364
-            ],
-            dtype=np.float32,
-        )
+        obs_high = np.array([
+            45.0,   # Hot outdoor temp
+            35.0,   # Hot zone temp
+            1000.0, # High solar (W/m²)
+            23.0,   # Hour 23
+            364.0, # Day 364
+        ], dtype=np.float32)
 
         self.observation_space = _MockSpace("box", low=obs_low, high=obs_high)
-        self.action_space = _MockSpace(
-            "box", low=self.action_space_low, high=self.action_space_high
-        )
+        self.action_space = _MockSpace("box", low=self.action_space_low, high=self.action_space_high)
 
         # Initial state
         self._reset_state()
@@ -178,23 +156,15 @@ class FluxionEnv:
         # Temperature: -5°C to 30°C sinusoidal + noise
         base_temp = 12.5
         temp_amplitude = 17.5
-        self._outdoor_temps = (
-            base_temp
-            + temp_amplitude * np.sin(2 * np.pi * (hours - 1200) / 8760)
-            + np.random.normal(0, 2, self.config.steps_per_episode)
-        )
+        self._outdoor_temps = base_temp + temp_amplitude * np.sin(
+            2 * np.pi * (hours - 1200) / 8760
+        ) + np.random.normal(0, 2, self.config.steps_per_episode)
 
         # Solar radiation: 0 to ~800 W/m² (simplified daily pattern)
         hour_of_day = hours % 24
         solar_base = np.maximum(0, np.sin(np.pi * (hour_of_day - 6) / 12))
-        self._solar_radiation = (
-            solar_base * (1 + 0.3 * np.sin(2 * np.pi * hours / 8760)) * 800
-        )
-        self._solar_radiation = np.maximum(
-            0,
-            self._solar_radiation
-            + np.random.normal(0, 50, self.config.steps_per_episode),
-        )
+        self._solar_radiation = solar_base * (1 + 0.3 * np.sin(2 * np.pi * hours / 8760)) * 800
+        self._solar_radiation = np.maximum(0, self._solar_radiation + np.random.normal(0, 50, self.config.steps_per_episode))
 
     def _reset_state(self):
         """Reset internal state for new episode."""
@@ -223,9 +193,7 @@ class FluxionEnv:
         self._hvac_heating_capacity = 5000  # 5 kW max heating
         self._hvac_cooling_capacity = 5000  # 5 kW max cooling
 
-    def reset(
-        self, seed: Optional[int] = None, options: Optional[Dict] = None
-    ) -> Tuple[np.ndarray, Dict]:
+    def reset(self, seed: Optional[int] = None, options: Optional[Dict] = None) -> Tuple[np.ndarray, Dict]:
         """
         Reset the environment to initial state.
 
@@ -261,20 +229,8 @@ class FluxionEnv:
             info: Additional info
         """
         # Parse action
-        self._heating_setpoint = float(
-            np.clip(
-                action[0],
-                self.config.heating_setpoint_min,
-                self.config.heating_setpoint_max,
-            )
-        )
-        self._cooling_setpoint = float(
-            np.clip(
-                action[1],
-                self.config.cooling_setpoint_min,
-                self.config.cooling_setpoint_max,
-            )
-        )
+        self._heating_setpoint = float(np.clip(action[0], self.config.heating_setpoint_min, self.config.heating_setpoint_max))
+        self._cooling_setpoint = float(np.clip(action[1], self.config.cooling_setpoint_min, self.config.cooling_setpoint_max))
 
         # Ensure valid setpoint range
         if self._heating_setpoint >= self._cooling_setpoint:
@@ -310,9 +266,7 @@ class FluxionEnv:
 
         return obs, reward, terminated, truncated, info
 
-    def _simulate_timestep(
-        self, outdoor_temp: float, solar_rad: float
-    ) -> Tuple[float, float]:
+    def _simulate_timestep(self, outdoor_temp: float, solar_rad: float) -> Tuple[float, float]:
         """
         Simulate one hour of building thermal dynamics.
 
@@ -368,9 +322,7 @@ class FluxionEnv:
         """
         discomfort = self._calculate_discomfort(zone_temp)
 
-        reward = (
-            self.config.energy_weight * energy + self.config.comfort_weight * discomfort
-        )
+        reward = self.config.energy_weight * energy + self.config.comfort_weight * discomfort
 
         return reward
 
@@ -394,16 +346,13 @@ class FluxionEnv:
         hour = self.current_step % 24
         day_of_year = (self.current_step // 24) % 365
 
-        obs = np.array(
-            [
-                self._outdoor_temps[self.current_step],  # Outdoor temperature
-                self._zone_temperature,  # Zone temperature
-                self._solar_radiation[self.current_step],  # Solar radiation
-                hour / 24.0,  # Hour of day (normalized)
-                day_of_year / 365.0,  # Day of year (normalized)
-            ],
-            dtype=np.float32,
-        )
+        obs = np.array([
+            self._outdoor_temps[self.current_step],  # Outdoor temperature
+            self._zone_temperature,                   # Zone temperature
+            self._solar_radiation[self.current_step], # Solar radiation
+            hour / 24.0,                              # Hour of day (normalized)
+            day_of_year / 365.0,                     # Day of year (normalized)
+        ], dtype=np.float32)
 
         return obs
 
@@ -459,6 +408,7 @@ def make(env_id: str = "Fluxion-v0", **kwargs) -> FluxionEnv:
 
 # Register with Gymnasium if available
 try:
+    import gymnasium as gym
     from gymnasium.envs.registration import register
 
     register(

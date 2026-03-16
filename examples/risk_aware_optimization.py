@@ -20,16 +20,16 @@ Usage:
 Related Issue: #176 - Phase 7: Create risk-aware optimization examples
 """
 
-import os
 import sys
+import os
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
-    import numpy as np  # isort:skip
-    import fluxion  # isort:skip
-except ImportError:
+    import fluxion
+    import numpy as np
+except ImportError as e:
     print("Note: This example requires the fluxion Python package to be built.")
     print("Run 'maturin develop' first to build the Python bindings.")
     print()
@@ -53,7 +53,9 @@ class RiskAwareOptimizer:
         self.decision_history = []
 
     def predict_with_confidence(
-        self, temperatures: list, num_samples: int = 100
+        self,
+        temperatures: list,
+        num_samples: int = 100
     ) -> dict:
         """
         Get predictions with confidence intervals.
@@ -77,10 +79,10 @@ class RiskAwareOptimizer:
         upper = mean + 2 * std
 
         return {
-            "mean": mean.tolist(),
-            "std": std.tolist(),
-            "lower_bound": lower.tolist(),
-            "upper_bound": upper.tolist(),
+            'mean': mean.tolist(),
+            'std': std.tolist(),
+            'lower_bound': lower.tolist(),
+            'upper_bound': upper.tolist()
         }
 
     def _mock_predictions(self, temperatures):
@@ -103,10 +105,18 @@ class RiskAwareOptimizer:
             lower = lower.tolist()
             upper = upper.tolist()
 
-        return {"mean": mean, "std": std, "lower_bound": lower, "upper_bound": upper}
+        return {
+            'mean': mean,
+            'std': std,
+            'lower_bound': lower,
+            'upper_bound': upper
+        }
 
     def evaluate_risk(
-        self, predictions: dict, target_load: float, risk_tolerance: float = 0.1
+        self,
+        predictions: dict,
+        target_load: float,
+        risk_tolerance: float = 0.1
     ) -> dict:
         """
         Evaluate risk of not meeting target.
@@ -119,8 +129,8 @@ class RiskAwareOptimizer:
         Returns:
             Risk assessment dictionary
         """
-        mean = np.array(predictions["mean"]) if np else predictions["mean"]
-        std = np.array(predictions["std"]) if np else predictions["std"]
+        mean = np.array(predictions['mean']) if np else predictions['mean']
+        std = np.array(predictions['std']) if np else predictions['std']
 
         # Calculate z-score for target
         if np:
@@ -131,7 +141,11 @@ class RiskAwareOptimizer:
             prob_exceed = 1 - 0.5 * (1 + np.erf(z_scores / np.sqrt(2)))
 
             # Expected shortfall (average amount over target if over)
-            expected_shortfall = np.where(mean > target_load, mean - target_load, 0)
+            expected_shortfall = np.where(
+                mean > target_load,
+                mean - target_load,
+                0
+            )
 
             risk_level = []
             for p in prob_exceed:
@@ -166,23 +180,18 @@ class RiskAwareOptimizer:
                     risk_level.append("HIGH")
 
         return {
-            "target_load": target_load,
-            "probability_exceed": prob_exceed if np is None else prob_exceed.tolist(),
-            "expected_shortfall": (
-                expected_shortfall if np is None else expected_shortfall.tolist()
-            ),
-            "risk_level": risk_level,
-            "within_tolerance": [
-                p <= risk_tolerance
-                for p in (prob_exceed if np is None else prob_exceed.tolist())
-            ],
+            'target_load': target_load,
+            'probability_exceed': prob_exceed if np is None else prob_exceed.tolist(),
+            'expected_shortfall': expected_shortfall if np is None else expected_shortfall.tolist(),
+            'risk_level': risk_level,
+            'within_tolerance': [p <= risk_tolerance for p in (prob_exceed if np is None else prob_exceed.tolist())]
         }
 
     def optimize_setpoint(
         self,
         outdoor_temp: float,
         current_temps: list,
-        risk_preference: str = "balanced",
+        risk_preference: str = "balanced"
     ) -> dict:
         """
         Optimize HVAC setpoint with risk awareness.
@@ -219,45 +228,43 @@ class RiskAwareOptimizer:
         conservative_risk = self.evaluate_risk(
             predictions, conservative_load, risk_tolerance=0.1
         )
-        scenarios.append(
-            {
-                "name": "Conservative",
-                "heating_setpoint": heating_setpoint,
-                "cooling_setpoint": cooling_setpoint,
-                "estimated_load": conservative_load,
-                "risk": conservative_risk,
-            }
-        )
+        scenarios.append({
+            'name': 'Conservative',
+            'heating_setpoint': heating_setpoint,
+            'cooling_setpoint': cooling_setpoint,
+            'estimated_load': conservative_load,
+            'risk': conservative_risk
+        })
 
         # Balanced scenario
-        balanced_load = self.estimate_load(current_temps, 20.0, 26.0)
+        balanced_load = self.estimate_load(
+            current_temps, 20.0, 26.0
+        )
         balanced_risk = self.evaluate_risk(
             predictions, balanced_load, risk_tolerance=0.15
         )
-        scenarios.append(
-            {
-                "name": "Balanced",
-                "heating_setpoint": 20.0,
-                "cooling_setpoint": 26.0,
-                "estimated_load": balanced_load,
-                "risk": balanced_risk,
-            }
-        )
+        scenarios.append({
+            'name': 'Balanced',
+            'heating_setpoint': 20.0,
+            'cooling_setpoint': 26.0,
+            'estimated_load': balanced_load,
+            'risk': balanced_risk
+        })
 
         # Aggressive scenario
-        aggressive_load = self.estimate_load(current_temps, 18.0, 28.0)
+        aggressive_load = self.estimate_load(
+            current_temps, 18.0, 28.0
+        )
         aggressive_risk = self.evaluate_risk(
             predictions, aggressive_load, risk_tolerance=0.25
         )
-        scenarios.append(
-            {
-                "name": "Aggressive",
-                "heating_setpoint": 18.0,
-                "cooling_setpoint": 28.0,
-                "estimated_load": aggressive_load,
-                "risk": aggressive_risk,
-            }
-        )
+        scenarios.append({
+            'name': 'Aggressive',
+            'heating_setpoint': 18.0,
+            'cooling_setpoint': 28.0,
+            'estimated_load': aggressive_load,
+            'risk': aggressive_risk
+        })
 
         # Select best scenario based on preference
         if risk_preference == "conservative":
@@ -269,11 +276,11 @@ class RiskAwareOptimizer:
             selected = scenarios[1]
 
         return {
-            "outdoor_temp": outdoor_temp,
-            "current_temps": current_temps,
-            "selected_scenario": selected,
-            "all_scenarios": scenarios,
-            "recommendation": self._generate_recommendation(selected, risk_preference),
+            'outdoor_temp': outdoor_temp,
+            'current_temps': current_temps,
+            'selected_scenario': selected,
+            'all_scenarios': scenarios,
+            'recommendation': self._generate_recommendation(selected, risk_preference)
         }
 
     def estimate_load(self, temps, heating_sp, cooling_sp):
@@ -294,15 +301,15 @@ class RiskAwareOptimizer:
 
     def _generate_recommendation(self, scenario, preference):
         """Generate human-readable recommendation."""
-        name = scenario["name"]
-        h_sp = scenario["heating_setpoint"]
-        c_sp = scenario["cooling_setpoint"]
+        name = scenario['name']
+        h_sp = scenario['heating_setpoint']
+        c_sp = scenario['cooling_setpoint']
 
         rec = f"Recommend {name} setpoints: "
         rec += f"heating={h_sp}C, cooling={c_sp}C. "
 
-        risk = scenario["risk"]
-        if all(risk["within_tolerance"]):
+        risk = scenario['risk']
+        if all(risk['within_tolerance']):
             rec += "Risk level is acceptable."
         else:
             rec += "Warning: Some zones have elevated risk."
@@ -310,12 +317,7 @@ class RiskAwareOptimizer:
         return rec
 
 
-from typing import Any, List, Optional
-
-
-def visualize_confidence_intervals(
-    predictions: dict, zone_names: Optional[List[Any]] = None
-):
+def visualize_confidence_intervals(predictions: dict, zone_names: list = None):
     """
     Visualize predictions with confidence intervals.
 
@@ -323,35 +325,31 @@ def visualize_confidence_intervals(
         predictions: Dictionary with mean, std, bounds
         zone_names: Optional names for zones
     """
-    print("\n" + "=" * 60)
+    print("\n" + "="*60)
     print("CONFIDENCE INTERVAL VISUALIZATION")
-    print("=" * 60)
+    print("="*60)
 
-    mean = predictions["mean"]
-    lower = predictions["lower_bound"]
-    upper = predictions["upper_bound"]
+    mean = predictions['mean']
+    lower = predictions['lower_bound']
+    upper = predictions['upper_bound']
 
     n_zones = len(mean)
     if zone_names is None:
-        zone_names = [f"Zone {i + 1}" for i in range(n_zones)]
+        zone_names = [f"Zone {i+1}" for i in range(n_zones)]
 
-    print(
-        f"\n{'Zone':<12} {'Mean':>10} {'Lower':>10} {'Upper':>10} {'Uncertainty':>12}"
-    )
+    print(f"\n{'Zone':<12} {'Mean':>10} {'Lower':>10} {'Upper':>10} {'Uncertainty':>12}")
     print("-" * 60)
 
     for i, name in enumerate(zone_names):
-        print(
-            f"{name:<12} {mean[i]:>10.2f} {lower[i]:>10.2f} {upper[i]:>10.2f} "
-            f"{upper[i] - lower[i]:>10.2f}"
-        )
+        print(f"{name:<12} {mean[i]:>10.2f} {lower[i]:>10.2f} {upper[i]:>10.2f} "
+              f"{upper[i]-lower[i]:>10.2f}")
 
 
 def demonstrate_risk_analysis():
     """Demonstrate risk-aware optimization workflow."""
-    print("\n" + "=" * 70)
+    print("\n" + "="*70)
     print("RISK-AWARE OPTIMIZATION DEMONSTRATION")
-    print("=" * 70)
+    print("="*70)
 
     optimizer = RiskAwareOptimizer()
 
@@ -359,7 +357,7 @@ def demonstrate_risk_analysis():
     zone_temps = [20.0, 21.0, 19.5, 22.0, 20.5]
     outdoor_temp = 5.0
 
-    print("\nScenario:")
+    print(f"\nScenario:")
     print(f"  Zone temperatures: {zone_temps}")
     print(f"  Outdoor temperature: {outdoor_temp}C")
 
@@ -370,15 +368,11 @@ def demonstrate_risk_analysis():
     print("\nPrediction Results:")
     print(f"  Mean loads: {[f'{m:.2f}' for m in predictions['mean']]}")
     print(f"  Std dev: {[f'{s:.2f}' for s in predictions['std']]}")
-    print(
-        f"  95% CI: [{[f'{lower:.2f}' for lower in predictions['lower_bound']]}, "
-        f"{[f'{u:.2f}' for u in predictions['upper_bound']]}]"
-    )
+    print(f"  95% CI: [{[f'{l:.2f}' for l in predictions['lower_bound']]}, "
+          f"{[f'{u:.2f}' for u in predictions['upper_bound']]}]")
 
     # Visualize confidence intervals
-    visualize_confidence_intervals(
-        predictions, [f"Zone {i + 1}" for i in range(len(zone_temps))]
-    )
+    visualize_confidence_intervals(predictions, [f"Zone {i+1}" for i in range(len(zone_temps))])
 
     # Evaluate risk
     print("\n--- Step 2: Risk Evaluation ---")
@@ -386,17 +380,13 @@ def demonstrate_risk_analysis():
     risk_assessment = optimizer.evaluate_risk(predictions, target_load)
 
     print(f"\nTarget load: {target_load} W/m²")
-    print(
-        f"\n{'Zone':<10} {'Prob > Target':>15} {'Expected Shortfall':>20} {'Risk':>10}"
-    )
+    print(f"\n{'Zone':<10} {'Prob > Target':>15} {'Expected Shortfall':>20} {'Risk':>10}")
     print("-" * 60)
 
     for i in range(len(zone_temps)):
-        print(
-            f"Zone {i + 1:<4} {risk_assessment['probability_exceed'][i]:>15.1%} "
-            f"{risk_assessment['expected_shortfall'][i]:>20.2f} "
-            f"{risk_assessment['risk_level'][i]:>10}"
-        )
+        print(f"Zone {i+1:<4} {risk_assessment['probability_exceed'][i]:>15.1%} "
+              f"{risk_assessment['expected_shortfall'][i]:>20.2f} "
+              f"{risk_assessment['risk_level'][i]:>10}")
 
     # Optimize setpoints
     print("\n--- Step 3: Risk-Aware Setpoint Optimization ---")
@@ -405,26 +395,28 @@ def demonstrate_risk_analysis():
         print(f"\n--- {preference.capitalize()} Preference ---")
 
         result = optimizer.optimize_setpoint(
-            outdoor_temp, zone_temps, risk_preference=preference
+            outdoor_temp,
+            zone_temps,
+            risk_preference=preference
         )
 
-        scenario = result["selected_scenario"]
+        scenario = result['selected_scenario']
         print(f"  Heating setpoint: {scenario['heating_setpoint']}C")
         print(f"  Cooling setpoint: {scenario['cooling_setpoint']}C")
         print(f"  Estimated load: {scenario['estimated_load']:.2f} W/m²")
         print(f"  {result['recommendation']}")
 
-    print("\n" + "=" * 70)
+    print("\n" + "="*70)
     print("DEMONSTRATION COMPLETE")
-    print("=" * 70)
+    print("="*70)
 
 
 def main():
     """Main entry point."""
-    print("=" * 70)
+    print("="*70)
     print("Risk-Aware Optimization Example")
     print("Issue #176: Phase 7 - Create risk-aware optimization examples")
-    print("=" * 70)
+    print("="*70)
 
     print("\nThis example demonstrates:")
     print("  1. Uncertainty-aware predictions with confidence intervals")
@@ -434,11 +426,10 @@ def main():
 
     demonstrate_risk_analysis()
 
-    print("\n" + "-" * 70)
+    print("\n" + "-"*70)
     print("USAGE INSTRUCTIONS:")
-    print("-" * 70)
-    print(
-        """
+    print("-"*70)
+    print("""
 To use in your own code:
 
     from examples.risk_aware_optimization import RiskAwareOptimizer
@@ -470,8 +461,7 @@ Best Practices:
     - Increase num_samples for more accurate uncertainty estimates
     - Consider both mean prediction and uncertainty in decisions
     - Monitor risk levels over time for operational insights
-"""
-    )
+""")
 
 
 if __name__ == "__main__":

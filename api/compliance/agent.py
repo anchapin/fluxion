@@ -5,18 +5,18 @@ This module provides an LLM-powered agent that checks building energy models
 for compliance with ASHRAE 90.1 and IECC standards.
 """
 
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
 
 from api.compliance.data_aggregation import (
-    ComplianceDataAggregator,
     ComplianceMetrics,
+    ComplianceDataAggregator,
     create_sample_metrics,
 )
 from api.compliance.prompt_engine import (
-    CompliancePromptEngine,
     ComplianceStandard,
     ReportFormat,
+    CompliancePromptEngine,
     create_prompt_for_llm,
 )
 from api.compliance.report_generator import (
@@ -29,7 +29,6 @@ from api.compliance.report_generator import (
 @dataclass
 class ComplianceAgentConfig:
     """Configuration for the compliance agent."""
-
     standard: str = "ASHRAE 90.1-2019"
     output_format: str = "markdown"
     electricity_rate: float = 0.12  # $/kWh
@@ -93,7 +92,7 @@ class ComplianceAgent:
         Returns:
             Dictionary with compliance determination and details
         """
-        result: Dict[str, Any] = {
+        result = {
             "compliant": False,
             "standard": self.config.standard,
             "checks": [],
@@ -102,95 +101,67 @@ class ComplianceAgent:
 
         # Check if baseline is required
         if self.config.require_baseline and baseline_metrics is None:
-            result["checks"].append(
-                {
-                    "name": "Baseline Comparison",
-                    "status": "FAIL",
-                    "message": "Baseline metrics required for compliance check",
-                }
-            )
+            result["checks"].append({
+                "name": "Baseline Comparison",
+                "status": "FAIL",
+                "message": "Baseline metrics required for compliance check"
+            })
             result["summary"] = "Cannot determine compliance without baseline"
             return result
 
         if baseline_metrics:
             # Energy improvement check
             energy_reduction = (
-                (
-                    (
-                        baseline_metrics.total_energy_kwh
-                        - proposed_metrics.total_energy_kwh
-                    )
-                    / baseline_metrics.total_energy_kwh
-                    * 100
-                )
-                if baseline_metrics.total_energy_kwh > 0
-                else 0
-            )
+                (baseline_metrics.total_energy_kwh - proposed_metrics.total_energy_kwh) /
+                baseline_metrics.total_energy_kwh * 100
+            ) if baseline_metrics.total_energy_kwh > 0 else 0
 
-            result["checks"].append(
-                {
-                    "name": "Energy Cost Improvement",
-                    "threshold": f">={self.config.min_improvement_percent}%",
-                    "actual": f"{energy_reduction:.1f}%",
-                    "status": (
-                        "PASS"
-                        if energy_reduction >= self.config.min_improvement_percent
-                        else "FAIL"
-                    ),
-                }
-            )
+            result["checks"].append({
+                "name": "Energy Cost Improvement",
+                "threshold": f">={self.config.min_improvement_percent}%",
+                "actual": f"{energy_reduction:.1f}%",
+                "status": "PASS" if energy_reduction >= self.config.min_improvement_percent else "FAIL",
+            })
 
             # Unmet hours check
             unmet = proposed_metrics.total_unmet_hours
-            result["checks"].append(
-                {
-                    "name": "Unmet Hours",
-                    "threshold": f"<={self.config.max_unmet_hours}",
-                    "actual": f"{unmet:.0f} hours",
-                    "status": (
-                        "PASS" if unmet <= self.config.max_unmet_hours else "FAIL"
-                    ),
-                }
-            )
+            result["checks"].append({
+                "name": "Unmet Hours",
+                "threshold": f"<={self.config.max_unmet_hours}",
+                "actual": f"{unmet:.0f} hours",
+                "status": "PASS" if unmet <= self.config.max_unmet_hours else "FAIL",
+            })
 
             # Peak demand check
-            peak_heat_ok = (
-                proposed_metrics.peak_heating_load_kw
-                <= baseline_metrics.peak_heating_load_kw
-            )
-            peak_cool_ok = (
-                proposed_metrics.peak_cooling_load_kw
-                <= baseline_metrics.peak_cooling_load_kw
-            )
+            peak_heat_ok = proposed_metrics.peak_heating_load_kw <= baseline_metrics.peak_heating_load_kw
+            peak_cool_ok = proposed_metrics.peak_cooling_load_kw <= baseline_metrics.peak_cooling_load_kw
 
-            result["checks"].append(
-                {
-                    "name": "Peak Heating Demand",
-                    "threshold": "<=Baseline",
-                    "actual": f"{proposed_metrics.peak_heating_load_kw:.1f} kW",
-                    "status": "PASS" if peak_heat_ok else "FAIL",
-                }
-            )
+            result["checks"].append({
+                "name": "Peak Heating Demand",
+                "threshold": "<=Baseline",
+                "actual": f"{proposed_metrics.peak_heating_load_kw:.1f} kW",
+                "status": "PASS" if peak_heat_ok else "FAIL",
+            })
 
-            result["checks"].append(
-                {
-                    "name": "Peak Cooling Demand",
-                    "threshold": "<=Baseline",
-                    "actual": f"{proposed_metrics.peak_cooling_load_kw:.1f} kW",
-                    "status": "PASS" if peak_cool_ok else "FAIL",
-                }
-            )
+            result["checks"].append({
+                "name": "Peak Cooling Demand",
+                "threshold": "<=Baseline",
+                "actual": f"{proposed_metrics.peak_cooling_load_kw:.1f} kW",
+                "status": "PASS" if peak_cool_ok else "FAIL",
+            })
 
             # Calculate cost savings
             cost_savings = (
-                baseline_metrics.annual_energy_cost_usd
-                - proposed_metrics.annual_energy_cost_usd
+                baseline_metrics.annual_energy_cost_usd - proposed_metrics.annual_energy_cost_usd
             )
             result["annual_savings_usd"] = cost_savings
             result["energy_reduction_percent"] = energy_reduction
 
             # Overall compliance
-            all_passed = all(check["status"] == "PASS" for check in result["checks"])
+            all_passed = all(
+                check["status"] == "PASS"
+                for check in result["checks"]
+            )
             result["compliant"] = all_passed
 
             if all_passed:
@@ -279,7 +250,7 @@ class ComplianceAgent:
         Returns:
             Complete results including compliance check, report, and LLM response
         """
-        results: Dict[str, Any] = {
+        results = {
             "compliance": self.check_compliance(proposed_metrics, baseline_metrics),
             "metrics": {
                 "proposed": proposed_metrics,
@@ -288,18 +259,16 @@ class ComplianceAgent:
         }
 
         # Generate markdown report
-        markdown_report = self.generate_markdown_report(
+        results["markdown_report"] = self.generate_markdown_report(
             proposed_metrics=proposed_metrics,
             baseline_metrics=baseline_metrics,
         )
-        results["markdown_report"] = markdown_report
 
         # Generate LLM prompt
-        llm_prompt = self.generate_prompt(
+        results["llm_prompt"] = self.generate_prompt(
             proposed_metrics=proposed_metrics,
             baseline_metrics=baseline_metrics,
         )
-        results["llm_prompt"] = llm_prompt
 
         # Optionally call LLM
         if llm_client:

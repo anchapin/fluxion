@@ -18,7 +18,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -26,6 +26,7 @@ import pandas as pd
 # Ensure we can import the package if run directly
 sys.path.append(os.path.join(os.path.dirname(__file__), "../../"))
 
+from tools.data_gen import geometry, sampler, weather
 from tools.data_gen.sampler import (
     DistributionType,
     ParameterSampler,
@@ -198,15 +199,13 @@ class RCModelSimulator:
 
     def _compute_thermal_parameters(self):
         """Compute thermal parameters from building configuration."""
+        import math
         cfg = self.config
 
         # Floor area
         self.floor_area = cfg.width * cfg.length * cfg.num_floors
         self.window_area = self.floor_area * cfg.wwr
-        self.wall_area = (
-            2 * (cfg.width + cfg.length) * cfg.height * cfg.num_floors
-            - self.window_area
-        )
+        self.wall_area = 2 * (cfg.width + cfg.length) * cfg.height * cfg.num_floors - self.window_area
 
         # Thermal resistances (K/W)
         self.R_wall = 1.0 / cfg.wall_u_value if cfg.wall_u_value > 0 else 2.0
@@ -215,24 +214,21 @@ class RCModelSimulator:
         self.R_floor = 1.0 / cfg.floor_u_value if cfg.floor_u_value > 0 else 2.0
 
         # Combined exterior resistance
-        self.R_ext = (
-            1.0 / (self.window_area / self.R_window + self.wall_area / self.R_wall)
-            if (self.window_area / self.R_window + self.wall_area / self.R_wall) > 0
-            else self.R_wall
-        )
+        self.R_ext = 1.0 / (self.window_area / self.R_window + self.wall_area / self.R_wall) if (self.window_area / self.R_window + self.wall_area / self.R_wall) > 0 else self.R_wall
 
         # Internal thermal mass (J/K)
         thermal_mass = (
-            self.wall_area * 0.1 * 2000 * 1000 + self.floor_area * 0.2 * 2300 * 1000
+            self.wall_area * 0.1 * 2000 * 1000 +
+            self.floor_area * 0.2 * 2300 * 1000
         )
         self.C_zone = thermal_mass
         self.C_mass = thermal_mass * 0.5
 
         # Internal heat gains (W)
         self.internal_gain = (
-            cfg.occupancy_density * self.floor_area * 100
-            + cfg.equipment_density * self.floor_area
-            + cfg.lighting_density * self.floor_area
+            cfg.occupancy_density * self.floor_area * 100 +
+            cfg.equipment_density * self.floor_area +
+            cfg.lighting_density * self.floor_area
         )
 
         # HVAC capacity (W)
@@ -249,6 +245,7 @@ class RCModelSimulator:
         Returns:
             Tuple of (indoor_temps, heating_loads, cooling_loads) in W
         """
+        import math
         n = len(outdoor_temps)
         indoor_temps = np.zeros(n)
         heating_loads = np.zeros(n)
@@ -268,9 +265,7 @@ class RCModelSimulator:
             day_of_year = t // 24
             solar_irr = self._get_solar_irradiance(hour, day_of_year)
             solar_factor = self._get_solar_factor()
-            Q_solar = (
-                solar_irr * self.window_area * self.config.window_shgc * solar_factor
-            )
+            Q_solar = solar_irr * self.window_area * self.config.window_shgc * solar_factor
 
             # Internal gains
             Q_internal = self.internal_gain
@@ -291,14 +286,10 @@ class RCModelSimulator:
             cooling = 0.0
 
             if T_zone_new < T_heat:
-                heating = min(
-                    self.hvac_heating_capacity, (T_heat - T_zone_new) * C1 / dt
-                )
+                heating = min(self.hvac_heating_capacity, (T_heat - T_zone_new) * C1 / dt)
                 T_zone_new = T_zone + (Q_net + heating) * dt / C1
             elif T_zone_new > T_cool:
-                cooling = min(
-                    self.hvac_cooling_capacity, (T_zone_new - T_cool) * C1 / dt
-                )
+                cooling = min(self.hvac_cooling_capacity, (T_zone_new - T_cool) * C1 / dt)
                 T_zone_new = T_zone + (Q_net - cooling) * dt / C1
 
             indoor_temps[t] = T_zone_new
@@ -311,14 +302,12 @@ class RCModelSimulator:
 
     def _get_solar_factor(self):
         import math
-
         orientation = self.config.orientation
         theta = math.radians(orientation)
         return 0.5 + 0.5 * max(0, math.cos(theta))
 
     def _get_solar_irradiance(self, hour, day_of_year):
         import math
-
         if hour < 6 or hour > 20:
             return 0.0
 
@@ -429,7 +418,7 @@ class MonteCarloDataGenerator:
 
     def setup(self) -> None:
         """Setup the generator: prepare samplers, weather files, output directory."""
-        logger.info("Setting up Monte Carlo data generator")
+        logger.info(f"Setting up Monte Carlo data generator")
         logger.info(f"  Output directory: {self.output_dir}")
         logger.info(f"  Number of samples: {self.num_samples}")
         logger.info(f"  Sampling method: {self.sampling_method}")
@@ -616,9 +605,7 @@ class MonteCarloDataGenerator:
             )
         )
 
-        logger.info(
-            f"Parameter sampler configured with {len(self.param_sampler.parameters)} parameters"
-        )
+        logger.info(f"Parameter sampler configured with {len(self.param_sampler.parameters)} parameters")
 
     def _setup_weather_files(self) -> None:
         """Setup available weather files."""
@@ -647,16 +634,15 @@ class MonteCarloDataGenerator:
             BuildingConfig with sampled parameters
         """
         # Sample parameters
-        if self.param_sampler is None:
-            raise ValueError("Parameter sampler not initialized")
-        samples = self.param_sampler.sample(num_samples=1, method=self.sampling_method)
+        samples = self.param_sampler.sample(
+            num_samples=1, method=self.sampling_method
+        )
         params = samples[0]
 
         # Select weather file (random selection for diversity)
-        _ = sample_idx % len(self.weather_files)
+        weather_idx = sample_idx % len(self.weather_files)
         if self.weather_files:
             import random
-
             weather_file = random.choice(self.weather_files)
         else:
             weather_file = "USA_CA_San.Francisco.Intl.AP.724940_TMY3.epw"
@@ -740,9 +726,7 @@ class MonteCarloDataGenerator:
         result.outdoor_temps = base_temp + annual_cycle + daily_cycle
 
         # Run RC simulation for time series
-        indoor_temps, heating_loads, cooling_loads = rc_simulator.simulate_year(
-            result.outdoor_temps
-        )
+        indoor_temps, heating_loads, cooling_loads = rc_simulator.simulate_year(result.outdoor_temps)
 
         result.indoor_temps = indoor_temps
         result.heating_loads = heating_loads
@@ -751,10 +735,8 @@ class MonteCarloDataGenerator:
         # Calculate solar gains
         solar_factor = np.maximum(0, np.sin(np.pi * (hour_of_day - 6) / 12))
         max_solar = 800 * (1 - config.wwr * 0.5)
-        result.solar_gains = (
-            solar_factor
-            * max_solar
-            * (0.8 + 0.2 * np.sin(np.radians(config.orientation)))
+        result.solar_gains = solar_factor * max_solar * (
+            0.8 + 0.2 * np.sin(np.radians(config.orientation))
         )
 
         # Aggregate totals
@@ -767,18 +749,14 @@ class MonteCarloDataGenerator:
             try:
                 oracle_params = config.to_oracle_params()
                 oracle = fluxion.BatchOracle()
-                eui_list = oracle.evaluate_population(
-                    [oracle_params], use_surrogates=False
-                )
+                eui_list = oracle.evaluate_population([oracle_params], use_surrogates=False)
                 eui = eui_list[0]
 
                 # Compare with our simulation (for logging/debugging)
                 floor_area = config.width * config.length * config.num_floors
-                _ = eui * floor_area
+                expected_energy = eui * floor_area
 
-                logger.debug(
-                    f"Fluxion EUI: {eui:.2f}, RC Model Energy: {result.total_energy:.2f}"
-                )
+                logger.debug(f"Fluxion EUI: {eui:.2f}, RC Model Energy: {result.total_energy:.2f}")
             except Exception as e:
                 logger.debug(f"Fluxion validation skipped: {e}")
 
@@ -806,9 +784,7 @@ class MonteCarloDataGenerator:
         result.outdoor_temps = base_temp + annual_cycle + daily_cycle
 
         # Run RC simulation
-        indoor_temps, heating_loads, cooling_loads = rc_simulator.simulate_year(
-            result.outdoor_temps
-        )
+        indoor_temps, heating_loads, cooling_loads = rc_simulator.simulate_year(result.outdoor_temps)
 
         result.indoor_temps = indoor_temps
         result.heating_loads = heating_loads
@@ -817,10 +793,8 @@ class MonteCarloDataGenerator:
         # Calculate solar gains
         solar_factor = np.maximum(0, np.sin(np.pi * (hour_of_day - 6) / 12))
         max_solar = 800 * (1 - config.wwr * 0.5)
-        result.solar_gains = (
-            solar_factor
-            * max_solar
-            * (0.8 + 0.2 * np.sin(np.radians(config.orientation)))
+        result.solar_gains = solar_factor * max_solar * (
+            0.8 + 0.2 * np.sin(np.radians(config.orientation))
         )
 
         # Aggregate totals
@@ -855,10 +829,8 @@ class MonteCarloDataGenerator:
         # Solar varies by orientation and hour
         solar_factor = np.maximum(0, np.sin(np.pi * (hour_of_day - 6) / 12))
         max_solar = 800 * (1 - config.wwr * 0.5)  # Reduced by windows
-        result.solar_gains = (
-            solar_factor
-            * max_solar
-            * (0.8 + 0.2 * np.sin(np.radians(config.orientation)))
+        result.solar_gains = solar_factor * max_solar * (
+            0.8 + 0.2 * np.sin(np.radians(config.orientation))
         )
 
         # Calculate heat transfer
@@ -876,7 +848,9 @@ class MonteCarloDataGenerator:
 
         # Indoor temperature (simplified - maintained near setpoint when HVAC is on)
         # Free-floating temperature calculation
-        _ = result.outdoor_temps + (result.solar_gains / (u_avg * 10))  # Simplified
+        indoor_free = result.outdoor_temps + (
+            result.solar_gains / (u_avg * 10)
+        )  # Simplified
 
         # HVAC mode simulation
         # Heating needed when outdoor is low or indoor drops below setpoint
@@ -980,22 +954,22 @@ class MonteCarloDataGenerator:
         self._save_data(df)
 
         # Print summary
-        logger.info("Generation complete!")
+        logger.info(f"Generation complete!")
         logger.info(f"  Total samples generated: {len(all_samples)}")
         logger.info(f"  Total time: {self.total_time:.2f}s")
         if self.simulation_times:
             logger.info(
                 f"  Average simulation time: {np.mean(self.simulation_times):.3f}s"
             )
-            logger.info(
-                f"  Throughput: {len(all_samples) / self.total_time:.1f} samples/s"
-            )
+            logger.info(f"  Throughput: {len(all_samples) / self.total_time:.1f} samples/s")
 
         return df
 
-    def _result_to_samples(self, result: SimulationResult) -> List[TrainingSample]:
+    def _result_to_samples(
+        self, result: SimulationResult
+    ) -> List[TrainingSample]:
         """Convert simulation result to training samples."""
-        samples: List[TrainingSample] = []
+        samples = []
 
         # We can only create samples if we have complete time series
         if len(result.indoor_temps) < 2:

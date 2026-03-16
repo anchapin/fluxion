@@ -24,15 +24,6 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from tqdm import tqdm
 
-# Optional ONNX export dependencies
-try:
-    import onnx
-    from onnx import TensorProto, helper, numpy_helper
-
-    ONNX_AVAILABLE = True
-except ImportError:
-    ONNX_AVAILABLE = False
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -40,49 +31,6 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger(__name__)
-
-
-def create_dummy_onnx_model(output_path: Path, input_dim: int, output_dim: int):
-    """Create a minimal valid ONNX model for dry-run/testing."""
-    if not ONNX_AVAILABLE:
-        raise RuntimeError("ONNX package required but not available")
-
-    # Simple linear model: y = 1.2 * x + 0
-    weight = np.full((output_dim, input_dim), 1.2, dtype=np.float32)
-    bias = np.zeros(output_dim, dtype=np.float32)
-
-    init = [
-        numpy_helper.from_array(weight, name="W"),
-        numpy_helper.from_array(bias, name="b"),
-    ]
-
-    gemm_node = helper.make_node(
-        "Gemm",
-        inputs=["input", "W", "b"],
-        outputs=["output"],
-        name="gemm",
-        alpha=1.0,
-        beta=1.0,
-        transA=0,
-        transB=1,  # transpose weight for proper matmul
-    )
-
-    graph = helper.make_graph(
-        [gemm_node],
-        "dummy_surrogate",
-        [helper.make_tensor_value_info("input", TensorProto.FLOAT, [None, input_dim])],
-        [
-            helper.make_tensor_value_info(
-                "output", TensorProto.FLOAT, [None, output_dim]
-            )
-        ],
-        initializer=init,
-    )
-
-    model = helper.make_model(graph)
-    onnx.checker.check_model(model)
-    onnx.save_model(model, str(output_path))
-    logger.info(f"Saved dummy ONNX model to {output_path}")
 
 
 def generate_synthetic_data(
@@ -273,15 +221,12 @@ class PhysicsLoss(nn.Module):
     Combines standard MSE (data loss) with a physics regularization term
     that penalizes energy balance violations.
     """
-
     def __init__(self, lambda_physics: float = 0.1):
         super().__init__()
         self.lambda_physics = lambda_physics
         self.mse = nn.MSELoss()
 
-    def forward(
-        self, pred: torch.Tensor, target: torch.Tensor, features: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    def forward(self, pred: torch.Tensor, target: torch.Tensor, features: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # 1. Data Fitting Loss (MSE)
         data_loss = self.mse(pred, target)
 
@@ -454,15 +399,6 @@ def export_onnx(model: nn.Module, sample_input: np.ndarray, output_path: Path):
 def main():
     parser = argparse.ArgumentParser(description="Train AI Surrogate Model")
 
-    # Component type
-    parser.add_argument(
-        "--component",
-        choices=["solar", "hvac", "infiltration", "thermal_mass"],
-        required=False,
-        default="generic",
-        help="Component type for modular surrogate training",
-    )
-
     # Data Args
     parser.add_argument(
         "--input-file",
@@ -470,26 +406,17 @@ def main():
         help="Path to training data (.npz, .csv, or directory)",
     )
     parser.add_argument(
-        "--samples",
-        type=int,
-        default=1000,
-        help="Samples to generate if no input file (alias for num-samples)",
-    )
-    parser.add_argument(
         "--num-samples",
         type=int,
-        default=None,
-        help="Samples to generate if no input file (overrides --samples)",
+        default=10000,
+        help="Samples to generate if no input file",
     )
     parser.add_argument(
-        "--num-zones",
-        type=int,
-        default=1,
-        help="Number of zones (output dim, default: 1)",
+        "--num-zones", type=int, default=10, help="Number of zones (output dim)"
     )
 
     # Training Args
-    parser.add_argument("--epochs", type=int, default=10, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=100, help="Training epochs")
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument(
         "--learning-rate", type=float, default=0.001, help="Learning rate"
@@ -498,8 +425,8 @@ def main():
         "--hidden-dims",
         type=int,
         nargs="+",
-        default=[32, 32],
-        help="Hidden layer dimensions (default: 32 32)",
+        default=[64, 64],
+        help="Hidden layer dimensions",
     )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
@@ -525,43 +452,21 @@ def main():
 
     # Output Args
     parser.add_argument(
-        "--output", type=str, required=True, help="Output ONNX file path"
-    )
-
-    # Dry-run flag
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Create a dummy model quickly without real training (for pipeline testing)",
+        "--output-dir", type=str, default="models", help="Output directory"
     )
 
     args = parser.parse_args()
 
-    # Resolve samples
-    num_samples = args.num_samples if args.num_samples is not None else args.samples
-
-    # Setup output path
-    output_path = Path(args.output)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_dir = output_path.parent  # for intermediate files
-
-    # Dry-run: create dummy model without training
-    if args.dry_run:
-        logger.info("Dry-run mode: creating dummy ONNX model")
-        input_dim = args.num_zones
-        output_dim = args.num_zones
-        create_dummy_onnx_model(output_path, input_dim, output_dim)
-        return 0
+    # Setup output
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     # Get Data
     if args.input_file:
         X, y = load_data(args.input_file)
     else:
-        logger.info(
-            f"Generating {num_samples} synthetic samples for {args.num_zones} zones..."
-        )
-        X, y = generate_synthetic_data(num_samples, args.num_zones, args.seed)
-        # Save generated data to output directory for record
+        X, y = generate_synthetic_data(args.num_samples, args.num_zones, args.seed)
+        # Save generated data
         np.savez(output_dir / "generated_data.npz", X=X, y=y)
 
     # Train
@@ -579,7 +484,7 @@ def main():
     )
 
     # Export
-    export_onnx(model, X, output_path)
+    export_onnx(model, X, output_dir / "surrogate.onnx")
 
     # Plotting (Simple)
     try:

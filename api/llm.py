@@ -8,8 +8,8 @@ Enables natural language queries to the Fluxion API with function calling suppor
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
+from typing import Optional, Dict, Any, List
+import httpx
 from llama_cpp import Llama
 from pydantic import BaseModel, Field
 
@@ -30,23 +30,27 @@ FLUXION_API_FUNCTIONS = [
                         "type": "array",
                         "items": {"type": "number"},
                         "minItems": 3,
-                        "maxItems": 3,
+                        "maxItems": 3
                     },
-                    "description": "List of parameter vectors [window_u_value, heating_setpoint, cooling_setpoint]",
+                    "description": "List of parameter vectors [window_u_value, heating_setpoint, cooling_setpoint]"
                 },
                 "use_surrogates": {
                     "type": "boolean",
                     "description": "Use AI surrogates for faster evaluation (recommended)",
-                    "default": True,
-                },
+                    "default": True
+                }
             },
-            "required": ["population"],
-        },
+            "required": ["population"]
+        }
     },
     {
         "name": "get_model_status",
         "description": "Get the current status of the surrogate model (loaded/unloaded)",
-        "parameters": {"type": "object", "properties": {}, "required": []},
+        "parameters": {
+            "type": "object",
+            "properties": {},
+            "required": []
+        }
     },
     {
         "name": "load_surrogate",
@@ -56,22 +60,19 @@ FLUXION_API_FUNCTIONS = [
             "properties": {
                 "model_path": {
                     "type": "string",
-                    "description": "Path to the ONNX model file",
+                    "description": "Path to the ONNX model file"
                 }
             },
-            "required": ["model_path"],
-        },
-    },
+            "required": ["model_path"]
+        }
+    }
 ]
 
 
 class LLMQueryRequest(BaseModel):
     """Request model for LLM queries."""
-
     query: str = Field(..., description="Natural language query from the user")
-    model_path: Optional[str] = Field(
-        None, description="Path to GGUF model (optional, uses default if not provided)"
-    )
+    model_path: Optional[str] = Field(None, description="Path to GGUF model (optional, uses default if not provided)")
     temperature: float = Field(0.7, description="Sampling temperature (0.0-2.0)")
     max_tokens: int = Field(2048, description="Maximum tokens to generate")
     context_window: int = Field(8192, description="Context window size")
@@ -79,14 +80,9 @@ class LLMQueryRequest(BaseModel):
 
 class LLMQueryResponse(BaseModel):
     """Response model for LLM queries."""
-
     response: str = Field(..., description="Natural language response from the LLM")
-    tool_calls: Optional[List[Dict[str, Any]]] = Field(
-        None, description="JSON tool calls made by the LLM"
-    )
-    tool_results: Optional[List[Dict[str, Any]]] = Field(
-        None, description="Results from executed tool calls"
-    )
+    tool_calls: Optional[List[Dict[str, Any]]] = Field(None, description="JSON tool calls made by the LLM")
+    tool_results: Optional[List[Dict[str, Any]]] = Field(None, description="Results from executed tool calls")
     model: str = Field(..., description="Model used for inference")
     inference_time_ms: float = Field(..., description="Inference time in milliseconds")
 
@@ -136,7 +132,7 @@ class LLMPool:
             n_ctx=8192,
             n_threads=4,
             n_gpu_layers=0,  # Set to >0 if GPU acceleration is available
-            verbose=False,
+            verbose=False
         )
 
         self._models[path] = llm
@@ -154,7 +150,7 @@ class LLMPool:
         return {
             "loaded": bool(self._models),
             "model_path": self._default_model_path,
-            "loaded_models": list(self._models.keys()),
+            "loaded_models": list(self._models.keys())
         }
 
     def unload_model(self, model_path: Optional[str] = None):
@@ -169,7 +165,7 @@ class LLMPool:
         self,
         user_query: str,
         include_function_results: bool = False,
-        function_results: Optional[str] = None,
+        function_results: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         Create a prompt for function calling.
@@ -193,12 +189,15 @@ class LLMPool:
                 "```\n"
                 "Do not include any other text in your response when making function calls. "
                 "After receiving function results, summarize the data in plain English for the facility manager."
-            ),
+            )
         }
 
-        user_message = {"role": "user", "content": user_query}
+        user_message = {
+            "role": "user",
+            "content": user_query
+        }
 
-        messages: List[Dict[str, Any]] = [system_message]
+        messages = [system_message]
 
         if include_function_results and function_results:
             assistant_message = {
@@ -210,17 +209,17 @@ class LLMPool:
                         "id": "call_1",
                         "function": {
                             "name": "evaluate_population",
-                            "arguments": json.dumps(user_query),
-                        },
+                            "arguments": json.dumps(user_query)
+                        }
                     }
-                ],
+                ]
             }
             messages.append(assistant_message)
 
             tool_result_message = {
                 "role": "tool",
                 "tool_call_id": "call_1",
-                "content": function_results,
+                "content": function_results
             }
             messages.append(tool_result_message)
         else:
@@ -237,7 +236,7 @@ def initialize_llm(
     model_path: str,
     context_window: int = 8192,
     n_threads: int = 4,
-    n_gpu_layers: int = 0,
+    n_gpu_layers: int = 0
 ) -> Llama:
     """
     Initialize the default LLM model.
@@ -256,31 +255,35 @@ def initialize_llm(
 
 
 # Convenience wrapper functions for FastAPI endpoints
-def init_llm(
-    model_path: str,
-    context_window: int = 8192,
-    n_threads: int = 4,
-    n_gpu_layers: int = 0,
-) -> Dict[str, Any]:
+def init_llm(model_path: str, context_window: int = 8192, n_threads: int = 4, n_gpu_layers: int = 0) -> Dict[str, Any]:
     """Initialize the LLM and return status."""
     try:
-        initialize_llm(model_path, context_window, n_threads, n_gpu_layers)
+        llm = initialize_llm(model_path, context_window, n_threads, n_gpu_layers)
         return {
             "status": "success",
             "message": f"LLM initialized from {model_path}",
-            "model_path": model_path,
+            "model_path": model_path
         }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 
 def unload_llm() -> Dict[str, Any]:
     """Unload the LLM from memory."""
     try:
         llm_pool.unload_model()
-        return {"status": "success", "message": "LLM unloaded"}
+        return {
+            "status": "success",
+            "message": "LLM unloaded"
+        }
     except Exception as e:
-        return {"status": "error", "message": str(e)}
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 
 def get_llm_status() -> Dict[str, Any]:
@@ -289,7 +292,7 @@ def get_llm_status() -> Dict[str, Any]:
     return {
         "model_loaded": status["loaded"],
         "model_path": status.get("model_path"),
-        "available_functions": FLUXION_API_FUNCTIONS,
+        "available_functions": FLUXION_API_FUNCTIONS
     }
 
 
@@ -299,7 +302,7 @@ def query_with_function_calling(
     temperature: float = 0.7,
     max_tokens: int = 2048,
     execute_functions: bool = True,
-    api_client=None,
+    api_client=None
 ) -> Dict[str, Any]:
     """
     Process a natural language query with function calling support.
@@ -315,8 +318,8 @@ def query_with_function_calling(
     Returns:
         Dictionary with response, tool_calls, and tool_results
     """
-    import re
     import time
+    import re
 
     llm = llm_pool.get_model(model_path)
 
@@ -331,7 +334,7 @@ def query_with_function_calling(
         temperature=temperature,
         max_tokens=max_tokens,
         functions=FLUXION_API_FUNCTIONS,
-        function_call="auto",
+        function_call="auto"
     )
 
     inference_time = (time.time() - start_time) * 1000
@@ -366,9 +369,10 @@ def query_with_function_calling(
                     # Extract just the arguments portion
                     args_str = match.group(2)
                     func_args = json.loads(args_str)
-                    tool_calls = [
-                        {"name": func_name, "arguments": json.dumps(func_args)}
-                    ]
+                    tool_calls = [{
+                        "name": func_name,
+                        "arguments": json.dumps(func_args)
+                    }]
                     break
                 except json.JSONDecodeError as e:
                     logger.warning(f"Failed to parse function arguments: {e}")
@@ -389,13 +393,17 @@ def query_with_function_calling(
             try:
                 # Execute the function via API client
                 result = execute_api_call(api_client, func_name, func_args)
-                tool_results.append(
-                    {"function": func_name, "arguments": func_args, "result": result}
-                )
+                tool_results.append({
+                    "function": func_name,
+                    "arguments": func_args,
+                    "result": result
+                })
             except Exception as e:
-                tool_results.append(
-                    {"function": func_name, "arguments": func_args, "error": str(e)}
-                )
+                tool_results.append({
+                    "function": func_name,
+                    "arguments": func_args,
+                    "error": str(e)
+                })
 
         # Second pass: Get summary from LLM with function results
         # Use a simpler approach - append function results to a new query
@@ -406,24 +414,22 @@ def query_with_function_calling(
             summary_messages = [
                 {
                     "role": "system",
-                    "content": "You are a helpful assistant that explains Fluxion API results in plain English. The user asked a question, and the function results are provided below. Provide a clear, concise summary.",
+                    "content": "You are a helpful assistant that explains Fluxion API results in plain English. The user asked a question, and the function results are provided below. Provide a clear, concise summary."
                 },
                 {
                     "role": "user",
-                    "content": f"Original question: {query}\n\nFunction results:\n{function_results_str}\n\nPlease summarize these results in plain English.",
-                },
+                    "content": f"Original question: {query}\n\nFunction results:\n{function_results_str}\n\nPlease summarize these results in plain English."
+                }
             ]
 
             # Get final summary from LLM
             summary_response = llm.create_chat_completion(
                 messages=summary_messages,
                 temperature=temperature,
-                max_tokens=max_tokens,
+                max_tokens=max_tokens
             )
 
-            final_response = summary_response["choices"][0]["message"].get(
-                "content", ""
-            )
+            final_response = summary_response["choices"][0]["message"].get("content", "")
 
     if not final_response:
         final_response = assistant_message.get("content", "")
@@ -432,13 +438,11 @@ def query_with_function_calling(
         "response": final_response or "No response generated",
         "tool_calls": tool_calls,
         "tool_results": tool_results,
-        "inference_time_ms": inference_time,
+        "inference_time_ms": inference_time
     }
 
 
-def execute_api_call(
-    client, function_name: str, arguments: Dict[str, Any]
-) -> Dict[str, Any]:
+def execute_api_call(client, function_name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     """
     Execute a Fluxion API call.
 
@@ -450,14 +454,15 @@ def execute_api_call(
     Returns:
         API response as dictionary
     """
+    import httpx
 
     if function_name == "evaluate_population":
         response = client.post(
             "/evaluate",
             json={
                 "population": arguments.get("population", []),
-                "use_surrogates": arguments.get("use_surrogates", True),
-            },
+                "use_surrogates": arguments.get("use_surrogates", True)
+            }
         )
         response.raise_for_status()
         return response.json()
@@ -469,7 +474,8 @@ def execute_api_call(
 
     elif function_name == "load_surrogate":
         response = client.post(
-            "/load-surrogate", json={"model_path": arguments.get("model_path")}
+            "/load-surrogate",
+            json={"model_path": arguments.get("model_path")}
         )
         response.raise_for_status()
         return response.json()

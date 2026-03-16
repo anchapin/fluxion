@@ -25,15 +25,15 @@ Reward Function:
 - PMV (Predicted Mean Vote) thermal comfort penalty
 """
 
-import os
 import sys
+import os
 
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 
 import numpy as np
 
@@ -48,20 +48,16 @@ logger = logging.getLogger(__name__)
 try:
     import gymnasium as gym
     from gymnasium import spaces
-
     GYMNASIUM_AVAILABLE = True
 except ImportError:
     GYMNASIUM_AVAILABLE = False
-    logger.warning(
-        "Gymnasium not available - please install with: pip install gymnasium"
-    )
+    logger.warning("Gymnasium not available - please install with: pip install gymnasium")
     # Create minimal stub for type hints
     spaces = None
     gym = None
 
 try:
     import fluxion
-
     FLUXION_AVAILABLE = True
 except ImportError:
     FLUXION_AVAILABLE = False
@@ -71,7 +67,7 @@ except ImportError:
 # Default electricity price schedule (time-of-use in $/kWh)
 # Peak: 16:00-21:00, Off-peak: 00:00-06:00, Shoulder: 6:00-16:00 & 21:00-24:00
 DEFAULT_ELECTRICITY_PRICES = {
-    "peak": 0.35,  # $/kWh
+    "peak": 0.35,      # $/kWh
     "shoulder": 0.20,  # $/kWh
     "off_peak": 0.10,  # $/kWh
 }
@@ -80,7 +76,6 @@ DEFAULT_ELECTRICITY_PRICES = {
 @dataclass
 class EnvConfig:
     """Configuration for the Fluxion RL environment."""
-
     # Number of thermal zones
     num_zones: int = 1
 
@@ -105,19 +100,17 @@ class EnvConfig:
 
     # Reward weights
     energy_weight: float = -1.0  # Minimize energy cost
-    pmv_weight: float = -1.0  # Penalize thermal discomfort (PMV)
+    pmv_weight: float = -1.0     # Penalize thermal discomfort (PMV)
 
     # Thermal comfort parameters for PMV
     # Default indoor conditions
-    indoor_rh: float = 50.0  # Relative humidity (%)
-    air_velocity: float = 0.1  # m/s
+    indoor_rh: float = 50.0      # Relative humidity (%)
+    air_velocity: float = 0.1     # m/s
     clothing_insulation: float = 0.5  # clo (typical indoor clothing)
-    metabolic_rate: float = 1.0  # met (sedentary activity)
+    metabolic_rate: float = 1.0    # met (sedentary activity)
 
     # Electricity prices
-    electricity_prices: Dict[str, float] = field(
-        default_factory=lambda: DEFAULT_ELECTRICITY_PRICES.copy()
-    )
+    electricity_prices: Dict[str, float] = field(default_factory=lambda: DEFAULT_ELECTRICITY_PRICES.copy())
 
 
 class FluxionEnv(gym.Env):
@@ -172,25 +165,20 @@ class FluxionEnv(gym.Env):
         # Initialize the Fluxion model if available
         self._init_fluxion_model()
 
-        # Weather and pricing data
-        self._outdoor_temps: np.ndarray = np.array([])
-        self._solar_radiation: np.ndarray = np.array([])
-        self._electricity_prices: np.ndarray = np.array([])
-
         # Initialize weather data
         self._init_weather(weather_file)
 
         # Initialize electricity prices
         self._init_electricity_prices(electricity_price_file)
 
+        # Define action and observation spaces
+        self._define_spaces()
+
         # State tracking
         self.current_step = 0
         self.episode_energy_cost = 0.0
         self.episode_pmv_penalty = 0.0
         self.episode_energy = 0.0
-
-        # Define action and observation spaces first
-        self._define_spaces()
 
         # Internal state
         self._reset_state()
@@ -200,13 +188,9 @@ class FluxionEnv(gym.Env):
         if FLUXION_AVAILABLE:
             try:
                 self.model = fluxion.Model(num_zones=self.config.num_zones)
-                logger.info(
-                    f"Fluxion model initialized with {self.config.num_zones} zone(s)"
-                )
+                logger.info(f"Fluxion model initialized with {self.config.num_zones} zone(s)")
             except Exception as e:
-                logger.warning(
-                    f"Failed to initialize Fluxion model: {e}. Using simplified model."
-                )
+                logger.warning(f"Failed to initialize Fluxion model: {e}. Using simplified model.")
                 self.model = None
         else:
             self.model = None
@@ -230,16 +214,16 @@ class FluxionEnv(gym.Env):
         # Outdoor temperature: sinusoidal with yearly cycle + daily cycle + noise
         base_temp = 12.5  # Annual average
         yearly_amplitude = 17.5  # Summer vs winter
-        daily_amplitude = 5.0  # Day vs night
+        daily_amplitude = 5.0   # Day vs night
 
         yearly_cycle = np.sin(2 * np.pi * (hours - 1200) / 8760)
         daily_cycle = np.sin(2 * np.pi * hours / 24)
 
         self._outdoor_temps = (
-            base_temp
-            + yearly_amplitude * yearly_cycle
-            + daily_amplitude * daily_cycle
-            + np.random.normal(0, 2, self.config.steps_per_episode)
+            base_temp +
+            yearly_amplitude * yearly_cycle +
+            daily_amplitude * daily_cycle +
+            np.random.normal(0, 2, self.config.steps_per_episode)
         )
 
         # Clip to realistic range
@@ -257,15 +241,15 @@ class FluxionEnv(gym.Env):
 
         # Max solar ~1000 W/m²
         self._solar_radiation = (
-            daylight
-            * (1 + 0.3 * seasonal_factor)
-            * 800
-            * (1 + np.random.normal(0, 0.1, self.config.steps_per_episode))
+            daylight *
+            (1 + 0.3 * seasonal_factor) *
+            800 *
+            (1 + np.random.normal(0, 0.1, self.config.steps_per_episode))
         )
         self._solar_radiation = np.maximum(0, self._solar_radiation)
 
         # Relative humidity (inverse of temperature pattern)
-        self._relative_humidity = 50 + 20 * np.sin(yearly_cycle + np.pi / 2)
+        self._relative_humidity = 50 + 20 * np.sin(yearly_cycle + np.pi/2)
 
     def _init_electricity_prices(self, price_file: Optional[str]):
         """Initialize electricity price schedule."""
@@ -310,11 +294,11 @@ class FluxionEnv(gym.Env):
         # Time: hour of day (1), day of year (1)
 
         obs_dim = (
-            num_zones  # Indoor temperatures
-            + forecast_horizon  # Outdoor temp forecast
-            + forecast_horizon  # Solar radiation forecast
-            + forecast_horizon  # Electricity price forecast
-            + 2  # Hour of day, day of year
+            num_zones +  # Indoor temperatures
+            forecast_horizon +  # Outdoor temp forecast
+            forecast_horizon +  # Solar radiation forecast
+            forecast_horizon +  # Electricity price forecast
+            2  # Hour of day, day of year
         )
 
         # Define bounds
@@ -369,29 +353,21 @@ class FluxionEnv(gym.Env):
         # Continuous: [heating_setpoint, cooling_setpoint, fan_speed]
         # Binary: [heater_on, cooler_on, fan_on, economizer_on]
 
-        self.action_space = spaces.Dict(
-            {
-                "continuous": spaces.Box(
-                    low=np.array(
-                        [
-                            self.config.heating_setpoint_min,
-                            self.config.cooling_setpoint_min,
-                            self.config.fan_speed_min,
-                        ],
-                        dtype=np.float32,
-                    ),
-                    high=np.array(
-                        [
-                            self.config.heating_setpoint_max,
-                            self.config.cooling_setpoint_max,
-                            self.config.fan_speed_max,
-                        ],
-                        dtype=np.float32,
-                    ),
-                ),
-                "discrete": spaces.MultiBinary(self.config.num_equipment),
-            }
-        )
+        self.action_space = spaces.Dict({
+            "continuous": spaces.Box(
+                low=np.array([
+                    self.config.heating_setpoint_min,
+                    self.config.cooling_setpoint_min,
+                    self.config.fan_speed_min,
+                ], dtype=np.float32),
+                high=np.array([
+                    self.config.heating_setpoint_max,
+                    self.config.cooling_setpoint_max,
+                    self.config.fan_speed_max,
+                ], dtype=np.float32),
+            ),
+            "discrete": spaces.MultiBinary(self.config.num_equipment),
+        })
 
     def _reset_state(self):
         """Reset internal state for new episode."""
@@ -412,7 +388,9 @@ class FluxionEnv(gym.Env):
         self._equipment_states = np.array([1, 1, 1, 0], dtype=np.int8)
 
     def reset(
-        self, seed: Optional[int] = None, options: Optional[Dict] = None
+        self,
+        seed: Optional[int] = None,
+        options: Optional[Dict] = None
     ) -> Tuple[np.ndarray, Dict]:
         """
         Reset the environment to initial state.
@@ -440,7 +418,8 @@ class FluxionEnv(gym.Env):
         return obs, info
 
     def step(
-        self, action: Dict[str, np.ndarray]
+        self,
+        action: Dict[str, np.ndarray]
     ) -> Tuple[np.ndarray, float, bool, bool, Dict]:
         """
         Execute one timestep.
@@ -461,23 +440,21 @@ class FluxionEnv(gym.Env):
         """
         # Parse continuous actions
         continuous = action.get("continuous", np.array([20.0, 24.0, 50.0]))
-        self._heating_setpoint = float(
-            np.clip(
-                continuous[0],
-                self.config.heating_setpoint_min,
-                self.config.heating_setpoint_max,
-            )
-        )
-        self._cooling_setpoint = float(
-            np.clip(
-                continuous[1],
-                self.config.cooling_setpoint_min,
-                self.config.cooling_setpoint_max,
-            )
-        )
-        self._fan_speed = float(
-            np.clip(continuous[2], self.config.fan_speed_min, self.config.fan_speed_max)
-        )
+        self._heating_setpoint = float(np.clip(
+            continuous[0],
+            self.config.heating_setpoint_min,
+            self.config.heating_setpoint_max
+        ))
+        self._cooling_setpoint = float(np.clip(
+            continuous[1],
+            self.config.cooling_setpoint_min,
+            self.config.cooling_setpoint_max
+        ))
+        self._fan_speed = float(np.clip(
+            continuous[2],
+            self.config.fan_speed_min,
+            self.config.fan_speed_max
+        ))
 
         # Parse discrete actions (equipment toggles)
         discrete = action.get("discrete", np.array([1, 1, 1, 0]))
@@ -507,7 +484,7 @@ class FluxionEnv(gym.Env):
 
         # Calculate PMV and thermal comfort
         pmv = self._calculate_pmv(zone_temps[0], outdoor_temp)
-        pmv_penalty = pmv**2  # Square to penalize deviation from 0
+        pmv_penalty = pmv ** 2  # Square to penalize deviation from 0
         self.episode_pmv_penalty += pmv_penalty
 
         # Calculate reward
@@ -547,7 +524,9 @@ class FluxionEnv(gym.Env):
             return self._simulate_simplified(outdoor_temp, solar_rad)
 
     def _simulate_with_fluxion(
-        self, outdoor_temp: float, solar_rad: float
+        self,
+        outdoor_temp: float,
+        solar_rad: float
     ) -> Tuple[float, np.ndarray]:
         """Simulate using Fluxion Rust engine."""
         # This would call the Fluxion model via PyO3
@@ -555,7 +534,9 @@ class FluxionEnv(gym.Env):
         return self._simulate_simplified(outdoor_temp, solar_rad)
 
     def _simulate_simplified(
-        self, outdoor_temp: float, solar_rad: float
+        self,
+        outdoor_temp: float,
+        solar_rad: float
     ) -> Tuple[float, np.ndarray]:
         """
         Simulate using simplified 5R1C thermal model.
@@ -567,7 +548,7 @@ class FluxionEnv(gym.Env):
         # Based on standard 5R1C model
         thermal_mass = 1e7  # J/K (large thermal mass for stability)
         h_transmission = 500  # W/K (overall heat transfer coefficient)
-        h_ventilation = 100  # W/K (ventilation)
+        h_ventilation = 100   # W/K (ventilation)
 
         # Current state
         Ti = self._zone_temperatures[0]
@@ -590,7 +571,7 @@ class FluxionEnv(gym.Env):
         fan_on = bool(self._equipment_states[2])
 
         # Calculate target temperature (midpoint of setpoints)
-        _ = (self._heating_setpoint + self._cooling_setpoint) / 2
+        target_temp = (self._heating_setpoint + self._cooling_setpoint) / 2
 
         # Only provide heating/cooling if equipment is on
         if heater_on and Ti < self._heating_setpoint:
@@ -630,7 +611,11 @@ class FluxionEnv(gym.Env):
 
         return energy, zone_temps
 
-    def _calculate_pmv(self, zone_temp: float, outdoor_temp: float) -> float:
+    def _calculate_pmv(
+        self,
+        zone_temp: float,
+        outdoor_temp: float
+    ) -> float:
         """
         Calculate Predicted Mean Vote (PMV) for thermal comfort.
 
@@ -694,11 +679,11 @@ class FluxionEnv(gym.Env):
 
         # Combined PMV
         pmv = (
-            thermal_sensation
-            + humidity_effect
-            + air_effect
-            + clothing_effect
-            + activity_effect
+            thermal_sensation +
+            humidity_effect +
+            air_effect +
+            clothing_effect +
+            activity_effect
         )
 
         # Clip to valid range [-3, 3]
@@ -718,7 +703,7 @@ class FluxionEnv(gym.Env):
         energy_penalty = self.config.energy_weight * energy_cost
 
         # PMV thermal comfort penalty (squared for quadratic penalty)
-        pmv_penalty = self.config.pmv_weight * (pmv**2)
+        pmv_penalty = self.config.pmv_weight * (pmv ** 2)
 
         reward = energy_penalty + pmv_penalty
 
@@ -734,7 +719,7 @@ class FluxionEnv(gym.Env):
         idx = 0
 
         # Indoor temperatures
-        obs[idx : idx + num_zones] = self._zone_temperatures
+        obs[idx:idx + num_zones] = self._zone_temperatures
         idx += num_zones
 
         # Weather forecast (outdoor temps)
@@ -743,24 +728,24 @@ class FluxionEnv(gym.Env):
         available = end - start
 
         if available > 0:
-            obs[idx : idx + available] = self._outdoor_temps[start:end]
+            obs[idx:idx + available] = self._outdoor_temps[start:end]
             # Fill remaining with last value
             if available < horizon:
-                obs[idx + available : idx + horizon] = self._outdoor_temps[end - 1]
+                obs[idx + available:idx + horizon] = self._outdoor_temps[end - 1]
         idx += horizon
 
         # Weather forecast (solar radiation)
         if available > 0:
-            obs[idx : idx + available] = self._solar_radiation[start:end]
+            obs[idx:idx + available] = self._solar_radiation[start:end]
             if available < horizon:
-                obs[idx + available : idx + horizon] = self._solar_radiation[end - 1]
+                obs[idx + available:idx + horizon] = self._solar_radiation[end - 1]
         idx += horizon
 
         # Electricity price forecast
         if available > 0:
-            obs[idx : idx + available] = self._electricity_prices[start:end]
+            obs[idx:idx + available] = self._electricity_prices[start:end]
             if available < horizon:
-                obs[idx + available : idx + horizon] = self._electricity_prices[end - 1]
+                obs[idx + available:idx + horizon] = self._electricity_prices[end - 1]
         idx += horizon
 
         # Time features
@@ -779,7 +764,7 @@ class FluxionEnv(gym.Env):
 
         pmv = self._calculate_pmv(
             self._zone_temperatures[0],
-            self._outdoor_temps[max(0, self.current_step - 1)],
+            self._outdoor_temps[max(0, self.current_step - 1)]
         )
 
         return {
@@ -793,21 +778,9 @@ class FluxionEnv(gym.Env):
             "equipment_states": self._equipment_states.tolist(),
             # Zone state
             "zone_temperatures": self._zone_temperatures.tolist(),
-            "outdoor_temperature": (
-                self._outdoor_temps[self.current_step]
-                if self.current_step < len(self._outdoor_temps)
-                else 0
-            ),
-            "solar_radiation": (
-                self._solar_radiation[self.current_step]
-                if self.current_step < len(self._solar_radiation)
-                else 0
-            ),
-            "electricity_price": (
-                self._electricity_prices[self.current_step]
-                if self.current_step < len(self._electricity_prices)
-                else 0
-            ),
+            "outdoor_temperature": self._outdoor_temps[self.current_step] if self.current_step < len(self._outdoor_temps) else 0,
+            "solar_radiation": self._solar_radiation[self.current_step] if self.current_step < len(self._solar_radiation) else 0,
+            "electricity_price": self._electricity_prices[self.current_step] if self.current_step < len(self._electricity_prices) else 0,
             # Metrics
             "pmv": pmv,
             "energy_this_step": 0,  # Would be from step results
@@ -826,16 +799,14 @@ class FluxionEnv(gym.Env):
         render_mode = mode or self.render_mode or "human"
 
         if render_mode == "human":
-            print(
-                f"Step {self.current_step}: T_zone={self._zone_temperatures[0]:.1f}°C, "
-                f"T_out={self._outdoor_temps[self.current_step]:.1f}°C, "
-                f"Price=${self._electricity_prices[self.current_step]:.3f}/kWh"
-            )
+            print(f"Step {self.current_step}: T_zone={self._zone_temperatures[0]:.1f}°C, "
+                  f"T_out={self._outdoor_temps[self.current_step]:.1f}°C, "
+                  f"Price=${self._electricity_prices[self.current_step]:.3f}/kWh")
         elif render_mode == "rgb_array":
             # TODO: Implement proper rgb_array rendering
             # For now, return a simple text representation as numpy array
             import numpy as np
-
+            text = f"Step: {self.current_step}, T_zone: {self._zone_temperatures[0]:.1f}, T_out: {self._outdoor_temps[self.current_step]:.1f}"
             # Return as simple representation (placeholder for full implementation)
             return np.zeros((100, 100, 3), dtype=np.uint8)
 
@@ -850,6 +821,11 @@ class FluxionEnv(gym.Env):
 
 
 # Gymnasium environment registration
+def make(env_id: str = "Fluxion-v0", **kwargs) -> "FluxionEnv":
+    """Create a Fluxion environment."""
+    return FluxionEnv(**kwargs)
+
+
 def make(env_id: str = "Fluxion-v0", **kwargs) -> "FluxionEnv":
     """Create a Fluxion environment (alias for gym.make)."""
     return gym.make(env_id, **kwargs)
@@ -882,17 +858,14 @@ if GYMNASIUM_AVAILABLE:
 if __name__ == "__main__":
     # Test the environment
     if GYMNASIUM_AVAILABLE:
-        import sys
-
         import gymnasium as gym
-
-        sys.path.insert(0, "/home/alex/Projects/fluxion")
+        import sys
+        sys.path.insert(0, '/home/alex/Projects/fluxion')
 
         print("Testing FluxionEnv...")
 
         # Import directly
         from tools.gymnasium_env import FluxionEnv
-
         env = FluxionEnv()
 
         print(f"Observation space: {env.observation_space}")
@@ -909,9 +882,7 @@ if __name__ == "__main__":
                 "discrete": np.array([1, 1, 1, 0], dtype=np.int8),
             }
             obs, reward, terminated, truncated, info = env.step(action)
-            print(
-                f"Step {i + 1}: reward={reward:.4f}, zone_temp={info['zone_temperatures'][0]:.2f}"
-            )
+            print(f"Step {i+1}: reward={reward:.4f}, zone_temp={info['zone_temperatures'][0]:.2f}")
 
             if terminated or truncated:
                 break

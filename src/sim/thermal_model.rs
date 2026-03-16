@@ -157,7 +157,7 @@ impl ThermalModelTrait for PhysicsThermalModel {
         // Use the mode to determine whether to use surrogates
         let actual_use_surrogates = use_surrogates || self.mode == ThermalModelMode::Surrogate;
         self.inner
-            .solve_timesteps(steps, surrogates, actual_use_surrogates, None, None, None)
+            .solve_timesteps(steps, surrogates, actual_use_surrogates)
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {
@@ -277,8 +277,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
         _use_surrogates: bool,
     ) -> f64 {
         // Always use surrogates for this model type
-        self.inner
-            .solve_timesteps(steps, surrogates, true, None, None, None)
+        self.inner.solve_timesteps(steps, surrogates, true)
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {
@@ -414,7 +413,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
     ) -> f64 {
         // Use the internal mode flag
         self.inner
-            .solve_timesteps(steps, surrogates, self.use_surrogates, None, None, None)
+            .solve_timesteps(steps, surrogates, self.use_surrogates)
     }
 
     fn apply_parameters(&mut self, params: &[f64]) {

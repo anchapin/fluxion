@@ -22,15 +22,17 @@ Requirements:
 """
 
 import argparse
+import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Dict
+from typing import Dict, Any
 
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
-from tools.compliance_agent import CodeComplianceAgent
+from tools.compliance_agent import CodeComplianceAgent, Standard
+from tools.compliance_agent.agent import DEFAULT_SYSTEM_PROMPT
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +50,7 @@ SAMPLE_OFFICE_BUILDING = {
     "climate_zone": "5A",
     "floor_area_sqft": 50000,
     "number_of_floors": 10,
+
     # Envelope properties
     "wall_r_value": 15.0,  # ft²·°F·h/BTU
     "roof_r_value": 35.0,
@@ -57,6 +60,7 @@ SAMPLE_OFFICE_BUILDING = {
     "door_u_factor": 0.65,
     "window_to_wall_ratio": 0.40,
     "infiltration_rate": 0.15,  # ACH
+
     # HVAC properties
     "hvac_type": "VAV with reheat",
     "heating_setpoint": 72.0,  # °F
@@ -67,17 +71,21 @@ SAMPLE_OFFICE_BUILDING = {
     "ventilation_rate": 15.0,  # cfm/person
     "outdoor_air_per_person": 5.0,  # cfm/person
     "economizer": True,
+
     # Lighting properties
     "lighting_power_density": 0.85,  # W/sq ft
     "lighting_control_type": "Occupancy sensors",
     "daylighting_controls": True,
     "occupancy_sensors": True,
+
     # Service water heating
     "water_heater_type": "Heat pump",
     "water_heater_efficiency": 0.95,
+
     # Electric power
     "transformer_efficiency": 0.98,
     "motor_efficiency": 0.96,
+
     # Additional info
     "operating_hours": "8am-6pm weekdays",
     "occupancy_density": 150,  # sq ft/person
@@ -91,6 +99,7 @@ SAMPLE_RESIDENTIAL_BUILDING = {
     "climate_zone": "3A",
     "floor_area_sqft": 2500,
     "number_of_floors": 2,
+
     # Envelope properties
     "wall_r_value": 20.0,
     "roof_r_value": 38.0,
@@ -100,6 +109,7 @@ SAMPLE_RESIDENTIAL_BUILDING = {
     "door_u_factor": 0.35,
     "window_to_wall_ratio": 0.20,
     "infiltration_rate": 0.08,
+
     # HVAC properties
     "hvac_type": "Split system",
     "heating_setpoint": 70.0,
@@ -108,22 +118,23 @@ SAMPLE_RESIDENTIAL_BUILDING = {
     "hvac_seer": 16.0,  # Seasonal Energy Efficiency Ratio
     "hvac_hspf": 10.0,  # Heating Seasonal Performance Factor
     "ventilation_rate": 0.03,  # ACH
+
     # Lighting properties
     "lighting_power_density": 0.7,
     "lighting_control_type": "Manual",
     "occupancy_sensors": False,
+
     # Service water heating
     "water_heater_type": "Heat pump water heater",
     "water_heater_efficiency": 3.0,  # COP
+
     # Additional info
     "operating_hours": "24/7",
     "occupancy_density": 4,  # persons
 }
 
 
-def run_demo(
-    backend: str = "mock", model: str = "llama2", standard: str = "ASHRAE90.1-2019"
-):
+def run_demo(backend: str = "mock", model: str = "llama2", standard: str = "ASHRAE90.1-2019"):
     """Run the compliance agent demo."""
 
     print("\n" + "=" * 70)
@@ -136,7 +147,7 @@ def run_demo(
     print("-" * 70)
 
     # Initialize the agent
-    agent_kwargs: Dict[str, Any] = {"backend": backend}
+    agent_kwargs = {"backend": backend}
 
     if backend == "ollama":
         agent_kwargs["model"] = model
@@ -157,7 +168,9 @@ def run_demo(
     print("-" * 70)
 
     report = agent.check_compliance(
-        model_data=SAMPLE_OFFICE_BUILDING, standard=standard, use_rules_engine=True
+        model_data=SAMPLE_OFFICE_BUILDING,
+        standard=standard,
+        use_rules_engine=True
     )
 
     print(report.print_summary())
@@ -175,7 +188,7 @@ def run_demo(
     report2 = agent.check_compliance(
         model_data=SAMPLE_RESIDENTIAL_BUILDING,
         standard="IECC-2021",
-        use_rules_engine=True,
+        use_rules_engine=True
     )
 
     print(report2.print_summary())
@@ -193,7 +206,9 @@ def run_demo(
     non_compliant_building["hvac_cop"] = 2.5  # Too low
 
     report3 = agent.check_compliance(
-        model_data=non_compliant_building, standard=standard, use_rules_engine=True
+        model_data=non_compliant_building,
+        standard=standard,
+        use_rules_engine=True
     )
 
     print(report3.print_summary())
@@ -203,9 +218,7 @@ def run_demo(
     print("=" * 70)
 
 
-def run_demo_with_file(
-    file_path: str, backend: str = "mock", standard: str = "ASHRAE90.1-2019"
-):
+def run_demo_with_file(file_path: str, backend: str = "mock", standard: str = "ASHRAE90.1-2019"):
     """Run the compliance agent on a model data file."""
 
     print("\n" + "=" * 70)
@@ -228,7 +241,9 @@ def run_demo_with_file(
 
     # Run compliance check
     report = agent.check_compliance(
-        model_data=model_data, standard=standard, use_rules_engine=True
+        model_data=model_data,
+        standard=standard,
+        use_rules_engine=True
     )
 
     print(report.print_summary())
@@ -249,30 +264,32 @@ Examples:
   %(prog)s --backend ollama --model llama2   # Run with Ollama
   %(prog)s --backend openai --model gpt-4   # Run with OpenAI
   %(prog)s --file model_data.json            # Load from file
-        """,
+        """
     )
 
     parser.add_argument(
         "--backend",
         choices=["mock", "ollama", "openai"],
         default="mock",
-        help="LLM backend to use (default: mock)",
+        help="LLM backend to use (default: mock)"
     )
     parser.add_argument(
         "--model",
         type=str,
         default="llama2",
-        help="Model name for Ollama/OpenAI (default: llama2)",
+        help="Model name for Ollama/OpenAI (default: llama2)"
     )
     parser.add_argument(
         "--standard",
         type=str,
         default="ASHRAE90.1-2019",
         choices=["ASHRAE90.1-2019", "ASHRAE90.1-2022", "IECC-2021", "IECC-2024"],
-        help="Compliance standard to check against (default: ASHRAE90.1-2019)",
+        help="Compliance standard to check against (default: ASHRAE90.1-2019)"
     )
     parser.add_argument(
-        "--file", type=str, help="Path to model data JSON file (instead of demo data)"
+        "--file",
+        type=str,
+        help="Path to model data JSON file (instead of demo data)"
     )
 
     args = parser.parse_args()

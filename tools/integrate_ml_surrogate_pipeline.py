@@ -12,11 +12,13 @@ Implements Issue #383: Integrate ML Surrogate FDD Pipeline
 """
 
 import argparse
+import json
 import logging
+import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
@@ -298,7 +300,7 @@ def train_surrogate_model(
     mae = np.mean(np.abs(y_val - val_pred))
     r2 = 1 - (np.sum((y_val - val_pred) ** 2) / np.sum((y_val - np.mean(y_val)) ** 2))
 
-    logger.info("Training complete!")
+    logger.info(f"Training complete!")
     logger.info(f"  R² Score: {r2:.4f}")
     logger.info(f"  MAE: {mae:.4f}")
     logger.info(f"  MSE: {mse:.4f}")
@@ -379,7 +381,7 @@ def export_onnx_model(
 
 def benchmark_model(
     model_path: Path,
-    test_data_path: Optional[Path] = None,
+    test_data_path: Path = None,
 ) -> Tuple[float, float]:
     """
     Benchmark a trained ONNX model against test data.
@@ -434,7 +436,7 @@ def benchmark_model(
     mae = np.mean(np.abs(y_true - y_pred))
     r2 = 1 - (np.sum((y_true - y_pred) ** 2) / np.sum((y_true - np.mean(y_true)) ** 2))
 
-    logger.info("Benchmarking complete!")
+    logger.info(f"Benchmarking complete!")
     logger.info(f"  R² Score: {r2:.4f}")
     logger.info(f"  MAE: {mae:.4f}")
     logger.info(f"  MSE: {mse:.4f}")
@@ -520,7 +522,7 @@ def main():
 
         # Step 1: Run validation
         logger.info("\n[Step 1/4] Running ASHRAE 140 validation...")
-        _ = run_ashrae_140_validation()
+        validation_passed = run_ashrae_140_validation()
 
         # Step 2: Collect training data
         logger.info("\n[Step 2/4] Collecting training data...")

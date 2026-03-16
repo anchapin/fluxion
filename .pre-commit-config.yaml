@@ -24,9 +24,6 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: ["types-requests"]
-        # Disabled: 101+ pre-existing type errors need systematic fixing
-        # Run manually with: mypy .
-        stages: []
 
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

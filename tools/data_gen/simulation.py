@@ -6,10 +6,10 @@ Handles running OpenStudio/EnergyPlus workflows.
 import json
 import logging
 import os
+import random
 import shutil
 import subprocess
 from pathlib import Path
-from typing import Any, Dict, Optional
 
 from . import geometry
 
@@ -27,7 +27,7 @@ def run_simulation(
     weather_file_path: str,
     output_dir: str,
     run_name: str = "run",
-    params: Optional[Dict[Any, Any]] = None,
+    params: dict = None,
 ):
     """
     Run an OpenStudio simulation.

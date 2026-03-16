@@ -8,20 +8,20 @@ Tests the distributed inference system including:
 - Configuration loading
 """
 
-from unittest.mock import AsyncMock
-
+import asyncio
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from api.distributed_inference import (
-    ConsistentHashLoadBalancer,
     DistributedInferenceManager,
     Endpoint,
     EndpointConfig,
     EndpointStatus,
-    LeastConnectionsLoadBalancer,
     LoadBalancingStrategy,
     RoundRobinLoadBalancer,
+    LeastConnectionsLoadBalancer,
     WeightedLoadBalancer,
+    ConsistentHashLoadBalancer,
 )
 
 
@@ -153,10 +153,7 @@ class TestRoundRobinLoadBalancer:
 
         # Should only select 0 and 2
         for selection in selections:
-            assert selection.config.url in (
-                "http://localhost:8000",
-                "http://localhost:8002",
-            )
+            assert selection.config.url in ("http://localhost:8000", "http://localhost:8002")
 
     def test_returns_none_when_no_healthy(self):
         """Test that None is returned when no healthy endpoints."""
@@ -236,12 +233,8 @@ class TestWeightedLoadBalancer:
         # Run many times to see distribution
         selections = [balancer.select_endpoint(endpoints) for _ in range(30)]
 
-        url0_count = sum(
-            1 for s in selections if s.config.url == "http://localhost:8000"
-        )
-        url1_count = sum(
-            1 for s in selections if s.config.url == "http://localhost:8001"
-        )
+        url0_count = sum(1 for s in selections if s.config.url == "http://localhost:8000")
+        url1_count = sum(1 for s in selections if s.config.url == "http://localhost:8001")
 
         # url1 should be roughly 2x url0
         assert url1_count > url0_count
@@ -392,12 +385,10 @@ class TestIntegration:
 
         # Add endpoints
         for i in range(3):
-            manager.add_endpoint(
-                EndpointConfig(
-                    url=f"http://localhost:800{i}",
-                    weight=i + 1,
-                )
-            )
+            manager.add_endpoint(EndpointConfig(
+                url=f"http://localhost:800{i}",
+                weight=i + 1,
+            ))
 
         # Mark all as healthy
         for ep in manager._endpoints.values():
@@ -425,12 +416,8 @@ class TestIntegration:
         manager = DistributedInferenceManager()
 
         # Add endpoints
-        manager.add_endpoint(
-            EndpointConfig(url="http://localhost:8000", failure_threshold=3)
-        )
-        manager.add_endpoint(
-            EndpointConfig(url="http://localhost:8001", failure_threshold=3)
-        )
+        manager.add_endpoint(EndpointConfig(url="http://localhost:8000", failure_threshold=3))
+        manager.add_endpoint(EndpointConfig(url="http://localhost:8001", failure_threshold=3))
 
         # Mark both as healthy initially
         manager._endpoints["http://localhost:8000"].status = EndpointStatus.HEALTHY
