@@ -2,14 +2,16 @@ import os
 import shutil
 import sys
 import unittest
-import numpy as np
 from pathlib import Path
+
+import numpy as np
 
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from tools.data_gen import geometry, simulation
 from tools import train_surrogate
+from tools.data_gen import geometry, simulation
+
 
 class TestTrainIntegration(unittest.TestCase):
     def setUp(self):
@@ -29,11 +31,7 @@ class TestTrainIntegration(unittest.TestCase):
 
         # Run simulation (mock)
         simulation.run_simulation(
-            model,
-            "dummy_weather.epw",
-            str(self.test_dir),
-            "run1",
-            params=params
+            model, "dummy_weather.epw", str(self.test_dir), "run1", params=params
         )
 
         # 2. Load Data
@@ -55,6 +53,7 @@ class TestTrainIntegration(unittest.TestCase):
         # Not checking exact values, but ensuring not all zeros or NaNs
         self.assertFalse(np.isnan(y).any())
         self.assertNotEqual(np.max(np.abs(y)), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

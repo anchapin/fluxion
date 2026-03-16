@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
-import yaml
+import yaml  # type: ignore
 
 from api.distributed_inference import (
     DistributedInferenceManager,
@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class DistributedInferenceConfig:
     """Configuration for distributed inference system."""
+
     endpoints: List[EndpointConfig] = field(default_factory=list)
     strategy: LoadBalancingStrategy = LoadBalancingStrategy.ROUND_ROBIN
     health_check_interval: float = 30.0
@@ -50,9 +51,9 @@ def load_endpoint_config(config: Dict[str, Any]) -> EndpointConfig:
 def load_from_dict(config: Dict[str, Any]) -> DistributedInferenceConfig:
     """Load configuration from dictionary."""
     endpoints = [load_endpoint_config(ep) for ep in config.get("endpoints", [])]
-    
+
     strategy = LoadBalancingStrategy(config.get("strategy", "round_robin"))
-    
+
     return DistributedInferenceConfig(
         endpoints=endpoints,
         strategy=strategy,
@@ -73,6 +74,7 @@ def load_from_yaml(file_path: Union[str, Path]) -> DistributedInferenceConfig:
 def load_from_json(file_path: Union[str, Path]) -> DistributedInferenceConfig:
     """Load configuration from JSON file."""
     import json
+
     with open(file_path, "r") as f:
         config = json.load(f)
     return load_from_dict(config)
@@ -81,7 +83,7 @@ def load_from_json(file_path: Union[str, Path]) -> DistributedInferenceConfig:
 def load_from_env() -> DistributedInferenceConfig:
     """
     Load configuration from environment variables.
-    
+
     Environment variables:
     - FLUXION_DISTRIBUTED_ENABLED: Enable distributed inference (default: true)
     - FLUXION_DISTRIBUTED_STRATEGY: Load balancing strategy
@@ -92,30 +94,30 @@ def load_from_env() -> DistributedInferenceConfig:
     - FLUXION_MAX_RETRIES: Maximum retries per request
     """
     enabled = os.getenv("FLUXION_DISTRIBUTED_ENABLED", "true").lower() == "true"
-    
+
     strategy = LoadBalancingStrategy(
         os.getenv("FLUXION_DISTRIBUTED_STRATEGY", "round_robin")
     )
-    
+
     endpoints_str = os.getenv("FLUXION_ENDPOINTS", "")
     endpoints = []
-    
+
     if endpoints_str:
         urls = [url.strip() for url in endpoints_str.split(",")]
         weights_str = os.getenv("FLUXION_ENDPOINT_WEIGHTS", "")
-        
+
         if weights_str:
             weights = [int(w.strip()) for w in weights_str.split(",")]
         else:
             weights = [1] * len(urls)
-        
+
         for url, weight in zip(urls, weights):
             endpoints.append(EndpointConfig(url=url, weight=weight))
-    
+
     health_check_interval = float(os.getenv("FLUXION_HEALTH_CHECK_INTERVAL", "30.0"))
     default_timeout = float(os.getenv("FLUXION_DEFAULT_TIMEOUT", "30.0"))
     max_retries = int(os.getenv("FLUXION_MAX_RETRIES", "3"))
-    
+
     return DistributedInferenceConfig(
         endpoints=endpoints,
         strategy=strategy,
@@ -132,18 +134,18 @@ def auto_load(
 ) -> DistributedInferenceConfig:
     """
     Automatically load configuration from file or environment.
-    
+
     Args:
         config_path: Path to configuration file (YAML or JSON)
         config_format: Format of config file ('yaml' or 'json'), auto-detected if None
-    
+
     Returns:
         DistributedInferenceConfig: Loaded configuration
     """
     # Try loading from file first
     if config_path:
         path = Path(config_path)
-        
+
         if not path.exists():
             logger.warning(f"Config file not found: {config_path}")
         else:
@@ -157,7 +159,7 @@ def auto_load(
                     return load_from_yaml(path)
                 elif path.suffix == ".json":
                     return load_from_json(path)
-    
+
     # Fall back to environment variables
     return load_from_env()
 
@@ -167,21 +169,21 @@ def initialize_from_config(
 ) -> Optional[DistributedInferenceManager]:
     """
     Initialize the distributed inference manager from configuration.
-    
+
     Args:
         config: Distributed inference configuration
-    
+
     Returns:
         DistributedInferenceManager or None if no endpoints configured
     """
     if not config.enabled:
         logger.info("Distributed inference is disabled")
         return None
-    
+
     if not config.endpoints:
         logger.warning("No endpoints configured for distributed inference")
         return None
-    
+
     manager = initialize_inference_manager(
         endpoints=config.endpoints,
         strategy=config.strategy,
@@ -189,10 +191,10 @@ def initialize_from_config(
         default_timeout=config.default_timeout,
         max_retries=config.max_retries,
     )
-    
+
     logger.info(
         f"Initialized distributed inference with {len(config.endpoints)} endpoints, "
         f"strategy: {config.strategy.value}"
     )
-    
+
     return manager

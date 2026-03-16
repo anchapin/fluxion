@@ -13,7 +13,6 @@ fn main() {
         ("Case 650", ASHRAE140Case::Case650),
         ("Case 600FF", ASHRAE140Case::Case600FF),
         ("Case 650FF", ASHRAE140Case::Case650FF),
-        
         // High mass cases (900 series)
         ("Case 900", ASHRAE140Case::Case900),
         ("Case 910", ASHRAE140Case::Case910),
@@ -23,7 +22,6 @@ fn main() {
         ("Case 950", ASHRAE140Case::Case950),
         ("Case 900FF", ASHRAE140Case::Case900FF),
         ("Case 950FF", ASHRAE140Case::Case950FF),
-        
         // Special cases
         ("Case 960", ASHRAE140Case::Case960),
         ("Case 195", ASHRAE140Case::Case195),
@@ -31,7 +29,7 @@ fn main() {
 
     println!("ASHRAE 140 Test Cases (Full Suite)\n");
     println!("========================\n");
-    
+
     for (name, case) in cases {
         let spec = case.spec();
         let case_type = if spec.num_zones > 1 {
@@ -41,9 +39,9 @@ fn main() {
         } else {
             "Controlled"
         };
-        
+
         println!("{}: {} [{}]", name, spec.case_id, case_type);
     }
-    
+
     println!("\nTotal: {} test cases", cases.len());
 }

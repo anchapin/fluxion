@@ -1,7 +1,7 @@
 # Investigation Report: Solar Gain Calculation Accuracy (Issue #278)
 
-**Date:** 2026-03-03  
-**Branch:** feature/issue-278  
+**Date:** 2026-03-03
+**Branch:** feature/issue-278
 **Author:** Kilo (AI Agent)
 
 ## Background

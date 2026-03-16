@@ -19,7 +19,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -32,12 +31,14 @@ logger = logging.getLogger(__name__)
 
 class SurrogateModel(nn.Module):
     """Standard surrogate model for ensemble training."""
-    
-    def __init__(self, input_dim: int, output_dim: int, hidden_dims: List[int], seed: int = 42):
+
+    def __init__(
+        self, input_dim: int, output_dim: int, hidden_dims: List[int], seed: int = 42
+    ):
         super().__init__()
         torch.manual_seed(seed)
         np.random.seed(seed)
-        
+
         layers = []
         prev_dim = input_dim
 
@@ -92,7 +93,7 @@ def train_single_model(
     criterion = nn.MSELoss()
 
     best_val_loss = float("inf")
-    
+
     for epoch in range(epochs):
         model.train()
         epoch_loss = 0.0
@@ -120,11 +121,13 @@ def train_single_model(
             torch.save(model.state_dict(), output_dir / f"best_{model_name}.pt")
 
         if (epoch + 1) % 20 == 0:
-            logger.info(f"  Epoch {epoch + 1}/{epochs} - Loss: {avg_loss:.6f} - Val: {val_loss:.6f}")
+            logger.info(
+                f"  Epoch {epoch + 1}/{epochs} - Loss: {avg_loss:.6f} - Val: {val_loss:.6f}"
+            )
 
     # Load best model
     model.load_state_dict(torch.load(output_dir / f"best_{model_name}.pt"))
-    
+
     # Final evaluation
     model.eval()
     with torch.no_grad():
@@ -139,7 +142,7 @@ def train_single_model(
         "mae": float(mae),
         "r2": float(r2),
     }
-    
+
     return model, metrics
 
 
@@ -173,51 +176,62 @@ def train_ensemble(
     """Train an ensemble of models."""
     input_dim = X.shape[1]
     output_dim = y.shape[1]
-    
+
     all_metrics = []
-    
+
     logger.info(f"Training ensemble of {num_models} models...")
-    
+
     for i in range(num_models):
         model_seed = seed + i * 100  # Different seed for each model
         model_name = f"model_{i}"
-        
+
         logger.info(f"Training {model_name} (seed={model_seed})...")
-        
+
         # Create model with different initialization
         model = SurrogateModel(input_dim, output_dim, hidden_dims, seed=model_seed)
-        
+
         # Train
         trained_model, metrics = train_single_model(
-            X, y, model, epochs, batch_size, learning_rate,
-            output_dir, model_name, model_seed
+            X,
+            y,
+            model,
+            epochs,
+            batch_size,
+            learning_rate,
+            output_dir,
+            model_name,
+            model_seed,
         )
-        
+
         # Export to ONNX
         onnx_path = output_dir / f"ensemble_{model_name}.onnx"
         export_onnx(trained_model, X, onnx_path)
-        
+
         metrics["model_path"] = str(onnx_path)
         all_metrics.append(metrics)
-        
-        logger.info(f"  {model_name} - MAE: {metrics['mae']:.4f}, R2: {metrics['r2']:.4f}")
-    
+
+        logger.info(
+            f"  {model_name} - MAE: {metrics['mae']:.4f}, R2: {metrics['r2']:.4f}"
+        )
+
     # Save ensemble config
     ensemble_config = {
         "num_models": num_models,
         "model_paths": [m["model_path"] for m in all_metrics],
         "aggregation_method": "mean",
     }
-    
+
     with open(output_dir / "ensemble_config.json", "w") as f:
         json.dump(ensemble_config, f, indent=2)
-    
+
     # Save detailed metrics
     with open(output_dir / "ensemble_metrics.json", "w") as f:
         json.dump(all_metrics, f, indent=2)
-    
-    logger.info(f"Ensemble training complete! {num_models} models saved to {output_dir}")
-    
+
+    logger.info(
+        f"Ensemble training complete! {num_models} models saved to {output_dir}"
+    )
+
     return ensemble_config, all_metrics
 
 
@@ -228,40 +242,40 @@ def evaluate_ensemble(
 ) -> Dict:
     """Evaluate ensemble predictions and disagreement."""
     import torch
-    
+
     models = []
     for path in model_paths:
-        model = SurrogateModel(
-            X.shape[1], y.shape[1], [64, 64]
-        )
-        model.load_state_dict(torch.load(path.replace('.onnx', '.pt')))
+        model = SurrogateModel(X.shape[1], y.shape[1], [64, 64])
+        model.load_state_dict(torch.load(path.replace(".onnx", ".pt")))
         model.eval()
         models.append(model)
-    
+
     X_t = torch.from_numpy(X)
-    
+
     # Get predictions from all models
     all_predictions = []
     with torch.no_grad():
         for model in models:
             pred = model(X_t).numpy()
             all_predictions.append(pred)
-    
-    all_predictions = np.array(all_predictions)  # Shape: (num_models, num_samples, output_dim)
-    
+
+    all_predictions = np.array(
+        all_predictions
+    )  # Shape: (num_models, num_samples, output_dim)
+
     # Calculate ensemble statistics
     mean_pred = np.mean(all_predictions, axis=0)
     std_pred = np.std(all_predictions, axis=0)
-    
+
     # Calculate metrics
     mse = np.mean((y - mean_pred) ** 2)
     mae = np.mean(np.abs(y - mean_pred))
     r2 = 1 - (np.sum((y - mean_pred) ** 2) / np.sum((y - np.mean(y)) ** 2))
-    
+
     # Disagreement metrics
     mean_disagreement = np.mean(std_pred)
     max_disagreement = np.max(std_pred)
-    
+
     return {
         "mse": float(mse),
         "mae": float(mae),
@@ -296,7 +310,9 @@ def main():
     )
 
     # Training Args
-    parser.add_argument("--epochs", type=int, default=100, help="Training epochs per model")
+    parser.add_argument(
+        "--epochs", type=int, default=100, help="Training epochs per model"
+    )
     parser.add_argument("--batch-size", type=int, default=32, help="Batch size")
     parser.add_argument(
         "--learning-rate", type=float, default=0.001, help="Learning rate"
@@ -331,16 +347,25 @@ def main():
             logger.warning("Using synthetic data generation for demo")
             np.random.seed(args.seed)
             X = np.random.randn(args.num_samples, 3).astype(np.float32)
-            y = (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
+            y = (
+                (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1)
+                .reshape(-1, 1)
+                .astype(np.float32)
+            )
     else:
         # Generate synthetic data
         np.random.seed(args.seed)
         X = np.random.randn(args.num_samples, 3).astype(np.float32)
-        y = (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
+        y = (
+            (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1)
+            .reshape(-1, 1)
+            .astype(np.float32)
+        )
 
     # Train ensemble
     ensemble_config, metrics = train_ensemble(
-        X, y,
+        X,
+        y,
         num_models=args.num_models,
         epochs=args.epochs,
         batch_size=args.batch_size,
@@ -354,15 +379,16 @@ def main():
     split_idx = int(0.8 * len(X))
     X_val = X[split_idx:]
     y_val = y[split_idx:]
-    
-    eval_metrics = evaluate_ensemble(
-        X_val, y_val,
-        [m["model_path"] for m in metrics]
+
+    eval_metrics = evaluate_ensemble(X_val, y_val, [m["model_path"] for m in metrics])
+
+    logger.info(
+        f"Ensemble Evaluation: MAE={eval_metrics['mae']:.4f}, R2={eval_metrics['r2']:.4f}"
     )
-    
-    logger.info(f"Ensemble Evaluation: MAE={eval_metrics['mae']:.4f}, R2={eval_metrics['r2']:.4f}")
-    logger.info(f"Disagreement: mean={eval_metrics['mean_disagreement']:.4f}, max={eval_metrics['max_disagreement']:.4f}")
-    
+    logger.info(
+        f"Disagreement: mean={eval_metrics['mean_disagreement']:.4f}, max={eval_metrics['max_disagreement']:.4f}"
+    )
+
     with open(output_dir / "ensemble_evaluation.json", "w") as f:
         json.dump(eval_metrics, f, indent=2)
 

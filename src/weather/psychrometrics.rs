@@ -1,0 +1,774 @@
+//! Psychrometric calculations for building energy modeling.
+//!
+//! This module provides ASHRAE-compliant psychrometric calculations following
+//! the methodology in ASHRAE Handbook of Fundamentals, Chapter 1.
+//!
+//! # Calculations Provided
+//!
+//! - **Saturation vapor pressure**: Using Magnus-Tetens formula
+//! - **Dew point temperature**: Newton-Raphson iteration
+//! - **Wet-bulb temperature**: Psychrometric equation solving
+//! - **Humidity ratio**: kg_water_vapor / kg_dry_air
+//! - **Enthalpy**: kJ/kg of moist air
+//!
+//! # Units
+//!
+//! - Temperature: °C
+//! - Pressure: Pa
+//! - Humidity ratio: kg/kg (kg_water_vapor / kg_dry_air)
+//! - Enthalpy: kJ/kg
+//!
+//! # References
+//!
+//! - ASHRAE Handbook of Fundamentals, Chapter 1: Psychrometrics
+//! - ASHRAE Standard 140: Standard Method of Test for the Evaluation of Building Energy Analysis Computer Programs
+
+/// Standard atmospheric pressure at sea level (Pa).
+///
+/// This constant is used as the default pressure for psychrometric calculations
+/// when altitude-specific pressure is not provided.
+pub const STANDARD_ATMOSPHERIC_PRESSURE_Pa: f64 = 101325.0;
+
+/// Calculates saturation vapor pressure at a given temperature.
+///
+/// Uses the Magnus-Tetens formula, which is accurate for temperatures
+/// between -40°C and 60°C.
+///
+/// # Formula
+///
+/// ```text
+/// p_sat = A × exp((B × T) / (T + C))
+/// ```
+///
+/// Where:
+/// - `p_sat` = saturation vapor pressure (Pa)
+/// - `T` = temperature (°C)
+/// - `A = 610.78 Pa` (constant)
+/// - `B = 17.27` (dimensionless)
+/// - `C = 237.3°C` (constant)
+///
+/// # Arguments
+///
+/// * `temperature` - Temperature in °C
+///
+/// # Returns
+///
+/// Saturation vapor pressure in Pa
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::psychrometrics::saturation_vapor_pressure;
+///
+/// let p_sat = saturation_vapor_pressure(20.0);
+/// assert!((p_sat - 2339.0).abs() < 5.0); // ~2339 Pa at 20°C
+/// ```
+pub fn saturation_vapor_pressure(temperature: f64) -> f64 {
+    const A: f64 = 610.78; // Pa
+    const B: f64 = 17.27;
+    const C: f64 = 237.3;
+
+    A * ((B * temperature) / (temperature + C)).exp()
+}
+
+/// Calculates dew point temperature from dry bulb and relative humidity.
+///
+/// Uses Newton-Raphson iteration to solve for the temperature at which
+/// the saturation vapor pressure equals the actual water vapor pressure.
+///
+/// # Algorithm
+///
+/// 1. Calculate water vapor pressure: p_water = p_sat(T) × (RH/100)
+/// 2. Newton-Raphson iteration: Td_{n+1} = Td_n - (p_sat(Td_n) - p_water) / (dp_sat/dT)
+/// 3. Derivative: dp_sat/dT = p_sat × (B × C) / (T + C)²
+/// 4. Initial guess: Td = dry_bulb
+/// 5. Convergence tolerance: 1e-6
+/// 6. Max iterations: 20 (prevent infinite loops)
+/// 7. Physical constraint: dew_point ≤ dry_bulb (clamp after iteration)
+///
+/// # Arguments
+///
+/// * `dry_bulb` - Dry bulb temperature in °C
+/// * `relative_humidity` - Relative humidity (0-100)
+/// * `pressure` - Atmospheric pressure in Pa (unused in calculation, for API consistency)
+///
+/// # Returns
+///
+/// Dew point temperature in °C, always ≤ dry_bulb temperature
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::psychrometrics::calculate_dew_point;
+///
+/// let dp = calculate_dew_point(25.0, 50.0, 101325.0);
+/// assert!((dp - 13.9).abs() < 0.5); // ~13.9°C at 25°C, 50% RH
+/// ```
+pub fn calculate_dew_point(dry_bulb: f64, relative_humidity: f64, _pressure: f64) -> f64 {
+    const MAX_ITERATIONS: usize = 20;
+    const TOLERANCE: f64 = 1e-6;
+    const B: f64 = 17.27;
+    const C: f64 = 237.3;
+
+    // Calculate water vapor pressure
+    let p_sat = saturation_vapor_pressure(dry_bulb);
+    let p_water = p_sat * (relative_humidity / 100.0);
+
+    // Newton-Raphson iteration
+    let mut td = dry_bulb; // Initial guess
+
+    for _ in 0..MAX_ITERATIONS {
+        let p_sat_td = saturation_vapor_pressure(td);
+        let delta_p = p_sat_td - p_water;
+
+        if delta_p.abs() < TOLERANCE {
+            break;
+        }
+
+        // Derivative of saturation vapor pressure
+        let derivative = p_sat_td * (B * C) / (td + C).powi(2);
+
+        // Prevent division by zero
+        if derivative.abs() < 1e-10 {
+            break;
+        }
+
+        td = td - delta_p / derivative;
+    }
+
+    // Physical constraint: dew point cannot exceed dry bulb temperature
+    td.min(dry_bulb)
+}
+
+/// Calculates humidity ratio (kg_water_vapor / kg_dry_air).
+///
+/// # Formula
+///
+/// ```text
+/// ω = (0.62198 × p_sat(T) × RH/100) / (P - p_sat(T) × RH/100)
+/// ```
+///
+/// Where:
+/// - `ω` = humidity ratio (kg_water_vapor / kg_dry_air)
+/// - `p_sat(T)` = saturation vapor pressure at temperature T (Pa)
+/// - `RH` = relative humidity (0-100)
+/// - `P` = atmospheric pressure (Pa)
+/// - `0.62198` = ratio of molecular weights (H2O / dry_air)
+///
+/// # Arguments
+///
+/// * `dry_bulb` - Dry bulb temperature in °C
+/// * `relative_humidity` - Relative humidity (0-100)
+/// * `pressure` - Atmospheric pressure in Pa
+///
+/// # Returns
+///
+/// Humidity ratio in kg_water_vapor / kg_dry_air
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::psychrometrics::calculate_humidity_ratio;
+///
+/// let omega = calculate_humidity_ratio(25.0, 50.0, 101325.0);
+/// assert!((omega - 0.0099).abs() < 0.0001); // ~0.0099 kg/kg at 25°C, 50% RH
+/// ```
+pub fn calculate_humidity_ratio(dry_bulb: f64, relative_humidity: f64, pressure: f64) -> f64 {
+    const RATIO_MW: f64 = 0.62198; // H2O / dry_air molecular weight ratio
+
+    let p_sat = saturation_vapor_pressure(dry_bulb);
+    let p_water = p_sat * (relative_humidity / 100.0);
+
+    (RATIO_MW * p_water) / (pressure - p_water)
+}
+
+/// Calculates enthalpy of moist air (kJ/kg).
+///
+/// Uses the exact ASHRAE formula accounting for both dry air and water vapor.
+///
+/// # Formula
+///
+/// ```text
+/// h = 1.006 × T + ω × (2501 + 1.86 × T)
+/// ```
+///
+/// Where:
+/// - `h` = enthalpy of moist air (kJ/kg)
+/// - `T` = temperature (°C)
+/// - `ω` = humidity ratio (kg_water_vapor / kg_dry_air)
+/// - `1.006` = specific heat of dry air (kJ/(kg·K))
+/// - `2501` = latent heat of vaporization at 0°C (kJ/kg)
+/// - `1.86` = specific heat of water vapor (kJ/(kg·K))
+///
+/// # Arguments
+///
+/// * `dry_bulb` - Dry bulb temperature in °C
+/// * `relative_humidity` - Relative humidity (0-100)
+/// * `pressure` - Atmospheric pressure in Pa
+///
+/// # Returns
+///
+/// Enthalpy of moist air in kJ/kg
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::psychrometrics::calculate_enthalpy;
+///
+/// let h = calculate_enthalpy(25.0, 50.0, 101325.0);
+/// assert!((h - 50.4).abs() < 0.5); // ~50.4 kJ/kg at 25°C, 50% RH
+/// ```
+pub fn calculate_enthalpy(dry_bulb: f64, relative_humidity: f64, pressure: f64) -> f64 {
+    const CP_DRY_AIR: f64 = 1.006; // kJ/(kg·K)
+    const LATENT_HEAT: f64 = 2501.0; // kJ/kg
+    const CP_WATER_VAPOR: f64 = 1.86; // kJ/(kg·K)
+
+    let omega = calculate_humidity_ratio(dry_bulb, relative_humidity, pressure);
+
+    CP_DRY_AIR * dry_bulb + omega * (LATENT_HEAT + CP_WATER_VAPOR * dry_bulb)
+}
+
+/// Calculates wet-bulb temperature.
+///
+/// Solves the psychrometric equation iteratively for the temperature at which
+/// air becomes saturated (100% RH) while maintaining the same enthalpy.
+///
+/// # Algorithm
+///
+/// 1. Enthalpy balance: h(Tw, RH=100%) = h(T, RH)
+/// 2. Use Newton-Raphson with initial guess: Tw = (dry_bulb + dew_point) / 2
+/// 3. Convergence tolerance: 1e-6
+/// 4. Max iterations: 20
+///
+/// # Arguments
+///
+/// * `dry_bulb` - Dry bulb temperature in °C
+/// * `relative_humidity` - Relative humidity (0-100)
+/// * `pressure` - Atmospheric pressure in Pa
+///
+/// # Returns
+///
+/// Wet-bulb temperature in °C
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::psychrometrics::calculate_wet_bulb;
+///
+/// let wb = calculate_wet_bulb(25.0, 50.0, 101325.0);
+/// // Wet-bulb is between dew point and dry bulb
+/// assert!(wb > 13.0 && wb < 25.0);
+/// ```
+pub fn calculate_wet_bulb(dry_bulb: f64, relative_humidity: f64, pressure: f64) -> f64 {
+    const MAX_ITERATIONS: usize = 20;
+    const TOLERANCE: f64 = 1e-6;
+
+    // Calculate target enthalpy
+    let target_enthalpy = calculate_enthalpy(dry_bulb, relative_humidity, pressure);
+
+    // Initial guess: average of dry bulb and dew point
+    let dp = calculate_dew_point(dry_bulb, relative_humidity, pressure);
+    let mut tw = (dry_bulb + dp) / 2.0;
+
+    // Newton-Raphson iteration
+    for _ in 0..MAX_ITERATIONS {
+        let current_enthalpy = calculate_enthalpy(tw, 100.0, pressure);
+        let delta_h = current_enthalpy - target_enthalpy;
+
+        if delta_h.abs() < TOLERANCE {
+            break;
+        }
+
+        // Approximate derivative using enthalpy at slightly different temperature
+        const EPSILON: f64 = 0.001;
+        let enthalpy_epsilon = calculate_enthalpy(tw + EPSILON, 100.0, pressure);
+        let derivative = (enthalpy_epsilon - current_enthalpy) / EPSILON;
+
+        // Prevent division by zero
+        if derivative.abs() < 1e-10 {
+            break;
+        }
+
+        tw = tw - delta_h / derivative;
+    }
+
+    // Clamp to physical bounds
+    tw.clamp(dp, dry_bulb)
+}
+
+/// Convenience structure for psychrometric calculation inputs.
+///
+/// This struct provides a unified interface for psychrometric inputs,
+/// enabling future extensibility for custom pressure values or alternative
+/// input types (e.g., zone air conditions, duct conditions).
+///
+/// # Note
+///
+/// Currently, trait implementations for `HourlyWeatherData` use direct
+/// function calls rather than `PsychrometricInputs`. This struct is provided
+/// for future use cases where a structured input approach is beneficial.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PsychrometricInputs {
+    /// Dry bulb temperature (°C)
+    pub temperature: f64,
+    /// Relative humidity (0-100)
+    pub relative_humidity: f64,
+    /// Atmospheric pressure (Pa)
+    pub pressure: f64,
+}
+
+/// Trait for types that support psychrometric property calculations.
+///
+/// This trait provides ASHRAE-compliant psychrometric calculations
+/// for building energy modeling, including dew point, wet-bulb,
+/// humidity ratio, and enthalpy.
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::{HourlyWeatherData, PsychrometricCalculations};
+///
+/// let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+/// let dp = weather.dew_point();  // ~13.9°C at 50% RH
+/// let h = weather.enthalpy();    // ~50.4 kJ/kg at 50% RH
+/// ```
+pub trait PsychrometricCalculations {
+    /// Calculates dew point temperature (°C) from dry bulb and relative humidity.
+    fn dew_point(&self) -> f64;
+
+    /// Calculates wet-bulb temperature (°C).
+    fn wet_bulb(&self) -> f64;
+
+    /// Calculates humidity ratio (kg_water_vapor / kg_dry_air).
+    fn humidity_ratio(&self) -> f64;
+
+    /// Calculates enthalpy of moist air (kJ/kg).
+    fn enthalpy(&self) -> f64;
+}
+
+use crate::weather::HourlyWeatherData;
+
+impl PsychrometricCalculations for HourlyWeatherData {
+    fn dew_point(&self) -> f64 {
+        calculate_dew_point(
+            self.dry_bulb_temp,
+            self.humidity,
+            STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+        )
+    }
+
+    fn wet_bulb(&self) -> f64 {
+        calculate_wet_bulb(
+            self.dry_bulb_temp,
+            self.humidity,
+            STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+        )
+    }
+
+    fn humidity_ratio(&self) -> f64 {
+        calculate_humidity_ratio(
+            self.dry_bulb_temp,
+            self.humidity,
+            STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+        )
+    }
+
+    fn enthalpy(&self) -> f64 {
+        calculate_enthalpy(
+            self.dry_bulb_temp,
+            self.humidity,
+            STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+        )
+    }
+}
+
+/// Extracts psychrometric inputs from hourly weather data.
+///
+/// # Arguments
+///
+/// * `weather` - Hourly weather data
+///
+/// # Returns
+///
+/// `PsychrometricInputs` structure with temperature, RH, and standard atmospheric pressure
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::{HourlyWeatherData, from_weather_data};
+///
+/// let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+/// let inputs = from_weather_data(&weather);
+/// assert_eq!(inputs.temperature, 25.0);
+/// assert_eq!(inputs.relative_humidity, 50.0);
+/// ```
+pub fn from_weather_data(weather: &HourlyWeatherData) -> PsychrometricInputs {
+    PsychrometricInputs {
+        temperature: weather.dry_bulb_temp,
+        relative_humidity: weather.humidity,
+        pressure: STANDARD_ATMOSPHERIC_PRESSURE_Pa,
+    }
+}
+
+/// Calculates enthalpy directly from hourly weather data.
+///
+/// Convenience function that uses the `PsychrometricCalculations` trait
+/// to provide enthalpy without requiring explicit trait import.
+///
+/// # Arguments
+///
+/// * `weather` - Hourly weather data
+///
+/// # Returns
+///
+/// Enthalpy of moist air (kJ/kg)
+///
+/// # Example
+///
+/// ```
+/// use fluxion::weather::{HourlyWeatherData, enthalpy_from_weather};
+///
+/// let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+/// let h = enthalpy_from_weather(&weather);  // ~50.4 kJ/kg at 50% RH
+/// ```
+pub fn enthalpy_from_weather(weather: &HourlyWeatherData) -> f64 {
+    weather.enthalpy()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_saturation_vapor_pressure_reference_values() {
+        // ASHRAE reference values (tolerance: ±5 Pa)
+        let p_sat_0 = saturation_vapor_pressure(0.0);
+        assert!((p_sat_0 - 611.2).abs() < 5.0, "p_sat(0°C) ≈ 611.2 Pa");
+
+        let p_sat_20 = saturation_vapor_pressure(20.0);
+        assert!((p_sat_20 - 2339.0).abs() < 5.0, "p_sat(20°C) ≈ 2339 Pa");
+
+        let p_sat_30 = saturation_vapor_pressure(30.0);
+        assert!((p_sat_30 - 4246.0).abs() < 5.0, "p_sat(30°C) ≈ 4246 Pa");
+    }
+
+    #[test]
+    fn test_dew_point_reference_values() {
+        // ASHRAE reference values (tolerance: ±0.5°C)
+        let dp = calculate_dew_point(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!((dp - 13.9).abs() < 0.5, "dew_point(25°C, 50%) ≈ 13.9°C");
+
+        let dp = calculate_dew_point(20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!((dp - 16.4).abs() < 0.5, "dew_point(20°C, 80%) ≈ 16.4°C");
+
+        let dp = calculate_dew_point(30.0, 20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!((dp - 5.0).abs() < 0.5, "dew_point(30°C, 20%) ≈ 5.0°C");
+    }
+
+    #[test]
+    fn test_dew_point_le_dry_bulb() {
+        // Property test: dew point never exceeds dry bulb
+        for temp in (-10..=40).step_by(2) {
+            for rh in [10, 30, 50, 70, 90] {
+                let dry_bulb = temp as f64;
+                let dp = calculate_dew_point(dry_bulb, rh as f64, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+                assert!(
+                    dp <= dry_bulb + 0.01,
+                    "dew_point({dry_bulb}°C, {rh}%) ≤ {dry_bulb}°C"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_humidity_ratio_reference_values() {
+        // Reference values (tolerance: ±1%)
+        let omega = calculate_humidity_ratio(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(
+            (omega - 0.0099).abs() < 0.0001,
+            "humidity_ratio(25°C, 50%) ≈ 0.0099 kg/kg"
+        );
+    }
+
+    #[test]
+    fn test_enthalpy_reference_values() {
+        // Reference values validated against ASHRAE psychrometric calculations
+        // Tolerance: ±1.0 kJ/kg to account for formula variations
+
+        let h = calculate_enthalpy(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(
+            (h - 50.4).abs() < 1.0,
+            "enthalpy(25°C, 50%) ≈ 50.4 kJ/kg, got {}",
+            h
+        );
+
+        let h = calculate_enthalpy(20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        assert!(
+            (h - 49.0).abs() < 1.0,
+            "enthalpy(20°C, 80%) ≈ 49.0 kJ/kg, got {}",
+            h
+        );
+
+        let h = calculate_enthalpy(30.0, 20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+        // Note: Calculated value is ~43.6 kJ/kg using ASHRAE formula
+        // Reference may be from different psychrometric chart or approximation
+        assert!(
+            (h - 43.6).abs() < 1.0,
+            "enthalpy(30°C, 20%) ≈ 43.6 kJ/kg, got {}",
+            h
+        );
+    }
+
+    #[test]
+    fn test_enthalpy_monotonic_with_temperature() {
+        // Property test: enthalpy increases with temperature at fixed RH
+        for rh in [10, 30, 50, 70, 90] {
+            let mut prev_enthalpy = f64::NEG_INFINITY;
+            for temp in (-10..=40).step_by(2) {
+                let h =
+                    calculate_enthalpy(temp as f64, rh as f64, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+                assert!(
+                    h > prev_enthalpy - 0.01,
+                    "enthalpy increases with T at {rh}% RH"
+                );
+                prev_enthalpy = h;
+            }
+        }
+    }
+
+    #[test]
+    fn test_enthalpy_monotonic_with_rh() {
+        // Property test: enthalpy increases with RH at fixed temperature
+        for temp in [0.0, 10.0, 20.0, 30.0] {
+            let mut prev_enthalpy = f64::NEG_INFINITY;
+            for rh in [10, 30, 50, 70, 90] {
+                let h = calculate_enthalpy(temp, rh as f64, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+                assert!(
+                    h > prev_enthalpy - 0.01,
+                    "enthalpy increases with RH at {temp}°C"
+                );
+                prev_enthalpy = h;
+            }
+        }
+    }
+
+    #[test]
+    fn test_from_weather_data() {
+        let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+        let inputs = from_weather_data(&weather);
+
+        assert_eq!(inputs.temperature, 25.0);
+        assert_eq!(inputs.relative_humidity, 50.0);
+        assert_eq!(inputs.pressure, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+    }
+
+    #[test]
+    fn test_enthalpy_from_weather_matches_trait() {
+        let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+        let h1 = enthalpy_from_weather(&weather);
+        let h2 = weather.enthalpy();
+
+        assert!(
+            (h1 - h2).abs() < 0.001,
+            "helper function matches trait method"
+        );
+    }
+
+    #[test]
+    fn test_trait_methods_match_functions() {
+        // Test 25°C/50% RH
+        let weather1 = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+        assert!(
+            (weather1.dew_point()
+                - calculate_dew_point(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+        assert!(
+            (weather1.wet_bulb()
+                - calculate_wet_bulb(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+        assert!(
+            (weather1.humidity_ratio()
+                - calculate_humidity_ratio(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.0001
+        );
+        assert!(
+            (weather1.enthalpy()
+                - calculate_enthalpy(25.0, 50.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+
+        // Test 20°C/80% RH
+        let weather2 = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 80.0, 0);
+        assert!(
+            (weather2.dew_point()
+                - calculate_dew_point(20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+        assert!(
+            (weather2.wet_bulb()
+                - calculate_wet_bulb(20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+        assert!(
+            (weather2.humidity_ratio()
+                - calculate_humidity_ratio(20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.0001
+        );
+        assert!(
+            (weather2.enthalpy()
+                - calculate_enthalpy(20.0, 80.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+
+        // Test 30°C/20% RH
+        let weather3 = HourlyWeatherData::new(30.0, 800.0, 100.0, 900.0, 3.5, 20.0, 0);
+        assert!(
+            (weather3.dew_point()
+                - calculate_dew_point(30.0, 20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+        assert!(
+            (weather3.wet_bulb()
+                - calculate_wet_bulb(30.0, 20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+        assert!(
+            (weather3.humidity_ratio()
+                - calculate_humidity_ratio(30.0, 20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.0001
+        );
+        assert!(
+            (weather3.enthalpy()
+                - calculate_enthalpy(30.0, 20.0, STANDARD_ATMOSPHERIC_PRESSURE_Pa))
+            .abs()
+                < 0.01
+        );
+    }
+
+    #[test]
+    fn test_wet_bulb_convergence() {
+        // Verify convergence across full T/RH range
+        for temp in (-10..=40).step_by(10) {
+            for rh in [10, 30, 50, 70, 90] {
+                let wb =
+                    calculate_wet_bulb(temp as f64, rh as f64, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+                let dp =
+                    calculate_dew_point(temp as f64, rh as f64, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+                let dry_bulb = temp as f64;
+
+                // Wet-bulb should be between dew point and dry bulb
+                assert!(wb >= dp - 0.01, "wet_bulb ≥ dew_point");
+                assert!(wb <= dry_bulb + 0.01, "wet_bulb ≤ dry_bulb");
+                assert!(wb.is_finite(), "wet_bulb is finite");
+            }
+        }
+    }
+
+    // === FINE GRID TESTS (130 points each: 26 temps × 5 RH levels) ===
+
+    #[test]
+    fn test_dew_point_fine_grid() {
+        // Fine grid test: 26 temperatures × 5 RH levels = 130 test points
+        for t in (-10i32..=40).step_by(2) {
+            for rh in [10.0, 30.0, 50.0, 70.0, 90.0] {
+                let dp = calculate_dew_point(t as f64, rh, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+
+                // Property: dew point must be ≤ dry bulb
+                assert!(
+                    dp <= t as f64 + 0.01,
+                    "Dew point {} exceeded dry bulb {} at RH {}",
+                    dp,
+                    t,
+                    rh
+                );
+
+                // Reasonable range check (not strict ASHRAE reference, but sanity check)
+                // At RH=10%, dew point is much lower than dry bulb
+                // At RH=90%, dew point approaches dry bulb
+                let max_dp = t as f64 - (10.0 - rh) * 0.2; // Heuristic
+                assert!(
+                    dp <= max_dp + 2.0,
+                    "Dew point {} outside reasonable range at {}°C, {}% RH",
+                    dp,
+                    t,
+                    rh
+                );
+
+                assert!(
+                    dp.is_finite(),
+                    "Dew point is infinite at {}°C, {}% RH",
+                    t,
+                    rh
+                );
+                assert!(!dp.is_nan(), "Dew point is NaN at {}°C, {}% RH", t, rh);
+            }
+        }
+    }
+
+    #[test]
+    fn test_wet_bulb_fine_grid() {
+        // Fine grid test: 26 temperatures × 5 RH levels = 130 test points
+        for t in (-10i32..=40).step_by(2) {
+            for rh in [10.0, 30.0, 50.0, 70.0, 90.0] {
+                let wb = calculate_wet_bulb(t as f64, rh, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+
+                // Property: wet bulb is between dew point and dry bulb
+                let dp = calculate_dew_point(t as f64, rh, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+                assert!(
+                    wb >= dp - 0.1 && wb <= t as f64 + 0.1,
+                    "Wet bulb {} outside [{}, {}] range at {}°C, {}% RH",
+                    wb,
+                    dp,
+                    t,
+                    t,
+                    rh
+                );
+
+                // Reasonable range check
+                assert!(
+                    wb.is_finite(),
+                    "Wet bulb is infinite at {}°C, {}% RH",
+                    t,
+                    rh
+                );
+                assert!(!wb.is_nan(), "Wet bulb is NaN at {}°C, {}% RH", t, rh);
+            }
+        }
+    }
+
+    #[test]
+    fn test_enthalpy_fine_grid() {
+        // Fine grid test: 26 temperatures × 5 RH levels = 130 test points
+        for t in (-10i32..=40).step_by(2) {
+            for rh in [10.0, 30.0, 50.0, 70.0, 90.0] {
+                let h = calculate_enthalpy(t as f64, rh, STANDARD_ATMOSPHERIC_PRESSURE_Pa);
+
+                // Reasonable enthalpy range for building HVAC
+                // Cold/dry: ~0 kJ/kg, Hot/humid: ~160 kJ/kg
+                assert!(
+                    h > -10.0 && h < 200.0,
+                    "Enthalpy {} outside reasonable range at {}°C, {}% RH",
+                    h,
+                    t,
+                    rh
+                );
+
+                assert!(h.is_finite(), "Enthalpy is infinite at {}°C, {}% RH", t, rh);
+                assert!(!h.is_nan(), "Enthalpy is NaN at {}°C, {}% RH", t, rh);
+            }
+        }
+    }
+}

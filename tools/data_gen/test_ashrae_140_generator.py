@@ -8,9 +8,10 @@ import json
 import os
 import tempfile
 
+import pytest
+
 from tools.data_gen.ashrae_140_generator import (
     ASHRAE140CaseGenerator,
-    CaseSpec,
     ConstructionType,
     GlassType,
     Orientation,

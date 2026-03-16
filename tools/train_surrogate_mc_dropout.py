@@ -21,7 +21,6 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -35,17 +34,18 @@ logger = logging.getLogger(__name__)
 class MCDropoutModel(nn.Module):
     """
     Neural network with dropout layers for Monte Carlo Dropout.
-    
+
     Dropout is applied during training to prevent overfitting,
     and also during inference (without updating weights) to generate
     multiple stochastic forward passes for uncertainty estimation.
     """
+
     def __init__(
-        self, 
-        input_dim: int, 
-        output_dim: int, 
+        self,
+        input_dim: int,
+        output_dim: int,
         hidden_dims: List[int],
-        dropout_rate: float = 0.1
+        dropout_rate: float = 0.1,
     ):
         super().__init__()
         layers = []
@@ -61,19 +61,19 @@ class MCDropoutModel(nn.Module):
 
         layers.append(nn.Linear(prev_dim, output_dim))
         self.net = nn.Sequential(*layers)
-        
+
         # Store dropout rate for inference
         self.dropout_rate = dropout_rate
 
     def forward(self, x):
         return self.net(x)
-    
+
     def enable_dropout(self):
         """Enable dropout layers for MC Dropout inference."""
         for module in self.modules():
             if isinstance(module, nn.Dropout):
                 module.train()
-    
+
     def disable_dropout(self):
         """Disable dropout for standard inference."""
         for module in self.modules():
@@ -84,31 +84,30 @@ class MCDropoutModel(nn.Module):
 class MCDropoutLoss(nn.Module):
     """
     Combined loss for MC Dropout training.
-    
+
     Includes:
     - MSE loss for prediction accuracy
     - Variance regularization to encourage confident predictions
     """
+
     def __init__(self, lambda_variance: float = 0.01):
         super().__init__()
         self.lambda_variance = lambda_variance
         self.mse = nn.MSELoss()
 
     def forward(
-        self, 
-        pred: torch.Tensor, 
-        target: torch.Tensor
+        self, pred: torch.Tensor, target: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         # Main prediction loss
         data_loss = self.mse(pred, target)
-        
+
         # Variance regularization: encourage low variance in predictions
         # This is applied per batch to push the model toward confident predictions
         variance = torch.var(pred, dim=0).mean()
         variance_loss = variance
-        
+
         total_loss = data_loss + self.lambda_variance * variance_loss
-        
+
         return total_loss, data_loss, variance_loss
 
 
@@ -146,7 +145,7 @@ def train_mc_dropout_model(
     input_dim = X.shape[1]
     output_dim = y.shape[1]
     model = MCDropoutModel(input_dim, output_dim, hidden_dims, dropout_rate)
-    
+
     # Set model to training mode (dropout enabled)
     model.train()
 
@@ -154,7 +153,7 @@ def train_mc_dropout_model(
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, "min", patience=5, factor=0.5
     )
-    
+
     criterion = MCDropoutLoss(lambda_variance=0.01)
 
     logger.info(
@@ -164,11 +163,7 @@ def train_mc_dropout_model(
     logger.info("Starting training...")
 
     best_val_loss = float("inf")
-    history: Dict[str, List[float]] = {
-        "loss": [], 
-        "val_loss": [], 
-        "variance_loss": []
-    }
+    history: Dict[str, List[float]] = {"loss": [], "val_loss": [], "variance_loss": []}
 
     for epoch in range(epochs):
         model.train()
@@ -178,12 +173,12 @@ def train_mc_dropout_model(
         for batch_X, batch_y in loader:
             optimizer.zero_grad()
             pred = model(batch_X)
-            
+
             loss, data_loss, var_loss = criterion(pred, batch_y)
-            
+
             loss.backward()
             optimizer.step()
-            
+
             epoch_loss += loss.item()
             epoch_variance_loss += var_loss.item()
 
@@ -222,7 +217,7 @@ def train_mc_dropout_model(
         # Standard prediction (dropout disabled)
         model.disable_dropout()
         test_pred = model(X_val_t).numpy()
-        
+
         # MC Dropout prediction (multiple passes with dropout)
         model.enable_dropout()
         mc_samples = []
@@ -230,9 +225,9 @@ def train_mc_dropout_model(
             with torch.no_grad():
                 mc_pred = model(X_val_t).numpy()
                 mc_samples.append(mc_pred)
-        
+
         mc_samples = np.array(mc_samples)  # Shape: (20, batch, output)
-        mc_mean = np.mean(mc_samples, axis=0)
+        _ = np.mean(mc_samples, axis=0)
         mc_std = np.std(mc_samples, axis=0)
 
     mse = np.mean((y_val - test_pred) ** 2)
@@ -241,14 +236,14 @@ def train_mc_dropout_model(
 
     # Uncertainty metrics
     avg_uncertainty = np.mean(mc_std)
-    
+
     metrics = {
-        "mse": float(mse), 
-        "mae": float(mae), 
+        "mse": float(mse),
+        "mae": float(mae),
         "r2": float(r2),
-        "avg_uncertainty": float(avg_uncertainty)
+        "avg_uncertainty": float(avg_uncertainty),
     }
-    
+
     logger.info(f"Validation Metrics: MAE={mae:.4f}, R2={r2:.4f}")
     logger.info(f"Average Uncertainty (MC Dropout): {avg_uncertainty:.4f}")
 
@@ -258,11 +253,13 @@ def train_mc_dropout_model(
     return model, metrics
 
 
-def export_mc_dropout_onnx(model: nn.Module, sample_input: np.ndarray, output_path: Path):
+def export_mc_dropout_onnx(
+    model: nn.Module, sample_input: np.ndarray, output_path: Path
+):
     """Export MC Dropout model to ONNX."""
     logger.info(f"Exporting MC Dropout model to {output_path}...")
     model.eval()
-    
+
     # For ONNX export, we need to handle dropout specially
     # ONNX Runtime doesn't support torch dropout during inference natively
     # So we export as a standard model and handle MCD in the Rust runtime
@@ -284,41 +281,39 @@ def export_mc_dropout_onnx(model: nn.Module, sample_input: np.ndarray, output_pa
 
 
 def mc_dropout_inference(
-    model: nn.Module,
-    X: np.ndarray,
-    num_samples: int = 20
+    model: nn.Module, X: np.ndarray, num_samples: int = 20
 ) -> Tuple[np.ndarray, np.ndarray]:
     """
     Run Monte Carlo Dropout inference.
-    
+
     Returns mean predictions and standard deviations across multiple
     stochastic forward passes.
-    
+
     Args:
         model: Trained MC Dropout model
         X: Input features
         num_samples: Number of stochastic forward passes
-    
+
     Returns:
         Tuple of (mean predictions, standard deviations)
     """
     model.eval()
     model.enable_dropout()  # Keep dropout layers in training mode
-    
+
     X_t = torch.from_numpy(X)
     samples = []
-    
+
     with torch.no_grad():
         for _ in range(num_samples):
             pred = model(X_t).numpy()
             samples.append(pred)
-    
+
     samples = np.array(samples)
     mean = np.mean(samples, axis=0)
     std = np.std(samples, axis=0)
-    
+
     model.disable_dropout()  # Return to standard inference mode
-    
+
     return mean, std
 
 
@@ -375,7 +370,6 @@ def main():
 
     # Get Data (use simplified generation for demo)
     if args.input_file:
-        import pandas as pd
         path = Path(args.input_file)
         if path.suffix == ".npz":
             data = np.load(path)
@@ -383,13 +377,21 @@ def main():
         else:
             logger.warning("Using synthetic data generation for demo")
             X = np.random.randn(args.num_samples, 3).astype(np.float32)
-            y = (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
+            y = (
+                (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1)
+                .reshape(-1, 1)
+                .astype(np.float32)
+            )
     else:
         # Generate synthetic data
         np.random.seed(args.seed)
         X = np.random.randn(args.num_samples, 3).astype(np.float32)
         # Simple linear relationship with noise
-        y = (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
+        y = (
+            (X[:, 0] * 2 + X[:, 1] * 1.5 + np.random.randn(args.num_samples) * 0.1)
+            .reshape(-1, 1)
+            .astype(np.float32)
+        )
 
     # Train
     model, metrics = train_mc_dropout_model(
@@ -420,7 +422,9 @@ def main():
 
     logger.info("MC Dropout training complete!")
     logger.info(f"Model saved to {output_dir}")
-    logger.info(f"Use {config['num_mc_samples']} forward passes at inference for uncertainty")
+    logger.info(
+        f"Use {config['num_mc_samples']} forward passes at inference for uncertainty"
+    )
 
 
 if __name__ == "__main__":

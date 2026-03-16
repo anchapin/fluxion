@@ -38,7 +38,7 @@ fn test_6r2c_thermal_mass_initialization() {
 
     // Step through a few timesteps to ensure temperatures evolve differently
     for step in 0..10 {
-        let result = model.solve_timesteps(step + 1, &surrogates, false);
+        let result = model.solve_timesteps(step + 1, &surrogates, false, None, None, None);
         assert!(!result.is_nan(), "Energy result should be valid");
     }
 

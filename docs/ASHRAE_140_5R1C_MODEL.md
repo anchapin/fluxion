@@ -7,7 +7,7 @@ This document describes the 5R1C thermal network model implemented in Fluxion fo
 The 5R1C model is a simplified thermal network with 5 resistances (R) and 1 capacitance (C):
 
 - **R1 (h_tr_w)**: Window/conduction conductance
-- **R2 (h_ve)**: Ventilation conductance  
+- **R2 (h_ve)**: Ventilation conductance
 - **R3 (h_tr_em)**: Exterior-to-mass conductance
 - **R4 (h_tr_ms)**: Mass-to-surface conductance
 - **R5 (h_tr_is)**: Surface-to-air conductance (interior surface conductance)
@@ -60,8 +60,8 @@ sensitivity = (h_tr_ms + h_tr_is) / [h_ms_is + (h_tr_ms + h_tr_is) * (h_tr_w + h
 
 In code terms:
 ```rust
-derived_den = derived_h_ms_is_prod 
-            + derived_term_rest_1 * h_ext 
+derived_den = derived_h_ms_is_prod
+            + derived_term_rest_1 * h_ext
             + derived_ground_coeff
 
 sensitivity = derived_term_rest_1 / derived_den
@@ -114,8 +114,8 @@ self.derived_sensitivity = self.derived_term_rest_1.clone() / self.derived_den.c
 For systems with variable infiltration/ventilation (night ventilation, etc.), sensitivity is recalculated at each timestep to maintain accuracy:
 
 ```rust
-let den_val = self.derived_h_ms_is_prod.clone() 
-    + term_rest_1.clone() * h_ext.clone() 
+let den_val = self.derived_h_ms_is_prod.clone()
+    + term_rest_1.clone() * h_ext.clone()
     + self.derived_ground_coeff.clone();
 let sens_val = term_rest_1.clone() / den_val.clone();
 ```

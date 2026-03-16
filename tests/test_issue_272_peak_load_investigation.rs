@@ -93,8 +93,6 @@ fn test_issue_272_case_600_peak_load_calculation() {
     // This simulates startup conditions
     model.temperatures = VectorField::new(vec![15.0; spec.num_zones]);
     model.mass_temperatures = VectorField::new(vec![15.0; spec.num_zones]);
-    // Disable thermal mass energy accounting for peak load calculation test
-    model.thermal_mass_energy_accounting = false;
 
     println!("=== Issue #272 Peak Load Investigation: Case 600 ===");
     println!("Outdoor Temperature: {:.2}°C", outdoor_temp);

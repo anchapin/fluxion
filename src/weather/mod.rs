@@ -17,6 +17,13 @@
 
 pub mod denver;
 pub mod epw;
+pub mod interpolation;
+pub mod psychrometrics;
+pub mod tmy3;
+
+pub use self::psychrometrics::*;
+pub use interpolation::{interpolate_weather, select_method_for_field, InterpolationMethod};
+pub use tmy3::{load_weather_locations, Tmy3Cache, WeatherLocation};
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -78,6 +85,48 @@ pub struct HourlyWeatherData {
     /// Zero-based index representing the hour within the year, where 0 corresponds
     /// to midnight on January 1st and 8759 corresponds to 11pm on December 31st.
     pub hour_of_year: usize,
+
+    /// Ground temperature (°C)
+    ///
+    /// Temperature at the ground surface, used for foundation heat loss
+    /// calculations and low-rise building thermal modeling.
+    pub ground_temperature: Option<f64>,
+
+    /// Horizontal illuminance (lux)
+    ///
+    /// Total visible light from the sky dome on a horizontal surface,
+    /// used for daylighting calculations and electric lighting savings.
+    pub horizontal_illuminance: Option<f64>,
+
+    /// Diffuse illuminance (lux)
+    ///
+    /// Visible light from the sky (excluding direct solar beam) on a
+    /// horizontal surface, used for daylighting under overcast conditions.
+    pub diffuse_illuminance: Option<f64>,
+
+    /// Snow depth (mm)
+    ///
+    /// Depth of snow accumulation on the ground, used for albedo
+    /// variations affecting solar reflection and thermal mass.
+    pub snow_depth: Option<f64>,
+
+    /// Snow cover (%)
+    ///
+    /// Percentage of ground surface covered by snow, affects albedo
+    /// and thermal mass calculations.
+    pub snow_cover: Option<f64>,
+
+    /// Present weather observation
+    ///
+    /// Text description of current weather conditions (e.g., "Rain",
+    /// "Snow", "Fog"), used for advanced HVAC control and freeze protection.
+    pub present_weather: Option<String>,
+
+    /// Present weather code
+    ///
+    /// Numeric code from EPW field 22, representing weather observation
+    /// type. Used for discrete weather condition classification.
+    pub present_weather_code: Option<u32>,
 }
 
 impl HourlyWeatherData {
@@ -126,6 +175,13 @@ impl HourlyWeatherData {
             humidity,
             horizontal_infrared: 0.0, // Default, can be set via with_infrared()
             hour_of_year,
+            ground_temperature: None,
+            horizontal_illuminance: None,
+            diffuse_illuminance: None,
+            snow_depth: None,
+            snow_cover: None,
+            present_weather: None,
+            present_weather_code: None,
         }
     }
 
@@ -161,6 +217,13 @@ impl HourlyWeatherData {
             humidity,
             horizontal_infrared,
             hour_of_year,
+            ground_temperature: None,
+            horizontal_illuminance: None,
+            diffuse_illuminance: None,
+            snow_depth: None,
+            snow_cover: None,
+            present_weather: None,
+            present_weather_code: None,
         }
     }
 
@@ -295,6 +358,158 @@ impl HourlyWeatherData {
         // If day >= 334, it's December
         12
     }
+
+    /// Validates weather data for missing values, NaN, and out-of-range temperatures.
+    ///
+    /// This method checks that all weather values are complete and within reasonable
+    /// physical limits for Earth-based building energy simulations.
+    ///
+    /// # Validation Rules
+    ///
+    /// - **Missing values**: All fields must be finite (not NaN or infinite)
+    /// - **Temperature range**: Dry bulb temperature must be between -50°C and 60°C
+    /// - **Solar irradiance**: DNI, DHI, GHI must be non-negative (can be 0 at night)
+    /// - **Wind speed**: Must be non-negative
+    /// - **Humidity**: Must be between 0% and 100%
+    /// - **Infrared**: Must be non-negative
+    ///
+    /// # Arguments
+    ///
+    /// * `weather` - Slice of hourly weather data to validate
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - All weather data is valid
+    /// * `Err(String)` - Validation error with specific message describing the issue
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use fluxion::weather::HourlyWeatherData;
+    ///
+    /// let weather_data = vec![
+    ///     HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0),
+    ///     HourlyWeatherData::new(15.0, 750.0, 90.0, 840.0, 3.0, 55.0, 1),
+    /// ];
+    ///
+    /// match HourlyWeatherData::validate_all(&weather_data) {
+    ///     Ok(()) => println!("All weather data is valid"),
+    ///     Err(e) => eprintln!("Validation error: {}", e),
+    /// }
+    /// ```
+    pub fn validate_all(weather: &[HourlyWeatherData]) -> Result<(), String> {
+        const MIN_TEMP_C: f64 = -50.0; // Reasonable minimum Earth temperature
+        const MAX_TEMP_C: f64 = 60.0; // Reasonable maximum Earth temperature
+
+        for (index, w) in weather.iter().enumerate() {
+            // Check for NaN temperatures
+            if w.dry_bulb_temp.is_nan() {
+                return Err(format!(
+                    "Temperature is NaN at timestep {}, cannot use in simulation",
+                    index
+                ));
+            }
+
+            // Check for infinite temperatures
+            if !w.dry_bulb_temp.is_finite() {
+                return Err(format!(
+                    "Temperature is infinite at timestep {}, cannot use in simulation",
+                    index
+                ));
+            }
+
+            // Check for out-of-range temperatures
+            if w.dry_bulb_temp < MIN_TEMP_C || w.dry_bulb_temp > MAX_TEMP_C {
+                return Err(format!(
+                    "Temperature {:.2}°C at timestep {} out of range [{:.1}, {:.1}]°C",
+                    w.dry_bulb_temp, index, MIN_TEMP_C, MAX_TEMP_C
+                ));
+            }
+
+            // Check for invalid solar irradiance (must be non-negative)
+            if w.dni < 0.0 {
+                return Err(format!(
+                    "Direct Normal Irradiance {:.2} W/m² at timestep {} is negative",
+                    w.dni, index
+                ));
+            }
+            if w.dhi < 0.0 {
+                return Err(format!(
+                    "Diffuse Horizontal Irradiance {:.2} W/m² at timestep {} is negative",
+                    w.dhi, index
+                ));
+            }
+            if w.ghi < 0.0 {
+                return Err(format!(
+                    "Global Horizontal Irradiance {:.2} W/m² at timestep {} is negative",
+                    w.ghi, index
+                ));
+            }
+
+            // Check for invalid wind speed (must be non-negative)
+            if w.wind_speed < 0.0 {
+                return Err(format!(
+                    "Wind speed {:.2} m/s at timestep {} is negative",
+                    w.wind_speed, index
+                ));
+            }
+
+            // Check for invalid humidity (must be 0-100%)
+            if w.humidity < 0.0 || w.humidity > 100.0 {
+                return Err(format!(
+                    "Relative humidity {:.2}% at timestep {} out of range [0, 100]%",
+                    w.humidity, index
+                ));
+            }
+
+            // Check for invalid infrared radiation (must be non-negative)
+            if w.horizontal_infrared < 0.0 {
+                return Err(format!(
+                    "Horizontal Infrared Radiation {:.2} W/m² at timestep {} is negative",
+                    w.horizontal_infrared, index
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Checks if weather data is complete (no missing or NaN values).
+    ///
+    /// This is a simpler check than `validate_all` that only verifies that
+    /// all critical fields are present and not NaN. It does not check range limits.
+    ///
+    /// # Arguments
+    ///
+    /// * `weather` - Slice of hourly weather data to check
+    ///
+    /// # Returns
+    ///
+    /// `true` if all weather data is complete and finite, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use fluxion::weather::HourlyWeatherData;
+    ///
+    /// let weather_data = vec![
+    ///     HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0),
+    ///     HourlyWeatherData::new(f64::NAN, 750.0, 90.0, 840.0, 3.0, 55.0, 1),
+    /// ];
+    ///
+    /// assert!(!HourlyWeatherData::is_complete(&weather_data));
+    /// ```
+    pub fn is_complete(weather: &[HourlyWeatherData]) -> bool {
+        weather.iter().all(|w| {
+            w.dry_bulb_temp.is_finite()
+                && w.dni.is_finite()
+                && w.dhi.is_finite()
+                && w.ghi.is_finite()
+                && w.wind_speed.is_finite()
+                && w.humidity.is_finite()
+                && w.horizontal_infrared.is_finite()
+        })
+    }
 }
 
 /// Error types for weather data operations.
@@ -325,6 +540,8 @@ impl fmt::Display for WeatherError {
         }
     }
 }
+
+impl std::error::Error for WeatherError {}
 
 /// Trait for abstracting different weather data sources.
 ///
@@ -429,6 +646,45 @@ pub trait WeatherSource {
             source: self,
             current_hour: 0,
         }
+    }
+
+    /// Validates all weather data from this source.
+    ///
+    /// This method collects all 8760 hours of weather data and validates
+    /// it for missing values, NaN temperatures, and out-of-range values.
+    /// It logs warnings for recoverable issues and returns errors for critical problems.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - All weather data is valid
+    /// * `Err(String)` - Validation error with specific message
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// use fluxion::weather::WeatherSource;
+    /// # struct MyWeatherSource;
+    /// # impl WeatherSource for MyWeatherSource {
+    /// #     fn location(&self) -> Option<String> { Some("Test City".to_string()) }
+    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion::weather::HourlyWeatherData, fluxion::weather::WeatherError> {
+    /// #         Ok(fluxion::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
+    /// #     }
+    /// # }
+    ///
+    /// let weather = MyWeatherSource;
+    ///
+    /// match weather.validate_all() {
+    ///     Ok(()) => println!("All weather data is valid"),
+    ///     Err(e) => eprintln!("Weather validation failed: {}", e),
+    /// }
+    /// ```
+    fn validate_all(&self) -> Result<(), String>
+    where
+        Self: Sized,
+    {
+        let weather_data: Result<Vec<_>, _> = self.iter_hours().collect();
+        let weather_data = weather_data.map_err(|e| e.to_string())?;
+        HourlyWeatherData::validate_all(&weather_data)
     }
 }
 
@@ -630,5 +886,79 @@ mod tests {
                 assert!(result.is_err());
             }
         }
+    }
+
+    #[test]
+    fn test_extreme_weather_validation() {
+        // Test 1: Valid weather data
+        let valid_weather = vec![
+            HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0),
+            HourlyWeatherData::new(15.0, 750.0, 90.0, 840.0, 3.0, 55.0, 1),
+        ];
+        assert!(HourlyWeatherData::validate_all(&valid_weather).is_ok());
+
+        // Test 2: NaN temperature
+        let nan_weather = vec![HourlyWeatherData::new(
+            f64::NAN,
+            800.0,
+            100.0,
+            900.0,
+            3.5,
+            50.0,
+            0,
+        )];
+        let result = HourlyWeatherData::validate_all(&nan_weather);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("NaN"));
+
+        // Test 3: Out-of-range temperature (too cold)
+        let cold_weather = vec![HourlyWeatherData::new(
+            -60.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&cold_weather);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("out of range"));
+
+        // Test 4: Out-of-range temperature (too hot)
+        let hot_weather = vec![HourlyWeatherData::new(
+            70.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&hot_weather);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("out of range"));
+
+        // Test 5: Negative solar irradiance
+        let negative_solar = vec![HourlyWeatherData::new(
+            20.0, -100.0, 100.0, 900.0, 3.5, 50.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&negative_solar);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("negative"));
+
+        // Test 6: Invalid humidity (out of range)
+        let invalid_humidity = vec![HourlyWeatherData::new(
+            20.0, 800.0, 100.0, 900.0, 3.5, 150.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&invalid_humidity);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("out of range"));
+
+        // Test 7: Test is_complete function
+        let complete_weather = vec![
+            HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0),
+            HourlyWeatherData::new(15.0, 750.0, 90.0, 840.0, 3.0, 55.0, 1),
+        ];
+        assert!(HourlyWeatherData::is_complete(&complete_weather));
+
+        let incomplete_weather = vec![HourlyWeatherData::new(
+            f64::NAN,
+            800.0,
+            100.0,
+            900.0,
+            3.5,
+            50.0,
+            0,
+        )];
+        assert!(!HourlyWeatherData::is_complete(&incomplete_weather));
     }
 }

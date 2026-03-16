@@ -9,9 +9,10 @@ Reduces model size by ~4x and speeds up CPU inference for edge devices.
 import argparse
 import os
 import sys
+from typing import Any, List, Optional
 
 try:
-    from onnxruntime.quantization import QuantType, quantize_dynamic, quantize_static
+    from onnxruntime.quantization import QuantType, quantize_dynamic
 except ImportError:
     print("ERROR: onnxruntime not installed. Install with:")
     print("  pip install onnxruntime")
@@ -22,14 +23,14 @@ def quantize(
     model_path: str,
     output_path: str,
     quantization_type: str = "int8",
-    op_types_to_quantize: list = None,
+    op_types_to_quantize: Optional[List[Any]] = None,
     calibration_method: str = "minmax",
     reduce_range: bool = False,
     debug: bool = False,
 ):
     """
     Quantize an ONNX model.
-    
+
     Args:
         model_path: Path to input ONNX model
         output_path: Path to save quantized model
@@ -60,19 +61,17 @@ def quantize(
             print("Using FLOAT16 quantization via onnxconverter-common...")
             try:
                 import onnx
-                from onnx import numpy_helper, TensorProto
-                from onnx.helper import make_tensor_value_info
-                
+
                 # Load model
                 model = onnx.load(model_path)
                 graph = model.graph
-                
+
                 # Convert FP32 constants to FP16
                 for node in graph.node:
                     if node.op_type == "Constant":
                         # Handle constant tensors
                         pass  # FP16 conversion is complex
-                
+
                 # For now, fall back to INT8
                 weight_type = QuantType.QInt8
             except ImportError:
@@ -114,12 +113,12 @@ def quantize(
         # Compare sizes
         original_size = os.path.getsize(model_path)
         quantized_size = os.path.getsize(output_path)
-        
-        print(f"\nResults:")
+
+        print("\nResults:")
         print(f"  Original size:  {original_size / 1024:.2f} KB")
         print(f"  Quantized size: {quantized_size / 1024:.2f} KB")
         print(f"  Reduction:      {(1 - quantized_size / original_size) * 100:.1f}%")
-        
+
         if quantized_size > 0:
             print(f"  Size ratio:     {original_size / quantized_size:.2f}x")
 
@@ -129,6 +128,7 @@ def quantize(
         print(f"Quantization failed: {e}")
         if debug:
             import traceback
+
             traceback.print_exc()
         return False
 
@@ -136,49 +136,50 @@ def quantize(
 def benchmark_inference(model_path: str, num_runs: int = 100):
     """
     Benchmark model inference to compare FP32 vs INT8 performance.
-    
+
     Args:
         model_path: Path to ONNX model
         num_runs: Number of inference runs
     """
     try:
-        import onnxruntime as ort
-        import numpy as np
         import time
+
+        import numpy as np
+        import onnxruntime as ort
     except ImportError as e:
         print(f"Cannot run benchmark: {e}")
         return
 
     print(f"\nBenchmarking: {model_path}")
-    
+
     # Create inference session
     sess = ort.InferenceSession(model_path)
-    
+
     # Get input name and shape
     input_name = sess.get_inputs()[0].name
     input_shape = sess.get_inputs()[0].shape
-    
+
     # Create dummy input
     if -1 in input_shape or None in input_shape:
         # Dynamic shape - use default
         input_data = np.random.randn(1, 10).astype(np.float32)
     else:
         input_data = np.random.randn(*input_shape).astype(np.float32)
-    
+
     # Warmup
     for _ in range(10):
         sess.run(None, {input_name: input_data})
-    
+
     # Benchmark
     start = time.perf_counter()
     for _ in range(num_runs):
         sess.run(None, {input_name: input_data})
     elapsed = time.perf_counter() - start
-    
+
     print(f"  Runs: {num_runs}")
-    print(f"  Total time: {elapsed*1000:.2f} ms")
-    print(f"  Avg time: {elapsed*1000/num_runs:.3f} ms")
-    print(f"  Throughput: {num_runs/elapsed:.1f} inferences/sec")
+    print(f"  Total time: {elapsed * 1000:.2f} ms")
+    print(f"  Avg time: {elapsed * 1000 / num_runs:.3f} ms")
+    print(f"  Throughput: {num_runs / elapsed:.1f} inferences/sec")
 
 
 def main():
@@ -198,9 +199,9 @@ Examples:
 
   # Reduce quantization range (for older CPUs)
   python3 tools/quantize_model.py --model model.onnx --output model_int8.onnx --reduce-range
-"""
+""",
     )
-    
+
     parser.add_argument(
         "--model", type=str, required=True, help="Path to input ONNX model"
     )
@@ -208,39 +209,46 @@ Examples:
         "--output", type=str, required=True, help="Path to output quantized model"
     )
     parser.add_argument(
-        "--type", type=str, default="int8",
+        "--type",
+        type=str,
+        default="int8",
         choices=["int8", "uint8", "fp16"],
-        help="Quantization type (default: int8)"
+        help="Quantization type (default: int8)",
     )
     parser.add_argument(
-        "--op-types", type=str, nargs="+",
+        "--op-types",
+        type=str,
+        nargs="+",
         default=None,
-        help="Operator types to quantize (default: common DNN ops)"
+        help="Operator types to quantize (default: common DNN ops)",
     )
     parser.add_argument(
-        "--calibration", type=str, default="minmax",
+        "--calibration",
+        type=str,
+        default="minmax",
         choices=["minmax", "percentile", "entropy"],
-        help="Calibration method for quantization"
+        help="Calibration method for quantization",
     )
     parser.add_argument(
-        "--reduce-range", action="store_true",
-        help="Use 7-bit quantization for weights (for older CPUs)"
+        "--reduce-range",
+        action="store_true",
+        help="Use 7-bit quantization for weights (for older CPUs)",
     )
     parser.add_argument(
-        "--benchmark", action="store_true",
-        help="Run inference benchmark after quantization"
+        "--benchmark",
+        action="store_true",
+        help="Run inference benchmark after quantization",
     )
     parser.add_argument(
-        "--benchmark-runs", type=int, default=100,
-        help="Number of benchmark runs (default: 100)"
+        "--benchmark-runs",
+        type=int,
+        default=100,
+        help="Number of benchmark runs (default: 100)",
     )
-    parser.add_argument(
-        "--debug", action="store_true",
-        help="Print debug information"
-    )
+    parser.add_argument("--debug", action="store_true", help="Print debug information")
 
     args = parser.parse_args()
-    
+
     success = quantize(
         model_path=args.model,
         output_path=args.output,
@@ -250,16 +258,16 @@ Examples:
         reduce_range=args.reduce_range,
         debug=args.debug,
     )
-    
+
     if success and args.benchmark:
-        print("\n" + "="*50)
+        print("\n" + "=" * 50)
         print("Benchmarking original model:")
         benchmark_inference(args.model, args.benchmark_runs)
-        
-        print("\n" + "="*50)
+
+        print("\n" + "=" * 50)
         print("Benchmarking quantized model:")
         benchmark_inference(args.output, args.benchmark_runs)
-    
+
     if not success:
         sys.exit(1)
 

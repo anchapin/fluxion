@@ -1,0 +1,44 @@
+# Material Property Database
+#
+# This file contains thermal properties for common building materials.
+# All values are typical ranges; adjust for specific applications.
+#
+# Properties:
+#   - conductivity: Thermal conductivity (W/mK)
+#   - density: Material density (kg/m³)
+#   - specific_heat: Specific heat capacity (J/kgK)
+#   - absorptance: Solar absorptance (0-1, dimensionless)
+#   - emissivity: Thermal emissivity (0-1, dimensionless)
+#
+# Sources:
+#   - ASHRAE Handbook of Fundamentals
+#   - ISO 13790 Annex C
+#   - Engineering Toolbox material properties database
+
+Concrete:
+  conductivity: 1.4      # W/mK
+  density: 2300.0         # kg/m³
+  specific_heat: 840.0    # J/kgK
+  absorptance: 0.7
+  emissivity: 0.9
+
+Insulation:
+  conductivity: 0.04     # W/mK
+  density: 50.0           # kg/m³
+  specific_heat: 840.0    # J/kgK
+  absorptance: 0.5
+  emissivity: 0.9
+
+Gypsum:
+  conductivity: 0.17      # W/mK
+  density: 960.0          # kg/m³
+  specific_heat: 840.0    # J/kgK
+  absorptance: 0.3
+  emissivity: 0.9
+
+Brick:
+  conductivity: 0.7       # W/mK
+  density: 1920.0         # kg/m³
+  specific_heat: 840.0    # J/kgK
+  absorptance: 0.9
+  emissivity: 0.9

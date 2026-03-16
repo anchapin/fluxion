@@ -15,9 +15,9 @@ References:
 import logging
 import math
 import random
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 
@@ -331,9 +331,17 @@ class ParameterSampler:
             Sampled value
         """
         if param.dist_type == DistributionType.UNIFORM:
+            if param.min_val is None or param.max_val is None:
+                raise ValueError(
+                    f"UNIFORM distribution requires min_val and max_val for {param.name}"
+                )
             value = self._rng.uniform(param.min_val, param.max_val)
 
         elif param.dist_type == DistributionType.NORMAL:
+            if param.mean is None or param.std is None:
+                raise ValueError(
+                    f"NORMAL distribution requires mean and std for {param.name}"
+                )
             # Sample from normal and clip to bounds
             value = self._rng.gauss(param.mean, param.std)
             if param.min_val is not None:
@@ -342,12 +350,20 @@ class ParameterSampler:
                 value = min(value, param.max_val)
 
         elif param.dist_type == DistributionType.LOG_UNIFORM:
+            if param.min_val is None or param.max_val is None:
+                raise ValueError(
+                    f"LOG_UNIFORM requires min_val and max_val for {param.name}"
+                )
             # Sample log-uniform: exp(U(log(min), log(max)))
             log_min = math.log(param.min_val)
             log_max = math.log(param.max_val)
             value = math.exp(self._rng.uniform(log_min, log_max))
 
         elif param.dist_type == DistributionType.TRIANGULAR:
+            if param.min_val is None or param.max_val is None or param.mode is None:
+                raise ValueError(
+                    f"TRIANGULAR distribution requires min_val, max_val, and mode for {param.name}"
+                )
             value = self._rng.triangular(param.min_val, param.mode, param.max_val)
 
         else:
@@ -367,10 +383,18 @@ class ParameterSampler:
             Mapped parameter value
         """
         if param.dist_type == DistributionType.UNIFORM:
+            if param.min_val is None or param.max_val is None:
+                raise ValueError(
+                    f"UNIFORM requires min_val and max_val for {param.name}"
+                )
             # Linear mapping: min + lhs * (max - min)
             return param.min_val + lhs_value * (param.max_val - param.min_val)
 
         elif param.dist_type == DistributionType.LOG_UNIFORM:
+            if param.min_val is None or param.max_val is None:
+                raise ValueError(
+                    f"LOG_UNIFORM requires min_val and max_val for {param.name}"
+                )
             # Log-uniform mapping
             log_min = math.log(param.min_val)
             log_max = math.log(param.max_val)
@@ -378,6 +402,10 @@ class ParameterSampler:
             return math.exp(log_val)
 
         elif param.dist_type == DistributionType.NORMAL:
+            if param.mean is None or param.std is None:
+                raise ValueError(
+                    f"NORMAL distribution requires mean and std for {param.name}"
+                )
             # For normal distribution in LHS, we use inverse CDF
             # First convert LHS value to standard normal using inverse CDF
             try:
@@ -393,9 +421,17 @@ class ParameterSampler:
                 return value
             except ImportError:
                 logger.warning("scipy not available, using uniform approximation")
+                if param.min_val is None or param.max_val is None:
+                    raise ValueError(
+                        f"LHS fallback requires min_val and max_val for {param.name}"
+                    )
                 return param.min_val + lhs_value * (param.max_val - param.min_val)
 
         elif param.dist_type == DistributionType.TRIANGULAR:
+            if param.min_val is None or param.max_val is None or param.mode is None:
+                raise ValueError(
+                    f"TRIANGULAR distribution requires min_val, max_val, and mode for {param.name}"
+                )
             # Triangular distribution inverse CDF
             a, m, b = param.min_val, param.mode, param.max_val
             f = (m - a) / (b - a)
@@ -427,7 +463,7 @@ class ParameterSampler:
 
         for sample in samples:
             if retries >= self.config.max_retries:
-                logger.warning(f"Max retries reached, skipping constraint enforcement")
+                logger.warning("Max retries reached, skipping constraint enforcement")
                 break
 
             is_valid = True

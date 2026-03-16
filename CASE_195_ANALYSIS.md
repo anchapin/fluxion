@@ -102,11 +102,11 @@ This case tests **conduction-only heat transfer**:
 fn test_case_195_heating_cooling() {
     let mut model = ASHRAE140Case::Case195.spec();
     let results = validator.simulate_case(&model, &weather);
-    
+
     // Verify both heating and cooling are required
     assert!(results.annual_heating_mwh > 0.0);
     assert!(results.annual_cooling_mwh > 0.0);
-    
+
     // Verify within reference ranges
     assert!(results.annual_heating_mwh >= 3.50 && results.annual_heating_mwh <= 4.50);
     assert!(results.annual_cooling_mwh >= 1.50 && results.annual_cooling_mwh <= 2.50);

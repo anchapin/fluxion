@@ -4,7 +4,7 @@
 //! using rayon for running thousands of building variants simultaneously.
 //! This is essential for high-throughput building energy analysis and optimization.
 
-use crate::sim::thermal_model::{ThermalModelTrait, ThermalModelMode};
+use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -118,9 +118,16 @@ impl ParallelThermalEvaluator {
 
                 // Apply parameters and solve
                 model.apply_parameters(&variant.parameters);
-                
+
                 // Run a simplified simulation (8760 hourly timesteps = 1 year)
-                let eui = model.solve_timesteps(8760, &crate::ai::surrogate::SurrogateManager::default(), false);
+                let eui = model.solve_timesteps(
+                    8760,
+                    &crate::ai::surrogate::default(),
+                    false,
+                    None,
+                    None,
+                    None,
+                );
 
                 VariantResult {
                     id: variant.id,
@@ -149,25 +156,31 @@ impl ParallelThermalEvaluator {
         F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync,
     {
         let chunk_size = self.config.chunk_size;
-        
-        let chunks: Vec<Vec<BuildingVariant>> = population
-            .chunks(chunk_size)
-            .map(|c| c.to_vec())
-            .collect();
+
+        let chunks: Vec<Vec<BuildingVariant>> =
+            population.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
         let results: Vec<Vec<VariantResult>> = chunks
             .par_iter()
             .map(|chunk| {
                 // Create a new model factory for each parallel chunk to avoid borrow issues
                 // This works because we create a fresh closure that captures nothing
-                let mut chunk_model: Box<dyn ThermalModelTrait> = Box::new(crate::sim::thermal_model::PhysicsThermalModel::new(1));
-                
+                let mut chunk_model: Box<dyn ThermalModelTrait> =
+                    Box::new(crate::sim::thermal_model::PhysicsThermalModel::new(1));
+
                 chunk
                     .iter()
                     .map(|variant| {
                         chunk_model.apply_parameters(&variant.parameters);
-                        let eui = chunk_model.solve_timesteps(8760, &crate::ai::surrogate::SurrogateManager::default(), false);
-                        
+                        let eui = chunk_model.solve_timesteps(
+                            8760,
+                            &crate::ai::surrogate::default(),
+                            false,
+                            None,
+                            None,
+                            None,
+                        );
+
                         VariantResult {
                             id: variant.id,
                             eui,
@@ -250,11 +263,11 @@ impl AsyncInferenceManager {
                                             let u_value = params[0];
                                             let heating = params[1];
                                             let cooling = params[2];
-                                            
+
                                             let base_load = 50.0;
                                             let u_factor = (u_value - 1.5).abs() * 8.0;
                                             let setpoint_diff = (cooling - heating) * 4.0;
-                                            
+
                                             base_load + u_factor + setpoint_diff
                                         } else {
                                             f64::NAN
@@ -266,7 +279,7 @@ impl AsyncInferenceManager {
                                             success: !eui.is_nan(),
                                             error: if eui.is_nan() { Some("Invalid parameters".to_string()) } else { None },
                                         };
-                                        
+
                                         let _ = sender.send(result).await;
                                     });
                                     running_handles.push(handle);
@@ -298,11 +311,11 @@ impl AsyncInferenceManager {
                                             let u_value = params[0];
                                             let heating = params[1];
                                             let cooling = params[2];
-                                            
+
                                             let base_load = 50.0;
                                             let u_factor = (u_value - 1.5).abs() * 8.0;
                                             let setpoint_diff = (cooling - heating) * 4.0;
-                                            
+
                                             base_load + u_factor + setpoint_diff
                                         } else {
                                             f64::NAN
@@ -314,7 +327,7 @@ impl AsyncInferenceManager {
                                             success: !eui.is_nan(),
                                             error: if eui.is_nan() { Some("Invalid parameters".to_string()) } else { None },
                                         };
-                                        
+
                                         let _ = sender.send(result).await;
                                     });
                                     running_handles.push(handle);
@@ -349,7 +362,7 @@ impl AsyncInferenceManager {
             let mut count = self.tasks_submitted.lock().unwrap();
             *count += 1;
         }
-        
+
         let _ = self.task_sender.send(variant).await;
         id
     }
@@ -480,10 +493,8 @@ impl DistributedInferenceExecutor {
     pub fn execute_chunked(&self, population: Vec<Vec<f64>>, use_surrogates: bool) -> Vec<f64> {
         let chunk_size = self.config.chunk_size;
 
-        let chunks: Vec<Vec<Vec<f64>>> = population
-            .chunks(chunk_size)
-            .map(|c| c.to_vec())
-            .collect();
+        let chunks: Vec<Vec<Vec<f64>>> =
+            population.chunks(chunk_size).map(|c| c.to_vec()).collect();
 
         let chunk_results: Vec<Vec<f64>> = chunks
             .par_iter()
@@ -546,13 +557,15 @@ where
     F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync + 'static,
 {
     let mut manager = AsyncInferenceManager::new(max_concurrent);
-    
+
     // Submit all variants
     let _ = manager.submit_batch(population).await;
-    
+
     // Collect results
-    let results = manager.collect_results(manager.tasks_submitted() as usize).await;
-    
+    let results = manager
+        .collect_results(manager.tasks_submitted() as usize)
+        .await;
+
     results
 }
 
@@ -617,15 +630,15 @@ mod tests {
     #[test]
     fn test_execute_population() {
         let executor = DistributedInferenceExecutor::new();
-        
+
         let population = vec![
             vec![1.5, 20.0, 26.0],
             vec![2.0, 18.0, 28.0],
             vec![1.0, 22.0, 24.0],
         ];
-        
+
         let results = executor.execute_population(population, false);
-        
+
         assert_eq!(results.len(), 3);
         for eui in &results {
             assert!(!eui.is_nan());
@@ -635,16 +648,16 @@ mod tests {
     #[test]
     fn test_execute_chunked() {
         let executor = DistributedInferenceExecutor::new();
-        
+
         let population = vec![
             vec![1.5, 20.0, 26.0],
             vec![2.0, 18.0, 28.0],
             vec![1.0, 22.0, 24.0],
             vec![1.2, 19.0, 27.0],
         ];
-        
+
         let results = executor.execute_chunked(population, false);
-        
+
         assert_eq!(results.len(), 4);
     }
 
@@ -657,18 +670,18 @@ mod tests {
     #[tokio::test]
     async fn test_async_submit_and_collect() {
         let mut manager = AsyncInferenceManager::new(5);
-        
+
         let variants = vec![
             BuildingVariant::new(0, vec![1.5, 20.0, 26.0]),
             BuildingVariant::new(1, vec![2.0, 18.0, 28.0]),
         ];
-        
+
         let ids = manager.submit_batch(variants).await;
         assert_eq!(ids.len(), 2);
-        
+
         // Give some time for processing
         tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        
+
         let results = manager.collect_results(2).await;
         assert_eq!(results.len(), 2);
     }
@@ -681,7 +694,7 @@ mod tests {
             success: true,
             error: None,
         };
-        
+
         assert_eq!(result.id, 1);
         assert!(result.success);
         assert!(result.error.is_none());
@@ -695,7 +708,7 @@ mod tests {
             success: false,
             error: Some("Invalid parameters".to_string()),
         };
-        
+
         assert!(!result.success);
         assert!(result.error.is_some());
     }

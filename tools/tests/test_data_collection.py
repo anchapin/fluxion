@@ -1,16 +1,18 @@
 import os
 import shutil
+import sys
 import tempfile
 import unittest
+from unittest.mock import patch
+
 import numpy as np
 import pandas as pd
-import sys
-from unittest.mock import patch
 
 # Add tools directory to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from tools.data_collection import ASHRAELoader, WeatherDataLoader, DataPreprocessor, main
+from tools.data_collection import ASHRAELoader, DataPreprocessor, WeatherDataLoader
+
 
 class TestDataCollection(unittest.TestCase):
     def setUp(self):
@@ -20,11 +22,13 @@ class TestDataCollection(unittest.TestCase):
         self.output_file = os.path.join(self.test_dir, "output.npz")
 
         # Create dummy ASHRAE CSV
-        df_ashrae = pd.DataFrame({
-            "Date/Time": pd.date_range(start="2023-01-01", periods=24, freq="h"),
-            "Zone Mean Air Temperature [C]": np.random.uniform(18, 24, 24),
-            "Zone Total Heating Energy [J]": np.random.uniform(0, 100, 24)
-        })
+        df_ashrae = pd.DataFrame(
+            {
+                "Date/Time": pd.date_range(start="2023-01-01", periods=24, freq="h"),
+                "Zone Mean Air Temperature [C]": np.random.uniform(18, 24, 24),
+                "Zone Total Heating Energy [J]": np.random.uniform(0, 100, 24),
+            }
+        )
         df_ashrae.to_csv(self.ashrae_file, index=False)
 
         # Create dummy EPW file
@@ -45,8 +49,8 @@ class TestDataCollection(unittest.TestCase):
                 row[1] = 1
                 row[2] = 1
                 row[3] = i + 1
-                row[6] = 5.0 + i * 0.5 # Dry Bulb
-                row[13] = 100.0 + i * 10 # Radiation
+                row[6] = 5.0 + i * 0.5  # Dry Bulb
+                row[13] = 100.0 + i * 10  # Radiation
                 f.write(",".join(map(str, row)) + "\n")
 
     def tearDown(self):
@@ -78,14 +82,18 @@ class TestDataCollection(unittest.TestCase):
         # Run main with arguments
         test_args = [
             "tools/data_collection.py",
-            "--ashrae-file", self.ashrae_file,
-            "--weather-file", self.weather_file,
-            "--out", self.output_file
+            "--ashrae-file",
+            self.ashrae_file,
+            "--weather-file",
+            self.weather_file,
+            "--out",
+            self.output_file,
         ]
-        with patch.object(sys, 'argv', test_args):
+        with patch.object(sys, "argv", test_args):
             # We import main inside the test to avoid running it on import
             # But main() is not called on import in my implementation
             from tools.data_collection import main as run_main
+
             run_main()
 
         self.assertTrue(os.path.exists(self.output_file))
@@ -94,6 +102,7 @@ class TestDataCollection(unittest.TestCase):
         self.assertIn("y", data)
         self.assertEqual(data["X"].shape, (24, 2))
         self.assertEqual(data["y"].shape, (24, 10))
+
 
 if __name__ == "__main__":
     unittest.main()

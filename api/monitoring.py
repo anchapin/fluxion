@@ -6,14 +6,15 @@ This module provides real-time monitoring capabilities and Building Automation S
 Implements Issue #219: feat(api): Implement real-time monitoring and BAS integration
 """
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional, Callable
-from enum import Enum
 import asyncio
 import json
-from datetime import datetime
 import logging
+from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional
+
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 class MetricType(str, Enum):
     """Types of metrics that can be monitored."""
+
     TEMPERATURE = "temperature"
     ENERGY = "energy"
     POWER = "power"
@@ -34,6 +36,7 @@ class MetricType(str, Enum):
 
 class AlertSeverity(str, Enum):
     """Alert severity levels."""
+
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -41,6 +44,7 @@ class AlertSeverity(str, Enum):
 
 class KPI(BaseModel):
     """Key Performance Indicator."""
+
     name: str
     value: float
     unit: str
@@ -50,6 +54,7 @@ class KPI(BaseModel):
 
 class Alert(BaseModel):
     """Alert notification."""
+
     id: str
     severity: AlertSeverity
     message: str
@@ -60,6 +65,7 @@ class Alert(BaseModel):
 
 class MetricReading(BaseModel):
     """A single metric reading."""
+
     metric_type: MetricType
     value: float
     unit: str
@@ -69,6 +75,7 @@ class MetricReading(BaseModel):
 
 class MonitoringData(BaseModel):
     """Complete monitoring snapshot."""
+
     zone_id: str
     temperature: Optional[float] = None
     humidity: Optional[float] = None
@@ -82,49 +89,56 @@ class MonitoringData(BaseModel):
 
 class ConnectionManager:
     """Manages WebSocket connections for real-time updates."""
-    
+
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self.subscriptions: Dict[str, set] = {}  # zone_id -> set of websockets
-    
+
     async def connect(self, websocket: WebSocket, zone_id: Optional[str] = None):
         """Accept a new WebSocket connection."""
         await websocket.accept()
         self.active_connections.append(websocket)
-        
+
         if zone_id:
             if zone_id not in self.subscriptions:
                 self.subscriptions[zone_id] = set()
             self.subscriptions[zone_id].add(websocket)
-        
-        logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
-    
+
+        logger.info(
+            f"WebSocket connected. Total connections: {len(self.active_connections)}"
+        )
+
     def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection."""
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-        
+
         # Remove from subscriptions
         for zone_id in list(self.subscriptions.keys()):
             if websocket in self.subscriptions[zone_id]:
                 self.subscriptions[zone_id].remove(websocket)
-        
-        logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
-    
+
+        logger.info(
+            f"WebSocket disconnected. Total connections: {len(self.active_connections)}"
+        )
+
     async def broadcast(self, message: dict):
         """Broadcast a message to all connected clients."""
         if self.active_connections:
             await asyncio.gather(
-                *[connection.send_json(message) for connection in self.active_connections],
-                return_exceptions=True
+                *[
+                    connection.send_json(message)
+                    for connection in self.active_connections
+                ],
+                return_exceptions=True,
             )
-    
+
     async def send_to_zone(self, zone_id: str, message: dict):
         """Send a message to clients subscribed to a specific zone."""
         if zone_id in self.subscriptions:
             await asyncio.gather(
                 *[conn.send_json(message) for conn in self.subscriptions[zone_id]],
-                return_exceptions=True
+                return_exceptions=True,
             )
 
 
@@ -139,35 +153,35 @@ class MonitoringState:
         self.alerts: List[Alert] = []
         self.kpis: Dict[str, KPI] = {}
         self.zones: Dict[str, MonitoringData] = {}
-    
+
     def add_metric(self, zone_id: str, reading: MetricReading):
         """Add a metric reading to history."""
         key = f"{zone_id}_{reading.metric_type.value}"
         if key not in self.metrics_history:
             self.metrics_history[key] = []
-        
+
         self.metrics_history[key].append(reading)
-        
+
         # Keep only last 1000 readings per metric
         if len(self.metrics_history[key]) > 1000:
             self.metrics_history[key] = self.metrics_history[key][-1000:]
-    
+
     def add_alert(self, alert: Alert):
         """Add a new alert."""
         self.alerts.append(alert)
-        
+
         # Keep only last 100 alerts
         if len(self.alerts) > 100:
             self.alerts = self.alerts[-100:]
-    
+
     def update_kpi(self, kpi: KPI):
         """Update a KPI value."""
         self.kpis[kpi.name] = kpi
-    
+
     def get_zone_data(self, zone_id: str) -> Optional[MonitoringData]:
         """Get current data for a zone."""
         return self.zones.get(zone_id)
-    
+
     def update_zone(self, data: MonitoringData):
         """Update zone data."""
         self.zones[data.zone_id] = data
@@ -182,7 +196,13 @@ def init_kpis():
     default_kpis = [
         KPI(name="total_energy", value=0.0, unit="kWh", target=1000.0),
         KPI(name="peak_power", value=0.0, unit="kW", target=50.0),
-        KPI(name="average_temperature", value=22.0, unit="°C", target=22.0, status="normal"),
+        KPI(
+            name="average_temperature",
+            value=22.0,
+            unit="°C",
+            target=22.0,
+            status="normal",
+        ),
         KPI(name="hvac_efficiency", value=3.5, unit="COP", target=3.0, status="normal"),
         KPI(name="occupancy_count", value=0.0, unit="persons", target=50.0),
         KPI(name="comfort_index", value=95.0, unit="%", target=90.0, status="normal"),
@@ -199,13 +219,13 @@ init_kpis()
 async def websocket_endpoint(websocket: WebSocket, zone_id: Optional[str] = None):
     """
     WebSocket endpoint for real-time monitoring updates.
-    
+
     Connect with: ws://host:port/monitoring/ws?zone_id=zone1
-    
+
     Messages received:
     - subscribe: Subscribe to specific zone updates
     - unsubscribe: Unsubscribe from zone updates
-    
+
     Messages sent:
     - metric: New metric reading
     - alert: New alert notification
@@ -219,23 +239,24 @@ async def websocket_endpoint(websocket: WebSocket, zone_id: Optional[str] = None
             try:
                 message = json.loads(data)
                 msg_type = message.get("type")
-                
+
                 if msg_type == "subscribe":
                     target_zone = message.get("zone_id")
                     if target_zone:
                         await manager.disconnect(websocket)
                         await manager.connect(websocket, target_zone)
-                        await websocket.send_json({
-                            "type": "subscribed",
-                            "zone_id": target_zone
-                        })
-                
+                        await websocket.send_json(
+                            {"type": "subscribed", "zone_id": target_zone}
+                        )
+
                 elif msg_type == "ping":
-                    await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
-                    
+                    await websocket.send_json(
+                        {"type": "pong", "timestamp": datetime.now().isoformat()}
+                    )
+
             except json.JSONDecodeError:
                 await websocket.send_json({"type": "error", "message": "Invalid JSON"})
-                
+
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
@@ -264,13 +285,12 @@ async def update_zone(zone_id: str, data: MonitoringData):
     """Update monitoring data for a zone."""
     data.zone_id = zone_id
     state.update_zone(data)
-    
+
     # Broadcast update to subscribers
-    await manager.send_to_zone(zone_id, {
-        "type": "zone_update",
-        "data": data.model_dump()
-    })
-    
+    await manager.send_to_zone(
+        zone_id, {"type": "zone_update", "data": data.model_dump()}
+    )
+
     return {"status": "success"}
 
 
@@ -286,13 +306,12 @@ async def add_metric(reading: MetricReading):
     """Add a new metric reading."""
     if reading.zone_id:
         state.add_metric(reading.zone_id, reading)
-        
+
         # Broadcast to subscribers
-        await manager.send_to_zone(reading.zone_id, {
-            "type": "metric",
-            "data": reading.model_dump()
-        })
-    
+        await manager.send_to_zone(
+            reading.zone_id, {"type": "metric", "data": reading.model_dump()}
+        )
+
     return {"status": "success"}
 
 
@@ -311,7 +330,7 @@ async def acknowledge_alert(alert_id: str):
         if alert.id == alert_id:
             alert.acknowledged = True
             return {"status": "success", "alert_id": alert_id}
-    
+
     raise HTTPException(status_code=404, detail=f"Alert {alert_id} not found")
 
 
@@ -319,13 +338,10 @@ async def acknowledge_alert(alert_id: str):
 async def create_alert(alert: Alert):
     """Create a new alert."""
     state.add_alert(alert)
-    
+
     # Broadcast alert
-    await manager.broadcast({
-        "type": "alert",
-        "data": alert.model_dump()
-    })
-    
+    await manager.broadcast({"type": "alert", "data": alert.model_dump()})
+
     return {"status": "success", "alert_id": alert.id}
 
 
@@ -354,15 +370,12 @@ async def update_kpi(kpi: KPI):
             kpi.status = "warning"
         else:
             kpi.status = "normal"
-    
+
     state.update_kpi(kpi)
-    
+
     # Broadcast update
-    await manager.broadcast({
-        "type": "kpi",
-        "data": kpi.model_dump()
-    })
-    
+    await manager.broadcast({"type": "kpi", "data": kpi.model_dump()})
+
     return {"status": "success"}
 
 
@@ -372,37 +385,37 @@ class BASIntegration:
     Building Automation System integration base class.
     Extend this to implement BACnet/IP or Modbus protocols.
     """
-    
+
     def __init__(self):
         self.connected = False
         self.device_address = None
-    
+
     async def connect(self, address: str, protocol: str = "bacnet"):
         """Connect to a BAS device."""
         # Placeholder - implement actual protocol connection
         self.device_address = address
         self.connected = True
         logger.info(f"Connected to BAS at {address} using {protocol}")
-    
+
     async def disconnect(self):
         """Disconnect from BAS device."""
         self.connected = False
         self.device_address = None
-    
+
     async def read_value(self, object_id: str):
         """Read a value from the BAS."""
         if not self.connected:
             raise RuntimeError("Not connected to BAS")
         # Placeholder - implement actual read
         return 0.0
-    
+
     async def write_value(self, object_id: str, value: float):
         """Write a value to the BAS."""
         if not self.connected:
             raise RuntimeError("Not connected to BAS")
         # Placeholder - implement actual write
         pass
-    
+
     async def read_multiple(self, object_ids: List[str]) -> Dict[str, float]:
         """Read multiple values from the BAS."""
         if not self.connected:
@@ -419,17 +432,17 @@ bas_integration = BASIntegration()
 async def connect_bas(request: dict):
     """
     Connect to a Building Automation System.
-    
+
     Request body:
         address: str - IP address of the BAS device
         protocol: str - Protocol to use (bacnet or modbus)
     """
     address = request.get("address")
     protocol = request.get("protocol", "bacnet")
-    
+
     if not address:
         raise HTTPException(status_code=400, detail="address is required")
-    
+
     await bas_integration.connect(address, protocol)
     return {"status": "success", "message": f"Connected to BAS at {address}"}
 
@@ -446,7 +459,7 @@ async def get_bas_status():
     """Get BAS connection status."""
     return {
         "connected": bas_integration.connected,
-        "device_address": bas_integration.device_address
+        "device_address": bas_integration.device_address,
     }
 
 
