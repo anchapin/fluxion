@@ -751,20 +751,19 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // step_physics() returns Watts (instantaneous power), not kWh
-            // Convert Watts × 3600 seconds = Joules for hourly timesteps
+            // step_physics() returns kWh (energy for the timestep)
+            // Convert kWh to Joules: kWh × 3.6e6 = Joules
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3600.0;
+                annual_heating_joules += hvac_kwh * 3.6e6;
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3600.0;
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             }
         }
 
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
-            // The old calculation (hvac_kwh * 1000.0) was wrong because it multiplied energy by 3600
+            // Issue #272: Use model's tracked peak power (in watts)
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -1345,20 +1344,19 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // Positive = heating, negative = cooling
-            // step_physics() returns Watts (instantaneous power), not kWh
-            // Convert Watts × 3600 seconds = Joules for hourly timesteps
+            // step_physics() returns kWh (energy for the timestep)
+            // Convert kWh to Joules: kWh × 3.6e6 = Joules
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3600.0;
+                annual_heating_joules += hvac_kwh * 3.6e6;
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3600.0;
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             }
         }
 
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
+            // Issue #272: Use model's tracked peak power (in watts)
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -1958,12 +1956,10 @@ impl ASHRAE140Validator {
             model.set_weather(weather_data.clone());
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
-            // step_physics() returns kWh (energy for the timestep), not Watts
+            // step_physics() returns kWh (energy for the timestep)
             // Convert kWh to Joules: kWh × 3.6e6 = Joules
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
-                // Peak tracking: Use the model's internal peak tracking (more accurate)
-                // The returned hvac_kwh is already energy, not power
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             }
