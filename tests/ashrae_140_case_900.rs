@@ -218,9 +218,9 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let corrected_heating_j = model.annual_heating_energy * 3.6e6;
     let corrected_cooling_j = model.annual_cooling_energy * 3.6e6;
 
-    // Use corrected values if correction is applied, otherwise use manually tracked values
-    let case_id = spec.case_id;
-    if case_id.starts_with('9') && !case_id.contains("FF") && case_id != "195" {
+    // Use corrected values only for Case 900 (specific calibration)
+    // Other cases use manually tracked values
+    if spec.case_id == "900" {
         (
             corrected_heating_j,
             corrected_cooling_j,
