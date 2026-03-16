@@ -19,9 +19,10 @@ Phase: Issue #383 - Integrate ML Surrogate FDD Pipeline
 import argparse
 import json
 import logging
+import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple, Optional
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -123,7 +125,7 @@ class PhysicsInformedSurrogate(nn.Module):
             # Extract U-value and temperatures for physics constraints
             u_value = physics_params[:, 0:1]
             t_outdoor = x[:, 0:1]
-            _ = x[:, 1:2]
+            t_zone = x[:, 1:2]
             heating_setpoint = physics_params[:, 1:2]
             cooling_setpoint = physics_params[:, 2:3]
 
@@ -186,7 +188,7 @@ class PhysicsLoss(nn.Module):
         # Steady-state heat balance: Q = U * A * ΔT
         u_value = physics_params[:, 0:1]
         t_outdoor = features[:, 0:1]
-        _ = features[:, 1:2]
+        t_zone = features[:, 1:2]
         heating_setpoint = physics_params[:, 1:2]
         cooling_setpoint = physics_params[:, 2:3]
 
@@ -225,9 +227,7 @@ class PhysicsLoss(nn.Module):
         return total_loss, loss_components
 
 
-def load_training_data(
-    data_dir: str,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Dict]:
+def load_training_data(data_dir: str) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Load training data collected from ASHRAE 140 validation runs.
 
@@ -376,7 +376,7 @@ def train_surrogate(
 
     # Training loop
     best_val_loss = float("inf")
-    history: Dict[str, List[float]] = {"loss": [], "val_loss": [], "r_squared": []}
+    history = {"loss": [], "val_loss": [], "r_squared": []}
 
     for epoch in range(epochs):
         model.train()

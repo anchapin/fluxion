@@ -1,17 +1,13 @@
 import argparse
-import os
 import sys
-from typing import List, Optional
+import os
 
 # Add tools directory to path to allow importing benchmark_throughput
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from benchmark_throughput import benchmark_throughput
 
-
-def benchmark_gpu_crossover(
-    model_path: str, output_file: str, batch_sizes: Optional[List[int]] = None
-):
+def benchmark_gpu_crossover(model_path: str, output_file: str, batch_sizes: list[int] = None):
     """
     Run benchmarks to find CPU/GPU crossover point.
     """
@@ -34,16 +30,8 @@ def benchmark_gpu_crossover(
         return
 
     # Analyze results
-    cpu_results = {
-        b["batch_size"]: b["throughput"]
-        for b in results["benchmarks"]
-        if b["backend"] == "cpu"
-    }
-    cuda_results = {
-        b["batch_size"]: b["throughput"]
-        for b in results["benchmarks"]
-        if b["backend"] == "cuda"
-    }
+    cpu_results = {b['batch_size']: b['throughput'] for b in results['benchmarks'] if b['backend'] == 'cpu'}
+    cuda_results = {b['batch_size']: b['throughput'] for b in results['benchmarks'] if b['backend'] == 'cuda'}
 
     if not cuda_results:
         print("\nWARNING: No CUDA results found. Is CUDA available?")
@@ -54,9 +42,7 @@ def benchmark_gpu_crossover(
 
     sorted_batches = sorted(batch_sizes)
 
-    print(
-        f"{'Batch Size':<12} | {'CPU (samples/s)':<18} | {'GPU (samples/s)':<18} | {'Speedup':<10}"
-    )
+    print(f"{'Batch Size':<12} | {'CPU (samples/s)':<18} | {'GPU (samples/s)':<18} | {'Speedup':<10}")
     print("-" * 65)
 
     for bs in sorted_batches:
@@ -71,42 +57,25 @@ def benchmark_gpu_crossover(
         print(f"{bs:<12} | {cpu_tp:<18.2f} | {gpu_tp:<18.2f} | {speedup:<10.2f}x")
 
         if not crossover_found and speedup > 1.0:
-            print(
-                f"\n[!] Crossover point found around batch size {bs} (Speedup: {speedup:.2f}x)"
-            )
+            print(f"\n[!] Crossover point found around batch size {bs} (Speedup: {speedup:.2f}x)")
             crossover_found = True
 
     if not crossover_found:
-        print(
-            "\n[!] No crossover point found (CPU might be faster for all tested batch sizes)."
-        )
+        print("\n[!] No crossover point found (CPU might be faster for all tested batch sizes).")
     elif crossover_found:
         # Find where speedup exceeds 10x
         for bs in sorted_batches:
-            cpu_tp = cpu_results.get(bs, 0)
-            gpu_tp = cuda_results.get(bs, 0)
-            if cpu_tp > 0 and (gpu_tp / cpu_tp) > 10.0:
-                print(f"[!] >10x Speedup achieved at batch size {bs}")
-                break
-
+             cpu_tp = cpu_results.get(bs, 0)
+             gpu_tp = cuda_results.get(bs, 0)
+             if cpu_tp > 0 and (gpu_tp / cpu_tp) > 10.0:
+                 print(f"[!] >10x Speedup achieved at batch size {bs}")
+                 break
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GPU Crossover Benchmark")
-    parser.add_argument(
-        "--model",
-        type=str,
-        default="assets/loads_predictor.onnx",
-        help="Path to ONNX model",
-    )
-    parser.add_argument(
-        "--output",
-        type=str,
-        default="gpu_benchmark_results.json",
-        help="Output JSON file",
-    )
-    parser.add_argument(
-        "--batch-sizes", type=str, help="Comma-separated batch sizes (optional)"
-    )
+    parser.add_argument("--model", type=str, default="assets/loads_predictor.onnx", help="Path to ONNX model")
+    parser.add_argument("--output", type=str, default="gpu_benchmark_results.json", help="Output JSON file")
+    parser.add_argument("--batch-sizes", type=str, help="Comma-separated batch sizes (optional)")
 
     args = parser.parse_args()
 

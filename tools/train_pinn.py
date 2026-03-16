@@ -41,6 +41,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.autograd import grad
 from torch.utils.data import DataLoader, TensorDataset
+from tqdm import tqdm
 
 # Configure logging
 logging.basicConfig(
@@ -55,11 +56,9 @@ logger = logging.getLogger(__name__)
 # Physics Constants and Configuration
 # ============================================================================
 
-
 @dataclass
 class PhysicsConfig:
     """Configuration for thermal physics model."""
-
     # Thermal capacity (kWh/K) - typical residential: 50-100 kWh/K
     thermal_capacity: float = 50.0
     # Transmission heat transfer coefficient (W/K)
@@ -79,7 +78,6 @@ class PhysicsConfig:
 @dataclass
 class PINNConfig:
     """Configuration for PINN training."""
-
     # Network architecture
     input_dim: int = 4  # [time, T_outdoor, Q_solar, Q_internal]
     output_dim: int = 1  # T_indoor
@@ -108,7 +106,6 @@ class PINNConfig:
 # ============================================================================
 # Neural Network Architecture
 # ============================================================================
-
 
 class ThermalPINN(nn.Module):
     """
@@ -182,7 +179,6 @@ class ThermalPINN(nn.Module):
 # ============================================================================
 # Physics-Based Loss Functions
 # ============================================================================
-
 
 class PINNLoss(nn.Module):
     """
@@ -292,10 +288,7 @@ class PINNLoss(nn.Module):
     ) -> torch.Tensor:
         """Get temperature prediction with gradient tracking."""
         # Stack inputs
-        x = torch.stack(
-            [t.squeeze(), t_outdoor.squeeze(), q_solar.squeeze(), q_internal.squeeze()],
-            dim=1,
-        )
+        x = torch.stack([t.squeeze(), t_outdoor.squeeze(), q_solar.squeeze(), q_internal.squeeze()], dim=1)
 
         # Get prediction from the model
         t_pred = model(x)
@@ -349,7 +342,7 @@ class PINNLoss(nn.Module):
                 q_solar_collocation,
                 q_internal_collocation,
             )
-            physics_loss = torch.mean(physics_residual**2)
+            physics_loss = torch.mean(physics_residual ** 2)
         else:
             physics_loss = torch.tensor(0.0, device=predictions.device)
         loss_components["physics"] = physics_loss.item()
@@ -384,12 +377,7 @@ class PINNLoss(nn.Module):
             H_total = self.h_transmission + self.h_ventilation
             expected_delta_t = total_heat / H_total
             energy_balance_loss = torch.mean(
-                (
-                    predictions.mean()
-                    - t_outdoor_collocation.mean()
-                    - expected_delta_t.mean()
-                )
-                ** 2
+                (predictions.mean() - t_outdoor_collocation.mean() - expected_delta_t.mean()) ** 2
             )
         else:
             energy_balance_loss = torch.tensor(0.0, device=predictions.device)
@@ -397,11 +385,11 @@ class PINNLoss(nn.Module):
 
         # Combined loss with weights
         total_loss = (
-            self.config.data_weight * data_loss
-            + self.config.physics_weight * physics_loss
-            + self.config.initial_condition_weight * ic_loss
-            + self.config.boundary_weight * boundary_loss
-            + self.config.energy_balance_weight * energy_balance_loss
+            self.config.data_weight * data_loss +
+            self.config.physics_weight * physics_loss +
+            self.config.initial_condition_weight * ic_loss +
+            self.config.boundary_weight * boundary_loss +
+            self.config.energy_balance_weight * energy_balance_loss
         )
 
         loss_components["total"] = total_loss.item()
@@ -412,7 +400,6 @@ class PINNLoss(nn.Module):
 # ============================================================================
 # Data Generation
 # ============================================================================
-
 
 class ThermalDataGenerator:
     """
@@ -461,8 +448,8 @@ class ThermalDataGenerator:
         for i in range(1, n_steps):
             # Heat balance: C * dT/dt = Q_in - H * (T - T_outdoor)
             q_total = q_solar[i] + q_internal[i]
-            dT = (q_total - H * (t_indoor[i - 1] - t_outdoor[i])) / C * dt
-            t_indoor[i] = t_indoor[i - 1] + dT
+            dT = (q_total - H * (t_indoor[i-1] - t_outdoor[i])) / C * dt
+            t_indoor[i] = t_indoor[i-1] + dT
 
         return t_indoor
 
@@ -477,7 +464,7 @@ class ThermalDataGenerator:
         Returns:
             Tuple of (inputs_dict, targets_array)
         """
-        X: Dict[str, List[float]] = {
+        X = {
             "time": [],
             "t_outdoor": [],
             "q_solar": [],
@@ -489,11 +476,9 @@ class ThermalDataGenerator:
             # Generate outdoor temperature profile (daily cycle with noise)
             t_base = self.rng.uniform(5, 30)  # Base outdoor temp
             t_amplitude = self.rng.uniform(5, 15)  # Daily variation
-            t_outdoor = (
-                t_base
-                + t_amplitude * np.sin(2 * np.pi * np.arange(n_timesteps) / n_timesteps)
-                + self.rng.normal(0, 1, n_timesteps)
-            )
+            t_outdoor = t_base + t_amplitude * np.sin(
+                2 * np.pi * np.arange(n_timesteps) / n_timesteps
+            ) + self.rng.normal(0, 1, n_timesteps)
 
             # Solar gains (peak at noon)
             solar_base = self.rng.uniform(0, 100)
@@ -554,7 +539,6 @@ class ThermalDataGenerator:
 # ============================================================================
 # Training Functions
 # ============================================================================
-
 
 def train_pinn(
     model: nn.Module,
@@ -622,11 +606,9 @@ def train_pinn(
     patience_counter = 0
 
     logger.info(f"Starting PINN training for {config.epochs} epochs...")
-    logger.info(
-        f"Physics config: C={physics_config.thermal_capacity} kWh/K, "
-        f"H_tr={physics_config.h_transmission} W/K, "
-        f"H_ve={physics_config.h_ventilation} W/K"
-    )
+    logger.info(f"Physics config: C={physics_config.thermal_capacity} kWh/K, "
+                f"H_tr={physics_config.h_transmission} W/K, "
+                f"H_ve={physics_config.h_ventilation} W/K")
 
     for epoch in range(config.epochs):
         model.train()
@@ -817,61 +799,36 @@ def export_onnx(
 # Main
 # ============================================================================
 
-
 def main():
-    parser = argparse.ArgumentParser(description="PINN Training for Thermal Modeling")
+    parser = argparse.ArgumentParser(
+        description="PINN Training for Thermal Modeling"
+    )
 
     # Data arguments
-    parser.add_argument(
-        "--n-samples", type=int, default=5000, help="Number of training samples"
-    )
-    parser.add_argument(
-        "--n-timesteps", type=int, default=24, help="Timesteps per sample"
-    )
-    parser.add_argument(
-        "--n-collocation", type=int, default=10000, help="Collocation points"
-    )
+    parser.add_argument("--n-samples", type=int, default=5000, help="Number of training samples")
+    parser.add_argument("--n-timesteps", type=int, default=24, help="Timesteps per sample")
+    parser.add_argument("--n-collocation", type=int, default=10000, help="Collocation points")
 
     # Physics arguments
-    parser.add_argument(
-        "--thermal-capacity", type=float, default=50.0, help="Thermal capacity (kWh/K)"
-    )
-    parser.add_argument(
-        "--h-transmission", type=float, default=200.0, help="Transmission H (W/K)"
-    )
-    parser.add_argument(
-        "--h-ventilation", type=float, default=50.0, help="Ventilation H (W/K)"
-    )
+    parser.add_argument("--thermal-capacity", type=float, default=50.0, help="Thermal capacity (kWh/K)")
+    parser.add_argument("--h-transmission", type=float, default=200.0, help="Transmission H (W/K)")
+    parser.add_argument("--h-ventilation", type=float, default=50.0, help="Ventilation H (W/K)")
 
     # Training arguments
     parser.add_argument("--epochs", type=int, default=5000, help="Training epochs")
     parser.add_argument("--batch-size", type=int, default=128, help="Batch size")
-    parser.add_argument(
-        "--learning-rate", type=float, default=1e-3, help="Learning rate"
-    )
-    parser.add_argument(
-        "--patience", type=int, default=100, help="Early stopping patience"
-    )
+    parser.add_argument("--learning-rate", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--patience", type=int, default=100, help="Early stopping patience")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     # Loss weights
-    parser.add_argument(
-        "--data-weight", type=float, default=1.0, help="Data loss weight"
-    )
-    parser.add_argument(
-        "--physics-weight", type=float, default=0.1, help="Physics loss weight"
-    )
-    parser.add_argument(
-        "--boundary-weight", type=float, default=1.0, help="Boundary loss weight"
-    )
-    parser.add_argument(
-        "--energy-weight", type=float, default=0.1, help="Energy balance weight"
-    )
+    parser.add_argument("--data-weight", type=float, default=1.0, help="Data loss weight")
+    parser.add_argument("--physics-weight", type=float, default=0.1, help="Physics loss weight")
+    parser.add_argument("--boundary-weight", type=float, default=1.0, help="Boundary loss weight")
+    parser.add_argument("--energy-weight", type=float, default=0.1, help="Energy balance weight")
 
     # Output arguments
-    parser.add_argument(
-        "--output-dir", type=str, default="models/pinn", help="Output directory"
-    )
+    parser.add_argument("--output-dir", type=str, default="models/pinn", help="Output directory")
 
     args = parser.parse_args()
 
@@ -913,23 +870,11 @@ def main():
 
     # Split data
     split_idx = int(0.8 * len(y))
-    X_train = np.column_stack(
-        [
-            X["time"][:split_idx],
-            X["t_outdoor"][:split_idx],
-            X["q_solar"][:split_idx],
-            X["q_internal"][:split_idx],
-        ]
-    )
+    X_train = np.column_stack([X["time"][:split_idx], X["t_outdoor"][:split_idx],
+                               X["q_solar"][:split_idx], X["q_internal"][:split_idx]])
     y_train = y[:split_idx]
-    X_val = np.column_stack(
-        [
-            X["time"][split_idx:],
-            X["t_outdoor"][split_idx:],
-            X["q_solar"][split_idx:],
-            X["q_internal"][split_idx:],
-        ]
-    )
+    X_val = np.column_stack([X["time"][split_idx:], X["t_outdoor"][split_idx:],
+                             X["q_solar"][split_idx:], X["q_internal"][split_idx:]])
     y_val = y[split_idx:]
 
     logger.info(f"Training samples: {len(y_train)}, Validation samples: {len(y_val)}")

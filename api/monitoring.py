@@ -6,15 +6,14 @@ This module provides real-time monitoring capabilities and Building Automation S
 Implements Issue #219: feat(api): Implement real-time monitoring and BAS integration
 """
 
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from pydantic import BaseModel, Field
+from typing import List, Dict, Optional, Callable
+from enum import Enum
 import asyncio
 import json
-import logging
 from datetime import datetime
-from enum import Enum
-from typing import Dict, List, Optional
-
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, Field
+import logging
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +23,6 @@ router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 class MetricType(str, Enum):
     """Types of metrics that can be monitored."""
-
     TEMPERATURE = "temperature"
     ENERGY = "energy"
     POWER = "power"
@@ -36,7 +34,6 @@ class MetricType(str, Enum):
 
 class AlertSeverity(str, Enum):
     """Alert severity levels."""
-
     INFO = "info"
     WARNING = "warning"
     CRITICAL = "critical"
@@ -44,7 +41,6 @@ class AlertSeverity(str, Enum):
 
 class KPI(BaseModel):
     """Key Performance Indicator."""
-
     name: str
     value: float
     unit: str
@@ -54,7 +50,6 @@ class KPI(BaseModel):
 
 class Alert(BaseModel):
     """Alert notification."""
-
     id: str
     severity: AlertSeverity
     message: str
@@ -65,7 +60,6 @@ class Alert(BaseModel):
 
 class MetricReading(BaseModel):
     """A single metric reading."""
-
     metric_type: MetricType
     value: float
     unit: str
@@ -75,7 +69,6 @@ class MetricReading(BaseModel):
 
 class MonitoringData(BaseModel):
     """Complete monitoring snapshot."""
-
     zone_id: str
     temperature: Optional[float] = None
     humidity: Optional[float] = None
@@ -104,9 +97,7 @@ class ConnectionManager:
                 self.subscriptions[zone_id] = set()
             self.subscriptions[zone_id].add(websocket)
 
-        logger.info(
-            f"WebSocket connected. Total connections: {len(self.active_connections)}"
-        )
+        logger.info(f"WebSocket connected. Total connections: {len(self.active_connections)}")
 
     def disconnect(self, websocket: WebSocket):
         """Remove a WebSocket connection."""
@@ -118,19 +109,14 @@ class ConnectionManager:
             if websocket in self.subscriptions[zone_id]:
                 self.subscriptions[zone_id].remove(websocket)
 
-        logger.info(
-            f"WebSocket disconnected. Total connections: {len(self.active_connections)}"
-        )
+        logger.info(f"WebSocket disconnected. Total connections: {len(self.active_connections)}")
 
     async def broadcast(self, message: dict):
         """Broadcast a message to all connected clients."""
         if self.active_connections:
             await asyncio.gather(
-                *[
-                    connection.send_json(message)
-                    for connection in self.active_connections
-                ],
-                return_exceptions=True,
+                *[connection.send_json(message) for connection in self.active_connections],
+                return_exceptions=True
             )
 
     async def send_to_zone(self, zone_id: str, message: dict):
@@ -138,7 +124,7 @@ class ConnectionManager:
         if zone_id in self.subscriptions:
             await asyncio.gather(
                 *[conn.send_json(message) for conn in self.subscriptions[zone_id]],
-                return_exceptions=True,
+                return_exceptions=True
             )
 
 
@@ -196,13 +182,7 @@ def init_kpis():
     default_kpis = [
         KPI(name="total_energy", value=0.0, unit="kWh", target=1000.0),
         KPI(name="peak_power", value=0.0, unit="kW", target=50.0),
-        KPI(
-            name="average_temperature",
-            value=22.0,
-            unit="°C",
-            target=22.0,
-            status="normal",
-        ),
+        KPI(name="average_temperature", value=22.0, unit="°C", target=22.0, status="normal"),
         KPI(name="hvac_efficiency", value=3.5, unit="COP", target=3.0, status="normal"),
         KPI(name="occupancy_count", value=0.0, unit="persons", target=50.0),
         KPI(name="comfort_index", value=95.0, unit="%", target=90.0, status="normal"),
@@ -245,14 +225,13 @@ async def websocket_endpoint(websocket: WebSocket, zone_id: Optional[str] = None
                     if target_zone:
                         await manager.disconnect(websocket)
                         await manager.connect(websocket, target_zone)
-                        await websocket.send_json(
-                            {"type": "subscribed", "zone_id": target_zone}
-                        )
+                        await websocket.send_json({
+                            "type": "subscribed",
+                            "zone_id": target_zone
+                        })
 
                 elif msg_type == "ping":
-                    await websocket.send_json(
-                        {"type": "pong", "timestamp": datetime.now().isoformat()}
-                    )
+                    await websocket.send_json({"type": "pong", "timestamp": datetime.now().isoformat()})
 
             except json.JSONDecodeError:
                 await websocket.send_json({"type": "error", "message": "Invalid JSON"})
@@ -287,9 +266,10 @@ async def update_zone(zone_id: str, data: MonitoringData):
     state.update_zone(data)
 
     # Broadcast update to subscribers
-    await manager.send_to_zone(
-        zone_id, {"type": "zone_update", "data": data.model_dump()}
-    )
+    await manager.send_to_zone(zone_id, {
+        "type": "zone_update",
+        "data": data.model_dump()
+    })
 
     return {"status": "success"}
 
@@ -308,9 +288,10 @@ async def add_metric(reading: MetricReading):
         state.add_metric(reading.zone_id, reading)
 
         # Broadcast to subscribers
-        await manager.send_to_zone(
-            reading.zone_id, {"type": "metric", "data": reading.model_dump()}
-        )
+        await manager.send_to_zone(reading.zone_id, {
+            "type": "metric",
+            "data": reading.model_dump()
+        })
 
     return {"status": "success"}
 
@@ -340,7 +321,10 @@ async def create_alert(alert: Alert):
     state.add_alert(alert)
 
     # Broadcast alert
-    await manager.broadcast({"type": "alert", "data": alert.model_dump()})
+    await manager.broadcast({
+        "type": "alert",
+        "data": alert.model_dump()
+    })
 
     return {"status": "success", "alert_id": alert.id}
 
@@ -374,7 +358,10 @@ async def update_kpi(kpi: KPI):
     state.update_kpi(kpi)
 
     # Broadcast update
-    await manager.broadcast({"type": "kpi", "data": kpi.model_dump()})
+    await manager.broadcast({
+        "type": "kpi",
+        "data": kpi.model_dump()
+    })
 
     return {"status": "success"}
 
@@ -459,7 +446,7 @@ async def get_bas_status():
     """Get BAS connection status."""
     return {
         "connected": bas_integration.connected,
-        "device_address": bas_integration.device_address,
+        "device_address": bas_integration.device_address
     }
 
 

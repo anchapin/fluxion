@@ -3,16 +3,12 @@
 Hook: Validate Rust doc comments on public API
 Purpose: Ensure all public functions/structs have /// documentation
 This prevents undocumented surrogates, physics changes, and parameter mappings
-
-Note: This hook only checks for missing doc comments and provides guidance.
-It does not fail the build - it serves as a reminder to add documentation.
 """
 
 import re
 import sys
 
 exit_code = 0
-warnings = 0
 
 for filepath in sys.argv[1:]:
     if not filepath.endswith(".rs"):
@@ -36,13 +32,6 @@ for filepath in sys.argv[1:]:
                 i += 1
                 continue
 
-            # Skip simple enums with no associated functions
-            # (enums with only variants don't need docs for the enum itself)
-            if "enum" in line:
-                # Check if this is a simple enum (no impl blocks nearby)
-                i += 1
-                continue
-
             # Check if there is a doc comment before this pub item
             # Walk backwards skipping attributes like #[derive(...)]
             has_doc = False
@@ -61,16 +50,11 @@ for filepath in sys.argv[1:]:
                 break
 
             if not has_doc:
-                warnings += 1
-                # Only print the first 10 warnings to avoid clutter
-                if warnings <= 10:
-                    print(f"⚠ {filepath}:{i + 1}: Consider adding doc comment")
-                    print(f"   {line.strip()}")
+                print(f"❌ {filepath}:{i + 1}: Public item missing doc comment")
+                print(f"   {line.strip()}")
+                print("   ✓ Add doc comment: /// Your documentation here")
+                exit_code = 1
 
         i += 1
 
-if warnings > 10:
-    print(f"... and {warnings - 10} more items consider adding documentation")
-
-# This hook now only warns, doesn't fail
-sys.exit(0)
+sys.exit(exit_code)

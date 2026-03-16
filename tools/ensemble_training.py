@@ -13,12 +13,16 @@ Related to Issue #170: Phase 9: Implement diverse ensemble training
 
 import json
 import logging
+import random
 from pathlib import Path
 from typing import (
+    Any,
     Callable,
     Dict,
     List,
     Optional,
+    Tuple,
+    Union,
 )
 
 import numpy as np
@@ -89,7 +93,7 @@ class ModelDiversityMetrics:
             return 0.0
 
         stacked = np.stack(predictions, axis=0)
-        _ = stacked.shape[0]
+        num_models = stacked.shape[0]
 
         # Compute pairwise differences
         disagreement_count = 0
@@ -161,7 +165,6 @@ class EnsembleModel:
                     nn.ReLU(),
                     nn.Linear(hidden_dim, output_dim),
                 )
-
             self.config.model_factory = create_model
 
         for i in range(self.config.num_models):
@@ -229,7 +232,7 @@ class EnsembleModel:
 
         Returns training history.
         """
-        history: Dict[str, List[float]] = {"loss": [], "diversity": []}
+        history = {"loss": [], "diversity": []}
 
         X_tensor = torch.from_numpy(X).float()
         y_tensor = torch.from_numpy(y).float()
@@ -262,9 +265,7 @@ class EnsembleModel:
             diversity = ModelDiversityMetrics.compute_diversity_score(preds)
             history["diversity"].append(diversity)
 
-            logger.info(
-                f"Epoch {epoch + 1}/{epochs}: loss={avg_loss:.4f}, diversity={diversity:.4f}"
-            )
+            logger.info(f"Epoch {epoch+1}/{epochs}: loss={avg_loss:.4f}, diversity={diversity:.4f}")
 
         return history
 
@@ -359,9 +360,7 @@ class EnsembleModel:
         predictions = self.predict(X)
 
         return {
-            "diversity_score": ModelDiversityMetrics.compute_diversity_score(
-                predictions
-            ),
+            "diversity_score": ModelDiversityMetrics.compute_diversity_score(predictions),
             "disagreement": ModelDiversityMetrics.compute_disagreement(predictions),
         }
 
@@ -377,9 +376,7 @@ class EnsembleModel:
         config = {
             "num_models": self.config.num_models,
             "aggregation_method": self.config.aggregation_method,
-            "model_weights": (
-                self.model_weights.tolist() if self.model_weights is not None else None
-            ),
+            "model_weights": self.model_weights.tolist() if self.model_weights is not None else None,
         }
         with open(path / "config.json", "w") as f:
             json.dump(config, f)
@@ -400,13 +397,9 @@ class EnsembleModel:
 
         # Load models
         for i in range(self.config.num_models):
-            if self.config.model_factory is not None:
-                model = self.config.model_factory()
-                model.load_state_dict(torch.load(path / f"model_{i}.pt"))
-                self.models.append(model)
-            else:
-                logger.error("Cannot load models: model_factory is None")
-                break
+            model = self.config.model_factory()
+            model.load_state_dict(torch.load(path / f"model_{i}.pt"))
+            self.models.append(model)
 
         logger.info(f"Loaded ensemble from {path}")
 
@@ -434,7 +427,7 @@ class DiverseEnsembleTrainer:
         """
         Train ensemble with diversity regularization.
         """
-        history: Dict[str, List[float]] = {"loss": [], "diversity": [], "total": []}
+        history = {"loss": [], "diversity": [], "total": []}
 
         X_tensor = torch.from_numpy(X).float()
         y_tensor = torch.from_numpy(y).float()
@@ -489,9 +482,7 @@ class DiverseEnsembleTrainer:
 
             history["total"].append(avg_loss - self.diversity_penalty * diversity)
 
-            logger.info(
-                f"Epoch {epoch + 1}/{epochs}: loss={avg_loss:.4f}, diversity={diversity:.4f}"
-            )
+            logger.info(f"Epoch {epoch+1}/{epochs}: loss={avg_loss:.4f}, diversity={diversity:.4f}")
 
         return history
 
@@ -549,21 +540,13 @@ if __name__ == "__main__":
     # Generate training data
     np.random.seed(42)
     X_train = np.random.randn(args.num_samples, 5).astype(np.float32)
-    y_train = (
-        (
-            X_train[:, 0] * 2
-            + X_train[:, 1] * 0.5
-            + np.random.randn(args.num_samples) * 0.1
-        )
-        .reshape(-1, 1)
-        .astype(np.float32)
-    )
+    y_train = (X_train[:, 0] * 2 + X_train[:, 1] * 0.5 +
+               np.random.randn(args.num_samples) * 0.1).reshape(-1, 1).astype(np.float32)
 
     # Train ensemble
     print(f"\nTraining ensemble with {args.num_models} models...")
     history = ensemble.train_ensemble(
-        X_train,
-        y_train,
+        X_train, y_train,
         epochs=args.epochs,
         batch_size=args.batch_size,
     )
@@ -576,7 +559,7 @@ if __name__ == "__main__":
 
     # Get diversity metrics
     diversity = ensemble.get_diversity_metrics(X_test)
-    print("\nDiversity Metrics:")
+    print(f"\nDiversity Metrics:")
     for key, value in diversity.items():
         print(f"  {key}: {value:.4f}")
 

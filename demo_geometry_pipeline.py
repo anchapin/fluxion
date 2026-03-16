@@ -12,6 +12,7 @@ Usage:
 """
 
 import argparse
+import json
 import os
 import sys
 import tempfile
@@ -20,16 +21,17 @@ from pathlib import Path
 # Add tools directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
+import numpy as np
 
 # Import the geometry extraction pipeline
 from tools.geometry_extraction import (
-    BuildingGeometry,
-    Door,
     GeometryIngestionPipeline,
-    Point2D,
+    BuildingGeometry,
     ThermalZone,
     Wall,
     Window,
+    Door,
+    Point2D,
 )
 
 
@@ -40,140 +42,116 @@ def create_sample_geometry() -> BuildingGeometry:
 
     # Add walls (counter-clockwise, starting from bottom-left)
     # Exterior walls
-    geometry.walls.append(
-        Wall(
-            id="wall_1",
-            start_point=Point2D(0.0, 0.0),
-            end_point=Point2D(10.0, 0.0),
-            height=2.4,
-            thickness=0.2,
-        )
-    )
-    geometry.walls.append(
-        Wall(
-            id="wall_2",
-            start_point=Point2D(10.0, 0.0),
-            end_point=Point2D(10.0, 8.0),
-            height=2.4,
-            thickness=0.2,
-        )
-    )
-    geometry.walls.append(
-        Wall(
-            id="wall_3",
-            start_point=Point2D(10.0, 8.0),
-            end_point=Point2D(0.0, 8.0),
-            height=2.4,
-            thickness=0.2,
-        )
-    )
-    geometry.walls.append(
-        Wall(
-            id="wall_4",
-            start_point=Point2D(0.0, 8.0),
-            end_point=Point2D(0.0, 0.0),
-            height=2.4,
-            thickness=0.2,
-        )
-    )
+    geometry.walls.append(Wall(
+        id="wall_1",
+        start_point=Point2D(0.0, 0.0),
+        end_point=Point2D(10.0, 0.0),
+        height=2.4,
+        thickness=0.2
+    ))
+    geometry.walls.append(Wall(
+        id="wall_2",
+        start_point=Point2D(10.0, 0.0),
+        end_point=Point2D(10.0, 8.0),
+        height=2.4,
+        thickness=0.2
+    ))
+    geometry.walls.append(Wall(
+        id="wall_3",
+        start_point=Point2D(10.0, 8.0),
+        end_point=Point2D(0.0, 8.0),
+        height=2.4,
+        thickness=0.2
+    ))
+    geometry.walls.append(Wall(
+        id="wall_4",
+        start_point=Point2D(0.0, 8.0),
+        end_point=Point2D(0.0, 0.0),
+        height=2.4,
+        thickness=0.2
+    ))
     # Interior wall
-    geometry.walls.append(
-        Wall(
-            id="wall_5",
-            start_point=Point2D(5.0, 0.0),
-            end_point=Point2D(5.0, 8.0),
-            height=2.4,
-            thickness=0.15,
-        )
-    )
+    geometry.walls.append(Wall(
+        id="wall_5",
+        start_point=Point2D(5.0, 0.0),
+        end_point=Point2D(5.0, 8.0),
+        height=2.4,
+        thickness=0.15
+    ))
 
     # Add windows
-    geometry.windows.append(
-        Window(
-            id="window_1",
-            wall_id="wall_1",
-            start_point=Point2D(2.0, 0.9),
-            end_point=Point2D(4.0, 0.9),
-            height=1.2,
-            sill_height=0.9,
-        )
-    )
-    geometry.windows.append(
-        Window(
-            id="window_2",
-            wall_id="wall_1",
-            start_point=Point2D(6.0, 0.9),
-            end_point=Point2D(8.0, 0.9),
-            height=1.2,
-            sill_height=0.9,
-        )
-    )
-    geometry.windows.append(
-        Window(
-            id="window_3",
-            wall_id="wall_2",
-            start_point=Point2D(10.0, 0.9),
-            end_point=Point2D(10.0, 2.1),
-            height=1.2,
-            sill_height=0.9,
-        )
-    )
-    geometry.windows.append(
-        Window(
-            id="window_4",
-            wall_id="wall_3",
-            start_point=Point2D(1.0, 0.9),
-            end_point=Point2D(3.0, 0.9),
-            height=1.2,
-            sill_height=0.9,
-        )
-    )
+    geometry.windows.append(Window(
+        id="window_1",
+        wall_id="wall_1",
+        start_point=Point2D(2.0, 0.9),
+        end_point=Point2D(4.0, 0.9),
+        height=1.2,
+        sill_height=0.9
+    ))
+    geometry.windows.append(Window(
+        id="window_2",
+        wall_id="wall_1",
+        start_point=Point2D(6.0, 0.9),
+        end_point=Point2D(8.0, 0.9),
+        height=1.2,
+        sill_height=0.9
+    ))
+    geometry.windows.append(Window(
+        id="window_3",
+        wall_id="wall_2",
+        start_point=Point2D(10.0, 0.9),
+        end_point=Point2D(10.0, 2.1),
+        height=1.2,
+        sill_height=0.9
+    ))
+    geometry.windows.append(Window(
+        id="window_4",
+        wall_id="wall_3",
+        start_point=Point2D(1.0, 0.9),
+        end_point=Point2D(3.0, 0.9),
+        height=1.2,
+        sill_height=0.9
+    ))
 
     # Add doors
-    geometry.doors.append(
-        Door(
-            id="door_1",
-            wall_id="wall_5",
-            start_point=Point2D(5.0, 0.0),
-            end_point=Point2D(5.0, 2.1),
-            height=2.1,
-        )
-    )
+    geometry.doors.append(Door(
+        id="door_1",
+        wall_id="wall_5",
+        start_point=Point2D(5.0, 0.0),
+        end_point=Point2D(5.0, 2.1),
+        height=2.1
+    ))
 
     # Add thermal zones
-    geometry.zones.append(
-        ThermalZone(
-            id="zone_1",
-            name="Living Room",
-            vertices=[
-                Point2D(0.0, 0.0),
-                Point2D(5.0, 0.0),
-                Point2D(5.0, 8.0),
-                Point2D(0.0, 8.0),
-            ],
-            ceiling_height=2.4,
-        )
-    )
-    geometry.zones.append(
-        ThermalZone(
-            id="zone_2",
-            name="Bedroom",
-            vertices=[
-                Point2D(5.0, 0.0),
-                Point2D(10.0, 0.0),
-                Point2D(10.0, 8.0),
-                Point2D(5.0, 8.0),
-            ],
-            ceiling_height=2.4,
-        )
-    )
+    geometry.zones.append(ThermalZone(
+        id="zone_1",
+        name="Living Room",
+        vertices=[
+            Point2D(0.0, 0.0),
+            Point2D(5.0, 0.0),
+            Point2D(5.0, 8.0),
+            Point2D(0.0, 8.0)
+        ],
+        ceiling_height=2.4
+    ))
+    geometry.zones.append(ThermalZone(
+        id="zone_2",
+        name="Bedroom",
+        vertices=[
+            Point2D(5.0, 0.0),
+            Point2D(10.0, 0.0),
+            Point2D(10.0, 8.0),
+            Point2D(5.0, 8.0)
+        ],
+        ceiling_height=2.4
+    ))
 
     # Add metadata
     geometry.metadata = {
         "source": "demo",
         "source_type": "generated",
         "building_type": "residential",
-        "year_built": 2020,
+        "year_built": 2020
     }
 
     return geometry
@@ -187,7 +165,10 @@ def demo_basic_usage():
 
     # Create pipeline with mock VLM (for testing without external dependencies)
     pipeline = GeometryIngestionPipeline(
-        vlm_provider="mock", model_name="llava", max_zones=100, max_walls=500
+        vlm_provider="mock",
+        model_name="llava",
+        max_zones=100,
+        max_walls=500
     )
 
     # Create sample geometry directly (bypassing VLM for demo)
@@ -228,7 +209,9 @@ def demo_ingestion_pipeline():
 
     # Create pipeline
     pipeline = GeometryIngestionPipeline(
-        vlm_provider="mock", max_zones=100, max_walls=500
+        vlm_provider="mock",
+        max_zones=100,
+        max_walls=500
     )
 
     # Create a temporary output directory
@@ -236,7 +219,8 @@ def demo_ingestion_pipeline():
         # Run ingestion using mock VLM response (no file needed)
         # This simulates what would happen with a real floor plan image
         geometry, tensors = pipeline.ingest(
-            input_path="demo_floor_plan.png", input_type="image"
+            input_path="demo_floor_plan.png",
+            input_type="image"
         )
 
         # Save outputs
@@ -290,17 +274,16 @@ def demo_rust_integration():
     # Try to import and use the Rust bindings if available
     try:
         import fluxion
-
         print("\n✅ Rust fluxion module loaded!")
 
         # Create geometry tensor from numpy arrays
         geo_tensor = fluxion.GeometryTensor.from_numpy(
-            tensors["zone_coords"],
-            tensors["wall_matrix"],
-            tensors["window_matrix"],
-            tensors["adjacency_matrix"],
-            tensors["zone_properties"],
-            tensors["summary"],
+            tensors['zone_coords'],
+            tensors['wall_matrix'],
+            tensors['window_matrix'],
+            tensors['adjacency_matrix'],
+            tensors['zone_properties'],
+            tensors['summary']
         )
 
         print(f"  Created Rust GeometryTensor: {geo_tensor}")
@@ -375,10 +358,12 @@ def main():
         "--vlm-provider",
         default="mock",
         choices=["ollama", "openai", "mock"],
-        help="VLM provider for geometry extraction",
+        help="VLM provider for geometry extraction"
     )
     parser.add_argument(
-        "--skip-rust", action="store_true", help="Skip Rust integration demo"
+        "--skip-rust",
+        action="store_true",
+        help="Skip Rust integration demo"
     )
 
     args = parser.parse_args()
@@ -398,8 +383,7 @@ def main():
     print("\n" + "=" * 60)
     print("✅ Demo Complete!")
     print("=" * 60)
-    print(
-        """
+    print("""
 The pipeline is ready to use! Here's how:
 
 1. Extract geometry from PDF/CAD:
@@ -414,8 +398,7 @@ The pipeline is ready to use! Here's how:
 3. Pass to Rust core (zero-copy):
    import fluxion
    geo_tensor = fluxion.GeometryTensor.from_numpy(*tensors.values())
-"""
-    )
+""")
 
 
 if __name__ == "__main__":

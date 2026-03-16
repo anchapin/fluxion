@@ -5,23 +5,22 @@ Tests for Ensemble Training
 Tests for Issue #170: Phase 9: Implement diverse ensemble training
 """
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
 import torch
 import torch.nn as nn
+import sys
+from pathlib import Path
 
 # Add tools directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ensemble_training import (
-    DiverseEnsembleTrainer,
     EnsembleConfig,
-    EnsembleMember,
-    EnsembleModel,
     ModelDiversityMetrics,
+    EnsembleModel,
+    DiverseEnsembleTrainer,
+    EnsembleMember,
 )
 
 
@@ -67,9 +66,7 @@ class TestModelDiversityMetrics:
             np.array([10.0, 20.0, 30.0]),  # Very different
         ]
 
-        disagreement = ModelDiversityMetrics.compute_disagreement(
-            predictions, threshold=1.0
-        )
+        disagreement = ModelDiversityMetrics.compute_disagreement(predictions, threshold=1.0)
 
         assert disagreement > 0.0
 
@@ -80,9 +77,7 @@ class TestModelDiversityMetrics:
             np.array([1.1, 2.1, 3.1]),
         ]
 
-        disagreement = ModelDiversityMetrics.compute_disagreement(
-            predictions, threshold=1.0
-        )
+        disagreement = ModelDiversityMetrics.compute_disagreement(predictions, threshold=1.0)
 
         assert disagreement == 0.0
 
@@ -346,19 +341,14 @@ class TestIntegration:
         # Generate data
         np.random.seed(42)
         X_train = np.random.randn(500, 5).astype(np.float32)
-        y_train = (
-            (X_train[:, 0] * 2 + X_train[:, 1] * 0.5 + np.random.randn(500) * 0.1)
-            .reshape(-1, 1)
-            .astype(np.float32)
-        )
+        y_train = (X_train[:, 0] * 2 + X_train[:, 1] * 0.5 +
+                   np.random.randn(500) * 0.1).reshape(-1, 1).astype(np.float32)
 
         X_test = np.random.randn(100, 5).astype(np.float32)
-        y_test = (
-            (X_test[:, 0] * 2 + X_test[:, 1] * 0.5).reshape(-1, 1).astype(np.float32)
-        )
+        y_test = (X_test[:, 0] * 2 + X_test[:, 1] * 0.5).reshape(-1, 1).astype(np.float32)
 
         # Train
-        _ = ensemble.train_ensemble(X_train, y_train, epochs=3, batch_size=32)
+        history = ensemble.train_ensemble(X_train, y_train, epochs=3, batch_size=32)
 
         # Predict
         predictions = ensemble.predict_aggregate(X_test)

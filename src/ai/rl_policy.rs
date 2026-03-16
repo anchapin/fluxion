@@ -86,8 +86,8 @@ impl RLPolicyManager {
         Ok(RLPolicyManager {
             session: None,
             config: PolicyConfig::default(),
-            obs_dim: 8, // Default: [outdoor_temp, zone_temp, solar_rad, hour, day_of_week, month, heating_setpoint, cooling_setpoint]
-            action_dim: 2, // Default: [heating_setpoint, cooling_setpoint]
+            obs_dim: 8,  // Default: [outdoor_temp, zone_temp, solar_rad, hour, day_of_week, month, heating_setpoint, cooling_setpoint]
+            action_dim: 2,  // Default: [heating_setpoint, cooling_setpoint]
         })
     }
 
@@ -100,11 +100,7 @@ impl RLPolicyManager {
     ///
     /// # Returns
     /// * `RLPolicyManager` - Manager with loaded model
-    pub fn load_policy(
-        path: &str,
-        backend: crate::ai::surrogate::InferenceBackend,
-        device_id: usize,
-    ) -> Result<Self, String> {
+    pub fn load_policy(path: &str, backend: crate::ai::surrogate::InferenceBackend, device_id: usize) -> Result<Self, String> {
         let path = Path::new(path);
         if !path.exists() {
             return Err(format!("ONNX policy not found: {}", path.display()));
@@ -112,10 +108,12 @@ impl RLPolicyManager {
 
         // Build session based on backend
         let session: Session = match backend {
-            crate::ai::surrogate::InferenceBackend::CPU => Session::builder()
-                .map_err(|e| format!("Failed to create ONNX session: {}", e))?
-                .commit_from_file(path)
-                .map_err(|e| format!("Failed to load ONNX model: {}", e))?,
+            crate::ai::surrogate::InferenceBackend::CPU => {
+                Session::builder()
+                    .map_err(|e| format!("Failed to create ONNX session: {}", e))?
+                    .commit_from_file(path)
+                    .map_err(|e| format!("Failed to load ONNX model: {}", e))?
+            }
             #[cfg(feature = "cuda")]
             crate::ai::surrogate::InferenceBackend::CUDA => {
                 use ort::execution_providers::CUDAExecutionProvider;
@@ -135,10 +133,12 @@ impl RLPolicyManager {
                     .commit_from_file(path)
                     .map_err(|e| format!("Failed to load ONNX model: {}", e))?
             }
-            _ => Session::builder()
-                .map_err(|e| format!("Failed to create ONNX session: {}", e))?
-                .commit_from_file(path)
-                .map_err(|e| format!("Failed to load ONNX model: {}", e))?,
+            _ => {
+                Session::builder()
+                    .map_err(|e| format!("Failed to create ONNX session: {}", e))?
+                    .commit_from_file(path)
+                    .map_err(|e| format!("Failed to load ONNX model: {}", e))?
+            }
         };
 
         let config = PolicyConfig {
@@ -152,7 +152,7 @@ impl RLPolicyManager {
         Ok(RLPolicyManager {
             session: Some(Arc::new(session)),
             config,
-            obs_dim: 8, // Default from training
+            obs_dim: 8,  // Default from training
             action_dim: 2,
         })
     }
@@ -179,11 +179,7 @@ impl RLPolicyManager {
                             if let Some(output) = outputs.get("action") {
                                 match output.try_extract_array::<f32>() {
                                     Ok(action_array) => {
-                                        let action: Vec<f64> = action_array
-                                            .iter()
-                                            .copied()
-                                            .map(|x| x as f64)
-                                            .collect();
+                                        let action: Vec<f64> = action_array.iter().copied().map(|x| x as f64).collect();
                                         return PolicyInference {
                                             action: PolicyAction::Continuous(action.clone()),
                                             action_mean: action,
@@ -199,11 +195,7 @@ impl RLPolicyManager {
                             if !outputs.is_empty() {
                                 match outputs[0].try_extract_array::<f32>() {
                                     Ok(action_array) => {
-                                        let action: Vec<f64> = action_array
-                                            .iter()
-                                            .copied()
-                                            .map(|x| x as f64)
-                                            .collect();
+                                        let action: Vec<f64> = action_array.iter().copied().map(|x| x as f64).collect();
                                         return PolicyInference {
                                             action: PolicyAction::Continuous(action.clone()),
                                             action_mean: action,
@@ -264,7 +256,8 @@ impl RLPolicyManager {
                     match session.run(ort::inputs!["observation" => input_tensor].into()) {
                         Ok(outputs) => {
                             // Try "action" output first, then first output
-                            let output_tensor = outputs.get("action").or_else(|| outputs.get(0));
+                            let output_tensor = outputs.get("action")
+                                .or_else(|| outputs.get(0));
 
                             if let Some(output) = output_tensor {
                                 match output.try_extract_array::<f32>() {
@@ -274,8 +267,7 @@ impl RLPolicyManager {
                                         let mut results = Vec::with_capacity(batch_size);
 
                                         for chunk in action_array.chunks(action_dim) {
-                                            let action: Vec<f64> =
-                                                chunk.iter().map(|&x| x as f64).collect();
+                                            let action: Vec<f64> = chunk.iter().map(|&x| x as f64).collect();
                                             results.push(PolicyInference {
                                                 action: PolicyAction::Continuous(action.clone()),
                                                 action_mean: action,
@@ -342,7 +334,7 @@ mod tests {
     #[test]
     fn test_predict_without_model() {
         let manager = RLPolicyManager::new().unwrap();
-        let obs = vec![20.0, 22.0, 100.0, 12.0, 1.0, 6.0, 20.0, 24.0]; // Sample observation
+        let obs = vec![20.0, 22.0, 100.0, 12.0, 1.0, 6.0, 20.0, 24.0];  // Sample observation
         let inference = manager.predict(&obs);
 
         // Should return default action when no model loaded

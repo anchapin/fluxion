@@ -5,21 +5,23 @@ Tests for Online Learning Framework
 Tests for Issue #169: Phase 9: Implement online learning framework
 """
 
-import sys
-from pathlib import Path
-
 import numpy as np
 import pytest
+import torch
+import torch.nn as nn
+import sys
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 # Add tools directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from online_learning import (
-    DataStreamer,
-    OnlineLearner,
-    PerformanceMonitor,
-    SimpleOnlineModel,
     StreamingDataBuffer,
+    PerformanceMonitor,
+    OnlineLearner,
+    DataStreamer,
+    SimpleOnlineModel,
 )
 
 
@@ -126,9 +128,9 @@ class TestPerformanceMonitor:
 
         stats = monitor.get_recent_stats()
 
-        assert "recent_loss_mean" in stats
-        assert "recent_mae_mean" in stats
-        assert stats["recent_mae_mean"] == pytest.approx(0.1, rel=0.01)
+        assert 'recent_loss_mean' in stats
+        assert 'recent_mae_mean' in stats
+        assert stats['recent_mae_mean'] == pytest.approx(0.1, rel=0.01)
 
     def test_drift_detection_no_drift(self):
         """Test drift detection when there's no drift."""
@@ -199,7 +201,7 @@ class TestOnlineLearner:
         result = learner.process_sample(features, targets)
 
         # No update should happen yet
-        assert result is None or "update_number" in result
+        assert result is None or 'update_number' in result
         assert learner._sample_count == 5
 
     def test_update(self):
@@ -221,8 +223,8 @@ class TestOnlineLearner:
         result = learner.update()
 
         if result:
-            assert "training_loss" in result
-            assert "update_number" in result
+            assert 'training_loss' in result
+            assert 'update_number' in result
 
     def test_get_metrics(self):
         """Test getting metrics."""
@@ -237,8 +239,8 @@ class TestOnlineLearner:
 
         metrics = learner.get_metrics()
 
-        assert "sample_count" in metrics
-        assert "buffer_size" in metrics
+        assert 'sample_count' in metrics
+        assert 'buffer_size' in metrics
 
     def test_checkpoint_save_load(self, tmp_path):
         """Test saving and loading checkpoints."""
@@ -258,7 +260,7 @@ class TestOnlineLearner:
             learner.process_sample(features, targets)
 
         # Save checkpoint
-        _ = learner.save_checkpoint("test_checkpoint.pt")
+        checkpoint_path = learner.save_checkpoint("test_checkpoint.pt")
 
         # Create new learner
         model2 = SimpleOnlineModel(input_dim=5)
@@ -367,24 +369,17 @@ class TestIntegration:
                 # Generate batch
                 batch_size = 16
                 features = np.random.randn(batch_size, input_dim).astype(np.float32)
-                targets = (
-                    (
-                        features[:, 0] * 2
-                        + features[:, 1] * 0.5
-                        + np.random.randn(batch_size) * 0.1
-                    )
-                    .reshape(-1, 1)
-                    .astype(np.float32)
-                )
+                targets = (features[:, 0] * 2 + features[:, 1] * 0.5 +
+                          np.random.randn(batch_size) * 0.1).reshape(-1, 1).astype(np.float32)
 
                 # Process sample
-                _ = learner.process_sample(features, targets)
+                result = learner.process_sample(features, targets)
 
         # Get final metrics
         metrics = learner.get_metrics()
 
-        assert metrics["sample_count"] == 480  # 3 * 10 * 16
-        assert "recent_loss_mean" in metrics
+        assert metrics['sample_count'] == 480  # 3 * 10 * 16
+        assert 'recent_loss_mean' in metrics
 
         # Check for drift (should not have drift)
         has_drift, _ = learner.check_performance()

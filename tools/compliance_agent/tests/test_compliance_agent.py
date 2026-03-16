@@ -2,9 +2,9 @@
 Tests for the Code Compliance Agent
 """
 
-import json
-
 import pytest
+import json
+from pathlib import Path
 
 from tools.compliance_agent import (
     CodeComplianceAgent,
@@ -15,8 +15,8 @@ from tools.compliance_agent import (
     get_rules_for_standard,
 )
 from tools.compliance_agent.llm_backend import (
-    LLMBackendFactory,
     MockLLMBackend,
+    LLMBackendFactory,
 )
 
 
@@ -47,7 +47,7 @@ class TestMockBackend:
         response = backend.generate(
             messages=[{"role": "user", "content": "Hello"}],
             temperature=0.7,
-            max_tokens=100,
+            max_tokens=100
         )
 
         assert response.content is not None
@@ -57,11 +57,9 @@ class TestMockBackend:
     def test_mock_backend_compliance_response(self):
         backend = MockLLMBackend()
         response = backend.generate(
-            messages=[
-                {"role": "user", "content": "Check ASHRAE compliance for my building"}
-            ],
+            messages=[{"role": "user", "content": "Check ASHRAE compliance for my building"}],
             temperature=0.7,
-            max_tokens=100,
+            max_tokens=100
         )
 
         # Should contain JSON with compliance checks
@@ -114,27 +112,26 @@ class TestComplianceAgent:
         report = agent.check_compliance(
             model_data=sample_model_data,
             standard=Standard.ASHRAE90_1_2019,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         assert isinstance(report, ComplianceReport)
         assert report.model_name == "Test Building"
         assert len(report.checks) > 0
-        assert report.overall_status in [
-            ComplianceStatus.COMPLIANT,
-            ComplianceStatus.NON_COMPLIANT,
-            ComplianceStatus.NEEDS_REVIEW,
-        ]
+        assert report.overall_status in [ComplianceStatus.COMPLIANT, ComplianceStatus.NON_COMPLIANT, ComplianceStatus.NEEDS_REVIEW]
 
     def test_check_compliance_with_rules_engine(self, agent, sample_model_data):
         """Test that rules engine works even when LLM is not available."""
         # Create agent with a non-available backend
-        agent = CodeComplianceAgent(backend="ollama", model="nonexistent")
+        agent = CodeComplianceAgent(
+            backend="ollama",
+            model="nonexistent"
+        )
 
         report = agent.check_compliance(
             model_data=sample_model_data,
             standard=Standard.ASHRAE90_1_2019,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         assert isinstance(report, ComplianceReport)
@@ -156,7 +153,7 @@ class TestComplianceAgent:
         report = agent.check_compliance(
             model_data=model_data,
             standard=Standard.ASHRAE90_1_2019,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         # Most checks should pass
@@ -174,7 +171,7 @@ class TestComplianceAgent:
         report = agent.check_compliance(
             model_data=model_data,
             standard=Standard.ASHRAE90_1_2019,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         assert report.summary["non_compliant"] > 0
@@ -183,7 +180,7 @@ class TestComplianceAgent:
         report = agent.check_compliance(
             model_data=sample_model_data,
             standard=Standard.IECC_2021,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         assert report.standard == "IECC-2021"
@@ -192,7 +189,7 @@ class TestComplianceAgent:
         report = agent.check_compliance(
             model_data=sample_model_data,
             standard=Standard.ASHRAE90_1_2019,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         output_file = tmp_path / "test_report.json"
@@ -211,7 +208,7 @@ class TestComplianceAgent:
         report = agent.check_compliance(
             model_data=sample_model_data,
             standard=Standard.ASHRAE90_1_2019,
-            use_rules_engine=True,
+            use_rules_engine=True
         )
 
         output_file = tmp_path / "test_report.txt"
@@ -231,7 +228,7 @@ class TestComplianceAgent:
         model_data = {
             "model_name": "File Loaded Building",
             "wall_r_value": 15.0,
-            "window_u_factor": 0.40,
+            "window_u_factor": 0.40
         }
 
         json_file = tmp_path / "model.json"
@@ -254,7 +251,7 @@ class TestComplianceReport:
             timestamp="2024-01-01T00:00:00",
             overall_status=ComplianceStatus.COMPLIANT,
             checks=[],
-            summary={"total": 0, "compliant": 0},
+            summary={"total": 0, "compliant": 0}
         )
 
         data = report.to_dict()
@@ -269,7 +266,7 @@ class TestComplianceReport:
             timestamp="2024-01-01T00:00:00",
             overall_status=ComplianceStatus.COMPLIANT,
             checks=[],
-            summary={"total": 0, "compliant": 0},
+            summary={"total": 0, "compliant": 0}
         )
 
         json_str = report.to_json()
@@ -282,15 +279,15 @@ class TestComplianceReport:
                 rule_id="5.1.1",
                 rule_title="Envelope Insulation",
                 status=ComplianceStatus.COMPLIANT,
-                message="Meets requirements",
+                message="Meets requirements"
             ),
             ComplianceCheckResult(
                 rule_id="5.1.2",
                 rule_title="Fenestration U-Factor",
                 status=ComplianceStatus.NON_COMPLIANT,
                 message="Exceeds maximum",
-                recommendation="Replace windows",
-            ),
+                recommendation="Replace windows"
+            )
         ]
 
         report = ComplianceReport(
@@ -299,7 +296,11 @@ class TestComplianceReport:
             timestamp="2024-01-01T00:00:00",
             overall_status=ComplianceStatus.NON_COMPLIANT,
             checks=checks,
-            summary={"total": 2, "compliant": 1, "non_compliant": 1},
+            summary={
+                "total": 2,
+                "compliant": 1,
+                "non_compliant": 1
+            }
         )
 
         summary = report.print_summary()

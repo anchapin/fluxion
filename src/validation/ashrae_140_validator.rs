@@ -6,57 +6,16 @@ use crate::validation::diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
     HourlyData, PeakTiming, TemperatureProfile,
 };
-use crate::validation::diagnostics::SimulationDiagnostics;
-use crate::validation::multi_reference::MultiReferenceDB;
-use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType};
+use crate::validation::report::{BenchmarkReport, MetricType};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
-use rayon::prelude::*;
-use std::path::Path;
 
-/// ASHRAE Standard 140 validation for building energy programs.
-///
-/// Validates Fluxion against ASHRAE 140 reference results (EnergyPlus, ESP-r, TRNSYS).
-/// Supports multi-reference comparison with toleranced pass/warning/fail criteria.
-/// Auto-loads multi-reference database from docs/ashrae_140_references.json if available.
-///
-/// # Validation Criteria
-/// - Annual energy: ±15% tolerance
-/// - Monthly energy: ±10% tolerance
-/// - Peak loads: ±15% tolerance
-/// - Free-floating temperature: ±1.0°C tolerance
-///
-/// # Usage
-/// ```rust,no_run
-/// use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
-///
-/// let validator = ASHRAE140Validator::new();
-/// let results = validator.validate_case("600")?;
-/// validator.print_results(&results);
-/// ```
-///
-/// # Output
-/// - Console summary with pass/warning/fail status
-/// - Markdown report (docs/ASHRAE140_RESULTS.md)
-/// - CSV export for analysis
-/// - Multi-reference comparison (EnergyPlus, ESP-r, TRNSYS)
-///
-/// See docs/ASHRAE140_VALIDATION.md for details.
+/// Validator for ASHRAE 140 standard cases.
 pub struct ASHRAE140Validator {
     /// Diagnostic configuration
     diagnostic_config: DiagnosticConfig,
     /// Diagnostic collector for detailed output
     diagnostic: DiagnosticCollector,
-    /// Flag to enable simulation diagnostics (Phase 5)
-    use_simulation_diagnostics: bool,
-    /// Temporary storage for simulation diagnostics collected during the last run
-    last_simulation_diagnostics: Option<SimulationDiagnostics>,
-    /// Multi-reference database for per-program validation (Phase 7)
-    multi_ref: Option<MultiReferenceDB>,
-    /// Diagnostic case ranges added for validation (Phase 18)
-    pub diagnostic_cases_added: Vec<String>,
-    /// Skip baseline cases when running diagnostics only (Phase 18)
-    skip_baseline_cases: bool,
 }
 
 impl Default for ASHRAE140Validator {
@@ -69,207 +28,26 @@ impl ASHRAE140Validator {
     /// Creates a new ASHRAE 140 validator.
     pub fn new() -> Self {
         let config = DiagnosticConfig::from_env();
-        let mut validator = Self {
+        Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
-            use_simulation_diagnostics: false,
-            last_simulation_diagnostics: None,
-            multi_ref: None,
-            diagnostic_cases_added: Vec::new(),
-            skip_baseline_cases: false,
-        };
-
-        // Auto-load multi-reference database if available (Phase 7 multi-reference integration)
-        let default_multi_ref_path = Path::new("docs/ashrae_140_references.json");
-        if default_multi_ref_path.exists() {
-            match MultiReferenceDB::from_file(default_multi_ref_path) {
-                Ok(db) => {
-                    validator.multi_ref = Some(db);
-                }
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to load multi-reference data from {}: {}",
-                        default_multi_ref_path.display(),
-                        e
-                    );
-                }
-            }
         }
-
-        // Add all diagnostic case ranges by default (Phase 18)
-        // This ensures fluxion validate runs complete validation (baseline + diagnostics)
-        validator.add_diagnostic_case_range("195-470".to_string());
-        validator.add_diagnostic_case_range("800-810".to_string());
-        validator.add_diagnostic_case_range("non-residential".to_string());
-        validator.add_diagnostic_case_range("solid-conduction".to_string());
-        validator.add_diagnostic_case_range("solar-gain".to_string());
-
-        validator
-    }
-
-    /// Sets the multi-reference database for per-program validation.
-    ///
-    /// # Arguments
-    /// * `path` - Path to the JSON file containing reference ranges per program
-    ///
-    /// # Returns
-    /// Self for method chaining
-    pub fn with_multi_reference(mut self, path: &Path) -> Self {
-        match MultiReferenceDB::from_file(path) {
-            Ok(db) => {
-                self.multi_ref = Some(db);
-            }
-            Err(e) => {
-                eprintln!("Warning: Failed to load multi-reference data: {}", e);
-            }
-        }
-        self
     }
 
     /// Creates a validator with diagnostic output enabled.
     pub fn with_diagnostics(config: DiagnosticConfig) -> Self {
-        let mut validator = Self {
+        Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
-            use_simulation_diagnostics: false,
-            last_simulation_diagnostics: None,
-            multi_ref: None,
-            diagnostic_cases_added: Vec::new(),
-            skip_baseline_cases: false,
-        };
-
-        // Add all diagnostic case ranges by default
-        validator.add_diagnostic_case_range("195-470".to_string());
-        validator.add_diagnostic_case_range("800-810".to_string());
-        validator.add_diagnostic_case_range("non-residential".to_string());
-        validator.add_diagnostic_case_range("solid-conduction".to_string());
-        validator.add_diagnostic_case_range("solar-gain".to_string());
-
-        validator
+        }
     }
 
     /// Creates a new validator with full diagnostic output enabled.
     pub fn with_full_diagnostics() -> Self {
         let config = DiagnosticConfig::full();
-        let mut validator = Self {
+        Self {
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
-            use_simulation_diagnostics: false,
-            last_simulation_diagnostics: None,
-            multi_ref: None,
-            diagnostic_cases_added: Vec::new(),
-            skip_baseline_cases: false,
-        };
-
-        // Add all diagnostic case ranges by default
-        validator.add_diagnostic_case_range("195-470".to_string());
-        validator.add_diagnostic_case_range("800-810".to_string());
-        validator.add_diagnostic_case_range("non-residential".to_string());
-        validator.add_diagnostic_case_range("solid-conduction".to_string());
-        validator.add_diagnostic_case_range("solar-gain".to_string());
-
-        validator
-    }
-
-    /// Adds a diagnostic case range to the validator for smart validation.
-    ///
-    /// This method registers a diagnostic case range (e.g., "195-470", "800-810")
-    /// to be included in validation runs. The validator will only run diagnostic
-    /// cases that have been explicitly added, enabling smart re-run behavior.
-    ///
-    /// # Arguments
-    /// * `range` - Diagnostic case range identifier (e.g., "195-470", "800-810", "non-residential", "solid-conduction", "solar-gain")
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
-    ///
-    /// let mut validator = ASHRAE140Validator::new();
-    /// validator.add_diagnostic_case_range("195-470".to_string());
-    /// validator.add_diagnostic_case_range("800-810".to_string());
-    /// ```
-    pub fn add_diagnostic_case_range(&mut self, range: String) {
-        self.diagnostic_cases_added.push(range);
-    }
-
-    /// Skips baseline cases when running diagnostics only.
-    ///
-    /// When set to true, the validator will only run diagnostic cases
-    /// (those added via add_diagnostic_case_range) and skip the
-    /// baseline cases (600-960).
-    pub fn skip_baseline_cases(&mut self, skip: bool) {
-        self.skip_baseline_cases = skip;
-    }
-
-    /// Returns whether baseline cases are being skipped.
-    pub fn is_skip_baseline_cases(&self) -> bool {
-        self.skip_baseline_cases
-    }
-
-    /// Disables all diagnostic cases (for backward compatibility).
-    ///
-    /// This method clears all diagnostic case ranges, causing the validator
-    /// to only run baseline cases (600-960).
-    pub fn disable_diagnostics(&mut self) {
-        self.diagnostic_cases_added.clear();
-    }
-
-    /// Expands a diagnostic case range string into actual ASHRAE140Case variants.
-    ///
-    /// Supported ranges:
-    /// - "800-810" -> vec![Case800, Case801, ..., Case810]
-    /// - "195-470" -> vec![Case196, Case197, Case198, Case200, Case250, Case300, Case350, Case400, Case470]
-    /// - "non-residential" -> vec![Office, Retail, School]
-    /// - "solid-conduction" -> vec![Case195HighMass, Case195NoLoads, Case195NoSolar, Case195ThermalBridge]
-    /// - "solar-gain" -> vec![Case195SHGC0.3, Case195SHGC0.6, Case195SHGC0.9, Case195Alb0.1, Case195Alb0.5, Case195Alb0.9]
-    ///
-    /// Returns empty vec for unknown ranges.
-    fn expand_diagnostic_range(&self, range: &str) -> Vec<ASHRAE140Case> {
-        match range {
-            "800-810" => vec![
-                ASHRAE140Case::Case800,
-                ASHRAE140Case::Case801,
-                ASHRAE140Case::Case802,
-                ASHRAE140Case::Case803,
-                ASHRAE140Case::Case804,
-                ASHRAE140Case::Case805,
-                ASHRAE140Case::Case806,
-                ASHRAE140Case::Case807,
-                ASHRAE140Case::Case808,
-                ASHRAE140Case::Case809,
-                ASHRAE140Case::Case810,
-            ],
-            "195-470" => vec![
-                ASHRAE140Case::Case196,
-                ASHRAE140Case::Case197,
-                ASHRAE140Case::Case198,
-                ASHRAE140Case::Case200,
-                ASHRAE140Case::Case250,
-                ASHRAE140Case::Case300,
-                ASHRAE140Case::Case350,
-                ASHRAE140Case::Case400,
-                ASHRAE140Case::Case470,
-            ],
-            "non-residential" => vec![
-                ASHRAE140Case::Office,
-                ASHRAE140Case::Retail,
-                ASHRAE140Case::School,
-            ],
-            "solid-conduction" => vec![
-                ASHRAE140Case::Case195HighMass,
-                ASHRAE140Case::Case195NoLoads,
-                ASHRAE140Case::Case195NoSolar,
-                ASHRAE140Case::Case195ThermalBridge,
-            ],
-            "solar-gain" => vec![
-                ASHRAE140Case::Case195SHGC03,
-                ASHRAE140Case::Case195SHGC06,
-                ASHRAE140Case::Case195SHGC09,
-                ASHRAE140Case::Case195Albedo01,
-                ASHRAE140Case::Case195Albedo05,
-                ASHRAE140Case::Case195Albedo09,
-            ],
-            _ => vec![],
         }
     }
 
@@ -503,11 +281,6 @@ impl ASHRAE140Validator {
 
         diagnostic_report.print_summary();
 
-        // Enrich results with multi-reference per-program status if configured
-        if let Some(ref multi_db) = self.multi_ref {
-            report.enrich_with_multi_reference(multi_db);
-        }
-
         (report, diagnostic_report)
     }
 
@@ -604,11 +377,6 @@ impl ASHRAE140Validator {
             report.add_benchmark_data(&case_id, data.clone());
         }
 
-        // Enrich results with multi-reference per-program status if configured
-        if let Some(ref multi_db) = self.multi_ref {
-            report.enrich_with_multi_reference(multi_db);
-        }
-
         report
     }
 
@@ -620,11 +388,9 @@ impl ASHRAE140Validator {
         controller: &IdealHVACController,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Plan 03-04: Thermal mass energy accounting removed
-        // Ti_free calculation already includes thermal mass effects via:
-        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
-        // - Thermal capacitance Cm (thermal mass response rate)
-        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
@@ -751,8 +517,6 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
             } else {
@@ -763,7 +527,8 @@ impl ASHRAE140Validator {
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            // Issue #272: Use model's tracked peak power (in watts)
+            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
+            // The old calculation (hvac_kwh * 1000.0) was wrong because it multiplied energy by 3600
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -789,30 +554,6 @@ impl ASHRAE140Validator {
     ///
     /// # Returns
     /// A tuple of (BenchmarkReport, DiagnosticCollector) with validation results and diagnostics
-    /// Validates specified ASHRAE 140 case with detailed diagnostics.
-    ///
-    /// Runs full building simulation for the specified case, collects diagnostics,
-    /// and compares results against reference data. Uses multi-reference
-    /// database if loaded to compare against EnergyPlus, ESP-r, and TRNSYS.
-    ///
-    /// # Arguments
-    /// * `case` - ASHRAE 140 case identifier (e.g., ASHRAE140Case::Case600)
-    ///
-    /// # Returns
-    /// Tuple of (BenchmarkReport, DiagnosticCollector) containing:
-    /// - BenchmarkReport: Pass/warning/fail status for each metric
-    /// - DiagnosticCollector: Detailed hourly data, temperature profiles, peak loads
-    ///
-    /// # Errors
-    /// Returns error if case simulation fails or benchmark data not found.
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// let (report, diagnostics) = validator.validate_single_case_with_diagnostics(
-    ///     ASHRAE140Case::Case600
-    /// )?;
-    /// validator.print_results(&report);
-    /// ```
     pub fn validate_single_case_with_diagnostics(
         &mut self,
         case: ASHRAE140Case,
@@ -902,93 +643,46 @@ impl ASHRAE140Validator {
     }
 
     /// Validates the analytical engine against the ASHRAE 140 cases.
-    pub fn validate_analytical_engine(&self) -> BenchmarkReport {
+    pub fn validate_analytical_engine(&mut self) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
-        report.set_start(); // Record start time
         let benchmark_data = benchmark::get_all_benchmark_data();
         let weather = DenverTmyWeather::new();
 
-        // Cases to validate - baseline cases + diagnostic cases
-        // Skip baseline cases if skip_baseline_cases is true (Phase 18)
-        let mut cases = if self.skip_baseline_cases {
-            vec![]
-        } else {
-            vec![
-                // Low mass cases (600 series)
-                ASHRAE140Case::Case600,
-                ASHRAE140Case::Case610,
-                ASHRAE140Case::Case620,
-                ASHRAE140Case::Case630,
-                ASHRAE140Case::Case640,
-                ASHRAE140Case::Case650,
-                ASHRAE140Case::Case600FF,
-                ASHRAE140Case::Case650FF,
-                // High mass cases (900 series)
-                ASHRAE140Case::Case900,
-                ASHRAE140Case::Case910,
-                ASHRAE140Case::Case920,
-                ASHRAE140Case::Case930,
-                ASHRAE140Case::Case940,
-                ASHRAE140Case::Case950,
-                ASHRAE140Case::Case900FF,
-                ASHRAE140Case::Case950FF,
-                // Special cases
-                ASHRAE140Case::Case960,
-                ASHRAE140Case::Case195,
-            ]
-        };
+        // Cases to validate - all 18 ASHRAE 140 cases
+        let cases = vec![
+            // Low mass cases (600 series)
+            ASHRAE140Case::Case600,
+            ASHRAE140Case::Case610,
+            ASHRAE140Case::Case620,
+            ASHRAE140Case::Case630,
+            ASHRAE140Case::Case640,
+            ASHRAE140Case::Case650,
+            ASHRAE140Case::Case600FF,
+            ASHRAE140Case::Case650FF,
+            // High mass cases (900 series)
+            ASHRAE140Case::Case900,
+            ASHRAE140Case::Case910,
+            ASHRAE140Case::Case920,
+            ASHRAE140Case::Case930,
+            ASHRAE140Case::Case940,
+            ASHRAE140Case::Case950,
+            ASHRAE140Case::Case900FF,
+            ASHRAE140Case::Case950FF,
+            // Special cases
+            ASHRAE140Case::Case960,
+            ASHRAE140Case::Case195,
+        ];
 
-        // Add diagnostic cases if any ranges registered
-        for range in &self.diagnostic_cases_added {
-            let diagnostic_cases = self.expand_diagnostic_range(range);
-            cases.extend(diagnostic_cases);
-        }
+        for case in cases {
+            let case_id = case.number();
+            if let Some(data) = benchmark_data.get(&case_id) {
+                let spec = case.spec();
+                let results = self.simulate_case(&spec, &weather);
 
-        // Define a struct to hold partial results from each parallel task
-        #[derive(Debug)]
-        struct CasePartial {
-            case_id: String,
-            data: Option<BenchmarkData>,
-            is_free_floating: bool,
-            results: Option<CaseResults>,
-        }
-
-        // Parallel processing: simulate each case
-        let partials: Vec<CasePartial> = cases
-            .par_iter()
-            .map(|case| {
-                let case_id = case.number();
-                let data_opt = benchmark_data.get(&case_id).cloned();
-                let is_free_floating = case.spec().is_free_floating();
-                let results = data_opt
-                    .as_ref()
-                    .map(|_| self.simulate_case(&case.spec(), &weather));
-                CasePartial {
-                    case_id,
-                    data: data_opt,
-                    is_free_floating,
-                    results,
-                }
-            })
-            .collect();
-
-        // Sequential post-processing: print results and accumulate into report
-        for partial in partials {
-            if let (Some(data), Some(mut results)) = (partial.data, partial.results) {
-                // Case 960: Convert thermal energy to electrical energy to match ASHRAE reference.
-                // The reference values (EnergyPlus, ESP-r, TRNSYS) report HVAC electricity consumption.
-                // Apply COP/efficiency corrections for fair comparison.
-                if partial.case_id == "960" {
-                    let cooling_cop = 3.0;
-                    let heating_efficiency = 0.9;
-                    results.annual_heating_mwh /= heating_efficiency;
-                    results.annual_cooling_mwh /= cooling_cop;
-                }
-
-                if partial.is_free_floating {
+                if spec.is_free_floating() {
                     println!(
                         "Case {} (Free-Floating): Min Temp={:.2}°C (Ref: {:.2}-{:.2}), Max Temp={:.2}°C (Ref: {:.2}-{:.2})",
-                        partial.case_id,
+                        case_id,
                         results.min_temp_celsius.unwrap_or(0.0),
                         data.min_free_float_min,
                         data.min_free_float_max,
@@ -997,9 +691,10 @@ impl ASHRAE140Validator {
                         data.max_free_float_max
                     );
 
+                    // Add free-floating temperature metrics
                     if let Some(min_temp) = results.min_temp_celsius {
                         report.add_result_simple(
-                            &partial.case_id,
+                            &case_id,
                             MetricType::MinFreeFloat,
                             min_temp,
                             data.min_free_float_min,
@@ -1009,7 +704,7 @@ impl ASHRAE140Validator {
 
                     if let Some(max_temp) = results.max_temp_celsius {
                         report.add_result_simple(
-                            &partial.case_id,
+                            &case_id,
                             MetricType::MaxFreeFloat,
                             max_temp,
                             data.max_free_float_min,
@@ -1019,7 +714,7 @@ impl ASHRAE140Validator {
                 } else {
                     println!(
                         "Case {}: Heating={:.2} (Ref: {:.2}-{:.2}), Cooling={:.2} (Ref: {:.2}-{:.2}), Peak H={:.2}, Peak C={:.2}",
-                        partial.case_id,
+                        case_id,
                         results.annual_heating_mwh,
                         data.annual_heating_min,
                         data.annual_heating_max,
@@ -1031,7 +726,7 @@ impl ASHRAE140Validator {
                     );
 
                     report.add_result_simple(
-                        &partial.case_id,
+                        &case_id,
                         MetricType::AnnualHeating,
                         results.annual_heating_mwh,
                         data.annual_heating_min,
@@ -1039,16 +734,17 @@ impl ASHRAE140Validator {
                     );
 
                     report.add_result_simple(
-                        &partial.case_id,
+                        &case_id,
                         MetricType::AnnualCooling,
                         results.annual_cooling_mwh,
                         data.annual_cooling_min,
                         data.annual_cooling_max,
                     );
 
+                    // Add peak loads if reference data is available
                     if data.peak_heating_min >= 0.0 {
                         report.add_result_simple(
-                            &partial.case_id,
+                            &case_id,
                             MetricType::PeakHeating,
                             results.peak_heating_kw,
                             data.peak_heating_min,
@@ -1058,7 +754,7 @@ impl ASHRAE140Validator {
 
                     if data.peak_cooling_min >= 0.0 {
                         report.add_result_simple(
-                            &partial.case_id,
+                            &case_id,
                             MetricType::PeakCooling,
                             results.peak_cooling_kw,
                             data.peak_cooling_min,
@@ -1067,144 +763,18 @@ impl ASHRAE140Validator {
                     }
                 }
 
-                report.add_benchmark_data(&partial.case_id, data);
+                report.add_benchmark_data(&case_id, data.clone());
             }
         }
 
-        // Process diagnostic cases if added (Phase 18)
-        for range in &self.diagnostic_cases_added {
-            match range.as_str() {
-                "195-470" => {
-                    // Note: Cases 195-470 diagnostic range validation
-                    // Only available in test mode via tests/ashrae_140/diagnostics.rs
-                    println!(
-                        "Diagnostic range {} registered (requires test mode for execution)",
-                        range
-                    );
-                }
-                "800-810" => {
-                    // Note: Cases 800-810 diagnostic range validation
-                    // Only available in test mode via tests/ashrae_140/diagnostics.rs
-                    println!(
-                        "Diagnostic range {} registered (requires test mode for execution)",
-                        range
-                    );
-                }
-                "non-residential" => {
-                    // Run non-residential cases
-                    for case in &[
-                        ASHRAE140Case::Office,
-                        ASHRAE140Case::Retail,
-                        ASHRAE140Case::School,
-                    ] {
-                        let case_id = case.number();
-                        let data_opt = benchmark_data.get(&case_id).cloned();
-                        if let Some(data) = data_opt {
-                            let results = self.simulate_case(&case.spec(), &weather);
-                            report.add_result_simple(
-                                &case_id,
-                                MetricType::AnnualHeating,
-                                results.annual_heating_mwh,
-                                data.annual_heating_min,
-                                data.annual_heating_max,
-                            );
-                            report.add_result_simple(
-                                &case_id,
-                                MetricType::AnnualCooling,
-                                results.annual_cooling_mwh,
-                                data.annual_cooling_min,
-                                data.annual_cooling_max,
-                            );
-                            report.add_benchmark_data(&case_id, data);
-                            println!("Case {}: Added to report", case_id);
-                        }
-                    }
-                }
-                "solid-conduction" => {
-                    // Run solid conduction variants
-                    for case in &[
-                        ASHRAE140Case::Case195HighMass,
-                        ASHRAE140Case::Case195NoLoads,
-                        ASHRAE140Case::Case195NoSolar,
-                        ASHRAE140Case::Case195ThermalBridge,
-                    ] {
-                        let case_id = case.number();
-                        let data_opt = benchmark_data.get(&case_id).cloned();
-                        if let Some(data) = data_opt {
-                            let results = self.simulate_case(&case.spec(), &weather);
-                            report.add_result_simple(
-                                &case_id,
-                                MetricType::AnnualHeating,
-                                results.annual_heating_mwh,
-                                data.annual_heating_min,
-                                data.annual_heating_max,
-                            );
-                            report.add_result_simple(
-                                &case_id,
-                                MetricType::AnnualCooling,
-                                results.annual_cooling_mwh,
-                                data.annual_cooling_min,
-                                data.annual_cooling_max,
-                            );
-                            report.add_benchmark_data(&case_id, data);
-                            println!("Case {}: Added to report", case_id);
-                        }
-                    }
-                }
-                "solar-gain" => {
-                    // Run solar gain variants
-                    for case in &[
-                        ASHRAE140Case::Case195SHGC03,
-                        ASHRAE140Case::Case195SHGC06,
-                        ASHRAE140Case::Case195SHGC09,
-                        ASHRAE140Case::Case195Albedo01,
-                        ASHRAE140Case::Case195Albedo05,
-                        ASHRAE140Case::Case195Albedo09,
-                    ] {
-                        let case_id = case.number();
-                        let data_opt = benchmark_data.get(&case_id).cloned();
-                        if let Some(data) = data_opt {
-                            let results = self.simulate_case(&case.spec(), &weather);
-                            report.add_result_simple(
-                                &case_id,
-                                MetricType::AnnualHeating,
-                                results.annual_heating_mwh,
-                                data.annual_heating_min,
-                                data.annual_heating_max,
-                            );
-                            report.add_result_simple(
-                                &case_id,
-                                MetricType::AnnualCooling,
-                                results.annual_cooling_mwh,
-                                data.annual_cooling_min,
-                                data.annual_cooling_max,
-                            );
-                            report.add_benchmark_data(&case_id, data);
-                            println!("Case {}: Added to report", case_id);
-                        }
-                    }
-                }
-                _ => {
-                    println!("Unknown diagnostic range: {}", range);
-                }
-            }
-        }
-
-        report.set_end(); // Record end time after all work complete
-                          // Enrich results with multi-reference per-program status if configured
-        if let Some(ref multi_db) = self.multi_ref {
-            report.enrich_with_multi_reference(multi_db);
-        }
         report
     }
 
     fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Plan 03-04: Thermal mass energy accounting removed
-        // Ti_free calculation already includes thermal mass effects via:
-        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
-        // - Thermal capacitance Cm (thermal mass response rate)
-        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
 
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
@@ -1344,8 +914,7 @@ impl ASHRAE140Validator {
                 }
             }
 
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
+            // Positive = heating, negative = cooling
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
             } else {
@@ -1356,7 +925,7 @@ impl ASHRAE140Validator {
         CaseResults {
             annual_heating_mwh: annual_heating_joules / 3.6e9,
             annual_cooling_mwh: annual_cooling_joules / 3.6e9,
-            // Issue #272: Use model's tracked peak power (in watts)
+            // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
@@ -1379,17 +948,9 @@ impl ASHRAE140Validator {
         weather: &DenverTmyWeather,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Attach simulation diagnostics if requested (Phase 5)
-        if self.use_simulation_diagnostics {
-            let diag = SimulationDiagnostics::new(model.num_zones, 8760);
-            model.set_diagnostics(Some(diag));
-        }
-
-        // Plan 03-04: Thermal mass energy accounting removed
-        // Ti_free calculation already includes thermal mass effects via:
-        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
-        // - Thermal capacitance Cm (thermal mass response rate)
-        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
@@ -1528,24 +1089,17 @@ impl ASHRAE140Validator {
                 hourly_data.internal_loads[zone_idx] = load * floor_area;
             }
 
-            // step_physics() returns Watts (instantaneous power), not kWh
-            // Convert Watts × 3600 seconds = Joules for hourly timesteps
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3600.0;
+                annual_heating_joules += hvac_kwh * 3.6e6;
                 let hvac_watts = hvac_kwh * 1000.0;
                 hourly_data.hvac_heating[0] = hvac_watts;
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3600.0;
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
                 hourly_data.hvac_cooling[0] = hvac_watts;
             }
 
             self.diagnostic.record_hour(hourly_data);
-        }
-
-        // Capture simulation diagnostics if enabled
-        if self.use_simulation_diagnostics {
-            self.last_simulation_diagnostics = model.get_diagnostics().cloned();
         }
 
         CaseResults {
@@ -1568,42 +1122,37 @@ impl ASHRAE140Validator {
     }
 }
 
-#[derive(Debug)]
-/// Results of a single ASHRAE 140 case simulation.
-///
-/// Contains annual heating/cooling energy, peak loads, and for free-floating
-/// cases also the minimum and maximum zone temperatures.
-pub struct CaseResults {
-    pub annual_heating_mwh: f64,
-    pub annual_cooling_mwh: f64,
-    pub peak_heating_kw: f64,
-    pub peak_cooling_kw: f64,
+struct CaseResults {
+    annual_heating_mwh: f64,
+    annual_cooling_mwh: f64,
+    peak_heating_kw: f64,
+    peak_cooling_kw: f64,
     /// Minimum zone temperature (°C) for free-floating cases
-    pub min_temp_celsius: Option<f64>,
+    min_temp_celsius: Option<f64>,
     /// Maximum zone temperature (°C) for free-floating cases
-    pub max_temp_celsius: Option<f64>,
+    max_temp_celsius: Option<f64>,
 }
 
 /// Diagnostic data collected during case simulation.
-pub struct CaseDiagnostic {
+struct CaseDiagnostic {
     /// Energy breakdown by component
-    pub energy_breakdown: EnergyBreakdown,
+    energy_breakdown: EnergyBreakdown,
     /// Peak load timing information
-    pub peak_timing: PeakTiming,
+    peak_timing: PeakTiming,
     /// Temperature profile for free-floating cases
-    pub temp_profile: TemperatureProfile,
+    temp_profile: TemperatureProfile,
     /// Hourly data (if collected)
     #[allow(dead_code)]
-    pub hourly_data: Vec<HourlyData>,
+    hourly_data: Vec<HourlyData>,
     /// Issue #432: Thermal mass energy accounting data
     /// Total cumulative mass energy change (J)
-    pub mass_energy_change_joules: f64,
+    mass_energy_change_joules: f64,
     /// Envelope mass cumulative energy change (J) - for 6R2C model
-    pub envelope_mass_energy_change_joules: f64,
+    envelope_mass_energy_change_joules: f64,
     /// Internal mass cumulative energy change (J) - for 6R2C model
-    pub internal_mass_energy_change_joules: f64,
+    internal_mass_energy_change_joules: f64,
     /// Whether thermal mass energy accounting was enabled
-    pub thermal_mass_energy_accounting_enabled: bool,
+    thermal_mass_energy_accounting_enabled: bool,
 }
 
 impl CaseDiagnostic {
@@ -1622,52 +1171,18 @@ impl CaseDiagnostic {
     }
 }
 
-/// Validation result for a single metric.
-pub struct ValidationResult {
-    /// Whether the result is within the reference tolerance range
-    pub in_range: bool,
-    /// Error percentage relative to reference midpoint
-    pub error_pct: f64,
-}
-
-/// Validation report for Case 960.
-pub struct ValidationReport {
-    /// Case identifier
-    pub case_id: String,
-    /// Case description
-    pub description: String,
-    /// Annual heating energy (MWh)
-    pub annual_heating_mwh: f64,
-    /// Annual cooling energy (MWh)
-    pub annual_cooling_mwh: f64,
-    /// Peak heating load (kW)
-    pub peak_heating_kw: f64,
-    /// Peak cooling load (kW)
-    pub peak_cooling_kw: f64,
-    /// Heating energy validation result
-    pub heating_result: ValidationResult,
-    /// Cooling energy validation result
-    pub cooling_result: ValidationResult,
-    /// Peak heating load validation result
-    pub peak_heating_result: ValidationResult,
-    /// Peak cooling load validation result
-    pub peak_cooling_result: ValidationResult,
-}
-
 impl ASHRAE140Validator {
     /// Simulate a case with full diagnostic data collection.
-    pub fn simulate_case_with_diagnostics(
+    fn simulate_case_with_diagnostics(
         &self,
         spec: &CaseSpec,
         weather: &DenverTmyWeather,
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        // Plan 03-04: Thermal mass energy accounting removed
-        // Ti_free calculation already includes thermal mass effects via:
-        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
-        // - Thermal capacitance Cm (thermal mass response rate)
-        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
+        // Disable thermal mass energy accounting for ASHRAE 140 validation
+        // ASHRAE 140 validates steady-state HVAC energy, not long-term consumption
+        model.thermal_mass_energy_accounting = false;
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
@@ -1684,10 +1199,11 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
+        let annual_heating_joules = 0.0;
+        let annual_cooling_joules = 0.0;
+
         let peak_heating_hour: usize = 0;
         let peak_cooling_hour: usize = 0;
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
@@ -1713,9 +1229,6 @@ impl ASHRAE140Validator {
             }
 
             let weather_data = weather.get_hourly_data(step).unwrap();
-
-            // Set weather data on model for solar gain calculations
-            model.set_weather(weather_data.clone());
 
             // Apply dynamic setpoints
             if let Some(hvac_schedule) = spec.hvac.first() {
@@ -1809,14 +1322,6 @@ impl ASHRAE140Validator {
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
-            // Accumulate heating/cooling energy (manual tracking)
-            // step_physics() returns kWh, convert to Joules: kWh * 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
-
             // Track solar gains energy from model for diagnostics (convert W to Joules)
             for zone_idx in 0..num_zones {
                 let floor_area = spec
@@ -1898,7 +1403,7 @@ impl ASHRAE140Validator {
             model.envelope_mass_energy_change_cumulative;
         diagnostic.internal_mass_energy_change_joules =
             model.internal_mass_energy_change_cumulative;
-        diagnostic.thermal_mass_energy_accounting_enabled = false; // Plan 03-04: Removed
+        diagnostic.thermal_mass_energy_accounting_enabled = model.thermal_mass_energy_accounting;
 
         if is_free_floating {
             diagnostic.temp_profile.finalize();
@@ -1922,413 +1427,5 @@ impl ASHRAE140Validator {
         };
 
         (results, diagnostic)
-    }
-
-    /// Validates Case 960 (Sunspace/Multi-zone) against ASHRAE 140 reference.
-    ///
-    /// Tests inter-zone heat transfer between conditioned back-zone and unconditioned sunspace.
-    pub fn validate_case_960(&self) -> ValidationReport {
-        let spec = ASHRAE140Case::Case960.spec();
-        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-        let weather = DenverTmyWeather::new();
-
-        // Reset peak power tracking
-        model.reset_peak_power();
-
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
-
-        // Set hvac_enabled per zone based on HVAC configuration
-        let num_zones = model.num_zones;
-        let mut hvac_enabled_vals = vec![1.0; num_zones];
-        for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
-            if zone_idx < num_zones {
-                hvac_enabled_vals[zone_idx] = if hvac.is_enabled() { 1.0 } else { 0.0 };
-            }
-        }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
-
-        // Run simulation
-        for step in 0..8760 {
-            let weather_data = weather.get_hourly_data(step).unwrap();
-            model.set_weather(weather_data.clone());
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
-        }
-
-        // Use model's internal peak tracking (more accurate than manual calculation)
-        // model.peak_power_heating and model.peak_power_cooling are in Watts, convert to kW
-        let peak_heating_kw = model.peak_power_heating / 1000.0;
-        let peak_cooling_kw = model.peak_power_cooling / 1000.0;
-
-        let annual_heating_mwh = annual_heating_joules / 3.6e9;
-        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
-        // peak_heating_kw and peak_cooling_kw already set above from model's internal tracking
-
-        // Case 960: Convert thermal energy to electrical energy to match ASHRAE reference.
-        // The reference values (EnergyPlus, ESP-r, TRNSYS) report HVAC electricity consumption.
-        // Fluxion's `step_physics` returns thermal loads (heat removed/added). We apply
-        // efficiency factors to convert to electrical energy for fair comparison.
-        // Cooling COP (Coefficient of Performance): 3.0 means 1 unit electricity moves 3 units heat.
-        // Heating efficiency: 0.9 for electric resistance/furnace (typical for ASHRAE 140).
-        let cooling_cop = 3.0;
-        let heating_efficiency = 0.9;
-
-        let annual_heating_electrical_mwh = annual_heating_mwh / heating_efficiency;
-        let annual_cooling_electrical_mwh = annual_cooling_mwh / cooling_cop;
-
-        // Get benchmark data for Case 960
-        let benchmark_data = benchmark::get_benchmark_data("960").unwrap();
-
-        // Use hardcoded tolerances for Case 960 (from plan spec)
-        let annual_tolerance = 0.15; // ±15%
-        let peak_tolerance = 0.10; // ±10%
-
-        // Validate against benchmark using electrical energy (thermal / efficiency)
-        let heating_result = self.validate_energy_against_reference(
-            annual_heating_electrical_mwh,
-            benchmark_data.annual_heating_min,
-            benchmark_data.annual_heating_max,
-            annual_tolerance,
-        );
-
-        let cooling_result = self.validate_energy_against_reference(
-            annual_cooling_electrical_mwh,
-            benchmark_data.annual_cooling_min,
-            benchmark_data.annual_cooling_max,
-            annual_tolerance,
-        );
-
-        let peak_heating_result = self.validate_peak_load_against_reference(
-            peak_heating_kw,
-            benchmark_data.peak_heating_min,
-            benchmark_data.peak_heating_max,
-            peak_tolerance,
-        );
-
-        let peak_cooling_result = self.validate_peak_load_against_reference(
-            peak_cooling_kw,
-            benchmark_data.peak_cooling_min,
-            benchmark_data.peak_cooling_max,
-            peak_tolerance,
-        );
-
-        // Phase 8: COP correction for Case 960 (cooling_cop=3.0, heating_efficiency=0.9)
-        // The ValidationReport stores electrical energy values for Case 960 to match ASHRAE 140 reference
-        ValidationReport {
-            case_id: "960".to_string(),
-            description: "Sunspace - 2-zone building (back-zone + sunspace)".to_string(),
-            annual_heating_mwh: annual_heating_electrical_mwh, // Electrical equivalent (thermal / 0.9)
-            annual_cooling_mwh: annual_cooling_electrical_mwh, // Electrical equivalent (thermal / 3.0)
-            peak_heating_kw,
-            peak_cooling_kw,
-            heating_result,
-            cooling_result,
-            peak_heating_result,
-            peak_cooling_result,
-        }
-    }
-
-    /// Validates energy value against reference range.
-    fn validate_energy_against_reference(
-        &self,
-        actual: f64,
-        ref_min: f64,
-        ref_max: f64,
-        tolerance: f64,
-    ) -> ValidationResult {
-        let ref_mid = (ref_min + ref_max) / 2.0;
-        let ref_half_range = (ref_max - ref_min) / 2.0;
-        let tolerance_range = ref_half_range * (1.0 + tolerance);
-        let in_range =
-            (actual >= ref_mid - tolerance_range) && (actual <= ref_mid + tolerance_range);
-        let error_pct = ((actual - ref_mid).abs() / ref_mid) * 100.0;
-
-        ValidationResult {
-            in_range,
-            error_pct,
-        }
-    }
-
-    /// Validates peak load against reference range.
-    fn validate_peak_load_against_reference(
-        &self,
-        actual: f64,
-        ref_min: f64,
-        ref_max: f64,
-        _tolerance: f64,
-    ) -> ValidationResult {
-        // For peak loads, use min/max directly (not midpoint)
-        let in_range = (actual >= ref_min) && (actual <= ref_max);
-        let ref_mid = (ref_min + ref_max) / 2.0;
-        let error_pct = if ref_mid > 0.0 {
-            ((actual - ref_mid).abs() / ref_mid) * 100.0
-        } else {
-            0.0
-        };
-
-        ValidationResult {
-            in_range,
-            error_pct,
-        }
-    }
-}
-
-/// Validates a single ASHRAE 140 case with optional simulation diagnostics collection.
-///
-/// This function runs the simulation for the given case and returns both the validation
-/// report and (if requested) the detailed hourly diagnostics.
-pub fn validate_case_with_diagnostics(
-    case: ASHRAE140Case,
-    collect_diags: bool,
-) -> (ValidationReport, Option<SimulationDiagnostics>) {
-    // Use a validator instance to access helper methods
-    let validator = ASHRAE140Validator::new();
-    let spec = case.spec();
-    let case_id = case.number().to_string();
-
-    // Create model
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    model.reset_peak_power();
-
-    // Handle free-floating cases
-    if spec.is_free_floating() {
-        model.heating_setpoint = -999.0;
-        model.cooling_setpoint = 999.0;
-        model.hvac_heating_capacity = 0.0;
-        model.hvac_cooling_capacity = 0.0;
-    }
-
-    // Attach diagnostics if requested
-    if collect_diags {
-        let diag = SimulationDiagnostics::new(spec.num_zones, 8760);
-        model.set_diagnostics(Some(diag));
-    }
-
-    let weather = DenverTmyWeather::new();
-
-    // Simulation state
-    let mut annual_heating_joules = 0.0;
-    let mut annual_cooling_joules = 0.0;
-    let mut peak_heating_watts: f64 = 0.0;
-    let mut peak_cooling_watts: f64 = 0.0;
-    let mut min_temp_celsius = f64::INFINITY;
-    let mut max_temp_celsius = f64::NEG_INFINITY;
-
-    // Run simulation for 8760 hours
-    for step in 0..8760 {
-        let weather_data = weather.get_hourly_data(step).unwrap();
-        model.set_weather(weather_data.clone());
-
-        // Apply dynamic setpoints
-        if let Some(hvac_schedule) = spec.hvac.first() {
-            model.heating_setpoint = hvac_schedule.heating_setpoint;
-            model.cooling_setpoint = hvac_schedule.cooling_setpoint;
-        }
-
-        // Step physics (includes diagnostics recording if enabled)
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
-
-        // Energy tracking: step_physics() returns Watts (instantaneous power), not kWh
-        // Convert Watts × 3600 seconds = Joules for hourly timesteps
-        if hvac_kwh > 0.0 {
-            annual_heating_joules += hvac_kwh * 3600.0;
-            peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
-        } else {
-            annual_cooling_joules += (-hvac_kwh) * 3600.0;
-            peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
-        }
-
-        // Free-floating temperature tracking
-        if spec.is_free_floating() {
-            let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
-            if let Some(&t) = zone_temps.first() {
-                min_temp_celsius = min_temp_celsius.min(t);
-                max_temp_celsius = max_temp_celsius.max(t);
-            }
-        }
-    }
-
-    let annual_heating_mwh = annual_heating_joules / 3.6e9;
-    let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
-    let peak_heating_kw = peak_heating_watts / 1000.0;
-    let peak_cooling_kw = peak_cooling_watts / 1000.0;
-
-    // Retrieve diagnostics if collected
-    let diagnostics = model.get_diagnostics().cloned();
-
-    // Load benchmark data for validation
-    let benchmark_data = benchmark::get_benchmark_data(&case_id);
-
-    // Tolerances
-    let annual_tolerance = 0.15; // ±15%
-    let peak_tolerance = 0.10; // ±10%
-
-    // Compute validation results using validator's helper methods
-    let (heating_result, cooling_result, peak_heating_result, peak_cooling_result) =
-        if let Some(data) = benchmark_data {
-            let heating_result = validator.validate_energy_against_reference(
-                annual_heating_mwh,
-                data.annual_heating_min,
-                data.annual_heating_max,
-                annual_tolerance,
-            );
-            let cooling_result = validator.validate_energy_against_reference(
-                annual_cooling_mwh,
-                data.annual_cooling_min,
-                data.annual_cooling_max,
-                annual_tolerance,
-            );
-            let peak_heating_result = if data.peak_heating_min >= 0.0 {
-                validator.validate_peak_load_against_reference(
-                    peak_heating_kw,
-                    data.peak_heating_min,
-                    data.peak_heating_max,
-                    peak_tolerance,
-                )
-            } else {
-                ValidationResult {
-                    in_range: false,
-                    error_pct: 0.0,
-                }
-            };
-            let peak_cooling_result = if data.peak_cooling_min >= 0.0 {
-                validator.validate_peak_load_against_reference(
-                    peak_cooling_kw,
-                    data.peak_cooling_min,
-                    data.peak_cooling_max,
-                    peak_tolerance,
-                )
-            } else {
-                ValidationResult {
-                    in_range: false,
-                    error_pct: 0.0,
-                }
-            };
-            (
-                heating_result,
-                cooling_result,
-                peak_heating_result,
-                peak_cooling_result,
-            )
-        } else {
-            // No reference data available
-            (
-                ValidationResult {
-                    in_range: false,
-                    error_pct: 0.0,
-                },
-                ValidationResult {
-                    in_range: false,
-                    error_pct: 0.0,
-                },
-                ValidationResult {
-                    in_range: false,
-                    error_pct: 0.0,
-                },
-                ValidationResult {
-                    in_range: false,
-                    error_pct: 0.0,
-                },
-            )
-        };
-
-    let report = ValidationReport {
-        case_id,
-        description: case.description().to_string(),
-        annual_heating_mwh,
-        annual_cooling_mwh,
-        peak_heating_kw,
-        peak_cooling_kw,
-        heating_result,
-        cooling_result,
-        peak_heating_result,
-        peak_cooling_result,
-    };
-
-    (report, diagnostics)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
-
-    #[test]
-    fn test_validator_multireference_enrichment() {
-        // This test verifies that the validator automatically loads multi-reference data
-        // and enriches BenchmarkReport with per-program statuses.
-        let validator = ASHRAE140Validator::new();
-        // Skip if multi-reference data not available (e.g., in test environment without the file)
-        if validator.multi_ref.is_none() {
-            eprintln!("Skipping multi-reference test: multi_ref not loaded (file missing?)");
-            return;
-        }
-        let report = validator.validate_analytical_engine();
-
-        // Find a result for case 600 AnnualHeating
-        let result = report
-            .results
-            .iter()
-            .find(|r| r.case_id == "600" && r.metric == MetricType::AnnualHeating)
-            .expect("600 annual heating result missing");
-
-        assert!(
-            result.per_program.is_some(),
-            "per_program should be populated"
-        );
-        let per_prog = result.per_program.as_ref().unwrap();
-        assert!(
-            per_prog.contains_key("EnergyPlus"),
-            "EnergyPlus status missing"
-        );
-        assert!(per_prog.contains_key("ESP-r"), "ESP-r status missing");
-        assert!(per_prog.contains_key("TRNSYS"), "TRNSYS status missing");
-
-        // Check overall status consistency:
-        // PASS if EnergyPlus passes, else WARN if any program passes, else FAIL.
-        let ep_status = per_prog.get("EnergyPlus").unwrap();
-        match *ep_status {
-            ValidationStatus::Pass => {
-                assert!(
-                    matches!(result.status, ValidationStatus::Pass),
-                    "Overall should be PASS when EnergyPlus passes"
-                );
-            }
-            ValidationStatus::Warning => {
-                // EnergyPlus warning - overall could be WARN or FAIL depending on others
-                let any_pass = per_prog
-                    .values()
-                    .any(|s| matches!(s, ValidationStatus::Pass));
-                if any_pass {
-                    assert!(
-                        matches!(result.status, ValidationStatus::Warning)
-                            || matches!(result.status, ValidationStatus::Pass)
-                    );
-                } else {
-                    assert!(matches!(result.status, ValidationStatus::Fail));
-                }
-            }
-            ValidationStatus::Fail => {
-                // EnergyPlus fails - overall is WARN if any other passes, else FAIL
-                let any_pass = per_prog
-                    .values()
-                    .any(|s| matches!(s, ValidationStatus::Pass));
-                if any_pass {
-                    assert!(matches!(result.status, ValidationStatus::Warning));
-                } else {
-                    assert!(matches!(result.status, ValidationStatus::Fail));
-                }
-            }
-        }
     }
 }

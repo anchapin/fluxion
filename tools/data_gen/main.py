@@ -104,17 +104,10 @@ def main():
         "monte-carlo", help="Generate training data using Monte Carlo methods"
     )
     mc_parser.add_argument(
-        "--output",
-        "-o",
-        default="data/training_data",
-        help="Output directory for Parquet files",
+        "--output", "-o", default="data/training_data", help="Output directory for Parquet files"
     )
     mc_parser.add_argument(
-        "--count",
-        "-n",
-        type=int,
-        default=1000,
-        help="Number of building configurations to simulate",
+        "--count", "-n", type=int, default=1000, help="Number of building configurations to simulate"
     )
     mc_parser.add_argument(
         "--seed", type=int, default=42, help="Random seed for reproducibility"
@@ -123,15 +116,11 @@ def main():
         "--batch-size", type=int, default=100, help="Batch size for processing"
     )
     mc_parser.add_argument(
-        "--weather-dir",
-        default="assets/weather",
-        help="Directory containing weather files",
+        "--weather-dir", default="assets/weather", help="Directory containing weather files"
     )
     mc_parser.add_argument(
-        "--sampling-method",
-        default="LHS",
-        choices=["RANDOM", "LHS", "SOBOL"],
-        help="Sampling method for parameter space",
+        "--sampling-method", default="LHS", choices=["RANDOM", "LHS", "SOBOL"],
+        help="Sampling method for parameter space"
     )
 
     args = parser.parse_args()

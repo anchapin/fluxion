@@ -17,7 +17,7 @@ import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -27,7 +27,6 @@ logger = logging.getLogger(__name__)
 
 class LoadBalancingStrategy(str, Enum):
     """Supported load balancing strategies."""
-
     ROUND_ROBIN = "round_robin"
     LEAST_CONNECTIONS = "least_connections"
     WEIGHTED = "weighted"
@@ -36,7 +35,6 @@ class LoadBalancingStrategy(str, Enum):
 
 class EndpointStatus(str, Enum):
     """Endpoint health status."""
-
     HEALTHY = "healthy"
     UNHEALTHY = "unhealthy"
     DEGRADED = "degraded"
@@ -46,7 +44,6 @@ class EndpointStatus(str, Enum):
 @dataclass
 class EndpointConfig:
     """Configuration for a single inference endpoint."""
-
     url: str
     weight: int = 1  # Weight for weighted load balancing
     max_retries: int = 3
@@ -59,7 +56,6 @@ class EndpointConfig:
 @dataclass
 class Endpoint:
     """Represents a single inference endpoint with health tracking."""
-
     config: EndpointConfig
     status: EndpointStatus = EndpointStatus.UNKNOWN
     current_connections: int = 0
@@ -95,7 +91,6 @@ class Endpoint:
 
 class HealthCheckProtocol(Protocol):
     """Protocol for custom health check implementations."""
-
     async def check_health(self, endpoint: Endpoint) -> bool:
         """Check if endpoint is healthy."""
         ...
@@ -140,7 +135,7 @@ class RoundRobinLoadBalancer(LoadBalancer):
     """Round-robin load balancing strategy."""
 
     def __init__(self):
-        self._current_index: Dict[int, int] = {}  # key (id) -> index
+        self._current_index: Dict[str, int] = {}  # key -> index
 
     def select_endpoint(self, endpoints: List[Endpoint]) -> Optional[Endpoint]:
         """Select next endpoint in round-robin fashion."""
@@ -193,7 +188,7 @@ class WeightedLoadBalancer(LoadBalancer):
     """Weighted load balancing strategy."""
 
     def __init__(self):
-        self._current_index: Dict[int, int] = {}
+        self._current_index: Dict[str, int] = {}
 
     def select_endpoint(self, endpoints: List[Endpoint]) -> Optional[Endpoint]:
         """Select endpoint based on weight and round-robin."""
@@ -257,9 +252,7 @@ class ConsistentHashLoadBalancer(LoadBalancer):
 
         self._sorted_keys = sorted(self._hash_ring.keys())
 
-    def select_endpoint(
-        self, endpoints: List[Endpoint], request_key: str = ""
-    ) -> Optional[Endpoint]:
+    def select_endpoint(self, endpoints: List[Endpoint], request_key: str = "") -> Optional[Endpoint]:
         """Select endpoint using consistent hashing."""
         self._build_ring(endpoints)
 
@@ -308,7 +301,7 @@ class DistributedInferenceManager:
         health_check: Optional[HealthCheckProtocol] = None,
         health_check_interval: float = 30.0,
         default_timeout: float = 30.0,
-        max_retries: int = 3,
+        max_retries: int = 3
     ):
         self._endpoints: Dict[str, Endpoint] = {}
         self._strategy = strategy
@@ -378,14 +371,10 @@ class DistributedInferenceManager:
             endpoint.consecutive_successes += 1
             endpoint.consecutive_failures = 0
 
-            if (
-                endpoint.consecutive_successes >= endpoint.config.recovery_threshold
-                and endpoint.status == EndpointStatus.UNHEALTHY
-            ):
+            if (endpoint.consecutive_successes >= endpoint.config.recovery_threshold
+                and endpoint.status == EndpointStatus.UNHEALTHY):
                 endpoint.status = EndpointStatus.DEGRADED
-                logger.info(
-                    f"Endpoint {endpoint.config.url} recovered to degraded state"
-                )
+                logger.info(f"Endpoint {endpoint.config.url} recovered to degraded state")
 
             if endpoint.status == EndpointStatus.UNKNOWN:
                 endpoint.status = EndpointStatus.HEALTHY
@@ -397,9 +386,7 @@ class DistributedInferenceManager:
             if endpoint.consecutive_failures >= endpoint.config.failure_threshold:
                 if endpoint.status != EndpointStatus.UNHEALTHY:
                     endpoint.status = EndpointStatus.UNHEALTHY
-                    logger.warning(
-                        f"Endpoint {endpoint.config.url} marked as unhealthy"
-                    )
+                    logger.warning(f"Endpoint {endpoint.config.url} marked as unhealthy")
 
     def add_endpoint(self, config: EndpointConfig):
         """Add an inference endpoint."""
@@ -431,7 +418,11 @@ class DistributedInferenceManager:
         return self._load_balancer.select_endpoint(healthy)
 
     async def _execute_request(
-        self, endpoint: Endpoint, method: str, path: str, **kwargs
+        self,
+        endpoint: Endpoint,
+        method: str,
+        path: str,
+        **kwargs
     ) -> httpx.Response:
         """Execute a request to an endpoint with retry logic."""
         url = f"{endpoint.config.url.rstrip('/')}{path}"
@@ -457,7 +448,7 @@ class DistributedInferenceManager:
 
             return response
 
-        except (httpx.TimeoutException, httpx.ConnectError):
+        except (httpx.TimeoutException, httpx.ConnectError) as e:
             async with self._lock:
                 endpoint.failed_requests += 1
                 endpoint.current_connections = max(0, endpoint.current_connections - 1)
@@ -478,7 +469,7 @@ class DistributedInferenceManager:
         path: str,
         retries: Optional[int] = None,
         request_key: str = "",  # For consistent hash
-        **kwargs,
+        **kwargs
     ) -> httpx.Response:
         """
         Make a distributed request with automatic failover.
@@ -505,7 +496,7 @@ class DistributedInferenceManager:
             if endpoint is None:
                 if attempt == max_retries:
                     raise httpx.HTTPError("No healthy endpoints available")
-                await asyncio.sleep(0.1 * (2**attempt))  # Exponential backoff
+                await asyncio.sleep(0.1 * (2 ** attempt))  # Exponential backoff
                 continue
 
             self.total_requests += 1
@@ -517,17 +508,13 @@ class DistributedInferenceManager:
             except Exception as e:
                 last_error = e
                 self.total_failures += 1
-                logger.warning(
-                    f"Request to {endpoint.config.url} failed (attempt {attempt + 1}): {e}"
-                )
+                logger.warning(f"Request to {endpoint.config.url} failed (attempt {attempt + 1}): {e}")
 
                 if attempt < max_retries:
                     # Exponential backoff
-                    await asyncio.sleep(0.1 * (2**attempt))
+                    await asyncio.sleep(0.1 * (2 ** attempt))
 
-        raise httpx.HTTPError(
-            f"All endpoints failed after {max_retries + 1} attempts: {last_error}"
-        )
+        raise httpx.HTTPError(f"All endpoints failed after {max_retries + 1} attempts: {last_error}")
 
     async def get(self, path: str, **kwargs) -> httpx.Response:
         """Make a GET request."""
@@ -538,7 +525,9 @@ class DistributedInferenceManager:
         return await self.request("POST", path, **kwargs)
 
     async def evaluate_population(
-        self, population: List[List[float]], use_surrogates: bool = True
+        self,
+        population: List[List[float]],
+        use_surrogates: bool = True
     ) -> Dict[str, Any]:
         """
         Evaluate a population of building designs using distributed inference.
@@ -552,7 +541,10 @@ class DistributedInferenceManager:
         """
         response = await self.post(
             "/evaluate",
-            json={"population": population, "use_surrogates": use_surrogates},
+            json={
+                "population": population,
+                "use_surrogates": use_surrogates
+            }
         )
         response.raise_for_status()
         return response.json()
@@ -562,18 +554,16 @@ class DistributedInferenceManager:
         endpoints_status = []
 
         for endpoint in self.list_endpoints():
-            endpoints_status.append(
-                {
-                    "url": endpoint.config.url,
-                    "status": endpoint.status.value,
-                    "current_connections": endpoint.current_connections,
-                    "total_requests": endpoint.total_requests,
-                    "successful_requests": endpoint.successful_requests,
-                    "failed_requests": endpoint.failed_requests,
-                    "average_response_time_ms": endpoint.average_response_time * 1000,
-                    "last_health_check": endpoint.last_health_check,
-                }
-            )
+            endpoints_status.append({
+                "url": endpoint.config.url,
+                "status": endpoint.status.value,
+                "current_connections": endpoint.current_connections,
+                "total_requests": endpoint.total_requests,
+                "successful_requests": endpoint.successful_requests,
+                "failed_requests": endpoint.failed_requests,
+                "average_response_time_ms": endpoint.average_response_time * 1000,
+                "last_health_check": endpoint.last_health_check
+            })
 
         healthy_count = len([e for e in self._endpoints.values() if e.is_healthy])
 
@@ -581,7 +571,7 @@ class DistributedInferenceManager:
             "total_endpoints": len(self._endpoints),
             "healthy_endpoints": healthy_count,
             "strategy": self._strategy.value,
-            "endpoints": endpoints_status,
+            "endpoints": endpoints_status
         }
 
     def get_metrics(self) -> Dict[str, Any]:
@@ -591,8 +581,7 @@ class DistributedInferenceManager:
             "total_failures": self.total_failures,
             "success_rate": (
                 (self.total_requests - self.total_failures) / self.total_requests * 100
-                if self.total_requests > 0
-                else 0
+                if self.total_requests > 0 else 0
             ),
             "endpoints": {
                 url: {
@@ -600,10 +589,10 @@ class DistributedInferenceManager:
                     "total_requests": ep.total_requests,
                     "successful_requests": ep.successful_requests,
                     "failed_requests": ep.failed_requests,
-                    "average_response_time_ms": ep.average_response_time * 1000,
+                    "average_response_time_ms": ep.average_response_time * 1000
                 }
                 for url, ep in self._endpoints.items()
-            },
+            }
         }
 
 
@@ -621,7 +610,7 @@ def initialize_inference_manager(
     strategy: LoadBalancingStrategy = LoadBalancingStrategy.ROUND_ROBIN,
     health_check_interval: float = 30.0,
     default_timeout: float = 30.0,
-    max_retries: int = 3,
+    max_retries: int = 3
 ) -> DistributedInferenceManager:
     """
     Initialize the global inference manager.
@@ -642,7 +631,7 @@ def initialize_inference_manager(
         strategy=strategy,
         health_check_interval=health_check_interval,
         default_timeout=default_timeout,
-        max_retries=max_retries,
+        max_retries=max_retries
     )
 
     for config in endpoints:

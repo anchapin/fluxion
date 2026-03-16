@@ -5,16 +5,15 @@ This module provides templated prompts that inject building energy metrics
 into an LLM context window for generating ASHRAE 90.1 and IECC compliance reports.
 """
 
+from typing import Dict, Any, List, Optional
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, Optional
 
 from api.compliance.data_aggregation import ComplianceMetrics
 
 
 class ComplianceStandard(Enum):
     """Supported compliance standards."""
-
     ASHRAE_90_1_2019 = "ASHRAE 90.1-2019"
     ASHRAE_90_1_2022 = "ASHRAE 90.1-2022"
     IECC_2021 = "IECC 2021"
@@ -23,7 +22,6 @@ class ComplianceStandard(Enum):
 
 class ReportFormat(Enum):
     """Output format for compliance reports."""
-
     MARKDOWN = "markdown"
     PDF = "pdf"
     JSON = "json"
@@ -33,7 +31,6 @@ class ReportFormat(Enum):
 @dataclass
 class PromptTemplate:
     """Container for prompt templates."""
-
     system_prompt: str
     user_prompt_template: str
     description: str
@@ -75,9 +72,7 @@ class CompliancePromptEngine:
         },
     }
 
-    def __init__(
-        self, standard: ComplianceStandard = ComplianceStandard.ASHRAE_90_1_2019
-    ):
+    def __init__(self, standard: ComplianceStandard = ComplianceStandard.ASHRAE_90_1_2019):
         """
         Initialize the prompt engine.
 
@@ -111,19 +106,21 @@ class CompliancePromptEngine:
 
         # Build user prompt
         user_prompt = self._build_user_prompt(
-            metrics_context, baseline_metrics is not None, report_format
+            metrics_context,
+            baseline_metrics is not None,
+            report_format
         )
 
         return PromptTemplate(
             system_prompt=system_prompt,
             user_prompt_template=user_prompt,
-            description=f"Generate {report_format.value} compliance report",
+            description=f"Generate {report_format.value} compliance report"
         )
 
     def _build_metrics_context(
         self,
         metrics: ComplianceMetrics,
-        baseline_metrics: Optional[ComplianceMetrics] = None,
+        baseline_metrics: Optional[ComplianceMetrics] = None
     ) -> str:
         """
         Build the metrics context string for the prompt.
@@ -148,9 +145,7 @@ class CompliancePromptEngine:
         # Annual Energy
         lines.append("# Annual Energy Consumption")
         lines.append(f"- Total Energy: {metrics.total_energy_kwh:,.1f} kWh")
-        lines.append(
-            f"- Energy Use Intensity (EUI): {metrics.total_eui_kwh_m2:.2f} kWh/m²/year"
-        )
+        lines.append(f"- Energy Use Intensity (EUI): {metrics.total_eui_kwh_m2:.2f} kWh/m²/year")
         lines.append(f"- Annual Energy Cost: ${metrics.annual_energy_cost_usd:,.2f}")
         lines.append("")
 
@@ -158,9 +153,7 @@ class CompliancePromptEngine:
         lines.append("# Peak Loads")
         lines.append(f"- Peak Heating: {metrics.peak_heating_load_kw:.1f} kW")
         lines.append(f"- Peak Cooling: {metrics.peak_cooling_load_kw:.1f} kW")
-        lines.append(
-            f"- Peak Electric Demand: {metrics.peak_electric_demand_kw:.1f} kW"
-        )
+        lines.append(f"- Peak Electric Demand: {metrics.peak_electric_demand_kw:.1f} kW")
         lines.append("")
 
         # Unmet Hours
@@ -185,22 +178,15 @@ class CompliancePromptEngine:
 
             # Calculate improvements
             energy_reduction = (
-                (
-                    (baseline_metrics.total_energy_kwh - metrics.total_energy_kwh)
-                    / baseline_metrics.total_energy_kwh
-                    * 100
-                )
-                if baseline_metrics.total_energy_kwh > 0
-                else 0
-            )
+                (baseline_metrics.total_energy_kwh - metrics.total_energy_kwh) /
+                baseline_metrics.total_energy_kwh * 100
+            ) if baseline_metrics.total_energy_kwh > 0 else 0
 
             cost_savings = (
                 baseline_metrics.annual_energy_cost_usd - metrics.annual_energy_cost_usd
             )
 
-            lines.append(
-                f"- Baseline EUI: {baseline_metrics.total_eui_kwh_m2:.2f} kWh/m²/year"
-            )
+            lines.append(f"- Baseline EUI: {baseline_metrics.total_eui_kwh_m2:.2f} kWh/m²/year")
             lines.append(f"- Proposed EUI: {metrics.total_eui_kwh_m2:.2f} kWh/m²/year")
             lines.append(f"- Energy Reduction: {energy_reduction:.1f}%")
             lines.append(f"- Annual Cost Savings: ${cost_savings:,.2f}")
@@ -229,10 +215,7 @@ Specifically, you understand Appendix G: Performance Rating Method and can gener
             base_system += """
 You are familiar with ASHRAE Standard 90.1-2022 (Energy Standard for Buildings Except Low-Rise Residential Buildings).
 Specifically, you understand Appendix G: Performance Rating Method and can generate compliance documentation."""
-        elif self.standard in (
-            ComplianceStandard.IECC_2021,
-            ComplianceStandard.IECC_2024,
-        ):
+        elif self.standard in (ComplianceStandard.IECC_2021, ComplianceStandard.IECC_2024):
             base_system += """
 You are familiar with the International Energy Conservation Code (IECC) and its compliance requirements.
 You understand the performance-based and prescriptive compliance paths."""
@@ -246,7 +229,10 @@ Include a summary section at the beginning."""
         return base_system
 
     def _build_user_prompt(
-        self, metrics_context: str, has_baseline: bool, report_format: ReportFormat
+        self,
+        metrics_context: str,
+        has_baseline: bool,
+        report_format: ReportFormat
     ) -> str:
         """
         Build the user prompt.
@@ -313,18 +299,12 @@ Use the following compliance criteria:
         """
         # Calculate key metrics
         energy_reduction = (
-            (
-                (baseline_metrics.total_energy_kwh - proposed_metrics.total_energy_kwh)
-                / baseline_metrics.total_energy_kwh
-                * 100
-            )
-            if baseline_metrics.total_energy_kwh > 0
-            else 0
-        )
+            (baseline_metrics.total_energy_kwh - proposed_metrics.total_energy_kwh) /
+            baseline_metrics.total_energy_kwh * 100
+        ) if baseline_metrics.total_energy_kwh > 0 else 0
 
         cost_savings = (
-            baseline_metrics.annual_energy_cost_usd
-            - proposed_metrics.annual_energy_cost_usd
+            baseline_metrics.annual_energy_cost_usd - proposed_metrics.annual_energy_cost_usd
         )
 
         system_prompt = """You are a building code compliance officer.
@@ -341,12 +321,12 @@ Provide a clear YES or NO determination with supporting rationale."""
 - Peak Cooling: {baseline_metrics.peak_cooling_load_kw:.1f} kW
 
 **Proposed Building:**
-- Annual Energy: {proposed_metrics.total_energy_kwh:,.0f} kWh
-- EUI: {proposed_metrics.total_eui_kwh_m2:.2f} kWh/m²/year
-- Annual Cost: ${proposed_metrics.annual_energy_cost_usd:,.2f}
-- Peak Heating: {proposed_metrics.peak_heating_load_kw:.1f} kW
-- Peak Cooling: {proposed_metrics.peak_cooling_load_kw:.1f} kW
-- Unmet Hours: {proposed_metrics.total_unmet_hours:.0f}
+- Annual Energy: { proposed_metrics.total_energy_kwh:,.0f} kWh
+- EUI: { proposed_metrics.total_eui_kwh_m2:.2f} kWh/m²/year
+- Annual Cost: ${ proposed_metrics.annual_energy_cost_usd:,.2f}
+- Peak Heating: { proposed_metrics.peak_heating_load_kw:.1f} kW
+- Peak Cooling: { proposed_metrics.peak_cooling_load_kw:.1f} kW
+- Unmet Hours: { proposed_metrics.total_unmet_hours:.0f}
 
 **Performance Improvement:**
 - Energy Reduction: {energy_reduction:.1f}%
@@ -363,7 +343,7 @@ Provide:
         return PromptTemplate(
             system_prompt=system_prompt,
             user_prompt_template=user_prompt,
-            description="ASHRAE 90.1 compliance determination",
+            description="ASHRAE 90.1 compliance determination"
         )
 
     def create_json_prompt(

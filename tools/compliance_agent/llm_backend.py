@@ -20,7 +20,6 @@ logger = logging.getLogger(__name__)
 @dataclass
 class LLMResponse:
     """Response from an LLM backend."""
-
     content: str
     model: str
     usage: Dict[str, int]
@@ -37,7 +36,7 @@ class LLMBackend(ABC):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        **kwargs,
+        **kwargs
     ) -> LLMResponse:
         """Generate a response from the LLM."""
         pass
@@ -65,7 +64,9 @@ class MockLLMBackend(LLMBackend):
     """
 
     def __init__(
-        self, response_delay_ms: float = 100.0, response_template: Optional[str] = None
+        self,
+        response_delay_ms: float = 100.0,
+        response_template: Optional[str] = None
     ):
         """
         Initialize the mock backend.
@@ -90,7 +91,7 @@ class MockLLMBackend(LLMBackend):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        **kwargs,
+        **kwargs
     ) -> LLMResponse:
         """Generate a mock response."""
         self._call_count += 1
@@ -113,57 +114,49 @@ class MockLLMBackend(LLMBackend):
             model="mock-llm",
             usage={"prompt_tokens": 100, "completion_tokens": 50, "total_tokens": 150},
             latency_ms=self._response_delay_ms,
-            raw_response={"mock": True, "call_number": self._call_count},
+            raw_response={"mock": True, "call_number": self._call_count}
         )
 
     def _generate_response(self, prompt: str) -> str:
         """Generate a mock response based on the prompt content."""
         prompt_lower = prompt.lower()
 
-        if (
-            "compliance" in prompt_lower
-            or "ashrae" in prompt_lower
-            or "iecc" in prompt_lower
-        ):
-            return json.dumps(
-                {
-                    "compliance_checks": [
-                        {
-                            "rule_id": "5.1.1",
-                            "status": "COMPLIANT",
-                            "message": "Building envelope thermal resistance meets minimum R-value requirements.",
-                            "details": {"wall_r_value": 15.0, "required": 13.0},
-                        },
-                        {
-                            "rule_id": "5.1.2",
-                            "status": "NON_COMPLIANT",
-                            "message": "Window U-factor exceeds maximum allowed value.",
-                            "details": {"window_u_factor": 0.50, "required_max": 0.40},
-                            "recommendation": "Replace windows with high-performance glazing (U-factor <= 0.40)",
-                        },
-                        {
-                            "rule_id": "6.1.1",
-                            "status": "COMPLIANT",
-                            "message": "HVAC equipment efficiency meets requirements.",
-                            "details": {"cop": 3.5, "required_min": 3.0},
-                        },
-                    ],
-                    "overall_status": "NEEDS_REVIEW",
-                    "summary": {
-                        "total_checks": 3,
-                        "compliant": 2,
-                        "non_compliant": 1,
-                        "needs_review": 0,
+        if "compliance" in prompt_lower or "ashrae" in prompt_lower or "iecc" in prompt_lower:
+            return json.dumps({
+                "compliance_checks": [
+                    {
+                        "rule_id": "5.1.1",
+                        "status": "COMPLIANT",
+                        "message": "Building envelope thermal resistance meets minimum R-value requirements.",
+                        "details": {"wall_r_value": 15.0, "required": 13.0}
                     },
+                    {
+                        "rule_id": "5.1.2",
+                        "status": "NON_COMPLIANT",
+                        "message": "Window U-factor exceeds maximum allowed value.",
+                        "details": {"window_u_factor": 0.50, "required_max": 0.40},
+                        "recommendation": "Replace windows with high-performance glazing (U-factor <= 0.40)"
+                    },
+                    {
+                        "rule_id": "6.1.1",
+                        "status": "COMPLIANT",
+                        "message": "HVAC equipment efficiency meets requirements.",
+                        "details": {"cop": 3.5, "required_min": 3.0}
+                    }
+                ],
+                "overall_status": "NEEDS_REVIEW",
+                "summary": {
+                    "total_checks": 3,
+                    "compliant": 2,
+                    "non_compliant": 1,
+                    "needs_review": 0
                 }
-            )
+            })
         else:
-            return json.dumps(
-                {
-                    "response": "This is a mock response from the compliance agent.",
-                    "message": "The model data has been analyzed successfully.",
-                }
-            )
+            return json.dumps({
+                "response": "This is a mock response from the compliance agent.",
+                "message": "The model data has been analyzed successfully."
+            })
 
 
 class OllamaBackend(LLMBackend):
@@ -177,7 +170,7 @@ class OllamaBackend(LLMBackend):
         self,
         model: str = "llama2",
         base_url: str = "http://localhost:11434",
-        timeout: int = 120,
+        timeout: int = 120
     ):
         """
         Initialize the Ollama backend.
@@ -200,7 +193,6 @@ class OllamaBackend(LLMBackend):
         """Get or create the HTTP client."""
         if self._client is None:
             import httpx
-
             self._client = httpx.Client(timeout=self._timeout)
         return self._client
 
@@ -223,7 +215,7 @@ class OllamaBackend(LLMBackend):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        **kwargs,
+        **kwargs
     ) -> LLMResponse:
         """Generate a response using Ollama."""
         import httpx
@@ -239,7 +231,10 @@ class OllamaBackend(LLMBackend):
             if role == "system":
                 system_message = content
             else:
-                ollama_messages.append({"role": role, "content": content})
+                ollama_messages.append({
+                    "role": role,
+                    "content": content
+                })
 
         # Build the prompt
         if system_message:
@@ -269,8 +264,8 @@ class OllamaBackend(LLMBackend):
                     "options": {
                         "temperature": temperature,
                         "num_predict": max_tokens,
-                    },
-                },
+                    }
+                }
             )
             response.raise_for_status()
             result = response.json()
@@ -283,11 +278,10 @@ class OllamaBackend(LLMBackend):
                 usage={
                     "prompt_tokens": result.get("prompt_eval_count", 0),
                     "completion_tokens": result.get("eval_count", 0),
-                    "total_tokens": result.get("prompt_eval_count", 0)
-                    + result.get("eval_count", 0),
+                    "total_tokens": result.get("prompt_eval_count", 0) + result.get("eval_count", 0)
                 },
                 latency_ms=latency_ms,
-                raw_response=result,
+                raw_response=result
             )
         except httpx.HTTPError as e:
             raise RuntimeError(f"Ollama request failed: {e}")
@@ -305,7 +299,7 @@ class OpenAIBackend(LLMBackend):
         model: str = "gpt-4",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
-        timeout: int = 120,
+        timeout: int = 120
     ):
         """
         Initialize the OpenAI backend.
@@ -325,9 +319,7 @@ class OpenAIBackend(LLMBackend):
         self._client = None
 
         if not self._api_key:
-            logger.warning(
-                "OpenAI API key not provided. Set OPENAI_API_KEY environment variable."
-            )
+            logger.warning("OpenAI API key not provided. Set OPENAI_API_KEY environment variable.")
 
     @property
     def name(self) -> str:
@@ -338,16 +330,13 @@ class OpenAIBackend(LLMBackend):
         if self._client is None:
             try:
                 from openai import OpenAI
-
                 self._client = OpenAI(
                     api_key=self._api_key,
                     base_url=self._base_url,
-                    timeout=self._timeout,
+                    timeout=self._timeout
                 )
             except ImportError:
-                raise ImportError(
-                    "openai package is required. Install with: pip install openai"
-                )
+                raise ImportError("openai package is required. Install with: pip install openai")
         return self._client
 
     def is_available(self) -> bool:
@@ -368,7 +357,7 @@ class OpenAIBackend(LLMBackend):
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
-        **kwargs,
+        **kwargs
     ) -> LLMResponse:
         """Generate a response using OpenAI."""
         start_time = time.time()
@@ -380,7 +369,7 @@ class OpenAIBackend(LLMBackend):
                 messages=messages,
                 temperature=temperature,
                 max_tokens=max_tokens,
-                **kwargs,
+                **kwargs
             )
 
             latency_ms = (time.time() - start_time) * 1000
@@ -392,20 +381,12 @@ class OpenAIBackend(LLMBackend):
                 content=content,
                 model=response.model,
                 usage={
-                    "prompt_tokens": (
-                        response.usage.prompt_tokens if response.usage else 0
-                    ),
-                    "completion_tokens": (
-                        response.usage.completion_tokens if response.usage else 0
-                    ),
-                    "total_tokens": (
-                        response.usage.total_tokens if response.usage else 0
-                    ),
+                    "prompt_tokens": response.usage.prompt_tokens if response.usage else 0,
+                    "completion_tokens": response.usage.completion_tokens if response.usage else 0,
+                    "total_tokens": response.usage.total_tokens if response.usage else 0
                 },
                 latency_ms=latency_ms,
-                raw_response=(
-                    response.model_dump() if hasattr(response, "model_dump") else {}
-                ),
+                raw_response=response.model_dump() if hasattr(response, 'model_dump') else {}
             )
         except Exception as e:
             raise RuntimeError(f"OpenAI request failed: {e}")
@@ -421,7 +402,11 @@ class LLMBackendFactory:
     }
 
     @classmethod
-    def create(cls, backend: str, **kwargs) -> LLMBackend:
+    def create(
+        cls,
+        backend: str,
+        **kwargs
+    ) -> LLMBackend:
         """
         Create an LLM backend instance.
 
@@ -451,7 +436,10 @@ class LLMBackendFactory:
         return list(cls._backends.keys())
 
 
-def create_backend(backend: Union[str, LLMBackend], **kwargs) -> LLMBackend:
+def create_backend(
+    backend: Union[str, LLMBackend],
+    **kwargs
+) -> LLMBackend:
     """
     Create an LLM backend from a string or existing instance.
 

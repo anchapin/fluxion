@@ -19,7 +19,7 @@ def run_benchmark(
     batch_sizes: List[int],
     num_iterations: int = 100,
     warmup_iterations: int = 10,
-) -> List[Dict]:
+) -> Dict:
     """
     Run benchmark for different batch sizes.
 
@@ -62,16 +62,14 @@ def run_benchmark(
         }
         results.append(result)
 
-        print(
-            f"Batch {batch_size:4d}: {avg_time_per_batch_ms:8.2f} ms/batch, "
-            f"{avg_time_per_item_us:7.2f} μs/item, "
-            f"{throughput:8.0f} items/sec"
-        )
+        print(f"Batch {batch_size:4d}: {avg_time_per_batch_ms:8.2f} ms/batch, "
+              f"{avg_time_per_item_us:7.2f} μs/item, "
+              f"{throughput:8.0f} items/sec")
 
     return results
 
 
-def find_optimal_batch_size(results: List[Dict], metric: str = "throughput") -> int:
+def find_optimal_batch_size(results: Dict, metric: str = "throughput") -> int:
     """Find optimal batch size based on metric."""
     if metric == "throughput":
         return max(results, key=lambda x: x["throughput"])["batch_size"]
@@ -155,16 +153,12 @@ def main():
     print("RECOMMENDATIONS")
     print("=" * 50)
     print(f"For maximum throughput: Use batch size {optimal}")
-    print(
-        f"  - Achieves {next(r['throughput'] for r in results if r['batch_size'] == optimal):.0f} items/sec"
-    )
+    print(f"  - Achieves {next(r['throughput'] for r in results if r['batch_size'] == optimal):.0f} items/sec")
 
     # Find latency-optimal
     latency_optimal = find_optimal_batch_size(results, "latency")
     print(f"\nFor minimum latency: Use batch size {latency_optimal}")
-    print(
-        f"  - Achieves {next(r['avg_time_per_item_us'] for r in results if r['batch_size'] == latency_optimal):.2f} μs/item"
-    )
+    print(f"  - Achieves {next(r['avg_time_per_item_us'] for r in results if r['batch_size'] == latency_optimal):.2f} μs/item")
 
 
 if __name__ == "__main__":
