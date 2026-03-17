@@ -1001,7 +1001,7 @@ impl BatchOracle {
                                 let loads =
                                     rx.recv().expect("Failed to receive loads from service");
                                 model.set_loads(&loads);
-                                energy += model.step_physics(t, outdoor_temp);
+                                energy += model.step_physics(t, outdoor_temp, 3600.0);
                             }
                             let _ = res_tx.send((idx, model, energy));
                         });
@@ -1107,6 +1107,7 @@ impl BatchOracle {
                             None,
                             None,
                             None,
+                            3600.0, // dt_seconds
                         );
                     }
                 });
@@ -1376,6 +1377,7 @@ impl BatchOracle {
                             None,
                             None,
                             None,
+                            3600.0, // dt_seconds
                         );
                     }
                 });

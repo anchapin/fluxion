@@ -1,3 +1,4 @@
+pub mod adaptive_timestep;
 pub mod assembly;
 pub mod boundary;
 pub mod components;

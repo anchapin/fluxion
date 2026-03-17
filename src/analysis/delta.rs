@@ -326,7 +326,7 @@ fn run_simulation(spec: &CaseSpec, collect_hourly: bool) -> Result<SimulationRes
         model.set_loads(&internal_loads_density);
 
         // Step physics
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Accumulate energy (convert kWh to Joules)
         if hvac_kwh > 0.0 {

@@ -234,7 +234,7 @@ impl Case600Model {
             self.model.set_loads(&[load_per_area]);
 
             // Solve physics for this hour
-            let hvac_kwh = self.model.step_physics(step, dry_bulb);
+            let hvac_kwh = self.model.step_physics(step, dry_bulb, 3600.0);
 
             // Positive = heating (energy added to building), negative = cooling (energy removed)
             // hvac_kwh is the HVAC energy for 1 hour timestep.

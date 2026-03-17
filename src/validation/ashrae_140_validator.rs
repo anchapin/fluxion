@@ -742,7 +742,7 @@ impl ASHRAE140Validator {
 
             model.set_loads(&internal_loads);
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
@@ -1333,7 +1333,7 @@ impl ASHRAE140Validator {
             }
             model.set_loads(&internal_loads);
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
@@ -1499,7 +1499,7 @@ impl ASHRAE140Validator {
             }
             model.set_loads(&internal_loads);
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
@@ -1807,7 +1807,7 @@ impl ASHRAE140Validator {
             // Apply internal loads
             model.set_loads(&internal_loads_per_zone);
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // Accumulate heating/cooling energy (manual tracking)
             // step_physics() returns kWh, convert to Joules: kWh * 3.6e6 = Joules
@@ -1954,7 +1954,7 @@ impl ASHRAE140Validator {
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
             model.set_weather(weather_data.clone());
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // step_physics() returns kWh (energy for the timestep)
             // Convert kWh to Joules: kWh × 3.6e6 = Joules
@@ -2136,7 +2136,7 @@ pub fn validate_case_with_diagnostics(
         }
 
         // Step physics (includes diagnostics recording if enabled)
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Energy tracking: step_physics() returns Watts (instantaneous power), not kWh
         // Convert Watts × 3600 seconds = Joules for hourly timesteps

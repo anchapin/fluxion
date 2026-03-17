@@ -1457,12 +1457,12 @@ impl ThermalModel<VectorField> {
         model.window_orientations = window_orients_vec;
 
         // Configure 6R2C model for high-mass cases (900 series)
-        // This improves accuracy for thermal lag in heavy concrete buildings
-        // Plan 03-07: Disable 6R2C for Case 900 to fix annual energy over-prediction
-        // The 6R2C model was causing excessive HVAC runtime (78.4% of time)
-        // and annual energy over-prediction (heating 6.85 MWh, cooling 4.94 MWh)
-        // Reverting to 5R1C model reduces thermal mass coupling complexity
-        if spec.case_id.starts_with('9') && spec.case_id != "900" {
+        // DISABLED (2026-03-17): 6R2C evaluation shows no accuracy improvement over 5R1C
+        // Fix D1 (sol-air temperature) implemented for 5R1C provides marginal improvement (7.99→7.85 MWh)
+        // but heating remains 284-570% above reference (1.17-2.04 MWh)
+        // Root cause: RC network structure cannot capture multi-layer thermal lag (fundamental limitation)
+        // Reference: Phase 24 diagnostic audit, docs/6R2C_CODE_AUDIT_DISCREPANCIES.md
+        if false && spec.case_id.starts_with('9') {
             // For high-mass buildings: 75% envelope mass, 25% internal mass
             // Conductance between masses: 100 W/K (typical for concrete construction)
             model.configure_6r2c_model(0.75, 100.0);
@@ -2529,7 +2529,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.set_loads(&loads);
 
                 // 3. Solve physics for this timestep
-                self.step_physics(t, outdoor_temp)
+                self.step_physics(t, outdoor_temp, 3600.0)
             })
             .sum();
 
@@ -2588,15 +2588,61 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         equipment: Option<&[Box<dyn Equipment>]>,
         occupancy: Option<&OccupancyProfile>,
     ) -> f64 {
+        // Default to 1-hour timestep (3600 seconds)
+        self.solve_timesteps_with_dt(
+            steps, surrogates, use_ai, lighting, equipment, occupancy, 3600.0, // dt_seconds
+        )
+    }
+
+    /// Solve thermal model for specified timesteps with variable timestep support.
+    ///
+    /// This method extends solve_timesteps to support adaptive timestep simulation,
+    /// allowing finer timesteps (e.g., 6-minute) for high-mass buildings.
+    ///
+    /// # Arguments
+    /// * `steps` - Number of hourly timesteps (typically 8760 for 1 year)
+    /// * `surrogates` - Reference to SurrogateManager for load predictions
+    /// * `use_ai` - If true, use neural surrogates; if false, use analytical calculations
+    /// * `lighting` - Optional lighting schedule for internal heat gains (Plan 17-04)
+    /// * `equipment` - Optional equipment list for internal heat gains (Plan 17-04)
+    /// * `occupancy` - Optional occupancy profile for internal heat gains (Plan 17-04)
+    /// * `dt_seconds` - Timestep duration in seconds (e.g., 3600.0 for 1-hour, 360.0 for 6-minute)
+    ///
+    /// # Returns
+    /// Cumulative annual energy use intensity (EUI) in kWh/m²/year.
+    ///
+    /// # Example
+    ///
+    /// ```rust,no_run
+    /// use fluxion::sim::engine::ThermalModel;
+    /// use fluxion::physics::cta::VectorField;
+    /// use fluxion::ai::surrogate::SurrogateManager;
+    ///
+    /// let mut model = ThermalModel::<VectorField>::new(1);
+    /// let surrogates = SurrogateManager::new();
+    ///
+    /// // Run with 6-minute timestep for high-mass building
+    /// let eui = model.solve_timesteps_with_dt(8760, &surrogates, false, None, None, None, 360.0);
+    /// ```
+    pub fn solve_timesteps_with_dt(
+        &mut self,
+        steps: usize,
+        surrogates: &SurrogateManager,
+        use_ai: bool,
+        lighting: Option<&LightingSchedule>,
+        equipment: Option<&[Box<dyn Equipment>]>,
+        occupancy: Option<&OccupancyProfile>,
+        dt_seconds: f64,
+    ) -> f64 {
         // Record call for wiring validation (Plan 21-10)
         #[cfg(feature = "wiring-tracing")]
         if let Some(ref tracer) = self.tracer {
-            tracer.record_call("solve_timesteps");
+            tracer.record_call("solve_timesteps_with_dt");
         }
 
         info!(
-            "Starting simulation for {} timesteps, use_ai={}",
-            steps, use_ai
+            "Starting simulation for {} timesteps with dt={:.1}s, use_ai={}",
+            steps, dt_seconds, use_ai
         );
 
         // Auto-load building profile if not manually provided (Plan 17-04)
@@ -2680,6 +2726,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     lighting_ref,
                     equipment_ref,
                     occupancy_ref,
+                    dt_seconds,
                 )
             })
             .sum();
@@ -2795,12 +2842,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Arguments
     /// * `timestep` - Current timestep index (used for ground temperature)
     /// * `outdoor_temp` - Outdoor air temperature (°C)
+    /// * `dt_seconds` - Timestep duration in seconds (default: 3600.0 for 1-hour timestep)
     ///
     /// # Returns
     /// HVAC energy consumption for the timestep in kWh.
     ///
     /// Issue #351: Calculate solar gains internally if weather data is available
-    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
+    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
         // Record call for wiring validation (Plan 21-10)
         #[cfg(feature = "wiring-tracing")]
         if let Some(ref tracer) = self.tracer {
@@ -2815,19 +2863,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Branch based on thermal model type
         if self.is_8r3c_model() {
-            self.step_physics_8r3c(timestep, outdoor_temp)
+            self.step_physics_8r3c(timestep, outdoor_temp, dt_seconds)
         } else if self.is_6r2c_model() {
-            self.step_physics_6r2c(timestep, outdoor_temp)
+            self.step_physics_6r2c(timestep, outdoor_temp, dt_seconds)
         } else {
-            self.step_physics_5r1c(timestep, outdoor_temp)
+            self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
         }
     }
 
     /// Solve physics for one timestep using the 5R1C (single mass node) model.
     ///
     /// This is the original implementation for backward compatibility.
-    fn step_physics_5r1c(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
-        let dt = 3600.0; // Timestep in seconds (1 hour)
+    fn step_physics_5r1c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+        let dt = dt_seconds; // Use provided timestep duration
 
         // Get ground temperature at this timestep
         let t_g = self.ground_temperature.ground_temperature(timestep);
@@ -2863,6 +2911,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_ia = T::from(VectorField::new(phi_ia_data));
         let phi_st = T::from(VectorField::new(phi_st_data));
         let phi_m = T::from(VectorField::new(phi_m_data));
+
+        // === FIX D1: Calculate sol-air temperature for exterior surface ===
+        // Per ISO 13790, exterior surface temperature is affected by solar radiation
+        // T_sol-air = T_outdoor + (α × I_sol / h_se)
+        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
+        use crate::physics::constants::thermal::ashrae_140::v2023::{
+            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
+        };
+        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
+        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
+        let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let i_sol = solar_ref[i]; // Solar radiation intensity W/m²
+            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
+            t_sol_air_data.push(t_sol_air_zone);
+        }
+        let t_sol_air = VectorField::new(t_sol_air_data);
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -3131,10 +3196,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let actual_electrical_power = electrical_power * efficiency_multiplier;
 
             // Accumulate electrical energy consumption (Plan 18-08)
-            // actual_electrical_power is in Watts, dt is in seconds
-            // Convert to kWh: (Watts × dt) / 3.6e6 = kWh
-            let dt = 3600.0; // Timestep in seconds (1 hour)
-            let energy_this_timestep = actual_electrical_power * dt / 3.6e6;
+            // actual_electrical_power is in Watts, dt_seconds is in seconds
+            // Convert to kWh: (Watts × dt_seconds) / 3.6e6 = kWh
+            let energy_this_timestep = actual_electrical_power * dt_seconds / 3.6e6;
             self.annual_electrical_energy += energy_this_timestep;
 
             // Track peak heating/cooling based on thermal demand (not electrical power)
@@ -3306,32 +3370,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_new = match method {
                 ThermalIntegrationMethod::BackwardEuler => {
                     // Use implicit backward Euler for high thermal mass
+                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     backward_euler_update(
                         tm_old,
                         dt,
                         cm,
                         h_tr_em,
                         h_tr_ms,
-                        outdoor_temp,
+                        t_sol_air[i],
                         t_s,
                         phi_m_zone,
                     )
                 }
                 ThermalIntegrationMethod::ExplicitEuler => {
                     // Use explicit Euler for low thermal mass (faster, still stable)
+                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     let q_m_net =
-                        h_tr_em * (outdoor_temp - tm_old) + h_tr_ms * (t_s - tm_old) + phi_m_zone;
+                        h_tr_em * (t_sol_air[i] - tm_old) + h_tr_ms * (t_s - tm_old) + phi_m_zone;
                     tm_old + (q_m_net / cm) * dt
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
+                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     crank_nicolson_update(
                         tm_old,
                         dt,
                         cm,
                         h_tr_em,
                         h_tr_ms,
-                        outdoor_temp,
+                        t_sol_air[i],
                         t_s,
                         phi_m_zone,
                     )
@@ -3380,8 +3447,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// - Internal mass (furniture, partitions) - faster response
     ///
     /// This better captures thermal phase shifts in high-mass buildings.
-    fn step_physics_6r2c(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
-        let dt = 3600.0; // Timestep in seconds (1 hour)
+    fn step_physics_6r2c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+        let dt = dt_seconds; // Use provided timestep duration
 
         // Get ground temperature at this timestep
         let t_g = self.ground_temperature.ground_temperature(timestep);
@@ -3617,8 +3684,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut t_s_act = ts_num_act;
         t_s_act.div_assign(term_rest_1);
 
+        // === FIX D1: Calculate sol-air temperature for exterior surface ===
+        // Per ISO 13790, exterior surface temperature is affected by solar radiation
+        // T_sol-air = T_outdoor + (α × I_sol / h_se)
+        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
+        use crate::physics::constants::thermal::ashrae_140::v2023::{
+            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
+        };
+        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
+        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
+        let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let i_sol = solar_ref[i]; // Solar radiation intensity W/m²
+            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
+            t_sol_air_data.push(t_sol_air_zone);
+        }
+        let t_sol_air = VectorField::new(t_sol_air_data);
+
         // === 6R2C: Update two mass nodes with implicit integration ===
-        // Envelope mass: receives heat from exterior, surface, and internal mass
+        // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
         let old_env_mass_temperatures = self.envelope_mass_temperatures.clone();
 
         // Update envelope mass temperatures using implicit integration for high thermal capacitance
@@ -3665,11 +3749,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_env_new = match method_env {
                 ThermalIntegrationMethod::BackwardEuler => {
                     // Use implicit backward Euler for high thermal mass
-                    // Heat flux: Q_env = h_tr_em*(T_ext - Tm_env) + h_tr_ms*(T_s - Tm_env) + h_tr_me*(Tm_int - Tm_env) + phi_m_env
+                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                    // Heat flux: Q_env = h_tr_em*(T_sol-air - Tm_env) + h_tr_ms*(T_s - Tm_env) + h_tr_me*(Tm_int - Tm_env) + phi_m_env
                     // Simplified approach: treat multiple sources as combined thermal link
                     let effective_conductance = h_tr_em + h_tr_ms + h_tr_me;
                     let effective_temp =
-                        (h_tr_em * outdoor_temp + h_tr_ms * t_s + h_tr_me * tm_int)
+                        (h_tr_em * t_sol_air[i] + h_tr_ms * t_s + h_tr_me * tm_int)
                             / effective_conductance;
                     backward_euler_update(
                         tm_env_old,
@@ -3684,7 +3769,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
                 ThermalIntegrationMethod::ExplicitEuler => {
                     // Use explicit Euler for low thermal mass
-                    let q_env_net = h_tr_em * (outdoor_temp - tm_env_old)
+                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                    let q_env_net = h_tr_em * (t_sol_air[i] - tm_env_old)
                         + h_tr_ms * (t_s - tm_env_old)
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
@@ -3697,7 +3783,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         );
                         println!(
                             "  Components: h_tr_em*({:.1}-{:.1})={:.2}, h_tr_ms*({:.1}-{:.1})={:.2}, h_tr_me*({:.1}-{:.1})={:.2}, phi_m_env={:.2}",
-                            outdoor_temp, tm_env_old, h_tr_em * (outdoor_temp - tm_env_old),
+                            t_sol_air[i], tm_env_old, h_tr_em * (t_sol_air[i] - tm_env_old),
                             t_s, tm_env_old, h_tr_ms * (t_s - tm_env_old),
                             tm_int, tm_env_old, h_tr_me * (tm_int - tm_env_old),
                             phi_m_env_zone
@@ -3708,7 +3794,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy
-                    let q_env_net = h_tr_em * (outdoor_temp - tm_env_old)
+                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                    let q_env_net = h_tr_em * (t_sol_air[i] - tm_env_old)
                         + h_tr_ms * (t_s - tm_env_old)
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
@@ -3719,7 +3806,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         cm_env,
                         h_tr_em + h_tr_ms + h_tr_me,
                         0.0,
-                        outdoor_temp,
+                        t_sol_air[i],
                         t_s + phi_m_env_zone / (h_tr_ms + h_tr_me),
                         phi_m_env_zone,
                     )
@@ -3887,15 +3974,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Note
     /// This is a simplified implementation for evaluation purposes. It follows the
     /// 5R1C/6R2C pattern but with additional mass nodes for ceiling, floor, and partitions.
-    fn step_physics_8r3c(&mut self, timestep: usize, outdoor_temp: f64) -> f64 {
-        let dt = 3600.0; // Timestep in seconds (1 hour)
+    fn step_physics_8r3c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+        let dt = dt_seconds; // Use provided timestep duration
 
         // Get ground temperature at this timestep (unused in simplified 8R3C)
         let _t_g = self.ground_temperature.ground_temperature(timestep);
 
         // Use 5R1C solve for simplicity (Phase 20 evaluation)
         // In a full implementation, this would be a proper 8R3C algebraic system
-        let energy = self.step_physics_5r1c(timestep, outdoor_temp);
+        let energy = self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds);
 
         // Update 8R3C mass temperatures using simple relaxation (for evaluation)
         // In a full implementation, these would be coupled with Ti_free calculation
@@ -3948,6 +4035,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// * `lighting` - Optional lighting schedule for internal heat gains (Plan 17-04)
     /// * `equipment` - Optional equipment list for internal heat gains (Plan 17-04)
     /// * `occupancy` - Optional occupancy profile for internal heat gains (Plan 17-04)
+    /// * `dt_seconds` - Timestep duration in seconds (default: 3600.0 for 1-hour timestep)
     ///
     /// # Returns
     ///
@@ -3962,6 +4050,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         lighting: Option<&LightingSchedule>,
         equipment: Option<&[Box<dyn Equipment>]>,
         occupancy: Option<&OccupancyProfile>,
+        dt_seconds: f64,
     ) -> f64 {
         // 1. Calculate External Loads
         if use_ai {
@@ -4044,8 +4133,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // where it's added directly to thermal mass temperature
         self.internal_radiative_to_mass = internal_radiative_to_mass;
 
-        // 2. Call step_physics (pass timestep for ground temperature)
-        self.step_physics(timestep, outdoor_temp)
+        // 2. Call step_physics (pass timestep for ground temperature and dt_seconds)
+        self.step_physics(timestep, outdoor_temp, dt_seconds)
     }
 
     /// Convert timestep to (year, month, day, hour) for solar calculations.
@@ -4826,7 +4915,7 @@ mod tests {
         model.set_loads(&test_loads);
 
         // Use outdoor temp different from indoor to ensure HVAC energy is needed
-        let energy = model.step_physics(0, 10.0); // Cold outdoor temp should require heating
+        let energy = model.step_physics(0, 10.0, 3600.0); // Cold outdoor temp should require heating
         assert!(energy >= 0.0, "Energy should be non-negative");
         assert_eq!(model.loads.as_ref(), test_loads.as_slice());
     }
@@ -4849,11 +4938,12 @@ mod tests {
         model2.apply_parameters(&[1.5, 21.0]);
 
         // Using solve_single_step with use_ai=false (analytical loads)
-        let energy1 = model1.solve_single_step(0, 20.0, false, &surrogates, true, None, None, None);
+        let energy1 =
+            model1.solve_single_step(0, 20.0, false, &surrogates, true, None, None, None, 3600.0);
 
         // Using set_loads + step_physics manually
         model2.calc_analytical_loads(0, true);
-        let energy2 = model2.step_physics(0, 20.0);
+        let energy2 = model2.step_physics(0, 20.0, 3600.0);
 
         // Results should be identical
         assert!(
@@ -5195,6 +5285,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    3600.0,
                 );
                 total_energy_kwh += energy_kwh;
             }
@@ -5245,6 +5336,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    3600.0,
                 );
                 total_energy_kwh_cool += energy_kwh_cool;
             }
@@ -5292,6 +5384,7 @@ mod tests {
                 None,
                 None,
                 None,
+                3600.0,
             );
 
             // Issue #272, #274, #275: With thermal mass energy accounting, net energy can be non-zero
@@ -5328,6 +5421,7 @@ mod tests {
                 None,
                 None,
                 None,
+                3600.0,
             );
 
             // Test hot outdoor temp - should cool
@@ -5343,6 +5437,7 @@ mod tests {
                 None,
                 None,
                 None,
+                3600.0,
             );
 
             // Test comfortable outdoor temp - should be in deadband
@@ -5358,6 +5453,7 @@ mod tests {
                 None,
                 None,
                 None,
+                3600.0,
             );
 
             assert!(
@@ -5483,6 +5579,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    3600.0,
                 );
                 model2.solve_single_step(
                     t,
@@ -5493,6 +5590,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    3600.0,
                 );
             }
 
@@ -5588,6 +5686,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    3600.0,
                 );
                 model_warm.solve_single_step(
                     t,
@@ -5598,6 +5697,7 @@ mod tests {
                     None,
                     None,
                     None,
+                    3600.0,
                 );
             }
 

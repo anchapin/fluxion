@@ -241,7 +241,7 @@ pub fn validate_energy_balance_over_year(
         model.weather = Some(weather_data.clone());
 
         // Run physics step and get HVAC energy
-        let hvac_energy = model.step_physics(step, weather_data.dry_bulb_temp);
+        let hvac_energy = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Calculate energy inputs
         // Energy in = solar + internal_gains + hvac_heating (when heating)
