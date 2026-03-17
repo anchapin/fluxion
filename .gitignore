@@ -78,3 +78,23 @@ Thumbs.db
 *.copilotmd
 cobertura.xml
 worktrees/
+
+# EnergyPlus simulation artifacts
+energyplus/
+runs/
+tests/energyplus_data/
+
+# Generated tool scripts (not source)
+tools/create_case_900_osm.rb
+tools/create_case_900_with_mcp.py
+tools/generate_energyplus_idf.py
+tools/list_mcp_tools.py
+tools/mcp_client.py
+tools/phase_25_parametric_sweep.py
+tools/run_energyplus_simulations.py
+tools/train_residual_model.py
+
+# Generated example workflows
+examples/analysis_workflow.py
+examples/optimization_workflow.py
+examples/validation_workflow.py
