@@ -51,7 +51,19 @@
 5. ✅ Reference program comparison completed (EnergyPlus internal states extracted)
 6. ✅ Root cause report with go/no-go recommendation for RC network approach
 
-**Plans:** TBD (to be created via /gsd:plan-phase 24)
+**Plans:** 10 plans created (24-01 through 24-10)
+- 24-01: ISO 13790 6R2C Equation Verification
+- 24-02: 6R2C Code-to-Spec Conformance Audit
+- 24-03: Conductance Calculation Unit Tests
+- 24-04: Node Placement and Boundary Condition Tests
+- 24-05: Time Constant and Timestep Sensitivity Analysis
+- 24-06: Heat Flow Path Tracing Instrumentation
+- 24-07: 5R1C vs 6R2C Side-by-Side Comparison
+- 24-08: EnergyPlus Installation and Test Case Setup
+- 24-09: EnergyPlus Internal State Comparison
+- 24-10: Comprehensive Root Cause Analysis and Recommendation
+
+**Status:** PLANNING COMPLETE — Ready for execution
 
 ---
 
@@ -161,17 +173,16 @@ Each phase delivers a coherent, verifiable capability that informs the next phas
 
 ---
 
-| 24. 6R2C/8R3C Diagnostic Audit | 0/6 | Pending     | -          |
 ## Progress
 
 | Phase | Name | Plans Complete | Status | Completed |
 |-------|------|----------------|--------|-----------|
-| 24. 6R2C/8R3C Diagnostic Audit | 0/6 | Pending | - |
+| 24. 6R2C/8R3C Diagnostic Audit | 0/10 | Planning Complete | Ready to execute |
 | 25. Alternative Physics Implementation | 0/4 | Pending | - |
 | 26. Comparative Evaluation | 0/4 | Pending | - |
 | 27. v0.6 Release or Pivot Decision | 0/2 | Pending | - |
 
-**Overall Progress:** 0% (0/4 phases started)
+**Overall Progress:** 0% (0/4 phases started, Phase 24 planning complete)
 
 ---
 
