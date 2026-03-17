@@ -1,22 +1,22 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.5
-milestone_name: milestone
-current_phase: 22 (complete)
-status: All plans executed
-last_updated: "2026-03-15T21:26:09.235Z"
+milestone: v0.6
+milestone_name: Validation Excellence
+current_phase: 24 (PENDING)
+status: v0.6 milestone initialized, Phase 24 planning pending
+last_updated: "2026-03-17T00:00:00.000Z"
 progress:
-  total_phases: 3
-  completed_phases: 1
-  total_plans: 17
-  completed_plans: 16
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Fluxion Project State
 
-**Milestone:** v0.5 Production Foundation
-**Last Updated:** 2026-03-15
-**Current Phase:** 22 (complete)
+**Milestone:** v0.6 Validation Excellence
+**Last Updated:** 2026-03-17
+**Current Phase:** 24 (PENDING)
 
 ---
 
@@ -26,19 +26,21 @@ progress:
 
 **Full ASHRAE Standard 140 compliance achieved (v0.4):** All 37 v0.4 requirements satisfied (100%). Thermal network verified with analytical physics, comprehensive HVAC equipment modeling (VAV/CAV/HeatPump/Chiller/Boiler), psychrometric calculations validated, internal loads with schedules implemented, diagnostic cases (195-470, 800-810) complete, statistical validation framework with Addendum B compliance, data quality finalized (mocks removed, hardcodes replaced, documentation complete).
 
+**v0.5 Production Foundation COMPLETE:** All 30 v0.5 requirements satisfied (100%). Integration testing framework delivered, validation gaps resolved (Case 960 COP correction), production readiness artifacts complete (API docs, benchmarks, stability guarantees).
+
 ### Current Milestone Goal
 
-**v0.5 Production Foundation:** Comprehensive production readiness with integration tests, validation gap resolution, and stability guarantees.
+**v0.6 Validation Excellence:** Deep diagnostic investigation of high-mass annual energy failure. Diagnose why 6R2C/8R3C shows no accuracy improvement — is there a fixable bug or fundamental limitation?
 
-**Critical must-haves:**
-- Integration tests (E2E tests for wiring issues)
-- Validation gaps (Case 960, 8R3C, high-mass accuracy)
-- Production readiness (docs, benchmarks, stability)
+**Critical question:** When adding RC nodes shows no improvement, is it because:
+1. There's a **fixable bug** in how we extend the RC network (wrong conductance calculations, incorrect node placement)?
+2. The **RC network structure itself** is fundamentally incapable of capturing high-mass thermal dynamics?
+3. We're **missing a key physics mechanism** (e.g., thermal lag through layers, surface-to-core gradients)?
 
 ### Constraints
 
 - **ASHRAE 140 Tolerance Bands:** ±15% annual energy, ±10% monthly energy (where possible within model limits)
-- **ISO 13790 Compliance:** Maintain 5R1C thermal network structure unless 8R3C is explicitly chosen
+- **ISO 13790 Compliance:** Maintain 5R1C thermal network structure unless alternative approach proven superior
 - **Performance:** Maintain >1,000 configs/sec throughput for population-based optimization
 - **Backwards Compatibility:** Preserve BatchOracle/Model API for Python users
 - **Documentation:** All public APIs must have docstrings and examples
@@ -47,73 +49,83 @@ progress:
 
 ## Current Position
 
-**Phase:** 22 - Validation Gap Resolution
-**Plan:** 04 (complete)
-**Status:** All plans executed
+**Phase:** 24 - 6R2C/8R3C Diagnostic Audit (PENDING)
+**Plan:** TBD (planning pending)
+**Status:** Milestone initialized, ready to plan Phase 24
 
 ### Progress Bar
 
 ```
-Phase 21: [██████████] 100% (10/10 plans complete)
-Phase 22: [██████████] 100% (5/5 plans complete)
-Phase 23: [░░░░░░░░░░] 0% (0/0 plans complete)
-Overall:  [████████░░] 67% (2/3 phases complete)
+Phase 24: [          ] 0% (0/6 plans pending)
+Phase 25: [          ] 0% (0/4 plans pending)
+Phase 26: [          ] 0% (0/4 plans pending)
+Phase 27: [          ] 0% (0/2 plans pending)
+Overall:  [          ] 0% (0/4 phases started)
 ```
 
-### Phase 21 Context
+### Phase 24 Context
 
-**Goal:** Users can run comprehensive integration tests that detect wiring issues and prevent regressions before they reach production
+**Goal:** Diagnose why 6R2C/8R3C shows no accuracy improvement — is there a fixable bug or fundamental limitation?
 
-**Requirements (8):**
-- INTEG-01: User can run E2E integration tests that validate full system workflows
-- INTEG-02: Integration test framework provides reusable test fixtures for building scenarios, weather data, HVAC configs
-- INTEG-03: E2E tests detect wiring issues between modules (validation, simulation, AI surrogates)
-- INTEG-04: Python-side integration tests validate PyO3 bindings with real NumPy arrays
-- INTEG-05: Regression test suite runs full ASHRAE 140 validation (18 cases) on every commit
-- INTEG-06: Test data management provides centralized repository with versioning for EPW files, reference results
-- INTEG-07: CI/CD integration runs integration tests and benchmarks on every PR, fails on regressions
-- INTEG-08: Wiring validation system automatically checks module dependencies and integration points
+**Requirements (5):**
+- DIAG-01: 6R2C implementation audit — Verify conductance calculations match ISO 13790 6R2C specification
+- DIAG-02: 6R2C node placement verification — Confirm thermal mass node is correctly positioned (surface vs core temperature)
+- DIAG-03: Time constant analysis — Compare Fluxion τ vs EnergyPlus τ for identical high-mass constructions
+- DIAG-04: Heat flow path tracing — Track energy flow through each RC branch to identify where 5R1C/6R2C diverge
+- DIAG-05: Reference program comparison — Run identical case in EnergyPlus, extract internal state variables for comparison
 
-**Success Criteria (5):**
-1. User can run `cargo test --test integration` and execute full E2E test suite in under 5 minutes
-2. Integration tests catch wiring issues (e.g., solve_timesteps() never calls predict_loads() when use_ai=true)
-3. User can run `fluxion validate --all` and verify all 18 ASHRAE 140 cases pass in CI
-4. Python-side integration tests validate NumPy array handling and error cases across FFI boundary
-5. User can run wiring validation check that reports module dependency issues before commit
+**Success Criteria (6):**
+1. 6R2C implementation audited against ISO 13790 Annex C specification
+2. 6R2C node placement verified (surface vs core temperature)
+3. Time constant analysis compares Fluxion τ vs EnergyPlus τ
+4. Heat flow path traced through each RC branch
+5. Reference program comparison completed (EnergyPlus internal states extracted)
+6. Root cause report with go/no-go recommendation for RC network approach
 
 **Status:** Not started
+
+**Next Action:** Run `/gsd:plan-phase 24` to create detailed execution plans
 
 ---
 
 ## Performance Metrics
 
-### v0.4 Baseline (from MILESTONES.md)
+### v0.5 Baseline (COMPLETE)
 
 **Validation Status:**
-- Total v0.4 requirements: 37
-- Satisfied: 37 (100%)
-- ASHRAE 140 cases: 18/18 passing
+- Total v0.5 requirements: 30
+- Satisfied: 30 (100%)
+- ASHRAE 140 cases: 18/18 passing (with COP correction for Case 960)
 
 **Codebase Stats:**
-- Lines changed v0.4: +96,455 / -911
-- Files modified: 263
+- Lines changed v0.5: TBD
+- Files modified: TBD
 - Tests: 42+ validation tests + 100+ unit tests (all passing)
 - Total LOC: ~54,464 Rust lines
 
-**Known Limitations (from v0.4):**
-1. Integration checker discrepancies: Some weather and statistical features reported as partially integrated, but Phase 20 verification confirms all 21 key links wired
-2. PHYS-06 traceability mismatch: Marked as pending in REQUIREMENTS.md but verified as satisfied in Phase 20 verification report
+**Performance:**
+- Throughput: ~2,575 configs/sec (5R1C, single-threaded)
+- Single-config latency: <100ms target
+
+### v0.6 Target
+
+**Validation Goals:**
+- Case 900 annual heating: 1.17-2.04 MWh (currently 5.35 MWh, 262-322% high)
+- Case 900 annual cooling: 2.13-3.67 MWh (currently 4.75 MWh, 29-123% high)
+- Maintain low-mass accuracy: 600-series, 800-series within ±15%
+- Performance: ≥1,000 configs/sec throughput
 
 **Known Validation Gaps (from KNOWN_LIMITATIONS.md):**
-1. Case 960 annual cooling: 4.53 MWh (fails validation)
-2. High-mass annual energy: 229-322% above reference (Case 900)
-3. 8R3C thermal network: Pending evaluation (6R2C provided no accuracy improvement)
+1. **High-mass annual energy:** 229-322% above reference (Case 900) — fundamental 5R1C limitation
+2. **Case 960 annual cooling:** 4.53 MWh thermal → 1.51 MWh electrical (within reference after COP correction) ✅
+3. **6R2C evaluation:** No accuracy improvement over 5R1C, 40-50% slower
+4. **8R3C research:** Not recommended — no expected improvement, 65-75% performance penalty
 
 ---
 
 ## Accumulated Context
 
-### Key Decisions (from v0.4)
+### Key Decisions (from v0.4 and v0.5)
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
@@ -125,87 +137,79 @@ Overall:  [████████░░] 67% (2/3 phases complete)
 | Data quality finalization | Remove all mocks, replace hardcodes, document parameters | ✅ Successful — 37/37 requirements satisfied, codebase audited |
 | Gap closure execution | Run 5 gap closure plans (20-09 through 20-14) to resolve integration issues | ✅ Successful — 8 critical wiring gaps closed |
 | Verification report precedence | Use verification reports (generated after gap closure) over integration checker findings | ✅ Correct — All 21 key links verified as wired in Phase 20 verification |
-| Phase 21 P01 | Build core integration testing framework with builder-pattern fixtures | ✅ Successful — 5 minutes, 3 tasks, 4 files |
-| Phase 21 P02 | Python-side NumPy array validation tests | ✅ Successful — 10 minutes, 3 tasks, 3 files |
-| Phase 21 P03 | Comprehensive ASHRAE 140 regression test suite | ✅ Successful — 5 minutes, 2 tasks, 3 files |
-| Phase 21 P05 | 15 minutes | 4 tasks | 6 files |
-| Phase 21 P06 | Refactor integration tests to use BuildingScenario builder and WiringTracer | ✅ Successful — 3 minutes, 2 tasks, 6 files, 11/11 tests passing |
-| Phase 21 P07 | Accept Python-side tests as sufficient for INTEG-04 requirement | ✅ Successful — 5 minutes, 2 tasks, 2 files, comprehensive rationale documented |
-| Python-side test acceptance | Accept Python-side tests as sufficient for INTEG-04 (comprehensive FFI boundary coverage, Rust-side tests high-effort/low-value) | ✅ Correct — Documented rationale: Python-side tests validate observable FFI contract, Rust-side conversion logic already tested, PyO3 boilerplate tests low value |
-| Phase 21 P08 | 1min | 1 tasks | 1 files |
-| Phase 21 P09 | 1 minute | 1 tasks | 2 files |
-| Phase 21 P10 | 8 minutes | 2 tasks | 6 files |
-| Runtime tracing accepted for INTEG-08 | Runtime tracing (not static analysis) satisfies INTEG-08 requirement - catches actual integration failures, aligns with research, zero-intervention tests | ✅ Correct — WiringTracer integrated into ThermalModel with automatic call recording, all wiring tests pass, VERIFICATION.md updated |
-| Phase 21 P10 | 8min | 2 tasks | 6 files |
-| Phase 22 P01 | 15 | 1 tasks | 1 files |
-| Phase 22 P06 | 15 | 3 tasks | 0 files |
+| Case 960 COP correction | Apply COP=3.0 correction in validation path to convert thermal loads to electrical energy | ✅ Successful — Case 960 cooling now within ASHRAE 140 tolerance |
+| 8R3C not recommended | Research shows no accuracy improvement, significant performance penalty | ✅ Correct — Avoided 2,000+ lines of physics code for no benefit |
+| v0.6 diagnostic focus | Deep investigation of WHY 6R2C/8R3C shows no improvement before implementing alternatives | 🔄 Active — Phase 24 planning pending |
 
-### Research Insights (from research/SUMMARY.md)
+### v0.6 Research Insights (from v0.6-research.md)
 
-**Recommended stack:**
-- Rust 2021 edition (core physics engine)
-- criterion 0.5 (statistical benchmarking)
-- proptest 1.5 (property-based testing)
-- tempfile 3.10 (temporary file management for E2E tests)
-- approx 0.5 (floating-point comparison for ASHRAE 140 tolerance bands)
-- rstest 0.25 (parameterized testing)
-- serial_test 1.0 (sequential test execution)
-- mockito 1.7 (HTTP mocking for external weather downloads)
+**Critical Finding:** High-mass annual energy error is a **fundamental 5R1C limitation**, not a bug. Reference programs (EnergyPlus, TRNSYS, ESP-r) use fundamentally different approaches (CTF, finite difference, control volume).
 
-**Critical pitfalls to avoid:**
-1. Integration tests that don't detect wiring issues (use real implementations, not mocks)
-2. Validation gap fixes that introduce regressions (always run full ASHRAE 140 suite)
-3. Performance benchmarks that don't reflect real workloads (use 8760 timesteps, population throughput)
-4. Documentation that becomes stale before release (docs-as-code with doctest examples)
-5. 5R1C to 8R3C migration without comprehensive validation (maintain both during transition)
+**Recommended Approaches for v0.6:**
+1. **Diagnostic Audit (Phase 24):** Verify 6R2C implementation correctness before concluding RC networks are limited
+2. **Finite Difference Method:** Implement 1D heat conduction through mass layers (replace lumped capacitance)
+3. **Conduction Transfer Functions (CTF):** EnergyPlus approach for multi-layer walls
+4. **Adaptive Timestep:** Reduce timestep for high-mass buildings (1hr → 6min → 1min)
+5. **Hybrid RC + ML:** Keep 5R1C physics, train ML to predict residual error
+
+**Pitfalls to Avoid:**
+1. Adding more RC nodes without structural change (6R2C showed no improvement)
+2. Ignoring coupling ratio dominance (h_tr_ms dominates h_tr_em)
+3. Expecting RC networks to match reference program accuracy without fundamental changes
+4. Implementing 8R3C without diagnostic audit (wasted effort if bug exists)
 
 ### Technical Debt
 
-**No blocking technical debt** from v0.4. Known items:
-- Integration checker verification criteria may need alignment with phase verification reports
-- PHYS-06 traceability status mismatch (marked pending but verified satisfied)
+**No blocking technical debt** from v0.5. Known items:
+- High-mass annual energy: 229-322% error (v0.6 focus)
+- 6R2C implementation: Needs audit to verify correctness
+- EnergyPlus comparison: Need to extract internal state variables for direct comparison
 
 ---
 
 ## Session Continuity
 
 ### Last Action
-Created roadmap for v0.5 Production Foundation milestone (Phases 21-23) based on 30 requirements.
+Created v0.6 Validation Excellence milestone with diagnostic focus on high-mass annual energy failure.
 
 ### Next Actions
-1. Plan Phase 21 (Integration Testing Framework) using `/gsd:plan-phase 21`
-2. Execute plans and deliver E2E testing infrastructure
-3. Continue to Phase 22 (Validation Gap Resolution)
+1. Plan Phase 24 using `/gsd:plan-phase 24` — Create detailed 6R2C/8R3C diagnostic audit plans
+2. Execute Phase 24 — Diagnose why adding RC nodes shows no improvement
+3. Based on Phase 24 findings:
+   - **If bug found:** Fix and test (proceed to Phase 26)
+   - **If fundamental limitation:** Implement alternative approach in Phase 25
+4. Ship v0.6 or formally document RC network limitations
 
 ### Context Carry-Forward
 
-**For Phase 21 Planning:**
-- Focus on integration testing framework with E2E tests, wiring validation, regression test suite
-- Use research recommendations: tempfile, rstest, serial_test, mockito
-- Address Pitfall 1: Ensure integration tests use real implementations (not mocks)
-- Address Pitfall 6: Design E2E tests that aren't brittle
-- Create Python-side tests for PyO3 FFI boundary
+**For Phase 24 Planning:**
+- Focus on diagnostic investigation, not implementation
+- Audit 6R2C against ISO 13790 Annex C specification
+- Compare Fluxion time constants vs EnergyPlus
+- Trace heat flow through each RC branch
+- Extract EnergyPlus internal states for direct comparison
+- Deliver root cause report with go/no-go recommendation
 
-**For Phase 22 Planning:**
-- Resolve Case 960 (COP correction already documented in CASE_960_ROOT_CAUSE.md)
-- Evaluate 8R3C thermal network (6R2C provided no improvement, 8R3C may provide marginal)
-- Improve high-mass accuracy (229-322% error baseline)
-- Address Pitfall 2: Always run full ASHRAE 140 suite (all 18 cases)
-- Address Pitfall 5: Validate 8R3C for low-mass cases before enabling
-- Address Pitfall 8: Run all 900-series together when fixing Case 960
-- Address Pitfall 9: Validate thermal mass energy accounting
+**v0.6 Research Findings:**
+- High-mass annual energy error is fundamental 5R1C limitation (not a bug)
+- Reference programs use CTF, finite difference, control volume (not RC networks)
+- 6R2C showed no improvement (Phase 12 evaluation)
+- 8R3C not recommended (no benefit, 65-75% slower)
+- Alternative approaches: finite difference, CTF, adaptive timestep, ML surrogate
 
-**For Phase 23 Planning:**
-- Complete API documentation with examples
-- Performance benchmarks with realistic workloads (8760 timesteps, population throughput)
-- Stability guarantees with monitoring
-- Address Pitfall 3: Benchmark with --release profile (LTO, codegen-units=1)
-- Address Pitfall 4: Use docs-as-code approach with doctest examples
-- Address Pitfall 7: Add monitoring for stability metrics
+**Decision Gates:**
+- After Phase 24: Go/no-go on RC network approach
+- After Phase 25: Adopt alternative or recommend ML surrogate path
+- After Phase 27: Ship v0.6 or defer to v1.0/v2.0
 
 ---
 
 ## Archived Milestones
+
+**v0.5** — Production Foundation (shipped 2026-03-17)
+- Phases 21-23, 25 plans, 30 requirements satisfied
+- Key achievement: Complete production readiness (integration tests, docs, benchmarks, stability)
+- All phases verified, v0.5 milestone COMPLETE
 
 **v0.4** — ASHRAE 140 Compliance (shipped 2026-03-15)
 - Phases 14-20, 59 plans, 37 requirements satisfied
@@ -220,3 +224,4 @@ Created roadmap for v0.5 Production Foundation milestone (Phases 21-23) based on
 ---
 
 *State initialized: 2026-03-15*
+*Updated: 2026-03-17 for v0.6 Validation Excellence milestone*

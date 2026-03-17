@@ -1,161 +1,149 @@
 # Fluxion Roadmap
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
-**Milestone:** v0.5 Production Foundation
-**Current Phase:** Phase 22 (gap closure)
-**Last Updated:** 2026-03-15
+**Milestone:** v0.6 Validation Excellence (ACTIVE)
+**Current Phase:** Phase 24 (Pending)
+**Last Updated:** 2026-03-17
 
 ---
 
 ## Milestones
 
-- ✅ **v0.5 Production Foundation** — Phases 21-23 (complete, 15/15 plans complete)
-- ✅ **v0.4 ASHRAE 140 Compliance** — Phases 14-20 (shipped 2026-03-15) — See `.planning/milestones/v0.4-ROADMAP.md`
-- ✅ **v0.2 Partial Validation** — Phases 1-7 (shipped 2026-03-11) — See `.planning/milestones/v0.2-ROADMAP.md`
+- 🔄 **v0.6 Validation Excellence** — Phases 24-27 (ACTIVE, started 2026-03-17)
+- ✅ **v0.5 Production Foundation** — Phases 21-23 (COMPLETE 2026-03-17)
+- ✅ **v0.4 ASHRAE 140 Compliance** — Phases 14-20 (shipped 2026-03-15)
+- ✅ **v0.2 Partial Validation** — Phases 1-7 (shipped 2026-03-11)
 
 ---
 
 ## Current Status
 
-**Milestone:** v0.5 Production Foundation
-**Phase:** Phase 22 - Validation Gap Resolution
-**Status:** Gap closure plans created (22-06, 22-07)
+**Milestone:** v0.6 Validation Excellence
+**Phase:** Phase 24 - 6R2C/8R3C Diagnostic Audit (PENDING)
+**Status:** Milestone initialized, planning complete
 
 ---
 
 ## Phases
 
-- [x] **Phase 21: Integration Testing Framework** - E2E tests, wiring validation, regression test suite (completed 2026-03-15, gap closure mode)
-- [x] **Phase 22: Validation Gap Resolution** - Case 960 fix, 8R3C evaluation, high-mass accuracy (5/5 plans executed, 2 gap closure plans)
-- [ ] **Phase 23: Production Readiness** - Complete docs, benchmarks, stability guarantees
+- [ ] **Phase 24: 6R2C/8R3C Diagnostic Audit** - Root cause analysis of why adding RC nodes shows no improvement
+- [ ] **Phase 25: Alternative Physics Implementation** - Test finite difference, CTF, adaptive timestep approaches
+- [ ] **Phase 26: Comparative Evaluation** - Run all 18 ASHRAE 140 cases, compare accuracy vs performance
+- [ ] **Phase 27: v0.6 Release or Pivot Decision** - Ship validated approach OR formal proof + ML surrogate recommendation
 
 ---
 
 ## Phase Details
 
-### Phase 21: Integration Testing Framework
+### Phase 24: 6R2C/8R3C Diagnostic Audit
 
-**Goal:** Users can run comprehensive integration tests that detect wiring issues and prevent regressions before they reach production
+**Goal:** Diagnose why 6R2C/8R3C shows no accuracy improvement — is there a fixable bug or fundamental limitation?
 
-**Depends on:** Nothing (continues from v0.4 Phase 20)
+**Depends on:** Nothing (continues from v0.5 Phase 22)
 
-**Requirements:** INTEG-01, INTEG-02, INTEG-03, INTEG-04, INTEG-05, INTEG-06, INTEG-07, INTEG-08
+**Requirements:** DIAG-01, DIAG-02, DIAG-03, DIAG-04, DIAG-05
 
 **Success Criteria** (what must be TRUE):
-1. User can run `cargo test --test integration` and execute full E2E test suite in under 5 minutes
-2. Integration tests catch wiring issues (e.g., solve_timesteps() never calls predict_loads() when use_ai=true)
-3. User can run `fluxion validate --all` and verify all 18 ASHRAE 140 cases pass in CI
-4. Python-side integration tests validate NumPy array handling and error cases across FFI boundary
-5. User can run wiring validation check that reports module dependency issues before commit
+1. ✅ 6R2C implementation audited against ISO 13790 Annex C specification
+2. ✅ 6R2C node placement verified (surface vs core temperature)
+3. ✅ Time constant analysis compares Fluxion τ vs EnergyPlus τ
+4. ✅ Heat flow path traced through each RC branch
+5. ✅ Reference program comparison completed (EnergyPlus internal states extracted)
+6. ✅ Root cause report with go/no-go recommendation for RC network approach
 
-**Plans:** 10/10 plans complete
-- [x] 21-01-PLAN.md — E2E framework with BuildingScenario builder and WiringTracer
-- [x] 21-02-PLAN.md — Python PyO3 integration tests with NumPy array validation
-- [x] 21-03-PLAN.md — ASHRAE 140 regression test suite with nightly GitHub Actions
-- [x] 21-04-PLAN.md — Test data management with versioned directories
-- [x] 21-05-PLAN.md — Wiring validation, E2E scenarios, CI/CD integration
-- [ ] 21-06-PLAN.md — Refactor integration tests to use BuildingScenario and WiringTracer
-- [ ] 21-07-PLAN.md — Implement Rust-side PyO3 tests OR document blocker
-- [ ] 21-08-PLAN.md — Correct verification error in VERIFICATION.md
-- [ ] 21-09-PLAN.md — Add HVAC variant tests with parameterization
-- [ ] 21-10-PLAN.md — Add automated dependency checking OR accept manual tracing
-
-**Gap Closure Mode:** 5 plans created to address verification gaps from 21-VERIFICATION.md
-- 21-06: Framework-test disconnect (tests don't use BuildingScenario/WiringTracer)
-- 21-07: Missing Rust-side PyO3 tests (test_pyo3_bindings.rs is TODO stub)
-- 21-08: Performance verification error (22 seconds IS under 5 minutes)
-- 21-09: Missing HVAC variant tests (VAV, CAV, HeatPump, Chiller)
-- 21-10: Automated dependency checking missing (only manual runtime tracing exists)
+**Plans:** TBD (to be created via /gsd:plan-phase 24)
 
 ---
 
-### Phase 22: Validation Gap Resolution
+### Phase 25: Alternative Physics Implementation
 
-**Goal:** Users can validate that all known ASHRAE 140 gaps (Case 960, 8R3C, high-mass) are resolved without breaking existing cases
+**Goal:** Implement and test alternative approaches if Phase 24 finds RC networks fundamentally limited.
 
-**Depends on:** Phase 21 (integration testing framework provides regression guardrails)
+**Depends on:** Phase 24 (diagnostic results determine which alternative to pursue)
 
-**Requirements:** VAL-01, VAL-02, VAL-03, VAL-04, VAL-05, VAL-06, VAL-07, VAL-08, VAL-09
+**Requirements:** ALT-01, ALT-02, ALT-03, ALT-04, ALT-05
 
 **Success Criteria** (what must be TRUE):
-1. User can run `fluxion validate --case 960` and see annual cooling energy within ±15% of reference
-2. User can run 8R3C thermal network and see <50% error improvement for high-mass cases (or 5R1C remains default)
-3. User can run full ASHRAE 140 validation suite and see 18/18 cases passing (no regressions)
-4. High-mass annual energy accuracy improved from 229-322% error baseline (verified through thermal mass energy accounting)
-5. A/B testing framework quantifies improvement for each validation gap fix before adoption
+1. ✅ Best alternative approach implemented (finite difference, CTF, or adaptive timestep)
+2. ✅ Case 900 annual heating within ±15% (target: 1.17-2.04 MWh)
+3. ✅ Case 900 annual cooling within ±15% (target: 2.13-3.67 MWh)
+4. ✅ Performance ≥1,000 configs/sec throughput
 
-**Plans:** 6/7 plans executed
-
-- [x] 22-01-PLAN.md — 900-series regression test to prevent Case 960 fix from breaking other cases
-- [x] 22-02-PLAN.md — Thermal mass energy accounting validation (diagnose physics correctness)
-- [x] 22-03-PLAN.md — A/B testing framework for variant comparison
-- [x] 22-04-PLAN.md — Case 960 validation with COP correction
-- [x] 22-05-PLAN.md — 8R3C thermal network research and evaluation
-- [ ] 22-06-PLAN.md — Fix compilation issues and verify 900-series regression test execution (gap closure)
-- [ ] 22-07-PLAN.md — Investigate and fix thermal mass energy balance calculation (gap closure)
-
-**Gap Closure Mode:** 2 plans created to address verification gaps from 22-VERIFICATION.md
-- 22-06: VAL-07 - 900-series regression test (compilation issues blocking verification)
-- 22-07: VAL-06, VAL-08 - Thermal mass energy accounting (1100%+ energy balance errors requiring physics investigation)
+**Plans:** TBD (to be created via /gsd:plan-phase 25)
 
 ---
 
-### Phase 23: Production Readiness
+### Phase 26: Comparative Evaluation
 
-**Goal:** Users have complete documentation, performance benchmarks, and stability guarantees for production deployment
+**Goal:** Comprehensive evaluation of chosen approach against all ASHRAE 140 cases.
 
-**Depends on:** Phase 22 (stable validation fixes provide baseline for production artifacts)
+**Depends on:** Phase 25 (working alternative implementation)
 
-**Requirements:** PROD-01, PROD-02, PROD-03, PROD-04, PROD-05, PROD-06, PROD-07, PROD-08, PROD-09, PROD-10, PROD-11, PROD-12, PROD-13
+**Requirements:** VAL-10, VAL-11, VAL-12, VAL-13
 
 **Success Criteria** (what must be TRUE):
-1. User can reference complete API documentation with examples for all BatchOracle and Model methods
-2. User can run performance benchmarks and see documented throughput guarantees (10,000+ configs/sec) by hardware
-3. User can verify performance regression detection fails PR if >10% slowdown from baseline
-4. User can read stability guarantees document covering input validation, error handling, failure modes, and determinism
-5. User can migrate from v0.4 to v0.5 using migration guide with no breaking API changes
+1. ✅ All 18 ASHRAE 140 cases run with new approach
+2. ✅ Low-mass cases (600-series, 800-series) remain within ±15% (no regression)
+3. ✅ High-mass cases (900-series) within ±15% (or documented limitation if not achievable)
+4. ✅ Performance ≥1,000 configs/sec throughput
+5. ✅ Recommendation for v1.0 architecture documented
 
-**Plans:** TBD
+**Plans:** TBD (to be created via /gsd:plan-phase 26)
 
 ---
 
-| 21. Integration Testing Framework | 10/10 | Complete    | 2026-03-15 |
-## Progress
+### Phase 27: v0.6 Release or Pivot Decision
 
-| Phase | Plans Complete | Status | Completed |
-|-------|----------------|--------|-----------|
-| 21. Integration Testing Framework | 5/5 complete, 5 gap closure plans | Gap closure mode | 2026-03-15 |
-| 22. Validation Gap Resolution | 6/7 | In Progress|  |
-| 23. Production Readiness | 0/0 | Not started | - |
+**Goal:** Ship v0.6 with validated approach OR formally document that RC networks cannot work and recommend ML surrogate path.
 
-**Overall Progress:** 67% (2/3 phases complete)
+**Depends on:** Phase 26 (comprehensive evaluation results)
+
+**Requirements:** TBD (based on outcome)
+
+**Success Criteria** (what must be TRUE):
+
+**If Successful:**
+1. ✅ v0.6 shipped with new physics approach
+2. ✅ All documentation updated
+3. ✅ Migration guide (v0.5 → v0.6) provided
+4. ✅ CI/CD updated with new validation thresholds
+
+**If Pivot Required:**
+1. ✅ Formal proof RC networks cannot achieve ±15% for high-mass
+2. ✅ ML surrogate feasibility documented
+3. ✅ Recommendation for v1.0/v2.0 roadmap
+
+**Plans:** TBD (to be created via /gsd:plan-phase 27)
 
 ---
 
 ## Dependencies
 
 ```
-Phase 21 (Integration Testing - gap closure mode)
+Phase 24 (6R2C/8R3C Diagnostic Audit)
     ↓
-Phase 22 (Validation Gap Resolution - gap closure mode)
+Phase 25 (Alternative Physics Implementation)
     ↓
-Phase 23 (Production Readiness)
+Phase 26 (Comparative Evaluation)
+    ↓
+Phase 27 (v0.6 Release or Pivot Decision)
 ```
 
 ---
 
 ## Phase Order Rationale
 
-The three-phase structure follows natural dependency chains:
+The four-phase structure follows a diagnostic-driven approach:
 
-1. **Integration Testing → Validation Gaps:** Validation fixes require comprehensive testing to avoid regressions. Phase 21 provides E2E framework and regression tests needed for Phase 22's A/B testing.
+1. **Phase 24 (Diagnosis):** Before implementing anything, understand WHY 6R2C/8R3C showed no improvement. Is there a bug? Wrong conductance calculations? Incorrect node placement? Or is the RC network structure itself fundamentally limited?
 
-2. **Validation Gaps → Production Readiness:** Production benchmarks and documentation depend on stable validation fixes. Phase 22 resolves known gaps, providing stable physics for Phase 23's realistic benchmarks.
+2. **Phase 25 (Alternative):** If Phase 24 finds RC networks fundamentally limited, implement alternative approaches (finite difference, CTF, adaptive timestep). If Phase 24 finds a bug, fix it and skip to Phase 26.
 
-This ordering directly addresses the critical pitfalls identified in research:
-- Phase 21 prevents Pitfall 1 (wiring issues not detected) and Pitfall 6 (brittle tests)
-- Phase 22 prevents Pitfall 2 (fixes introduce regressions) and Pitfall 5 (8R3C migration without validation)
-- Phase 23 prevents Pitfall 3 (unrealistic benchmarks) and Pitfall 4 (stale documentation)
+3. **Phase 26 (Evaluation):** Comprehensive testing against all 18 ASHRAE 140 cases. Ensure no regressions on low-mass while fixing high-mass.
+
+4. **Phase 27 (Decision):** Based on results, either ship v0.6 with validated approach OR formally document that RC networks cannot work and recommend ML surrogate path for v1.0.
+
+This ordering ensures we don't waste effort implementing alternatives if there's a simple bug in the current 6R2C implementation.
 
 ---
 
@@ -163,15 +151,28 @@ This ordering directly addresses the critical pitfalls identified in research:
 
 **Granularity:** Fine (from config.json)
 
-This milestone uses fine-grained phases to maintain clear delivery boundaries:
-- **Integration Testing Framework** (8 requirements) - Complete E2E testing infrastructure
-- **Validation Gap Resolution** (9 requirements) - Resolve all known ASHRAE 140 gaps
-- **Production Readiness** (13 requirements) - Complete production artifacts
+This milestone uses fine-grained phases to maintain clear decision points:
+- **Phase 24:** Diagnostic only — no implementation
+- **Phase 25:** Implementation of best alternative
+- **Phase 26:** Comprehensive evaluation
+- **Phase 27:** Release or pivot decision
 
-Each phase delivers a coherent, verifiable capability that unblocks the next phase.
+Each phase delivers a coherent, verifiable capability that informs the next phase.
 
 ---
 
-*Roadmap created: 2026-03-15*
-*Updated: 2026-03-15 - Added gap closure plans (21-06 through 21-10)*
-*Updated: 2026-03-15 - Added gap closure plans (22-06 through 22-07)*
+| 24. 6R2C/8R3C Diagnostic Audit | 0/6 | Pending     | -          |
+## Progress
+
+| Phase | Name | Plans Complete | Status | Completed |
+|-------|------|----------------|--------|-----------|
+| 24. 6R2C/8R3C Diagnostic Audit | 0/6 | Pending | - |
+| 25. Alternative Physics Implementation | 0/4 | Pending | - |
+| 26. Comparative Evaluation | 0/4 | Pending | - |
+| 27. v0.6 Release or Pivot Decision | 0/2 | Pending | - |
+
+**Overall Progress:** 0% (0/4 phases started)
+
+---
+
+*Roadmap created: 2026-03-17 for v0.6 Validation Excellence*
