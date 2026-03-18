@@ -88,6 +88,7 @@ impl CTFSolverConfig {
 }
 
 /// CTF solver state and history buffers.
+#[derive(Clone)]
 pub struct CTFSolver {
     /// CTF coefficients (X, Y, Z, Φ).
     pub coefficients: CTFCoefficients,

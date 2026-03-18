@@ -1,0 +1,290 @@
+//! CTF Solver Wrapper - Implements HeatConductionSolver trait for CTF method.
+//!
+//! This module wraps the existing CTFSolver to implement the common
+//! HeatConductionSolver trait interface, enabling unified treatment
+//! with 5R1C and finite difference solvers.
+//!
+//! # Overview
+//!
+//! The `CTFSolverWrapper` adapts the CTFSolver to the common trait interface:
+//! - Converts BuildingAssembly to CTF coefficients
+//! - Handles temperature boundary conditions
+//! - Returns heat flux in consistent units [W/m²]
+//!
+//! # Example
+//!
+//! ```rust
+//! use fluxion::physics::ctf_solver_wrapper::CTFSolverWrapper;
+//! use fluxion::physics::solver_trait::HeatConductionSolver;
+//!
+//! let mut solver = CTFSolverWrapper::new();
+//! solver.initialize(&wall_assembly)?;
+//!
+//! let flux = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0)?;
+//! ```
+
+use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
+use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
+use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::sim::assembly::BuildingAssembly;
+
+/// CTF solver wrapper implementing the common HeatConductionSolver trait.
+///
+/// This wrapper adapts the CTFSolver to work with the unified solver interface,
+/// handling conversion from BuildingAssembly to CTF coefficients and managing
+/// boundary condition transformations.
+pub struct CTFSolverWrapper {
+    /// Underlying CTF solver
+    solver: Option<CTFSolver>,
+    /// CTF coefficients (cached after initialization)
+    coefficients: Option<CTFCoefficients>,
+    /// Interior convective coefficient [W/m²·K]
+    h_interior: f64,
+    /// Exterior convective coefficient [W/m²·K]
+    h_exterior: f64,
+    /// Initialized flag
+    initialized: bool,
+    /// Valid flag (coefficients converged)
+    valid: bool,
+}
+
+impl CTFSolverWrapper {
+    /// Create a new uninitialized CTF solver wrapper.
+    pub fn new() -> Self {
+        Self {
+            solver: None,
+            coefficients: None,
+            h_interior: 8.0,
+            h_exterior: 25.0,
+            initialized: false,
+            valid: false,
+        }
+    }
+
+    /// Create wrapper with custom convective coefficients.
+    pub fn with_convection(h_interior: f64, h_exterior: f64) -> Self {
+        Self {
+            h_interior,
+            h_exterior,
+            ..Self::new()
+        }
+    }
+
+    /// Convert BuildingAssembly to CTF materials.
+    fn assembly_to_ctf_materials(assembly: &BuildingAssembly) -> Vec<CTFMaterial> {
+        assembly
+            .layers
+            .iter()
+            .map(|layer| {
+                CTFMaterial::new(
+                    layer.name(),
+                    layer.thickness(),
+                    layer.conductivity(),
+                    layer.density(),
+                    layer.specific_heat(),
+                )
+            })
+            .collect()
+    }
+
+    /// Validate CTF coefficients.
+    fn validate_coefficients(coeffs: &CTFCoefficients) -> bool {
+        coeffs.x.iter().all(|&x| x.is_finite())
+            && coeffs.y.iter().all(|&y| y.is_finite())
+            && coeffs.z.iter().all(|&z| z.is_finite())
+            && coeffs.phi.iter().all(|&p| p.is_finite())
+    }
+}
+
+impl Default for CTFSolverWrapper {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl HeatConductionSolver for CTFSolverWrapper {
+    fn name(&self) -> &str {
+        "CTF"
+    }
+
+    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
+        // Convert assembly to CTF materials
+        let materials = Self::assembly_to_ctf_materials(wall);
+
+        if materials.is_empty() {
+            return Err(SolverError::ConstructionError(
+                "Wall assembly has no layers".to_string(),
+            ));
+        }
+
+        // Compute CTF coefficients for 1-hour timestep
+        let timestep = 3600.0; // Default 1 hour
+        let coeffs = CTFCalculator::with_defaults(&materials, timestep).compute_coefficients();
+
+        // Validate coefficients
+        if !Self::validate_coefficients(&coeffs) {
+            self.valid = false;
+            return Err(SolverError::CoefficientError(
+                "CTF coefficient calculation failed - coefficients are not finite".to_string(),
+            ));
+        }
+
+        // Create solver configuration
+        let config = CTFSolverConfig::new(timestep, 50);
+
+        // Create and initialize solver
+        self.solver = Some(CTFSolver::new(coeffs.clone(), config));
+        self.coefficients = Some(coeffs);
+        self.initialized = true;
+        self.valid = true;
+
+        Ok(())
+    }
+
+    fn step(
+        &mut self,
+        timestep: f64,
+        T_interior: f64,
+        T_exterior: f64,
+        _h_interior: f64,
+        _h_exterior: f64,
+    ) -> Result<f64, SolverError> {
+        if !self.initialized {
+            return Err(SolverError::InvalidConfig(
+                "CTF solver not initialized. Call initialize() first.".to_string(),
+            ));
+        }
+
+        if !self.valid {
+            return Err(SolverError::ConvergenceError(
+                "CTF solver is not valid (coefficients may be invalid)".to_string(),
+            ));
+        }
+
+        // Get mutable reference to solver
+        let solver = self.solver.as_mut().ok_or_else(|| {
+            SolverError::InvalidConfig("CTF solver is None after initialization".to_string())
+        })?;
+
+        // Verify timestep matches CTF configuration
+        let solver_timestep = solver.config.timestep;
+        if (timestep - solver_timestep).abs() > 1.0 {
+            // Timestep mismatch - could interpolate or warn
+            // For now, just proceed with CTF's native timestep
+            log::warn!(
+                "CTF timestep ({:.0}s) differs from model timestep ({:.0}s)",
+                solver_timestep,
+                timestep
+            );
+        }
+
+        // Step the CTF solver with surface temperatures
+        // Note: CTF expects surface temperatures, but we're using air temperatures
+        // This is a simplification - a more accurate model would solve surface heat balance
+        let q_flux = solver.step(T_interior, T_exterior);
+
+        Ok(q_flux)
+    }
+
+    fn energy_storage_rate(&self) -> f64 {
+        // CTF doesn't explicitly track energy storage rate
+        // Could estimate from flux difference between interior and exterior
+        0.0
+    }
+
+    fn is_valid(&self) -> bool {
+        self.initialized && self.valid
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+
+    fn create_test_wall() -> BuildingAssembly {
+        AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2))) // 200mm concrete
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_ctf_wrapper_creation() {
+        let wrapper = CTFSolverWrapper::new();
+        assert!(!wrapper.initialized);
+        assert!(!wrapper.valid);
+    }
+
+    #[test]
+    fn test_ctf_wrapper_initialization() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+
+        let result = wrapper.initialize(&wall);
+        assert!(result.is_ok());
+        assert!(wrapper.is_valid());
+    }
+
+    #[test]
+    fn test_ctf_wrapper_flux_calculation() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+
+        wrapper.initialize(&wall).unwrap();
+
+        // Calculate flux for 20°C interior, 0°C exterior
+        let flux = wrapper.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+
+        // Flux should be finite
+        assert!(flux.is_finite());
+
+        // Flux should be negative (heat flowing out)
+        assert!(flux < 0.0);
+    }
+
+    #[test]
+    fn test_ctf_wrapper_uninitialized() {
+        let mut wrapper = CTFSolverWrapper::new();
+
+        // Should fail if not initialized
+        let result = wrapper.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ctf_wrapper_diurnal_simulation() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+
+        wrapper.initialize(&wall).unwrap();
+
+        // 24-hour simulation
+        let mut total_flux = 0.0;
+        for hour in 0..24 {
+            let t_ext = 10.0 + 10.0 * ((hour as f64 - 6.0) * std::f64::consts::PI / 12.0).sin();
+            let flux = wrapper.step(3600.0, 20.0, t_ext, 8.0, 25.0).unwrap();
+            total_flux += flux;
+        }
+
+        // Total flux should be reasonable
+        assert!(
+            total_flux.abs() < 10000.0,
+            "Total flux {:.2} unreasonably large",
+            total_flux
+        );
+    }
+
+    #[test]
+    fn test_ctf_wrapper_with_convection() {
+        let mut wrapper = CTFSolverWrapper::with_convection(10.0, 30.0);
+        let wall = create_test_wall();
+
+        let result = wrapper.initialize(&wall);
+        assert!(result.is_ok());
+
+        // Custom convection coefficients should be stored
+        assert!((wrapper.h_interior - 10.0).abs() < 1e-10);
+        assert!((wrapper.h_exterior - 30.0).abs() < 1e-10);
+    }
+}

@@ -24,7 +24,7 @@ fn test_debug_case_960_multi_zone() {
         let weather_data = weather.get_hourly_data(step).unwrap();
 
         let temps_old = model.temperatures.as_ref().to_vec();
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let temps_new = model.temperatures.as_ref();
 
         // Calculate inter-zone heat transfer at this step (approximate)

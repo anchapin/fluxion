@@ -78,7 +78,7 @@ fn trace_hvac_calculation() {
     println!("HVAC power: {:.2} kW", hvac_power / 1000.0);
 
     // Run model
-    let hvac_output = model.step_physics(timestep, t_out);
+    let hvac_output = model.step_physics(timestep, t_out, 3600.0);
     println!("\n=== Model Output ===");
     println!("HVAC output: {:.2} kW", hvac_output);
     println!("Zone temp after: {:.2}C", model.temperatures.as_ref()[0]);

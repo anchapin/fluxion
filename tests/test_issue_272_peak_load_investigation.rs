@@ -140,7 +140,7 @@ fn test_issue_272_case_600_peak_load_calculation() {
     println!();
 
     // Run simulation for one timestep
-    let hvac_kwh = model.step_physics(coldest_hour, outdoor_temp);
+    let hvac_kwh = model.step_physics(coldest_hour, outdoor_temp, 3600.0);
 
     println!("Simulation Results:");
     println!("  HVAC Energy: {:.6} kWh", hvac_kwh);
@@ -211,7 +211,7 @@ fn test_issue_272_case_600_peak_cooling_calculation() {
     println!();
 
     // Run simulation
-    let hvac_kwh = model.step_physics(hottest_hour, outdoor_temp);
+    let hvac_kwh = model.step_physics(hottest_hour, outdoor_temp, 3600.0);
 
     println!("Simulation Results:");
     println!("  HVAC Energy: {:.6} kWh", hvac_kwh);

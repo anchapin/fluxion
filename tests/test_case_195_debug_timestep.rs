@@ -72,7 +72,7 @@ fn debug_timestep_values() {
         println!("Model sensitivity: {:.4}", sens_from_model);
 
         // Step the model
-        let hvac = model.step_physics(step, t_out);
+        let hvac = model.step_physics(step, t_out, 3600.0);
         println!("Model HVAC output: {:.2} kW", hvac);
         println!("Zone temp: {:.1}C", model.temperatures.as_ref()[0]);
     }

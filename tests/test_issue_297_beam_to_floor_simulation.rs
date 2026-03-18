@@ -35,7 +35,7 @@ fn test_beam_to_floor_simulation_impact() {
 
     let initial_tm = model.mass_temperatures.as_ref()[0];
     let outdoor_temp = 20.0;
-    model.step_physics(0, outdoor_temp);
+    model.step_physics(0, outdoor_temp, 3600.0);
 
     let final_tm = model.mass_temperatures.as_ref()[0];
     let tm_increase_high_fraction = final_tm - initial_tm;
@@ -50,7 +50,7 @@ fn test_beam_to_floor_simulation_impact() {
     model_low.solar_gains =
         VectorField::from_scalar((beam_gain_watts + diffuse_gain_watts) / zone_area, 1);
 
-    model_low.step_physics(0, outdoor_temp);
+    model_low.step_physics(0, outdoor_temp, 3600.0);
     let final_tm_low = model_low.mass_temperatures.as_ref()[0];
     let tm_increase_low_fraction = final_tm_low - initial_tm;
 
@@ -86,7 +86,7 @@ fn test_6r2c_beam_to_floor_simulation_impact() {
     let initial_tm_env = model.envelope_mass_temperatures.as_ref()[0];
     let initial_tm_int = model.internal_mass_temperatures.as_ref()[0];
 
-    model.step_physics(0, 20.0);
+    model.step_physics(0, 20.0, 3600.0);
 
     let final_tm_env = model.envelope_mass_temperatures.as_ref()[0];
     let final_tm_int = model.internal_mass_temperatures.as_ref()[0];

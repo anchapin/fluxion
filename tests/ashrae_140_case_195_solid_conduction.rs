@@ -39,7 +39,7 @@ fn simulate_case_195() -> (f64, f64, f64) {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         if hvac_kwh > 0.0 {
             annual_heating_joules += hvac_kwh * 3.6e6;
@@ -169,7 +169,7 @@ fn test_case_195_temperature_range() {
     // Simulate for a week to see temperature patterns
     for step in 0..168 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        model.step_physics(step, weather_data.dry_bulb_temp);
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         temperatures.push(model.temperatures.as_ref()[0]);
     }
 

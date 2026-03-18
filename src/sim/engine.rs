@@ -7,6 +7,8 @@ use crate::physics::constants::thermal::ashrae_140::{
     EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
 };
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
+use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::sim::assembly::{AssemblyBuilder, BuildingAssembly, ConcreteMaterial, MaterialLayer};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
@@ -492,6 +494,28 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// - No curve fitting or artificial delays
     pub ideal_air_loads_mode: bool,
 
+    // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
+    /// CTF coefficients for each wall construction (precomputed during initialization)
+    pub ctf_coefficients: Option<CTFCoefficients>,
+    /// CTF solver instances (one per zone for parallel evaluation)
+    pub ctf_solvers: Vec<CTFSolver>,
+    /// Enable CTF solver for heat conduction (default: false for 5R1C fallback)
+    pub ctf_enabled: bool,
+    /// CTF timestep duration in seconds (typically 3600 for 1-hour timestep)
+    pub ctf_timestep: f64,
+
+    // FD (Finite Difference) solver for high-mass walls (Phase 28)
+    /// FD solver instances (one per zone for parallel evaluation)
+    pub fd_solvers: Vec<crate::physics::fd_solver::ImplicitFDSolver>,
+    /// Enable FD solver for heat conduction (default: false)
+    pub fd_enabled: bool,
+    /// FD timestep duration in seconds (typically 3600 for 1-hour timestep)
+    pub fd_timestep: f64,
+
+    // Solver manager for unified heat conduction solving (Phase 28)
+    /// Unified solver manager for 5R1C/CTF/FD methods with automatic selection
+    pub solver_manager: Option<crate::physics::solver_manager::SolverManager>,
+
     /// Fraction of internal gains that are convective (rest is radiative to surfaces)
     pub convective_fraction: f64,
 
@@ -693,6 +717,20 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             window_orientations: self.window_orientations.clone(),
             hvac_controller: self.hvac_controller.clone(),
             ideal_air_loads_mode: self.ideal_air_loads_mode,
+
+            // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
+            ctf_coefficients: self.ctf_coefficients.clone(),
+            ctf_solvers: self.ctf_solvers.clone(),
+            ctf_enabled: self.ctf_enabled,
+            ctf_timestep: self.ctf_timestep,
+
+            // FD (Finite Difference) solver for high-mass walls (Phase 28)
+            fd_solvers: vec![], // Don't clone FD solvers - they will be reinitialized
+            fd_enabled: false,
+            fd_timestep: self.fd_timestep,
+
+            // Solver manager for unified heat conduction solving (Phase 28)
+            solver_manager: None, // Don't clone solvers - they will be reinitialized
 
             // Predictive HVAC controller with thermal inertia (Plan 15-04)
             predictive_controller: self.predictive_controller.clone(),
@@ -2010,6 +2048,20 @@ impl ThermalModel<VectorField> {
             internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
             ideal_air_loads_mode: false,        // Disable ideal air loads by default (Issue #382)
 
+            // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
+            ctf_coefficients: None, // Will be set during initialization if CTF enabled
+            ctf_solvers: Vec::new(), // One solver per zone
+            ctf_enabled: false,     // Disabled by default (use 5R1C)
+            ctf_timestep: 3600.0,   // 1-hour timestep default
+
+            // FD (Finite Difference) solver for high-mass walls (Phase 28)
+            fd_solvers: Vec::new(), // One solver per zone
+            fd_enabled: false,      // Disabled by default
+            fd_timestep: 3600.0,    // 1-hour timestep default
+
+            // Solver manager for unified heat conduction solving (Phase 28)
+            solver_manager: None, // Will be initialized when solver method is selected
+
             // Peak power tracking (Issue #272)
             peak_power_heating: 0.0, // Peak heating power in watts
             peak_power_cooling: 0.0, // Peak cooling power in watts
@@ -2308,6 +2360,174 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Check if this is an 8R3C thermal model (Phase 20 evaluation).
     pub fn is_8r3c_model(&self) -> bool {
         self.thermal_model_type == ThermalModelType::EightRThreeC
+    }
+
+    /// Enable CTF (Conduction Transfer Function) solver for high-mass wall conduction.
+    ///
+    /// This method precomputes CTF coefficients for the wall construction and initializes
+    /// CTF solvers for each thermal zone. The CTF solver will be used instead of 5R1C
+    /// for calculating heat conduction through opaque surfaces.
+    ///
+    /// # Arguments
+    /// * `wall_layers` - Wall construction layers (interior to exterior) with thermal properties
+    /// * `timestep` - Simulation timestep in seconds (typically 3600 for 1-hour)
+    /// * `history_size` - Number of history elements to retain (typically 50)
+    ///
+    /// # Example
+    /// ```rust
+    /// let mut model = ThermalModel::new(1);
+    /// let layers = vec![
+    ///     CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
+    ///     CTFMaterial::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
+    ///     CTFMaterial::new("Insulation", 0.050, 0.04, 50.0, 840.0),
+    ///     CTFMaterial::new("Brick", 0.100, 0.81, 1920.0, 790.0),
+    /// ];
+    /// model.enable_ctf(&layers, 3600.0, 50);
+    /// ```
+    pub fn enable_ctf(&mut self, wall_layers: &[CTFMaterial], timestep: f64, history_size: usize) {
+        // Precompute CTF coefficients for the wall construction
+        let calculator = CTFCalculator::with_defaults(wall_layers, timestep);
+        let coefficients = calculator.compute_coefficients();
+
+        // Create a solver for each zone
+        let mut solvers = Vec::with_capacity(self.num_zones);
+        for i in 0..self.num_zones {
+            let mut config = CTFSolverConfig::new(timestep, history_size);
+            // Set surface area based on zone geometry
+            let zone_areas: &[f64] = self.zone_area.as_ref();
+            config.surface_area = zone_areas.get(i).copied().unwrap_or(20.0);
+            config.h_interior = INTERIOR_FILM_COEFF;
+            config.h_exterior =
+                crate::physics::constants::thermal::ashrae_140::v2023::EXTERIOR_FILM_COEFF;
+            solvers.push(CTFSolver::new(coefficients.clone(), config));
+        }
+
+        self.ctf_coefficients = Some(coefficients);
+        self.ctf_solvers = solvers;
+        self.ctf_enabled = true;
+        self.ctf_timestep = timestep;
+    }
+
+    /// Disable CTF solver and revert to 5R1C conduction calculation.
+    pub fn disable_ctf(&mut self) {
+        self.ctf_enabled = false;
+        self.ctf_coefficients = None;
+        self.ctf_solvers.clear();
+    }
+
+    /// Check if CTF solver is enabled.
+    pub fn ctf_is_enabled(&self) -> bool {
+        self.ctf_enabled
+    }
+
+    /// Enable Finite Difference (FD) solver for high-mass walls.
+    ///
+    /// This method creates FD solvers for each zone using the wall layer discretization.
+    /// FD solver uses implicit BTCS scheme with Thomas algorithm for tridiagonal system solving.
+    ///
+    /// # Arguments
+    ///
+    /// * `wall_layers` - Wall construction layers (used for FD discretization)
+    /// * `timestep` - Simulation timestep in seconds (typically 3600 for 1-hour)
+    /// * `nodes_per_layer` - Number of nodes per material layer (default: 5-10 for accuracy)
+    /// * `initial_temp` - Initial wall temperature [°C] (default: 20°C)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// let layers = vec![
+    ///     MaterialLayer::new("Concrete", 0.200, 1.4, 2300.0, 880.0),
+    /// ];
+    /// model.enable_fd(&layers, 3600.0, 5, 20.0);
+    /// ```
+    pub fn enable_fd(
+        &mut self,
+        wall_layers: &[crate::physics::fd_discretization::MaterialLayer],
+        timestep: f64,
+        nodes_per_layer: usize,
+        initial_temp: f64,
+    ) {
+        use crate::physics::fd_discretization::WallDiscretization;
+        use crate::physics::fd_solver::ImplicitFDSolver;
+
+        // Create discretization for the wall
+        let discretization = WallDiscretization::from_layers(wall_layers, nodes_per_layer);
+
+        // Create a solver for each zone
+        let mut solvers = Vec::with_capacity(self.num_zones);
+        for _ in 0..self.num_zones {
+            solvers.push(ImplicitFDSolver::new(discretization.clone(), initial_temp));
+        }
+
+        self.fd_solvers = solvers;
+        self.fd_enabled = true;
+        self.fd_timestep = timestep;
+    }
+
+    /// Disable FD solver and revert to 5R1C conduction calculation.
+    pub fn disable_fd(&mut self) {
+        self.fd_enabled = false;
+        self.fd_solvers.clear();
+    }
+
+    /// Check if FD solver is enabled.
+    pub fn fd_is_enabled(&self) -> bool {
+        self.fd_enabled
+    }
+
+    /// Enable CTF with automatic fallback to FD if coefficients are invalid.
+    ///
+    /// This method attempts to enable CTF solver, but if coefficient calculation fails
+    /// or produces invalid results, it automatically falls back to FD solver.
+    ///
+    /// # Arguments
+    ///
+    /// * `wall_layers` - Wall construction layers for both CTF and FD
+    /// * `timestep` - Simulation timestep in seconds
+    /// * `history_size` - CTF history buffer size (default: 50)
+    /// * `fd_nodes` - FD nodes per layer (default: 5)
+    ///
+    /// # Returns
+    ///
+    /// `true` if CTF was enabled, `false` if fell back to FD
+    pub fn enable_ctf_with_fd_fallback(
+        &mut self,
+        wall_layers: &[crate::physics::fd_discretization::MaterialLayer],
+        timestep: f64,
+        history_size: usize,
+        fd_nodes: usize,
+    ) -> bool {
+        use crate::physics::ctf_coefficients::CTFCalculator;
+        use crate::physics::method_selector::ThermalMethodSelector;
+
+        // Convert wall layers to CTF materials
+        let ctf_materials: Vec<crate::physics::ctf_coefficients::CTFMaterial> = wall_layers
+            .iter()
+            .map(|l| {
+                crate::physics::ctf_coefficients::CTFMaterial::new(
+                    &l.name,
+                    l.thickness,
+                    l.conductivity,
+                    l.density,
+                    l.specific_heat,
+                )
+            })
+            .collect();
+
+        // Try to compute CTF coefficients
+        let calculator = CTFCalculator::with_defaults(&ctf_materials, timestep);
+        let coefficients = calculator.compute_coefficients();
+
+        // Validate coefficients
+        if !ThermalMethodSelector::validate_ctf_coefficients(&coefficients) {
+            log::warn!("CTF coefficients invalid, falling back to FD solver");
+            self.enable_fd(wall_layers, timestep, fd_nodes, 20.0);
+            return false;
+        }
+
+        // CTF coefficients are valid, enable CTF
+        self.enable_ctf(&ctf_materials, timestep, history_size);
+        true
     }
 
     /// Updates model parameters based on a gene vector from an optimizer.
@@ -2927,7 +3147,57 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
-        let t_sol_air = VectorField::new(t_sol_air_data);
+        // Keep t_sol_air_data for CTF calculation, create VectorField for standard 5R1C
+        let t_sol_air = VectorField::new(t_sol_air_data.clone());
+
+        // === CTF (Conduction Transfer Function) Heat Flux Calculation ===
+        // If CTF is enabled, calculate heat flux through envelope using CTF method
+        // instead of 5R1C conductance-based approach
+        let ctf_flux_w: Option<Vec<f64>> = if self.ctf_enabled && !self.ctf_solvers.is_empty() {
+            let temps = self.temperatures.as_ref();
+            let mut ctf_fluxes = Vec::with_capacity(self.num_zones);
+
+            for (i, solver) in self.ctf_solvers.iter_mut().enumerate() {
+                let t_zone = temps.get(i).copied().unwrap_or(20.0);
+                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+
+                // Calculate CTF flux [W/m²] (positive = into zone)
+                let q_flux = solver.step(t_zone, t_ext);
+                ctf_fluxes.push(q_flux);
+            }
+            Some(ctf_fluxes)
+        } else {
+            None
+        };
+
+        // === FD (Finite Difference) Heat Flux Calculation ===
+        // If FD is enabled, calculate heat flux through envelope using implicit BTCS method
+        let fd_flux_w: Option<Vec<f64>> = if self.fd_enabled && !self.fd_solvers.is_empty() {
+            use crate::physics::fd_solver::SurfaceBC;
+            let temps = self.temperatures.as_ref();
+            let mut fd_fluxes = Vec::with_capacity(self.num_zones);
+
+            for (i, solver) in self.fd_solvers.iter_mut().enumerate() {
+                let t_zone = temps.get(i).copied().unwrap_or(20.0);
+                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+
+                // Create boundary conditions
+                let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
+                let exterior_bc = SurfaceBC::new_exterior(
+                    crate::physics::constants::thermal::ashrae_140::v2023::EXTERIOR_FILM_COEFF,
+                    t_ext,
+                    0.0, // External heat flux (solar already in sol-air temp)
+                );
+
+                // Step FD solver and get interior surface heat flux
+                solver.step(self.fd_timestep, &interior_bc, &exterior_bc);
+                let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
+                fd_fluxes.push(q_flux);
+            }
+            Some(fd_fluxes)
+        } else {
+            None
+        };
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -3071,6 +3341,65 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
             }
         }
+
+        // === Add CTF envelope conduction heat flux (if enabled) ===
+        // CTF flux replaces standard envelope conduction calculation
+        // Positive flux = heat into zone, Negative flux = heat out of zone
+        if let Some(ctf_fluxes) = &ctf_flux_w {
+            let slice = phi_ia_with_iz.as_mut();
+            for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
+                if i < slice.len() {
+                    // Convert flux [W/m²] to power [W] by multiplying by zone area
+                    let area = self.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let q_ctf = q_flux * area;
+
+                    // Subtract standard 5R1C envelope conduction to avoid double-counting
+                    // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
+                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_mass = self
+                        .mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
+                    let h_tr_em_i = self.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
+
+                    // Add net CTF flux (CTF - 5R1C)
+                    slice[i] += q_ctf - q_5r1c;
+                }
+            }
+        }
+
+        // === Add FD envelope conduction heat flux (if enabled) ===
+        // FD flux replaces standard 5R1C envelope conduction calculation
+        // Positive flux = heat into zone, Negative flux = heat out of zone
+        if let Some(fd_fluxes) = &fd_flux_w {
+            let slice = phi_ia_with_iz.as_mut();
+            for (i, &q_flux) in fd_fluxes.iter().enumerate() {
+                if i < slice.len() {
+                    // Convert flux [W/m²] to power [W] by multiplying by zone area
+                    let area = self.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let q_fd = q_flux * area;
+
+                    // Subtract standard 5R1C envelope conduction to avoid double-counting
+                    // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
+                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_mass = self
+                        .mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
+                    let h_tr_em_i = self.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
+
+                    // Add net FD flux (FD - 5R1C)
+                    slice[i] += q_fd - q_5r1c;
+                }
+            }
+        }
+
         // For single-zone or no inter-zone heat, phi_ia_with_iz remains as cloned phi_ia (no allocation beyond the initial clone)
 
         // Recalculate num_rest with inter-zone heat transfer
@@ -4952,6 +5281,118 @@ mod tests {
             energy1,
             energy2
         );
+    }
+
+    #[test]
+    fn test_ctf_solver_enable() {
+        use crate::physics::ctf_coefficients::CTFMaterial;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+
+        // Initially CTF should be disabled
+        assert!(!model.ctf_is_enabled(), "CTF should be disabled by default");
+        assert!(
+            model.ctf_coefficients.is_none(),
+            "CTF coefficients should be None"
+        );
+        assert!(model.ctf_solvers.is_empty(), "CTF solvers should be empty");
+
+        // Enable CTF with Case 900 wall construction
+        let layers = vec![
+            CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
+            CTFMaterial::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
+            CTFMaterial::new("Insulation", 0.050, 0.04, 50.0, 840.0),
+            CTFMaterial::new("Brick", 0.100, 0.81, 1920.0, 790.0),
+        ];
+        model.enable_ctf(&layers, 3600.0, 50);
+
+        // Verify CTF is enabled
+        assert!(
+            model.ctf_is_enabled(),
+            "CTF should be enabled after enable_ctf()"
+        );
+        assert!(
+            model.ctf_coefficients.is_some(),
+            "CTF coefficients should be Some"
+        );
+        assert_eq!(model.ctf_solvers.len(), 1, "Should have 1 CTF solver");
+        assert!(
+            (model.ctf_timestep - 3600.0).abs() < 1e-9,
+            "CTF timestep should be 3600s"
+        );
+    }
+
+    #[test]
+    fn test_ctf_solver_disable() {
+        use crate::physics::ctf_coefficients::CTFMaterial;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+
+        // Enable CTF first
+        let layers = vec![CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0)];
+        model.enable_ctf(&layers, 3600.0, 50);
+        assert!(model.ctf_is_enabled(), "CTF should be enabled");
+
+        // Disable CTF
+        model.disable_ctf();
+
+        // Verify CTF is disabled
+        assert!(
+            !model.ctf_is_enabled(),
+            "CTF should be disabled after disable_ctf()"
+        );
+        assert!(
+            model.ctf_coefficients.is_none(),
+            "CTF coefficients should be None"
+        );
+        assert!(model.ctf_solvers.is_empty(), "CTF solvers should be empty");
+    }
+
+    #[test]
+    fn test_ctf_solver_multi_zone() {
+        use crate::physics::ctf_coefficients::CTFMaterial;
+
+        let mut model = ThermalModel::<VectorField>::new(5);
+
+        // Enable CTF for 5-zone model
+        let layers = vec![
+            CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
+            CTFMaterial::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
+        ];
+        model.enable_ctf(&layers, 3600.0, 50);
+
+        // Verify CTF solvers created for all zones
+        assert!(model.ctf_is_enabled(), "CTF should be enabled");
+        assert_eq!(model.ctf_solvers.len(), 5, "Should have 5 CTF solvers");
+    }
+
+    #[test]
+    fn test_ctf_step_physics_integration() {
+        use crate::physics::ctf_coefficients::CTFMaterial;
+
+        let mut model = ThermalModel::<VectorField>::new(1);
+        model.apply_parameters(&[1.5, 21.0, 27.0]);
+
+        // Enable CTF
+        let layers = vec![
+            CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0),
+            CTFMaterial::new("Concrete", 0.150, 1.4, 2300.0, 880.0),
+            CTFMaterial::new("Insulation", 0.050, 0.04, 50.0, 840.0),
+            CTFMaterial::new("Brick", 0.100, 0.81, 1920.0, 790.0),
+        ];
+        model.enable_ctf(&layers, 3600.0, 50);
+
+        // Run step_physics with CTF enabled
+        let test_loads = vec![5.0; 1];
+        model.set_loads(&test_loads);
+
+        // Should not panic and should return finite energy
+        let energy = model.step_physics(0, 10.0, 3600.0);
+        assert!(
+            energy.is_finite(),
+            "Energy should be finite with CTF enabled"
+        );
+        assert!(energy >= 0.0, "Energy should be non-negative");
     }
 
     #[test]

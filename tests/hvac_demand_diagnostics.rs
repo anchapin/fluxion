@@ -52,7 +52,7 @@ fn test_case_900_hvac_demand_analysis() {
         model.weather = Some(weather_data.clone());
 
         // Run physics step
-        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Track mass temperature behavior
         if let Some(&mass_temp) = model.mass_temperatures.as_slice().first() {
@@ -260,7 +260,7 @@ fn test_case_900_solar_mass_interaction_analysis() {
             .unwrap_or(20.0);
 
         // Run physics step
-        model.step_physics(step, weather_data.dry_bulb_temp);
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Get new mass temp
         let curr_mass_temp = model

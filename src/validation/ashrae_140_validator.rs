@@ -1,6 +1,7 @@
 use crate::physics::cta::VectorField;
+use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
-use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
+use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
 use crate::validation::benchmark;
 use crate::validation::diagnostic::{
     ComparisonRow, DiagnosticCollector, DiagnosticConfig, DiagnosticReport, EnergyBreakdown,
@@ -1198,8 +1199,83 @@ impl ASHRAE140Validator {
         report
     }
 
+    /// Convert ConstructionLayer to CTFMaterial for CTF solver.
+    fn layer_to_ctf_material(layer: &crate::sim::construction::ConstructionLayer) -> CTFMaterial {
+        CTFMaterial::new(
+            &layer.name,
+            layer.thickness,
+            layer.conductivity,
+            layer.density,
+            layer.specific_heat,
+        )
+    }
+
+    /// Enable advanced solver (CTF or FD) for high-mass cases based on construction type.
+    ///
+    /// This method implements automatic solver selection with CTF→FD fallback:
+    /// - For high-mass constructions (τ ≥ 2 hours): try CTF first, fallback to FD if coefficients invalid
+    /// - For low-mass constructions: use default 5R1C (no change)
+    ///
+    /// Phase 29: This is the key integration for CTF/FD solvers into the validation path.
+    fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
+        // Only enable advanced solver for high-mass construction cases
+        if spec.construction_type == ConstructionType::HighMass {
+            // Convert wall construction layers to FD materials (compatible with both CTF and FD)
+            let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec
+                .construction
+                .wall
+                .layers
+                .iter()
+                .map(|layer| {
+                    crate::physics::fd_discretization::MaterialLayer::new(
+                        &layer.name,
+                        layer.thickness,
+                        layer.conductivity,
+                        layer.density,
+                        layer.specific_heat,
+                    )
+                })
+                .collect();
+
+            // Calculate wall thermal properties for logging
+            let total_resistance: f64 =
+                fd_layers.iter().map(|l| l.thickness / l.conductivity).sum();
+            let total_capacitance: f64 = fd_layers
+                .iter()
+                .map(|l| l.density * l.specific_heat * l.thickness)
+                .sum();
+            let time_constant = total_resistance * total_capacitance; // seconds
+            let tau_hours = time_constant / 3600.0;
+
+            // Enable CTF with automatic FD fallback
+            // Returns true if CTF was enabled, false if fell back to FD
+            let used_ctf = model.enable_ctf_with_fd_fallback(&fd_layers, 3600.0, 50, 5);
+
+            let u_value = 1.0
+                / fd_layers
+                    .iter()
+                    .map(|l| l.thickness / l.conductivity)
+                    .sum::<f64>();
+            let solver_name = if used_ctf { "CTF" } else { "FD (fallback)" };
+
+            println!(
+                "[Solver] Case {}: Enabled {} solver for high-mass construction ({} layers, U={:.3} W/m²K, τ={:.1}h)",
+                spec.case_id,
+                solver_name,
+                fd_layers.len(),
+                u_value,
+                tau_hours
+            );
+        }
+    }
+
     fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
+
+        // Phase 29: Enable advanced solver (CTF/FD) for high-mass cases
+        // This implements automatic solver selection with CTF→FD fallback
+        self.enable_advanced_solver(&mut model, spec);
+
         // Plan 03-04: Thermal mass energy accounting removed
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)

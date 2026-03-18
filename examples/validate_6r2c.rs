@@ -29,7 +29,7 @@ fn simulate_case(spec: &CaseSpec, use_6r2c: bool) -> (f64, f64, f64, f64) {
         model.set_weather(weather_data.clone());
 
         // Step physics (analytical path, no surrogates)
-        let hvac_energy_for_step = model.step_physics(step, weather_data.dry_bulb_temp);
+        let hvac_energy_for_step = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Track peaks
         let hvac_power_watts = if hvac_energy_for_step > 0.0 {
