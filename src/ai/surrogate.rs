@@ -1,7 +1,7 @@
 //! Surrogate manager for fast thermal load predictions.
 
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,
@@ -857,9 +857,7 @@ impl SurrogateManager {
 
         // Legacy single-model path
         if !self.model_loaded || batch_temps.is_empty() {
-            // For tests and fallback, return dummy values.
-            // In a real run, predict_loads_with_fallback is used.
-            return batch_temps.iter().map(|b| vec![1.2; b.len()]).collect();
+            panic!("SurrogateManager requires ONNX model to be loaded for batched inference. Call load_onnx() or with_gpu_backend() before calling predict_loads_batched(). Current state: model_loaded = false");
         }
         if let Some(ref pool) = self.session_pool {
             let batch_size = batch_temps.len();

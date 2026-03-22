@@ -3,7 +3,7 @@ use fluxion::validation::ASHRAE140Validator;
 
 #[test]
 fn test_ashrae_140_comprehensive_validation() {
-    let validator = ASHRAE140Validator::new();
+    let mut validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
 
     // Check that we have results
@@ -91,7 +91,7 @@ fn generate_validation_report() {
     use fluxion::validation::Analyzer;
     use std::path::PathBuf;
 
-    let validator = ASHRAE140Validator::new();
+    let mut validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
 
     // Classify systematic issues

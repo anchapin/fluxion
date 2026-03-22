@@ -49,7 +49,7 @@ fn test_internal_gain_causes_temperature_rise() {
     // Run simulation
     let steps = 500;
     for t in 0..steps {
-        model.step_physics(t, outdoor_temp, 3600.0);
+        model.step_physics(t, outdoor_temp);
     }
 
     let final_temp = model.temperatures[0];
@@ -97,7 +97,7 @@ fn test_hvac_heating_maintains_setpoint() {
     // Run simulation
     let steps = 500;
     for t in 0..steps {
-        model.step_physics(t, outdoor_temp, 3600.0);
+        model.step_physics(t, outdoor_temp);
     }
 
     let final_temp = model.temperatures[0];
@@ -144,7 +144,7 @@ fn test_hvac_cooling_maintains_setpoint() {
     // Run simulation
     let steps = 500;
     for t in 0..steps {
-        model.step_physics(t, outdoor_temp, 3600.0);
+        model.step_physics(t, outdoor_temp);
     }
 
     let final_temp = model.temperatures[0];
@@ -198,8 +198,8 @@ fn test_heat_flow_symmetry() {
     let mut cooling_energy = 0.0;
 
     for t in 0..steps {
-        heating_energy += model_heating.step_physics(t, outdoor_temp, 3600.0).abs();
-        cooling_energy += model_cooling.step_physics(t, outdoor_temp, 3600.0).abs();
+        heating_energy += model_heating.step_physics(t, outdoor_temp).abs();
+        cooling_energy += model_cooling.step_physics(t, outdoor_temp).abs();
     }
 
     println!(
@@ -252,13 +252,13 @@ fn test_energy_conservation_steady_state() {
     // Run to steady state
     let steps = 2000;
     for t in 0..steps {
-        model.step_physics(t, outdoor_temp, 3600.0);
+        model.step_physics(t, outdoor_temp);
     }
 
     // At steady state, the zone temperature should stabilize
     // Check that temperature is no longer changing significantly
     let temp_before = model.temperatures[0];
-    model.step_physics(steps, outdoor_temp, 3600.0);
+    model.step_physics(steps, outdoor_temp);
     let temp_after = model.temperatures[0];
 
     let temp_change = (temp_after - temp_before).abs();
@@ -397,8 +397,8 @@ fn test_thermal_model_consistency() {
 
     // Run both models with identical inputs
     for t in 0..100 {
-        let e1 = model1.step_physics(t, outdoor_temp, 3600.0);
-        let e2 = model2.step_physics(t, outdoor_temp, 3600.0);
+        let e1 = model1.step_physics(t, outdoor_temp);
+        let e2 = model2.step_physics(t, outdoor_temp);
 
         // Energy should be identical
         assert!(
@@ -496,7 +496,7 @@ fn test_multi_zone_energy_balance() {
     // Run simulation
     let steps = 500;
     for t in 0..steps {
-        model.step_physics(t, outdoor_temp, 3600.0);
+        model.step_physics(t, outdoor_temp);
     }
 
     // Check that inter-zone heat transfer is working

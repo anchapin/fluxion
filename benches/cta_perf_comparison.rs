@@ -160,13 +160,13 @@ fn bench_thermal_model_ops(c: &mut Criterion) {
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
     // Warm up
-    model.solve_timesteps(100, &surrogates, false, None, None, None);
+    model.solve_timesteps(100, &surrogates, false);
 
     let mut group = c.benchmark_group("thermal_model");
 
     group.bench_function("solve_timesteps_1year", |b| {
         b.iter(|| {
-            model.solve_timesteps(8760, &surrogates, false, None, None, None);
+            model.solve_timesteps(8760, &surrogates, false);
         })
     });
 

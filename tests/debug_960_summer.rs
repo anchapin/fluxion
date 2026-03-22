@@ -47,7 +47,7 @@ fn test_960_summer_debug() {
     for hour in start_hour..start_hour + 7 * 24 {
         let weather_data = weather.get_hourly_data(hour).unwrap();
         model.set_weather(weather_data.clone());
-        let hvac_kwh = model.step_physics(hour, weather_data.dry_bulb_temp, 3600.0);
+        let hvac_kwh = model.step_physics(hour, weather_data.dry_bulb_temp);
         let temps = model.temperatures.as_ref();
         let loads = model.loads.as_ref();
         let solar = model.solar_gains.as_ref();

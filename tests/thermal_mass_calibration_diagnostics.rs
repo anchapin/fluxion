@@ -6,6 +6,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::WeatherSource;
 
 /// Convert Joules to MWh
 const J_TO_MWH: f64 = 1.0 / 3_600_000_000.0; // 1 MWh = 3.6e9 J

@@ -73,7 +73,7 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Set weather data for proper solar gain calculation
         model.set_weather(weather_data.clone());
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
         if hvac_kwh > 0.0 {
             annual_heating_joules += hvac_kwh * 3.6e6;
@@ -194,7 +194,7 @@ fn test_case_960_zone_temperatures() {
         // One week
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.set_weather(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         let temps = model.temperatures.as_ref();
         back_zone_temps.push(temps[0]);
@@ -381,7 +381,7 @@ fn test_case_960_inter_zone_heat_transfer_analysis() {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.set_weather(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         let temps = model.temperatures.as_ref();
         let temp_diff = temps[1] - temps[0];
@@ -456,7 +456,7 @@ fn test_case_960_seasonal_temperature_profiles() {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.set_weather(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         let temps = model.temperatures.as_ref();
 

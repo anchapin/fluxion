@@ -2,6 +2,7 @@
 
 use fluxion::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use fluxion::ai::surrogate::SurrogateManager;
+use rand::rngs::StdRng;
 use rand::{Rng, SeedableRng};
 
 #[cfg(test)]

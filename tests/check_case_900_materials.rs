@@ -3,6 +3,7 @@
 //! This test verifies that Case 900 uses the correct material properties
 //! as specified in ASHRAE 140 Standard 2023.
 
+use fluxion::sim::construction::{Assemblies, Construction};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[test]

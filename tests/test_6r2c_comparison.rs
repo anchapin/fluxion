@@ -66,8 +66,8 @@ fn run_comparison_simulation(case_name: &str, thermal_cap: f64, days: usize) -> 
             10.0 + 10.0 * ((hour_of_day as f64 - 3.0) * std::f64::consts::PI / 12.0).sin();
 
         // Run both models
-        let hvac_5r1c = model_5r1c.step_physics(timestep, outdoor_temp, 3600.0);
-        let hvac_6r2c = model_6r2c.step_physics(timestep, outdoor_temp, 3600.0);
+        let hvac_5r1c = model_5r1c.step_physics(timestep, outdoor_temp);
+        let hvac_6r2c = model_6r2c.step_physics(timestep, outdoor_temp);
 
         // Accumulate energy
         if hvac_5r1c > 0.0 {
@@ -219,8 +219,8 @@ fn test_comparison_mass_temperature_response() {
 
     // Apply step change in outdoor temperature
     for timestep in 0..48 {
-        model_5r1c.step_physics(timestep, 40.0, 3600.0);
-        model_6r2c.step_physics(timestep, 40.0, 3600.0);
+        model_5r1c.step_physics(timestep, 40.0);
+        model_6r2c.step_physics(timestep, 40.0);
 
         t_mass_5r1c.push(model_5r1c.mass_temperatures.as_ref()[0]);
         t_env_6r2c.push(model_6r2c.envelope_mass_temperatures.as_ref()[0]);
@@ -277,8 +277,8 @@ fn test_comparison_hvac_power_profiles() {
     for timestep in 0..48 {
         let outdoor_temp = 10.0 + 10.0 * ((timestep as f64) * std::f64::consts::PI / 24.0).sin();
 
-        let hvac_5r1c = model_5r1c.step_physics(timestep, outdoor_temp, 3600.0);
-        let hvac_6r2c = model_6r2c.step_physics(timestep, outdoor_temp, 3600.0);
+        let hvac_5r1c = model_5r1c.step_physics(timestep, outdoor_temp);
+        let hvac_6r2c = model_6r2c.step_physics(timestep, outdoor_temp);
 
         hvac_5r1c_profile.push(hvac_5r1c);
         hvac_6r2c_profile.push(hvac_6r2c);

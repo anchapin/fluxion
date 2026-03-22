@@ -13,6 +13,8 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::WeatherSource;
 
 #[test]
 fn test_case_900_free_floating_temp_analysis() {
@@ -165,7 +167,7 @@ fn test_case_900_free_floating_temp_analysis() {
         let hour_of_day = hour % 24;
         let daily_cycle = ((hour_of_day as f64) - 12.0) * std::f64::consts::PI / 12.0;
         let outdoor_temp = 10.0 + 10.0 * daily_cycle.cos();
-        model_5r1c.step_physics(hour, outdoor_temp, 3600.0);
+        model_5r1c.step_physics(hour, outdoor_temp);
         let temp = model_5r1c.temperatures.as_ref()[0];
         min_temp_5r1c = min_temp_5r1c.min(temp);
         max_temp_5r1c = max_temp_5r1c.max(temp);
@@ -190,7 +192,7 @@ fn test_case_900_free_floating_temp_analysis() {
         let hour_of_day = hour % 24;
         let daily_cycle = ((hour_of_day as f64) - 12.0) * std::f64::consts::PI / 12.0;
         let outdoor_temp = 10.0 + 10.0 * daily_cycle.cos();
-        model_6r2c.step_physics(hour, outdoor_temp, 3600.0);
+        model_6r2c.step_physics(hour, outdoor_temp);
         let temp = model_6r2c.temperatures.as_ref()[0];
         min_temp_6r2c = min_temp_6r2c.min(temp);
         max_temp_6r2c = max_temp_6r2c.max(temp);

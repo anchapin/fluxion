@@ -17,7 +17,7 @@ fn trace_full_year() {
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
         if hvac_kwh > 0.0 {
             annual_heating_joules += hvac_kwh * 3.6e6;

@@ -89,7 +89,7 @@ impl TimestepMode {
             TimestepMode::Fixed { dt } => *dt,
             TimestepMode::Adaptive {
                 base_dt,
-                min_dt: _,
+                min_dt,
                 threshold_tau,
             } => {
                 if tau_hours >= *threshold_tau {

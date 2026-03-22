@@ -1298,7 +1298,7 @@ mod statistical_report_tests {
     #[test]
     fn test_statistical_validator_integration() {
         // Create StatisticalValidator
-        let validator = StatisticalValidator::new();
+        let mut validator = StatisticalValidator::new();
 
         // Validate a few baseline cases (cannot actually run simulations in unit tests)
         // This test verifies the API structure is correct
@@ -1452,8 +1452,8 @@ mod statistical_metrics_tests {
 
     #[test]
     fn test_statistical_metrics_aggregation() {
-        use crate::validation::report::BenchmarkReport;
-
+        use crate::validation::report::{BenchmarkReport, ValidationStatus};
+        use std::collections::HashMap;
 
         // Create test report
         let mut report = BenchmarkReport::new();
@@ -1475,7 +1475,7 @@ mod statistical_metrics_tests {
 
     #[test]
     fn test_statistical_metrics_zero_exclusion() {
-        use crate::validation::report::BenchmarkReport;
+        use crate::validation::report::{BenchmarkReport, ValidationStatus};
 
         // Create report with zero reference
         let mut report = BenchmarkReport::new();

@@ -51,10 +51,6 @@ pub mod sim;
 pub mod testing;
 pub mod validation;
 
-use crate::api::BuildingParameters;
-
-#[cfg(feature = "python-bindings")]
-
 pub mod weather;
 
 // Re-export thermal model traits for public API
@@ -66,22 +62,22 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
+use crate::api::parameters::BuildingParameters;
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 // Logging for verbosity control via RUST_LOG environment variable
+use log::{debug, error, info, trace, warn};
 use sim::engine::ThermalModel;
 
-#[cfg(feature = "python-bindings")]
 use crate::api::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
 
-#[cfg(feature = "python-bindings")]
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
-#[cfg(feature = "python-bindings")]
+
 use ndarray::Array2;
-#[cfg(feature = "python-bindings")]
+
 use numpy::PyArrayMethods;
-#[cfg(feature = "python-bindings")]
+
 use pyo3::{
     prelude::{pyclass, pymethods, pymodule, PyModule},
     types::{PyAnyMethods, PyModuleMethods},
@@ -95,7 +91,7 @@ use pyo3::{
 ///
 /// Use this class when you need detailed simulation of a single building configuration,
 /// including hourly temperature traces and ASHRAE 140 validation.
-#[cfg(feature = "python-bindings")]
+
 /// Single-building energy model for detailed simulation.
 ///
 /// Use for validation, hourly temperature traces, or ASHRAE 140 testing.
@@ -135,7 +131,6 @@ struct Model {
     surrogates: SurrogateManager,
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl Model {
     /// Create a new Model instance with default configuration.
@@ -228,16 +223,16 @@ impl Model {
     /// # Returns
     /// Total energy use intensity (EUI) in kWh/m²/year
     fn simulate(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
-        log::info!(
+        info!(
             "Starting simulation for {} years, use_surrogates={}",
             years, use_surrogates
         );
         let steps = years as usize * 8760;
-        log::debug!("Simulation will process {} timesteps", steps);
+        debug!("Simulation will process {} timesteps", steps);
         let result =
             self.inner
                 .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
-        log::info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
         Ok(result)
     }
 
@@ -270,7 +265,7 @@ impl Model {
     /// eui = model.simulate_with_loads(1, False)
     /// ```
     fn simulate_with_loads(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
-        log::info!(
+        info!(
             "Starting simulation with auto-loaded internal loads for {} years, use_surrogates={}",
             years, use_surrogates
         );
@@ -280,7 +275,7 @@ impl Model {
         let result =
             self.inner
                 .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
-        log::info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
         Ok(result)
     }
 
@@ -399,13 +394,12 @@ impl Model {
 }
 
 /// VectorField wrapper for Python with optimized numpy support.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass(name = "VectorField")]
 pub struct PyVectorField {
     inner: crate::physics::cta::VectorField,
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl PyVectorField {
     /// Create a new VectorField from a Python list or numpy array.
@@ -482,7 +476,7 @@ impl PyVectorField {
 }
 
 /// Construction layer material properties for Python.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass(name = "ConstructionLayer")]
 #[derive(Clone)]
 pub struct PyConstructionLayer {
@@ -502,7 +496,6 @@ pub struct PyConstructionLayer {
     pub absorptance: f64,
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<&crate::sim::construction::ConstructionLayer> for PyConstructionLayer {
     fn from(layer: &crate::sim::construction::ConstructionLayer) -> Self {
         PyConstructionLayer {
@@ -517,7 +510,6 @@ impl From<&crate::sim::construction::ConstructionLayer> for PyConstructionLayer 
     }
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<PyConstructionLayer> for crate::sim::construction::ConstructionLayer {
     fn from(layer: PyConstructionLayer) -> Self {
         crate::sim::construction::ConstructionLayer::with_surface_properties(
@@ -532,7 +524,6 @@ impl From<PyConstructionLayer> for crate::sim::construction::ConstructionLayer {
     }
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl PyConstructionLayer {
     /// Create a new ConstructionLayer.
@@ -570,7 +561,7 @@ impl PyConstructionLayer {
 }
 
 /// Surface type for construction calculations.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass(name = "SurfaceType", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PySurfaceType {
@@ -579,7 +570,6 @@ pub enum PySurfaceType {
     Floor,
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<PySurfaceType> for crate::sim::construction::SurfaceType {
     fn from(st: PySurfaceType) -> Self {
         match st {
@@ -591,7 +581,7 @@ impl From<PySurfaceType> for crate::sim::construction::SurfaceType {
 }
 
 /// Thermal mass classification for Python.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass(name = "MassClass", eq, eq_int)]
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum PyMassClass {
@@ -602,7 +592,6 @@ pub enum PyMassClass {
     VeryHeavy,
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<PyMassClass> for crate::sim::construction::MassClass {
     fn from(mc: PyMassClass) -> Self {
         match mc {
@@ -616,14 +605,13 @@ impl From<PyMassClass> for crate::sim::construction::MassClass {
 }
 
 /// Multi-layer construction assembly for Python.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass(name = "Construction")]
 pub struct PyConstruction {
     #[pyo3(get)]
     pub layers: Vec<PyConstructionLayer>,
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<&crate::sim::construction::Construction> for PyConstruction {
     fn from(construction: &crate::sim::construction::Construction) -> Self {
         PyConstruction {
@@ -636,7 +624,6 @@ impl From<&crate::sim::construction::Construction> for PyConstruction {
     }
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<PyConstruction> for crate::sim::construction::Construction {
     fn from(construction: PyConstruction) -> Self {
         crate::sim::construction::Construction::new(
@@ -645,7 +632,6 @@ impl From<PyConstruction> for crate::sim::construction::Construction {
     }
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl PyConstruction {
     /// Create a new Construction from a list of layers.
@@ -719,7 +705,7 @@ impl PyConstruction {
 }
 
 /// Wall surface representation for Python.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass(name = "WallSurface")]
 #[derive(Clone)]
 pub struct PyWallSurface {
@@ -731,7 +717,6 @@ pub struct PyWallSurface {
     pub orientation: String,
 }
 
-#[cfg(feature = "python-bindings")]
 impl From<&crate::sim::components::WallSurface> for PyWallSurface {
     fn from(surface: &crate::sim::components::WallSurface) -> Self {
         PyWallSurface {
@@ -742,7 +727,6 @@ impl From<&crate::sim::components::WallSurface> for PyWallSurface {
     }
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl PyWallSurface {
     /// Create a new WallSurface.
@@ -1131,7 +1115,6 @@ impl BatchOracle {
     }
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl BatchOracle {
     /// Create a new BatchOracle instance.
@@ -1225,10 +1208,7 @@ impl BatchOracle {
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
         // Convert BuildingParameters to Vec<Vec<f64>> for existing implementation
-        let vec_population: Vec<Vec<f64>> = population
-            .iter()
-            .map(|p: &BuildingParameters| p.to_vec())
-            .collect();
+        let vec_population: Vec<Vec<f64>> = population.iter().map(|p| p.to_vec()).collect();
 
         // Call existing implementation
         Ok(Self::evaluate_population(
@@ -1498,7 +1478,7 @@ impl BatchOracle {
 /// This struct provides programmatic access to the valid ranges for all
 /// design parameters used by BatchOracle and Model. Optimization libraries
 /// can query these bounds to generate valid parameter vectors.
-#[cfg(feature = "python-bindings")]
+
 #[pyclass]
 #[derive(Clone)]
 pub struct ParameterBounds {
@@ -1522,7 +1502,6 @@ pub struct ParameterBounds {
     pub max_cooling_setpoint: f64,
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl ParameterBounds {
     /// Get the default parameter bounds.
@@ -1542,7 +1521,6 @@ impl ParameterBounds {
     }
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymodule]
 fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register custom exception types
@@ -1575,13 +1553,11 @@ mod tests {
     use crate::physics::cta::VectorField;
     use crate::sim::engine::ThermalModel;
 
-    #[cfg(feature = "python-bindings")]
     use crate::BatchOracle;
 
     // Import logging macros for tests
+    use log::info;
 
-
-    #[cfg(feature = "python-bindings")]
     #[test]
     fn test_batch_oracle_validation() {
         let oracle = BatchOracle::new().unwrap();
@@ -1602,7 +1578,6 @@ mod tests {
         assert!(results[4].is_nan());
     }
 
-    #[cfg(feature = "python-bindings")]
     #[test]
     fn test_batched_vs_unbatched_consistency() {
         let oracle = BatchOracle::new().unwrap();
@@ -1625,7 +1600,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "python-bindings")]
     #[test]
     fn test_large_population_performance() {
         let oracle = BatchOracle::new().unwrap();
@@ -1645,7 +1619,6 @@ mod tests {
         assert!(duration.as_millis() < 100, "Too slow: {:?}", duration);
     }
 
-    #[cfg(feature = "python-bindings")]
     #[test]
     fn test_10k_population_throughput() {
         let oracle = BatchOracle::new().unwrap();
@@ -1790,7 +1763,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "python-bindings")]
     #[test]
     fn test_batch_oracle_building_parameters() {
         use crate::api::parameters::BuildingParameters;
@@ -1821,7 +1793,6 @@ mod tests {
         }
     }
 
-    #[cfg(feature = "python-bindings")]
     #[test]
     fn test_batch_oracle_building_parameters_invalid() {
         use crate::api::parameters::BuildingParameters;
@@ -1854,20 +1825,20 @@ mod tests {
         // Test various log levels - these should not panic
         log::error!("Test error log");
         log::warn!("Test warn log");
-        log::log::info!("Test info log");
+        log::info!("Test info log");
         log::debug!("Test debug log");
         log::trace!("Test trace log");
 
         // Test that BatchOracle and Model can be created and used with logging
-        #[cfg(feature = "python-bindings")]
+
         {
             let oracle = BatchOracle::new().unwrap();
-            log::info!("Created BatchOracle with logging");
+            info!("Created BatchOracle with logging");
 
             let population = vec![vec![1.5, 20.0, 27.0]];
             let results = oracle.evaluate_population(population, false).unwrap();
             assert!(results[0].is_finite());
-            log::info!("BatchOracle evaluation completed successfully");
+            info!("BatchOracle evaluation completed successfully");
         }
     }
 }
@@ -2281,20 +2252,17 @@ impl Default for DistributedInferenceExecutor {
 // Geometry Tensor Python Bindings (Zero-Copy)
 // ============================================================================
 
-#[cfg(feature = "python-bindings")]
 use crate::physics::geometry_tensor::{
     GeometryTensor, ADJACENCY_MATRIX_DIMS, WALL_MATRIX_DIMS, WINDOW_MATRIX_DIMS, ZONE_COORDS_DIMS,
     ZONE_PROPERTIES_DIMS,
 };
 
-#[cfg(feature = "python-bindings")]
 #[pyclass(name = "GeometryTensor")]
 /// Python-accessible wrapper for GeometryTensor to expose to PyO3.
 pub struct PyGeometryTensor {
     inner: GeometryTensor,
 }
 
-#[cfg(feature = "python-bindings")]
 #[pymethods]
 impl PyGeometryTensor {
     /// Create a new empty GeometryTensor.

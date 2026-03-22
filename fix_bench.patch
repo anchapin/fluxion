@@ -1,9 +1,0 @@
---- .github/workflows/benchmark.yml
-+++ .github/workflows/benchmark.yml
-@@ -100,7 +100,7 @@
-         uses: actions/github-script@v7
-+        continue-on-error: true
-         with:
-           script: |
-             const fs = require('fs');
-             let comment = '## Performance Benchmark Results\n\n';

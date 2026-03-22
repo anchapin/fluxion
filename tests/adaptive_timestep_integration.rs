@@ -17,7 +17,7 @@ use std::time::Duration;
 #[test]
 fn test_case_900_1hr_timestep() {
     let spec = ASHRAE140Case::Case900.spec();
-    let _model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     let surrogates = SurrogateManager::new().unwrap_or_else(|_| {
         panic!("Failed to create SurrogateManager");

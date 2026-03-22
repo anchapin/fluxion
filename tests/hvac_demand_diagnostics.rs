@@ -52,7 +52,7 @@ fn test_case_900_hvac_demand_analysis() {
         model.weather = Some(weather_data.clone());
 
         // Run physics step
-        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
 
         // Track mass temperature behavior
         if let Some(&mass_temp) = model.mass_temperatures.as_slice().first() {
@@ -260,7 +260,7 @@ fn test_case_900_solar_mass_interaction_analysis() {
             .unwrap_or(20.0);
 
         // Run physics step
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         // Get new mass temp
         let curr_mass_temp = model
@@ -349,7 +349,7 @@ fn test_case_900_solar_mass_interaction_analysis() {
 #[test]
 fn test_hvac_power_demand_calculation_issues() {
     let spec = ASHRAE140Case::Case900.spec();
-    let model =
+    let mut model =
         fluxion::sim::engine::ThermalModel::<fluxion::physics::cta::VectorField>::from_spec(&spec);
 
     // Get conductance values to understand sensitivity

@@ -309,7 +309,7 @@ fn test_numerical_stability_extreme_timestep() {
     // Run with extreme outdoor temperatures
     for timestep in 0..48 {
         let outdoor_temp = if timestep % 24 < 12 { 50.0 } else { -20.0 };
-        model.step_physics(timestep, outdoor_temp, 3600.0);
+        model.step_physics(timestep, outdoor_temp);
     }
 
     // All temperatures should remain finite
@@ -361,7 +361,7 @@ fn test_energy_conservation_basic() {
     // Run simulation
     let mut total_hvac_energy = 0.0;
     for timestep in 0..24 {
-        let hvac_energy = model.step_physics(timestep, 10.0, 3600.0);
+        let hvac_energy = model.step_physics(timestep, 10.0);
         total_hvac_energy += hvac_energy;
     }
 
@@ -400,7 +400,7 @@ fn test_diagnostic_timestep_impact() {
 
     // Run baseline simulation (1-hour timestep)
     for timestep in 0..24 {
-        model.step_physics(timestep, 15.0, 3600.0);
+        model.step_physics(timestep, 15.0);
     }
 
     let t_zone_baseline = model.temperatures.as_ref()[0];

@@ -81,7 +81,7 @@ fn test_6r2c_model_single_timestep() {
     let initial_int_mass = model.internal_mass_temperatures.as_ref()[0];
 
     // Use outdoor_temp=0°C (different from initial 20°C) to create heat transfer
-    model.step_physics(0, 10.0, 3600.0);
+    model.step_physics(0, 10.0);
 
     // Check that temperatures have changed
     let new_temp = model.temperatures.as_ref()[0];
@@ -111,7 +111,7 @@ fn test_6r2c_model_energy_conservation() {
     let outdoor_temp = 20.0;
 
     for t in 0..steps {
-        let energy = model.step_physics(t, outdoor_temp, 3600.0);
+        let energy = model.step_physics(t, outdoor_temp);
         assert!(energy.is_finite());
         // Energy can be negative for cooling or when thermal mass is charging
         // (Issue #317: thermal mass energy accounting can result in negative net energy)
@@ -158,8 +158,8 @@ fn test_6r2c_model_thermal_lag() {
             final_outdoor
         };
 
-        model_5r1c.step_physics(t, outdoor, 3600.0);
-        model_6r2c.step_physics(t, outdoor, 3600.0);
+        model_5r1c.step_physics(t, outdoor);
+        model_6r2c.step_physics(t, outdoor);
 
         temps_5r1c.push(model_5r1c.temperatures.as_ref()[0]);
         temps_6r2c.push(model_6r2c.temperatures.as_ref()[0]);
@@ -192,7 +192,7 @@ fn test_6r2c_model_multi_zone() {
 
     // Run a few timesteps
     for t in 0..10 {
-        let energy = model.step_physics(t, 20.0, 3600.0);
+        let energy = model.step_physics(t, 20.0);
         assert!(energy.is_finite());
         // Energy can be negative for cooling or when thermal mass is charging
     }
@@ -217,7 +217,7 @@ fn test_6r2c_model_backward_compatibility() {
     model.configure_6r2c_model(0.75, 100.0);
 
     // Run a timestep
-    model.step_physics(0, 20.0, 3600.0);
+    model.step_physics(0, 20.0);
 
     // Check that the single mass temperature is a weighted average
     let env_temp = model.envelope_mass_temperatures.as_ref()[0];
@@ -247,8 +247,8 @@ fn test_5r1c_vs_6r2c_energy_comparison() {
     let mut energy_6r2c = 0.0;
 
     for t in 0..steps {
-        energy_5r1c += model_5r1c.step_physics(t, outdoor_temp, 3600.0);
-        energy_6r2c += model_6r2c.step_physics(t, outdoor_temp, 3600.0);
+        energy_5r1c += model_5r1c.step_physics(t, outdoor_temp);
+        energy_6r2c += model_6r2c.step_physics(t, outdoor_temp);
     }
 
     // Both models should have finite energy (can be negative for cooling or mass charging)
@@ -277,7 +277,7 @@ fn test_6r2c_model_different_mass_fractions() {
 
         // Run a few timesteps
         for t in 0..10 {
-            let energy = model.step_physics(t, 20.0, 3600.0);
+            let energy = model.step_physics(t, 20.0);
             assert!(energy.is_finite());
             // Energy can be negative for cooling or when thermal mass is charging
         }
@@ -305,7 +305,7 @@ fn test_6r2c_model_with_night_ventilation() {
 
     // Run a full day with night ventilation
     for t in 0..24 {
-        let energy = model.step_physics(t, 20.0, 3600.0);
+        let energy = model.step_physics(t, 20.0);
         assert!(energy.is_finite());
         // Energy can be negative for cooling or when thermal mass is charging
     }

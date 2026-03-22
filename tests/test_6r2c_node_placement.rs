@@ -9,6 +9,7 @@
 //!
 //! Reference: docs/ISO_13790_6R2C_SPECIFICATION.md §4
 
+use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 
 // ============================================================================
@@ -92,7 +93,7 @@ fn test_mass_nodes_diverge_during_simulation() {
 
     // Run several timesteps with cold outdoor temperature
     for timestep in 0..24 {
-        model.step_physics(timestep, 0.0, 3600.0); // 0°C outdoor
+        model.step_physics(timestep, 0.0); // 0°C outdoor
     }
 
     let final_t_env = model.envelope_mass_temperatures.as_ref()[0];
@@ -129,7 +130,7 @@ fn test_exterior_boundary_drives_envelope_mass() {
 
     // Run with hot outdoor temperature
     for timestep in 0..12 {
-        model.step_physics(timestep, 40.0, 3600.0); // 40°C outdoor (hot day, 3600.0)
+        model.step_physics(timestep, 40.0); // 40°C outdoor (hot day)
     }
 
     let final_t_env = model.envelope_mass_temperatures.as_ref()[0];
@@ -149,11 +150,11 @@ fn test_interior_boundary_drives_zone_air() {
     let mut model = ThermalModel::new(1);
     model.configure_6r2c_model(0.75, 100.0);
 
-    let _initial_t_zone = model.temperatures.as_ref()[0];
+    let initial_t_zone = model.temperatures.as_ref()[0];
 
     // Run simulation (HVAC will maintain setpoint)
     for timestep in 0..24 {
-        model.step_physics(timestep, 10.0, 3600.0); // 10°C outdoor
+        model.step_physics(timestep, 10.0); // 10°C outdoor
     }
 
     let final_t_zone = model.temperatures.as_ref()[0];
@@ -175,7 +176,7 @@ fn test_ground_boundary_applied() {
     // Ground temperature is typically ~10-15°C constant
     // This test just verifies the model runs without error with ground coupling
     for timestep in 0..24 {
-        model.step_physics(timestep, 30.0, 3600.0); // Hot outdoor
+        model.step_physics(timestep, 30.0); // Hot outdoor
     }
 
     // Model should complete without NaN or Inf
@@ -229,7 +230,7 @@ fn test_warm_start_continuity() {
 
     // Run for 24 hours
     for timestep in 0..24 {
-        model.step_physics(timestep, 15.0, 3600.0);
+        model.step_physics(timestep, 15.0);
     }
 
     // Save final state
@@ -238,7 +239,7 @@ fn test_warm_start_continuity() {
     let t_zone_final = model.temperatures.as_ref()[0];
 
     // Continue simulation (no reset)
-    model.step_physics(24, 15.0, 3600.0);
+    model.step_physics(24, 15.0);
 
     // Temperatures should be continuous (no jumps)
     let t_env_next = model.envelope_mass_temperatures.as_ref()[0];
@@ -409,7 +410,7 @@ fn test_case_960_interzone_coupling() {
 
     // Run simulation
     for timestep in 0..24 {
-        model.step_physics(timestep, 15.0, 3600.0);
+        model.step_physics(timestep, 15.0);
     }
 
     // Both zones should have finite temperatures
@@ -451,7 +452,7 @@ fn test_diagnostic_mass_node_response_time() {
     // Track temperature response over time
     let mut response_curve = Vec::new();
     for timestep in 0..48 {
-        model.step_physics(timestep, outdoor_temp_step, 3600.0);
+        model.step_physics(timestep, outdoor_temp_step);
         response_curve.push(model.envelope_mass_temperatures.as_ref()[0]);
     }
 

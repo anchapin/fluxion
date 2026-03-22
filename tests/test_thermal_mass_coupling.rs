@@ -96,7 +96,7 @@ fn test_thermal_mass_threshold_detection() {
 #[test]
 fn test_thermal_mass_coupling_mode_specific_disabled() {
     let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Verify coupling ratios achieve target >= 0.1 in both modes
     let h_tr_ms_value: f64 = model.h_tr_ms.as_ref()[0];

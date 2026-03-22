@@ -30,7 +30,7 @@ fn test_solution2_annual_energy_correction() {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
 
-        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
         total_energy_kwh += energy_kwh;
     }
 

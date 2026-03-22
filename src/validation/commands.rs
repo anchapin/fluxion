@@ -175,7 +175,7 @@ mod tests {
 
         // Run in a temporary directory to avoid affecting the real repository
         let temp = tempdir()?;
-        let _original_cwd = std::env::current_dir()?;
+        let original_cwd = std::env::current_dir()?;
         let _guard = DirGuard::new(temp.path())?;
 
         // Create docs directory (function expects it to be able to write)
@@ -279,7 +279,7 @@ mod tests {
             .create();
 
         let temp = tempdir()?;
-        let _original_cwd = std::env::current_dir()?;
+        let original_cwd = std::env::current_dir()?;
         let _guard = DirGuard::new(temp.path())?;
 
         fs::create_dir("docs")?;

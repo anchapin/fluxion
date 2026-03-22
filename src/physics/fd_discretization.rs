@@ -227,15 +227,15 @@ impl WallDiscretization {
     /// At material interfaces, the effective conductivity is the harmonic mean
     /// of adjacent layer conductivities to ensure flux continuity.
     fn calculate_interface_conductivities(
-        _layers: &[MaterialLayer],
-        _nodes_per_layer: usize,
+        layers: &[MaterialLayer],
+        nodes_per_layer: usize,
         node_positions: &[f64],
         conductivity: &[f64],
     ) -> Vec<InterfaceConductivity> {
         let mut interfaces = Vec::with_capacity(node_positions.len() + 1);
 
         // Interior surface interface (half-node from surface)
-        let _dx_interior = node_positions[0]; // Distance to first node center
+        let dx_interior = node_positions[0]; // Distance to first node center
         interfaces.push(InterfaceConductivity {
             position: 0.0,
             value: conductivity[0], // Same material

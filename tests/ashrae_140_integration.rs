@@ -7,7 +7,7 @@ use fluxion::validation::ASHRAE140Validator;
 
 #[test]
 fn test_ashrae_140_comprehensive() {
-    let validator = ASHRAE140Validator::new();
+    let mut validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
 
     report.print_summary();
@@ -22,7 +22,7 @@ fn test_ashrae_140_comprehensive() {
 
 #[test]
 fn test_case_600_baseline() {
-    let validator = ASHRAE140Validator::new();
+    let mut validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
 
     let result = report

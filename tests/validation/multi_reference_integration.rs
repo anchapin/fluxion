@@ -1,6 +1,7 @@
 use anyhow::Result;
 use fluxion::validation::{
-    multi_reference::MultiReferenceDB, reporter::ValidationReportGenerator, ASHRAE140Validator, MetricType,
+    multi_reference::MultiReferenceDB, reporter::ValidationReportGenerator, ASHRAE140Validator,
+    BenchmarkReport, MetricType,
 };
 use mockito::Matcher;
 use std::{
@@ -129,7 +130,7 @@ fn test_update_references_with_remote() -> Result<()> {
 
     // Use a temporary directory to avoid affecting the real repository
     let temp = tempdir()?;
-    let _original_cwd = std::env::current_dir()?;
+    let original_cwd = std::env::current_dir()?;
     let _guard = DirGuard::new(temp.path())?;
 
     // Create docs directory (function expects it to be able to write)

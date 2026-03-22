@@ -688,7 +688,7 @@ impl ValidationReportGenerator {
                 false
             };
 
-            let _cohens_d = if let Some(ref metrics) = report.statistical_metrics {
+            let cohens_d = if let Some(ref metrics) = report.statistical_metrics {
                 metrics.cohens_d
             } else {
                 f64::NAN
@@ -1227,7 +1227,7 @@ mod tests {
             .iter()
             .position(|l| l.contains("| Metric |"))
             .expect("Should find table header");
-        let _table_end = lines
+        let table_end = lines
             .iter()
             .position(|l| l.starts_with("| NMBE |"))
             .expect("Should find NMBE row");

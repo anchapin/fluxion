@@ -730,7 +730,7 @@ pub fn run_and_report(config: DeltaConfig, output_dir: &Path, include_hourly: bo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::ashrae_140_cases::ASHRAE140Case;
+    use crate::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
     use tempfile::tempdir;
 
     #[test]

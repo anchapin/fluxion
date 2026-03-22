@@ -484,7 +484,7 @@ mod tests {
         }
 
         // Verify weekday hours outside 8am-6pm are zero
-        for _day in 0..5 {
+        for day in 0..5 {
             for hour in 0..8 {
                 assert_eq!(schedule.value_for_day(DayType::Weekday, hour), 0.0);
             }
@@ -501,7 +501,7 @@ mod tests {
         schedule.fill_weekday(9, 17, 0.5);
 
         // Verify weekday hours filled
-        for _day in 0..5 {
+        for day in 0..5 {
             for hour in 9..17 {
                 assert_eq!(schedule.value_for_day(DayType::Weekday, hour), 0.5);
             }
@@ -549,7 +549,7 @@ mod tests {
         }
 
         // Verify weekday hours not filled
-        for _day in 0..5 {
+        for day in 0..5 {
             for hour in 10..18 {
                 assert_eq!(schedule.value_for_day(DayType::Weekday, hour), 0.0);
             }

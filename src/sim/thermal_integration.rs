@@ -14,6 +14,7 @@
 //! Implicit methods (backward Euler, Crank-Nicolson) are unconditionally stable
 //! and handle stiff thermal systems robustly.
 
+use std::f64::consts::PI;
 
 /// Thermal integration method for mass temperature updates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -482,7 +483,7 @@ mod tests {
         let mut tm = 20.0;
 
         for hour in 0..24 {
-            let t_ext = 20.0 + 10.0 * ((hour as f64 / 24.0) * 2.0 * std::f64::consts::PI).sin();
+            let t_ext = 20.0 + 10.0 * ((hour as f64 / 24.0) * 2.0 * PI).sin();
 
             let tm_old = tm;
             tm = backward_euler_update(tm_old, dt, cm, h_tr_em, h_tr_ms, t_ext, t_surface, phi_m);

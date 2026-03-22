@@ -393,14 +393,54 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
         }
         // Diagnostic ranges
         "195-470" => {
-            eprintln!("Error: Diagnostic case validation is only available in test mode");
-            eprintln!("Run 'cargo test -- --nocapture' to validate diagnostic cases");
-            anyhow::bail!("Diagnostic cases not available in release mode");
+            #[cfg(test)]
+            {
+                use fluxion::tests::ashrae_140::diagnostics;
+                let result = diagnostics::run_cases_195_470();
+                println!(
+                    "Cases 195-470: {}/{} passed ({:.1}%)",
+                    result.passed,
+                    result.total_cases,
+                    result.pass_rate()
+                );
+                if !result.all_passed() {
+                    let failed = result.failed_cases();
+                    if !failed.is_empty() {
+                        println!("Failed cases: {:?}", failed);
+                    }
+                }
+            }
+            #[cfg(not(test))]
+            {
+                eprintln!("Error: Diagnostic case validation is only available in test mode");
+                eprintln!("Run 'cargo test -- --nocapture' to validate diagnostic cases");
+                anyhow::bail!("Diagnostic cases not available in release mode");
+            }
         }
         "800-810" => {
-            eprintln!("Error: Diagnostic case validation is only available in test mode");
-            eprintln!("Run 'cargo test -- --nocapture' to validate diagnostic cases");
-            anyhow::bail!("Diagnostic cases not available in release mode");
+            #[cfg(test)]
+            {
+                use fluxion::tests::ashrae_140::diagnostics;
+                let result = diagnostics::run_cases_800_810();
+                println!(
+                    "Cases 800-810: {}/{} passed ({:.1}%)",
+                    result.passed,
+                    result.total_cases,
+                    result.pass_rate()
+                );
+                if !result.all_passed() {
+                    let failed = result.failed_cases();
+                    if !failed.is_empty() {
+                        println!("Failed cases: {:?}", failed);
+                    }
+                }
+            }
+            #[cfg(not(test))]
+            {
+                eprintln!("Error: Diagnostic case validation is only available in test mode");
+                eprintln!("Run 'cargo test -- --nocapture' to validate diagnostic cases");
+                anyhow::bail!("Diagnostic cases not available in release mode");
+            }
         }
         _ => {
             eprintln!("Unknown case specification: {}", case_spec);
@@ -427,7 +467,7 @@ fn main() -> Result<()> {
             all,
             diagnostics,
             range,
-            case: _,
+            case,
             statistical,
             alpha,
             format,

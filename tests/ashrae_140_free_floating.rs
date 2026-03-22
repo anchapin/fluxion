@@ -73,7 +73,7 @@ fn simulate_free_float_case(case: ASHRAE140Case) -> (f64, f64) {
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Issue #275: Set weather data on model for solar gain calculation
         model.weather = Some(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         // Track zone temperatures
         if let Some(&zone_temp) = model.temperatures.as_slice().first() {
@@ -499,7 +499,7 @@ fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         if let Some(&zone_temp) = model.temperatures.as_slice().first() {
             temperatures.push(zone_temp);

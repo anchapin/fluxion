@@ -6,7 +6,7 @@
 //! back to requesters via oneshot channels.
 
 use crate::ai::surrogate::SurrogateManager;
-use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender};
+use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender, TrySendError};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -147,8 +147,8 @@ impl Drop for Inner {
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-
-
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     #[test]
     fn test_shared_batch_service_single() {
@@ -215,14 +215,14 @@ mod tests {
             let service = service.clone();
             let handle = thread::spawn(move || {
                 let rx = service.submit(vec![i as f64, (i + 1) as f64]);
-                let _ = rx.recv();
+                rx.recv().unwrap()
             });
             handles.push(handle);
         }
 
         // Wait for all to complete.
         for h in handles {
-            let _ = h.join();
+            h.join().unwrap();
         }
 
         // The service should have processed all requests. Since we don't have

@@ -1,6 +1,6 @@
 use crate::BatchOracle;
 use anyhow::Result;
-use csv::Writer;
+use csv::{Reader, Writer};
 use serde::Deserialize;
 use std::path::Path;
 
@@ -368,7 +368,7 @@ mod tests {
         let path = tmp_file.path();
         export_to_csv(&report, path).expect("Export failed");
         // Read back
-        let mut rdr = csv::Reader::from_path(path).unwrap();
+        let mut rdr = Reader::from_path(path).unwrap();
         let headers = rdr.headers().unwrap();
         let expected_headers = [
             "Rank",
@@ -382,7 +382,7 @@ mod tests {
             headers.iter().collect::<Vec<_>>(),
             expected_headers.as_ref()
         );
-        let records = rdr.records().collect::<Result<Vec<_>, _>>().unwrap();
+        let mut records = rdr.records().collect::<Result<Vec<_>, _>>().unwrap();
         // Should have 2 records
         assert_eq!(records.len(), 2);
         // First record should be the one with higher normalized_coeff (A:200)

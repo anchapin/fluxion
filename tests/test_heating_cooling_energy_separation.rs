@@ -51,7 +51,7 @@ fn test_case_900_separate_heating_cooling_energy() {
         model.weather = Some(weather_data.clone());
 
         // Run physics step
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        model.step_physics(step, weather_data.dry_bulb_temp);
 
         // Diagnostic output daily
         if step % 24 == 0 {
