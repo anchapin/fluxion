@@ -1,13 +1,6 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::constants::atmospheric::{
-    AIR_DENSITY_SEA_LEVEL, STANDARD_ATMOSPHERIC_PRESSURE,
-};
-use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
-use crate::physics::constants::thermal::ashrae_140::{
-    EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
-};
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::sim::assembly::{AssemblyBuilder, BuildingAssembly, ConcreteMaterial, MaterialLayer};
+use crate::sim::assembly::{BuildingAssembly, MaterialLayer};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
@@ -22,7 +15,7 @@ use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_he
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::{BuildingType, OccupancyProfile};
 use crate::sim::profiles;
-use crate::sim::schedule::{DailySchedule, DayType};
+use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::sim::thermal_integration::{
@@ -33,7 +26,7 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{
     CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
 };
-use crate::validation::config::{validate_assembly, validate_constants, ConfigValidationResult};
+use crate::validation::config::{validate_assembly, validate_constants};
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
@@ -902,7 +895,7 @@ impl ThermalModel<VectorField> {
                 setback_setpoint,
             ); // Setback
             model.cooling_schedule = DailySchedule::constant(hvac.cooling_setpoint);
-        } else if let (Some(_), Some((start, end))) = (hvac.setback_setpoint, hvac.setback_hours) {
+        } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours) {
             // Partial setback info - use constant as fallback
             model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
             model.cooling_schedule = DailySchedule::constant(hvac.cooling_setpoint);
@@ -1876,7 +1869,7 @@ impl ThermalModel<VectorField> {
         // Create ThermalModel with validated assembly
         // Note: This creates a basic ThermalModel; for full assembly integration,
         // additional setup would be needed (similar to from_spec)
-        let mut model = ThermalModel::new(num_zones);
+        let model = ThermalModel::new(num_zones);
         // TODO: Apply assembly properties to model (wall_u_value, roof_u_value, etc.)
         Ok(model)
     }
@@ -3118,7 +3111,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_output_raw = if let Some(ref mut equipment) = self.hvac_equipment {
             // Get heating/cooling setpoints for this hour from schedule
             let heating_setpoint = self.heating_schedule.value(hour_of_day_idx);
-            let cooling_setpoint = self.cooling_schedule.value(hour_of_day_idx);
+            let _cooling_setpoint = self.cooling_schedule.value(hour_of_day_idx);
 
             // Calculate free cooling if economizer is active
             use crate::sim::hvac::is_economizer_active;
@@ -3177,7 +3170,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 equipment.calculate_power(modulated_load, outdoor_temp, hvac_mode);
 
             // Apply cycling losses
-            let (efficiency_multiplier, startup_penalty) = self
+            let (efficiency_multiplier, _startup_penalty) = self
                 .cycling_tracker
                 .calculate_cycling_loss(electrical_power > 0.0, equipment.current_plr());
 
@@ -4068,7 +4061,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Internal loads are added to self.loads which will be used by step_physics
         let day_of_year = timestep / 24 + 1; // 1-indexed day of year
         let hour = timestep % 24;
-        let day_type = holiday::get_day_type(day_of_year);
+        let _day_type = holiday::get_day_type(day_of_year);
         let hour_of_week = (day_of_year - 1) % 7 * 24 + hour;
 
         let mut internal_convective = 0.0;

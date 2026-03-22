@@ -61,11 +61,9 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
-use crate::api::parameters::BuildingParameters;
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 // Logging for verbosity control via RUST_LOG environment variable
-use log::{debug, error, info, trace, warn};
 use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
