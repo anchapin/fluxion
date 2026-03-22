@@ -859,7 +859,7 @@ impl SurrogateManager {
         if !self.model_loaded || batch_temps.is_empty() {
             // For tests and fallback, return dummy values.
             // In a real run, predict_loads_with_fallback is used.
-            return batch_temps.iter().map(|_| vec![1.2; 10]).collect();
+            return batch_temps.iter().map(|b| vec![1.2; b.len()]).collect();
         }
         if let Some(ref pool) = self.session_pool {
             let batch_size = batch_temps.len();

@@ -215,14 +215,14 @@ mod tests {
             let service = service.clone();
             let handle = thread::spawn(move || {
                 let rx = service.submit(vec![i as f64, (i + 1) as f64]);
-                rx.recv()
+                let _ = rx.recv();
             });
             handles.push(handle);
         }
 
         // Wait for all to complete.
         for h in handles {
-            h.join().unwrap();
+            let _ = h.join();
         }
 
         // The service should have processed all requests. Since we don't have
