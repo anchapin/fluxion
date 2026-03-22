@@ -28,7 +28,7 @@ fn test_solution1_revisited_coupling_adjustment() {
     // Extract baseline parameters
     let baseline_h_tr_em = baseline_model.h_tr_em.as_ref()[0];
     let baseline_h_tr_ms = baseline_model.h_tr_ms.as_ref()[0];
-    let baseline_h_tr_is = baseline_model.h_tr_is.as_ref()[0];
+    let _baseline_h_tr_is = baseline_model.h_tr_is.as_ref()[0];
     let baseline_ratio = baseline_h_tr_em / baseline_h_tr_ms;
 
     println!("=== Baseline (Current 5R1C) ===");

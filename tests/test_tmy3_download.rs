@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use fluxion::weather::tmy3::{load_weather_locations, Tmy3Cache};
-    use std::path::PathBuf;
+
 
     #[test]
     fn test_load_weather_locations() {
@@ -30,7 +30,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
         let cache_dir = temp_dir.path().join("tmy3");
 
-        let cache = Tmy3Cache::with_cache_dir(cache_dir.clone()).expect("Failed to create cache");
+        let _cache = Tmy3Cache::with_cache_dir(cache_dir.clone()).expect("Failed to create cache");
 
         assert!(cache_dir.exists(), "Cache directory should exist");
         assert!(cache_dir.is_dir(), "Cache should be a directory");

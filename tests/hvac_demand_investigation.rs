@@ -22,7 +22,7 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     println!("=== HVAC Demand Calculation Investigation ===\n");
 
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Extract key parameters
     let h_tr_em = model.h_tr_em.as_ref()[0]; // Exterior -> mass
@@ -95,7 +95,7 @@ fn test_case_900_hvac_demand_calculation_investigation() {
     // HVAC demand calculation
     let t_free_winter = 7.06; // From diagnostic test
     let setpoint_heating = 20.0;
-    let setpoint_cooling = 27.0;
+    let _setpoint_cooling = 27.0;
     let delta_t_heating = setpoint_heating - t_free_winter;
 
     let hvac_demand_heating_w = delta_t_heating / sensitivity;

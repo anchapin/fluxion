@@ -1227,7 +1227,7 @@ mod tests {
             .iter()
             .position(|l| l.contains("| Metric |"))
             .expect("Should find table header");
-        let table_end = lines
+        let _table_end = lines
             .iter()
             .position(|l| l.starts_with("| NMBE |"))
             .expect("Should find NMBE row");

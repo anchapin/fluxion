@@ -147,8 +147,8 @@ impl Drop for Inner {
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
+
+
 
     #[test]
     fn test_shared_batch_service_single() {

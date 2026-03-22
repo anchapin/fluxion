@@ -79,11 +79,11 @@ fn test_heat_flow_tracing_case_900() {
             5.0 + 8.0 * ((hour_of_day as f64 - 3.0) * std::f64::consts::PI / 12.0).sin();
 
         // Get pre-step state
-        let t_env_before = model.envelope_mass_temperatures.as_ref()[0];
-        let t_int_before = model.internal_mass_temperatures.as_ref()[0];
+        let _t_env_before = model.envelope_mass_temperatures.as_ref()[0];
+        let _t_int_before = model.internal_mass_temperatures.as_ref()[0];
 
         // Run timestep
-        let hvac_energy_j = model.step_physics(timestep, outdoor_temp);
+        let hvac_energy_j = model.step_physics(timestep, outdoor_temp, 3600.0);
         let hvac_power_w = hvac_energy_j / 3600.0; // Convert J to W
 
         // Get post-step state
@@ -255,7 +255,7 @@ fn test_heat_flow_path_envelope_to_internal() {
 
     // Run with hot outdoor temp to warm envelope
     for timestep in 0..24 {
-        model.step_physics(timestep, 40.0); // Hot day
+        model.step_physics(timestep, 40.0, 3600.0); // Hot day
     }
 
     let final_t_env = model.envelope_mass_temperatures.as_ref()[0];
@@ -292,7 +292,7 @@ fn test_heat_flow_path_exterior_to_envelope() {
 
     // Run with cold outdoor temp
     for timestep in 0..24 {
-        model.step_physics(timestep, -10.0); // Cold night
+        model.step_physics(timestep, -10.0, 3600.0); // Cold night
     }
 
     let final_t_env = model.envelope_mass_temperatures.as_ref()[0];
@@ -325,7 +325,7 @@ fn test_thermal_lag_envelope_vs_internal() {
     let mut t_int_curve = Vec::new();
 
     for timestep in 0..72 {
-        model.step_physics(timestep, outdoor_temp_step);
+        model.step_physics(timestep, outdoor_temp_step, 3600.0);
         t_env_curve.push(model.envelope_mass_temperatures.as_ref()[0]);
         t_int_curve.push(model.internal_mass_temperatures.as_ref()[0]);
     }
@@ -391,7 +391,7 @@ fn test_energy_balance_hvac_vs_heat_flows() {
 
     // Run simulation for 24 hours
     for timestep in 0..24 {
-        let hvac_j = model.step_physics(timestep, 5.0); // Cold day
+        let hvac_j = model.step_physics(timestep, 5.0, 3600.0); // Cold day
         total_hvac_energy += hvac_j;
     }
 

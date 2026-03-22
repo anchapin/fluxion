@@ -25,7 +25,7 @@ fn test_case_900_mass_temperature_tracking() {
 
         // model.calc_analytical_loads(step, true);
 
-        model.step_physics(step, outdoor_temp);
+        model.step_physics(step, outdoor_temp, 3600.0);
 
         env_mass_temps.push(model.envelope_mass_temperatures.as_ref()[0]);
         int_mass_temps.push(model.internal_mass_temperatures.as_ref()[0]);

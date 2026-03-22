@@ -21,8 +21,8 @@
 use serde::{Deserialize, Serialize};
 // Use constants from physics module instead of hardcoded values
 use crate::physics::constants::thermal::ashrae_140::{
-    EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF,
-    INTERIOR_FILM_COEFF_CEILING, INTERIOR_FILM_COEFF_FLOOR, INTERIOR_FILM_COEFF_WALL,
+    EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF_CEILING,
+    INTERIOR_FILM_COEFF_FLOOR, INTERIOR_FILM_COEFF_WALL,
 };
 use crate::physics::constants::{AIR_DENSITY_SEA_LEVEL, AIR_SPECIFIC_HEAT};
 

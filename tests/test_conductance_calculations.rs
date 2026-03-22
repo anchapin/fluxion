@@ -291,7 +291,7 @@ fn test_layer_by_layer_r_value_calculation() {
 /// Test 10: Validate ASHRAE film coefficient application (LAYER-02)
 #[test]
 fn test_ashrae_film_coefficient_application() {
-    use fluxion::sim::construction::{
+    use fluxion::physics::constants::thermal::ashrae_140::v2023::{
         EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF_WALL,
     };
 

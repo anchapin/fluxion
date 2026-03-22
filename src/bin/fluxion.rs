@@ -427,7 +427,7 @@ fn main() -> Result<()> {
             all,
             diagnostics,
             range,
-            case,
+            case: _,
             statistical,
             alpha,
             format,

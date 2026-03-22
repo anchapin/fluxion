@@ -1,6 +1,6 @@
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::sim::assembly::{BuildingAssembly, MaterialLayer};
+use crate::sim::assembly::BuildingAssembly;
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
@@ -895,7 +895,8 @@ impl ThermalModel<VectorField> {
                 setback_setpoint,
             ); // Setback
             model.cooling_schedule = DailySchedule::constant(hvac.cooling_setpoint);
-        } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours) {
+        } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours)
+        {
             // Partial setback info - use constant as fallback
             model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
             model.cooling_schedule = DailySchedule::constant(hvac.cooling_setpoint);
@@ -1753,6 +1754,7 @@ impl ThermalModel<VectorField> {
     /// );
     /// assert!(result.is_ok());
     /// ```
+    ///
     pub fn new_with_validation(
         num_zones: usize,
         window_u_value: f64,
@@ -3540,15 +3542,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let n = num_zones as f64;
 
             // For diagnostic, capture q_iz for first two zones before adding
-            let (mut dbg_q0, mut dbg_q1) = (0.0, 0.0);
+            let (mut _dbg_q0, mut _dbg_q1) = (0.0, 0.0);
             let slice = phi_ia_with_iz.as_mut();
             for i in 0..num_zones {
                 let q_iz = total_h_iz * (sum_t - n * temps[i]);
                 if i == 0 {
-                    dbg_q0 = q_iz;
+                    _dbg_q0 = q_iz;
                 }
                 if i == 1 {
-                    dbg_q1 = q_iz;
+                    _dbg_q1 = q_iz;
                 }
                 slice[i] += q_iz;
             }

@@ -67,7 +67,7 @@ mod tests {
 
     #[test]
     fn test_ashrae_140_validation() {
-        let mut validator = ASHRAE140Validator::new();
+        let validator = ASHRAE140Validator::new();
         let report = validator.validate_analytical_engine();
         report.print_summary();
 

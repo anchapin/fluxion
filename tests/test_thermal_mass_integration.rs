@@ -174,7 +174,7 @@ fn test_explicit_euler_accuracy_limitations_for_high_thermal_capacitance() {
     // the need for implicit integration methods (Backward Euler, Crank-Nicolson).
 
     let config = HIGH_MASS_CONFIG;
-    let tm_initial = 20.0;
+    let _tm_initial = 20.0;
 
     // Check stability criterion
     let is_stable = explicit_euler_stable(&config);

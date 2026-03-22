@@ -43,7 +43,6 @@
 //! let q_flux = coeffs.calculate_flux(t_interior, t_exterior_history, flux_history);
 //! ```
 
-
 /// Material layer with thermal properties.
 #[derive(Debug, Clone)]
 pub struct CTFMaterial {

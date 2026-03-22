@@ -2261,7 +2261,7 @@ pub fn validate_case_with_diagnostics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
+    use crate::validation::report::{MetricType, ValidationStatus};
 
     #[test]
     fn test_validator_multireference_enrichment() {

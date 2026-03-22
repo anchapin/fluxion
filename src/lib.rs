@@ -1220,7 +1220,10 @@ impl BatchOracle {
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
         // Convert BuildingParameters to Vec<Vec<f64>> for existing implementation
-        let vec_population: Vec<Vec<f64>> = population.iter().map(|p| p.to_vec()).collect();
+        let vec_population: Vec<Vec<f64>> = population
+            .iter()
+            .map(|p: &BuildingParameters| p.to_vec())
+            .collect();
 
         // Call existing implementation
         Ok(Self::evaluate_population(
@@ -1571,7 +1574,7 @@ mod tests {
     use crate::BatchOracle;
 
     // Import logging macros for tests
-    use log::info;
+
 
     #[cfg(feature = "python-bindings")]
     #[test]

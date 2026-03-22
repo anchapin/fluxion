@@ -134,7 +134,7 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
             .unwrap_or(20.0);
 
         // Run physics step (returns HVAC energy in kWh, positive for heating, negative for cooling)
-        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
 
         // Diagnostic output for HVAC energy (Plan 03-04)
@@ -252,7 +252,7 @@ fn simulate_case_900ff() -> (f64, f64, f64) {
         let weather_data = weather.get_hourly_data(_step).unwrap();
         // Set weather data on model for solar gain calculation
         model.weather = Some(weather_data.clone());
-        model.step_physics(_step, weather_data.dry_bulb_temp);
+        model.step_physics(_step, weather_data.dry_bulb_temp, 3600.0);
 
         // Get current zone temperature
         if let Some(&zone_temp) = model.temperatures.as_slice().first() {
@@ -337,7 +337,7 @@ fn test_case_900_peak_heating_within_reference_range() {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp);
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     let model_peak_heating_kw = model.peak_power_heating / 1000.0;
@@ -379,7 +379,7 @@ fn test_case_900_peak_cooling_within_reference_range() {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp);
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     let model_peak_cooling_kw = model.peak_power_cooling / 1000.0;
@@ -476,7 +476,7 @@ fn test_case_900ff_temperature_swing_reduction() {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model_600.weather = Some(weather_data.clone());
-        model_600.step_physics(step, weather_data.dry_bulb_temp);
+        model_600.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         if let Some(&zone_temp) = model_600.temperatures.as_slice().first() {
             min_temp_600 = min_temp_600.min(zone_temp);
@@ -526,7 +526,7 @@ fn test_case_900_annual_cooling_energy_with_correction() {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
 
-        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
         // Count only cooling energy (negative values)
         if energy_kwh < 0.0 {
@@ -568,7 +568,7 @@ fn test_case_900_thermal_mass_energy_balance() {
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp);
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
     // Verify cumulative thermal mass energy change is approximately zero
@@ -874,7 +874,7 @@ fn test_case_900_hvac_demand_calculation_analysis() {
         let outdoor_temp = weather_data.dry_bulb_temp;
 
         // Step physics
-        let energy_kwh = model.step_physics(step, outdoor_temp);
+        let energy_kwh = model.step_physics(step, outdoor_temp, 3600.0);
         let hvac_demand_w = energy_kwh * 1000.0 / 1.0; // kWh to W (approximate)
 
         // Track demand statistics
@@ -1009,7 +1009,7 @@ fn test_900_series_regression() {
             for step in 0..8760 {
                 let weather_data = weather.get_hourly_data(step).unwrap();
                 model.weather = Some(weather_data.clone());
-                model.step_physics(step, weather_data.dry_bulb_temp);
+                model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
                 if let Some(&zone_temp) = model.temperatures.as_slice().first() {
                     min_temp = min_temp.min(zone_temp);
@@ -1059,7 +1059,7 @@ fn test_900_series_regression() {
                     .copied()
                     .unwrap_or(20.0);
 
-                let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp);
+                let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
                 let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
 
                 // Track heating and cooling separately
