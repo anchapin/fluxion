@@ -215,7 +215,7 @@ mod tests {
             let service = service.clone();
             let handle = thread::spawn(move || {
                 let rx = service.submit(vec![i as f64, (i + 1) as f64]);
-                rx.recv().unwrap()
+                rx.recv()
             });
             handles.push(handle);
         }

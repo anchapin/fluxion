@@ -1,0 +1,10 @@
+--- benches/cta_perf_comparison.rs
++++ benches/cta_perf_comparison.rs
+@@ -141,7 +141,7 @@
+
+     group.bench_function("VectorField", |b| {
+         b.iter(|| {
+-            let _ = v1.zip_with(&v2, |x, y| *x + *y);
++            let _ = v1.zip_with(&v2, |x, y| x + y);
+         })
+     });

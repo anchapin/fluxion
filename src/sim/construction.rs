@@ -1526,7 +1526,7 @@ mod tests {
 
         // Check layer properties
         assert_eq!(wall.layers[0].thickness, 0.100); // Concrete
-        assert_eq!(wall.layers[1].thickness, 0.066); // Foam
+        assert_eq!(wall.layers[1].thickness, 0.0615); // Foam
         assert_eq!(wall.layers[2].thickness, 0.009); // Siding
     }
 

@@ -2989,13 +2989,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             sensitivity = self.derived_sensitivity.clone();
         };
 
-        // Optimized: use zip_with to avoid double clones; num_tm allocates 1 vector instead of 2
-        let num_tm = self
-            .derived_h_ms_is_prod
-            .zip_with(&self.mass_temperatures, |a, b| a * b);
-        // Optimized: use zip_with to avoid double clones (phi_st used later)
-        let num_phi_st = self.h_tr_is.zip_with(&phi_st, |a, b| a * b);
-
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // Optimization: use scalar multiplication for t_g and outdoor_temp instead of creating full constant vectors
         // Note: t_e vector creation removed. h_ext * t_e replaced by h_ext * outdoor_temp.
@@ -3073,36 +3066,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
         // For single-zone or no inter-zone heat, phi_ia_with_iz remains as cloned phi_ia (no allocation beyond the initial clone)
 
-        // Recalculate num_rest with inter-zone heat transfer
-        // Optimized: h_ext * t_e -> h_ext * outdoor_temp
-        // Optimized: t_g_vec -> t_g
         // Ground Coupling: term_rest_1 * h_tr_floor * T_ground = derived_ground_coeff * T_ground
         // Add this to numerator per ISO 13790 5R1C heat balance equation
-        // Optimized: combine h_ext * outdoor_temp addition and multiplication into phi_ia_with_iz buffer directly
-        // This eliminates one allocation (term_rest_1.clone())
-        let mut num_rest_with_iz = phi_ia_with_iz;
-        for (n, h) in num_rest_with_iz
-            .as_mut()
-            .iter_mut()
-            .zip(h_ext.as_ref().iter())
-        {
-            *n += h * outdoor_temp;
-        }
-        num_rest_with_iz.mul_assign(&term_rest_1);
-        // Fuse ground term addition: (derived_ground_coeff * t_g) added directly
-        let ground_coeff = self.derived_ground_coeff.as_ref();
-        for (n, g) in num_rest_with_iz
-            .as_mut()
-            .iter_mut()
-            .zip(ground_coeff.iter())
-        {
-            *n += g * t_g;
-        }
 
-        let mut t_i_free = num_tm;
-        t_i_free.add_assign(&num_phi_st);
-        t_i_free.add_assign(&num_rest_with_iz);
-        t_i_free.div_assign(&den);
+        // Optimized: fuse computation of t_i_free into a single scalar loop
+        // Eliminates full vector allocations for num_tm, num_phi_st, and num_rest_with_iz
+        let mut t_i_free_data = Vec::with_capacity(self.num_zones);
+        let h_ms_is_prod_ref = self.derived_h_ms_is_prod.as_ref();
+        let tm_ref = self.mass_temperatures.as_ref();
+        let h_tr_is_ref = self.h_tr_is.as_ref();
+        let phi_st_ref = phi_st.as_ref();
+        let term_rest_1_ref = term_rest_1.as_ref();
+        let h_ext_ref = h_ext.as_ref();
+        let phi_ia_ref = phi_ia_with_iz.as_ref();
+        let ground_coeff = self.derived_ground_coeff.as_ref();
+        let den_ref = den.as_ref();
+
+        for i in 0..self.num_zones {
+            let num_tm_val = h_ms_is_prod_ref[i] * tm_ref[i];
+            let num_phi_st_val = h_tr_is_ref[i] * phi_st_ref[i];
+            let sum_term = phi_ia_ref[i] + h_ext_ref[i] * outdoor_temp;
+            let num_rest_val = term_rest_1_ref[i] * sum_term + ground_coeff[i] * t_g;
+            let val = (num_tm_val + num_phi_st_val + num_rest_val) / den_ref[i];
+            t_i_free_data.push(val);
+        }
+        let t_i_free = T::from(VectorField::new(t_i_free_data));
 
         // 2.5. Predictive Control Calculation (Plan 15-04, 15-06)
         // Calculate temperature rate (dT/dt) for predictive control using thermal inertia
@@ -3318,16 +3306,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Mass temperature update: includes heat transfer from exterior and from surface
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate actual surface temperature for mass update (including HVAC effect)
-        // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
-        let mut ts_num_act = self.h_tr_ms.clone();
-        ts_num_act.mul_assign(&self.mass_temperatures);
-        let mut term2 = self.h_tr_is.clone();
-        term2.mul_assign(&t_i_act);
-        ts_num_act.add_assign(&term2);
-        ts_num_act.add_assign(&phi_st);
-        // Denominator is term_rest_1
-        let mut t_s_act = ts_num_act;
-        t_s_act.div_assign(term_rest_1);
+        // Optimized: fuse calculation into a single scalar loop
+        let mut t_s_act_data = Vec::with_capacity(self.num_zones);
+        let h_tr_ms_ref_s = self.h_tr_ms.as_ref();
+        let t_i_act_ref = t_i_act.as_ref();
+        for i in 0..self.num_zones {
+            let ts_num =
+                h_tr_ms_ref_s[i] * tm_ref[i] + h_tr_is_ref[i] * t_i_act_ref[i] + phi_st_ref[i];
+            t_s_act_data.push(ts_num / term_rest_1_ref[i]);
+        }
+        let t_s_act = T::from(VectorField::new(t_s_act_data));
 
         // Update mass temperatures using implicit integration for high thermal capacitance
         // This addresses instability with explicit Euler for Cm > 500 J/K
@@ -3538,10 +3526,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             sensitivity = self.derived_sensitivity.clone();
         };
 
-        // Use envelope mass temperature instead of single mass temperature
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
-
         // Inter-zone heat transfer (with radiative component - Issue #302)
         let num_zones = self.num_zones;
         let h_iz_vec = self.h_tr_iz.as_ref();
@@ -3579,28 +3563,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Ground Coupling: term_rest_1 * h_tr_floor * T_ground = derived_ground_coeff * T_ground
         // Add this to numerator per ISO 13790 5R1C heat balance equation
-        // Optimized: combine h_ext * outdoor_temp addition into phi_ia_with_iz to avoid intermediate allocation
-        let mut sum_term = phi_ia_with_iz;
-        for (s, h) in sum_term.as_mut().iter_mut().zip(h_ext.as_ref().iter()) {
-            *s += h * outdoor_temp;
-        }
-        let mut num_rest_with_iz = term_rest_1.clone();
-        num_rest_with_iz.mul_assign(&sum_term);
-        // Fuse ground term addition: (derived_ground_coeff * t_g) added directly
-        let ground_coeff = self.derived_ground_coeff.as_ref();
-        for (n, g) in num_rest_with_iz
-            .as_mut()
-            .iter_mut()
-            .zip(ground_coeff.iter())
-        {
-            *n += g * t_g;
-        }
 
-        // Calculate free-floating indoor temperature
-        let mut t_i_free = num_tm;
-        t_i_free.add_assign(&num_phi_st);
-        t_i_free.add_assign(&num_rest_with_iz);
-        t_i_free.div_assign(&den);
+        // Optimized: fuse computation of t_i_free into a single scalar loop
+        // Eliminates full vector allocations for num_tm, num_phi_st, and num_rest_with_iz
+        let mut t_i_free_data = Vec::with_capacity(self.num_zones);
+        let h_ms_is_prod_ref = self.derived_h_ms_is_prod.as_ref();
+        let tm_ref = self.envelope_mass_temperatures.as_ref();
+        let h_tr_is_ref = self.h_tr_is.as_ref();
+        let phi_st_ref = phi_st.as_ref();
+        let term_rest_1_ref = term_rest_1.as_ref();
+        let h_ext_ref = h_ext.as_ref();
+        let phi_ia_ref = phi_ia_with_iz.as_ref();
+        let ground_coeff = self.derived_ground_coeff.as_ref();
+        let den_ref = den.as_ref();
+        for i in 0..self.num_zones {
+            let num_tm_val = h_ms_is_prod_ref[i] * tm_ref[i];
+            let num_phi_st_val = h_tr_is_ref[i] * phi_st_ref[i];
+            let sum_term = phi_ia_ref[i] + h_ext_ref[i] * outdoor_temp;
+            let num_rest_val = term_rest_1_ref[i] * sum_term + ground_coeff[i] * t_g;
+            let val = (num_tm_val + num_phi_st_val + num_rest_val) / den_ref[i];
+            t_i_free_data.push(val);
+        }
+        let t_i_free = T::from(VectorField::new(t_i_free_data));
 
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
@@ -3675,14 +3659,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
-        let mut ts_num_act = self.h_tr_ms.clone();
-        ts_num_act.mul_assign(&self.envelope_mass_temperatures);
-        let mut term2 = self.h_tr_is.clone();
-        term2.mul_assign(&t_i_act);
-        ts_num_act.add_assign(&term2);
-        ts_num_act.add_assign(&phi_st);
-        let mut t_s_act = ts_num_act;
-        t_s_act.div_assign(term_rest_1);
+        // Optimized: fuse calculation into a single scalar loop
+        let mut t_s_act_data = Vec::with_capacity(self.num_zones);
+        let h_tr_ms_ref_s = self.h_tr_ms.as_ref();
+        let t_i_act_ref = t_i_act.as_ref();
+        for i in 0..self.num_zones {
+            let ts_num =
+                h_tr_ms_ref_s[i] * tm_ref[i] + h_tr_is_ref[i] * t_i_act_ref[i] + phi_st_ref[i];
+            t_s_act_data.push(ts_num / term_rest_1_ref[i]);
+        }
+        let t_s_act = T::from(VectorField::new(t_s_act_data));
 
         // === FIX D1: Calculate sol-air temperature for exterior surface ===
         // Per ISO 13790, exterior surface temperature is affected by solar radiation
@@ -4761,10 +4747,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.derived_den.clone()
         };
 
-        // Use envelope_mass_temperatures to match step_physics_6r2c
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.zip_with(&phi_st, |a, b| a * b);
-
         // Inter-zone heat transfer (with radiative component - Issue #302)
         // Optimized: eliminate Vec allocation by adding directly to phi_ia buffer
         let num_zones = self.num_zones;
@@ -4792,10 +4774,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Optimization: Use scalar multiplications
         // Ground Coupling: term_rest_1 * h_tr_floor * T_ground = derived_ground_coeff * T_ground
         // Add this to numerator per ISO 13790 5R1C heat balance equation
-        let num_rest = term_rest_1.clone() * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
-            + self.derived_ground_coeff.clone() * t_g;
-
-        let t_i_free = (num_tm + num_phi_st + num_rest) / den;
+        let mut t_i_free_data = Vec::with_capacity(self.num_zones);
+        let h_ms_is_prod_ref = self.derived_h_ms_is_prod.as_ref();
+        let tm_ref = self.envelope_mass_temperatures.as_ref();
+        let h_tr_is_ref = self.h_tr_is.as_ref();
+        let phi_st_ref = phi_st.as_ref();
+        let term_rest_1_ref = term_rest_1.as_ref();
+        let h_ext_ref = h_ext.as_ref();
+        let phi_ia_ref = phi_ia_with_iz.as_ref();
+        let ground_coeff = self.derived_ground_coeff.as_ref();
+        let den_ref = den.as_ref();
+        for i in 0..self.num_zones {
+            let num_tm_val = h_ms_is_prod_ref[i] * tm_ref[i];
+            let num_phi_st_val = h_tr_is_ref[i] * phi_st_ref[i];
+            let sum_term = phi_ia_ref[i] + h_ext_ref[i] * outdoor_temp;
+            let num_rest_val = term_rest_1_ref[i] * sum_term + ground_coeff[i] * t_g;
+            let val = (num_tm_val + num_phi_st_val + num_rest_val) / den_ref[i];
+            t_i_free_data.push(val);
+        }
+        let t_i_free = T::from(VectorField::new(t_i_free_data));
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]
