@@ -50,6 +50,11 @@ pub mod physics;
 pub mod sim;
 pub mod testing;
 pub mod validation;
+
+use crate::api::BuildingParameters;
+
+#[cfg(feature = "python-bindings")]
+
 pub mod weather;
 
 // Re-export thermal model traits for public API
@@ -223,16 +228,16 @@ impl Model {
     /// # Returns
     /// Total energy use intensity (EUI) in kWh/m²/year
     fn simulate(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
-        info!(
+        log::info!(
             "Starting simulation for {} years, use_surrogates={}",
             years, use_surrogates
         );
         let steps = years as usize * 8760;
-        debug!("Simulation will process {} timesteps", steps);
+        log::debug!("Simulation will process {} timesteps", steps);
         let result =
             self.inner
                 .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
-        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+        log::info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
         Ok(result)
     }
 
@@ -265,7 +270,7 @@ impl Model {
     /// eui = model.simulate_with_loads(1, False)
     /// ```
     fn simulate_with_loads(&mut self, years: u32, use_surrogates: bool) -> PyResult<f64> {
-        info!(
+        log::info!(
             "Starting simulation with auto-loaded internal loads for {} years, use_surrogates={}",
             years, use_surrogates
         );
@@ -275,7 +280,7 @@ impl Model {
         let result =
             self.inner
                 .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
-        info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
+        log::info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
         Ok(result)
     }
 
@@ -1849,7 +1854,7 @@ mod tests {
         // Test various log levels - these should not panic
         log::error!("Test error log");
         log::warn!("Test warn log");
-        log::info!("Test info log");
+        log::log::info!("Test info log");
         log::debug!("Test debug log");
         log::trace!("Test trace log");
 
@@ -1857,12 +1862,12 @@ mod tests {
         #[cfg(feature = "python-bindings")]
         {
             let oracle = BatchOracle::new().unwrap();
-            info!("Created BatchOracle with logging");
+            log::info!("Created BatchOracle with logging");
 
             let population = vec![vec![1.5, 20.0, 27.0]];
             let results = oracle.evaluate_population(population, false).unwrap();
             assert!(results[0].is_finite());
-            info!("BatchOracle evaluation completed successfully");
+            log::info!("BatchOracle evaluation completed successfully");
         }
     }
 }
