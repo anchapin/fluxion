@@ -92,19 +92,19 @@ impl BuildingScenario {
         }
 
         if let Some(u) = self.window_u_value {
-            if u < 0.1 || u > 5.0 {
+            if !(0.1..=5.0).contains(&u) {
                 return Err(format!("window_u_value must be in [0.1, 5.0], got {}", u));
             }
         }
 
         if let Some(sp) = self.heating_setpoint {
-            if sp < 15.0 || sp > 30.0 {
+            if !(15.0..=30.0).contains(&sp) {
                 return Err(format!("heating_setpoint must be in [15, 30], got {}", sp));
             }
         }
 
         if let Some(sp) = self.cooling_setpoint {
-            if sp < 15.0 || sp > 30.0 {
+            if !(15.0..=30.0).contains(&sp) {
                 return Err(format!("cooling_setpoint must be in [15, 30], got {}", sp));
             }
         }

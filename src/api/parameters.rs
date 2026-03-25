@@ -238,7 +238,7 @@ impl BuildingParameters {
     #[new]
     fn new_py(window_u_value: f64, heating_setpoint: f64, cooling_setpoint: f64) -> PyResult<Self> {
         Self::new(window_u_value, heating_setpoint, cooling_setpoint)
-            .map_err(|e| PyValueError::new_err(e))
+            .map_err(PyValueError::new_err)
     }
 
     /// Convert to Python list for backward compatibility.

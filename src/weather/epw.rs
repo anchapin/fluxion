@@ -361,7 +361,7 @@ impl EpwWeatherSource {
         let buffered = BufReader::new(reader);
         let mut records = Vec::new();
 
-        for (_line_num, line) in buffered.lines().enumerate() {
+        for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
 
             // Skip header lines (start with "LOCATION", "DESIGN CONDITIONS", etc.)
@@ -426,7 +426,7 @@ impl EpwWeatherSource {
         let buffered = BufReader::new(reader);
         let mut records = Vec::new();
 
-        for (_line_num, line) in buffered.lines().enumerate() {
+        for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
 
             // Skip header lines (start with "LOCATION", "DESIGN CONDITIONS", etc.)
@@ -490,7 +490,7 @@ impl EpwWeatherSource {
         let buffered = BufReader::new(reader);
         let mut records = Vec::new();
 
-        for (_line_num, line) in buffered.lines().enumerate() {
+        for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
 
             // Skip header lines (start with "LOCATION", "DESIGN CONDITIONS", etc.)

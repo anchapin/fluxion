@@ -76,7 +76,7 @@ impl CsvExporter {
                 .from_writer(BufWriter::new(file));
 
             // Write header
-            writer.write_record(&[
+            writer.write_record([
                 "Hour",
                 "Month",
                 "Day",

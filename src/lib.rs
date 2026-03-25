@@ -65,7 +65,7 @@ use crate::api::parameters::BuildingParameters;
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 // Logging for verbosity control via RUST_LOG environment variable
-use log::{debug, error, info, trace, warn};
+use log::{debug, info};
 use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
@@ -1177,7 +1177,7 @@ impl BatchOracle {
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
         Ok(Self::evaluate_population(
-            &self,
+            self,
             population,
             use_surrogates,
         )?)
@@ -1226,7 +1226,7 @@ impl BatchOracle {
 
         // Call existing implementation
         Ok(Self::evaluate_population(
-            &self,
+            self,
             vec_population,
             use_surrogates,
         )?)

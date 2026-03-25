@@ -133,7 +133,7 @@ pub fn get_day_type(day_of_year: usize) -> DayType {
     let day_of_week = (day_of_year - 1) % 7; // 0=Monday, ..., 6=Sunday
 
     // Check if holiday
-    let holidays = US_FEDERAL_HOLIDAYS.get_or_init(|| calculate_holidays_for_year());
+    let holidays = US_FEDERAL_HOLIDAYS.get_or_init(calculate_holidays_for_year);
     if holidays.contains(&day_of_year) {
         return DayType::Holiday;
     }

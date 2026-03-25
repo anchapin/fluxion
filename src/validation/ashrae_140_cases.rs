@@ -1645,7 +1645,7 @@ impl CaseBuilder {
     fn find_zone_index(&self, id: &str) -> usize {
         self.geometry
             .iter()
-            .position(|g| g.name.as_ref().map(String::as_str) == Some(id))
+            .position(|g| g.name.as_deref() == Some(id))
             .unwrap_or_else(|| panic!("Zone '{}' not found in builder", id))
     }
 

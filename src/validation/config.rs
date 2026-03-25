@@ -12,7 +12,7 @@
 
 use crate::physics::constants::thermal::ashrae_140 as ashrae_140_thermal;
 use crate::physics::constants::thermal::iso_13790;
-use crate::sim::assembly::{BuildingAssembly, ConcreteMaterial, InsulationMaterial, MaterialLayer};
+use crate::sim::assembly::{BuildingAssembly, MaterialLayer};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -338,7 +338,7 @@ pub fn validate_constants(path: &str) -> ConfigValidationResult {
 
     // Solar constant
     let solar_constant = crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
-    if solar_constant < 1300.0 || solar_constant > 1400.0 {
+    if !(1300.0..=1400.0).contains(&solar_constant) {
         warnings.push(ValidationError {
             path: format!("{}.solar", path),
             field: "SOLAR_CONSTANT".to_string(),

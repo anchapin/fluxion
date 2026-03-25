@@ -1,7 +1,7 @@
 //! Surrogate manager for fast thermal load predictions.
 
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,

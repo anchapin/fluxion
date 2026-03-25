@@ -11,3 +11,6 @@
 ## 2024-11-13 - [Optimize Hot Loop Memory Allocations]
 **Learning:** In hot loops, chaining operations on tensors (like `VectorField * scalar * scalar`) creates redundant intermediate vector allocations and causes a measurable slowdown. Calculating combined scalar terms before multiplying the `VectorField` minimizes the allocations needed per iteration.
 **Action:** When working with math routines in `ThermalModel::step_physics`, algebraically group scalars out of vector operations beforehand to minimize the number of `VectorField` instantiations in inner loops.
+## 2025-01-28 - [Eliminating Redundant Calculations in HVAC Loop]
+**Learning:** In the `hvac_power_demand` method, computing heating/cooling load equations for zones where HVAC is completely disabled (`enabled == 0.0`) performs unnecessary mathematical operations (float divisions, clamps, conditionals) and requires a secondary loop to zero out the results.
+**Action:** Always check boolean-like masks (`enabled == 0.0`) at the top of a processing loop to `continue` early and bypass expensive logic for inactive elements. Combine the mask multiplication directly into the active calculation branch.

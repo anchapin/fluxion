@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
@@ -388,6 +388,7 @@ impl ValidationResult {
 
 /// Interpretation guidance for failed validation metrics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Interpretation {
     /// Root cause hypotheses explaining why the metric failed
     pub root_cause_hypotheses: Vec<String>,
@@ -401,17 +402,6 @@ pub struct Interpretation {
     pub references: Vec<String>,
 }
 
-impl Default for Interpretation {
-    fn default() -> Self {
-        Self {
-            root_cause_hypotheses: Vec::new(),
-            parameter_sensitivity: Vec::new(),
-            recommended_next_steps: Vec::new(),
-            what_if_scenarios: Vec::new(),
-            references: Vec::new(),
-        }
-    }
-}
 
 /// Comprehensive validation report for ASHRAE 140 test cases.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -1633,7 +1623,7 @@ impl ValidationSuite {
         for result in &self.results {
             case_results
                 .entry(result.case_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(result);
         }
 
@@ -1890,7 +1880,7 @@ impl BenchmarkReport {
         let hours_per_month = [744, 696, 744, 720, 744, 720, 744, 744, 720, 744, 720, 744];
 
         // Calculate cumulative hour counts for month boundaries
-        let mut month_boundaries = vec![0; 13];
+        let mut month_boundaries = [0; 13];
         for i in 1..13 {
             month_boundaries[i] = hours_per_month[0..i].iter().sum();
         }
