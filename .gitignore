@@ -98,3 +98,56 @@ tools/train_residual_model.py
 examples/analysis_workflow.py
 examples/optimization_workflow.py
 examples/validation_workflow.py
+
+# Session debug/diagnostic binaries (auto-generated for debugging)
+src/bin/session_*.rs
+src/bin/case_*.rs
+src/bin/debug_*.rs
+src/bin/validate_*.rs
+src/bin/tmp_*.rs
+
+# Extra physics modules (experimental)
+src/physics/combined_heat_balance.rs
+src/physics/convection.rs
+src/physics/ctf_flux_direction_test.rs
+src/physics/multi_node_ctf.rs
+src/physics/newton_solver.rs
+src/physics/per_surface_ctf.rs
+src/physics/per_surface_integration.rs
+src/physics/per_surface_model.rs
+src/physics/radiation.rs
+src/physics/view_factor.rs
+src/sim/solar_distribution.rs
+src/validation/phase30_diagnostics.rs
+src/validation/solar_diagnostics.rs
+
+# Test helpers and diagnostics
+tests/ashrae_140_*.rs
+!tests/ashrae_140_validation.rs
+tests/ctf_*.rs
+tests/phase2_*.rs
+
+# Validation outputs and diagnostics
+*.log
+validation_*.txt
+diagnostics_*.csv
+session_*_test_results.txt
+*.profraw
+
+# Benchmark data
+benchmarks/outputs/
+benchmarks/energyplus/
+benchmarks/weather/
+
+# Analysis and investigation artifacts
+**/*_ANALYSIS.md
+**/*_INVESTIGATION.md
+**/*_REPORT.md
+**/*_PLAN.md
+**/*_PROMPT.md
+CONTINUATION_PROMPT*.md
+
+# Planning artifacts that shouldn't be committed
+.planning/phases/
+.planning/debug/
+.planning/V07_RELEASE_DECISION.md
