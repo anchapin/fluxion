@@ -31,7 +31,7 @@ fn main() {
     // Test 4: Run simulation
     println!("\nRunning 100 timesteps...");
     for t in 0..100 {
-        model_6r2c.step_physics(t, 20.0);
+        model_6r2c.step_physics(t, 20.0, 3600.0);
     }
     println!("Test 4 PASSED: 100 timesteps simulated successfully");
 

@@ -137,6 +137,55 @@ impl PredictiveController {
         (mode, modulation)
     }
 
+    /// Calculate control signal with dynamic setpoints (supports setback schedules).
+    ///
+    /// This variant allows passing time-varying setpoints, which is needed for
+    /// setback schedules where the setpoint changes at different hours.
+    pub fn calculate_modulation_with_setpoints(
+        &mut self,
+        zone_temp: f64,
+        mass_temp: f64,
+        temp_rate: f64,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+    ) -> (HVACMode, f64) {
+        // Step 1: Inertia factor based on mass temperature offset
+        let inertia_factor = self.thermal_inertia_gain * (zone_temp - mass_temp);
+
+        // Step 2: Predictive factor based on temperature rate
+        let predictive_factor = self.temp_rate_gain * temp_rate;
+
+        // Step 3: Effective setpoints adjusted by inertia and prediction (use provided setpoints)
+        let effective_heating_sp = heating_setpoint + inertia_factor - predictive_factor;
+        let effective_cooling_sp = cooling_setpoint + inertia_factor - predictive_factor;
+
+        // Step 4: Determine mode based on zone temp vs adjusted setpoints
+        let heating_threshold = effective_heating_sp - self.deadband_tolerance;
+        let cooling_threshold = effective_cooling_sp + self.deadband_tolerance;
+
+        let mode = if zone_temp < heating_threshold {
+            HVACMode::Heating
+        } else if zone_temp > cooling_threshold {
+            HVACMode::Cooling
+        } else {
+            HVACMode::Off
+        };
+
+        // Step 5: Calculate modulation factor based on temperature error
+        let temp_error = match mode {
+            HVACMode::Heating => effective_heating_sp - zone_temp,
+            HVACMode::Cooling => zone_temp - effective_cooling_sp,
+            HVACMode::Off => 0.0,
+        };
+
+        let modulation = (temp_error * 10.0).clamp(0.0, 1.0);
+
+        // Update previous zone temp for next timestep's dT/dt calculation
+        self.previous_zone_temp = zone_temp;
+
+        (mode, modulation)
+    }
+
     /// Reset controller state (for new simulation or year boundary).
     pub fn reset(&mut self) {
         self.previous_zone_temp = 20.0;

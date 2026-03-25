@@ -134,6 +134,65 @@ impl CTFSolver {
         }
     }
 
+    /// Create new CTF solver with warmup period.
+    ///
+    /// This initializes the solver by running a warmup period with realistic
+    /// diurnal temperature cycles to fill history buffers with physically
+    /// meaningful values, avoiding artificial transients at simulation start.
+    ///
+    /// # Arguments
+    ///
+    /// * `coefficients` - Precomputed CTF coefficients
+    /// * `config` - Solver configuration
+    /// * `t_interior_initial` - Initial interior temperature [°C]
+    /// * `t_exterior_initial` - Initial exterior temperature [°C]
+    /// * `warmup_days` - Number of warmup days (default: 7)
+    ///
+    /// # Returns
+    ///
+    /// Solver with history buffers initialized from warmup simulation.
+    pub fn with_warmup(
+        coefficients: CTFCoefficients,
+        config: CTFSolverConfig,
+        t_interior_initial: f64,
+        t_exterior_initial: f64,
+        warmup_days: usize,
+    ) -> Self {
+        let history_size = config.history_size.max(coefficients.num_coeffs);
+
+        // Start with initial conditions
+        let mut solver = Self {
+            coefficients,
+            config,
+            t_interior_history: vec![t_interior_initial; history_size],
+            t_exterior_history: vec![t_exterior_initial; history_size],
+            q_interior_history: vec![0.0; history_size],
+            q_exterior_history: vec![0.0; history_size],
+            t_interior_surface: t_interior_initial,
+            t_exterior_surface: t_exterior_initial,
+        };
+
+        // Run warmup period with diurnal cycles
+        // Use simple sinusoidal diurnal variation: T_ext = T_avg + A*sin(2π*t/24)
+        let t_avg = t_exterior_initial;
+        let amplitude = 8.0; // Typical diurnal amplitude [°C]
+        let hours_per_day = 24;
+        let total_warmup_hours = warmup_days * hours_per_day;
+
+        for hour in 0..total_warmup_hours {
+            // Diurnal exterior temperature
+            let t_ext = t_avg + amplitude * ((hour as f64 - 6.0) * std::f64::consts::PI / 12.0).sin();
+            
+            // Constant interior temperature (simplified - assumes HVAC maintains setpoint)
+            let t_int = t_interior_initial;
+            
+            // Step solver
+            solver.step(t_int, t_ext);
+        }
+
+        solver
+    }
+
     /// Create solver for ASHRAE 140 Case 900.
     pub fn case_900(coefficients: CTFCoefficients, timestep: f64) -> Self {
         Self::new(coefficients, CTFSolverConfig::case_900(timestep))
@@ -234,6 +293,27 @@ impl CTFSolver {
     #[inline]
     pub fn timestep(&self) -> f64 {
         self.config.timestep
+    }
+
+    /// Get exterior temperature history buffer.
+    /// Used by coupled solver for CTF history terms calculation.
+    #[inline]
+    pub fn exterior_temperature_history(&self) -> &[f64] {
+        &self.t_exterior_history
+    }
+
+    /// Get interior temperature history buffer.
+    /// Used by coupled solver for CTF history terms calculation.
+    #[inline]
+    pub fn interior_temperature_history(&self) -> &[f64] {
+        &self.t_interior_history
+    }
+
+    /// Get interior heat flux history buffer.
+    /// Used by coupled solver for CTF history terms calculation.
+    #[inline]
+    pub fn interior_flux_history(&self) -> &[f64] {
+        &self.q_interior_history
     }
 }
 

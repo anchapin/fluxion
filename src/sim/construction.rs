@@ -20,11 +20,11 @@
 
 use serde::{Deserialize, Serialize};
 // Use constants from physics module instead of hardcoded values
-use crate::physics::constants::thermal::ashrae_140::{
+pub use crate::physics::constants::thermal::ashrae_140::{
     EXTERIOR_FILM_COEFF, EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF,
     INTERIOR_FILM_COEFF_CEILING, INTERIOR_FILM_COEFF_FLOOR, INTERIOR_FILM_COEFF_WALL,
 };
-use crate::physics::constants::{AIR_DENSITY_SEA_LEVEL, AIR_SPECIFIC_HEAT};
+pub use crate::physics::constants::{AIR_DENSITY_SEA_LEVEL, AIR_SPECIFIC_HEAT};
 
 /// Surface type for ASHRAE 140 surface-type-specific interior film coefficients.
 ///

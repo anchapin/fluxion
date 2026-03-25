@@ -189,4 +189,83 @@ mod tests {
         // Window width = 6.0. Shaded fraction = 1.0 / 6.0 = 0.1666...
         assert!((shaded - 1.0 / 6.0).abs() < 1e-6);
     }
+
+    /// Case 610 shading diagnostic - tests overhang behavior across seasons
+    #[test]
+    fn test_case_610_shading_diagnostics() {
+        println!("\n=== Case 610 Shading Diagnostic Test ===");
+        println!("Overhang: 1.0m depth, 2.7m distance_above (from top of window)");
+        println!("Window: 12m² South-facing (6m wide × 2m high)");
+        println!();
+
+        // Case 610 window configuration (ASHRAE 140 spec)
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang {
+            depth: 1.0,        // 1m overhang depth
+            distance_above: 2.7, // 2.7m from window top (ASHRAE 140 spec)
+            extension: 10.0,   // Infinite extension
+        };
+
+        println!("Testing shading fraction at different sun positions:");
+        println!();
+        println!("{:<25} {:>8} {:>12} {:>15}", "Condition", "Alt(°)", "Shaded Frac", "Effective Gain");
+        println!("{}", "-".repeat(65));
+
+        // Test cases representing different seasons/times
+        let test_cases: [(&str, f64, f64); 9] = [
+            // Summer (high sun angle - should be mostly shaded)
+            ("Summer noon (Jun 21)", 73.5, 0.0),
+            ("Summer morning (9am)", 45.0, -45.0),
+            ("Summer afternoon (3pm)", 45.0, 45.0),
+            
+            // Winter (low sun angle - should be mostly unshaded)
+            ("Winter noon (Dec 21)", 26.5, 0.0),
+            ("Winter morning (9am)", 15.0, -45.0),
+            ("Winter afternoon (3pm)", 15.0, 45.0),
+            
+            // Spring/Fall (medium sun angle)
+            ("Equinox noon (Mar 21)", 50.0, 0.0),
+            ("Equinox morning (9am)", 30.0, -45.0),
+            ("Equinox afternoon (3pm)", 30.0, 45.0),
+        ];
+
+        for (label, alt_deg, az_deg) in test_cases {
+            let solar = LocalSolarPosition {
+                altitude: alt_deg.to_radians(),
+                relative_azimuth: az_deg.to_radians(),
+            };
+
+            let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+            let effective_gain = 1.0 - shaded;
+
+            println!(
+                "{:<25} {:>8.1} {:>12.2} {:>15.1}",
+                label, alt_deg, shaded, effective_gain
+            );
+        }
+
+        println!();
+        println!("Expected behavior:");
+        println!("  - Summer: High shading (60-80%) to block cooling load");
+        println!("  - Winter: Low shading (10-30%) to allow heating gain");
+        println!("  - If shading is constant year-round, algorithm is broken!");
+        println!();
+
+        // Check critical winter condition
+        let winter_noon_solar = LocalSolarPosition {
+            altitude: 26.5_f64.to_radians(),
+            relative_azimuth: 0.0,
+        };
+        let winter_shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_noon_solar);
+        
+        println!("CRITICAL: Winter noon shading fraction = {:.2}", winter_shaded);
+        
+        if winter_shaded > 0.5 {
+            println!("WARNING: Overhang blocks >50% of winter sun - this may cause heating overprediction!");
+        } else if winter_shaded > 0.3 {
+            println!("CAUTION: Overhang blocks {:.0}% of winter sun - may contribute to heating overprediction", winter_shaded * 100.0);
+        } else {
+            println!("OK: Winter sun access looks reasonable");
+        }
+    }
 }

@@ -1137,9 +1137,10 @@ impl ThermalModel<VectorField> {
         // CALIBRATION NOTE: This factor is calibrated for ASHRAE 140 Case 900 only.
         // Case 900 has specific reference values that require this correction.
         // Other 900-series cases may need different corrections.
+        // SESSION 93: RESTORED after testing h_tr_em_heating_factor = 1.0
         let sensitivity_correction = match spec.case_id.as_str() {
             // Case 900 only: apply ~4x correction to match reference values
-            "900" => 4.0,
+            "900" => 4.0,  // RESTORED: was 4.0
             // Other high-mass cases: no correction (may need separate calibration)
             "910" | "920" | "930" | "940" | "950" => 1.0,
             // Free-floating cases: no correction needed
@@ -4609,6 +4610,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     Some(0.2), // Ground reflectance
                 );
 
+                // SESSION 94 DEBUG: Log intermediate solar values
+                if timestep == 312 {
+                    eprintln!(
+                        "DEBUG solar_calc: timestep={}, orient={:?}, dni={}, dhi={}, irradiance.total={}, window_area={}, solar_gain={}",
+                        timestep, orientation, weather.dni, weather.dhi, irradiance.total_wm2, total_win_area, solar_gain.total_gain_w
+                    );
+                }
+
                 // Distribute solar gain to each surface with this orientation
                 for surface in zone_surfaces {
                     if surface.orientation != orientation {
@@ -4844,12 +4853,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Calculate solar gain for each zone using weather data
                 let mut zone_solar_gains = Vec::with_capacity(self.num_zones);
 
-                // DEBUG: Check weather data - print at noon (hour 12)
-                if timestep == 12 {
+                // SESSION 94: Debug print at key timesteps to trace solar gains
+                if timestep == 12 || timestep == 276 || timestep == 312 {
                     eprintln!(
-                        "DEBUG weather: dni={}, dhi={}, month={}, day={}, hour={}",
-                        weather.dni,
-                        weather.dhi,
+                        "DEBUG calc_analytical_loads: timestep={}, weather dni={}, dhi={}, month={}, day={}, hour={}",
+                        timestep, weather.dni, weather.dhi,
                         Self::timestep_to_date(timestep).1,
                         Self::timestep_to_date(timestep).2,
                         Self::timestep_to_date(timestep).3

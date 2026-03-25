@@ -396,35 +396,48 @@ impl ValidationReportGenerator {
             .filter(|r| r.case_id == case_id)
             .collect();
 
+        // Get benchmark data for correct reference values
+        // (Don't rely on result.ref_min/ref_max which may be zeroed in fallback)
+        let benchmark = report.benchmark_data.get(case_id);
+
         let mut heating_str = String::new();
         let mut cooling_str = String::new();
         let mut peak_h_str = String::new();
         let mut peak_c_str = String::new();
 
         for result in &case_results {
+            // Use benchmark data for reference values if available
+            let (ref_min, ref_max) = match (result.metric, benchmark) {
+                (MetricType::AnnualHeating, Some(b)) => (b.annual_heating_min, b.annual_heating_max),
+                (MetricType::AnnualCooling, Some(b)) => (b.annual_cooling_min, b.annual_cooling_max),
+                (MetricType::PeakHeating, Some(b)) => (b.peak_heating_min, b.peak_heating_max),
+                (MetricType::PeakCooling, Some(b)) => (b.peak_cooling_min, b.peak_cooling_max),
+                _ => (result.ref_min, result.ref_max), // Fallback to result values
+            };
+            
             match result.metric {
                 MetricType::AnnualHeating => {
                     heating_str = format!(
                         "{:.2} MWh (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, result.ref_min, result.ref_max
+                        result.fluxion_value, ref_min, ref_max
                     );
                 }
                 MetricType::AnnualCooling => {
                     cooling_str = format!(
                         "{:.2} MWh (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, result.ref_min, result.ref_max
+                        result.fluxion_value, ref_min, ref_max
                     );
                 }
                 MetricType::PeakHeating => {
                     peak_h_str = format!(
                         "{:.2} kW (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, result.ref_min, result.ref_max
+                        result.fluxion_value, ref_min, ref_max
                     );
                 }
                 MetricType::PeakCooling => {
                     peak_c_str = format!(
                         "{:.2} kW (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, result.ref_min, result.ref_max
+                        result.fluxion_value, ref_min, ref_max
                     );
                 }
                 _ => {}
@@ -469,21 +482,31 @@ impl ValidationReportGenerator {
             .filter(|r| r.case_id == case_id)
             .collect();
 
+        // Get benchmark data for correct reference values
+        let benchmark = report.benchmark_data.get(case_id);
+
         let mut min_str = String::new();
         let mut max_str = String::new();
 
         for result in &case_results {
+            // Use benchmark data for reference values if available
+            let (ref_min, ref_max) = match (result.metric, benchmark) {
+                (MetricType::MinFreeFloat, Some(b)) => (b.min_free_float_min, b.min_free_float_max),
+                (MetricType::MaxFreeFloat, Some(b)) => (b.max_free_float_min, b.max_free_float_max),
+                _ => (result.ref_min, result.ref_max), // Fallback to result values
+            };
+            
             match result.metric {
                 MetricType::MinFreeFloat => {
                     min_str = format!(
                         "{:.2}°C (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, result.ref_min, result.ref_max
+                        result.fluxion_value, ref_min, ref_max
                     );
                 }
                 MetricType::MaxFreeFloat => {
                     max_str = format!(
                         "{:.2}°C (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, result.ref_min, result.ref_max
+                        result.fluxion_value, ref_min, ref_max
                     );
                 }
                 _ => {}

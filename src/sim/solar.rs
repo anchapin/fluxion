@@ -6,6 +6,7 @@
 use crate::sim::shading::{calculate_shaded_fraction, LocalSolarPosition, Overhang, ShadeFin};
 use crate::sim::sky_radiation::{extraterrestrial_irradiance, relative_airmass};
 use crate::validation::ashrae_140_cases::{Orientation, WindowArea};
+use serde::{Deserialize, Serialize};
 
 /// Sun position in the sky at a given time and location.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -139,6 +140,29 @@ pub struct SolarGain {
     pub diffuse_gain_w: f64,
     pub ground_reflected_gain_w: f64,
     pub total_gain_w: f64,
+}
+
+/// Diagnostic data for solar calculations - Phase 30 debugging
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SolarDiagnostic {
+    pub month: u32,
+    pub day: u32,
+    pub hour: f64,
+    pub orientation: String,
+    pub dni: f64,
+    pub dhi: f64,
+    pub ghi: f64,
+    pub beam_irradiance: f64,
+    pub diffuse_irradiance: f64,
+    pub ground_reflected_irradiance: f64,
+    pub total_irradiance: f64,
+    pub incidence_angle: f64,
+    pub shgc_effective: f64,
+    pub beam_gain_w: f64,
+    pub diffuse_gain_w: f64,
+    pub ground_gain_w: f64,
+    pub total_gain_w: f64,
+    pub outdoor_temp: f64,
 }
 
 impl SolarGain {
@@ -315,7 +339,7 @@ pub fn calculate_window_solar_gain(
         while rel_az > 180.0 {
             rel_az -= 360.0;
         }
-        while rel_az <= -180.0 {
+        while rel_az < -180.0 {
             rel_az += 360.0;
         }
 
@@ -352,6 +376,92 @@ pub fn calculate_window_solar_gain(
     let ground_reflected_gain = window.area * irradiance.ground_reflected_wm2 * diffuse_shgc;
 
     SolarGain::new(beam_gain, diffuse_gain, ground_reflected_gain)
+}
+
+/// Calculate window solar gain with diagnostic data collection (Phase 30)
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_window_solar_gain_with_diagnostics(
+    irradiance: &SurfaceIrradiance,
+    window: &WindowProperties,
+    geometry: Option<&WindowArea>,
+    overhang: Option<&Overhang>,
+    fins: &[ShadeFin],
+    sun_pos: &SolarPosition,
+    orientation: Orientation,
+    month: u32,
+    day: u32,
+    hour: f64,
+    dni: f64,
+    dhi: f64,
+    ghi: f64,
+    outdoor_temp: f64,
+) -> (SolarGain, SolarDiagnostic) {
+    let (tilt_deg, surface_azimuth_deg) = orientation_to_angles(orientation);
+    let incidence_cos = sun_pos.incidence_cosine(tilt_deg, surface_azimuth_deg);
+    let incidence_angle = incidence_cos.acos().to_degrees();
+
+    // Calculate shaded fraction for beam radiation
+    let mut shaded_fraction = 0.0;
+    if let Some(geom) = geometry {
+        let mut rel_az = sun_pos.azimuth_deg - surface_azimuth_deg;
+        while rel_az > 180.0 {
+            rel_az -= 360.0;
+        }
+        while rel_az <= -180.0 {
+            rel_az += 360.0;
+        }
+
+        let local_solar = LocalSolarPosition {
+            altitude: sun_pos.altitude_deg.to_radians(),
+            relative_azimuth: rel_az.to_radians(),
+        };
+
+        shaded_fraction = calculate_shaded_fraction(geom, overhang, fins, &local_solar);
+    }
+
+    // Issue #299: Refine Window Angular Dependence Model
+    let beam_shgc = if incidence_angle <= 0.0 {
+        window.shgc
+    } else if incidence_angle >= 90.0 {
+        0.0
+    } else {
+        let shgc_ratio = ashrae_140_window_shgc_ratio(incidence_angle);
+        window.shgc * shgc_ratio
+    };
+
+    let diffuse_shgc = window.shgc * 0.9;
+    let effective_beam_wm2 = irradiance.beam_wm2 * (1.0 - shaded_fraction);
+
+    // Calculate separate gain components
+    let beam_gain = window.area * effective_beam_wm2 * beam_shgc;
+    let diffuse_gain = window.area * irradiance.diffuse_wm2 * diffuse_shgc;
+    let ground_reflected_gain = window.area * irradiance.ground_reflected_wm2 * diffuse_shgc;
+
+    let solar_gain = SolarGain::new(beam_gain, diffuse_gain, ground_reflected_gain);
+
+    // Create diagnostic record
+    let diagnostic = SolarDiagnostic {
+        month,
+        day,
+        hour,
+        orientation: format!("{:?}", orientation),
+        dni,
+        dhi,
+        ghi,
+        beam_irradiance: irradiance.beam_wm2,
+        diffuse_irradiance: irradiance.diffuse_wm2,
+        ground_reflected_irradiance: irradiance.ground_reflected_wm2,
+        total_irradiance: irradiance.total_wm2,
+        incidence_angle,
+        shgc_effective: beam_shgc,
+        beam_gain_w: beam_gain,
+        diffuse_gain_w: diffuse_gain,
+        ground_gain_w: ground_reflected_gain,
+        total_gain_w: solar_gain.total_gain_w,
+        outdoor_temp,
+    };
+
+    (solar_gain, diagnostic)
 }
 
 #[allow(clippy::too_many_arguments)]

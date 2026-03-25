@@ -2,21 +2,22 @@
 gsd_state_version: 1.0
 milestone: v0.7
 milestone_name: Thermal Physics Complete
-current_phase: 28 (COMPLETE), 29 (PLANNED)
-status: Phase 28 COMPLETE — CTF/FD solvers integrated with automatic method selection. Phase 29 PLANNED — Full ASHRAE 140 validation (9 plans ready)
-last_updated: "2026-03-18T14:00:00.000Z"
+current_phase: 29 (COMPLETE), 30 (NEXT)
+status: Phase 29 COMPLETE — Full ASHRAE 140 validation executed (32.8% pass rate, 75% heating improvement). Phase 30 NEXT — Documentation & v0.7.0 release.
+last_updated: "2026-03-18T15:00:00.000Z"
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 15
-  completed_plans: 6
+  completed_phases: 2
+  total_plans: 24
+  completed_plans: 15
 ---
 
 # Fluxion Project State
 
 **Milestone:** v0.7 Thermal Physics Complete
-**Last Updated:** 2026-03-17
-**Current Phase:** 28 (Solver Integration — Ready to Plan)
+**Last Updated:** 2026-03-18
+**Current Phase:** 29 (COMPLETE), 30 (PLANNED - Cooling Energy Fix)
+**Decision:** Delay v0.7.0 release to fix cooling energy gaps and improve pass rate
 
 ---
 
@@ -58,10 +59,11 @@ progress:
 ### Progress Bar
 
 ```
-Phase 28: [██████████] 100% — Solver Integration (COMPLETE, 6/6 plans done)
-Phase 29: [          ]   0% — Full Validation (PLANNED, 9 plans ready)
-Phase 30: [          ]   0% — Documentation & Release (Next)
-Overall:  [██████    ]  33% (1/3 phases complete, 0/3 planned)
+Phase 28: [██████████] 100% — Solver Integration (COMPLETE)
+Phase 29: [██████████] 100% — Full Validation (COMPLETE, 3/6 criteria met)
+Phase 30: [          ]   0% — Cooling Energy Fix (PLANNED)
+Phase 31: [          ]   0% — Documentation & Release (Next)
+Overall:  [██████    ]  50% (2/4 phases complete)
 ```
 
 ### v0.6 Summary (Shipped 2026-03-17)
@@ -84,19 +86,67 @@ Overall:  [██████    ]  33% (1/3 phases complete, 0/3 planned)
 
 **Next Step:** Phase 28 — Integrate CTF/FD solver into production thermal model
 
+### Phase 28 Summary (COMPLETE 2026-03-18)
+
+**Achievement:** CTF/FD solvers integrated with automatic method selection
+
+**Deliverables:**
+- ✅ Solver trait interface (`HeatConductionSolver`)
+- ✅ 5R1C, CTF, FD solver wrappers implementing the trait
+- ✅ Automatic method selector (τ < 2h → 5R1C, τ ≥ 2h → CTF)
+- ✅ Solver manager with runtime dispatch
+- ✅ CTF integrated into timestep loop
+- ✅ 97 unit tests passing (CTF: 28, FD: 30, Solver: 39)
+- ✅ `cargo check --release` passes
+- ✅ Python API exists
+
+**Performance:**
+- 5R1C: ~0.1ms/zone, ~2,575 configs/sec
+- CTF: ~0.5ms/zone, ~800-1,200 configs/sec
+- FD: ~2ms/zone, ~500-800 configs/sec
+
+### Phase 29 Summary (COMPLETE 2026-03-18)
+
+**Achievement:** Full ASHRAE 140 validation executed (18 cases)
+
+**Key Results:**
+- ✅ Case 900 heating: 5.90 MWh (-9.17% error) — IMPROVED 75% from v0.6
+- ✅ Performance: 1,237 configs/sec (target ≥800)
+- ✅ 800-series: 17/17 tests passing
+- ✅ Case 195: 4/4 metrics passing
+- ❌ Case 900 cooling: 6.13 MWh (-33.76% error) — FAIL
+- ❌ Case 960: Multi-zone HVAC issue persists
+- ❌ Overall pass rate: 32.8% (cooling energy systematic underestimation)
+
+**Validation Report:** `.planning/phases/29-full-validation/29-08-VALIDATION-REPORT.md`
+
+**Next Step:** Phase 30 — Documentation and v0.7.0 release
+
 ### Next Actions
 
 1. **Phase 28 COMPLETE** ✅ — CTF/FD solver integration with automatic method selection
-   - 6/6 plans complete (28-01 through 28-06 complete)
-   - 97 unit tests passing (CTF: 28, FD: 30, Solver: 39)
+   - 6/6 plans complete
+   - 97 unit tests passing
    - `cargo check --release` passes
    - Performance: 5R1C ~0.1ms/zone, CTF ~0.5ms/zone, FD ~2ms/zone
-2. **Execute Phase 29** using `/gsd:execute-phase 29` — Full ASHRAE 140 validation (18 cases)
-   - 9 plans ready (29-01 through 29-09)
-   - Wave 1: High-mass validation (900-series)
-   - Wave 2: Regression testing (600-series, 800-series, free-float)
-   - Wave 3: Performance benchmarking and reporting
-3. **Plan Phase 30** using `/gsd:plan-phase 30` — Documentation and v0.7.0 release (after Phase 29 complete)
+
+2. **Phase 29 COMPLETE** ✅ — Full ASHRAE 140 validation
+   - 9/9 plans complete
+   - Case 900 heating: 5.90 MWh (-9.17% error) — 75% improvement
+   - Performance: 1,237 configs/sec (exceeds 800 target)
+   - Overall pass rate: 32.8% (cooling energy gaps documented)
+
+3. **Phase 30: Cooling Energy Fix** — Deep investigation and correction
+   - Solar gain validation (SHGC, transmittance, window model)
+   - HVAC control strategy audit (cooling setpoints, sizing)
+   - Internal gains distribution (radiative/convective split)
+   - Target: Case 900 cooling within ±15%, overall pass rate >80%
+
+4. **Phase 31: Documentation & Release** — After cooling fix complete
+   - Update API documentation for CTF/FD solvers
+   - Create migration guide (v0.6 → v0.7)
+   - Write performance optimization guide
+   - Prepare v0.7.0 release (crates.io, PyPI)
 
 ---
 

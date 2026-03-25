@@ -2,14 +2,15 @@
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
 **Milestone:** v0.7 Thermal Physics Complete
-**Current Phase:** Phase 28 COMPLETE, Phase 29 PLANNED
+**Current Phase:** Phase 29 COMPLETE, Phase 30 PLANNED (Cooling Energy Fix)
 **Last Updated:** 2026-03-18
+**Decision:** Delay v0.7.0 to fix cooling energy gaps and improve pass rate to >80%
 
 ---
 
 ## Milestones
 
-- 🔄 **v0.7 Thermal Physics Complete** — Phases 28-30 (ACTIVE, started 2026-03-17)
+- 🔄 **v0.7 Thermal Physics Complete** — Phases 28-31 (ACTIVE, started 2026-03-17)
 - ✅ **v0.6 Validation Excellence** — Phases 24-27 (COMPLETE 2026-03-17)
 - ✅ **v0.5 Production Foundation** — Phases 21-23 (COMPLETE 2026-03-17)
 - ✅ **v0.4 ASHRAE 140 Compliance** — Phases 14-20 (shipped 2026-03-15)
@@ -20,16 +21,17 @@
 ## Current Status
 
 **Milestone:** v0.7 Thermal Physics Complete
-**Phase:** Phase 28 COMPLETE (Solver Integration), Phase 29 PLANNED (Full Validation)
-**Status:** Phase 28 complete (6/6 plans), Phase 29 planned (9 plans ready) — Ready to execute Phase 29
+**Phase:** Phase 29 COMPLETE (Full Validation), Phase 30 PLANNED (Cooling Energy Fix)
+**Status:** Phase 29 complete (9/9 plans), overall pass rate 32.8%. **Decision:** Fix cooling energy before release.
 
 ---
 
 ## Phases
 
 - [x] **Phase 28: CTF/FD Solver Integration** - COMPLETE (6/6 plans done)
-- [ ] **Phase 29: Full Validation** - PLANNED (2-3 weeks, 9 plans ready)
-- [ ] **Phase 30: Documentation & Release** - PLANNED (1-2 weeks)
+- [x] **Phase 29: Full Validation** - COMPLETE (9/9 plans, 32.8% pass rate)
+- [ ] **Phase 30: Cooling Energy Fix** - PLANNED (2-3 weeks)
+- [ ] **Phase 31: Documentation & Release** - PLANNED (1-2 weeks)
 
 ---
 

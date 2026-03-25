@@ -135,20 +135,29 @@ impl CTFCoefficients {
         t_interior_history: &[f64],
         flux_history: &[f64],
     ) -> f64 {
-        let mut q = -self.z[0] * t_interior;
+        // FIX: Correct ASHRAE CTF formula
+        // q''_i(t) = Σ(X_j·T_o(t-jΔt)) - Σ(Y_j·T_i(t-jΔt)) - Σ(Φ_j·q''_i(t-jΔt))
+        //
+        // The original code had a bug: it used both -Z[0]*T_int AND -ΣY*T_int,
+        // which double-counted the interior temperature and caused wrong sign.
+        // Z coefficients are not used in standard ASHRAE CTF formulation.
+
+        let mut q = 0.0;
 
         // X coefficients (exterior temperature history including current)
         for (j, &t_ext) in t_exterior_history.iter().take(self.num_coeffs).enumerate() {
             q += self.x[j] * t_ext;
         }
 
-        // Y coefficients (interior temperature history, not including current)
+        // Y coefficients (interior temperature history INCLUDING current)
+        // t_interior_history is [T_t-1, T_t-2, ...], so we prepend t_interior (T_t)
+        q -= self.y[0] * t_interior;
         for (j, &t_int) in t_interior_history
             .iter()
             .take(self.num_coeffs - 1)
             .enumerate()
         {
-            q -= self.y[j] * t_int;
+            q -= self.y[j + 1] * t_int;
         }
 
         // Φ coefficients (flux history)
@@ -268,8 +277,11 @@ impl<'a> CTFCalculator<'a> {
         let mut coeffs = CTFCoefficients::new(self.timestep, self.max_coeffs);
 
         // Calculate overall wall properties
+        // Include surface film resistances for ASHRAE 140 compliance
+        const R_SI: f64 = 0.125;  // Interior film resistance [m²K/W]
+        const R_SE: f64 = 0.044;  // Exterior film resistance [m²K/W]
         let total_resistance: f64 = self.layers.iter().map(|l| l.resistance()).sum();
-        let u_value = 1.0 / total_resistance;
+        let u_value = 1.0 / (R_SI + total_resistance + R_SE);  // Include surface films
 
         // Step 1: Find poles of the transfer function
         // Poles are values of s where A(s) = 0 (determinant of transmission matrix)
@@ -643,18 +655,41 @@ impl<'a> CTFCalculator<'a> {
     }
 
     /// Compute overall transmission matrix for the wall at Laplace frequency s.
+    ///
+    /// Includes surface film resistances (R_si and R_se) for ASHRAE 140 compliance.
     fn compute_overall_transmission_matrix(&self, s: Complex64) -> [[Complex64; 2]; 2] {
-        // Start with identity matrix
-        let mut matrix = [
-            [Complex64::new(1.0, 0.0), Complex64::new(0.0, 0.0)],
-            [Complex64::new(0.0, 0.0), Complex64::new(1.0, 0.0)],
-        ];
+        // ASHRAE 140 surface film resistances
+        const R_SI: f64 = 0.125;  // Interior film resistance [m²K/W]
+        const R_SE: f64 = 0.044;  // Exterior film resistance [m²K/W]
+
+        // Start with interior surface film matrix
+        // Film matrix: [1, R; 0, 1] where R is film resistance
+        let mut matrix = if s.norm() < 1e-20 {
+            // At s=0, films are purely resistive
+            [
+                [Complex64::new(1.0, 0.0), Complex64::new(R_SI, 0.0)],
+                [Complex64::new(0.0, 0.0), Complex64::new(1.0, 0.0)],
+            ]
+        } else {
+            // For dynamic response, films are still purely resistive (no thermal mass)
+            [
+                [Complex64::new(1.0, 0.0), Complex64::new(R_SI, 0.0)],
+                [Complex64::new(0.0, 0.0), Complex64::new(1.0, 0.0)],
+            ]
+        };
 
         // Multiply transmission matrices for each layer (interior to exterior)
         for layer in self.layers {
             let layer_matrix = self.layer_transmission_matrix_complex(layer, s);
             matrix = self.multiply_matrices_complex(&matrix, &layer_matrix);
         }
+
+        // Add exterior surface film matrix
+        let exterior_film = [
+            [Complex64::new(1.0, 0.0), Complex64::new(R_SE, 0.0)],
+            [Complex64::new(0.0, 0.0), Complex64::new(1.0, 0.0)],
+        ];
+        matrix = self.multiply_matrices_complex(&matrix, &exterior_film);
 
         matrix
     }
@@ -715,8 +750,11 @@ impl<'a> CTFCalculator<'a> {
     /// Apply normalization and ensure physical consistency of CTF coefficients.
     fn apply_ctf_normalization(&self, coeffs: &mut CTFCoefficients) {
         // Ensure X, Y, Z coefficients sum to U-value (steady-state constraint)
+        // Include surface film resistances for ASHRAE 140 compliance
+        const R_SI: f64 = 0.125;  // Interior film resistance [m²K/W]
+        const R_SE: f64 = 0.044;  // Exterior film resistance [m²K/W]
         let total_resistance: f64 = self.layers.iter().map(|l| l.resistance()).sum();
-        let u_value = 1.0 / total_resistance;
+        let u_value = 1.0 / (R_SI + total_resistance + R_SE);  // Include surface films
 
         // Normalize Y coefficients to sum to U-value
         let y_sum: f64 = coeffs.y.iter().sum();
@@ -855,6 +893,27 @@ mod tests {
         let calculator = CTFCalculator::with_defaults(&layers, 3600.0);
         let coeffs = calculator.compute_coefficients();
 
+        // Calculate construction U-value
+        let total_r: f64 = layers.iter().map(|l| l.thickness / l.conductivity).sum();
+        let u_value = 1.0 / total_r;
+
+        // Sum of X coefficients should approximate U-value
+        let x_sum: f64 = coeffs.x.iter().sum();
+        let y_sum: f64 = coeffs.y.iter().sum();
+
+        println!("\n=== CTF Coefficients for Case 900 Wall ===");
+        println!("Construction U-value: {:.4} W/m²K", u_value);
+        println!(
+            "Sum of X coefficients: {:.4} W/m²K (should be ~U-value)",
+            x_sum
+        );
+        println!("Sum of Y coefficients: {:.4} W/m²K", y_sum);
+        println!("Z[0]: {:.4} W/m²K", coeffs.z[0]);
+        println!("First 5 X: {:?}", &coeffs.x[0..5]);
+        println!("First 5 Y: {:?}", &coeffs.y[0..5]);
+        println!("First 5 Z: {:?}", &coeffs.z[0..5]);
+        println!("First 5 Phi: {:?}", &coeffs.phi[0..5]);
+
         // U-value approximation from sum of X coefficients
         // For simplified model, check that coefficients are non-zero and decay
         assert!(
@@ -896,12 +955,23 @@ mod tests {
         let calculator = CTFCalculator::with_defaults(&layers, 3600.0);
         let coeffs = calculator.compute_coefficients();
 
+        // Calculate construction U-value
+        let total_r: f64 = layers.iter().map(|l| l.thickness / l.conductivity).sum();
+        let u_value = 1.0 / total_r;
+
         // T_exterior = 30°C, T_interior = 20°C (heat flows into zone)
-        let t_ext_history = vec![30.0; 20];
-        let t_int_history = vec![20.0; 20];
-        let flux_history = vec![0.0; 20];
+        let t_ext_history = vec![30.0; coeffs.num_coeffs];
+        let t_int_history = vec![20.0; coeffs.num_coeffs - 1];
+        let flux_history = vec![0.0; coeffs.num_coeffs - 1];
 
         let q = coeffs.calculate_interior_flux(20.0, &t_ext_history, &t_int_history, &flux_history);
+
+        println!("\n=== CTF Flux Test ===");
+        println!("U-value: {:.4} W/m²K", u_value);
+        println!("T_ext = 30°C, T_int = 20°C, ΔT = 10°C");
+        println!("CTF flux: {:.4} W/m²", q);
+        println!("Expected (U×ΔT): {:.4} W/m²", u_value * 10.0);
+        println!("Ratio CTF/Expected: {:.2}%", (q / (u_value * 10.0)) * 100.0);
 
         // Flux should be finite and reasonable
         assert!(q.is_finite(), "Flux should be finite");
@@ -962,5 +1032,187 @@ mod tests {
         assert!((c[0][1] - 22.0).abs() < 1e-10);
         assert!((c[1][0] - 43.0).abs() < 1e-10);
         assert!((c[1][1] - 50.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ctf_flux_direction_cold_outside() {
+        // CRITICAL TEST: T_inside = 20°C, T_outside = 0°C
+        // Expected: CTF flux should be NEGATIVE (heat LEAVING zone)
+
+        let layers = case_900_wall();
+        let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
+
+        // Create temperature histories with warmup
+        let mut t_ext_history = vec![0.0; 50];
+        let mut t_int_history = vec![20.0; 49];
+        let mut flux_history = vec![0.0; 49];
+
+        // Calculate flux
+        let q_flux =
+            coeffs.calculate_interior_flux(20.0, &t_ext_history, &t_int_history, &flux_history);
+
+        println!("\n=== CTF FLUX DIRECTION TEST (Cold Outside) ===");
+        println!("T_inside = 20.0°C, T_outside = 0.0°C, ΔT = 20.0°C");
+        println!("CTF flux = {:.4} W/m²", q_flux);
+        println!("EXPECTED: NEGATIVE flux (heat leaving zone)");
+        println!(
+            "ACTUAL: {} flux",
+            if q_flux < 0.0 {
+                "NEGATIVE ✓"
+            } else {
+                "POSITIVE ✗ WRONG DIRECTION!"
+            }
+        );
+
+        // CRITICAL ASSERTION: Flux should be negative when T_inside > T_outside
+        // When inside is warmer than outside, heat should flow OUT of the zone
+        assert!(
+            q_flux < 0.0,
+            "CTF FLUX SIGN ERROR: Expected negative flux (heat leaving zone), got {:.4} W/m²",
+            q_flux
+        );
+    }
+
+    #[test]
+    fn test_ctf_flux_direction_hot_outside() {
+        // CRITICAL TEST: T_inside = 20°C, T_outside = 35°C
+        // Expected: CTF flux should be POSITIVE (heat ENTERING zone from outside)
+
+        let layers = case_900_wall();
+        let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
+
+        // Create temperature histories with warmup
+        let mut t_ext_history = vec![35.0; 50];
+        let mut t_int_history = vec![20.0; 49];
+        let mut flux_history = vec![0.0; 49];
+
+        // Calculate flux
+        let q_flux =
+            coeffs.calculate_interior_flux(20.0, &t_ext_history, &t_int_history, &flux_history);
+
+        println!("\n=== CTF FLUX DIRECTION TEST (Hot Outside) ===");
+        println!("T_inside = 20.0°C, T_outside = 35.0°C, ΔT = 15.0°C");
+        println!("CTF flux = {:.4} W/m²", q_flux);
+        println!("EXPECTED: POSITIVE flux (heat entering zone)");
+        println!(
+            "ACTUAL: {} flux",
+            if q_flux > 0.0 {
+                "POSITIVE ✓"
+            } else {
+                "NEGATIVE ✗ WRONG DIRECTION!"
+            }
+        );
+
+        // CRITICAL ASSERTION: Flux should be positive when T_outside > T_inside
+        assert!(
+            q_flux > 0.0,
+            "CTF FLUX SIGN ERROR: Expected positive flux (heat entering zone), got {:.4} W/m²",
+            q_flux
+        );
+    }
+
+    #[test]
+    fn test_ctf_coefficients_sign_convention() {
+        // Verify CTF coefficient signs match expected physics
+        let layers = case_900_wall();
+        let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
+
+        println!("\n=== CTF COEFFICIENT SIGN CONVENTION CHECK ===");
+        println!("Y[0] = {:.6} (should be POSITIVE)", coeffs.y[0]);
+        println!("X[0] = {:.6} (should be POSITIVE)", coeffs.x[0]);
+        println!(
+            "Sum(X) = {:.6} (should approximate U-value)",
+            coeffs.x.iter().sum::<f64>()
+        );
+
+        // Y[0] should be positive (coefficient for current interior temp)
+        assert!(coeffs.y[0] > 0.0, "Y[0] should be positive");
+
+        // X[0] should be positive (coefficient for current exterior temp)
+        assert!(coeffs.x[0] > 0.0, "X[0] should be positive");
+
+        // Sum of X should approximate U-value
+        let total_r: f64 = layers.iter().map(|l| l.thickness / l.conductivity).sum();
+        let u_value = 1.0 / total_r;
+        let x_sum = coeffs.x.iter().sum::<f64>();
+        println!("Construction U-value = {:.6} W/m²K", u_value);
+        println!("X sum / U-value ratio = {:.2}", x_sum / u_value);
+    }
+
+    #[test]
+    fn test_ctf_coefficients_asymmetric_wall() {
+        // Verify CTF coefficients are correct for ASHRAE 140 high-mass wall
+        // This test checks that X₀ ≠ Y₀ for asymmetric wall construction
+        // (insulation blocks exterior influence, creating asymmetry)
+
+        // ASHRAE 140 Case 900 wall construction (from inside to outside):
+        // 1. Gypsum board (inside finish)
+        // 2. Concrete block (structural mass)
+        // 3. Foam insulation (thermal resistance)
+        // 4. Wood siding (exterior finish)
+        let layers = vec![
+            CTFMaterial::new("Gypsum", 0.013, 0.16, 800.0, 1090.0), // inside
+            CTFMaterial::new("Concrete Block", 0.100, 0.51, 1920.0, 840.0), // mass
+            CTFMaterial::new("Foam", 0.0615, 0.04, 32.0, 1400.0),   // insulation
+            CTFMaterial::new("Wood Siding", 0.009, 0.16, 550.0, 1300.0), // outside
+        ];
+
+        let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
+
+        println!("\n=== ASYMMETRIC WALL CTF COEFFICIENTS ===");
+        println!("X[0] = {:.6} (exterior temp response)", coeffs.x[0]);
+        println!("Y[0] = {:.6} (interior temp response)", coeffs.y[0]);
+        println!("Z[0] = {:.6} (interior surface response)", coeffs.z[0]);
+        println!(
+            "X[0] - Y[0] = {:.6} (should be NON-ZERO for asymmetric wall)",
+            coeffs.x[0] - coeffs.y[0]
+        );
+
+        // Calculate construction U-value
+        let total_r: f64 = layers.iter().map(|l| l.thickness / l.conductivity).sum();
+        let u_value = 1.0 / total_r;
+        let x_sum: f64 = coeffs.x.iter().sum();
+        let y_sum: f64 = coeffs.y.iter().sum();
+
+        println!("\nConstruction U-value = {:.6} W/m²K", u_value);
+        println!(
+            "Sum(X) = {:.6} W/m²K (ratio to U: {:.2})",
+            x_sum,
+            x_sum / u_value
+        );
+        println!("Sum(Y) = {:.6} W/m²K", y_sum);
+
+        // For asymmetric wall, X[0] should NOT equal Y[0]
+        // If they're equal, there's likely a bug in coefficient calculation
+        let diff = (coeffs.x[0] - coeffs.y[0]).abs();
+        let avg = (coeffs.x[0] + coeffs.y[0]) / 2.0;
+        let relative_diff = diff / avg;
+
+        println!(
+            "\nRelative difference |X[0]-Y[0]|/avg = {:.2}%",
+            relative_diff * 100.0
+        );
+
+        // Assert that X[0] and Y[0] are meaningfully different (>1% relative difference)
+        // This catches bugs where the same coefficients are used for both sides
+        assert!(
+            relative_diff > 0.01,
+            "X[0] ({:.6}) and Y[0] ({:.6}) should differ for asymmetric wall (diff={:.2}%)",
+            coeffs.x[0],
+            coeffs.y[0],
+            relative_diff * 100.0
+        );
+
+        // Both should be positive (physical requirement)
+        assert!(coeffs.x[0] > 0.0, "X[0] should be positive");
+        assert!(coeffs.y[0] > 0.0, "Y[0] should be positive");
+
+        // Sum of X should approximate U-value (within 10%)
+        assert!(
+            (x_sum - u_value).abs() / u_value < 0.10,
+            "Sum(X) should approximate U-value (X_sum={:.4}, U={:.4})",
+            x_sum,
+            u_value
+        );
     }
 }
