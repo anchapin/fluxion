@@ -279,14 +279,12 @@ impl ContinuousTensor<f64> for VectorField {
         F: Fn(f64, f64) -> f64,
     {
         assert_eq!(self.len(), other.len(), "Tensor dimension mismatch");
-        VectorField {
-            data: self
-                .data
-                .iter()
-                .zip(other.data.iter())
-                .map(|(&a, &b)| f(a, b))
-                .collect(),
+        // Optimized: manual loop avoids iterators overhead, improving cache locality and avoiding an extra map
+        let mut result = Vec::with_capacity(self.len());
+        for i in 0..self.len() {
+            result.push(f(self.data[i], other.data[i]));
         }
+        VectorField { data: result }
     }
 
     fn reduce<F>(&self, init: f64, f: F) -> f64
