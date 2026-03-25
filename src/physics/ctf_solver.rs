@@ -181,11 +181,12 @@ impl CTFSolver {
 
         for hour in 0..total_warmup_hours {
             // Diurnal exterior temperature
-            let t_ext = t_avg + amplitude * ((hour as f64 - 6.0) * std::f64::consts::PI / 12.0).sin();
-            
+            let t_ext =
+                t_avg + amplitude * ((hour as f64 - 6.0) * std::f64::consts::PI / 12.0).sin();
+
             // Constant interior temperature (simplified - assumes HVAC maintains setpoint)
             let t_int = t_interior_initial;
-            
+
             // Step solver
             solver.step(t_int, t_ext);
         }

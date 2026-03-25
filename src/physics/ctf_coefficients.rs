@@ -278,10 +278,10 @@ impl<'a> CTFCalculator<'a> {
 
         // Calculate overall wall properties
         // Include surface film resistances for ASHRAE 140 compliance
-        const R_SI: f64 = 0.125;  // Interior film resistance [m²K/W]
-        const R_SE: f64 = 0.044;  // Exterior film resistance [m²K/W]
+        const R_SI: f64 = 0.125; // Interior film resistance [m²K/W]
+        const R_SE: f64 = 0.044; // Exterior film resistance [m²K/W]
         let total_resistance: f64 = self.layers.iter().map(|l| l.resistance()).sum();
-        let u_value = 1.0 / (R_SI + total_resistance + R_SE);  // Include surface films
+        let u_value = 1.0 / (R_SI + total_resistance + R_SE); // Include surface films
 
         // Step 1: Find poles of the transfer function
         // Poles are values of s where A(s) = 0 (determinant of transmission matrix)
@@ -659,8 +659,8 @@ impl<'a> CTFCalculator<'a> {
     /// Includes surface film resistances (R_si and R_se) for ASHRAE 140 compliance.
     fn compute_overall_transmission_matrix(&self, s: Complex64) -> [[Complex64; 2]; 2] {
         // ASHRAE 140 surface film resistances
-        const R_SI: f64 = 0.125;  // Interior film resistance [m²K/W]
-        const R_SE: f64 = 0.044;  // Exterior film resistance [m²K/W]
+        const R_SI: f64 = 0.125; // Interior film resistance [m²K/W]
+        const R_SE: f64 = 0.044; // Exterior film resistance [m²K/W]
 
         // Start with interior surface film matrix
         // Film matrix: [1, R; 0, 1] where R is film resistance
@@ -751,10 +751,10 @@ impl<'a> CTFCalculator<'a> {
     fn apply_ctf_normalization(&self, coeffs: &mut CTFCoefficients) {
         // Ensure X, Y, Z coefficients sum to U-value (steady-state constraint)
         // Include surface film resistances for ASHRAE 140 compliance
-        const R_SI: f64 = 0.125;  // Interior film resistance [m²K/W]
-        const R_SE: f64 = 0.044;  // Exterior film resistance [m²K/W]
+        const R_SI: f64 = 0.125; // Interior film resistance [m²K/W]
+        const R_SE: f64 = 0.044; // Exterior film resistance [m²K/W]
         let total_resistance: f64 = self.layers.iter().map(|l| l.resistance()).sum();
-        let u_value = 1.0 / (R_SI + total_resistance + R_SE);  // Include surface films
+        let u_value = 1.0 / (R_SI + total_resistance + R_SE); // Include surface films
 
         // Normalize Y coefficients to sum to U-value
         let y_sum: f64 = coeffs.y.iter().sum();

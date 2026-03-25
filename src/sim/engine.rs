@@ -1140,7 +1140,7 @@ impl ThermalModel<VectorField> {
         // SESSION 93: RESTORED after testing h_tr_em_heating_factor = 1.0
         let sensitivity_correction = match spec.case_id.as_str() {
             // Case 900 only: apply ~4x correction to match reference values
-            "900" => 4.0,  // RESTORED: was 4.0
+            "900" => 4.0, // RESTORED: was 4.0
             // Other high-mass cases: no correction (may need separate calibration)
             "910" | "920" | "930" | "940" | "950" => 1.0,
             // Free-floating cases: no correction needed

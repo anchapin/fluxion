@@ -994,7 +994,7 @@ impl ASHRAE140Validator {
                 if partial.case_id == "900" {
                     // Apply 4.0x correction to heating to match reference (1.17-2.04 MWh)
                     results.annual_heating_mwh /= 4.0;
-                    // Apply 0.50x correction to cooling to match reference (2.13-3.67 MWh)  
+                    // Apply 0.50x correction to cooling to match reference (2.13-3.67 MWh)
                     results.annual_cooling_mwh *= 0.50;
                 }
 

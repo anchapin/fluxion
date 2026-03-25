@@ -201,14 +201,17 @@ mod tests {
         // Case 610 window configuration (ASHRAE 140 spec)
         let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
         let overhang = Overhang {
-            depth: 1.0,        // 1m overhang depth
+            depth: 1.0,          // 1m overhang depth
             distance_above: 2.7, // 2.7m from window top (ASHRAE 140 spec)
-            extension: 10.0,   // Infinite extension
+            extension: 10.0,     // Infinite extension
         };
 
         println!("Testing shading fraction at different sun positions:");
         println!();
-        println!("{:<25} {:>8} {:>12} {:>15}", "Condition", "Alt(°)", "Shaded Frac", "Effective Gain");
+        println!(
+            "{:<25} {:>8} {:>12} {:>15}",
+            "Condition", "Alt(°)", "Shaded Frac", "Effective Gain"
+        );
         println!("{}", "-".repeat(65));
 
         // Test cases representing different seasons/times
@@ -217,12 +220,10 @@ mod tests {
             ("Summer noon (Jun 21)", 73.5, 0.0),
             ("Summer morning (9am)", 45.0, -45.0),
             ("Summer afternoon (3pm)", 45.0, 45.0),
-            
             // Winter (low sun angle - should be mostly unshaded)
             ("Winter noon (Dec 21)", 26.5, 0.0),
             ("Winter morning (9am)", 15.0, -45.0),
             ("Winter afternoon (3pm)", 15.0, 45.0),
-            
             // Spring/Fall (medium sun angle)
             ("Equinox noon (Mar 21)", 50.0, 0.0),
             ("Equinox morning (9am)", 30.0, -45.0),
@@ -256,10 +257,14 @@ mod tests {
             altitude: 26.5_f64.to_radians(),
             relative_azimuth: 0.0,
         };
-        let winter_shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_noon_solar);
-        
-        println!("CRITICAL: Winter noon shading fraction = {:.2}", winter_shaded);
-        
+        let winter_shaded =
+            calculate_shaded_fraction(&window, Some(&overhang), &[], &winter_noon_solar);
+
+        println!(
+            "CRITICAL: Winter noon shading fraction = {:.2}",
+            winter_shaded
+        );
+
         if winter_shaded > 0.5 {
             println!("WARNING: Overhang blocks >50% of winter sun - this may cause heating overprediction!");
         } else if winter_shaded > 0.3 {

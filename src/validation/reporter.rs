@@ -408,13 +408,17 @@ impl ValidationReportGenerator {
         for result in &case_results {
             // Use benchmark data for reference values if available
             let (ref_min, ref_max) = match (result.metric, benchmark) {
-                (MetricType::AnnualHeating, Some(b)) => (b.annual_heating_min, b.annual_heating_max),
-                (MetricType::AnnualCooling, Some(b)) => (b.annual_cooling_min, b.annual_cooling_max),
+                (MetricType::AnnualHeating, Some(b)) => {
+                    (b.annual_heating_min, b.annual_heating_max)
+                }
+                (MetricType::AnnualCooling, Some(b)) => {
+                    (b.annual_cooling_min, b.annual_cooling_max)
+                }
                 (MetricType::PeakHeating, Some(b)) => (b.peak_heating_min, b.peak_heating_max),
                 (MetricType::PeakCooling, Some(b)) => (b.peak_cooling_min, b.peak_cooling_max),
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
-            
+
             match result.metric {
                 MetricType::AnnualHeating => {
                     heating_str = format!(
@@ -495,7 +499,7 @@ impl ValidationReportGenerator {
                 (MetricType::MaxFreeFloat, Some(b)) => (b.max_free_float_min, b.max_free_float_max),
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
-            
+
             match result.metric {
                 MetricType::MinFreeFloat => {
                     min_str = format!(

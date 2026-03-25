@@ -496,16 +496,16 @@ impl PerezSkyModel {
         // Reference: Perez, R., et al. (1990). "Modeling daylight availability and
         // irradiance components from direct and global irradiance." Solar Energy 44(5),
         // 271-289. Table 3.
-        
+
         const F1C: [[f64; 3]; 8] = [
-            [-0.008317, 0.587728, -0.062064],  // Bin 1: overcast
-            [0.129967, 0.682595, -0.151375],   // Bin 2
-            [0.329676, 0.486861, -0.221272],   // Bin 3
-            [0.568205, 0.187452, -0.295250],   // Bin 4
-            [0.873018, -0.393289, -0.369150],  // Bin 5
-            [1.321297, -1.176777, -0.393994],  // Bin 6
-            [0.999852, -1.634380, -0.291495],  // Bin 7
-            [0.553776, 0.631414, -0.209172],   // Bin 8: clear sky
+            [-0.008317, 0.587728, -0.062064], // Bin 1: overcast
+            [0.129967, 0.682595, -0.151375],  // Bin 2
+            [0.329676, 0.486861, -0.221272],  // Bin 3
+            [0.568205, 0.187452, -0.295250],  // Bin 4
+            [0.873018, -0.393289, -0.369150], // Bin 5
+            [1.321297, -1.176777, -0.393994], // Bin 6
+            [0.999852, -1.634380, -0.291495], // Bin 7
+            [0.553776, 0.631414, -0.209172],  // Bin 8: clear sky
         ];
 
         // F2 coefficients: Note that F2 is typically small (0.00-0.06) for most
@@ -966,14 +966,14 @@ mod tests {
     fn test_perez_diffuse_vertical_surface() {
         // Test Perez model for vertical West surface on clear summer day
         // This is a regression test for the E/W solar gain issue
-        let dhi = 126.3;  // W/m²
-        let dni = 899.4;  // W/m²
-        let dni_extra = 1320.0;  // W/m²
+        let dhi = 126.3; // W/m²
+        let dni = 899.4; // W/m²
+        let dni_extra = 1320.0; // W/m²
         let airmass = 1.1;
-        let zenith_deg = 25.0;  // Altitude = 65°
-        let surface_tilt_deg = 90.0;  // Vertical
-        let surface_azimuth_deg = 270.0;  // West
-        let solar_azimuth_deg = 240.0;  // WSW
+        let zenith_deg = 25.0; // Altitude = 65°
+        let surface_tilt_deg = 90.0; // Vertical
+        let surface_azimuth_deg = 270.0; // West
+        let solar_azimuth_deg = 240.0; // WSW
 
         let diffuse = PerezSkyModel::calculate_diffuse_tilted(
             dhi,
@@ -996,29 +996,33 @@ mod tests {
         // Tilt factor should be 0.4-0.6 for vertical surface
         let tilt_factor = diffuse / dhi;
         assert!(tilt_factor > 0.3, "Tilt factor too low: {:.3}", tilt_factor);
-        assert!(tilt_factor < 0.8, "Tilt factor too high: {:.3}", tilt_factor);
+        assert!(
+            tilt_factor < 0.8,
+            "Tilt factor too high: {:.3}",
+            tilt_factor
+        );
     }
 
     #[test]
     fn test_perez_diffuse_realistic_conditions() {
         // Test with realistic conditions from simulation
         // Sample: May, 1pm, West surface, DNI=914.8, DHI=131.8
-        let dhi = 131.8;  // W/m²
-        let dni = 914.8;  // W/m²
-        let day_of_year = 135;  // May 15
+        let dhi = 131.8; // W/m²
+        let dni = 914.8; // W/m²
+        let day_of_year = 135; // May 15
         let dni_extra = extraterrestrial_irradiance(day_of_year);
-        
+
         // Solar position at 1pm in May (Denver)
         let altitude_deg = 61.8;
         let zenith_deg = 90.0 - altitude_deg;
-        let solar_azimuth_deg = 240.0;  // WSW
-        
+        let solar_azimuth_deg = 240.0; // WSW
+
         let airmass = relative_airmass(zenith_deg);
-        
+
         // West vertical surface
         let surface_tilt_deg = 90.0;
         let surface_azimuth_deg = 270.0;
-        
+
         let diffuse = PerezSkyModel::calculate_diffuse_tilted(
             dhi,
             dni,
@@ -1029,17 +1033,28 @@ mod tests {
             surface_azimuth_deg,
             solar_azimuth_deg,
         );
-        
+
         println!("\nRealistic test (May 1pm West):");
         println!("  DHI: {} W/m², DNI: {} W/m²", dhi, dni);
-        println!("  Altitude: {}°, Zenith: {}°, Airmass: {:.2}", altitude_deg, zenith_deg, airmass);
+        println!(
+            "  Altitude: {}°, Zenith: {}°, Airmass: {:.2}",
+            altitude_deg, zenith_deg, airmass
+        );
         println!("  Diffuse tilted: {:.1} W/m²", diffuse);
         println!("  Tilt factor: {:.3}", diffuse / dhi);
-        
+
         // Tilt factor should be 0.2-0.5 for this geometry
         // (lower than ideal due to high incidence angle)
         let tilt_factor = diffuse / dhi;
-        assert!(tilt_factor > 0.15, "Tilt factor too low: {:.3}", tilt_factor);
-        assert!(tilt_factor < 0.6, "Tilt factor too high: {:.3}", tilt_factor);
+        assert!(
+            tilt_factor > 0.15,
+            "Tilt factor too low: {:.3}",
+            tilt_factor
+        );
+        assert!(
+            tilt_factor < 0.6,
+            "Tilt factor too high: {:.3}",
+            tilt_factor
+        );
     }
 }

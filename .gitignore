@@ -124,8 +124,13 @@ src/validation/solar_diagnostics.rs
 # Test helpers and diagnostics
 tests/ashrae_140_*.rs
 !tests/ashrae_140_validation.rs
-tests/ctf_*.rs
-tests/phase2_*.rs
+tests/ashrae_140_*/      # Test subdirectories
+tests/extract_hourly_*.rs
+tests/test_multi_*.rs
+tests/*_diagnostics/     # Test diagnostic directories
+tests/ctf_*.rs           # CTF comparison tests
+tests/phase2_*.rs       # Phase 2 diagnostic tests
+tests/*_ORIG             # Backup/orig files
 
 # Validation outputs and diagnostics
 *.log
@@ -146,6 +151,26 @@ benchmarks/weather/
 **/*_PLAN.md
 **/*_PROMPT.md
 CONTINUATION_PROMPT*.md
+
+# Session scripts
+scripts/session_*.sh
+
+# Tools/scripts (diagnostic and analysis)
+tools/analyze_*.py
+tools/compare_*.py
+tools/debug_*.py
+tools/diagnose_*.py
+tools/extract_*.py
+tools/phase30_*.py
+tools/quick_*.py
+tools/replicate_*.py
+tools/run_*.py
+tools/solar_*.py
+tools/statistical_*.py
+tools/test_*.py
+tools/validate_*.py
+tools/verify_*.py
+tools/energyplus_*.csv
 
 # Planning artifacts that shouldn't be committed
 .planning/phases/
