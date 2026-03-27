@@ -628,6 +628,8 @@ impl ASHRAE140Validator {
         // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
+        // SESSION 32: Reset energy tracking so we can use model's internal counters
+        model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
@@ -743,7 +745,14 @@ impl ASHRAE140Validator {
 
             model.set_loads(&internal_loads);
 
+            // SESSION 32: Use raw hvac_kwh (like validate_case_960 does)
+            // Don't use get_heating_energy_kwh() - that includes correction factors
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            if hvac_kwh > 0.0 {
+                annual_heating_joules += hvac_kwh * 3.6e6;
+            } else {
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            }
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
@@ -751,19 +760,15 @@ impl ASHRAE140Validator {
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                 }
             }
-
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
         }
 
+        // SESSION 32: Use calculated values from raw hvac_kwh accumulation
+        let annual_heating_mwh = annual_heating_joules / 3.6e9;
+        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+
         CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh,
+            annual_cooling_mwh,
             // Issue #272: Use model's tracked peak power (in watts)
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
@@ -979,43 +984,39 @@ impl ASHRAE140Validator {
                 // Case 960: Convert thermal energy to electrical energy to match ASHRAE reference.
                 // The reference values (EnergyPlus, ESP-r, TRNSYS) report HVAC electricity consumption.
                 // Apply COP/efficiency corrections for fair comparison.
-                if partial.case_id == "960" {
-                    let cooling_cop = 3.0;
-                    let heating_efficiency = 0.9;
-                    results.annual_heating_mwh /= heating_efficiency;
-                    results.annual_cooling_mwh /= cooling_cop;
-                }
+                // === SESSION 33: REMOVED empirical COP correction ===
+                // The thermal model should produce physics-based results without manual corrections.
+                // Original: cooling_cop=3.0, heating_efficiency=0.9
+                // if partial.case_id == "960" {
+                //     let cooling_cop = 3.0;
+                //     let heating_efficiency = 0.9;
+                //     results.annual_heating_mwh /= heating_efficiency;
+                //     results.annual_cooling_mwh /= cooling_cop;
+                // }
 
-                // Session 91: Apply sensitivity correction for high-mass cases
-                // The CTF solver produces higher energy than reference; apply correction here
-                // (This was done in engine but validator re-calculates from raw hvac_kwh)
+                // === SESSION 33: REMOVED sensitivity corrections ===
+                // Physics-based thermal model should not need manual adjustments.
+                // Original Case 900: heating 4.0x, cooling 0.50x
+                // Original Case 910: heating 2.5x, cooling 0.35x
+                // Original Case 940: heating 2.7x, cooling 0.45x
+                // Original Case 950: cooling 0.35x
                 // SESSION 93: RESTORED after testing h_tr_em_heating_factor = 1.0
                 // SESSION 95: Keeping 4x correction - h_tr_is adjustment didn't fix root cause
-                if partial.case_id == "900" {
-                    // Apply 4.0x correction to heating to match reference (1.17-2.04 MWh)
-                    results.annual_heating_mwh /= 4.0;
-                    // Apply 0.50x correction to cooling to match reference (2.13-3.67 MWh)
-                    results.annual_cooling_mwh *= 0.50;
-                }
-
-                if partial.case_id == "910" {
-                    // Heating: 5.15 -> target 1.51-2.28 = divide by ~2.5
-                    results.annual_heating_mwh /= 2.5;
-                    // Cooling: 4.83 -> target 0.82-1.88 = multiply by 0.35
-                    results.annual_cooling_mwh *= 0.35;
-                }
-
-                if partial.case_id == "940" {
-                    // Heating: 3.54 -> target 0.79-1.41 = divide by ~2.7
-                    results.annual_heating_mwh /= 2.7;
-                    // Cooling: 6.95 -> target 2.08-3.55 = multiply by 0.45
-                    results.annual_cooling_mwh *= 0.45;
-                }
-
-                if partial.case_id == "950" {
-                    // Cooling: 2.73 -> target 0.39-0.92 = multiply by 0.35
-                    results.annual_cooling_mwh *= 0.35;
-                }
+                // if partial.case_id == "900" {
+                //     results.annual_heating_mwh /= 4.0;
+                //     results.annual_cooling_mwh *= 0.50;
+                // }
+                // if partial.case_id == "910" {
+                //     results.annual_heating_mwh /= 2.5;
+                //     results.annual_cooling_mwh *= 0.35;
+                // }
+                // if partial.case_id == "940" {
+                //     results.annual_heating_mwh /= 2.7;
+                //     results.annual_cooling_mwh *= 0.45;
+                // }
+                // if partial.case_id == "950" {
+                //     results.annual_cooling_mwh *= 0.35;
+                // }
 
                 if partial.is_free_floating {
                     println!(
@@ -1250,7 +1251,9 @@ impl ASHRAE140Validator {
     /// Phase 29: This is the key integration for CTF/FD solvers into the validation path.
     fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
         // Only enable advanced solver for high-mass construction cases
-        if spec.construction_type == ConstructionType::HighMass {
+        // SESSION 32: Exclude Case 960 from CTF - the multi-zone sunspace case produces
+        // zero energy with CTF solver. Use 5R1C model instead (like validate_case_960 does).
+        if spec.construction_type == ConstructionType::HighMass && spec.case_id != "960" {
             // Convert wall construction layers to FD materials (compatible with both CTF and FD)
             let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec
                 .construction
@@ -1308,23 +1311,18 @@ impl ASHRAE140Validator {
         self.enable_advanced_solver(&mut model, spec);
 
         // Plan 03-04: Thermal mass energy accounting removed
-        // Ti_free calculation already includes thermal mass effects via:
-        // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
-        // - Thermal capacitance Cm (thermal mass response rate)
-        // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
-
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
 
-        // Note: The model.weather field will be updated each timestep in the simulation loop (Issue #278)
+        // SESSION 32: Reset energy tracking for non-CTF cases (600-series)
+        // CTF cases (900-series) don't need reset - their internal tracking is handled differently
+        model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
-
-        // Check if this is a free-floating case (no HVAC for zone 0)
         let is_free_floating = spec.is_free_floating();
 
-        // For free-floating cases, disable HVAC by setting extreme setpoints
+        // For free-floating cases, disable HVAC
         if is_free_floating {
             model.heating_setpoint = -999.0;
             model.cooling_setpoint = 999.0;
@@ -1333,7 +1331,6 @@ impl ASHRAE140Validator {
         }
 
         // Set hvac_enabled per zone based on HVAC configuration (Issue #375)
-        // This ensures multi-zone cases like Case 960 properly track HVAC for each zone
         let mut hvac_enabled_vals = vec![1.0; num_zones];
         if !spec.hvac.is_empty() {
             for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
@@ -1342,14 +1339,14 @@ impl ASHRAE140Validator {
                 }
             }
         }
-        model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
-
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        model.hvac_enabled = VectorField::new(hvac_enabled_vals);
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        let mut annual_heating_joules = 0.0;
+        let mut annual_cooling_joules = 0.0;
 
+        // SESSION 32: Run simulation loop - model tracks energy internally
         for step in 0..STEPS {
             let hour_of_day = step % 24;
             let day_of_year = step / 24 + 1;
@@ -1442,6 +1439,15 @@ impl ASHRAE140Validator {
 
             let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
+            // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
+            // step_physics() returns kWh (energy for the timestep)
+            // Convert kWh to Joules: kWh × 3.6e6 = Joules
+            if hvac_kwh > 0.0 {
+                annual_heating_joules += hvac_kwh * 3.6e6;
+            } else {
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            }
+
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
                 // Get zone 0 air temperature (primary zone)
@@ -1450,19 +1456,15 @@ impl ASHRAE140Validator {
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                 }
             }
-
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
         }
 
+        // Calculate energy from raw hvac_kwh (like validate_case_960 does)
+        let annual_heating_mwh = annual_heating_joules / 3.6e9;
+        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+
         CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh, // Direct from hvac_kwh accumulation
+            annual_cooling_mwh, // Direct from hvac_kwh accumulation
             // Issue #272: Use model's tracked peak power (in watts)
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
@@ -1499,6 +1501,8 @@ impl ASHRAE140Validator {
         // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
+        // SESSION 32: Reset energy tracking so we can use model's internal counters
+        model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
@@ -1655,9 +1659,10 @@ impl ASHRAE140Validator {
             self.last_simulation_diagnostics = model.get_diagnostics().cloned();
         }
 
+        // SESSION 32: Use model's internal energy tracking for consistency
         CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh: model.annual_heating_energy / 1000.0, // Convert kWh to MWh
+            annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
             // Issue #272: Use model's tracked peak power (in watts) instead of calculating from energy
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
@@ -1777,6 +1782,8 @@ impl ASHRAE140Validator {
         // - Implicit/explicit Euler integration (Cm × ΔTm/dt)
         // Reset peak power tracking (Issue #272)
         model.reset_peak_power();
+        // SESSION 32: Reset energy tracking so we can use model's internal counters
+        model.reset_heating_cooling_energy();
 
         const STEPS: usize = 8760;
         let num_zones = model.num_zones;
@@ -2011,9 +2018,10 @@ impl ASHRAE140Validator {
             diagnostic.temp_profile.finalize();
         }
 
+        // SESSION 32: Use model's internal energy tracking for consistency
         let results = CaseResults {
-            annual_heating_mwh: annual_heating_joules / 3.6e9,
-            annual_cooling_mwh: annual_cooling_joules / 3.6e9,
+            annual_heating_mwh: model.annual_heating_energy / 1000.0, // Convert kWh to MWh
+            annual_cooling_mwh: model.annual_cooling_energy / 1000.0,
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
             min_temp_celsius: if is_free_floating && min_temp_celsius != f64::INFINITY {
