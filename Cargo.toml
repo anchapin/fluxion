@@ -187,3 +187,18 @@ harness = true
 name = "integration-cli"
 path = "tests/integration/test_cli.rs"
 harness = true
+
+[[test]]
+name = "solar_gain_unit_tests"
+path = "tests/solar_gain_unit_tests.rs"
+harness = false
+
+[[test]]
+name = "solar_distribution_tests"
+path = "tests/solar_distribution_tests.rs"
+harness = false
+
+[[test]]
+name = "thermal_mass_coupling_tests"
+path = "tests/thermal_mass_coupling_tests.rs"
+harness = false
