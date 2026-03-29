@@ -177,7 +177,7 @@ pub fn validate_6r2c_thermal_mass() -> ThermalMassValidationResult {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Configure for 6R2C mode
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Verify envelope and internal mass are initialized
     if model.envelope_mass_temperatures.as_ref().is_empty() {
