@@ -1,0 +1,214 @@
+# EnergyPlus Test Cases for Physics Validation
+#
+# Test case catalog for generating EnergyPlus reference data
+# to validate Fluxion physics calculations.
+
+# Categories:
+# - conduction: Heat conduction tests (600, 900 series)
+# - convection: Natural and forced convection tests
+# - radiation: Longwave and shortwave radiation tests
+# - ctf: Conduction Transfer Function tests
+# - newton: Newton solver convergence tests
+# - per_surface: Per-surface heat balance tests
+# - combined: Combined convection+radiation tests
+
+# ============================================
+# Conduction Tests (ASHRAE 140)
+# ============================================
+
+# Case 600: Heavyweight - Summer
+[[case]]
+id = "600"
+name = "Heavyweight - Summer"
+category = "conduction"
+floor_area = 48.0
+walls_u = 0.358
+roof_u = 0.226
+floor_u = 0.398
+window_u = 2.943
+window_area = 6.0
+setpoint_heating = 20.0
+setpoint_cooling = 27.0
+epw = "refdata/epw/Denver.epw"
+ep_reference = "refdata/ep/Case_600_results.json"
+
+# Case 900: Lightweight - Summer
+[[case]]
+id = "900"
+name = "Lightweight - Summer"
+category = "conduction"
+floor_area = 48.0
+walls_u = 0.358
+roof_u = 0.226
+floor_u = 0.398
+window_u = 2.943
+window_area = 6.0
+setpoint_heating = 20.0
+setpoint_cooling = 27.0
+epw = "refdata/epw/Denver.epw"
+ep_reference = "refdata/ep/Case_900_results.json"
+
+# ============================================
+# Convection Tests
+# ============================================
+
+# Natural Convection - Vertical Plate
+[[case]]
+id = "convection_natural_vertical"
+name = "Natural Convection - Vertical Plate"
+category = "convection"
+surface_type = "vertical_plate"
+orientation = "north"
+temperature_difference = [5.0, 10.0, 20.0]
+# Expected per ISO 15099
+
+# Natural Convection - Horizontal Hot Up
+[[case]]
+id = "convection_natural_hot_up"
+name = "Natural Convection - Horizontal Hot Up"
+category = "convection"
+surface_type = "horizontal_hot_up"
+temperature_difference = [5.0, 10.0, 20.0]
+# Expected per ISO 15099
+
+# Natural Convection - Horizontal Hot Down
+[[case]]
+id = "convection_natural_hot_down"
+name = "Natural Convection - Horizontal Hot Down"
+category = "convection"
+surface_type = "horizontal_hot_down"
+temperature_difference = [5.0, 10.0, 20.0]
+# Expected per ISO 15099
+
+# Forced Convection - External Surface
+[[case]]
+id = "convection_forced_exterior"
+name = "Forced Convection - Exterior Surface"
+category = "convection"
+velocity = [0.5, 1.0, 2.0]
+surface_type = "external"
+# Expected per ASHRAE Fundamentals
+
+# ============================================
+# Radiation Tests
+# ============================================
+
+# Longwave Radiation - Sky to Surface
+[[case]]
+id = "radiation_longwave"
+name = "Longwave Radiation - Sky to Surface"
+category = "radiation"
+surface_emissivity = 0.9
+sky_temperature = [-10.0, 0.0, 10.0, 20.0]
+surface_temperature = 20.0
+# Expected per Stefan-Boltzmann law
+
+# Shortwave Radiation - Beam/Diffuse Split
+[[case]]
+id = "radiation_shortwave"
+name = "Shortwave Radiation - Beam/Diffuse Split"
+category = "radiation"
+ghi = [100.0, 500.0, 800.0]
+zenith_angle = [0.0, 30.0, 60.0]
+# Verify beam + diffuse = GHI
+
+# ============================================
+# CTF Coefficient Tests
+# ============================================
+
+# CTF - Single Layer Concrete Wall
+[[case]]
+id = "ctf_single_layer"
+name = "CTF Coefficients - Single Layer Wall"
+category = "ctf"
+layers = [
+    { name = "Concrete", thickness = 0.15, conductivity = 1.73, density = 2243, specific_heat = 837 }
+]
+timestep_hours = 1.0
+# Compare CTF a, b, c, d coefficients with EnergyPlus
+
+# CTF - Two Layer Brick-Insulation Wall
+[[case]]
+id = "ctf_two_layer"
+name = "CTF Coefficients - Two Layer Wall"
+category = "ctf"
+layers = [
+    { name = "Brick", thickness = 0.10, conductivity = 0.77, density = 1920, specific_heat = 840 },
+    { name = "Insulation", thickness = 0.05, conductivity = 0.04, density = 30, specific_heat = 837 }
+]
+timestep_hours = 1.0
+# Compare CTF coefficients for multi-layer construction
+
+# ============================================
+# Newton Solver Tests
+# ============================================
+
+# Newton - Quadratic Convergence
+[[case]]
+id = "newton_quadratic"
+name = "Newton - Quadratic Convergence"
+category = "newton"
+function = "x^2 - 4"
+initial_guess = 1.0
+expected_root = 2.0
+expected_iterations = 5
+tolerance = 1e-10
+# Verify convergence in ~3-5 iterations
+
+# Newton - Oscillation Detection
+[[case]]
+id = "newton_oscillation"
+name = "Newton - Oscillation Detection"
+category = "newton"
+function = "(x - 1)^3 + 0.001 * sin(x - 1)"
+initial_guess = 1.0
+max_iterations = 20
+tolerance = 1e-10
+# Should detect oscillation and use fallback
+
+# ============================================
+# Per-Surface Heat Balance Tests
+# ============================================
+
+# Surface Energy Balance - Single Surface
+[[case]]
+id = "surface_energy_balance"
+name = "Surface Energy Balance - Single Surface"
+category = "per_surface"
+area = 10.0
+u_value = 0.3
+emissivity = 0.9
+interior_temp = 293.15  # 20°C
+exterior_temp = 303.15  # 30°C
+# Verify q_in + q_out + q_storage = 0
+
+# Multi-Surface Coupling
+[[case]]
+id = "surface_multi_coupling"
+name = "Multi-Surface Coupling"
+category = "per_surface"
+surface_a_area = 10.0
+surface_a_u = 0.3
+surface_a_emissivity = 0.9
+surface_b_area = 10.0
+surface_b_u = 0.3
+surface_b_emissivity = 0.9
+interzone_u = 0.1
+# Verify interzone flux conservation
+
+# ============================================
+# Combined Heat Balance Tests
+# ============================================
+
+# Combined Convection + Radiation
+[[case]]
+id = "combined_convection_radiation"
+name = "Combined Convection + Radiation"
+category = "combined"
+surface_area = 10.0
+surface_temp = 293.15
+air_temp = 293.15
+h_conv_coefficient = 2.5
+h_rad_coefficient = 5.0
+emissivity = 0.9
+# Verify combined heat transfer calculation
