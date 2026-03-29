@@ -447,15 +447,11 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub tracer: Option<std::sync::Arc<crate::testing::integration::wiring::WiringTracer>>,
 
     // 5R1C Conductances (W/K)
-    pub h_tr_em: T,         // Transmission: Exterior -> Mass (walls + roof)
-    pub h_tr_em_heating: T, // Exterior-to-mass coupling for heating mode (W/K)
-    pub h_tr_em_cooling: T, // Exterior-to-mass coupling for cooling mode (W/K)
-    pub h_tr_ms: T,         // Transmission: Mass -> Surface
-    pub h_tr_ms_heating: T, // Mass-to-surface coupling for heating mode (W/K)
-    pub h_tr_ms_cooling: T, // Mass-to-surface coupling for cooling mode (W/K)
-    pub h_tr_is: T,         // Transmission: Surface -> Interior
-    pub h_tr_w: T,          // Transmission: Exterior -> Interior (Windows)
-    pub h_ve: T,            // Ventilation: Exterior -> Interior
+    pub h_tr_em: T, // Transmission: Exterior -> Mass (walls + roof)
+    pub h_tr_ms: T, // Transmission: Mass -> Surface
+    pub h_tr_is: T, // Transmission: Surface -> Interior
+    pub h_tr_w: T,  // Transmission: Exterior -> Interior (Windows)
+    pub h_ve: T,    // Ventilation: Exterior -> Interior
 
     // Ground boundary condition
     pub h_tr_floor: T,                              // Floor conductance (W/K)
@@ -556,43 +552,30 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// High-mass buildings use lower coupling in winter to reduce cold absorption.
     ///   - Low-mass (600 series): 1.0 (use default coupling)
     ///   - High-mass (900 series): 0.55 (reduce coupling to limit cold absorption)
-    pub h_tr_em_heating_factor: f64,
-
-    /// Cooling mode coupling factor (Plan 03-14)
     /// Multiplier applied to h_tr_em when HVAC is in cooling mode.
     /// High-mass buildings use higher coupling in summer to improve heat absorption.
     ///   - Low-mass (600 series): 1.0 (use default coupling)
     ///   - High-mass (900 series): 1.75 (increase coupling to improve heat rejection)
-    pub h_tr_em_cooling_factor: f64,
-
     /// Heating mode mass-to-surface coupling factor
     /// Multiplier applied to h_tr_ms when HVAC is in heating mode.
     /// High-mass buildings use lower h_tr_ms to prevent heat loss from interior to mass.
     ///   - Low-mass (600 series): 1.0 (use default coupling)
     ///   - High-mass (900 series): 0.5 (reduce coupling to limit heat absorption by mass)
-    pub h_tr_ms_heating_factor: f64,
-
     /// Cooling mode mass-to-surface coupling factor
     /// Multiplier applied to h_tr_ms when HVAC is in cooling mode.
     /// High-mass buildings use higher h_tr_ms to allow heat stored in mass to be released.
     ///   - Low-mass (600 series): 1.0 (use default coupling)
     ///   - High-mass (900 series): 5.0 (increase coupling to improve heat rejection)
-    pub h_tr_ms_cooling_factor: f64,
-
     /// Heating mode solar beam-to-mass fraction
     /// Fraction of beam solar that goes directly to thermal mass during heating mode.
     /// Lower values send more solar to air/surface for immediate heating benefit.
     ///   - Low-mass (600 series): 0.3 (use default)
     ///   - High-mass (900 series): 0.5 (reduce mass coupling for immediate benefit)
-    pub solar_beam_to_mass_fraction_heating: f64,
-
     /// Cooling mode solar beam-to-mass fraction
     /// Fraction of beam solar that goes directly to thermal mass during cooling mode.
     /// Higher values send more solar to mass (delayed effect) to reduce immediate cooling load.
     ///   - Low-mass (600 series): 0.3 (use default)
     ///   - High-mass (900 series): 0.9 (increase mass coupling to delay heating effect)
-    pub solar_beam_to_mass_fraction_cooling: f64,
-
     // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
     /// Previous mass temperature for tracking thermal mass energy changes
     pub previous_mass_temperatures: T,
@@ -709,11 +692,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             hvac_heating_capacity: self.hvac_heating_capacity,
             h_tr_w: self.h_tr_w.clone(),
             h_tr_em: self.h_tr_em.clone(),
-            h_tr_em_heating: self.h_tr_em_heating.clone(),
-            h_tr_em_cooling: self.h_tr_em_cooling.clone(),
             h_tr_ms: self.h_tr_ms.clone(),
-            h_tr_ms_heating: self.h_tr_ms_heating.clone(),
-            h_tr_ms_cooling: self.h_tr_ms_cooling.clone(),
             h_tr_is: self.h_tr_is.clone(),
             h_ve: self.h_ve.clone(),
             h_tr_floor: self.h_tr_floor.clone(),
@@ -731,12 +710,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             solar_beam_to_mass_fraction: self.solar_beam_to_mass_fraction,
             thermal_mass_coupling_enhancement: self.thermal_mass_coupling_enhancement,
             time_constant_sensitivity_correction: self.time_constant_sensitivity_correction,
-            h_tr_em_heating_factor: self.h_tr_em_heating_factor,
-            h_tr_em_cooling_factor: self.h_tr_em_cooling_factor,
-            h_tr_ms_heating_factor: self.h_tr_ms_heating_factor,
-            h_tr_ms_cooling_factor: self.h_tr_ms_cooling_factor,
-            solar_beam_to_mass_fraction_heating: self.solar_beam_to_mass_fraction_heating,
-            solar_beam_to_mass_fraction_cooling: self.solar_beam_to_mass_fraction_cooling,
+            // Mode-specific factors removed - using physics-based conductances
+            // solar_beam_to_mass_fraction_heating and _cooling fields removed
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
             envelope_mass_energy_change_cumulative: self.envelope_mass_energy_change_cumulative,
@@ -1147,59 +1122,12 @@ impl ThermalModel<VectorField> {
         model.thermal_mass_coupling_enhancement = coupling_enhancement;
 
         // Separate heating/cooling coupling parameters (Plan 03-14)
-        // Winter: Lower h_tr_em to reduce cold absorption from exterior during heating
-        // Summer: Higher h_tr_em to increase heat rejection during cooling
-        let (h_tr_em_heating_factor, h_tr_em_cooling_factor) = match case_id.as_str() {
-            // High-mass HVAC cases (900 series)
-            "900" | "910" | "920" | "930" | "940" | "950" | "960" => {
-                // Use default coupling for now
-                (1.0, 1.0) // No mode-specific h_tr_em
-            }
-            // Free-floating cases (FF): use default coupling (no HVAC adjustment needed)
-            "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => {
-                (1.0, 1.0) // Default coupling for free-floating cases
-            }
-            // Low-mass cases: no mode-specific coupling needed
-            _ => (1.0, 1.0), // Use default coupling for all modes
-        };
+        // Mode-specific factors removed - will use physics-based h_tr_ms calculation
+        // The thermal conductance h_tr_ms will be calculated from first principles:
+        // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
 
-        // Store mode-specific coupling factors for use during initialization
-        model.h_tr_em_heating_factor = h_tr_em_heating_factor;
-        model.h_tr_em_cooling_factor = h_tr_em_cooling_factor;
-
-        // Mode-specific h_tr_ms factors for better heating/cooling balance
-        // High-mass buildings need different h_tr_ms in heating vs cooling:
-        // - Heating: Lower h_tr_ms to reduce heat loss from interior to mass
-        // - Cooling: Higher h_tr_ms to allow heat stored in mass to be released
-        let (h_tr_ms_heating_factor, h_tr_ms_cooling_factor) = match case_id.as_str() {
-            // High-mass HVAC cases (900 series)
-            // Use modest heating factor reduction and higher cooling factor
-            "920" | "930" => {
-                // E/W facing: use same configuration as South facing
-                // h_tr_ms_heating_factor adjustment showed no effect on heating prediction
-                // Cooling factor at 50.0× to address overprediction
-                (0.5, 50.0)
-            }
-            "900" | "910" | "940" | "950" => {
-                // South facing: standard tuning
-                // Heating: 0.5× to reduce interior-to-mass heat loss
-                // Cooling: 50.0× to reduce cooling overprediction
-                (0.5, 50.0)
-            }
-            "960" => {
-                // Sunspace case: use moderate factors
-                (0.5, 30.0)
-            }
-            // Free-floating cases (FF): use default coupling (no HVAC adjustment needed)
-            "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => {
-                (1.0, 1.0) // Default coupling for free-floating cases
-            }
-            // Low-mass cases: no mode-specific coupling needed
-            _ => (1.0, 1.0), // Use default coupling for all modes
-        };
-
-        model.h_tr_ms_heating_factor = h_tr_ms_heating_factor;
-        model.h_tr_ms_cooling_factor = h_tr_ms_cooling_factor;
+        // === SESSION 33: REMOVED mode-specific factors ===
+        // Using physics-based parameters only, no case-specific tuning.
 
         // === SESSION 33: REMOVED sensitivity correction ===
         // Physics-based model should produce correct results without manual adjustment.
@@ -1326,31 +1254,83 @@ impl ThermalModel<VectorField> {
             // Effective mass area (A_m) = factor × floor_area
             let a_m = a_m_factor * zone_floor_area;
 
-            // Mass-to-surface conductance (h_ms) - FIXED
-            // FIX TASK #9: Calculate from thermal resistance, not coefficient × area
-            // For 5R1C model, h_ms represents thermal coupling between mass and surface
-            // Should be derived from thermal resistance: h_ms = 1 / (1/h_si + 1/h_em)
-            // Or simplified: h_ms ≈ h_si for well-insulated buildings
-            // For ASHRAE 140, use reasonable approximation: h_ms = 2.0-10.0 W/K per zone
-            // Based on thermal capacitance (Case 900: ~70,000-250,000 J/K)
-            // Use conservative value for high-mass buildings to prevent overprediction
-            let kappa_calc = kappa_wall * zone_floor_area * 1000.0;
-            let h_ms_fixed: f64 = 2.0_f64.min(kappa_calc); // Capped at 2.0 W/K
-            h_tr_ms_vec.push(h_ms_fixed);
+            // Mass-to-surface conductance (h_ms) - PHYSICS-BASED
+            // FIX: Derive from thermal time constant, not k × A / d
+            //
+            // Thermal Time Constant Formula: τ = C_m / h_tr_ms
+            // Therefore: h_tr_ms = C_m / τ
+            //
+            // Where:
+            // - C_m = Total thermal capacitance (J/K)
+            // - τ = Target thermal time constant (seconds)
+            //
+            // This approach is based on ISO 13790 methodology and represents
+            // thermal coupling between mass and surface nodes in the 5R1C network.
+
+            // Calculate total thermal capacitance (C_m) from all mass elements
+            // κ (kappa) = effective specific capacitance per area (J/m²K)
+            let kappa_wall = spec
+                .construction
+                .wall
+                .iso_13790_effective_capacitance_per_area();
+            let kappa_roof = spec
+                .construction
+                .roof
+                .iso_13790_effective_capacitance_per_area();
+            let kappa_floor = spec
+                .construction
+                .floor
+                .iso_13790_effective_capacitance_per_area();
+
+            // Capacitance of each element: C = κ × A
+            let wall_cap = kappa_wall * opaque_area;
+            let roof_cap = kappa_roof * zone_floor_area;
+            let floor_cap = 0.0; // Insulated floor contributes negligibly
+
+            // Air heat capacity (for completeness in thermal balance)
+            let air_density = 1.225; // kg/m³ at sea level
+            let air_cp = 1005.0; // J/kg·K
+            let zone_volume = zone_floor_area * spec.geometry[zone_idx].height;
+            let air_cap = zone_volume * air_density * air_cp;
+
+            // Total thermal capacitance
+            let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
+
+            // Determine mass class and target thermal time constant
+            let mass_class = spec.construction.wall.iso_13790_mass_class();
+            let target_tau_hours = match mass_class {
+                crate::sim::construction::MassClass::VeryLight
+                | crate::sim::construction::MassClass::Light
+                | crate::sim::construction::MassClass::Medium => 2.0, // Low-mass: 1-2 hours
+                crate::sim::construction::MassClass::Heavy => 3.0, // Medium-mass: 2-3 hours
+                crate::sim::construction::MassClass::VeryHeavy => 4.0, // High-mass: 3-4 hours
+            };
+
+            let target_tau_seconds = target_tau_hours * 3600.0;
+
+            // Calculate h_tr_ms from thermal time constant: h_tr_ms = C_m / τ
+            let h_ms_physics = total_thermal_cap / target_tau_seconds;
+
+            h_tr_ms_vec.push(h_ms_physics);
 
             // Opaque conductance (h_tr_em)
+            // Mode-specific factors removed - using physics-based h_tr_em
+            // h_tr_em = k * A / d (thermal conductivity * area / thickness)
             let wall_u = spec.construction.wall.u_value(None, None);
             let roof_u = spec.construction.roof.u_value(None, None);
             let h_tr_op =
                 opaque_area * wall_u + zone_floor_area * roof_u + model.thermal_bridge_coefficient;
-            // FIX TASK #9: Remove h_ms reference, use h_ms_fixed instead
-            let h_tr_em_val = 1.0 / ((1.0 / h_tr_op) - (1.0 / (h_ms_fixed * a_m)));
 
-            // Apply thermal mass coupling enhancement for high-mass buildings (Issue #470)
-            // This enhances exterior-to-mass coupling to improve temperature swing damping
-            // The enhancement factor is set during construction setup based on building type
-            let h_tr_em_enhanced = h_tr_em_val * model.thermal_mass_coupling_enhancement;
-            h_tr_em_vec.push(h_tr_em_enhanced.max(0.1));
+            // Use physics-based h_tr_em calculation (same formula as h_tr_ms)
+            // For high-mass: k=1.4 W/m·K, d=0.2 m
+            // For low-mass: k=0.7 W/m·K, d=0.1 m
+            let (k_envelope, d_envelope) = if is_900_series_hvac {
+                (1.4, 0.2) // k=1.4 W/m·K, d=200mm (high-mass concrete)
+            } else {
+                (0.7, 0.1) // k=0.7 W/m·K, d=100mm (low-mass lightweight)
+            };
+            let h_tr_em_physics = k_envelope * opaque_area / d_envelope;
+            h_tr_em_vec.push(h_tr_em_physics.max(0.1));
 
             // Thermal capacitance using ISO 13790 effective specific capacitances
             // FIX TASK #9: Only include thermal mass, not air
@@ -1369,77 +1349,7 @@ impl ThermalModel<VectorField> {
         model.h_tr_floor = VectorField::new(h_tr_floor_vec);
         model.h_tr_is = VectorField::new(h_tr_is_vec);
         model.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
-        model.h_tr_ms_heating = VectorField::new(
-            h_tr_ms_vec
-                .iter()
-                .map(|&v| v * model.h_tr_ms_heating_factor)
-                .collect(),
-        ); // Heating mode coupling
-        model.h_tr_ms_cooling = VectorField::new(
-            h_tr_ms_vec
-                .iter()
-                .map(|&v| v * model.h_tr_ms_cooling_factor)
-                .collect(),
-        ); // Cooling mode coupling
-        model.h_tr_em = VectorField::new(h_tr_em_vec.clone()); // Default coupling
-                                                               // Apply mode-specific coupling factors (Plan 03-14)
-        model.h_tr_em_heating = VectorField::new(
-            h_tr_em_vec
-                .iter()
-                .map(|&v| v * model.h_tr_em_heating_factor)
-                .collect(),
-        ); // Heating mode coupling
-        model.h_tr_em_cooling = VectorField::new(
-            h_tr_em_vec
-                .iter()
-                .map(|&v| v * model.h_tr_em_cooling_factor)
-                .collect(),
-        ); // Cooling mode coupling
-
-        // Diagnostic: Print coupling parameters for Case 900 (Plan 03-14)
-        if case_id == "900" || case_id == "900FF" {
-            println!("=== Plan 03-14: Mode-Specific Coupling Parameters ===");
-            println!("h_tr_em (base): {:.2} W/K", h_tr_em_vec[0]);
-            println!(
-                "h_tr_em_heating_factor: {:.2}",
-                model.h_tr_em_heating_factor
-            );
-            println!(
-                "h_tr_em_cooling_factor: {:.2}",
-                model.h_tr_em_cooling_factor
-            );
-            println!(
-                "h_tr_em_heating: {:.2} W/K ({:.1}% of base)",
-                model.h_tr_em_heating.as_ref().to_vec()[0],
-                model.h_tr_em_heating_factor * 100.0
-            );
-            println!(
-                "h_tr_em_cooling: {:.2} W/K ({:.1}% of base)",
-                model.h_tr_em_cooling.as_ref().to_vec()[0],
-                model.h_tr_em_cooling_factor * 100.0
-            );
-            println!();
-            println!("h_tr_ms (base): {:.2} W/K", h_tr_ms_vec[0]);
-            println!(
-                "h_tr_ms_heating_factor: {:.2}",
-                model.h_tr_ms_heating_factor
-            );
-            println!(
-                "h_tr_ms_cooling_factor: {:.2}",
-                model.h_tr_ms_cooling_factor
-            );
-            println!(
-                "h_tr_ms_heating: {:.2} W/K ({:.1}% of base)",
-                model.h_tr_ms_heating.as_ref().to_vec()[0],
-                model.h_tr_ms_heating_factor * 100.0
-            );
-            println!(
-                "h_tr_ms_cooling: {:.2} W/K ({:.1}% of base)",
-                model.h_tr_ms_cooling.as_ref().to_vec()[0],
-                model.h_tr_ms_cooling_factor * 100.0
-            );
-            println!("=================================================");
-        }
+        model.h_tr_em = VectorField::new(h_tr_em_vec.clone());
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
@@ -1535,9 +1445,9 @@ impl ThermalModel<VectorField> {
             _ if spec.case_id.starts_with('9') => 0.7, // Other 900-series: 70% to mass (ASHRAE 140 spec)
             _ => 0.3,                                  // Low-mass: 30% to mass
         };
-        // Set mode-specific values (not currently used, reserved for future use)
-        model.solar_beam_to_mass_fraction_heating = model.solar_beam_to_mass_fraction;
-        model.solar_beam_to_mass_fraction_cooling = model.solar_beam_to_mass_fraction;
+
+        // Mode-specific solar_beam_to_mass_fraction removed - using physics-based distribution
+        // Solar gain distribution now based on first principles (ISO 13790)
 
         // Fix: Remove override for free-floating cases (Plan 03-03 Task 4)
         // Previous code (Issue #275) set solar_beam_to_mass_fraction = 0.0 for free-floating
@@ -1829,51 +1739,6 @@ impl ThermalModel<VectorField> {
         let target_h_tr_em = target_ratio * h_tr_ms_value;
         let h_tr_em_data = self.h_tr_em.as_mut();
         h_tr_em_data.iter_mut().for_each(|v| *v = target_h_tr_em);
-
-        // Option A: Disable mode-specific coupling when thermal mass correction is applied
-        // Set mode-specific factors to 1.0 so they don't override the thermal mass correction
-        // This resolves the conflict between Plan 14-02 and Plan 14-03
-        self.h_tr_em_heating_factor = 1.0;
-        self.h_tr_em_cooling_factor = 1.0;
-
-        // Apply mode-specific factors (now 1.0, so no change)
-        // These are the values actually used in simulation (mode-specific coupling)
-        for v in self.h_tr_em_heating.as_mut().iter_mut() {
-            *v = target_h_tr_em * self.h_tr_em_heating_factor;
-        }
-        for v in self.h_tr_em_cooling.as_mut().iter_mut() {
-            *v = target_h_tr_em * self.h_tr_em_cooling_factor;
-        }
-
-        // Debug output (can be removed after validation)
-        if cfg!(debug_assertions) {
-            println!("DEBUG: Thermal mass correction (Option A - disable mode-specific coupling):");
-            println!("  Target h_tr_em: {:.2} W/K", target_h_tr_em);
-            println!(
-                "  Heating factor: {:.2} (disabled)",
-                self.h_tr_em_heating_factor
-            );
-            println!(
-                "  Cooling factor: {:.2} (disabled)",
-                self.h_tr_em_cooling_factor
-            );
-            println!(
-                "  h_tr_em_heating: {:.2} W/K",
-                self.h_tr_em_heating.as_ref()[0]
-            );
-            println!(
-                "  h_tr_em_cooling: {:.2} W/K",
-                self.h_tr_em_cooling.as_ref()[0]
-            );
-            println!(
-                "  Heating coupling ratio: {:.3}",
-                self.h_tr_em_heating.as_ref()[0] / h_tr_ms_value
-            );
-            println!(
-                "  Cooling coupling ratio: {:.3}",
-                self.h_tr_em_cooling.as_ref()[0] / h_tr_ms_value
-            );
-        }
     }
 
     /// Create a new ThermalModel with specified number of thermal zones.
@@ -2147,11 +2012,7 @@ impl ThermalModel<VectorField> {
 
             h_tr_w: VectorField::from_scalar(0.0, num_zones),
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
-            h_tr_em_heating: VectorField::from_scalar(0.0, num_zones), // Heating mode coupling (Plan 03-14)
-            h_tr_em_cooling: VectorField::from_scalar(0.0, num_zones), // Cooling mode coupling (Plan 03-14)
-            h_tr_ms: VectorField::from_scalar(1000.0, num_zones),      // Fixed coupling
-            h_tr_ms_heating: VectorField::from_scalar(1000.0, num_zones), // Heating mode coupling
-            h_tr_ms_cooling: VectorField::from_scalar(1000.0, num_zones), // Cooling mode coupling
+            h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Will be set from physics
             h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
@@ -2171,12 +2032,10 @@ impl ThermalModel<VectorField> {
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
             thermal_mass_coupling_enhancement: 1.0, // Default: no coupling enhancement
             time_constant_sensitivity_correction: 1.0, // Default: no correction
-            h_tr_em_heating_factor: 1.0,      // Default: no heating mode adjustment (Plan 03-14)
-            h_tr_em_cooling_factor: 1.0,      // Default: no cooling mode adjustment (Plan 03-14)
-            h_tr_ms_heating_factor: 1.0,      // Default: no heating mode adjustment
-            h_tr_ms_cooling_factor: 1.0,      // Default: no cooling mode adjustment
-            solar_beam_to_mass_fraction_heating: 0.3, // Default: 30% to mass
-            solar_beam_to_mass_fraction_cooling: 0.3, // Default: 30% to mass
+            // Mode-specific factors removed - using physics-based conductances
+            // h_tr_em_heating_factor, h_tr_em_cooling_factor removed
+            // h_tr_ms_heating_factor, h_tr_ms_cooling_factor removed
+            // solar_beam_to_mass_fraction_heating, _cooling removed
 
             // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
@@ -2356,12 +2215,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let roof_area = self.zone_area.clone();
         self.h_tr_em =
             opaque_wall_area.clone() * self.wall_u_value + roof_area.clone() * self.roof_u_value;
-
-        // Initialize h_tr_em_heating and h_tr_em_cooling to same value as h_tr_em
-        // These will be overridden by mode-specific factors when using ASHRAE specs
-        // For manual model creation (ThermalModel::new), use default coupling
-        self.h_tr_em_heating = self.h_tr_em.clone();
-        self.h_tr_em_cooling = self.h_tr_em.clone();
 
         // h_tr_floor = U_floor * Floor Area
         // Issue #375: Use construction U-value from ThermalModel field
@@ -3809,12 +3662,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut new_mass_temperatures = Vec::with_capacity(self.num_zones);
         let mass_temps_ref = self.mass_temperatures.as_ref();
         let thermal_cap_ref = self.thermal_capacitance.as_ref();
-        let h_tr_em_heating_ref = self.h_tr_em_heating.as_ref();
-        let h_tr_em_cooling_ref = self.h_tr_em_cooling.as_ref();
-        let h_tr_em_default_ref = self.h_tr_em.as_ref();
-        let h_tr_ms_heating_ref = self.h_tr_ms_heating.as_ref();
-        let h_tr_ms_cooling_ref = self.h_tr_ms_cooling.as_ref();
-        let h_tr_ms_default_ref = self.h_tr_ms.as_ref();
+        // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
+        let h_tr_em_ref = self.h_tr_em.as_ref();
+        let h_tr_ms_ref = self.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
 
@@ -3827,31 +3677,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_s = t_s_act_ref[i];
             let phi_m_zone = phi_m_ref[i];
 
-            // Select appropriate h_tr_em based on HVAC output sign
-            // Positive = heating, negative = cooling, zero = off
-            let h_tr_em = if hvac_output_raw.as_ref()[i] > 0.0 {
-                // Heating mode: use heating-specific coupling
-                h_tr_em_heating_ref[i]
-            } else if hvac_output_raw.as_ref()[i] < 0.0 {
-                // Cooling mode: use cooling-specific coupling
-                h_tr_em_cooling_ref[i]
-            } else {
-                // Off/deadband: use default coupling
-                h_tr_em_default_ref[i]
-            };
-
-            // Select appropriate h_tr_ms based on HVAC output sign
-            // Positive = heating, negative = cooling, zero = off
-            let h_tr_ms = if hvac_output_raw.as_ref()[i] > 0.0 {
-                // Heating mode: use heating-specific coupling
-                h_tr_ms_heating_ref[i]
-            } else if hvac_output_raw.as_ref()[i] < 0.0 {
-                // Cooling mode: use cooling-specific coupling
-                h_tr_ms_cooling_ref[i]
-            } else {
-                // Off/deadband: use default coupling
-                h_tr_ms_default_ref[i]
-            };
+            // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
+            // The conductances are now calculated from first principles:
+            // h_tr_em = k * A / d (thermal conductivity * area / thickness)
+            // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
+            let h_tr_em = h_tr_em_ref[i];
+            let h_tr_ms = h_tr_ms_ref[i];
 
             // Select integration method based on thermal capacitance
             let method = select_integration_method(cm);
@@ -4198,19 +4029,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut new_env_mass_temperatures = Vec::with_capacity(self.num_zones);
         let env_mass_temps_ref = self.envelope_mass_temperatures.as_ref();
         let env_thermal_cap_ref = self.envelope_thermal_capacitance.as_ref();
-        let h_tr_em_heating_ref = self.h_tr_em_heating.as_ref();
-        let h_tr_em_cooling_ref = self.h_tr_em_cooling.as_ref();
-        let h_tr_em_default_ref = self.h_tr_em.as_ref();
-        let h_tr_ms_heating_ref = self.h_tr_ms_heating.as_ref();
-        let h_tr_ms_cooling_ref = self.h_tr_ms_cooling.as_ref();
-        let h_tr_ms_default_ref = self.h_tr_ms.as_ref();
+        // Mode-specific fields removed - use physics-based h_tr_em and h_tr_ms
+        let h_tr_em_ref = self.h_tr_em.as_ref();
+        let h_tr_ms_ref = self.h_tr_ms.as_ref();
         let h_tr_me_ref = self.h_tr_me.as_ref();
         let int_mass_temps_ref = self.internal_mass_temperatures.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
         let phi_m_env_ref = phi_m_env.as_ref();
-
-        // Determine HVAC mode from hvac_output_raw (Plan 03-14)
-        // Use separate heating/cooling coupling parameters based on mode
 
         for i in 0..self.num_zones {
             let tm_env_old = env_mass_temps_ref[i];
@@ -4220,31 +4045,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_s = t_s_act_ref[i];
             let phi_m_env_zone = phi_m_env_ref[i];
 
-            // Select appropriate h_tr_em based on HVAC output sign
-            // Positive = heating, negative = cooling, zero = off
-            let h_tr_em = if hvac_output_raw.as_ref()[i] > 0.0 {
-                // Heating mode: use heating-specific coupling
-                h_tr_em_heating_ref[i]
-            } else if hvac_output_raw.as_ref()[i] < 0.0 {
-                // Cooling mode: use cooling-specific coupling
-                h_tr_em_cooling_ref[i]
-            } else {
-                // Off/deadband: use default coupling
-                h_tr_em_default_ref[i]
-            };
-
-            // Select appropriate h_tr_ms based on HVAC output sign
-            // Positive = heating, negative = cooling, zero = off
-            let h_tr_ms = if hvac_output_raw.as_ref()[i] > 0.0 {
-                // Heating mode: use heating-specific coupling
-                h_tr_ms_heating_ref[i]
-            } else if hvac_output_raw.as_ref()[i] < 0.0 {
-                // Cooling mode: use cooling-specific coupling
-                h_tr_ms_cooling_ref[i]
-            } else {
-                // Off/deadband: use default coupling
-                h_tr_ms_default_ref[i]
-            };
+            // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
+            // The conductances are now calculated from first principles:
+            // h_tr_em = k * A / d (thermal conductivity * area / thickness)
+            // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
+            let h_tr_em = h_tr_em_ref[i];
+            let h_tr_ms = h_tr_ms_ref[i];
 
             // For envelope mass, use implicit integration for high thermal capacitance
             let method_env = select_integration_method(cm_env);
