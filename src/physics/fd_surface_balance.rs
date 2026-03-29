@@ -26,7 +26,7 @@ impl ZoneProperties {
         let cp_air = 1005.0; // J/kg·K
 
         let height = volume / floor_area;
-        let perimeter = 4.0 * (floor_area / 4.0).sqrt();
+        let perimeter = 4.0 * (floor_area / 4.0_f64).sqrt();
         let wall_area = perimeter * height;
         let interior_surface_area = 2.0 * floor_area + wall_area;
 
@@ -247,6 +247,7 @@ impl fmt::Display for FDZoneCoupler {
 mod tests {
     use super::*;
     use crate::physics::fd_discretization::{MaterialLayer, WallDiscretization};
+    use approx::assert_relative_eq;
 
     fn test_wall() -> ImplicitFDSolver {
         let layers = vec![MaterialLayer::new("Concrete", 0.200, 1.4, 2300.0, 880.0)];
@@ -375,5 +376,385 @@ mod tests {
             "Zone temp {:.2}°C outside reasonable range",
             coupler.t_zone
         );
+    }
+
+    #[test]
+    fn test_internal_gains_total() {
+        let gains = InternalGains {
+            people: 100.0,
+            lighting: 200.0,
+            equipment: 150.0,
+            infiltration: 50.0,
+        };
+
+        assert_relative_eq!(gains.total(), 500.0, max_relative = 0.01);
+    }
+
+    #[test]
+    fn test_internal_gains_zero() {
+        let gains = InternalGains::zero();
+
+        assert_relative_eq!(gains.people, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.lighting, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.equipment, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.infiltration, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.total(), 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_weather_state() {
+        let weather = WeatherState {
+            t_outdoor: 25.0,
+            solar_flux: 500.0,
+            t_sky: 20.0,
+        };
+
+        assert_relative_eq!(weather.t_outdoor, 25.0, epsilon = 1e-10);
+        assert_relative_eq!(weather.solar_flux, 500.0, epsilon = 1e-10);
+        assert_relative_eq!(weather.t_sky, 20.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_zone_properties_geometry() {
+        let zone = ZoneProperties::new(100.0, 300.0);
+
+        assert_relative_eq!(zone.floor_area, 100.0, epsilon = 1e-10);
+        assert_relative_eq!(zone.volume, 300.0, epsilon = 1e-10);
+
+        // Check interior surface area calculation
+        let height = 300.0 / 100.0; // 3.0 m
+        let perimeter = 4.0 * (100.0_f64 / 4.0_f64).sqrt(); // 4 * 5 = 20 m
+        let wall_area = perimeter * height; // 20 * 3 = 60 m²
+        let expected_interior = 2.0 * 100.0 + wall_area; // 200 + 60 = 260 m²
+
+        assert_relative_eq!(zone.interior_surface_area, expected_interior, max_relative = 0.01);
+    }
+
+    #[test]
+    fn test_zone_properties_heat_capacity() {
+        let zone = ZoneProperties::new(50.0, 150.0);
+
+        // Air density = 1.204 kg/m³, cp_air = 1005 J/kg·K
+        let rho = 1.204;
+        let cp = 1005.0;
+        let expected_capacity = rho * cp * zone.volume;
+
+        assert_relative_eq!(zone.heat_capacity, expected_capacity, max_relative = 0.01);
+    }
+
+    #[test]
+    fn test_interior_boundary_condition() {
+        let coupler = FDZoneCoupler::case_900(20.0);
+        let bc = coupler.interior_boundary_condition(22.0);
+
+        // h = 8.0, T_fluid = 22.0
+        assert_relative_eq!(bc.h, 8.0, epsilon = 1e-10);
+        assert_relative_eq!(bc.t_fluid, 22.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_exterior_boundary_condition() {
+        let coupler = FDZoneCoupler::case_900(20.0);
+        let bc = coupler.exterior_boundary_condition(30.0, 600.0, 0.8);
+
+        // h_ext = 25.0
+        // T_solair = 30 + 0.8 * 600 / 25 = 30 + 19.2 = 49.2
+        let expected_t_solair = 30.0 + (0.8 * 600.0) / 25.0;
+
+        assert_relative_eq!(bc.h, 25.0, epsilon = 1e-10);
+        assert_relative_eq!(bc.t_fluid, expected_t_solair, max_relative = 0.01);
+        assert_relative_eq!(bc.q_external, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_exterior_boundary_condition_zero_solar() {
+        let coupler = FDZoneCoupler::case_900(20.0);
+        let bc = coupler.exterior_boundary_condition(25.0, 0.0, 0.7);
+
+        // No solar: T_solair = T_outdoor
+        assert_relative_eq!(bc.t_fluid, 25.0, max_relative = 0.01);
+    }
+
+    #[test]
+    fn test_update_weather() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+
+        coupler.update_weather(15.0, 300.0, 10.0);
+
+        assert!(coupler.weather.is_some());
+        let weather = coupler.weather.as_ref().unwrap();
+        assert_relative_eq!(weather.t_outdoor, 15.0, epsilon = 1e-10);
+        assert_relative_eq!(weather.solar_flux, 300.0, epsilon = 1e-10);
+        assert_relative_eq!(weather.t_sky, 10.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_zone_temperature_getter() {
+        let mut coupler = FDZoneCoupler::case_900(22.0);
+
+        assert_relative_eq!(coupler.zone_temperature(), 22.0, epsilon = 1e-10);
+
+        coupler.set_zone_temperature(25.0);
+        assert_relative_eq!(coupler.zone_temperature(), 25.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_set_zone_temperature() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+
+        coupler.set_zone_temperature(23.5);
+        assert_relative_eq!(coupler.t_zone, 23.5, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_coupler_default_values() {
+        let zone = ZoneProperties::new(50.0, 135.0);
+        let coupler = FDZoneCoupler::new(zone, 20.0);
+
+        assert_relative_eq!(coupler.t_zone, 20.0, epsilon = 1e-10);
+        assert_relative_eq!(coupler.h_interior, 8.0, epsilon = 1e-10);
+        assert_relative_eq!(coupler.h_exterior, 25.0, epsilon = 1e-10);
+        assert!(coupler.weather.is_none());
+    }
+
+    #[test]
+    fn test_coupler_case_900_defaults() {
+        let coupler = FDZoneCoupler::case_900(20.0);
+
+        // Case 900 zone: 48 m² floor, 129.6 m³ volume
+        assert_relative_eq!(coupler.zone.floor_area, 48.0, epsilon = 0.1);
+        assert_relative_eq!(coupler.zone.volume, 129.6, epsilon = 0.1);
+    }
+
+    #[test]
+    fn test_thermal_time_constant_formula() {
+        let coupler = FDZoneCoupler::case_900(20.0);
+
+        // τ = C / (h_i * A_int)
+        let expected_tau = coupler.zone.heat_capacity
+            / (coupler.h_interior * coupler.zone.interior_surface_area);
+
+        let actual_tau = coupler.thermal_time_constant();
+
+        assert_relative_eq!(actual_tau, expected_tau, max_relative = 0.01);
+    }
+
+    #[test]
+    fn test_thermal_time_constant_high_h() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+        coupler.h_interior = 20.0;
+
+        let tau = coupler.thermal_time_constant();
+
+        // Higher h should give smaller time constant
+        assert!(tau < 100.0, "Time constant should be small with high h_interior");
+    }
+
+    #[test]
+    fn test_thermal_time_constant_low_h() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+        coupler.h_interior = 2.0;
+
+        let tau = coupler.thermal_time_constant();
+
+        // Lower h should give larger time constant
+        assert!(tau > 300.0, "Time constant should be large with low h_interior");
+    }
+
+    #[test]
+    fn test_large_zone() {
+        let zone = ZoneProperties::new(500.0, 2000.0);
+
+        assert_relative_eq!(zone.floor_area, 500.0, epsilon = 1e-10);
+        assert_relative_eq!(zone.volume, 2000.0, epsilon = 1e-10);
+
+        // Large zone should have large heat capacity
+        assert!(zone.heat_capacity > 1_000_000.0);
+    }
+
+    #[test]
+    fn test_small_zone() {
+        let zone = ZoneProperties::new(5.0, 15.0);
+
+        assert_relative_eq!(zone.floor_area, 5.0, epsilon = 1e-10);
+        assert_relative_eq!(zone.volume, 15.0, epsilon = 1e-10);
+
+        // Small zone should have smaller heat capacity
+        assert!(zone.heat_capacity < 50_000.0);
+    }
+
+    #[test]
+    fn test_extreme_solar_flux() {
+        let t_solair = FDZoneCoupler::sol_air_temperature(30.0, 1000.0, 0.9, 25.0);
+
+        // Very high solar should significantly increase sol-air temperature
+        let expected = 30.0 + (0.9 * 1000.0) / 25.0; // 30 + 36 = 66°C
+        assert_relative_eq!(t_solair, expected, max_relative = 0.01);
+        assert!(t_solair > 60.0);
+    }
+
+    #[test]
+    fn test_negative_solar_flux() {
+        // Solar flux shouldn't be negative in practice, but test robustness
+        let t_solair = FDZoneCoupler::sol_air_temperature(25.0, -100.0, 0.7, 25.0);
+
+        let expected = 25.0 + (0.7 * -100.0) / 25.0; // 25 - 2.8 = 22.2°C
+        assert_relative_eq!(t_solair, expected, max_relative = 0.01);
+    }
+
+    #[test]
+    fn test_various_convection_coefficients() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+
+        // Test different interior convection coefficients
+        for h_int in [3.0, 5.0, 8.0, 15.0, 25.0] {
+            coupler.h_interior = h_int;
+            let tau = coupler.thermal_time_constant();
+
+            // Higher h should give smaller tau
+            assert!(tau > 0.0, "Time constant should be positive");
+        }
+    }
+
+    #[test]
+    fn test_various_exterior_convection() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+
+        // Test different exterior convection coefficients
+        for h_ext in [10.0, 20.0, 25.0, 30.0, 50.0] {
+            coupler.h_exterior = h_ext;
+
+            let bc = coupler.exterior_boundary_condition(30.0, 500.0, 0.7);
+
+            assert_relative_eq!(bc.h, h_ext, epsilon = 1e-10);
+
+            // Verify sol-air calculation
+            let expected = 30.0 + (0.7 * 500.0) / h_ext;
+            assert_relative_eq!(bc.t_fluid, expected, max_relative = 0.01);
+        }
+    }
+
+    #[test]
+    fn test_internal_gains_only_people() {
+        let gains = InternalGains {
+            people: 150.0,
+            lighting: 0.0,
+            equipment: 0.0,
+            infiltration: 0.0,
+        };
+
+        assert_relative_eq!(gains.total(), 150.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_internal_gains_all_components() {
+        let gains = InternalGains {
+            people: 75.0,
+            lighting: 120.0,
+            equipment: 85.0,
+            infiltration: 30.0,
+        };
+
+        let total = gains.people + gains.lighting + gains.equipment + gains.infiltration;
+        assert_relative_eq!(gains.total(), total, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_display_implementation() {
+        let coupler = FDZoneCoupler::case_900(20.0);
+
+        // Just verify Display implementation compiles and produces output
+        let display_str = format!("{}", coupler);
+
+        assert!(!display_str.is_empty());
+        assert!(display_str.contains("Zone volume"));
+        assert!(display_str.contains("Floor area"));
+        assert!(display_str.contains("Heat capacity"));
+    }
+
+    #[test]
+    fn test_default_internal_gains() {
+        let gains = InternalGains::default();
+
+        assert_relative_eq!(gains.people, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.lighting, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.equipment, 0.0, epsilon = 1e-10);
+        assert_relative_eq!(gains.infiltration, 0.0, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_clone_zone_properties() {
+        let zone1 = ZoneProperties::new(50.0, 135.0);
+        let zone2 = zone1.clone();
+
+        assert_relative_eq!(zone1.floor_area, zone2.floor_area, epsilon = 1e-10);
+        assert_relative_eq!(zone1.volume, zone2.volume, epsilon = 1e-10);
+        assert_relative_eq!(zone1.heat_capacity, zone2.heat_capacity, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_clone_internal_gains() {
+        let gains1 = InternalGains {
+            people: 100.0,
+            lighting: 200.0,
+            equipment: 150.0,
+            infiltration: 50.0,
+        };
+        let gains2 = gains1.clone();
+
+        assert_relative_eq!(gains1.total(), gains2.total(), epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_weather_state_clone() {
+        let weather1 = WeatherState {
+            t_outdoor: 25.0,
+            solar_flux: 500.0,
+            t_sky: 20.0,
+        };
+        let weather2 = weather1.clone();
+
+        assert_relative_eq!(weather1.t_outdoor, weather2.t_outdoor, epsilon = 1e-10);
+        assert_relative_eq!(weather1.solar_flux, weather2.solar_flux, epsilon = 1e-10);
+        assert_relative_eq!(weather1.t_sky, weather2.t_sky, epsilon = 1e-10);
+    }
+
+    #[test]
+    fn test_various_solar_absorptance() {
+        // Test effect of different solar absorptance values
+        let coupler = FDZoneCoupler::case_900(20.0);
+
+        for alpha in [0.2, 0.5, 0.7, 0.9] {
+            let bc = coupler.exterior_boundary_condition(30.0, 500.0, alpha);
+
+            // Higher alpha should give higher sol-air temperature
+            let expected = 30.0 + (alpha * 500.0) / 25.0;
+            assert_relative_eq!(bc.t_fluid, expected, max_relative = 0.01);
+        }
+    }
+
+    #[test]
+    fn test_zone_temperature_update_weather() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+
+        coupler.update_weather(10.0, 200.0, 5.0);
+
+        // Weather update shouldn't change zone temperature
+        assert_relative_eq!(coupler.t_zone, 20.0, epsilon = 1e-10);
+
+        // But weather should be set
+        assert!(coupler.weather.is_some());
+    }
+
+    #[test]
+    fn test_boundary_condition_consistency() {
+        let coupler = FDZoneCoupler::case_900(22.0);
+
+        let interior_bc = coupler.interior_boundary_condition(22.0);
+        let exterior_bc = coupler.exterior_boundary_condition(22.0, 0.0, 0.7);
+
+        // With zero temperature difference and zero solar, both should use the zone temp
+        assert_relative_eq!(interior_bc.t_fluid, 22.0, epsilon = 1e-10);
+        assert_relative_eq!(exterior_bc.t_fluid, 22.0, max_relative = 0.01);
     }
 }
