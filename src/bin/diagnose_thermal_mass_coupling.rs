@@ -12,9 +12,18 @@ fn main() {
     let model_900 = ThermalModel::from_spec(&spec_900);
 
     println!("=== Case 900 (High-Mass) ===");
-    println!("Mass temperature: {:.2}°C", model_900.mass_temperatures.as_ref()[0]);
-    println!("Zone temperature: {:.2}°C", model_900.temperatures.as_ref()[0]);
-    println!("Thermal capacitance: {:.2} kJ/K", model_900.thermal_capacitance.as_ref()[0] / 1000.0);
+    println!(
+        "Mass temperature: {:.2}°C",
+        model_900.mass_temperatures.as_ref()[0]
+    );
+    println!(
+        "Zone temperature: {:.2}°C",
+        model_900.temperatures.as_ref()[0]
+    );
+    println!(
+        "Thermal capacitance: {:.2} kJ/K",
+        model_900.thermal_capacitance.as_ref()[0] / 1000.0
+    );
     println!();
 
     // Check h_tr_ms (mass to surface) conductance
@@ -45,17 +54,28 @@ fn main() {
     println!();
 
     // Calculate thermal time constant (tau)
-    let total_r: f64 = spec_900.construction.wall.layers.iter()
+    let total_r: f64 = spec_900
+        .construction
+        .wall
+        .layers
+        .iter()
         .map(|l| l.thickness / l.conductivity)
         .sum::<f64>();
 
-    let total_c: f64 = spec_900.construction.wall.layers.iter()
-        .map(|l| l.thickness * l.density * l.specific_heat * 48.0)  // 48 m² zone area
+    let total_c: f64 = spec_900
+        .construction
+        .wall
+        .layers
+        .iter()
+        .map(|l| l.thickness * l.density * l.specific_heat * 48.0) // 48 m² zone area
         .sum::<f64>();
 
     let tau_hours = total_r * total_c / 3600.0;
     println!("Total thermal resistance (R): {:.4} K·m²/W", total_r);
-    println!("Total thermal capacitance (C): {:.2} kJ/K", total_c / 1000.0);
+    println!(
+        "Total thermal capacitance (C): {:.2} kJ/K",
+        total_c / 1000.0
+    );
     println!("Thermal time constant (τ = R×C): {:.2} hours", tau_hours);
     println!("Expected for Case 900: ~73 hours");
     if tau_hours >= 50.0 && tau_hours < 100.0 {
@@ -70,24 +90,36 @@ fn main() {
     let t_zone = model_900.temperatures.as_ref()[0];
 
     // Heat flux from exterior to mass
-    let q_ext_to_mass = h_tr_em * (20.0 - t_m);  // Assuming 20°C outdoor
+    let q_ext_to_mass = h_tr_em * (20.0 - t_m); // Assuming 20°C outdoor
     println!("Heat flux exterior → mass (Q_em): {:.3} W", q_ext_to_mass);
 
     // Heat flux from surface to mass
-    let q_surface_to_mass = h_tr_ms * (t_m - 20.0);  // Assuming 20°C surface
-    println!("Heat flux surface → mass (Q_ms): {:.3} W", q_surface_to_mass);
+    let q_surface_to_mass = h_tr_ms * (t_m - 20.0); // Assuming 20°C surface
+    println!(
+        "Heat flux surface → mass (Q_ms): {:.3} W",
+        q_surface_to_mass
+    );
 
     // Heat flux from surface to zone
-    let q_surface_to_zone = h_tr_is * (20.0 - t_zone);  // Assuming 20°C surface
-    println!("Heat flux surface → zone (Q_is): {:.3} W", q_surface_to_zone);
+    let q_surface_to_zone = h_tr_is * (20.0 - t_zone); // Assuming 20°C surface
+    println!(
+        "Heat flux surface → zone (Q_is): {:.3} W",
+        q_surface_to_zone
+    );
 
     println!();
     println!("=== Conductance Consistency Check ===");
     // For 5R1C: h_tr_is should be larger than h_tr_ms (surface better insulated)
     if h_tr_is > h_tr_ms {
-        println!("✓ h_tr_is ({:.2}) > h_tr_ms ({:.2}) - surface better insulated than mass", h_tr_is, h_tr_ms);
+        println!(
+            "✓ h_tr_is ({:.2}) > h_tr_ms ({:.2}) - surface better insulated than mass",
+            h_tr_is, h_tr_ms
+        );
     } else {
-        println!("✗ h_tr_is ({:.2}) <= h_tr_ms ({:.2}) - unexpected", h_tr_is, h_tr_ms);
+        println!(
+            "✗ h_tr_is ({:.2}) <= h_tr_ms ({:.2}) - unexpected",
+            h_tr_is, h_tr_ms
+        );
     }
 
     println!();
@@ -97,17 +129,37 @@ fn main() {
     let spec_600 = ASHRAE140Case::Case600.spec();
     let model_600 = ThermalModel::from_spec(&spec_600);
 
-    println!("Mass temperature: {:.2}°C", model_600.mass_temperatures.as_ref()[0]);
-    println!("Thermal capacitance: {:.2} kJ/K", model_600.thermal_capacitance.as_ref()[0] / 1000.0);
-    println!("h_tr_ms (mass to surface): {:.3} W/K", model_600.h_tr_ms.as_ref()[0]);
-    println!("h_tr_is (surface to interior): {:.3} W/K", model_600.h_tr_is.as_ref()[0]);
+    println!(
+        "Mass temperature: {:.2}°C",
+        model_600.mass_temperatures.as_ref()[0]
+    );
+    println!(
+        "Thermal capacitance: {:.2} kJ/K",
+        model_600.thermal_capacitance.as_ref()[0] / 1000.0
+    );
+    println!(
+        "h_tr_ms (mass to surface): {:.3} W/K",
+        model_600.h_tr_ms.as_ref()[0]
+    );
+    println!(
+        "h_tr_is (surface to interior): {:.3} W/K",
+        model_600.h_tr_is.as_ref()[0]
+    );
 
     // Calculate thermal time constant for Case 600
-    let total_r_low: f64 = spec_600.construction.wall.layers.iter()
+    let total_r_low: f64 = spec_600
+        .construction
+        .wall
+        .layers
+        .iter()
         .map(|l| l.thickness / l.conductivity)
         .sum::<f64>();
 
-    let total_c_low: f64 = spec_600.construction.wall.layers.iter()
+    let total_c_low: f64 = spec_600
+        .construction
+        .wall
+        .layers
+        .iter()
         .map(|l| l.thickness * l.density * l.specific_heat * 48.0)
         .sum::<f64>();
 
@@ -122,7 +174,10 @@ fn main() {
 
     println!();
     println!("=== Key Observations ===");
-    println!("High-mass τ ({:.1}h) should be >> low-mass τ ({:.1}h)", tau_hours, tau_hours_low);
+    println!(
+        "High-mass τ ({:.1}h) should be >> low-mass τ ({:.1}h)",
+        tau_hours, tau_hours_low
+    );
     if tau_hours > tau_hours_low * 5.0 {
         println!("✓ High-mass has significantly longer time constant (correct)");
     } else {

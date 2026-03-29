@@ -25,7 +25,10 @@ fn main() {
     let cooling_factors = [1.4, 1.2, 1.0, 0.8, 0.6];
     let heating_factor = 0.6; // Keep heating factor constant
 
-    println!("Testing heating factor = {:.1}, varying cooling factor\n", heating_factor);
+    println!(
+        "Testing heating factor = {:.1}, varying cooling factor\n",
+        heating_factor
+    );
     println!("Cooling Factor | Case 600 H | Case 600 C | Pass?");
     println!("---------------|------------|------------|-------");
 
@@ -75,19 +78,21 @@ fn main() {
     }
 }
 
-fn test_case(spec: &fluxion::validation::ashrae_140_cases::CaseSpec, heating_factor: f64, cooling_factor: f64) -> (f64, f64) {
+fn test_case(
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+    heating_factor: f64,
+    cooling_factor: f64,
+) -> (f64, f64) {
     let mut model = ThermalModel::<VectorField>::from_spec(spec);
 
     model.h_tr_em_heating_factor = heating_factor;
     model.h_tr_em_cooling_factor = cooling_factor;
 
     let h_tr_em_vec = model.h_tr_em.as_ref().to_vec();
-    model.h_tr_em_heating = VectorField::new(
-        h_tr_em_vec.iter().map(|&v| v * heating_factor).collect(),
-    );
-    model.h_tr_em_cooling = VectorField::new(
-        h_tr_em_vec.iter().map(|&v| v * cooling_factor).collect(),
-    );
+    model.h_tr_em_heating =
+        VectorField::new(h_tr_em_vec.iter().map(|&v| v * heating_factor).collect());
+    model.h_tr_em_cooling =
+        VectorField::new(h_tr_em_vec.iter().map(|&v| v * cooling_factor).collect());
 
     let weather = DenverTmyWeather::new();
     let mut annual_heating_joules = 0.0;
@@ -107,8 +112,5 @@ fn test_case(spec: &fluxion::validation::ashrae_140_cases::CaseSpec, heating_fac
         }
     }
 
-    (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
-    )
+    (annual_heating_joules / 3.6e9, annual_cooling_joules / 3.6e9)
 }

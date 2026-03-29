@@ -105,19 +105,28 @@ mod tests {
         let spec = ASHRAE140Case::Case900.spec();
 
         // Get thermal resistance (sum of 1/C for all layers)
-        let total_thermal_resistance: f64 = spec.construction.wall.layers.iter()
+        let total_thermal_resistance: f64 = spec
+            .construction
+            .wall
+            .layers
+            .iter()
             .map(|l| l.thickness / l.conductivity)
             .sum::<f64>();
 
         // Get thermal capacitance
-        let total_thermal_capacitance: f64 = spec.construction.wall.layers.iter()
-            .map(|l| l.thickness * l.density * l.specific_heat * 48.0)  // 48 m² zone area
+        let total_thermal_capacitance: f64 = spec
+            .construction
+            .wall
+            .layers
+            .iter()
+            .map(|l| l.thickness * l.density * l.specific_heat * 48.0) // 48 m² zone area
             .sum::<f64>();
 
         let tau_hours = total_thermal_resistance * total_thermal_capacitance / 3600.0;
 
         // For Case 900 high-mass: tau should be ~73 hours
-        assert!(tau_hours > 50.0 && tau_hours < 100.0,
+        assert!(
+            tau_hours > 50.0 && tau_hours < 100.0,
             "Thermal time constant for Case 900 should be 50-100 hours, got {:.1} hours",
             tau_hours
         );
@@ -143,7 +152,8 @@ mod tests {
         assert!(
             high_h_tr_ms > low_h_tr_ms,
             "High-mass h_tr_ms ({:.2} W/K) should be > low-mass ({:.2} W/K)",
-            high_h_tr_ms, low_h_tr_ms
+            high_h_tr_ms,
+            low_h_tr_ms
         );
 
         // h_tr_is (surface to interior air) should scale similarly
@@ -153,7 +163,8 @@ mod tests {
         assert!(
             high_h_tr_is > low_h_tr_is,
             "High-mass h_tr_is ({:.2} W/K) should be > low-mass ({:.2} W/K)",
-            high_h_tr_is, low_h_tr_is
+            high_h_tr_is,
+            low_h_tr_is
         );
     }
 
@@ -250,9 +261,11 @@ mod tests {
         let high_mass = high_model.total_thermal_capacity.unwrap_or(0.0);
 
         // Low-mass should have lower thermal mass
-        assert!(low_mass < high_mass,
+        assert!(
+            low_mass < high_mass,
             "Low-mass ({:.1} J/K) should be < high-mass ({:.1} J/K)",
-            low_mass, high_mass
+            low_mass,
+            high_mass
         );
 
         // High-mass should have significant thermal lag

@@ -34,7 +34,8 @@ fn main() {
 
         // Sample every hour from 6 AM to 6 PM
         for hour in 6..=18 {
-            let sun_pos = calculate_solar_position(denver_lat, denver_lon, 2024, month, day, hour as f64);
+            let sun_pos =
+                calculate_solar_position(denver_lat, denver_lon, 2024, month, day, hour as f64);
 
             if !sun_pos.is_above_horizon() {
                 continue;
@@ -46,14 +47,70 @@ fn main() {
             let dni = 900.0;
             let dhi = 150.0;
 
-            let irr_e = calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::East, 0.2, day_of_year);
-            let irr_w = calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::West, 0.2, day_of_year);
-            let irr_s = calculate_surface_irradiance(&sun_pos, dni, dhi, None, Orientation::South, 0.2, day_of_year);
+            let irr_e = calculate_surface_irradiance(
+                &sun_pos,
+                dni,
+                dhi,
+                None,
+                Orientation::East,
+                0.2,
+                day_of_year,
+            );
+            let irr_w = calculate_surface_irradiance(
+                &sun_pos,
+                dni,
+                dhi,
+                None,
+                Orientation::West,
+                0.2,
+                day_of_year,
+            );
+            let irr_s = calculate_surface_irradiance(
+                &sun_pos,
+                dni,
+                dhi,
+                None,
+                Orientation::South,
+                0.2,
+                day_of_year,
+            );
 
-            let gain_e = calculate_window_solar_gain(&irr_e, &window_6, None, None, &[], &sun_pos, Orientation::East);
-            let gain_w = calculate_window_solar_gain(&irr_w, &window_6, None, None, &[], &sun_pos, Orientation::West);
-            let gain_s_12 = calculate_window_solar_gain(&irr_s, &window_12, None, None, &[], &sun_pos, Orientation::South);
-            let gain_s_6 = calculate_window_solar_gain(&irr_s, &window_6, None, None, &[], &sun_pos, Orientation::South);
+            let gain_e = calculate_window_solar_gain(
+                &irr_e,
+                &window_6,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::East,
+            );
+            let gain_w = calculate_window_solar_gain(
+                &irr_w,
+                &window_6,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::West,
+            );
+            let gain_s_12 = calculate_window_solar_gain(
+                &irr_s,
+                &window_12,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::South,
+            );
+            let gain_s_6 = calculate_window_solar_gain(
+                &irr_s,
+                &window_6,
+                None,
+                None,
+                &[],
+                &sun_pos,
+                Orientation::South,
+            );
 
             daily_east += gain_e.total_gain_w;
             daily_west += gain_w.total_gain_w;
@@ -66,7 +123,10 @@ fn main() {
         println!("E+W (12m²):    {:.0} Wh", daily_east + daily_west);
         println!("South (12m²):  {:.0} Wh", daily_south_12);
         println!("South (6m²):   {:.0} Wh", daily_south_6);
-        println!("Ratio (E+W)/S: {:.2}", (daily_east + daily_west) / daily_south_12);
+        println!(
+            "Ratio (E+W)/S: {:.2}",
+            (daily_east + daily_west) / daily_south_12
+        );
         println!();
     }
 

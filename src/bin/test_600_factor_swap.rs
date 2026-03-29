@@ -70,7 +70,11 @@ fn main() {
     println!("If swap helps for ≥3/6 cases, implement the change.");
 }
 
-fn test_case(spec: &fluxion::validation::ashrae_140_cases::CaseSpec, heating_factor: f64, cooling_factor: f64) -> (f64, f64) {
+fn test_case(
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+    heating_factor: f64,
+    cooling_factor: f64,
+) -> (f64, f64) {
     // Create model with custom factors
     let mut model = ThermalModel::<VectorField>::from_spec(spec);
 
@@ -80,18 +84,10 @@ fn test_case(spec: &fluxion::validation::ashrae_140_cases::CaseSpec, heating_fac
 
     // Update coupling vectors
     let h_tr_em_vec = model.h_tr_em.as_ref().to_vec();
-    model.h_tr_em_heating = VectorField::new(
-        h_tr_em_vec
-            .iter()
-            .map(|&v| v * heating_factor)
-            .collect(),
-    );
-    model.h_tr_em_cooling = VectorField::new(
-        h_tr_em_vec
-            .iter()
-            .map(|&v| v * cooling_factor)
-            .collect(),
-    );
+    model.h_tr_em_heating =
+        VectorField::new(h_tr_em_vec.iter().map(|&v| v * heating_factor).collect());
+    model.h_tr_em_cooling =
+        VectorField::new(h_tr_em_vec.iter().map(|&v| v * cooling_factor).collect());
 
     // Simulate full year (8760 hours)
     let weather = DenverTmyWeather::new();

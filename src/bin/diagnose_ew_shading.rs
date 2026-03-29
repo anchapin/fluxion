@@ -2,8 +2,8 @@
 //!
 //! Checks if shading for E/W windows is calculated correctly
 
-use fluxion::sim::solar::*;
 use fluxion::sim::shading::{Overhang, ShadeFin, Side};
+use fluxion::sim::solar::*;
 use fluxion::validation::ashrae_140_cases::Orientation;
 
 fn main() {
@@ -32,18 +32,52 @@ fn main() {
         let day_of_year = calculate_day_of_year(2024, 6, 21);
 
         // East window (no shading)
-        let irr_e = calculate_surface_irradiance(&sun_pos, 900.0, 150.0, None, Orientation::East, 0.2, day_of_year);
-        let gain_e = calculate_window_solar_gain(&irr_e, &window, None, None, &[], &sun_pos, Orientation::East);
+        let irr_e = calculate_surface_irradiance(
+            &sun_pos,
+            900.0,
+            150.0,
+            None,
+            Orientation::East,
+            0.2,
+            day_of_year,
+        );
+        let gain_e = calculate_window_solar_gain(
+            &irr_e,
+            &window,
+            None,
+            None,
+            &[],
+            &sun_pos,
+            Orientation::East,
+        );
 
         // West window (no shading)
-        let irr_w = calculate_surface_irradiance(&sun_pos, 900.0, 150.0, None, Orientation::West, 0.2, day_of_year);
-        let gain_w = calculate_window_solar_gain(&irr_w, &window, None, None, &[], &sun_pos, Orientation::West);
+        let irr_w = calculate_surface_irradiance(
+            &sun_pos,
+            900.0,
+            150.0,
+            None,
+            Orientation::West,
+            0.2,
+            day_of_year,
+        );
+        let gain_w = calculate_window_solar_gain(
+            &irr_w,
+            &window,
+            None,
+            None,
+            &[],
+            &sun_pos,
+            Orientation::West,
+        );
 
         let total = gain_e.total_gain_w + gain_w.total_gain_w;
         total_920 += total;
 
-        println!("{:5.1} | {:9.0} W | {:9.0} W | {:5.0} W",
-            hour, gain_e.total_gain_w, gain_w.total_gain_w, total);
+        println!(
+            "{:5.1} | {:9.0} W | {:9.0} W | {:5.0} W",
+            hour, gain_e.total_gain_w, gain_w.total_gain_w, total
+        );
     }
 
     println!();
@@ -88,27 +122,81 @@ fn main() {
         let day_of_year = calculate_day_of_year(2024, 6, 21);
 
         // East window (with shading)
-        let irr_e = calculate_surface_irradiance(&sun_pos, 900.0, 150.0, None, Orientation::East, 0.2, day_of_year);
-        let gain_e = calculate_window_solar_gain(&irr_e, &window, Some(&geometry), Some(&overhang), &fins, &sun_pos, Orientation::East);
+        let irr_e = calculate_surface_irradiance(
+            &sun_pos,
+            900.0,
+            150.0,
+            None,
+            Orientation::East,
+            0.2,
+            day_of_year,
+        );
+        let gain_e = calculate_window_solar_gain(
+            &irr_e,
+            &window,
+            Some(&geometry),
+            Some(&overhang),
+            &fins,
+            &sun_pos,
+            Orientation::East,
+        );
 
         // West window (with shading)
-        let irr_w = calculate_surface_irradiance(&sun_pos, 900.0, 150.0, None, Orientation::West, 0.2, day_of_year);
-        let gain_w = calculate_window_solar_gain(&irr_w, &window, Some(&geometry), Some(&overhang), &fins, &sun_pos, Orientation::West);
+        let irr_w = calculate_surface_irradiance(
+            &sun_pos,
+            900.0,
+            150.0,
+            None,
+            Orientation::West,
+            0.2,
+            day_of_year,
+        );
+        let gain_w = calculate_window_solar_gain(
+            &irr_w,
+            &window,
+            Some(&geometry),
+            Some(&overhang),
+            &fins,
+            &sun_pos,
+            Orientation::West,
+        );
 
         let total = gain_e.total_gain_w + gain_w.total_gain_w;
         total_930 += total;
 
         // Calculate shaded fraction for diagnostic
         let shaded_frac_e = if gain_e.beam_gain_w > 0.0 {
-            let irr_e_no_shade = calculate_surface_irradiance(&sun_pos, 900.0, 150.0, None, Orientation::East, 0.2, day_of_year);
-            let gain_e_no_shade = calculate_window_solar_gain(&irr_e_no_shade, &window, Some(&geometry), None, &[], &sun_pos, Orientation::East);
+            let irr_e_no_shade = calculate_surface_irradiance(
+                &sun_pos,
+                900.0,
+                150.0,
+                None,
+                Orientation::East,
+                0.2,
+                day_of_year,
+            );
+            let gain_e_no_shade = calculate_window_solar_gain(
+                &irr_e_no_shade,
+                &window,
+                Some(&geometry),
+                None,
+                &[],
+                &sun_pos,
+                Orientation::East,
+            );
             1.0 - (gain_e.beam_gain_w / gain_e_no_shade.beam_gain_w.max(0.001))
         } else {
             0.0
         };
 
-        println!("{:5.1} | {:9.0} W | {:9.0} W | {:5.0} W | {:.0}%",
-            hour, gain_e.total_gain_w, gain_w.total_gain_w, total, shaded_frac_e * 100.0);
+        println!(
+            "{:5.1} | {:9.0} W | {:9.0} W | {:5.0} W | {:.0}%",
+            hour,
+            gain_e.total_gain_w,
+            gain_w.total_gain_w,
+            total,
+            shaded_frac_e * 100.0
+        );
     }
 
     println!();

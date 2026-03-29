@@ -29,7 +29,8 @@ impl EnergyPlusReference {
     fn load() -> Self {
         let path = "benchmarks/outputs/bestest_gsr/case_900/run/reference_data.json";
         let file = std::fs::File::open(path).expect("Failed to open reference data");
-        let data: serde_json::from_reader(file).expect("Failed to parse reference data");
+        let data: ReferenceData =
+            serde_json::from_reader(file).expect("Failed to parse reference data");
 
         Self {
             zone_air_temp_c: data.hourly.zone_air_temp_c,
@@ -48,7 +49,7 @@ impl EnergyPlusReference {
     }
 
     fn annual_solar_mwh(&self) -> f64 {
-        self.solar_rate_total_w.iter().sum::<f64>() / 1000.0 / 8760.0  // W -> Wh -> kWh -> MWh
+        self.solar_rate_total_w.iter().sum::<f64>() / 1000.0 / 8760.0 // W -> Wh -> kWh -> MWh
     }
 }
 
@@ -65,8 +66,8 @@ mod tests {
     use fluxion::sim::construction::ConstructionSpec;
     use fluxion::sim::engine::ThermalModel;
 
-    const SOLAR_TOLERANCE: f64 = 0.01;  // 1% tolerance
-    const ENERGY_TOLERANCE: f64 = 0.05;  // 5% tolerance
+    const SOLAR_TOLERANCE: f64 = 0.01; // 1% tolerance
+    const ENERGY_TOLERANCE: f64 = 0.05; // 5% tolerance
 
     // Test 1: Verify EnergyPlus reference data validity
     #[test]
@@ -74,10 +75,26 @@ mod tests {
         let ep = EnergyPlusReference::load();
 
         // Verify we have 8760 hours of data
-        assert_eq!(ep.zone_air_temp_c.len(), 8760, "Zone temperature should have 8760 hours");
-        assert_eq!(ep.heating_energy_wh.len(), 8760, "Heating energy should have 8760 hours");
-        assert_eq!(ep.cooling_energy_wh.len(), 8760, "Cooling energy should have 8760 hours");
-        assert_eq!(ep.solar_rate_total_w.len(), 8760, "Solar rate should have 8760 hours");
+        assert_eq!(
+            ep.zone_air_temp_c.len(),
+            8760,
+            "Zone temperature should have 8760 hours"
+        );
+        assert_eq!(
+            ep.heating_energy_wh.len(),
+            8760,
+            "Heating energy should have 8760 hours"
+        );
+        assert_eq!(
+            ep.cooling_energy_wh.len(),
+            8760,
+            "Cooling energy should have 8760 hours"
+        );
+        assert_eq!(
+            ep.solar_rate_total_w.len(),
+            8760,
+            "Solar rate should have 8760 hours"
+        );
 
         // Verify annual totals match expected EnergyPlus values
         let heating_mwh = ep.annual_heating_mwh();
@@ -85,10 +102,16 @@ mod tests {
 
         // EnergyPlus reference from energyplus_reference_data.json:
         // Heating: 1.661 MWh, Cooling: 2.497 MWh
-        assert!(heating_mwh >= 1.6 && heating_mwh <= 1.7,
-            "Heating should be ~1.66 MWh, got {:.3} MWh", heating_mwh);
-        assert!(cooling_mwh >= 2.4 && cooling_mwh <= 2.6,
-            "Cooling should be ~2.50 MWh, got {:.3} MWh", cooling_mwh);
+        assert!(
+            heating_mwh >= 1.6 && heating_mwh <= 1.7,
+            "Heating should be ~1.66 MWh, got {:.3} MWh",
+            heating_mwh
+        );
+        assert!(
+            cooling_mwh >= 2.4 && cooling_mwh <= 2.6,
+            "Cooling should be ~2.50 MWh, got {:.3} MWh",
+            cooling_mwh
+        );
     }
 
     // Test 2: Solar gain should be zero during night hours
@@ -99,9 +122,12 @@ mod tests {
         // Solar should be zero during night hours (typically hours 0-5)
         // Check first few hours (Jan 1, midnight to 5 AM)
         for i in 0..6 {
-            assert!(ep.solar_rate_total_w[i] < 1.0,
+            assert!(
+                ep.solar_rate_total_w[i] < 1.0,
                 "Solar should be near zero at night hour {}, got {:.2} W",
-                i, ep.solar_rate_total_w[i]);
+                i,
+                ep.solar_rate_total_w[i]
+            );
         }
     }
 
@@ -124,13 +150,18 @@ mod tests {
         // Max solar should be around noon (hour 11-13 for local time)
         // Note: EnergyPlus uses UTC, so adjust for Denver time zone (-7 hours)
         // Hour 18 in UTC = 11 AM MST
-        assert!(max_hour >= 17 && max_hour <= 19,
+        assert!(
+            max_hour >= 17 && max_hour <= 19,
             "Max solar should occur around noon UTC (hours 17-19), got hour {}",
-            max_hour);
+            max_hour
+        );
 
         // Max solar should be reasonable (500-600 W for Denver)
-        assert!(max_solar > 400.0 && max_solar < 700.0,
-            "Max solar should be 400-700 W, got {:.2} W", max_solar);
+        assert!(
+            max_solar > 400.0 && max_solar < 700.0,
+            "Max solar should be 400-700 W, got {:.2} W",
+            max_solar
+        );
     }
 
     // Test 4: Solar gain should follow seasonal pattern
@@ -161,9 +192,12 @@ mod tests {
         let winter_avg = winter_solar / winter_hours as f64;
 
         // Summer should have higher solar than winter
-        assert!(summer_avg > winter_avg,
+        assert!(
+            summer_avg > winter_avg,
             "Summer solar ({:.2} W) should be higher than winter ({:.2} W)",
-            summer_avg, winter_avg);
+            summer_avg,
+            winter_avg
+        );
     }
 
     // Test 5: Solar gain correlation with temperature
@@ -174,7 +208,7 @@ mod tests {
         // On sunny days, solar gain should correlate with temperature rise
         // Check day with high solar (hour ~4320, ~day 180, June 28)
         let solar_hour = 4320;
-        let high_solar_threshold = 400.0;  // W
+        let high_solar_threshold = 400.0; // W
 
         if ep.solar_rate_total_w[solar_hour] > high_solar_threshold {
             // Zone temperature should rise during the day when solar is high
@@ -187,15 +221,21 @@ mod tests {
 
             // With high solar, temperature should be rising
             if solar_hour >= 3 {
-                assert!(temp_at_solar > temp_before,
+                assert!(
+                    temp_at_solar > temp_before,
                     "Temperature should rise with solar: before ({:.2} C) -> at solar ({:.2} C)",
-                    temp_before, temp_at_solar);
+                    temp_before,
+                    temp_at_solar
+                );
             }
 
             if solar_hour < 8760 - 3 {
-                assert!(temp_after > temp_at_solar,
+                assert!(
+                    temp_after > temp_at_solar,
                     "Temperature should continue rising: at solar ({:.2} C) -> after ({:.2} C)",
-                    temp_at_solar, temp_after);
+                    temp_at_solar,
+                    temp_after
+                );
             }
         }
     }
@@ -207,9 +247,11 @@ mod tests {
 
         // Total solar energy should be positive
         let total_solar_energy: f64 = ep.solar_rate_total_w.iter().sum::<f64>();
-        assert!(total_solar_energy > 10000.0,
+        assert!(
+            total_solar_energy > 10000.0,
             "Total solar energy should be significant, got {:.2} Wh",
-            total_solar_energy);
+            total_solar_energy
+        );
 
         // Calculate rough annual solar estimate
         // Denver ~1700 kWh/m²/year direct solar
@@ -218,9 +260,11 @@ mod tests {
         let estimated_annual_mwh = total_solar_energy / 1000.0 / 8760.0;
 
         // Should be in reasonable range (5-30 MWh depending on assumptions)
-        assert!(estimated_annual_mwh > 5.0 && estimated_annual_mwh < 50.0,
+        assert!(
+            estimated_annual_mwh > 5.0 && estimated_annual_mwh < 50.0,
             "Estimated annual solar should be 5-50 MWh, got {:.2} MWh",
-            estimated_annual_mwh);
+            estimated_annual_mwh
+        );
     }
 
     // Test 7: Solar gain should be zero during cloudy days
@@ -230,7 +274,7 @@ mod tests {
 
         // Find days with low solar (potential cloudy days)
         // Define low solar threshold
-        let low_solar_threshold = 50.0;  // W
+        let low_solar_threshold = 50.0; // W
 
         let mut low_solar_hours = 0;
         let mut total_hours_checked = 0;
@@ -247,9 +291,11 @@ mod tests {
         let low_solar_fraction = low_solar_hours as f64 / total_hours_checked as f64;
 
         // Denver should have some cloudy periods
-        assert!(low_solar_fraction > 0.05 && low_solar_fraction < 0.5,
+        assert!(
+            low_solar_fraction > 0.05 && low_solar_fraction < 0.5,
             "Cloudy period fraction should be 5-50%, got {:.1}%",
-            low_solar_fraction * 100.0);
+            low_solar_fraction * 100.0
+        );
     }
 
     // Test 8: Solar rate units and scale
@@ -262,15 +308,24 @@ mod tests {
         // Peak DNI ~900 W/m²
         // Expected peak: 900 * 12 * 0.8 ≈ 8640 W (but actual window area less)
 
-        let max_solar = ep.solar_rate_total_w.iter().fold(0.0_f64, |a, &b| a.max(*b));
+        let max_solar = ep
+            .solar_rate_total_w
+            .iter()
+            .fold(0.0_f64, |a, &b| a.max(*b));
 
         // Should be less than 10 kW (typical residential)
-        assert!(max_solar < 10000.0,
-            "Max solar rate should be < 10 kW, got {:.2} W", max_solar);
+        assert!(
+            max_solar < 10000.0,
+            "Max solar rate should be < 10 kW, got {:.2} W",
+            max_solar
+        );
 
         // Should be significant (> 1 kW)
-        assert!(max_solar > 1000.0,
-            "Max solar rate should be > 1 kW, got {:.2} W", max_solar);
+        assert!(
+            max_solar > 1000.0,
+            "Max solar rate should be > 1 kW, got {:.2} W",
+            max_solar
+        );
     }
 
     // Test 9: Solar gain time continuity
@@ -295,9 +350,11 @@ mod tests {
 
         // Should have very few or no unrealistic jumps
         let jump_fraction = unrealistic_jumps as f64 / ep.solar_rate_total_w.len() as f64;
-        assert!(jump_fraction < 0.001,
+        assert!(
+            jump_fraction < 0.001,
             "Unrealistic solar jumps should be < 0.1%, got {:.3}%",
-            jump_fraction * 100.0);
+            jump_fraction * 100.0
+        );
     }
 
     // Test 10: Solar gain daily pattern
@@ -308,30 +365,41 @@ mod tests {
         // Solar should follow daily pattern: zero at night, rise morning, peak noon, decline afternoon
         // Check a typical sunny day (e.g., June 21, hour 4320)
 
-        let day_start = 4320;  // Hour 4320 = June 21, 0:00
-        let day_hours: Vec<f64> = (0..24).map(|h| ep.solar_rate_total_w[day_start + h] as usize).collect();
+        let day_start = 4320; // Hour 4320 = June 21, 0:00
+        let day_hours: Vec<f64> = (0..24)
+            .map(|h| ep.solar_rate_total_w[day_start + h] as usize)
+            .collect();
 
         // Night (hours 0-5): should be zero
         for i in 0..6 {
-            assert!(day_hours[i] < 10.0,
+            assert!(
+                day_hours[i] < 10.0,
                 "Solar should be near zero at night hour {}, got {:.2} W",
-                i, day_hours[i]);
+                i,
+                day_hours[i]
+            );
         }
 
         // Solar should increase from morning to noon
         let morning_peak = day_hours[6..12].iter().fold(0.0_f64, |a, &b| a.max(*b));
         let noon_peak = day_hours[11..14].iter().fold(0.0_f64, |a, &b| a.max(*b));
 
-        assert!(noon_peak >= morning_peak,
+        assert!(
+            noon_peak >= morning_peak,
             "Noon solar ({:.2} W) should be >= morning ({:.2} W)",
-            noon_peak, morning_peak);
+            noon_peak,
+            morning_peak
+        );
 
         // Solar should decline afternoon
         let afternoon_peak = day_hours[14..18].iter().fold(0.0_f64, |a, &b| a.max(*b));
 
         // Noon should be higher than afternoon
-        assert!(noon_peak > afternoon_peak,
+        assert!(
+            noon_peak > afternoon_peak,
             "Noon solar ({:.2} W) should be > afternoon ({:.2} W)",
-            noon_peak, afternoon_peak);
+            noon_peak,
+            afternoon_peak
+        );
     }
 }

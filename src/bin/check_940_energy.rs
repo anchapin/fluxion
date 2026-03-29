@@ -1,7 +1,7 @@
 // Check if Case 940 energy tracking includes correction
 use fluxion::validation::ashrae_140_cases::CaseBuilder;
-use fluxion::weather::WeatherSource;
 use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::WeatherSource;
 
 fn main() {
     let spec = CaseBuilder::case_940_setback();
@@ -9,7 +9,10 @@ fn main() {
 
     println!("=== Case 940 Energy Tracking Check ===");
     println!("Case ID: {}", spec.case_id);
-    println!("Time constant sensitivity correction: {:.2}", model.time_constant_sensitivity_correction);
+    println!(
+        "Time constant sensitivity correction: {:.2}",
+        model.time_constant_sensitivity_correction
+    );
 
     // Run a few timesteps to see if energy is being tracked with correction
     let weather = DenverTmyWeather::new();
@@ -22,8 +25,14 @@ fn main() {
     }
 
     println!("After {} steps:", num_steps);
-    println!("  Annual heating energy (MWh): {:.4}", model.annual_heating_energy);
-    println!("  Annual cooling energy (MWh): {:.4}", model.annual_cooling_energy);
+    println!(
+        "  Annual heating energy (MWh): {:.4}",
+        model.annual_heating_energy
+    );
+    println!(
+        "  Annual cooling energy (MWh): {:.4}",
+        model.annual_cooling_energy
+    );
 
     // Run full year
     let mut model_full = fluxion::sim::engine::ThermalModel::from_spec(&spec);
@@ -34,8 +43,14 @@ fn main() {
     }
 
     println!("After full year (8760 steps):");
-    println!("  Annual heating energy (MWh): {:.4}", model_full.annual_heating_energy);
-    println!("  Annual cooling energy (MWh): {:.4}", model_full.annual_cooling_energy);
+    println!(
+        "  Annual heating energy (MWh): {:.4}",
+        model_full.annual_heating_energy
+    );
+    println!(
+        "  Annual cooling energy (MWh): {:.4}",
+        model_full.annual_cooling_energy
+    );
     println!("  Expected heating: 0.79-1.41 MWh");
     println!("  Expected cooling: 2.08-3.55 MWh");
 }

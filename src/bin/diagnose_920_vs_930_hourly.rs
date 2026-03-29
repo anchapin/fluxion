@@ -3,8 +3,8 @@
 //! This diagnostic compares free-floating temperatures and cooling demand
 //! throughout the day to identify when the 3.4x discrepancy occurs.
 
-use fluxion::sim::engine::ThermalModel;
 use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 fn main() {
@@ -30,8 +30,12 @@ fn main() {
 
     println!("Outdoor temp: {}°C (constant for testing)", outdoor_temp);
     println!();
-    println!("Hour | Ti_920 (°C) | Ti_930 (°C) | Diff (°C) | Cooling_920 (W) | Cooling_930 (W) | Ratio");
-    println!("-----|-------------|-------------|-----------|----------------|----------------|-------");
+    println!(
+        "Hour | Ti_920 (°C) | Ti_930 (°C) | Diff (°C) | Cooling_920 (W) | Cooling_930 (W) | Ratio"
+    );
+    println!(
+        "-----|-------------|-------------|-----------|----------------|----------------|-------"
+    );
 
     let cooling_setpoint = 27.0;
     let mut total_cooling_920 = 0.0;
@@ -65,15 +69,20 @@ fn main() {
             0.0
         };
 
-        println!("{:5} | {:11.2} | {:11.2} | {:9.2} | {:14.0} | {:14.0} | {:.2}",
-            hour, ti_920, ti_930, diff, cooling_920, cooling_930, ratio);
+        println!(
+            "{:5} | {:11.2} | {:11.2} | {:9.2} | {:14.0} | {:14.0} | {:.2}",
+            hour, ti_920, ti_930, diff, cooling_920, cooling_930, ratio
+        );
     }
 
     println!();
     println!("=== Summary ===");
     println!("Total cooling 920: {:.0} Wh", total_cooling_920);
     println!("Total cooling 930: {:.0} Wh", total_cooling_930);
-    println!("Ratio (930/920): {:.2}", total_cooling_930 / total_cooling_920);
+    println!(
+        "Ratio (930/920): {:.2}",
+        total_cooling_930 / total_cooling_920
+    );
     println!();
 
     println!("=== Validation Results ===");

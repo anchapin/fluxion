@@ -6,9 +6,9 @@
 // Hypothesis: Low thermal mass causes different physics than high-mass cases.
 // This diagnostic helps understand the thermal dynamics.
 
+use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::physics::cta::VectorField;
 
 fn main() {
     println!("============================================================");
@@ -16,11 +16,13 @@ fn main() {
     println!("============================================================\n");
 
     // Cases to diagnose
-    let cases = vec![("600", ASHRAE140Case::Case600),
-                     ("610", ASHRAE140Case::Case610),
-                     ("620", ASHRAE140Case::Case620),
-                     ("630", ASHRAE140Case::Case630),
-                     ("640", ASHRAE140Case::Case640)];
+    let cases = vec![
+        ("600", ASHRAE140Case::Case600),
+        ("610", ASHRAE140Case::Case610),
+        ("620", ASHRAE140Case::Case620),
+        ("630", ASHRAE140Case::Case630),
+        ("640", ASHRAE140Case::Case640),
+    ];
 
     for (case_id, case) in cases {
         println!("\n{}", "=".repeat(70));
@@ -54,24 +56,47 @@ fn main() {
 fn print_case_specs(spec: &fluxion::validation::ashrae_140_cases::CaseSpec) {
     println!("\nCase Specifications:");
     println!("  Floor Area: {:.2} m²", spec.geometry[0].floor_area());
-    println!("  Window Area: {:.2} m²", spec.windows[0].iter().map(|w| w.area).sum::<f64>());
-    println!("  Window Ratio: {:.2}", spec.windows[0].iter().map(|w| w.area).sum::<f64>() / spec.geometry[0].floor_area());
+    println!(
+        "  Window Area: {:.2} m²",
+        spec.windows[0].iter().map(|w| w.area).sum::<f64>()
+    );
+    println!(
+        "  Window Ratio: {:.2}",
+        spec.windows[0].iter().map(|w| w.area).sum::<f64>() / spec.geometry[0].floor_area()
+    );
 
     // Construction
     println!("\n  Construction:");
-    println!("    Wall U-value: {:.3} W/m²K", spec.construction.wall.u_value(None, None));
-    println!("    Roof U-value: {:.3} W/m²K", spec.construction.roof.u_value(None, None));
-    println!("    Floor U-value: {:.3} W/m²K", spec.construction.floor.u_value(None, None));
+    println!(
+        "    Wall U-value: {:.3} W/m²K",
+        spec.construction.wall.u_value(None, None)
+    );
+    println!(
+        "    Roof U-value: {:.3} W/m²K",
+        spec.construction.roof.u_value(None, None)
+    );
+    println!(
+        "    Floor U-value: {:.3} W/m²K",
+        spec.construction.floor.u_value(None, None)
+    );
 
     // Thermal mass
-    let wall_cap = spec.construction.wall.iso_13790_effective_capacitance_per_area();
-    let roof_cap = spec.construction.roof.iso_13790_effective_capacitance_per_area();
+    let wall_cap = spec
+        .construction
+        .wall
+        .iso_13790_effective_capacitance_per_area();
+    let roof_cap = spec
+        .construction
+        .roof
+        .iso_13790_effective_capacitance_per_area();
     println!("\n  Thermal Mass:");
     println!("    Wall κ: {:.2} kJ/m²K", wall_cap / 1000.0);
     println!("    Roof κ: {:.2} kJ/m²K", roof_cap / 1000.0);
 }
 
-fn create_model(spec: &fluxion::validation::ashrae_140_cases::CaseSpec) -> ThermalModel<VectorField> {
+fn create_model(
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+) -> ThermalModel<VectorField> {
     ThermalModel::from_spec(spec)
 }
 
@@ -85,19 +110,37 @@ fn print_thermal_properties(model: &ThermalModel<VectorField>, _case_id: &str) {
 
     // Classify as low-mass or high-mass
     let is_low_mass = total_cap < 5.0e6;
-    println!("  Mass Class: {}", if is_low_mass { "LOW-MASS" } else { "HIGH-MASS" });
+    println!(
+        "  Mass Class: {}",
+        if is_low_mass { "LOW-MASS" } else { "HIGH-MASS" }
+    );
 
     // Conductances
     println!("\n  Conductances:");
-    println!("    h_tr_em: {:.2} W/K (exterior->mass)", model.h_tr_em.as_ref()[0]);
-    println!("    h_tr_ms: {:.2} W/K (mass->surface)", model.h_tr_ms.as_ref()[0]);
-    println!("    h_tr_is: {:.2} W/K (surface->interior)", model.h_tr_is.as_ref()[0]);
+    println!(
+        "    h_tr_em: {:.2} W/K (exterior->mass)",
+        model.h_tr_em.as_ref()[0]
+    );
+    println!(
+        "    h_tr_ms: {:.2} W/K (mass->surface)",
+        model.h_tr_ms.as_ref()[0]
+    );
+    println!(
+        "    h_tr_is: {:.2} W/K (surface->interior)",
+        model.h_tr_is.as_ref()[0]
+    );
     println!("    h_tr_w:  {:.2} W/K (windows)", model.h_tr_w.as_ref()[0]);
-    println!("    h_ve:    {:.2} W/K (ventilation)", model.h_ve.as_ref()[0]);
+    println!(
+        "    h_ve:    {:.2} W/K (ventilation)",
+        model.h_ve.as_ref()[0]
+    );
 
     // Coupling ratio
     let coupling_ratio = model.h_tr_em.as_ref()[0] / model.h_tr_ms.as_ref()[0];
-    println!("\n  Coupling Ratio (h_tr_em / h_tr_ms): {:.3}", coupling_ratio);
+    println!(
+        "\n  Coupling Ratio (h_tr_em / h_tr_ms): {:.3}",
+        coupling_ratio
+    );
     if coupling_ratio < 0.1 {
         println!("    ⚠️  WARNING: Coupling ratio < 0.1 (ASHRAE 140 requirement)");
     }
@@ -161,7 +204,10 @@ fn calculate_time_constants(model: &ThermalModel<VectorField>, _case_id: &str) {
     } else {
         0.5
     };
-    println!("    Mass coupling factor: {:.2} (fraction to mass)", mass_coupling_factor);
+    println!(
+        "    Mass coupling factor: {:.2} (fraction to mass)",
+        mass_coupling_factor
+    );
     println!("    - Low mass: More gains go directly to air");
     println!("    - This causes faster temperature swings");
     println!("    - ISSUE: Current HVAC modulation may be too aggressive");

@@ -1,7 +1,7 @@
 // Compare 900-series high-mass cases with 600-series low-mass cases
+use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::physics::cta::VectorField;
 
 fn main() {
     println!("============================================================");
@@ -42,7 +42,10 @@ fn main() {
 
         // Coupling ratio
         let coupling_ratio = h_tr_em / h_tr_ms;
-        println!("\nCoupling Ratio (h_tr_em / h_tr_ms): {:.3}", coupling_ratio);
+        println!(
+            "\nCoupling Ratio (h_tr_em / h_tr_ms): {:.3}",
+            coupling_ratio
+        );
         if coupling_ratio < 0.1 {
             println!("  ⚠️  BELOW ASHRAE 140 requirement (0.1)");
         } else {

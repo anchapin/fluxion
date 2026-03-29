@@ -1,6 +1,6 @@
 // Quick diagnostic to check setback schedule for Case 940
-use fluxion::validation::ashrae_140_cases::CaseBuilder;
 use fluxion::sim::engine::ThermalModel;
+use fluxion::validation::ashrae_140_cases::CaseBuilder;
 
 fn main() {
     let spec = CaseBuilder::case_940_setback();
@@ -15,7 +15,11 @@ fn main() {
     println!("\n=== Heating Schedule (24 hours) ===");
     for hour in 0..24 {
         let setpoint = model.heating_schedule.value(hour);
-        let status = if setpoint == 10.0 { "SETBACK" } else { "NORMAL" };
+        let status = if setpoint == 10.0 {
+            "SETBACK"
+        } else {
+            "NORMAL"
+        };
         println!("Hour {:2}: Setpoint = {:.1}°C [{}]", hour, setpoint, status);
     }
 

@@ -3,8 +3,8 @@
 //! This diagnostic checks if the free-floating temperature calculation
 //! is working correctly for E/W vs South window configurations.
 
-use fluxion::sim::engine::ThermalModel;
 use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 fn main() {
@@ -62,7 +62,10 @@ fn main() {
     println!();
 
     if cooling_excess_900 > 0.0 && cooling_excess_920 > 0.0 {
-        println!("Ratio (920/900): {:.2}", cooling_excess_920 / cooling_excess_900);
+        println!(
+            "Ratio (920/900): {:.2}",
+            cooling_excess_920 / cooling_excess_900
+        );
         println!();
         println!("Expected cooling load ratio should match this temperature excess ratio");
     } else if cooling_excess_900 > 0.0 {

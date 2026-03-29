@@ -134,10 +134,7 @@ fn test_case_with_solar_fraction(
         }
     }
 
-    (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
-    )
+    (annual_heating_joules / 3.6e9, annual_cooling_joules / 3.6e9)
 }
 
 fn test_case_with_air_fraction(
@@ -165,10 +162,7 @@ fn test_case_with_air_fraction(
         }
     }
 
-    (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
-    )
+    (annual_heating_joules / 3.6e9, annual_cooling_joules / 3.6e9)
 }
 
 fn test_case_combined(
@@ -198,8 +192,5 @@ fn test_case_combined(
         }
     }
 
-    (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
-    )
+    (annual_heating_joules / 3.6e9, annual_cooling_joules / 3.6e9)
 }

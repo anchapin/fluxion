@@ -29,7 +29,10 @@ fn main() {
     println!("\n📊 Wall Properties:");
     println!("  Total resistance: {:.3} m²K/W", r_total);
     println!("  U-value: {:.3} W/m²K", u_value);
-    println!("  Time constant: {:.1} hours", r_total * 2240.0 * 920.0 / 3600.0);
+    println!(
+        "  Time constant: {:.1} hours",
+        r_total * 2240.0 * 920.0 / 3600.0
+    );
 
     // Compute CTF coefficients
     let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
@@ -38,8 +41,16 @@ fn main() {
     println!("  X[0] = {:.6} (should ≈ U-value)", coeffs.x[0]);
     println!("  Y[0] = {:.6} (should ≈ U-value)", coeffs.y[0]);
     println!("  Z[0] = {:.6} (should ≈ U-value)", coeffs.z[0]);
-    println!("  Sum X = {:.6} (should = {:.6})", coeffs.x.iter().sum::<f64>(), u_value);
-    println!("  Sum Y = {:.6} (should = {:.6})", coeffs.y.iter().sum::<f64>(), u_value);
+    println!(
+        "  Sum X = {:.6} (should = {:.6})",
+        coeffs.x.iter().sum::<f64>(),
+        u_value
+    );
+    println!(
+        "  Sum Y = {:.6} (should = {:.6})",
+        coeffs.y.iter().sum::<f64>(),
+        u_value
+    );
 
     // Create solver
     let config = CTFSolverConfig::new(3600.0, 50);
@@ -62,9 +73,11 @@ fn main() {
 
     println!("\n  Average flux: {:.2} W/m²", avg_flux);
     println!("  Expected flux (U·ΔT): {:.2} W/m²", expected_flux);
-    println!("  Difference: {:.2} W/m² ({:.1}%)",
+    println!(
+        "  Difference: {:.2} W/m² ({:.1}%)",
         avg_flux - expected_flux,
-        100.0 * (avg_flux - expected_flux).abs() / expected_flux.abs());
+        100.0 * (avg_flux - expected_flux).abs() / expected_flux.abs()
+    );
 
     // Check sign
     if avg_flux < 0.0 {
@@ -92,9 +105,11 @@ fn main() {
 
     println!("\n  Average flux: {:.2} W/m²", avg_flux);
     println!("  Expected flux (U·ΔT): {:.2} W/m²", expected_flux);
-    println!("  Difference: {:.2} W/m² ({:.1}%)",
+    println!(
+        "  Difference: {:.2} W/m² ({:.1}%)",
         avg_flux - expected_flux,
-        100.0 * (avg_flux - expected_flux).abs() / expected_flux.abs());
+        100.0 * (avg_flux - expected_flux).abs() / expected_flux.abs()
+    );
 
     // Check sign
     if avg_flux > 0.0 {

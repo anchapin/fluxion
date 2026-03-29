@@ -18,7 +18,10 @@ fn main() {
         "900" // Default to Case 900
     };
 
-    println!("=== Peak Load Diagnostic Analysis for Case {} ===\n", case_id);
+    println!(
+        "=== Peak Load Diagnostic Analysis for Case {} ===\n",
+        case_id
+    );
 
     // Create model for the specified case
     let case = match case_id {
@@ -65,7 +68,10 @@ fn main() {
     // Print reference ranges for comparison
     println!("=== Reference Ranges (for comparison) ===\n");
     println!("Check validation output for reference ranges.");
-    println!("Run: cargo run --release --bin fluxion validate --case {}", case_id);
+    println!(
+        "Run: cargo run --release --bin fluxion validate --case {}",
+        case_id
+    );
     println!();
 
     // Analysis
@@ -113,7 +119,10 @@ fn main() {
     println!();
 
     println!("2. Thermal Mass Effects:");
-    if matches!(spec.construction_type, fluxion::validation::ashrae_140_cases::ConstructionType::HighMass) {
+    if matches!(
+        spec.construction_type,
+        fluxion::validation::ashrae_140_cases::ConstructionType::HighMass
+    ) {
         println!("   - High-mass construction (900 series)");
         println!("   - Thermal mass buffers temperature extremes");
         println!("   - Peak loads may be dampened compared to low-mass");

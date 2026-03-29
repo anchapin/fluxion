@@ -1,8 +1,8 @@
 // Solar Gain Unit Tests for ASHRAE 140 Case 900
 // Standalone test binary to verify solar gain calculations against EnergyPlus reference
 
-use std::fs;
 use serde_json;
+use std::fs;
 
 fn main() {
     println!("=== Solar Gain Unit Tests ===");
@@ -23,13 +23,34 @@ fn main() {
     let mut ignored = 0;
 
     let tests = vec![
-        ("test_energyplus_reference_validity", "EnergyPlus reference data validity"),
-        ("test_solar_gain_zero_at_night", "Solar gain zero during night hours"),
-        ("test_solar_gain_peaks_at_noon", "Solar gain peaks around noon"),
-        ("test_solar_gain_seasonal_pattern", "Solar gain seasonal pattern"),
-        ("test_solar_gain_temperature_correlation", "Solar gain temperature correlation"),
-        ("test_solar_energy_conservation", "Solar energy conservation"),
-        ("test_solar_gain_cloudy_days", "Solar gain zero during cloudy days"),
+        (
+            "test_energyplus_reference_validity",
+            "EnergyPlus reference data validity",
+        ),
+        (
+            "test_solar_gain_zero_at_night",
+            "Solar gain zero during night hours",
+        ),
+        (
+            "test_solar_gain_peaks_at_noon",
+            "Solar gain peaks around noon",
+        ),
+        (
+            "test_solar_gain_seasonal_pattern",
+            "Solar gain seasonal pattern",
+        ),
+        (
+            "test_solar_gain_temperature_correlation",
+            "Solar gain temperature correlation",
+        ),
+        (
+            "test_solar_energy_conservation",
+            "Solar energy conservation",
+        ),
+        (
+            "test_solar_gain_cloudy_days",
+            "Solar gain zero during cloudy days",
+        ),
         ("test_solar_rate_units", "Solar rate units and scale"),
         ("test_solar_gain_continuity", "Solar gain time continuity"),
         ("test_solar_daily_pattern", "Solar gain daily pattern"),
@@ -58,9 +79,21 @@ fn main() {
 
     println!("\n=== Test Results ===");
     println!("Total: {} tests", tests.len());
-    println!("Passed: {} ({:.1}%)", passed, (passed as f64 / tests.len() as f64) * 100.0);
-    println!("Failed: {} ({:.1}%)", failed, (failed as f64 / tests.len() as f64) * 100.0);
-    println!("Ignored: {} ({:.1}%)", ignored, (ignored as f64 / tests.len() as f64) * 100.0);
+    println!(
+        "Passed: {} ({:.1}%)",
+        passed,
+        (passed as f64 / tests.len() as f64) * 100.0
+    );
+    println!(
+        "Failed: {} ({:.1}%)",
+        failed,
+        (failed as f64 / tests.len() as f64) * 100.0
+    );
+    println!(
+        "Ignored: {} ({:.1}%)",
+        ignored,
+        (ignored as f64 / tests.len() as f64) * 100.0
+    );
 
     // Exit with error code if any tests failed
     std::process::exit(if failed > 0 { 1 } else { 0 });
@@ -77,7 +110,7 @@ struct EnergyPlusReference {
 fn load_energyplus_reference() -> Result<EnergyPlusReference, Box<dyn std::error::Error>> {
     let path = "benchmarks/outputs/bestest_gsr/case_900/run/reference_data.json";
     let file = fs::File::open(path).map_err(|e| e.to_string())?;
-    let data: serde_json::from_reader(file).map_err(|e| e.to_string())?;
+    let data: EnergyPlusReference = serde_json::from_reader(file).map_err(|e| e.to_string())?;
 
     Ok(data)
 }
@@ -107,16 +140,28 @@ fn run_test(test_name: &str, ep: &EnergyPlusReference) -> TestResult {
 fn test_energyplus_reference_validity(ep: &EnergyPlusReference) -> TestResult {
     // Verify we have 8760 hours of data
     if ep.zone_air_temp_c.len() != 8760 {
-        return TestResult::Fail(format!("Zone temperature should have 8760 hours, got {}", ep.zone_air_temp_c.len()));
+        return TestResult::Fail(format!(
+            "Zone temperature should have 8760 hours, got {}",
+            ep.zone_air_temp_c.len()
+        ));
     }
     if ep.heating_energy_wh.len() != 8760 {
-        return TestResult::Fail(format!("Heating energy should have 8760 hours, got {}", ep.heating_energy_wh.len()));
+        return TestResult::Fail(format!(
+            "Heating energy should have 8760 hours, got {}",
+            ep.heating_energy_wh.len()
+        ));
     }
     if ep.cooling_energy_wh.len() != 8760 {
-        return TestResult::Fail(format!("Cooling energy should have 8760 hours, got {}", ep.cooling_energy_wh.len()));
+        return TestResult::Fail(format!(
+            "Cooling energy should have 8760 hours, got {}",
+            ep.cooling_energy_wh.len()
+        ));
     }
     if ep.solar_rate_total_w.len() != 8760 {
-        return TestResult::Fail(format!("Solar rate should have 8760 hours, got {}", ep.solar_rate_total_w.len()));
+        return TestResult::Fail(format!(
+            "Solar rate should have 8760 hours, got {}",
+            ep.solar_rate_total_w.len()
+        ));
     }
 
     // Verify annual totals match expected EnergyPlus values
@@ -126,10 +171,16 @@ fn test_energyplus_reference_validity(ep: &EnergyPlusReference) -> TestResult {
     // EnergyPlus reference from energyplus_reference_data.json:
     // Heating: 1.661 MWh, Cooling: 2.497 MWh
     if heating_mwh < 1.6 || heating_mwh > 1.7 {
-        return TestResult::Fail(format!("Heating should be ~1.66 MWh, got {:.3} MWh", heating_mwh));
+        return TestResult::Fail(format!(
+            "Heating should be ~1.66 MWh, got {:.3} MWh",
+            heating_mwh
+        ));
     }
     if cooling_mwh < 2.4 || cooling_mwh > 2.6 {
-        return TestResult::Fail(format!("Cooling should be ~2.50 MWh, got {:.3} MWh", cooling_mwh));
+        return TestResult::Fail(format!(
+            "Cooling should be ~2.50 MWh, got {:.3} MWh",
+            cooling_mwh
+        ));
     }
 
     TestResult::Pass
@@ -226,7 +277,7 @@ fn test_solar_gain_temperature_correlation(ep: &EnergyPlusReference) -> TestResu
     // On sunny days, solar gain should correlate with temperature rise
     // Check day with high solar (hour ~4320, ~day 180, June 28)
     let solar_hour = 4320;
-    let high_solar_threshold = 400.0;  // W
+    let high_solar_threshold = 400.0; // W
 
     if ep.solar_rate_total_w[solar_hour] > high_solar_threshold {
         // Zone temperature should rise during the day when solar is high
@@ -234,8 +285,16 @@ fn test_solar_gain_temperature_correlation(ep: &EnergyPlusReference) -> TestResu
 
         // Check temperature at solar_hour vs temperature at solar_hour - 3 and + 3
         let temp_at_solar = ep.zone_air_temp_c[solar_hour];
-        let temp_before = if solar_hour >= 3 { ep.zone_air_temp_c[solar_hour - 3] } else { 20.0 };
-        let temp_after = if solar_hour < 8760 - 3 { ep.zone_air_temp_c[solar_hour + 3] } else { temp_at_solar };
+        let temp_before = if solar_hour >= 3 {
+            ep.zone_air_temp_c[solar_hour - 3]
+        } else {
+            20.0
+        };
+        let temp_after = if solar_hour < 8760 - 3 {
+            ep.zone_air_temp_c[solar_hour + 3]
+        } else {
+            temp_at_solar
+        };
 
         // With high solar, temperature should be rising
         if solar_hour >= 3 {
@@ -291,7 +350,7 @@ fn test_solar_energy_conservation(ep: &EnergyPlusReference) -> TestResult {
 fn test_solar_gain_cloudy_days(ep: &EnergyPlusReference) -> TestResult {
     // Find days with low solar (potential cloudy days)
     // Define low solar threshold
-    let low_solar_threshold = 50.0;  // W
+    let low_solar_threshold = 50.0; // W
 
     let mut low_solar_hours = 0;
     let mut total_hours_checked = 0;
@@ -324,7 +383,10 @@ fn test_solar_rate_units(ep: &EnergyPlusReference) -> TestResult {
     // Peak DNI ~900 W/m²
     // Expected peak: 900 * 12 * 0.8 ≈ 8640 W (but actual window area less)
 
-    let max_solar = ep.solar_rate_total_w.iter().fold(0.0_f64, |a, &b| a.max(*b));
+    let max_solar = ep
+        .solar_rate_total_w
+        .iter()
+        .fold(0.0_f64, |a, &b| a.max(*b));
 
     // Should be less than 10 kW (typical residential)
     if max_solar > 10000.0 {
@@ -377,8 +439,10 @@ fn test_solar_daily_pattern(ep: &EnergyPlusReference) -> TestResult {
     // Solar should follow daily pattern: zero at night, rise morning, peak noon, decline afternoon
     // Check a typical sunny day (e.g., June 21, hour 4320)
 
-    let day_start = 4320;  // Hour 4320 = June 21, 0:00
-    let day_hours: Vec<f64> = (0..24).map(|h| ep.solar_rate_total_w[day_start + h]).collect();
+    let day_start = 4320; // Hour 4320 = June 21, 0:00
+    let day_hours: Vec<f64> = (0..24)
+        .map(|h| ep.solar_rate_total_w[day_start + h])
+        .collect();
 
     // Night (hours 0-5): should be zero
     for i in 0..6 {

@@ -150,8 +150,5 @@ fn test_case_with_am_factor(
         }
     }
 
-    (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
-    )
+    (annual_heating_joules / 3.6e9, annual_cooling_joules / 3.6e9)
 }

@@ -9,10 +9,10 @@
 //
 // This is likely the root cause of 2-3x overprediction in Case 900.
 
+use fluxion::physics::constants::thermal::ISO13790_CONSTANTS;
 use fluxion::sim::construction::ConstructionSpec;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, ConstructionType};
-use fluxion::physics::constants::thermal::ISO13790_CONSTANTS;
 
 const EPSILON: f64 = 1e-10;
 
@@ -95,12 +95,20 @@ mod tests {
         let mut model = ThermalModel::from_spec(&spec);
 
         // Calculate total R
-        let total_r: f64 = spec.construction.wall.layers.iter()
+        let total_r: f64 = spec
+            .construction
+            .wall
+            .layers
+            .iter()
             .map(|l| l.thickness / l.conductivity)
             .sum::<f64>();
 
         // Calculate total C (using zone area = 48 m²)
-        let total_c: f64 = spec.construction.wall.layers.iter()
+        let total_c: f64 = spec
+            .construction
+            .wall
+            .layers
+            .iter()
             .map(|l| l.thickness * l.density * l.specific_heat * 48.0)
             .sum::<f64>();
 
@@ -121,11 +129,19 @@ mod tests {
         let low_spec = ASHRAE140Case::Case600.spec();
         let mut low_model = ThermalModel::from_spec(&low_spec);
 
-        let total_r_low: f64 = low_spec.construction.wall.layers.iter()
+        let total_r_low: f64 = low_spec
+            .construction
+            .wall
+            .layers
+            .iter()
             .map(|l| l.thickness / l.conductivity)
             .sum::<f64>();
 
-        let total_c_low: f64 = low_spec.construction.wall.layers.iter()
+        let total_c_low: f64 = low_spec
+            .construction
+            .wall
+            .layers
+            .iter()
             .map(|l| l.thickness * l.density * l.specific_heat * 48.0)
             .sum::<f64>();
 
@@ -138,9 +154,11 @@ mod tests {
         );
 
         // High-mass should have τ >> low-mass
-        assert!(tau_hours > tau_hours_low,
+        assert!(
+            tau_hours > tau_hours_low,
             "High-mass τ ({:.1}h) should be >> low-mass τ ({:.1}h)",
-            tau_hours, tau_hours_low
+            tau_hours,
+            tau_hours_low
         );
     }
 
@@ -298,13 +316,15 @@ mod tests {
         let high_tau = calculate_tau(&high_model);
 
         // Low-mass should have small τ
-        assert!(low_tau < 10.0,
+        assert!(
+            low_tau < 10.0,
             "Low-mass τ should be < 10 hours, got {:.1} hours",
             low_tau
         );
 
         // High-mass should have large τ
-        assert!(high_tau > 50.0,
+        assert!(
+            high_tau > 50.0,
             "High-mass τ should be > 50 hours, got {:.1} hours",
             high_tau
         );
@@ -314,9 +334,11 @@ mod tests {
         let high_h_tr_ms = high_model.h_tr_ms.as_ref().get(0).copied().unwrap_or(0.0);
 
         // High-mass should have lower conductance (better insulated)
-        assert!(high_h_tr_ms < low_h_tr_ms,
+        assert!(
+            high_h_tr_ms < low_h_tr_ms,
             "High-mass h_tr_ms ({:.2} W/K) should be < low-mass ({:.2} W/K)",
-            high_h_tr_ms, low_h_tr_ms
+            high_h_tr_ms,
+            low_h_tr_ms
         );
 
         // High-mass should be more thermally resistive to heat flow
@@ -375,10 +397,16 @@ mod tests {
         let spec = ASHRAE140Case::Case900.spec();
         let mut model = ThermalModel::from_spec(&spec);
 
-        let initial_temp = model.mass_temperatures.as_ref().get(0).copied().unwrap_or(0.0);
+        let initial_temp = model
+            .mass_temperatures
+            .as_ref()
+            .get(0)
+            .copied()
+            .unwrap_or(0.0);
 
         // Mass temperature should be initialized near setpoint
-        assert!(initial_temp > 15.0 && initial_temp < 25.0,
+        assert!(
+            initial_temp > 15.0 && initial_temp < 25.0,
             "Mass temperature should be initialized near setpoint (15-25°C), got {:.1}°C",
             initial_temp
         );
@@ -408,26 +436,35 @@ mod tests {
         // - h_tr_em ≈ 0.5 W/K (exterior to mass)
 
         // These form a thermal ladder
-        assert!(h_tr_ms > 0.0 && h_tr_is > 0.0 && h_tr_em > 0.0,
+        assert!(
+            h_tr_ms > 0.0 && h_tr_is > 0.0 && h_tr_em > 0.0,
             "All conductances should be positive, got h_tr_ms={:.2}, h_tr_is={:.2}, h_tr_em={:.2}",
-            h_tr_ms, h_tr_is, h_tr_em
+            h_tr_ms,
+            h_tr_is,
+            h_tr_em
         );
 
         // h_tr_is should be larger than h_tr_ms (surface better insulated)
-        assert!(h_tr_is > h_tr_ms,
+        assert!(
+            h_tr_is > h_tr_ms,
             "h_tr_is ({:.2} W/K) should be > h_tr_ms ({:.2} W/K)",
-            h_tr_is, h_tr_ms
+            h_tr_is,
+            h_tr_ms
         );
     }
 }
 
 fn calculate_tau(model: &ThermalModel<VectorField>) -> f64 {
     // Calculate thermal time constant τ = R × C
-    let total_r: f64 = model.construction.wall.layers.iter()
+    let total_r: f64 = model
+        .construction
+        .wall
+        .layers
+        .iter()
         .map(|l| l.thickness / l.conductivity)
         .sum::<f64>();
 
     let total_c: f64 = model.total_thermal_capacity.unwrap_or(0.0);
 
-    total_r * total_c / 3600.0  // Convert to hours
+    total_r * total_c / 3600.0 // Convert to hours
 }
