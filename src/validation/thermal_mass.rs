@@ -416,7 +416,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
         // Configure 6R2C with 75% envelope, 25% internal
-        model.configure_6r2c_model(0.75, 100.0);
+        model.configure_6r2c_model(0.75, 100.0, None);
 
         let env_cap: f64 = model.envelope_thermal_capacitance.iter().sum();
         let int_cap: f64 = model.internal_thermal_capacitance.iter().sum();
@@ -442,7 +442,7 @@ mod tests {
     fn test_thermal_mass_temperature_damping() {
         let spec = ASHRAE140Case::Case900.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-        model.configure_6r2c_model(0.75, 100.0);
+        model.configure_6r2c_model(0.75, 100.0, None);
 
         use crate::ai::surrogate::SurrogateManager;
         let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");

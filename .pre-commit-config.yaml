@@ -81,6 +81,15 @@ repos:
         pass_filenames: false
         stages: [manual]
 
+      - id: physics-coverage
+        name: "Physics Coverage (Manual)"
+        entry: bash .githooks/physics-coverage-check.sh
+        language: system
+        types: [rust]
+        files: ^src/physics/
+        pass_filenames: false
+        stages: [manual]
+
 # Fluxion Pre-Commit Hooks Configuration
 #
 # Installation:

@@ -427,7 +427,11 @@ mod tests {
         let wall_area = perimeter * height; // 20 * 3 = 60 m²
         let expected_interior = 2.0 * 100.0 + wall_area; // 200 + 60 = 260 m²
 
-        assert_relative_eq!(zone.interior_surface_area, expected_interior, max_relative = 0.01);
+        assert_relative_eq!(
+            zone.interior_surface_area,
+            expected_interior,
+            max_relative = 0.01
+        );
     }
 
     #[test]
@@ -531,8 +535,8 @@ mod tests {
         let coupler = FDZoneCoupler::case_900(20.0);
 
         // τ = C / (h_i * A_int)
-        let expected_tau = coupler.zone.heat_capacity
-            / (coupler.h_interior * coupler.zone.interior_surface_area);
+        let expected_tau =
+            coupler.zone.heat_capacity / (coupler.h_interior * coupler.zone.interior_surface_area);
 
         let actual_tau = coupler.thermal_time_constant();
 
@@ -547,7 +551,10 @@ mod tests {
         let tau = coupler.thermal_time_constant();
 
         // Higher h should give smaller time constant
-        assert!(tau < 100.0, "Time constant should be small with high h_interior");
+        assert!(
+            tau < 100.0,
+            "Time constant should be small with high h_interior"
+        );
     }
 
     #[test]
@@ -558,7 +565,10 @@ mod tests {
         let tau = coupler.thermal_time_constant();
 
         // Lower h should give larger time constant
-        assert!(tau > 300.0, "Time constant should be large with low h_interior");
+        assert!(
+            tau > 300.0,
+            "Time constant should be large with low h_interior"
+        );
     }
 
     #[test]

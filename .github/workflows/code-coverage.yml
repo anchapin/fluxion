@@ -37,12 +37,77 @@ jobs:
 
           # Verify coverage XML was generated
           ls -la cobertura.xml
+      - name: Extract Physics Coverage
+        if: success()
+        run: |
+          # Extract physics coverage from tarpaulin XML
+          # Parse cobertura.xml for physics files only
+          python3 << 'EOF'
+          import xml.etree.ElementTree as ET
+
+          tree = ET.parse('cobertura.xml')
+          root = tree.getroot()
+
+          physics_files = []
+          total_lines = 0
+          covered_lines = 0
+
+          for cls in root.findall('.//class'):
+              filename = cls.get('filename', '')
+              if 'src/physics/' in filename:
+                  physics_files.append(filename)
+                  line_rate = float(cls.get('line-rate', '0'))
+                  lines = int(cls.get('lines-covered', '0')) + int(cls.get('lines-valid', '0')) / 2
+                  total_lines += lines
+                  covered_lines += lines * line_rate
+
+          if total_lines > 0:
+              physics_coverage = (covered_lines / total_lines) * 100
+              print(f"Physics coverage: {physics_coverage:.2f}%")
+              print(f"Physics files analyzed: {len(physics_files)}")
+              print(f"PHYSICS_COVERAGE={physics_coverage:.2f}") >> $GITHUB_ENV
+              print(f"PHYSICS_FILE_COUNT={len(physics_files)}") >> $GITHUB_ENV
+          else:
+              echo "Warning: No physics files found in coverage report"
+              print(f"PHYSICS_COVERAGE=0.00") >> $GITHUB_ENV
+
+          # List all physics files for debugging
+          echo ""
+          echo "Physics files covered:"
+          for f in physics_files:
+              echo "  - $f"
+          EOF
+
+      - name: Check Physics Coverage Threshold
+        if: success()
+        run: |
+          # Physics coverage must be >= 90%
+          echo "Checking physics coverage threshold (target: 90%)"
+
+          if (( $(echo "$PHYSICS_COVERAGE < 90" | bc -l) )); then
+            echo "::error::Physics coverage ${PHYSICS_COVERAGE}% is below 90% threshold"
+            echo "Physics coverage must be at least 90% to pass"
+            echo "Current physics coverage: ${PHYSICS_COVERAGE}%"
+            exit 1
+          else
+            echo "::notice::Physics coverage ${PHYSICS_COVERAGE}% meets 90% threshold ✅"
+          fi
+
+      - name: Generate Physics Coverage Summary
+        if: success()
+        run: |
+          echo "## Physics Coverage Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Coverage**: ${PHYSICS_COVERAGE}% (Target: 90%)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: $(if (( $(echo "$PHYSICS_COVERAGE >= 90" | bc -l) )); then echo "✅ PASS"; else echo "❌ FAIL"; fi)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Files Analyzed**: ${PHYSICS_FILE_COUNT}" >> $GITHUB_STEP_SUMMARY
+
       - name: Upload to codecov
         if: success() && !env.ACT
         uses: codecov/codecov-action@v4
         with:
           files: ./cobertura.xml
           fail_ci_if_error: false
-          flags: unit_tests
+          flags: unit_tests,physics
           name: codecov-fluxion
           verbose: true

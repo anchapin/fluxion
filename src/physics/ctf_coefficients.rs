@@ -1236,7 +1236,10 @@ mod tests {
 
         // First pole should be dominant (closest to origin)
         if poles.len() > 1 {
-            assert!(poles[0].norm() < poles[1].norm(), "First pole should be dominant");
+            assert!(
+                poles[0].norm() < poles[1].norm(),
+                "First pole should be dominant"
+            );
         }
     }
 
@@ -1249,7 +1252,11 @@ mod tests {
         let poles = calculator.find_poles();
         let residues = calculator.compute_residues(&poles);
 
-        assert_eq!(poles.len(), residues.len(), "Should have residue for each pole");
+        assert_eq!(
+            poles.len(),
+            residues.len(),
+            "Should have residue for each pole"
+        );
 
         // Residues should be non-zero and finite
         for residue in &residues {
@@ -1273,7 +1280,10 @@ mod tests {
         assert!(tau >= 3600.0, "Time constant should be >= 1 hour");
 
         // For high-mass concrete layer, tau should be large (hours)
-        assert!(tau > 10000.0, "Time constant should be large for high-mass wall");
+        assert!(
+            tau > 10000.0,
+            "Time constant should be large for high-mass wall"
+        );
     }
 
     #[test]
@@ -1288,7 +1298,10 @@ mod tests {
         let factor = calculator.compute_interior_surface_factor();
 
         // Factor should be between 0.5 and 2.0 (clamped)
-        assert!(factor >= 0.5 && factor <= 2.0, "Interior factor should be clamped");
+        assert!(
+            factor >= 0.5 && factor <= 2.0,
+            "Interior factor should be clamped"
+        );
     }
 
     #[test]
@@ -1323,9 +1336,7 @@ mod tests {
     #[test]
     fn test_decay_window_application() {
         // Test exponential decay window for coefficient convergence
-        let layers = vec![
-            CTFMaterial::new("Concrete", 0.100, 1.4, 2300.0, 880.0),
-        ];
+        let layers = vec![CTFMaterial::new("Concrete", 0.100, 1.4, 2300.0, 880.0)];
         let calculator = CTFCalculator::new(&layers, 3600.0, 10);
 
         let mut coeffs = CTFCoefficients::new(3600.0, 10);
@@ -1343,7 +1354,10 @@ mod tests {
         assert!(coeffs.z[0] > coeffs.z[9], "Z coefficients should decay");
 
         // First coefficient should remain close to 1.0
-        assert!(coeffs.x[0] > 0.9, "First coefficient should decay minimally");
+        assert!(
+            coeffs.x[0] > 0.9,
+            "First coefficient should decay minimally"
+        );
     }
 
     #[test]
@@ -1436,8 +1450,7 @@ mod tests {
         let layers = case_900_wall();
 
         let coeffs_hour = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
-        let coeffs_quarter =
-            CTFCalculator::with_defaults(&layers, 900.0).compute_coefficients();
+        let coeffs_quarter = CTFCalculator::with_defaults(&layers, 900.0).compute_coefficients();
 
         // Shorter timestep should capture more dynamics (different coefficients)
         assert!((coeffs_hour.x[0] - coeffs_quarter.x[0]).abs() > 1e-6);
@@ -1451,12 +1464,8 @@ mod tests {
     #[test]
     fn test_insulator_vs_conductor() {
         // Test CTF for highly insulating vs highly conducting materials
-        let insulator = vec![
-            CTFMaterial::new("Fiberglass", 0.050, 0.04, 32.0, 840.0),
-        ];
-        let conductor = vec![
-            CTFMaterial::new("Steel", 0.005, 50.0, 7850.0, 500.0),
-        ];
+        let insulator = vec![CTFMaterial::new("Fiberglass", 0.050, 0.04, 32.0, 840.0)];
+        let conductor = vec![CTFMaterial::new("Steel", 0.005, 50.0, 7850.0, 500.0)];
 
         let coeffs_insulator =
             CTFCalculator::with_defaults(&insulator, 3600.0).compute_coefficients();
@@ -1527,10 +1536,14 @@ mod tests {
         let layers = case_900_wall();
         let calculator = CTFCalculator::new(&layers, 3600.0, 10);
 
-        let a = [[Complex64::new(1.0, 0.0), Complex64::new(2.0, 1.0)],
-                 [Complex64::new(3.0, 0.0), Complex64::new(4.0, 0.0)]];
-        let b = [[Complex64::new(5.0, 0.0), Complex64::new(6.0, 0.0)],
-                 [Complex64::new(7.0, 0.0), Complex64::new(8.0, 0.0)]];
+        let a = [
+            [Complex64::new(1.0, 0.0), Complex64::new(2.0, 1.0)],
+            [Complex64::new(3.0, 0.0), Complex64::new(4.0, 0.0)],
+        ];
+        let b = [
+            [Complex64::new(5.0, 0.0), Complex64::new(6.0, 0.0)],
+            [Complex64::new(7.0, 0.0), Complex64::new(8.0, 0.0)],
+        ];
 
         let c = calculator.multiply_matrices_complex(&a, &b);
 
@@ -1559,10 +1572,8 @@ mod tests {
         assert!(refined_pole.re < 0.0);
 
         // Refined pole should be more accurate (closer to zero of A(s))
-        let a_before = calculator
-            .compute_overall_transmission_matrix(poles[0])[0][0].norm();
-        let a_after = calculator
-            .compute_overall_transmission_matrix(refined_pole)[0][0].norm();
+        let a_before = calculator.compute_overall_transmission_matrix(poles[0])[0][0].norm();
+        let a_after = calculator.compute_overall_transmission_matrix(refined_pole)[0][0].norm();
 
         assert!(
             a_after <= a_before || a_after.abs() < 1e-6,
@@ -1673,9 +1684,13 @@ mod tests {
     #[test]
     fn test_ctf_high_mass_wall() {
         // Test CTF for very high mass wall (large thermal inertia)
-        let high_mass = vec![
-            CTFMaterial::new("Heavy Concrete", 0.300, 1.4, 2300.0, 880.0),
-        ];
+        let high_mass = vec![CTFMaterial::new(
+            "Heavy Concrete",
+            0.300,
+            1.4,
+            2300.0,
+            880.0,
+        )];
         let calculator = CTFCalculator::with_defaults(&high_mass, 3600.0);
         let coeffs = calculator.compute_coefficients();
 

@@ -26,11 +26,14 @@ pub mod thermal_mass_energy_accounting;
 pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetworkVariant};
 pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
 pub use ashrae_140_validator::{validate_case_with_diagnostics, ASHRAE140Validator};
-pub use ep_oracle::{DEFAULT_MAX_ABS_ERROR, DEFAULT_MAX_RMSE, EPOracle, EPReference, FluxionResults, ValidationCriteria, ValidationDetails, ValidationReport};
 pub use config::{validate_assembly, validate_constants, ConfigValidationResult, ValidationError};
 pub use cross_validator::{
     AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
     EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
+};
+pub use ep_oracle::{
+    EPOracle, EPReference, FluxionResults, ValidationCriteria, ValidationDetails, ValidationReport,
+    DEFAULT_MAX_ABS_ERROR, DEFAULT_MAX_RMSE,
 };
 pub use statistical::{
     calculate_ci_cv_rmse, calculate_ci_nmbe, calculate_cohens_d, calculate_cv_rmse, calculate_nmbe,

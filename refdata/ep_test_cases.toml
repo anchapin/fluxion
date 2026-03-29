@@ -1,0 +1,311 @@
+# EnergyPlus Test Case Catalog
+# Defines test cases for physics validation
+
+# ASHRAE 140 Standard Cases
+[[case]]
+id = "600"
+name = "Heavyweight - Summer"
+category = "ashrae_140"
+floor_area = 48.0
+walls_u = 0.358
+roof_u = 0.226
+floor_u = 0.398
+window_u = 2.943
+window_area = 6.0
+window_ratio = 0.125  # 12.5% window-to-wall ratio
+setpoint_heating = 20.0
+setpoint_cooling = 27.0
+mass_type = "heavyweight"
+location = "Denver"
+epw = "refdata/epw/Denver.epw"
+# Expected results (from ASHRAE 140)
+expected_heating_energy_kwh = 714.0
+expected_cooling_energy_kwh = 5086.0
+
+[[case]]
+id = "600FF"
+name = "Heavyweight - Free Floating"
+category = "ashrae_140"
+floor_area = 48.0
+walls_u = 0.358
+roof_u = 0.226
+floor_u = 0.398
+window_u = 2.943
+window_area = 6.0
+setpoint_heating = null  # Free floating
+setpoint_cooling = null
+mass_type = "heavyweight"
+location = "Denver"
+epw = "refdata/epw/Denver.epw"
+expected_min_temp_c = -11.16
+expected_max_temp_c = 31.29
+
+[[case]]
+id = "900"
+name = "Lightweight - Summer"
+category = "ashrae_140"
+floor_area = 48.0
+walls_u = 0.358
+roof_u = 0.226
+floor_u = 0.398
+window_u = 2.943
+window_area = 6.0
+setpoint_heating = 20.0
+setpoint_cooling = 27.0
+mass_type = "lightweight"
+location = "Denver"
+epw = "refdata/epw/Denver.epw"
+expected_heating_energy_kwh = 733.0
+expected_cooling_energy_kwh = 5405.0
+
+[[case]]
+id = "900FF"
+name = "Lightweight - Free Floating"
+category = "ashrae_140"
+floor_area = 48.0
+walls_u = 0.358
+roof_u = 0.226
+floor_u = 0.398
+window_u = 2.943
+window_area = 6.0
+setpoint_heating = null
+setpoint_cooling = null
+mass_type = "lightweight"
+location = "Denver"
+epw = "refdata/epw/Denver.epw"
+expected_min_temp_c = -16.85
+expected_max_temp_c = 37.14
+
+# Convection Test Cases
+[[case]]
+id = "convection_natural_vertical"
+name = "Natural Convection - Vertical Plate"
+category = "convection"
+convection_type = "natural"
+surface_type = "vertical_plate"
+orientation = "south"
+characteristic_length = 1.0
+air_temperature = 293.15  # 20°C
+surface_temperatures = [298.15, 303.15, 308.15]  # 25°C, 30°C, 35°C
+# Expected h_c values per ISO 15099:5.2
+expected_hc_w_m2k = [2.5, 3.2, 4.0]
+
+[[case]]
+id = "convection_natural_horizontal_hot_up"
+name = "Natural Convection - Horizontal Hot Surface Facing Up"
+category = "convection"
+convection_type = "natural"
+surface_type = "horizontal_plate_hot_up"
+characteristic_length = 1.0
+air_temperature = 293.15
+surface_temperatures = [298.15, 303.15, 308.15]
+expected_hc_w_m2k = [1.8, 2.3, 2.9]
+
+[[case]]
+id = "convection_natural_horizontal_hot_down"
+name = "Natural Convection - Horizontal Hot Surface Facing Down"
+category = "convection"
+convection_type = "natural"
+surface_type = "horizontal_plate_hot_down"
+characteristic_length = 1.0
+air_temperature = 293.15
+surface_temperatures = [298.15, 303.15, 308.15]
+expected_hc_w_m2k = [0.8, 1.0, 1.2]
+
+[[case]]
+id = "convection_forced_exterior"
+name = "Forced Convection - Exterior Surface"
+category = "convection"
+convection_type = "forced"
+surface_type = "exterior_wall"
+wind_speeds = [0.5, 1.0, 2.0, 5.0]  # m/s
+characteristic_length = 1.0
+air_temperature = 293.15
+surface_temperature = 298.15
+# Expected per McAdams: h = 5.8 + 3.94 * v
+expected_hc_w_m2k = [7.77, 9.74, 13.68, 25.50]
+
+[[case]]
+id = "convection_forced_interior"
+name = "Forced Convection - Interior Surface"
+category = "convection"
+convection_type = "forced"
+surface_type = "interior_wall"
+velocity = 0.2  # m/s
+characteristic_length = 1.0
+air_temperature = 293.15
+surface_temperature = 298.15
+expected_hc_w_m2k = 3.5
+
+# Radiation Test Cases
+[[case]]
+id = "radiation_longwave_stefan_boltzmann"
+name = "Longwave Radiation - Stefan-Boltzmann Law"
+category = "radiation"
+radiation_type = "longwave"
+surface_emissivity = 0.9
+surface_temperatures = [273.15, 283.15, 293.15, 303.15]  # 0, 10, 20, 30°C
+sky_temperatures = [253.15, 263.15, 273.15, 283.15]  # -20, -10, 0, 10°C
+# Expected q = ε * σ * (Ts⁴ - Tsky⁴)
+# σ = 5.67e-8 W/(m²·K⁴)
+
+[[case]]
+id = "radiation_solar_incidence"
+name = "Solar Radiation - Incidence Angle"
+category = "radiation"
+radiation_type = "shortwave"
+latitude = 39.7392  # Denver
+longitude = -104.9903
+day_of_year = 172  # June 21
+hours = [6, 8, 10, 12, 14, 16, 18]  # Solar hours
+surface_azimuth = 0  # South
+surface_tilt = 90  # Vertical
+# Expected incidence angles (degrees)
+expected_incidence_deg = [75.5, 52.3, 28.8, 0.0, 28.8, 52.3, 75.5]
+
+[[case]]
+id = "radiation_solar_beam_diffuse_split"
+name = "Solar Radiation - Beam/Diffuse Split"
+category = "radiation"
+radiation_type = "shortwave"
+ghi_values = [200, 400, 600, 800, 1000]  # W/m²
+zenith_angles = [10, 30, 50, 70, 80]  # degrees
+# Expected per Erbs model
+expected_diffuse_fraction = [0.22, 0.30, 0.42, 0.60, 0.78]
+
+# CTF Coefficient Test Cases
+[[case]]
+id = "ctf_single_layer_concrete"
+name = "CTF - Single Layer Concrete Wall"
+category = "ctf_coefficients"
+layers = [
+  { name = "Concrete", thickness = 0.15, conductivity = 1.73, density = 2243, specific_heat = 837 }
+]
+timestep_hours = 1.0
+# Expected CTF coefficients (calculated)
+# a: cross conduction coefficients
+# b: history-dependent cross conduction
+# c: current flux coefficients
+# d: history-dependent flux coefficients
+
+[[case]]
+id = "ctf_two_layer_brick_insulation"
+name = "CTF - Two Layer Brick + Insulation"
+category = "ctf_coefficients"
+layers = [
+  { name = "Brick", thickness = 0.10, conductivity = 0.77, density = 1920, specific_heat = 790 },
+  { name = "Insulation", thickness = 0.05, conductivity = 0.04, density = 32, specific_heat = 840 }
+]
+timestep_hours = 1.0
+
+[[case]]
+id = "ctf_three_layer_wall"
+name = "CTF - Three Layer Wall"
+category = "ctf_coefficients"
+layers = [
+  { name = "Stucco", thickness = 0.025, conductivity = 0.69, density = 1856, specific_heat = 837 },
+  { name = "Concrete", thickness = 0.10, conductivity = 1.73, density = 2243, specific_heat = 837 },
+  { name = "Drywall", thickness = 0.013, conductivity = 0.16, density = 784, specific_heat = 830 }
+]
+timestep_hours = 1.0
+
+# Newton Solver Test Cases
+[[case]]
+id = "newton_convergence_quadratic"
+name = "Newton - Quadratic Convergence"
+category = "newton_solver"
+function_type = "quadratic"
+function_params = { a = 1.0, b = 0.0, c = -4.0 }  # f(x) = x² - 4
+expected_root = 2.0
+initial_guess = 1.0
+max_iterations = 10
+tolerance = 1e-10
+expected_iterations = 3
+
+[[case]]
+id = "newton_non_convergence"
+name = "Newton - Non-Convergence"
+category = "newton_solver"
+function_type = "oscillatory"
+# Function that causes oscillation near root
+expected_convergence = false
+initial_guess = 1.0
+max_iterations = 5
+
+# Per-Surface Model Test Cases
+[[case]]
+id = "per_surface_single_zone_energy_balance"
+name = "Per-Surface - Single Zone Energy Balance"
+category = "per_surface_model"
+zone_count = 1
+surfaces_per_zone = 6
+floor_area = 48.0
+ceiling_height = 3.0
+# Verify: sum of all surface fluxes = 0
+
+[[case]]
+id = "per_surface_two_zone_coupling"
+name = "Per-Surface - Two Zone Interzone Coupling"
+category = "per_surface_model"
+zone_count = 2
+interzone_surfaces = 1
+coupling_u = 0.5
+# Verify: interzone flux is conserved (q_ab = -q_ba)
+
+# Combined Heat Balance Test Cases
+[[case]]
+id = "combined_convection_radiation"
+name = "Combined - Convection + Radiation"
+category = "combined_heat_balance"
+surface_temperature = 293.15
+air_temperature = 298.15
+sky_temperature = 283.15
+surface_emissivity = 0.9
+expected_total_flux_w_m2 = -15.5  # Negative = surface losing heat
+
+[[case]]
+id = "combined_with_solar"
+name = "Combined - With Solar Gain"
+category = "combined_heat_balance"
+surface_temperature = 293.15
+air_temperature = 298.15
+solar_irradiance = 500.0  # W/m²
+surface_solar_absorptance = 0.6
+surface_emissivity = 0.9
+sky_temperature = 283.15
+expected_total_flux_w_m2 = 285.0  # Net gain from solar
+
+# FD Solver Test Cases
+[[case]]
+id = "fd_stability_explicit"
+name = "FD - Explicit Method Stability"
+category = "fd_solver"
+method = "explicit"
+thermal_diffusivity = 1e-6  # m²/s
+grid_spacing = 0.01  # m
+# Stability criterion: Δt ≤ Δx² / (2α)
+expected_max_timestep_s = 50.0
+
+[[case]]
+id = "fd_convergence_implicit"
+name = "FD - Implicit Method Convergence"
+category = "fd_solver"
+method = "implicit"
+time_steps = [1, 10, 100, 1000]
+expected_convergence_order = 1  # First order in time
+
+# Energy Balance Verification Cases
+[[case]]
+id = "energy_balance_annual"
+name = "Energy Balance - Annual Verification"
+category = "energy_balance"
+duration_months = 12
+# Verify: ΔU + ΔE_in - ΔE_out = 0
+# Over a full year, internal energy change should be minimal
+
+[[case]]
+id = "energy_balance_diurnal"
+name = "Energy Balance - Diurnal Cycle"
+category = "energy_balance"
+duration_hours = 24
+# Verify: energy is conserved over a 24-hour cycle

@@ -1298,7 +1298,7 @@ mod statistical_report_tests {
     #[test]
     fn test_statistical_validator_integration() {
         // Create StatisticalValidator
-        let mut validator = StatisticalValidator::new();
+        let validator = StatisticalValidator::new();
 
         // Validate a few baseline cases (cannot actually run simulations in unit tests)
         // This test verifies the API structure is correct
