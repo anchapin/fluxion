@@ -1148,16 +1148,12 @@ impl ThermalModel<VectorField> {
 
         // Separate heating/cooling coupling parameters (Plan 03-14)
         // Winter: Lower h_tr_em to reduce cold absorption from exterior during heating
-        // === SESSION 33: REPLACE with physics-based coupling factors ===
-        // Use construction-property-based coupling instead of empirical hardcoded values.
-        // Original: (0.15, 1.05) - hardcoded empirical values
-        // Physics-based: Use actual thermal conductance values for each mode
+        // Summer: Higher h_tr_em to increase heat rejection during cooling
         let (h_tr_em_heating_factor, h_tr_em_cooling_factor) = match case_id.as_str() {
-            // High-mass HVAC cases (900 series): use physics-based coupling
-            // The coupling factors should come from construction, not hardcoded
+            // High-mass HVAC cases (900 series)
             "900" | "910" | "920" | "930" | "940" | "950" | "960" => {
-                // Use default coupling for now - physics-based calculation coming
-                (1.0, 1.0) // SESSION 33: Removed hardcoded (0.15, 1.05)
+                // Use default coupling for now
+                (1.0, 1.0) // No mode-specific h_tr_em
             }
             // Free-floating cases (FF): use default coupling (no HVAC adjustment needed)
             "900FF" | "910FF" | "920FF" | "930FF" | "940FF" | "950FF" => {
