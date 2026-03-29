@@ -1534,7 +1534,8 @@ impl ThermalModel<VectorField> {
         if false && spec.case_id.starts_with('9') {
             // For high-mass buildings: 75% envelope mass, 25% internal mass
             // Conductance between masses: 100 W/K (typical for concrete construction)
-            model.configure_6r2c_model(0.75, 100.0);
+            // h_tr_ms defaults to 40% of ISO 13790 value for 6R2C
+            model.configure_6r2c_model(0.75, 100.0, None);
         }
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
@@ -2364,7 +2365,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///   - Typical values: 0.7-0.8 for high-mass buildings
     /// * `h_tr_me_value` - Conductance between envelope and internal mass (W/K)
     ///   - Typical values: 50-200 W/K depending on construction
-    pub fn configure_6r2c_model(&mut self, envelope_mass_fraction: f64, h_tr_me_value: f64) {
+    /// * `h_tr_ms_value` - Optional override for mass-to-surface conductance (W/K)
+    ///   - If None, uses ISO 13790 value (9.1 × A_m ≈ 1092 W/K)
+    ///   - For 6R2C, lower values may be more appropriate
+    pub fn configure_6r2c_model(&mut self, envelope_mass_fraction: f64, h_tr_me_value: f64, h_tr_ms_value: Option<f64>) {
         self.thermal_model_type = ThermalModelType::SixRTwoC;
 
         // Split thermal capacitance
@@ -2376,6 +2380,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Set conductance between envelope and internal mass
         self.h_tr_me = self.zone_area.clone().map(|_| h_tr_me_value);
+
+        // Override h_tr_ms if provided (for 6R2C tuning)
+        if let Some(h_tr_ms) = h_tr_ms_value {
+            self.h_tr_ms = self.zone_area.clone().map(|_| h_tr_ms);
+        }
 
         // Initialize mass temperatures from current single mass temperature
         // For 6R2C model, envelope and internal masses should have different time constants

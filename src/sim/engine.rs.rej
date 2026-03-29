@@ -1,0 +1,21 @@
+--- src/sim/engine.rs
++++ src/sim/engine.rs
+@@ -887,18 +887,7 @@
+         // Configure 6R2C model for high-mass cases (900 series)
+         // This improves accuracy for thermal lag in heavy concrete buildings
+         if spec.case_id.starts_with('9') {
+             // For high-mass buildings: 75% envelope mass, 25% internal mass
+             // Conductance between masses: 100 W/K (typical for concrete construction)
+             model.configure_6r2c_model(0.75, 100.0);
+ 
+-            // Apply τ override to envelope capacitance for 6R2C model
+-            // In 6R2C, the envelope mass time constant is governed by h_tr_em:
+-            // τ = C_envelope / h_tr_em
+-            // (Unlike 5R1C where τ = C_m / h_tr_ms)
+-            // For 6R2C high-mass cases, use case_id to detect VeryHeavy
+-            // (wall-based mass classification may not be accurate for multi-surface constructions)
+-            let is_veryheavy = spec.case_id.starts_with('9'); // 900-series are VeryHeavy
+-            let target_tau_hours = if is_veryheavy {
+-                std::env::var("FLUXION_TARGET_TAU_VERYHEAVY")
+-                    .ok()
+-                    .and_then(|s| s.parse().ok())
