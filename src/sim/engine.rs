@@ -579,6 +579,20 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     ///   - High-mass (900 series): 5.0 (increase coupling to improve heat rejection)
     pub h_tr_ms_cooling_factor: f64,
 
+    /// Heating mode solar beam-to-mass fraction
+    /// Fraction of beam solar that goes directly to thermal mass during heating mode.
+    /// Lower values send more solar to air/surface for immediate heating benefit.
+    ///   - Low-mass (600 series): 0.3 (use default)
+    ///   - High-mass (900 series): 0.5 (reduce mass coupling for immediate benefit)
+    pub solar_beam_to_mass_fraction_heating: f64,
+
+    /// Cooling mode solar beam-to-mass fraction
+    /// Fraction of beam solar that goes directly to thermal mass during cooling mode.
+    /// Higher values send more solar to mass (delayed effect) to reduce immediate cooling load.
+    ///   - Low-mass (600 series): 0.3 (use default)
+    ///   - High-mass (900 series): 0.9 (increase mass coupling to delay heating effect)
+    pub solar_beam_to_mass_fraction_cooling: f64,
+
     // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
     /// Previous mass temperature for tracking thermal mass energy changes
     pub previous_mass_temperatures: T,
@@ -721,6 +735,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             h_tr_em_cooling_factor: self.h_tr_em_cooling_factor,
             h_tr_ms_heating_factor: self.h_tr_ms_heating_factor,
             h_tr_ms_cooling_factor: self.h_tr_ms_cooling_factor,
+            solar_beam_to_mass_fraction_heating: self.solar_beam_to_mass_fraction_heating,
+            solar_beam_to_mass_fraction_cooling: self.solar_beam_to_mass_fraction_cooling,
             previous_mass_temperatures: self.previous_mass_temperatures.clone(),
             mass_energy_change_cumulative: self.mass_energy_change_cumulative,
             envelope_mass_energy_change_cumulative: self.envelope_mass_energy_change_cumulative,
@@ -1518,12 +1534,13 @@ impl ThermalModel<VectorField> {
             "960" => 0.4, // Sunspace: 40% to mass (60% to air + surface)
             // ASHRAE 140 specification: High-mass buildings (900 series) have 70% of beam solar
             // going to thermal mass, 30% to interior surface. This is the correct value.
-            // Plan 03-07 reduced this to 0.5 but that made cooling worse (4.93 → 5.03 MWh).
-            // Plan 03-07c reverts to 0.7 to maintain ASHRAE 140 specification.
             "900" | "910" | "920" | "930" | "940" | "950" => 0.7, // High-mass: 70% to mass (ASHRAE 140 spec)
             _ if spec.case_id.starts_with('9') => 0.7, // Other 900-series: 70% to mass (ASHRAE 140 spec)
             _ => 0.3,                                  // Low-mass: 30% to mass
         };
+        // Set mode-specific values (not currently used, reserved for future use)
+        model.solar_beam_to_mass_fraction_heating = model.solar_beam_to_mass_fraction;
+        model.solar_beam_to_mass_fraction_cooling = model.solar_beam_to_mass_fraction;
 
         // Fix: Remove override for free-floating cases (Plan 03-03 Task 4)
         // Previous code (Issue #275) set solar_beam_to_mass_fraction = 0.0 for free-floating
@@ -2161,6 +2178,8 @@ impl ThermalModel<VectorField> {
             h_tr_em_cooling_factor: 1.0,      // Default: no cooling mode adjustment (Plan 03-14)
             h_tr_ms_heating_factor: 1.0,       // Default: no heating mode adjustment
             h_tr_ms_cooling_factor: 1.0,       // Default: no cooling mode adjustment
+            solar_beam_to_mass_fraction_heating: 0.3, // Default: 30% to mass
+            solar_beam_to_mass_fraction_cooling: 0.3, // Default: 30% to mass
 
             // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
             previous_mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Track previous Tm
