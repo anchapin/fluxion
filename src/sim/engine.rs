@@ -1175,10 +1175,10 @@ impl ThermalModel<VectorField> {
             // High-mass HVAC cases (900 series)
             // Use modest heating factor reduction and higher cooling factor
             "920" | "930" => {
-                // E/W facing: higher heating factor to improve heating accuracy
-                // Increased from 0.9× to 1.2× to address -67% to -82% underprediction
+                // E/W facing: use same configuration as South facing
+                // h_tr_ms_heating_factor adjustment showed no effect on heating prediction
                 // Cooling factor at 50.0× to address overprediction
-                (1.2, 50.0)
+                (0.5, 50.0)
             }
             "900" | "910" | "940" | "950" => {
                 // South facing: standard tuning
@@ -1396,8 +1396,8 @@ impl ThermalModel<VectorField> {
                 .collect(),
         ); // Cooling mode coupling
 
-        // Diagnostic: Print coupling parameters for Case 900/920 (Plan 03-14)
-        if case_id == "900" || case_id == "900FF" || case_id == "920" {
+        // Diagnostic: Print coupling parameters for Case 900 (Plan 03-14)
+        if case_id == "900" || case_id == "900FF" {
             println!("=== Plan 03-14: Mode-Specific Coupling Parameters ===");
             println!("h_tr_em (base): {:.2} W/K", h_tr_em_vec[0]);
             println!(
