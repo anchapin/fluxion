@@ -604,4 +604,251 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_subtraction() {
+        let v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let v2 = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let diff = v1 - v2;
+        assert_eq!(diff.data, vec![9.0, 18.0, 27.0]);
+    }
+
+    #[test]
+    fn test_division() {
+        let v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let v2 = VectorField::new(vec![2.0, 4.0, 6.0]);
+        let quotient = v1 / v2;
+        assert_eq!(quotient.data, vec![5.0, 5.0, 5.0]);
+    }
+
+    #[test]
+    fn test_scalar_division() {
+        let v = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let divided = v / 2.0;
+        assert_eq!(divided.data, vec![5.0, 10.0, 15.0]);
+    }
+
+    #[test]
+    fn test_map() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let squared = v.map(|x| x * x);
+        assert_eq!(squared.data, vec![1.0, 4.0, 9.0]);
+
+        let negative = v.map(|x| -x);
+        assert_eq!(negative.data, vec![-1.0, -2.0, -3.0]);
+    }
+
+    #[test]
+    fn test_zip_with() {
+        let v1 = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let v2 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let combined = v1.zip_with(&v2, |a, b| a + b * 2.0);
+        assert_eq!(combined.data, vec![21.0, 42.0, 63.0]);
+    }
+
+    #[test]
+    fn test_reduce_sum() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0, 4.0]);
+        let sum = v.reduce(0.0, |acc, x| acc + x);
+        assert_eq!(sum, 10.0);
+    }
+
+    #[test]
+    fn test_reduce_max() {
+        let v = VectorField::new(vec![1.0, 5.0, 3.0, 9.0, 2.0]);
+        let max_val = v.reduce(f64::NEG_INFINITY, |acc, x| acc.max(x));
+        assert_eq!(max_val, 9.0);
+    }
+
+    #[test]
+    fn test_reduce_product() {
+        let v = VectorField::new(vec![2.0, 3.0, 4.0]);
+        let product = v.reduce(1.0, |acc, x| acc * x);
+        assert_eq!(product, 24.0);
+    }
+
+    #[test]
+    fn test_constant_like() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0, 4.0]);
+        let constant = v.constant_like(7.5);
+        assert_eq!(constant.data, vec![7.5; 4]);
+        assert_eq!(constant.len(), 4);
+    }
+
+    #[test]
+    fn test_elementwise_min() {
+        let v1 = VectorField::new(vec![5.0, 2.0, 8.0, 1.0]);
+        let v2 = VectorField::new(vec![3.0, 7.0, 4.0, 9.0]);
+        let result = v1.elementwise_min(&v2);
+        assert_eq!(result.data, vec![3.0, 2.0, 4.0, 1.0]);
+    }
+
+    #[test]
+    fn test_elementwise_max() {
+        let v1 = VectorField::new(vec![5.0, 2.0, 8.0, 1.0]);
+        let v2 = VectorField::new(vec![3.0, 7.0, 4.0, 9.0]);
+        let result = v1.elementwise_max(&v2);
+        assert_eq!(result.data, vec![5.0, 7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn test_div_assign() {
+        let mut v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let v2 = VectorField::new(vec![2.0, 4.0, 6.0]);
+        v1.div_assign(&v2);
+        assert_eq!(v1.data, vec![5.0, 5.0, 5.0]);
+    }
+
+    #[test]
+    fn test_index() {
+        let v = VectorField::new(vec![10.0, 20.0, 30.0]);
+        assert_eq!(v[0], 10.0);
+        assert_eq!(v[1], 20.0);
+        assert_eq!(v[2], 30.0);
+    }
+
+    #[test]
+    fn test_clone() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let cloned = v.clone();
+        assert_eq!(cloned.data, v.data);
+    }
+
+    #[test]
+    fn test_debug() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let debug_str = format!("{:?}", v);
+        assert!(debug_str.contains("VectorField"));
+    }
+
+    #[test]
+    fn test_as_slice() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let slice = v.as_slice();
+        assert_eq!(slice, &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_large_vector_operations() {
+        let large: Vec<f64> = (0..1000).map(|i| i as f64).collect();
+        let v = VectorField::new(large);
+
+        let doubled = v.clone() * 2.0;
+        for i in 0..1000 {
+            assert_eq!(doubled[i], i as f64 * 2.0);
+        }
+
+        let summed = v + doubled.clone();
+        for i in 0..1000 {
+            assert_eq!(summed[i], i as f64 * 3.0);
+        }
+    }
+
+    #[test]
+    fn test_gradient_constant() {
+        let v = VectorField::new(vec![5.0; 5]);
+        let grad = v.gradient();
+        assert_eq!(grad.data, vec![0.0; 5]);
+    }
+
+    #[test]
+    fn test_gradient_linear_increasing() {
+        let v = VectorField::new(vec![0.0, 1.0, 2.0, 3.0, 4.0]);
+        let grad = v.gradient();
+        assert_eq!(grad.data, vec![1.0; 5]);
+    }
+
+    #[test]
+    fn test_gradient_single_element() {
+        let v = VectorField::new(vec![5.0]);
+        let grad = v.gradient();
+        assert_eq!(grad.data, vec![0.0]);
+    }
+
+    #[test]
+    fn test_gradient_empty() {
+        let v = VectorField::new(vec![]);
+        let grad = v.gradient();
+        assert!(grad.is_empty());
+    }
+
+    #[test]
+    fn test_integrate_constant() {
+        let v = VectorField::new(vec![3.0; 5]);
+        let integral = v.integrate();
+        assert_eq!(integral, 15.0); // 3.0 * 5 = sum
+    }
+
+    #[test]
+    fn test_integrate_linear() {
+        let v = VectorField::new(vec![0.0, 1.0, 2.0, 3.0]);
+        let integral = v.integrate();
+        // Integration is just sum for 1D
+        assert_eq!(integral, 6.0); // 0 + 1 + 2 + 3
+    }
+
+    #[test]
+    fn test_integrate_single() {
+        let v = VectorField::new(vec![5.0]);
+        let integral = v.integrate();
+        assert_eq!(integral, 5.0);
+    }
+
+    #[test]
+    fn test_integrate_empty() {
+        let v = VectorField::new(vec![]);
+        let integral = v.integrate();
+        assert_eq!(integral, 0.0);
+    }
+
+    #[test]
+    fn test_in_place_operations_chaining() {
+        let mut v1 = VectorField::new(vec![10.0, 20.0, 30.0]);
+        let v2 = VectorField::new(vec![1.0, 2.0, 3.0]);
+        let v3 = VectorField::new(vec![100.0, 200.0, 300.0]);
+
+        v1.add_assign(&v2);
+        v1.mul_assign(&v3);
+        v1.sub_assign(&v2);
+
+        // (10 + 1) * 100 - 1 = 1099
+        // (20 + 2) * 200 - 2 = 4398
+        // (30 + 3) * 300 - 3 = 9897
+        assert_eq!(v1[0], 1099.0);
+        assert_eq!(v1[1], 4398.0);
+        assert_eq!(v1[2], 9897.0);
+    }
+
+    #[test]
+    fn test_operations_with_negative_values() {
+        let v1 = VectorField::new(vec![-5.0, -10.0, -15.0]);
+        let v2 = VectorField::new(vec![2.0, 5.0, 3.0]);
+
+        let sum = v1.clone() + v2.clone();
+        assert_eq!(sum.data, vec![-3.0, -5.0, -12.0]);
+
+        let prod = v1.clone() * v2.clone();
+        assert_eq!(prod.data, vec![-10.0, -50.0, -45.0]);
+
+        let scaled = v2 * -2.0;
+        assert_eq!(scaled.data, vec![-4.0, -10.0, -6.0]);
+    }
+
+    #[test]
+    fn test_map_complex_function() {
+        let v = VectorField::new(vec![1.0, 2.0, 3.0, 4.0]);
+        let result = v.map(|x| x * x + x / 2.0);
+        // 1*1 + 1/2 = 1.5
+        // 2*2 + 2/2 = 5.0
+        // 3*3 + 3/2 = 10.5
+        // 4*4 + 4/2 = 18.0
+        assert_eq!(result.data, vec![1.5, 5.0, 10.5, 18.0]);
+    }
+
+    #[test]
+    fn test_reduce_with_zero_init() {
+        let v = VectorField::new(vec![5.0, 10.0, 15.0]);
+        let sum = v.reduce(0.0, |acc, x| acc + x);
+        assert_eq!(sum, 30.0);
+    }
 }

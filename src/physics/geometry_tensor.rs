@@ -266,10 +266,49 @@ mod tests {
         let tensor = GeometryTensor::new();
         assert_eq!(tensor.zone_coords.len(), MAX_ZONES * 20);
         assert_eq!(tensor.wall_matrix.len(), MAX_WALLS * 6);
+        assert_eq!(tensor.window_matrix.len(), MAX_WALLS * 6);
+        assert_eq!(tensor.adjacency_matrix.len(), MAX_ZONES * MAX_ZONES);
+        assert_eq!(tensor.zone_properties.len(), MAX_ZONES * 5);
+        assert_eq!(tensor.summary.len(), 6);
     }
 
     #[test]
-    fn test_wall_data_length() {
+    fn test_geometry_tensor_default() {
+        let tensor = GeometryTensor::default();
+        assert_eq!(tensor.zone_coords.len(), MAX_ZONES * 20);
+        assert_eq!(tensor.wall_matrix.len(), MAX_WALLS * 6);
+    }
+
+    #[test]
+    fn test_wall_data_length_horizontal() {
+        let wall = WallData {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 3.0,
+            y2: 0.0,
+            height: 2.4,
+            thickness: 0.2,
+        };
+        assert!((wall.length() - 3.0).abs() < 1e-10);
+        assert!((wall.area() - 7.2).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_wall_data_length_vertical() {
+        let wall = WallData {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 4.0,
+            height: 2.4,
+            thickness: 0.2,
+        };
+        assert!((wall.length() - 4.0).abs() < 1e-10);
+        assert!((wall.area() - 9.6).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_wall_data_diagonal() {
         let wall = WallData {
             x1: 0.0,
             y1: 0.0,
@@ -283,10 +322,283 @@ mod tests {
     }
 
     #[test]
-    fn test_validate() {
+    fn test_wall_data_zero_height_area() {
+        let wall = WallData {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 3.0,
+            y2: 4.0,
+            height: 0.0,
+            thickness: 0.2,
+        };
+        assert_eq!(wall.area(), 0.0);
+    }
+
+    #[test]
+    fn test_num_zones() {
+        let mut tensor = GeometryTensor::new();
+        tensor.summary[0] = 5.0;
+        assert_eq!(tensor.num_zones(), 5);
+    }
+
+    #[test]
+    fn test_num_walls() {
+        let mut tensor = GeometryTensor::new();
+        tensor.summary[1] = 20.0;
+        assert_eq!(tensor.num_walls(), 20);
+    }
+
+    #[test]
+    fn test_total_area() {
+        let mut tensor = GeometryTensor::new();
+        tensor.summary[4] = 500.0;
+        assert!((tensor.total_area() - 500.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_total_volume() {
+        let mut tensor = GeometryTensor::new();
+        tensor.summary[5] = 1500.0;
+        assert!((tensor.total_volume() - 1500.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_get_zone_coords_valid() {
+        let mut tensor = GeometryTensor::new();
+        // Set some test values in zone 0
+        tensor.zone_coords[0] = 1.0;
+        tensor.zone_coords[1] = 2.0;
+        tensor.zone_coords[19] = 3.0;
+
+        let coords = tensor.get_zone_coords(0).unwrap();
+        assert_eq!(coords[0], 1.0);
+        assert_eq!(coords[1], 2.0);
+        assert_eq!(coords[19], 3.0);
+    }
+
+    #[test]
+    fn test_get_zone_coords_invalid() {
+        let tensor = GeometryTensor::new();
+        assert!(tensor.get_zone_coords(MAX_ZONES).is_none());
+        assert!(tensor.get_zone_coords(MAX_ZONES + 10).is_none());
+    }
+
+    #[test]
+    fn test_get_wall_valid() {
+        let mut tensor = GeometryTensor::new();
+        // Set some test values for wall 0
+        tensor.wall_matrix[0] = 1.0;
+        tensor.wall_matrix[1] = 2.0;
+        tensor.wall_matrix[2] = 3.0;
+        tensor.wall_matrix[3] = 4.0;
+        tensor.wall_matrix[4] = 2.5;
+        tensor.wall_matrix[5] = 0.2;
+
+        let wall = tensor.get_wall(0).unwrap();
+        assert_eq!(wall.x1, 1.0);
+        assert_eq!(wall.y1, 2.0);
+        assert_eq!(wall.x2, 3.0);
+        assert_eq!(wall.y2, 4.0);
+        assert_eq!(wall.height, 2.5);
+        assert_eq!(wall.thickness, 0.2);
+    }
+
+    #[test]
+    fn test_get_wall_invalid() {
+        let tensor = GeometryTensor::new();
+        assert!(tensor.get_wall(MAX_WALLS).is_none());
+        assert!(tensor.get_wall(MAX_WALLS + 10).is_none());
+    }
+
+    #[test]
+    fn test_zones_adjacent_true() {
+        let mut tensor = GeometryTensor::new();
+        let idx = 2 * MAX_ZONES + 3;
+        tensor.adjacency_matrix[idx] = 1.0;
+        assert!(tensor.zones_adjacent(2, 3));
+    }
+
+    #[test]
+    fn test_zones_adjacent_false() {
+        let tensor = GeometryTensor::new();
+        // Default values are 0.0
+        assert!(!tensor.zones_adjacent(0, 1));
+    }
+
+    #[test]
+    fn test_zones_adjacent_symmetry() {
+        let mut tensor = GeometryTensor::new();
+        // Set adjacency for zone 0 -> 1
+        let idx_01 = 0 * MAX_ZONES + 1;
+        tensor.adjacency_matrix[idx_01] = 1.0;
+        // Also set reverse
+        let idx_10 = 1 * MAX_ZONES + 0;
+        tensor.adjacency_matrix[idx_10] = 1.0;
+
+        assert!(tensor.zones_adjacent(0, 1));
+        assert!(tensor.zones_adjacent(1, 0));
+    }
+
+    #[test]
+    fn test_zones_adjacent_out_of_bounds() {
+        let tensor = GeometryTensor::new();
+        assert!(!tensor.zones_adjacent(MAX_ZONES, 0));
+        assert!(!tensor.zones_adjacent(0, MAX_ZONES));
+    }
+
+    #[test]
+    fn test_validate_clean() {
         let tensor = GeometryTensor::new();
         let issues = tensor.validate();
-        // Empty tensor should have no issues
+        // Empty tensor should have no issues (zeros are valid)
         assert!(issues.is_empty());
+    }
+
+    #[test]
+    fn test_validate_zone_coords_nan() {
+        let mut tensor = GeometryTensor::new();
+        tensor.zone_coords[0] = f64::NAN;
+        let issues = tensor.validate();
+        assert!(issues.iter().any(|s| s.contains("NaN")));
+    }
+
+    #[test]
+    fn test_validate_wall_matrix_nan() {
+        let mut tensor = GeometryTensor::new();
+        tensor.wall_matrix[0] = f64::NAN;
+        let issues = tensor.validate();
+        assert!(issues
+            .iter()
+            .any(|s| s.contains("NaN") && s.contains("wall")));
+    }
+
+    #[test]
+    fn test_validate_negative_zone_area() {
+        let mut tensor = GeometryTensor::new();
+        tensor.zone_properties[0] = -50.0; // Negative area for zone 0
+        tensor.zone_properties[1] = f64::NAN; // Add NaN to trigger nested check
+        let issues = tensor.validate();
+        assert!(issues.iter().any(|s| s.contains("negative area")));
+    }
+
+    #[test]
+    fn test_validate_adjacency_asymmetry() {
+        let mut tensor = GeometryTensor::new();
+        // Set zone 0 -> 1 adjacency but not 1 -> 0
+        let idx_01 = 0 * MAX_ZONES + 1;
+        tensor.adjacency_matrix[idx_01] = 1.0;
+        let issues = tensor.validate();
+        assert!(issues.iter().any(|s| s.contains("asymmetry")));
+    }
+
+    #[test]
+    fn test_validate_multiple_issues() {
+        let mut tensor = GeometryTensor::new();
+        tensor.zone_coords[0] = f64::NAN;
+        tensor.zone_properties[0] = -50.0;
+        tensor.zone_properties[1] = f64::NAN; // Add NaN to trigger area check
+        let issues = tensor.validate();
+        assert!(issues.len() >= 2);
+    }
+
+    #[test]
+    fn test_geometry_tensor_clone() {
+        let mut tensor = GeometryTensor::new();
+        tensor.summary[0] = 3.0;
+        tensor.summary[4] = 100.0;
+        let cloned = tensor.clone();
+        assert_eq!(cloned.summary[0], 3.0);
+        assert_eq!(cloned.summary[4], 100.0);
+    }
+
+    #[test]
+    fn test_constants_values() {
+        assert_eq!(MAX_ZONES, 100);
+        assert_eq!(MAX_WALLS, 500);
+        assert_eq!(ZONE_COORDS_DIMS, (100, 20));
+        assert_eq!(WALL_MATRIX_DIMS, (500, 6));
+        assert_eq!(WINDOW_MATRIX_DIMS, (500, 6));
+        assert_eq!(ADJACENCY_MATRIX_DIMS, (100, 100));
+        assert_eq!(ZONE_PROPERTIES_DIMS, (100, 5));
+    }
+
+    #[test]
+    fn test_wall_data_debug() {
+        let wall = WallData {
+            x1: 1.0,
+            y1: 2.0,
+            x2: 3.0,
+            y2: 4.0,
+            height: 2.5,
+            thickness: 0.2,
+        };
+        let debug_str = format!("{:?}", wall);
+        assert!(debug_str.contains("WallData"));
+    }
+
+    #[test]
+    fn test_wall_data_copy() {
+        let wall = WallData {
+            x1: 1.0,
+            y1: 2.0,
+            x2: 3.0,
+            y2: 4.0,
+            height: 2.5,
+            thickness: 0.2,
+        };
+        let copied = wall;
+        assert_eq!(copied.x1, 1.0);
+        assert_eq!(copied.y2, 4.0);
+    }
+
+    #[test]
+    fn test_geometry_tensor_debug() {
+        let tensor = GeometryTensor::new();
+        let debug_str = format!("{:?}", tensor);
+        assert!(debug_str.contains("GeometryTensor"));
+    }
+
+    #[test]
+    fn test_get_multiple_zones() {
+        let mut tensor = GeometryTensor::new();
+        // Set markers for first 3 zones
+        for i in 0..3 {
+            let idx = i * 20;
+            tensor.zone_coords[idx] = i as f64;
+        }
+
+        for i in 0..3 {
+            let coords = tensor.get_zone_coords(i).unwrap();
+            assert_eq!(coords[0], i as f64);
+        }
+    }
+
+    #[test]
+    fn test_get_multiple_walls() {
+        let mut tensor = GeometryTensor::new();
+        // Set markers for first 5 walls
+        for i in 0..5 {
+            let idx = i * 6;
+            tensor.wall_matrix[idx] = i as f64;
+        }
+
+        for i in 0..5 {
+            let wall = tensor.get_wall(i).unwrap();
+            assert_eq!(wall.x1, i as f64);
+        }
+    }
+
+    #[test]
+    fn test_wall_data_zero_length() {
+        let wall = WallData {
+            x1: 0.0,
+            y1: 0.0,
+            x2: 0.0,
+            y2: 0.0,
+            height: 2.4,
+            thickness: 0.2,
+        };
+        assert_eq!(wall.length(), 0.0);
+        assert_eq!(wall.area(), 0.0);
     }
 }

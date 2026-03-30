@@ -248,4 +248,267 @@ mod tests {
         let sum = t1 + t2;
         assert_eq!(sum.shape(), vec![2, 3]);
     }
+
+    #[test]
+    fn test_ndarray_add_values() {
+        let t1 = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![4.0, 5.0, 6.0]);
+        let sum = t1 + t2;
+        assert_eq!(sum.as_slice(), &[5.0, 7.0, 9.0]);
+    }
+
+    #[test]
+    fn test_ndarray_sub_preserves_shape() {
+        let data = vec![4.0, 5.0, 6.0, 7.0, 8.0, 9.0];
+        let t1 = NDArrayField::from_shape_vec(vec![2, 3], data.clone());
+        let t2 = NDArrayField::from_shape_vec(vec![2, 3], vec![1.0, 1.0, 1.0, 1.0, 1.0, 1.0]);
+        let diff = t1 - t2;
+        assert_eq!(diff.shape(), vec![2, 3]);
+        assert_eq!(diff.as_slice(), &[3.0, 4.0, 5.0, 6.0, 7.0, 8.0]);
+    }
+
+    #[test]
+    fn test_ndarray_mul_preserves_shape() {
+        let t1 = NDArrayField::from_shape_vec(vec![3], vec![2.0, 3.0, 4.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![3.0, 2.0, 5.0]);
+        let product = t1 * t2;
+        assert_eq!(product.shape(), vec![3]);
+        assert_eq!(product.as_slice(), &[6.0, 6.0, 20.0]);
+    }
+
+    #[test]
+    fn test_ndarray_div_preserves_shape() {
+        let t1 = NDArrayField::from_shape_vec(vec![3], vec![10.0, 12.0, 16.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![2.0, 3.0, 4.0]);
+        let quotient = t1 / t2;
+        assert_eq!(quotient.shape(), vec![3]);
+        assert_eq!(quotient.as_slice(), &[5.0, 4.0, 4.0]);
+    }
+
+    #[test]
+    fn test_ndarray_scalar_mul() {
+        let t = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        let scaled = t * 2.5;
+        assert_eq!(scaled.shape(), vec![3]);
+        assert_eq!(scaled.as_slice(), &[2.5, 5.0, 7.5]);
+    }
+
+    #[test]
+    fn test_ndarray_scalar_div() {
+        let t = NDArrayField::from_shape_vec(vec![4], vec![10.0, 20.0, 30.0, 40.0]);
+        let divided = t / 5.0;
+        assert_eq!(divided.shape(), vec![4]);
+        assert_eq!(divided.as_slice(), &[2.0, 4.0, 6.0, 8.0]);
+    }
+
+    #[test]
+    fn test_ndarray_as_slice() {
+        let data = vec![1.0, 2.0, 3.0, 4.0];
+        let t = NDArrayField::from_shape_vec(vec![2, 2], data.clone());
+        assert_eq!(t.as_slice(), data.as_slice());
+    }
+
+    #[test]
+    fn test_ndarray_is_empty_false() {
+        let t = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        assert!(!t.is_empty());
+    }
+
+    #[test]
+    fn test_ndarray_index() {
+        let t = NDArrayField::from_shape_vec(vec![3], vec![10.0, 20.0, 30.0]);
+        assert_eq!(t[0], 10.0);
+        assert_eq!(t[1], 20.0);
+        assert_eq!(t[2], 30.0);
+    }
+
+    #[test]
+    fn test_ndarray_zip_with() {
+        let t1 = NDArrayField::from_shape_vec(vec![4], vec![1.0, 2.0, 3.0, 4.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![4], vec![10.0, 20.0, 30.0, 40.0]);
+        let result = t1.zip_with(&t2, |a, b| a + b * 2.0);
+        assert_eq!(result.as_slice(), &[21.0, 42.0, 63.0, 84.0]);
+    }
+
+    #[test]
+    fn test_ndarray_zip_with_mismatched_length_panics() {
+        let t1 = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![4], vec![1.0, 2.0, 3.0, 4.0]);
+        let _ = std::panic::catch_unwind(|| {
+            let _ = t1.zip_with(&t2, |a, b| a + b);
+        });
+    }
+
+    #[test]
+    fn test_ndarray_reduce_sum() {
+        let t = NDArrayField::from_shape_vec(vec![5], vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+        let sum = t.reduce(0.0, |acc, x| acc + x);
+        assert_eq!(sum, 15.0);
+    }
+
+    #[test]
+    fn test_ndarray_reduce_product() {
+        let t = NDArrayField::from_shape_vec(vec![4], vec![2.0, 3.0, 4.0, 5.0]);
+        let product = t.reduce(1.0, |acc, x| acc * x);
+        assert_eq!(product, 120.0);
+    }
+
+    #[test]
+    fn test_ndarray_reduce_max() {
+        let t = NDArrayField::from_shape_vec(vec![5], vec![3.0, 1.0, 7.0, 2.0, 5.0]);
+        let max_val = t.reduce(f64::NEG_INFINITY, |acc, x| acc.max(x));
+        assert_eq!(max_val, 7.0);
+    }
+
+    #[test]
+    fn test_ndarray_integrate_constant() {
+        let t = NDArrayField::from_shape_vec(vec![5], vec![2.0; 5]);
+        let integral = t.integrate();
+        // Trapezoidal: (2+2)/2 * 4 = 8.0
+        assert_eq!(integral, 8.0);
+    }
+
+    #[test]
+    fn test_ndarray_integrate_linear() {
+        let t = NDArrayField::from_shape_vec(vec![4], vec![0.0, 1.0, 2.0, 3.0]);
+        let integral = t.integrate();
+        // Trapezoidal: 0.5*(0+1) + 0.5*(1+2) + 0.5*(2+3) = 0.5 + 1.5 + 2.5 = 4.5
+        assert!((integral - 4.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_ndarray_integrate_single_element() {
+        let t = NDArrayField::from_shape_vec(vec![1], vec![5.0]);
+        let integral = t.integrate();
+        assert_eq!(integral, 5.0);
+    }
+
+    #[test]
+    fn test_ndarray_integrate_empty() {
+        let t = NDArrayField::from_shape_vec(vec![0], vec![]);
+        let integral = t.integrate();
+        assert_eq!(integral, 0.0);
+    }
+
+    #[test]
+    fn test_ndarray_gradient_linear() {
+        let t = NDArrayField::from_shape_vec(vec![4], vec![0.0, 1.0, 2.0, 3.0]);
+        let g = t.gradient();
+        // Linear sequence should have constant gradient of 1
+        assert_eq!(g.as_slice(), &[1.0, 1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn test_ndarray_gradient_constant() {
+        let t = NDArrayField::from_shape_vec(vec![4], vec![5.0; 4]);
+        let g = t.gradient();
+        assert_eq!(g.as_slice(), &[0.0, 0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_ndarray_gradient_single_element() {
+        let t = NDArrayField::from_shape_vec(vec![1], vec![5.0]);
+        let g = t.gradient();
+        assert_eq!(g.as_slice(), &[0.0]);
+    }
+
+    #[test]
+    fn test_ndarray_gradient_empty() {
+        let t = NDArrayField::from_shape_vec(vec![0], vec![]);
+        let g = t.gradient();
+        assert_eq!(g.shape(), vec![0]);
+        assert!(g.is_empty());
+    }
+
+    #[test]
+    fn test_ndarray_constant_like() {
+        let t = NDArrayField::from_shape_vec(vec![2, 3], vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0]);
+        let constant = t.constant_like(7.5);
+        assert_eq!(constant.shape(), vec![2, 3]);
+        assert_eq!(constant.as_slice(), &[7.5; 6]);
+    }
+
+    #[test]
+    fn test_ndarray_elementwise_min() {
+        let t1 = NDArrayField::from_shape_vec(vec![4], vec![5.0, 2.0, 8.0, 1.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![4], vec![3.0, 7.0, 4.0, 9.0]);
+        let result = t1.elementwise_min(&t2);
+        assert_eq!(result.as_slice(), &[3.0, 2.0, 4.0, 1.0]);
+    }
+
+    #[test]
+    fn test_ndarray_elementwise_max() {
+        let t1 = NDArrayField::from_shape_vec(vec![4], vec![5.0, 2.0, 8.0, 1.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![4], vec![3.0, 7.0, 4.0, 9.0]);
+        let result = t1.elementwise_max(&t2);
+        assert_eq!(result.as_slice(), &[5.0, 7.0, 8.0, 9.0]);
+    }
+
+    #[test]
+    fn test_ndarray_add_assign() {
+        let mut t1 = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![4.0, 5.0, 6.0]);
+        t1.add_assign(&t2);
+        assert_eq!(t1.as_slice(), &[5.0, 7.0, 9.0]);
+    }
+
+    #[test]
+    fn test_ndarray_sub_assign() {
+        let mut t1 = NDArrayField::from_shape_vec(vec![3], vec![5.0, 7.0, 9.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![4.0, 5.0, 6.0]);
+        t1.sub_assign(&t2);
+        assert_eq!(t1.as_slice(), &[1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn test_ndarray_mul_assign() {
+        let mut t1 = NDArrayField::from_shape_vec(vec![3], vec![2.0, 3.0, 4.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![3.0, 2.0, 5.0]);
+        t1.mul_assign(&t2);
+        assert_eq!(t1.as_slice(), &[6.0, 6.0, 20.0]);
+    }
+
+    #[test]
+    fn test_ndarray_div_assign() {
+        let mut t1 = NDArrayField::from_shape_vec(vec![3], vec![10.0, 12.0, 16.0]);
+        let t2 = NDArrayField::from_shape_vec(vec![3], vec![2.0, 3.0, 4.0]);
+        t1.div_assign(&t2);
+        assert_eq!(t1.as_slice(), &[5.0, 4.0, 4.0]);
+    }
+
+    #[test]
+    fn test_ndarray_operations_preserve_multidimensional_shape() {
+        let data1 = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0];
+        let data2 = vec![2.0, 3.0, 4.0, 5.0, 6.0, 7.0];
+        let t1 = NDArrayField::from_shape_vec(vec![2, 3], data1);
+        let t2 = NDArrayField::from_shape_vec(vec![2, 3], data2);
+
+        let sum = t1.clone() + t2.clone();
+        let diff = t1.clone() - t2.clone();
+        let prod = t1.clone() * t2.clone();
+        let quot = t1 / t2;
+
+        assert_eq!(sum.shape(), vec![2, 3]);
+        assert_eq!(diff.shape(), vec![2, 3]);
+        assert_eq!(prod.shape(), vec![2, 3]);
+        assert_eq!(quot.shape(), vec![2, 3]);
+    }
+
+    #[test]
+    fn test_ndarray_clone_and_equality() {
+        let t1 = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        let t2 = t1.clone();
+        assert_eq!(t1, t2);
+        assert!(!std::ptr::eq(
+            t1.as_slice() as *const _,
+            t2.as_slice() as *const _
+        ));
+    }
+
+    #[test]
+    fn test_ndarray_debug_formatting() {
+        let t = NDArrayField::from_shape_vec(vec![3], vec![1.0, 2.0, 3.0]);
+        let debug_str = format!("{:?}", t);
+        assert!(debug_str.contains("NDArrayField"));
+    }
 }

@@ -502,4 +502,140 @@ mod tests {
         assert!(report.contains("5R1C: 1 walls"));
         assert!(report.contains("CTF:  2 walls"));
     }
+
+    #[test]
+    fn test_thermal_method_name() {
+        assert_eq!(ThermalMethod::FiveR1C.name(), "5R1C");
+        assert_eq!(ThermalMethod::CTF.name(), "CTF");
+        assert_eq!(ThermalMethod::FiniteDifference.name(), "FD");
+    }
+
+    #[test]
+    fn test_selector_default() {
+        let selector = ThermalMethodSelector::default();
+        assert_eq!(selector.threshold_hours, 2.0);
+        assert!(selector.override_method.is_none());
+        assert!(selector.enable_fallback);
+        assert_eq!(selector.h_interior, 8.0);
+        assert_eq!(selector.h_exterior, 25.0);
+    }
+
+    #[test]
+    fn test_log_selection() {
+        let selector = ThermalMethodSelector::default();
+        let wall = create_lightweight_wall();
+        let method = selector.select_method(&wall);
+        selector.log_selection(&wall, method);
+        // Just ensure it doesn't panic - actual logging is tested elsewhere
+    }
+
+    #[test]
+    fn test_thermal_method_copy() {
+        let method = ThermalMethod::CTF;
+        let copied = method;
+        assert_eq!(method, copied);
+    }
+
+    #[test]
+    fn test_thermal_method_eq() {
+        assert_eq!(ThermalMethod::FiveR1C, ThermalMethod::FiveR1C);
+        assert_ne!(ThermalMethod::CTF, ThermalMethod::FiniteDifference);
+    }
+
+    #[test]
+    fn test_selector_clone() {
+        let selector = ThermalMethodSelector::with_threshold(3.0);
+        let cloned = selector.clone();
+
+        assert_eq!(cloned.threshold_hours, 3.0);
+        assert!(cloned.override_method.is_none());
+    }
+
+    #[test]
+    fn test_selector_debug() {
+        let selector = ThermalMethodSelector::default();
+        let debug_str = format!("{:?}", selector);
+        assert!(debug_str.contains("ThermalMethodSelector"));
+    }
+
+    #[test]
+    fn test_thermal_method_debug() {
+        let method = ThermalMethod::CTF;
+        let debug_str = format!("{:?}", method);
+        assert!(debug_str.contains("CTF"));
+    }
+
+    #[test]
+    fn test_calculate_time_constant_zero_h() {
+        let selector = ThermalMethodSelector::default();
+        let wall = create_lightweight_wall();
+        let tau = selector.calculate_time_constant(&wall);
+
+        // Should be finite and positive
+        assert!(tau.is_finite());
+        assert!(tau > 0.0);
+    }
+
+    #[test]
+    fn test_select_with_custom_threshold() {
+        let selector = ThermalMethodSelector::with_threshold(5.0);
+        let wall = create_lightweight_wall();
+
+        // With high threshold (5h), even lightweight wall may use CTF
+        let method = selector.select_method(&wall);
+        // Depending on actual time constant, could be either 5R1C or CTF
+        assert!(matches!(
+            method,
+            ThermalMethod::FiveR1C | ThermalMethod::CTF
+        ));
+    }
+
+    #[test]
+    fn test_select_with_custom_override() {
+        let selector = ThermalMethodSelector::with_override(ThermalMethod::FiveR1C);
+        let wall = create_heavyweight_wall();
+
+        let method = selector.select_method(&wall);
+        assert_eq!(method, ThermalMethod::FiveR1C);
+    }
+
+    #[test]
+    fn test_generate_report_empty() {
+        let selector = ThermalMethodSelector::default();
+        let walls: Vec<BuildingAssembly> = vec![];
+
+        let report = selector.generate_report(&walls);
+
+        assert!(report.contains("Total walls: 0"));
+        assert!(report.contains("5R1C: 0 walls"));
+        assert!(report.contains("CTF:  0 walls"));
+        assert!(report.contains("FD:   0 walls"));
+    }
+
+    #[test]
+    fn test_fallback_with_enable_flag() {
+        let selector = ThermalMethodSelector {
+            enable_fallback: false,
+            ..ThermalMethodSelector::default()
+        };
+        let wall = create_heavyweight_wall();
+
+        // Even with CTF invalid, fallback disabled should return CTF
+        let method = selector.select_with_fallback(&wall, false);
+        assert_eq!(method, ThermalMethod::CTF);
+    }
+
+    #[test]
+    fn test_thermal_method_variants() {
+        let methods = [
+            ThermalMethod::FiveR1C,
+            ThermalMethod::CTF,
+            ThermalMethod::FiniteDifference,
+        ];
+
+        for method in methods {
+            let name = method.name();
+            assert!(!name.is_empty());
+        }
+    }
 }

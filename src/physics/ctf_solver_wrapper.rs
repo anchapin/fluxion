@@ -287,4 +287,84 @@ mod tests {
         assert!((wrapper.h_interior - 10.0).abs() < 1e-10);
         assert!((wrapper.h_exterior - 30.0).abs() < 1e-10);
     }
+
+    // === Phase 3: Additional coverage tests ===
+
+    #[test]
+    fn test_ctf_wrapper_default() {
+        let wrapper = CTFSolverWrapper::default();
+        assert_eq!(wrapper.h_interior, 8.0);
+        assert_eq!(wrapper.h_exterior, 25.0);
+    }
+
+    #[test]
+    fn test_ctf_wrapper_name() {
+        let wrapper = CTFSolverWrapper::new();
+        assert_eq!(wrapper.name(), "CTF");
+    }
+
+    #[test]
+    fn test_ctf_wrapper_is_valid() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+
+        // Not initialized -> not valid
+        assert!(!wrapper.is_valid());
+
+        wrapper.initialize(&wall).unwrap();
+        // Initialized -> valid
+        assert!(wrapper.is_valid());
+    }
+
+    #[test]
+    fn test_ctf_wrapper_energy_storage_rate() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Energy storage rate is 0 (placeholder for CTF)
+        let rate = wrapper.energy_storage_rate();
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_ctf_wrapper_step_extreme_temperatures() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Cold extreme
+        let flux_cold = wrapper.step(3600.0, -10.0, -20.0, 8.0, 25.0).unwrap();
+        assert!(flux_cold.is_finite());
+
+        // Hot extreme
+        let flux_hot = wrapper.step(3600.0, 40.0, 50.0, 8.0, 25.0).unwrap();
+        assert!(flux_hot.is_finite());
+    }
+
+    #[test]
+    fn test_ctf_wrapper_step_ignored_convection() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Convection parameters are ignored by the step function
+        // Should still work with any h_interior, h_exterior values
+        let flux = wrapper.step(3600.0, 20.0, 10.0, 100.0, 200.0).unwrap();
+        assert!(flux.is_finite());
+    }
+
+    #[test]
+    fn test_ctf_wrapper_initialization_reinitializable() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+
+        // First initialization
+        let result1 = wrapper.initialize(&wall);
+        assert!(result1.is_ok());
+
+        // Re-initialization should also succeed
+        let result2 = wrapper.initialize(&wall);
+        assert!(result2.is_ok());
+    }
 }

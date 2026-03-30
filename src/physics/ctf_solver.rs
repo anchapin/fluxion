@@ -88,7 +88,7 @@ impl CTFSolverConfig {
 }
 
 /// CTF solver state and history buffers.
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct CTFSolver {
     /// CTF coefficients (X, Y, Z, Φ).
     pub coefficients: CTFCoefficients,
@@ -504,5 +504,251 @@ mod tests {
         assert!((config.surface_area - 97.2).abs() < 0.1);
         assert_eq!(config.h_interior, 8.0);
         assert_eq!(config.h_exterior, 25.0);
+    }
+
+    #[test]
+    fn test_solver_with_warmup() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let solver = CTFSolver::with_warmup(coeffs, config, 20.0, 15.0, 7);
+
+        assert!(solver.interior_flux().is_finite());
+    }
+
+    #[test]
+    fn test_exterior_flux() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        solver.step(20.0, 30.0);
+        let q_int = solver.interior_flux();
+        let q_ext = solver.exterior_flux();
+
+        // In simplified implementation, they should be equal
+        assert_eq!(q_int, q_ext);
+    }
+
+    #[test]
+    fn test_interior_surface_temp() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        solver.step(22.0, 28.0);
+        assert_eq!(solver.interior_surface_temp(), 22.0);
+
+        solver.step(21.0, 27.0);
+        assert_eq!(solver.interior_surface_temp(), 21.0);
+    }
+
+    #[test]
+    fn test_exterior_surface_temp() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        solver.step(22.0, 28.0);
+        assert_eq!(solver.exterior_surface_temp(), 28.0);
+
+        solver.step(21.0, 27.0);
+        assert_eq!(solver.exterior_surface_temp(), 27.0);
+    }
+
+    #[test]
+    fn test_total_energy_transferred() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        // Step with constant temperature difference
+        let q1 = solver.step(20.0, 30.0);
+        let q2 = solver.step(20.0, 30.0);
+        let q3 = solver.step(20.0, 30.0);
+
+        let total_energy = solver.total_energy_transferred();
+        let expected = (q1 + q2 + q3) * 3600.0;
+
+        assert!((total_energy - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_timestep() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let solver = CTFSolver::new(coeffs.clone(), config);
+
+        assert_eq!(solver.timestep(), 3600.0);
+
+        let config2 = CTFSolverConfig::new(1800.0, 50);
+        let solver2 = CTFSolver::new(coeffs, config2);
+        assert_eq!(solver2.timestep(), 1800.0);
+    }
+
+    #[test]
+    fn test_history_accessors() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 10);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        solver.step(25.0, 30.0);
+
+        // Check history accessors return non-empty slices
+        let ext_hist = solver.exterior_temperature_history();
+        let int_hist = solver.interior_temperature_history();
+        let flux_hist = solver.interior_flux_history();
+
+        assert!(!ext_hist.is_empty());
+        assert!(!int_hist.is_empty());
+        assert!(!flux_hist.is_empty());
+        assert_eq!(ext_hist[0], 30.0);
+        assert_eq!(int_hist[0], 25.0);
+    }
+
+    #[test]
+    fn test_wall_model_update_conditions() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let solver = CTFSolver::new(coeffs, config);
+        let mut model = CTFWallModel::new(solver);
+
+        model.update_conditions(22.0, 28.0);
+        assert_eq!(model.t_zone, 22.0);
+        assert_eq!(model.t_sol_air, 28.0);
+
+        model.update_conditions(21.0, 27.0);
+        assert_eq!(model.t_zone, 21.0);
+        assert_eq!(model.t_sol_air, 27.0);
+    }
+
+    #[test]
+    fn test_wall_model_heat_flux() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let solver = CTFSolver::new(coeffs, config);
+        let mut model = CTFWallModel::new(solver);
+
+        model.update_conditions(20.0, 30.0);
+        model.step();
+
+        assert!(model.heat_flux().is_finite());
+    }
+
+    #[test]
+    fn test_solver_display() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let solver = CTFSolver::new(coeffs, config);
+
+        let display_str = format!("{}", solver);
+        assert!(display_str.contains("CTF Solver"));
+        assert!(display_str.contains("Timestep"));
+        assert!(display_str.contains("History size"));
+    }
+
+    #[test]
+    fn test_solver_clone() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        solver.step(22.0, 28.0);
+        let cloned = solver.clone();
+
+        assert_eq!(
+            cloned.interior_surface_temp(),
+            solver.interior_surface_temp()
+        );
+        assert_eq!(
+            cloned.exterior_surface_temp(),
+            solver.exterior_surface_temp()
+        );
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let cloned = config.clone();
+
+        assert_eq!(cloned.timestep, 3600.0);
+        assert_eq!(cloned.history_size, 50);
+        assert_eq!(cloned.surface_area, 1.0);
+        assert_eq!(cloned.h_interior, 8.0);
+        assert_eq!(cloned.h_exterior, 25.0);
+    }
+
+    #[test]
+    fn test_config_debug() {
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("CTFSolverConfig"));
+    }
+
+    #[test]
+    fn test_solver_debug() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let solver = CTFSolver::new(coeffs, config);
+        let debug_str = format!("{:?}", solver);
+        assert!(debug_str.contains("CTFSolver"));
+    }
+
+    #[test]
+    fn test_case_900_constructor() {
+        let coeffs = case_900_coefficients();
+        let solver = CTFSolver::case_900(coeffs.clone(), 3600.0);
+
+        assert_eq!(solver.config.timestep, 3600.0);
+        assert_eq!(solver.config.history_size, 50);
+        assert!((solver.config.surface_area - 97.2).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_warmup_initializes_history() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 20);
+        let solver = CTFSolver::with_warmup(coeffs, config, 20.0, 15.0, 3);
+
+        // History should be populated from warmup
+        assert!(!solver.q_interior_history.iter().all(|&x| x == 0.0));
+    }
+
+    #[test]
+    fn test_multiple_steps_consistent() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 50);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        let mut prev_flux = 0.0;
+        for _ in 0..10 {
+            let q = solver.step(20.0, 30.0);
+            assert!(q.is_finite());
+            // Flux should stabilize (not jump wildly)
+            if prev_flux != 0.0 {
+                assert!((q - prev_flux).abs() < 100.0);
+            }
+            prev_flux = q;
+        }
+    }
+
+    #[test]
+    fn test_temperature_history_accurate() {
+        let coeffs = case_900_coefficients();
+        let config = CTFSolverConfig::new(3600.0, 10);
+        let mut solver = CTFSolver::new(coeffs, config);
+
+        solver.step(20.0, 30.0);
+        solver.step(21.0, 31.0);
+        solver.step(22.0, 32.0);
+
+        let int_hist = solver.interior_temperature_history();
+        assert_eq!(int_hist[0], 22.0);
+        assert_eq!(int_hist[1], 21.0);
+        assert_eq!(int_hist[2], 20.0);
+
+        let ext_hist = solver.exterior_temperature_history();
+        assert_eq!(ext_hist[0], 32.0);
+        assert_eq!(ext_hist[1], 31.0);
+        assert_eq!(ext_hist[2], 30.0);
     }
 }

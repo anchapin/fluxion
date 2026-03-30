@@ -303,4 +303,145 @@ mod tests {
             total_flux
         );
     }
+
+    // === Phase 3: Additional coverage tests ===
+
+    #[test]
+    fn test_fd_wrapper_with_convection() {
+        let wrapper = FDSolverWrapper::with_convection(5.0, 30.0);
+        assert!(!wrapper.initialized);
+        assert!(!wrapper.valid);
+        assert_eq!(wrapper.h_interior, 5.0);
+        assert_eq!(wrapper.h_exterior, 30.0);
+    }
+
+    #[test]
+    fn test_fd_wrapper_default() {
+        let wrapper = FDSolverWrapper::default();
+        assert_eq!(wrapper.nodes_per_layer, 10);
+        assert_eq!(wrapper.h_interior, 8.0);
+        assert_eq!(wrapper.h_exterior, 25.0);
+    }
+
+    #[test]
+    fn test_fd_wrapper_name() {
+        let wrapper = FDSolverWrapper::new();
+        assert_eq!(wrapper.name(), "FD");
+    }
+
+    #[test]
+    fn test_fd_wrapper_energy_storage_rate() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Energy storage rate should be finite (may be 0 as placeholder)
+        let rate = wrapper.energy_storage_rate();
+        assert!(rate.is_finite());
+    }
+
+    #[test]
+    fn test_fd_wrapper_is_valid() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+
+        // Not initialized -> not valid
+        assert!(!wrapper.is_valid());
+
+        wrapper.initialize(&wall).unwrap();
+        // Initialized -> valid
+        assert!(wrapper.is_valid());
+    }
+
+    #[test]
+    fn test_fd_wrapper_step_various_timesteps() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        let timesteps = [300.0, 600.0, 1800.0, 3600.0];
+        for dt in timesteps {
+            let flux = wrapper.step(dt, 20.0, 10.0, 8.0, 25.0).unwrap();
+            assert!(flux.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_fd_wrapper_step_extreme_temperatures() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Cold extreme
+        let flux_cold = wrapper.step(3600.0, -10.0, -20.0, 8.0, 25.0).unwrap();
+        assert!(flux_cold.is_finite());
+
+        // Hot extreme
+        let flux_hot = wrapper.step(3600.0, 40.0, 50.0, 8.0, 25.0).unwrap();
+        assert!(flux_hot.is_finite());
+    }
+
+    #[test]
+    fn test_fd_wrapper_step_extreme_convection() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Low convection
+        let flux_low = wrapper.step(3600.0, 20.0, 10.0, 1.0, 1.0).unwrap();
+        assert!(flux_low.is_finite());
+
+        // High convection
+        let flux_high = wrapper.step(3600.0, 20.0, 10.0, 50.0, 100.0).unwrap();
+        assert!(flux_high.is_finite());
+    }
+
+    #[test]
+    fn test_fd_wrapper_initialization_empty_assembly() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+
+        // First initialization should succeed
+        let result1 = wrapper.initialize(&wall);
+        assert!(result1.is_ok());
+
+        // Second initialization should also succeed (updates state)
+        let result2 = wrapper.initialize(&wall);
+        assert!(result2.is_ok());
+    }
+
+    #[test]
+    fn test_fd_wrapper_custom_nodes_per_layer() {
+        let wrapper = FDSolverWrapper::with_discretization(5);
+        assert_eq!(wrapper.nodes_per_layer, 5);
+    }
+
+    #[test]
+    fn test_fd_wrapper_flux_directions() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // Interior hotter than exterior - flux should be positive (into zone)
+        let flux_heating = wrapper.step(3600.0, 25.0, 15.0, 8.0, 25.0).unwrap();
+        assert!(flux_heating > 0.0, "Heating flux should be positive");
+
+        // Exterior hotter than interior - flux should be negative (out of zone)
+        let flux_cooling = wrapper.step(3600.0, 15.0, 25.0, 8.0, 25.0).unwrap();
+        assert!(flux_cooling < 0.0, "Cooling flux should be negative");
+    }
+
+    #[test]
+    fn test_fd_wrapper_timestep_zero() {
+        let mut wrapper = FDSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        let flux = wrapper.step(0.0, 20.0, 10.0, 8.0, 25.0).unwrap();
+        // Zero timestep should give zero flux (no time for heat transfer)
+        assert!(
+            flux.abs() < 1e-10,
+            "Zero timestep should give near-zero flux"
+        );
+    }
 }
