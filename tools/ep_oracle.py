@@ -14,12 +14,12 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-import tempfile
-import shutil
 
 
 class EnergyPlusOracle:
@@ -153,7 +153,7 @@ Material,
   Concrete,
   MediumRough,
   0.15,                       ! Thickness (m)
-  {1.0/(u_walls*0.15):.4f},  ! Conductivity (W/mK)
+  {1.0 / (u_walls * 0.15):.4f},  ! Conductivity (W/mK)
   {1600.0},                   ! Density (kg/m3)
   {840.0},                    ! Specific Heat (J/kgK)
   {0.9};                      ! Thermal Absorptance
@@ -390,8 +390,10 @@ Output:Variable,
         # Build EnergyPlus command
         ep_cmd = [
             str(self.ep_path / "energyplus"),
-            "-w", str(epw_path),
-            "-d", str(output_dir),
+            "-w",
+            str(epw_path),
+            "-d",
+            str(output_dir),
             "-r",  # Read variables
             idf_path,
         ]
@@ -429,51 +431,60 @@ Output:Variable,
             cursor = conn.cursor()
 
             # Get zone temperatures
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT Value
                 FROM ReportData
                 JOIN ReportDataDictionary
                     ON ReportDataDictionary.ReportDataDictionaryIndex = ReportData.ReportDataDictionaryIndex
                 WHERE ReportDataDictionary.Name = 'Zone Mean Air Temperature'
                 ORDER BY TimeIndex
-            """)
+            """
+            )
             results["zone_temperatures"] = [row[0] for row in cursor.fetchall()]
 
             # Get outdoor temperatures
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT Value
                 FROM ReportData
                 JOIN ReportDataDictionary
                     ON ReportDataDictionary.ReportDataDictionaryIndex = ReportData.ReportDataDictionaryIndex
                 WHERE ReportDataDictionary.Name = 'Site Outdoor Air Drybulb Temperature'
                 ORDER BY TimeIndex
-            """)
+            """
+            )
             results["outdoor_temperatures"] = [row[0] for row in cursor.fetchall()]
 
             # Get heating energy
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT SUM(Value)
                 FROM ReportData
                 JOIN ReportDataDictionary
                     ON ReportDataDictionary.ReportDataDictionaryIndex = ReportData.ReportDataDictionaryIndex
                 WHERE ReportDataDictionary.Name = 'Zone Ideal Loads Supply Air Total Heating Energy'
-            """)
+            """
+            )
             row = cursor.fetchone()
             results["heating_energy"] = row[0] if row and row[0] else 0.0
 
             # Get cooling energy
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT SUM(Value)
                 FROM ReportData
                 JOIN ReportDataDictionary
                     ON ReportDataDictionary.ReportDataDictionaryIndex = ReportData.ReportDataDictionaryIndex
                 WHERE ReportDataDictionary.Name = 'Zone Ideal Loads Supply Air Total Cooling Energy'
-            """)
+            """
+            )
             row = cursor.fetchone()
             results["cooling_energy"] = row[0] if row and row[0] else 0.0
 
             # Get surface temperatures
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT TimeIndex, Value
                 FROM ReportData
                 JOIN ReportDataDictionary
@@ -481,10 +492,12 @@ Output:Variable,
                 WHERE ReportDataDictionary.Name = 'Surface Outside Face Temperature'
                   AND ReportDataDictionary.KeyValue = 'West Wall'
                 ORDER BY TimeIndex
-            """)
+            """
+            )
             results["surface_outside_temps"] = [row[1] for row in cursor.fetchall()]
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT TimeIndex, Value
                 FROM ReportData
                 JOIN ReportDataDictionary
@@ -492,7 +505,8 @@ Output:Variable,
                 WHERE ReportDataDictionary.Name = 'Surface Inside Face Temperature'
                   AND ReportDataDictionary.KeyValue = 'West Wall'
                 ORDER BY TimeIndex
-            """)
+            """
+            )
             results["surface_inside_temps"] = [row[1] for row in cursor.fetchall()]
 
             conn.close()
@@ -543,9 +557,10 @@ Output:Variable,
 
             # Calculate RMSE
             import math
+
             n = min(len(fluxion_temps), len(ep_temps))
             if n > 0:
-                se = sum((fluxion_temps[i] - ep_temps[i])**2 for i in range(n))
+                se = sum((fluxion_temps[i] - ep_temps[i]) ** 2 for i in range(n))
                 rmse = math.sqrt(se / n)
                 report["metrics"]["temperature_rmse"] = rmse
 
@@ -555,8 +570,11 @@ Output:Variable,
 
                 # Check max relative error
                 max_rel = max(
-                    abs(fluxion_temps[i] - ep_temps[i]) / abs(ep_temps[i])
-                    if ep_temps[i] != 0 else 0
+                    (
+                        abs(fluxion_temps[i] - ep_temps[i]) / abs(ep_temps[i])
+                        if ep_temps[i] != 0
+                        else 0
+                    )
                     for i in range(n)
                 )
                 report["metrics"]["temperature_max_rel"] = max_rel
@@ -610,6 +628,7 @@ def load_test_cases() -> Dict:
 
     try:
         import tomli
+
         with open(catalog_path, "rb") as f:
             return tomli.load(f)
     except ImportError:
@@ -660,20 +679,32 @@ def main():
     # Generate command
     gen_parser = subparsers.add_parser("generate", help="Generate EP reference data")
     gen_parser.add_argument("--case", help="Specific test case ID")
-    gen_parser.add_argument("--all-cases", action="store_true", help="Generate all cases")
-    gen_parser.add_argument("--output-dir", default="refdata/ep", help="Output directory")
+    gen_parser.add_argument(
+        "--all-cases", action="store_true", help="Generate all cases"
+    )
+    gen_parser.add_argument(
+        "--output-dir", default="refdata/ep", help="Output directory"
+    )
 
     # Compare command
-    comp_parser = subparsers.add_parser("compare", help="Compare Fluxion and EP results")
+    comp_parser = subparsers.add_parser(
+        "compare", help="Compare Fluxion and EP results"
+    )
     comp_parser.add_argument("--fluxion", required=True, help="Fluxion output JSON")
     comp_parser.add_argument("--ep", required=True, help="EP output JSON")
-    comp_parser.add_argument("--tol-abs", type=float, default=1.0, help="Absolute tolerance")
-    comp_parser.add_argument("--tol-rel", type=float, default=0.05, help="Relative tolerance")
+    comp_parser.add_argument(
+        "--tol-abs", type=float, default=1.0, help="Absolute tolerance"
+    )
+    comp_parser.add_argument(
+        "--tol-rel", type=float, default=0.05, help="Relative tolerance"
+    )
 
     # Validate command
     val_parser = subparsers.add_parser("validate", help="Validate Fluxion against EP")
     val_parser.add_argument("--test-case", required=True, help="Test case ID")
-    val_parser.add_argument("--fluxion-output", required=True, help="Fluxion output JSON")
+    val_parser.add_argument(
+        "--fluxion-output", required=True, help="Fluxion output JSON"
+    )
 
     args = parser.parse_args()
 
@@ -742,7 +773,9 @@ def main():
             ep_data = json.load(f)
 
         oracle = EnergyPlusOracle()
-        report = oracle.compare_results(fluxion_data, ep_data, args.tol_abs, args.tol_rel)
+        report = oracle.compare_results(
+            fluxion_data, ep_data, args.tol_abs, args.tol_rel
+        )
 
         print("\nComparison Report:")
         print(f"  Overall: {'PASS' if report['passed'] else 'FAIL'}")
@@ -760,7 +793,9 @@ def main():
         oracle = EnergyPlusOracle()
         test_cases = load_test_cases()
 
-        case = next((c for c in test_cases.get("case", []) if c["id"] == args.test_case), None)
+        case = next(
+            (c for c in test_cases.get("case", []) if c["id"] == args.test_case), None
+        )
         if not case:
             print(f"Test case {args.test_case} not found")
             sys.exit(1)

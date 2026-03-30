@@ -2,7 +2,6 @@
 ///
 /// This module provides coverage tracking infrastructure for ASHRAE 140 validation
 /// to ensure that tests exercise all critical physics code paths.
-
 use std::collections::HashSet;
 
 /// Coverage tracking for physics code paths.
@@ -89,7 +88,11 @@ impl CoverageSummary {
 ///
 /// This is a simplified approach to track which physics paths
 /// would be exercised during ASHRAE 140 validation runs.
-fn simulate_coverage_for_case(hours: usize, is_free_floating: bool, has_multiple_zones: bool) -> CoverageTracker {
+fn simulate_coverage_for_case(
+    hours: usize,
+    is_free_floating: bool,
+    has_multiple_zones: bool,
+) -> CoverageTracker {
     let mut coverage = CoverageTracker::new();
 
     for hour in 0..hours {
@@ -139,10 +142,22 @@ fn test_case_600_full_coverage() {
     assert!(coverage.path_hit("convection"), "Convection path not hit");
     assert!(coverage.path_hit("radiation"), "Radiation path not hit");
     assert!(coverage.path_hit("solar_gain"), "Solar gain path not hit");
-    assert!(coverage.path_hit("thermal_mass"), "Thermal mass path not hit");
-    assert!(coverage.path_hit("hvac_control"), "HVAC control path not hit");
-    assert!(coverage.path_hit("surface_balance"), "Surface balance path not hit");
-    assert!(coverage.path_hit("solve_timestep"), "Timestep solver path not hit");
+    assert!(
+        coverage.path_hit("thermal_mass"),
+        "Thermal mass path not hit"
+    );
+    assert!(
+        coverage.path_hit("hvac_control"),
+        "HVAC control path not hit"
+    );
+    assert!(
+        coverage.path_hit("surface_balance"),
+        "Surface balance path not hit"
+    );
+    assert!(
+        coverage.path_hit("solve_timestep"),
+        "Timestep solver path not hit"
+    );
 
     // Verify we hit a minimum number of unique paths
     assert!(
@@ -162,9 +177,18 @@ fn test_case_900_full_coverage() {
     assert!(coverage.path_hit("convection"), "Convection path not hit");
     assert!(coverage.path_hit("radiation"), "Radiation path not hit");
     assert!(coverage.path_hit("solar_gain"), "Solar gain path not hit");
-    assert!(coverage.path_hit("thermal_mass"), "Thermal mass path not hit");
-    assert!(coverage.path_hit("hvac_control"), "HVAC control path not hit");
-    assert!(coverage.path_hit("surface_balance"), "Surface balance path not hit");
+    assert!(
+        coverage.path_hit("thermal_mass"),
+        "Thermal mass path not hit"
+    );
+    assert!(
+        coverage.path_hit("hvac_control"),
+        "HVAC control path not hit"
+    );
+    assert!(
+        coverage.path_hit("surface_balance"),
+        "Surface balance path not hit"
+    );
 }
 
 /// Test coverage tracking hit counts.
@@ -218,7 +242,11 @@ fn test_coverage_percent() {
     let percent = summary.coverage_percent();
 
     // Should be 100% (3/3), not 60%
-    assert!((percent - 100.0).abs() < 1e-10, "Expected 100%, got {}", percent);
+    assert!(
+        (percent - 100.0).abs() < 1e-10,
+        "Expected 100%, got {}",
+        percent
+    );
 }
 
 /// Test that free-floating cases hit appropriate paths.
@@ -227,8 +255,10 @@ fn test_free_floating_case_coverage() {
     let coverage = simulate_coverage_for_case(24, true, false);
 
     // Free-floating should NOT hit HVAC control (no HVAC)
-    assert!(!coverage.path_hit("hvac_control"),
-        "HVAC control should not be hit in free-floating test");
+    assert!(
+        !coverage.path_hit("hvac_control"),
+        "HVAC control should not be hit in free-floating test"
+    );
 
     // But should hit all other paths
     assert!(coverage.path_hit("conduction"));
@@ -244,25 +274,36 @@ fn test_case_960_interzone_coverage() {
     let coverage = simulate_coverage_for_case(24, false, true);
 
     // Multi-zone case should hit interzone transfer
-    assert!(coverage.path_hit("interzone_transfer"),
-        "Interzone transfer should be hit in multi-zone case");
+    assert!(
+        coverage.path_hit("interzone_transfer"),
+        "Interzone transfer should be hit in multi-zone case"
+    );
 }
 
 /// Test coverage across multiple ASHRAE 140 case types.
 #[test]
 fn test_all_cases_coverage_comprehensive() {
     let all_paths: HashSet<String> = [
-        "conduction", "convection", "radiation", "solar_gain",
-        "thermal_mass", "hvac_control", "surface_balance",
-        "interzone_transfer", "solve_timestep",
-    ].iter().map(|s| s.to_string()).collect();
+        "conduction",
+        "convection",
+        "radiation",
+        "solar_gain",
+        "thermal_mass",
+        "hvac_control",
+        "surface_balance",
+        "interzone_transfer",
+        "solve_timestep",
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect();
 
     let mut combined_coverage = HashSet::new();
 
     // Test each case type
     let tests = vec![
-        simulate_coverage_for_case(168, false, false),  // Standard case
-        simulate_coverage_for_case(168, false, false),  // Lightweight case
+        simulate_coverage_for_case(168, false, false), // Standard case
+        simulate_coverage_for_case(168, false, false), // Lightweight case
         simulate_coverage_for_case(24, true, false),   // Free-floating
         simulate_coverage_for_case(24, false, true),   // Multi-zone
     ];
@@ -273,14 +314,20 @@ fn test_all_cases_coverage_comprehensive() {
 
     // Verify comprehensive coverage
     for path in all_paths.iter() {
-        assert!(combined_coverage.contains(path),
-            "Path '{}' not covered by any test case", path);
+        assert!(
+            combined_coverage.contains(path),
+            "Path '{}' not covered by any test case",
+            path
+        );
     }
 
     // Should have covered all critical paths
-    assert!(combined_coverage.len() >= all_paths.len(),
+    assert!(
+        combined_coverage.len() >= all_paths.len(),
         "Expected at least {} unique paths, got {}",
-        all_paths.len(), combined_coverage.len());
+        all_paths.len(),
+        combined_coverage.len()
+    );
 }
 
 /// Test coverage for different weather conditions (seasonal).
@@ -290,10 +337,10 @@ fn test_seasonal_coverage() {
 
     // Simulate different seasons
     let seasons = [
-        ("winter", 0, 24),      // January
-        ("spring", 2190, 24),    // April
-        ("summer", 4380, 24),    // July
-        ("fall", 6570, 24),      // October
+        ("winter", 0, 24),    // January
+        ("spring", 2190, 24), // April
+        ("summer", 4380, 24), // July
+        ("fall", 6570, 24),   // October
     ];
 
     for (season, _start_hour, _duration) in seasons {
