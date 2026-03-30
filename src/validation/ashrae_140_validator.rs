@@ -2251,16 +2251,18 @@ pub fn validate_case_with_diagnostics(
         }
 
         // Step physics (includes diagnostics recording if enabled)
+        // step_physics() returns kWh (cumulative energy for timestep)
         let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
-        // Energy tracking: step_physics() returns Watts (instantaneous power), not kWh
-        // Convert Watts × 3600 seconds = Joules for hourly timesteps
+        // Energy tracking: Convert kWh to Joules (1 kWh = 3.6e6 Joules)
         if hvac_kwh > 0.0 {
-            annual_heating_joules += hvac_kwh * 3600.0;
-            peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
+            annual_heating_joules += hvac_kwh * 3.6e6;
+            // Use model's built-in peak tracking (already in Watts)
+            peak_heating_watts = peak_heating_watts.max(model.get_peak_heating_power_kw() * 1000.0);
         } else {
-            annual_cooling_joules += (-hvac_kwh) * 3600.0;
-            peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
+            annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            // Use model's built-in peak tracking (already in Watts)
+            peak_cooling_watts = peak_cooling_watts.max(model.get_peak_cooling_power_kw() * 1000.0);
         }
 
         // Free-floating temperature tracking

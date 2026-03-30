@@ -3537,56 +3537,48 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let energy_this_timestep = actual_electrical_power * dt_seconds / 3.6e6;
             self.annual_electrical_energy += energy_this_timestep;
 
-            // Track peak heating/cooling based on thermal demand (not electrical power)
-            // Use modulated_load (clamped to capacity) for accurate peak tracking (Plan 18-08)
-            if matches!(hvac_mode, EquipmentHVACMode::Heating) && modulated_load > 0.0 {
-                self.peak_power_heating = self.peak_power_heating.max(modulated_load);
-            } else if matches!(hvac_mode, EquipmentHVACMode::Cooling) && modulated_load > 0.0 {
-                self.peak_power_cooling = self.peak_power_cooling.max(modulated_load);
-            }
+            // FIX: For multi-zone buildings (e.g., Case 960), use per-zone HVAC demand
+            // instead of broadcasting a single scalar value to all zones.
+            // Use hvac_power_demand which calculates per-zone values based on each zone's
+            // free-floating temperature and setpoint.
+            let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
 
-            // Return thermal demand (not electrical power) for temperature calculation
-            // Note: For accurate energy tracking, we'd need to track electrical power separately
-            // For now, return thermal demand with sign (positive = heating, negative = cooling)
-            let thermal_demand = match hvac_mode {
-                EquipmentHVACMode::Heating => modulated_load,
-                EquipmentHVACMode::Cooling => -modulated_load,
-                EquipmentHVACMode::Off => 0.0,
-            };
-
-            T::from(VectorField::from_scalar(thermal_demand, self.num_zones))
-        } else {
-            // Fallback to IdealHVACController when no equipment attached
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
-        };
-
-        // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
-        // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
-        // t_i_free is the free-floating temperature (what temp would be without HVAC)
-        // This captures thermal mass effects more accurately than steady-state heat loss
-        // Issue #272: Track peak heating/cooling power BEFORE correction
-        // Use hvac_output_raw (not corrected) to get actual HVAC power demand
-
-        // Calculate HVAC demand (already computed above line 1912)
-        // Peak tracking: use actual HVAC demand (not steady-state approximation)
-        let hvac_power_watts = hvac_output_raw.as_ref().iter().sum::<f64>();
-
-        // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
-        if self.hvac_equipment.is_none() {
-            // Note: hvac_output_raw is positive for heating, negative for cooling
-            if hvac_power_watts > 0.0 {
+            // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
+            let hvac_output_sum = hvac_output.as_ref().iter().sum::<f64>();
+            if hvac_output_sum > 0.0 {
                 // Heating mode
-                // No correction factor needed - hvac_output_raw already includes thermal mass effects
-                self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
-            } else if hvac_power_watts < 0.0 {
+                self.peak_power_heating = self.peak_power_heating.max(hvac_output_sum);
+            } else if hvac_output_sum < 0.0 {
                 // Cooling mode (store as positive value)
-                let cooling_demand = -hvac_power_watts;
-                // No correction factor needed - hvac_output_raw already includes thermal mass effects
+                let cooling_demand = -hvac_output_sum;
                 self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
             }
-        }
 
-        // Optional: Add diagnostic output for debugging
+            // Both equipment and fallback paths now use hvac_output (per-zone VectorField)
+            // so it needs to be returned for both branches
+            hvac_output
+        } else {
+            // Fallback to IdealHVACController when no equipment attached
+            let hvac_output_raw =
+                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+
+            // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
+            if self.hvac_equipment.is_none() {
+                // Note: hvac_output_raw is positive for heating, negative for cooling
+                let hvac_power_watts = hvac_output_raw.as_ref().iter().sum::<f64>();
+                if hvac_power_watts > 0.0 {
+                    // Heating mode
+                    self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
+                } else if hvac_power_watts < 0.0 {
+                    // Cooling mode (store as positive value)
+                    let cooling_demand = -hvac_power_watts;
+                    self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
+                }
+            }
+
+            hvac_output_raw
+        };
+
         // Plan 03-04: Use hvac_output_raw directly for energy calculation
         // Ti_free calculation already includes thermal mass effects via:
         // - h_tr_em and h_tr_ms conductances (thermal mass coupling)
