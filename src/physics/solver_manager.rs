@@ -404,4 +404,197 @@ mod tests {
         manager.clear();
         assert_eq!(manager.num_solvers(), 0);
     }
+
+    // === Phase 3: Additional coverage tests ===
+
+    #[test]
+    fn test_solver_manager_get_solver_mut() {
+        let mut manager = SolverManager::default();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall).unwrap();
+
+        let solver = manager.get_solver_mut(0);
+        assert!(solver.is_some());
+        let solver_name = solver.unwrap().name();
+        assert!(solver_name == "5R1C" || solver_name == "CTF");
+    }
+
+    #[test]
+    fn test_solver_manager_get_solver() {
+        let manager = SolverManager::default();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        let mut manager_mut = SolverManager::default();
+        manager_mut.get_or_create_solver(0, &wall).unwrap();
+
+        let solver = manager_mut.get_solver(0);
+        assert!(solver.is_some());
+    }
+
+    #[test]
+    fn test_solver_manager_get_solver_not_found() {
+        let manager = SolverManager::default();
+
+        let solver = manager.get_solver(999);
+        assert!(solver.is_none());
+
+        let mut manager_mut = SolverManager::default();
+        let solver_mut = manager_mut.get_solver_mut(999);
+        assert!(solver_mut.is_none());
+    }
+
+    #[test]
+    fn test_solver_manager_energy_storage_rate() {
+        let mut manager = SolverManager::default();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall).unwrap();
+
+        let rate = manager.energy_storage_rate(0);
+        // All current solver implementations return 0 for energy storage rate
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_solver_manager_energy_storage_rate_not_found() {
+        let manager = SolverManager::default();
+
+        let rate = manager.energy_storage_rate(999);
+        // Should return 0.0 for non-existent solver
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_solver_manager_all_valid() {
+        let mut manager = SolverManager::default();
+
+        // Initially no solvers - vacuously true
+        assert!(manager.all_valid());
+
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall).unwrap();
+
+        // Should be valid after initialization
+        assert!(manager.all_valid());
+    }
+
+    #[test]
+    fn test_solver_manager_method_distribution() {
+        let mut manager = SolverManager::default();
+
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall).unwrap();
+
+        let dist = manager.method_distribution();
+        assert!(!dist.is_empty());
+        assert!(dist.contains("5R1C"));
+        assert!(dist.contains("CTF"));
+        assert!(dist.contains("FD"));
+        assert!(dist.contains("total"));
+    }
+
+    #[test]
+    fn test_solver_manager_method_distribution_empty() {
+        let manager = SolverManager::default();
+
+        let dist = manager.method_distribution();
+        // All counts should be 0
+        assert!(dist.contains("5R1C: 0"));
+        assert!(dist.contains("CTF: 0"));
+        assert!(dist.contains("FD: 0"));
+        assert!(dist.contains("total: 0"));
+    }
+
+    #[test]
+    fn test_solver_manager_reinitialize() {
+        let mut manager = SolverManager::default();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        // First initialization
+        manager.get_or_create_solver(0, &wall).unwrap();
+        assert_eq!(manager.num_solvers(), 1);
+
+        // Re-initialization should succeed (no new solver created)
+        manager.get_or_create_solver(0, &wall).unwrap();
+        assert_eq!(manager.num_solvers(), 1);
+    }
+
+    #[test]
+    fn test_solver_manager_step_invalid_wall() {
+        let mut manager = SolverManager::default();
+
+        let result = manager.step(999, 3600.0, 20.0, 10.0, 8.0, 25.0);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_solver_stats_default() {
+        let stats = SolverStats::default();
+
+        assert_eq!(stats.five_r1c_count, 0);
+        assert_eq!(stats.ctf_count, 0);
+        assert_eq!(stats.fd_count, 0);
+        assert_eq!(stats.total_walls, 0);
+    }
+
+    #[test]
+    fn test_fd_solver_forced() {
+        let mut manager = SolverManager::new(ThermalMethodSelector::with_override(
+            ThermalMethod::FiniteDifference,
+        ));
+
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall).unwrap();
+
+        let stats = manager.get_stats();
+        // Should have exactly one FD solver
+        assert_eq!(stats.fd_count, 1);
+        assert_eq!(stats.five_r1c_count, 0);
+        assert_eq!(stats.ctf_count, 0);
+    }
+
+    #[test]
+    fn test_5r1c_solver_forced() {
+        let mut manager =
+            SolverManager::new(ThermalMethodSelector::with_override(ThermalMethod::FiveR1C));
+
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.3)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall).unwrap();
+
+        let stats = manager.get_stats();
+        // Should have exactly one 5R1C solver
+        assert_eq!(stats.five_r1c_count, 1);
+        assert_eq!(stats.ctf_count, 0);
+        assert_eq!(stats.fd_count, 0);
+    }
 }

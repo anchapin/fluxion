@@ -201,4 +201,127 @@ mod tests {
 
         assert!((actual - expected).abs() < 1e-10);
     }
+
+    // === Phase 3: Additional coverage tests ===
+
+    #[test]
+    fn test_five_r1c_new() {
+        let solver = FiveR1CSolver::new();
+        assert!(!solver.initialized);
+        assert_eq!(solver.R_total, 0.0);
+        assert_eq!(solver.C_total, 0.0);
+        assert_eq!(solver.T_mass, 20.0);
+        assert_eq!(solver.q_flux, 0.0);
+        assert_eq!(solver.R_si, 1.0 / 8.0);
+        assert_eq!(solver.R_se, 1.0 / 25.0);
+    }
+
+    #[test]
+    fn test_five_r1c_default() {
+        let solver = FiveR1CSolver::default();
+        assert!(!solver.initialized);
+        assert_eq!(solver.R_total, 0.0);
+        assert_eq!(solver.C_total, 0.0);
+        assert_eq!(solver.T_mass, 20.0);
+        assert_eq!(solver.q_flux, 0.0);
+        assert_eq!(solver.R_si, 1.0 / 8.0);
+        assert_eq!(solver.R_se, 1.0 / 25.0);
+    }
+
+    #[test]
+    fn test_five_r1c_name() {
+        let solver = FiveR1CSolver::new();
+        assert_eq!(solver.name(), "5R1C");
+    }
+
+    #[test]
+    fn test_five_r1c_energy_storage_rate() {
+        let mut solver = FiveR1CSolver::new();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        solver.initialize(&wall).unwrap();
+        let rate = solver.energy_storage_rate();
+        // Current implementation returns 0 for energy storage rate
+        assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_five_r1c_step_various_timesteps() {
+        let mut solver = FiveR1CSolver::new();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        solver.initialize(&wall).unwrap();
+
+        // Test various timestep values
+        for timestep in [300.0, 600.0, 1800.0, 3600.0, 7200.0] {
+            let flux = solver.step(timestep, 20.0, 0.0, 8.0, 25.0);
+            assert!(flux.is_ok());
+            let f = flux.unwrap();
+            assert!(f < 0.0); // Heat flowing out
+            assert!(f.abs() > 10.0 && f.abs() < 200.0);
+        }
+    }
+
+    #[test]
+    fn test_five_r1c_step_extreme_temperatures() {
+        let mut solver = FiveR1CSolver::new();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        solver.initialize(&wall).unwrap();
+
+        // Very hot exterior
+        let flux_hot = solver.step(3600.0, 20.0, 50.0, 8.0, 25.0).unwrap();
+        assert!(flux_hot > 0.0); // Heat flowing in
+
+        // Very cold exterior
+        let flux_cold = solver.step(3600.0, 20.0, -30.0, 8.0, 25.0).unwrap();
+        assert!(flux_cold < 0.0); // Heat flowing out
+
+        // Zero delta temperature
+        let flux_zero = solver.step(3600.0, 20.0, 20.0, 8.0, 25.0).unwrap();
+        assert_eq!(flux_zero, 0.0); // No heat flow
+    }
+
+    #[test]
+    fn test_five_r1c_step_ignored_convection() {
+        let mut solver = FiveR1CSolver::new();
+        let wall = AssemblyBuilder::new("Test Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        solver.initialize(&wall).unwrap();
+
+        // Convection coefficients are ignored in current implementation
+        let flux1 = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+        let flux2 = solver.step(3600.0, 20.0, 0.0, 100.0, 5.0).unwrap();
+
+        // Should be the same since convection is ignored
+        assert_eq!(flux1, flux2);
+    }
+
+    #[test]
+    fn test_five_r1c_uninitialized() {
+        let mut solver = FiveR1CSolver::new();
+        assert!(!solver.is_valid());
+
+        // Should return error when stepping without initialization
+        let result = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+        assert!(result.is_err());
+
+        if let Err(SolverError::InvalidConfig(msg)) = result {
+            assert!(msg.contains("not initialized"));
+        } else {
+            panic!("Expected InvalidConfig error");
+        }
+    }
 }

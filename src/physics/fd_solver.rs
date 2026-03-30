@@ -651,4 +651,247 @@ mod tests {
             "Insulation should create temperature gradient"
         );
     }
+
+    // === Phase 3: Additional coverage tests ===
+
+    #[test]
+    fn test_surface_bc_new_combined() {
+        let bc = SurfaceBC::new_combined(8.0, 5.0, 20.0, 100.0);
+        assert_eq!(bc.h, 13.0); // 8 + 5
+        assert_eq!(bc.t_fluid, 20.0);
+        assert_eq!(bc.q_external, 100.0);
+    }
+
+    #[test]
+    fn test_surface_bc_new_interior() {
+        let bc = SurfaceBC::new_interior(8.0, 21.0);
+        assert_eq!(bc.h, 8.0);
+        assert_eq!(bc.t_fluid, 21.0);
+        assert_eq!(bc.q_external, 0.0);
+    }
+
+    #[test]
+    fn test_surface_bc_new_exterior() {
+        let bc = SurfaceBC::new_exterior(25.0, 5.0, 300.0);
+        assert_eq!(bc.h, 25.0);
+        assert_eq!(bc.t_fluid, 5.0);
+        assert_eq!(bc.q_external, 300.0);
+    }
+
+    #[test]
+    fn test_temperature_at_valid() {
+        let disc = concrete_wall(0.200, 20);
+        let solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // Valid node indices
+        for i in 0..20 {
+            let temp = solver.temperature_at(i);
+            assert!(temp.is_some());
+            assert_eq!(temp.unwrap(), 20.0);
+        }
+    }
+
+    #[test]
+    fn test_temperature_at_invalid() {
+        let disc = concrete_wall(0.200, 20);
+        let solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // Invalid node indices
+        assert!(solver.temperature_at(999).is_none());
+        assert!(solver.temperature_at(20).is_none());
+    }
+
+    #[test]
+    fn test_interior_surface_temp() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 25.0);
+
+        assert_eq!(solver.interior_surface_temp(), 25.0);
+
+        // Change interior temperature
+        solver.temperatures[0] = 30.0;
+        assert_eq!(solver.interior_surface_temp(), 30.0);
+    }
+
+    #[test]
+    fn test_exterior_surface_temp() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 15.0);
+
+        assert_eq!(solver.exterior_surface_temp(), 15.0);
+
+        // Change exterior temperature
+        let n = solver.temperatures.len() - 1;
+        solver.temperatures[n] = 10.0;
+        assert_eq!(solver.exterior_surface_temp(), 10.0);
+    }
+
+    #[test]
+    fn test_interior_heat_flux() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // Zero flux when temperatures equal
+        let flux = solver.interior_heat_flux(8.0, 20.0);
+        assert_eq!(flux, 0.0);
+
+        // Positive flux into zone
+        solver.temperatures[0] = 18.0;
+        let flux = solver.interior_heat_flux(8.0, 20.0);
+        assert!(flux > 0.0); // Heat flowing into zone
+        assert_eq!(flux, 8.0 * (20.0 - 18.0));
+    }
+
+    #[test]
+    fn test_exterior_heat_flux() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // Zero flux when temperatures equal
+        let flux = solver.exterior_heat_flux(25.0, 20.0);
+        assert_eq!(flux, 0.0);
+
+        // Positive flux into wall
+        let n = solver.temperatures.len() - 1;
+        solver.temperatures[n] = 15.0;
+        let flux = solver.exterior_heat_flux(25.0, 20.0);
+        assert!(flux > 0.0); // Heat flowing into wall
+        assert_eq!(flux, 25.0 * (20.0 - 15.0));
+    }
+
+    #[test]
+    fn test_stored_energy_zero_reference() {
+        let disc = concrete_wall(0.200, 20);
+        let solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // With 0°C reference, should have positive energy
+        let energy = solver.stored_energy(0.0);
+        assert!(energy > 0.0);
+    }
+
+    #[test]
+    fn test_stored_energy_same_reference() {
+        let disc = concrete_wall(0.200, 20);
+        let solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // With same reference, energy should be zero
+        let energy = solver.stored_energy(20.0);
+        assert_eq!(energy, 0.0);
+    }
+
+    #[test]
+    fn test_energy_balance_error() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 20.0);
+
+        let prev_energy = solver.stored_energy(0.0);
+        let q_int = 10.0;
+        let q_ext = 20.0;
+        let dt = 3600.0;
+
+        // Make one step
+        let interior_bc = SurfaceBC::new_interior(8.0, 21.0);
+        let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+        solver.step(dt, &interior_bc, &exterior_bc);
+
+        let error = solver.energy_balance_error(prev_energy, q_int, q_ext, dt);
+        // Error should be finite
+        assert!(error.is_finite());
+    }
+
+    #[test]
+    fn test_step_various_timesteps() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 20.0);
+
+        let interior_bc = SurfaceBC::new_interior(8.0, 21.0);
+        let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+
+        // Test various timestep sizes
+        for dt in [300.0, 600.0, 1800.0, 3600.0, 7200.0] {
+            let result = solver.step(dt, &interior_bc, &exterior_bc);
+            assert_eq!(result.len(), 20);
+            // All temperatures should be finite
+            for t in &result {
+                assert!(t.is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn test_step_with_solar_flux() {
+        let disc = concrete_wall(0.200, 20);
+        let mut solver = ImplicitFDSolver::new(disc, 20.0);
+
+        // Apply solar flux to exterior
+        let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+        let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 500.0); // 500 W/m² solar
+
+        let temps_before = solver.temperatures.clone();
+        solver.step(3600.0, &interior_bc, &exterior_bc);
+        let temps_after = solver.temperatures.clone();
+
+        // Exterior should warm up due to solar
+        let n = temps_before.len() - 1;
+        assert!(temps_after[n] > temps_before[n]);
+    }
+
+    #[test]
+    fn test_with_gradient() {
+        let disc = concrete_wall(0.200, 20);
+        let solver = ImplicitFDSolver::with_gradient(disc.clone(), 25.0, 5.0);
+
+        // Gradient should be monotonic (interior > middle > exterior)
+        assert!(solver.temperatures[0] > solver.temperatures[10]);
+        assert!(solver.temperatures[10] > solver.temperatures[19]);
+
+        // First and last should be close to specified values
+        assert!((solver.temperatures[0] - 25.0).abs() < 2.0);
+        assert!((solver.temperatures[19] - 5.0).abs() < 2.0);
+    }
+
+    #[test]
+    fn test_tridiagonal_system_new() {
+        let sys = TridiagonalSystem::new(5);
+        assert_eq!(sys.lower.len(), 4);
+        assert_eq!(sys.main.len(), 5);
+        assert_eq!(sys.upper.len(), 4);
+        assert_eq!(sys.rhs.len(), 5);
+
+        // All should be zero
+        for i in 0..5 {
+            assert_eq!(sys.main[i], 0.0);
+            if i < 4 {
+                assert_eq!(sys.lower[i], 0.0);
+                assert_eq!(sys.upper[i], 0.0);
+            }
+            assert_eq!(sys.rhs[i], 0.0);
+        }
+    }
+
+    #[test]
+    fn test_solver_display() {
+        let disc = concrete_wall(0.200, 20);
+        let solver = ImplicitFDSolver::new(disc, 20.0);
+
+        let display_str = format!("{}", solver);
+        assert!(display_str.contains("FD Solver State"));
+        assert!(display_str.contains("Timestep"));
+        assert!(display_str.contains("Nodes"));
+        assert!(display_str.contains("T_interior"));
+        assert!(display_str.contains("T_exterior"));
+        assert!(display_str.contains("Temperature profile"));
+    }
+
+    #[test]
+    fn test_surface_bc_debug_clone() {
+        let bc = SurfaceBC::new_interior(8.0, 21.0);
+        let debug_str = format!("{:?}", bc);
+        assert!(debug_str.contains("SurfaceBC"));
+
+        let cloned = bc.clone();
+        assert_eq!(cloned.h, bc.h);
+        assert_eq!(cloned.t_fluid, bc.t_fluid);
+        assert_eq!(cloned.q_external, bc.q_external);
+    }
 }

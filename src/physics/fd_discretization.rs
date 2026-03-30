@@ -465,4 +465,275 @@ mod tests {
             assert!((disc.diffusivity[i] - alpha_concrete).abs() < 1e-9);
         }
     }
+
+    // === Phase 3: Additional coverage tests ===
+
+    #[test]
+    fn test_material_layer_new() {
+        let layer = MaterialLayer::new("Test", 0.1, 0.5, 1000.0, 900.0);
+
+        assert_eq!(layer.name, "Test");
+        assert_eq!(layer.thickness, 0.1);
+        assert_eq!(layer.conductivity, 0.5);
+        assert_eq!(layer.density, 1000.0);
+        assert_eq!(layer.specific_heat, 900.0);
+    }
+
+    #[test]
+    fn test_material_layer_diffusivity() {
+        let layer = MaterialLayer::new("Test", 0.1, 1.0, 1000.0, 1000.0);
+
+        let alpha = layer.diffusivity();
+        let expected = 1.0 / (1000.0 * 1000.0);
+
+        assert!((alpha - expected).abs() < 1e-12);
+        assert!(alpha > 0.0);
+    }
+
+    #[test]
+    fn test_material_layer_resistance() {
+        let layer = MaterialLayer::new("Test", 0.2, 2.0, 1500.0, 800.0);
+
+        let r = layer.resistance();
+        let expected = 0.2 / 2.0;
+
+        assert!((r - expected).abs() < 1e-12);
+        assert!(r > 0.0);
+    }
+
+    #[test]
+    fn test_material_layer_volumetric_heat_capacity() {
+        let layer = MaterialLayer::new("Test", 0.1, 1.5, 2000.0, 850.0);
+
+        let vc = layer.volumetric_heat_capacity();
+        let expected = 2000.0 * 850.0;
+
+        assert!((vc - expected).abs() < 1e-8);
+        assert!(vc > 0.0);
+    }
+
+    #[test]
+    fn test_material_layer_clone() {
+        let layer1 = MaterialLayer::new("Test", 0.1, 0.5, 1000.0, 900.0);
+        let layer2 = layer1.clone();
+
+        assert_eq!(layer1.name, layer2.name);
+        assert_eq!(layer1.thickness, layer2.thickness);
+        assert_eq!(layer1.conductivity, layer2.conductivity);
+        assert_eq!(layer1.density, layer2.density);
+        assert_eq!(layer1.specific_heat, layer2.specific_heat);
+    }
+
+    #[test]
+    fn test_node_at_position_valid() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        // Test at various positions
+        for position in [0.0, 0.05, 0.1, 0.2, 0.313] {
+            let node_idx = disc.node_at_position(position);
+            assert!(node_idx.is_some());
+        }
+    }
+
+    #[test]
+    fn test_node_at_position_invalid() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        // Outside wall range
+        assert!(disc.node_at_position(-0.1).is_none());
+        assert!(disc.node_at_position(1.0).is_none());
+    }
+
+    #[test]
+    fn test_node_at_position_exact_layer() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        // At exact layer boundary (0.013m - end of gypsum)
+        let node_idx = disc.node_at_position(0.013);
+        assert!(node_idx.is_some());
+        let idx = node_idx.unwrap();
+        assert!(idx < disc.total_nodes);
+    }
+
+    #[test]
+    fn test_thermal_mass_single_layer() {
+        let layers = vec![MaterialLayer::new("Concrete", 0.200, 1.4, 2300.0, 880.0)];
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        let mass = disc.thermal_mass();
+
+        // Analytical: C = ρ·c_p·L = 2300 × 880 × 0.2 = 404,800 J/K·m²
+        let expected = 2300.0 * 880.0 * 0.2;
+        assert!((mass - expected).abs() < 10.0);
+    }
+
+    #[test]
+    fn test_thermal_mass_multiple_layers() {
+        let layers = vec![
+            MaterialLayer::new("Insulation", 0.100, 0.04, 50.0, 840.0),
+            MaterialLayer::new("Concrete", 0.200, 1.4, 2300.0, 880.0),
+        ];
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        let mass = disc.thermal_mass();
+
+        // Should be sum of all layers
+        let expected_insulation = 50.0 * 840.0 * 0.100;
+        let expected_concrete = 2300.0 * 880.0 * 0.200;
+        let expected = expected_insulation + expected_concrete;
+
+        assert!((mass - expected).abs() < 100.0);
+    }
+
+    #[test]
+    fn test_u_value_simple() {
+        let layers = vec![MaterialLayer::new("Test", 0.1, 2.0, 1000.0, 1000.0)];
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        let u = disc.u_value();
+
+        // R = L/k = 0.1/2.0 = 0.05 m²·K/W
+        // U = 1/R = 20 W/m²·K
+        assert!((u - 20.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_u_value_case_900() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        let u = disc.u_value();
+
+        // U-value should be reasonable for insulated wall
+        // Typically 0.3-0.7 W/m²·K for well-insulated walls
+        assert!(u > 0.1 && u < 1.0);
+    }
+
+    #[test]
+    fn test_time_constant_formula() {
+        let layers = vec![MaterialLayer::new("Test", 0.1, 1.0, 1000.0, 1000.0)];
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        let tau = disc.time_constant();
+
+        // τ = R·C
+        let r = 0.1 / 1.0; // 0.1 m²·K/W
+        let c = 1000.0 * 1000.0 * 0.1; // 100,000 J/K·m²
+        let expected = r * c;
+
+        assert!((tau - expected).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_time_constant_scaling() {
+        let layers1 = vec![MaterialLayer::new("Test", 0.1, 1.0, 1000.0, 1000.0)];
+        let layers2 = vec![MaterialLayer::new("Test", 0.2, 1.0, 1000.0, 1000.0)];
+
+        let disc1 = WallDiscretization::from_layers(&layers1, 10);
+        let disc2 = WallDiscretization::from_layers(&layers2, 10);
+
+        let tau1 = disc1.time_constant();
+        let tau2 = disc2.time_constant();
+
+        // Thicker wall should have larger time constant
+        assert!(tau2 > tau1);
+    }
+
+    #[test]
+    fn test_single_layer_discretization() {
+        let layers = vec![MaterialLayer::new("Single", 0.3, 2.0, 2000.0, 900.0)];
+        let disc = WallDiscretization::from_layers(&layers, 15);
+
+        assert_eq!(disc.total_nodes, 15);
+        assert_eq!(disc.nodes_per_layer, 15);
+        assert_eq!(disc.layers.len(), 1);
+
+        // All nodes should be in the single layer
+        for i in 0..disc.total_nodes {
+            assert_eq!(disc.layer_for_node(i), Some(0));
+        }
+    }
+
+    #[test]
+    fn test_two_layer_discretization() {
+        let layers = vec![
+            MaterialLayer::new("Layer1", 0.1, 0.5, 500.0, 800.0),
+            MaterialLayer::new("Layer2", 0.2, 1.0, 1000.0, 1000.0),
+        ];
+        let disc = WallDiscretization::from_layers(&layers, 5);
+
+        assert_eq!(disc.total_nodes, 10);
+        assert_eq!(disc.nodes_per_layer, 5);
+
+        // Nodes 0-4: Layer 0, Nodes 5-9: Layer 1
+        for i in 0..5 {
+            assert_eq!(disc.layer_for_node(i), Some(0));
+        }
+        for i in 5..10 {
+            assert_eq!(disc.layer_for_node(i), Some(1));
+        }
+    }
+
+    #[test]
+    fn test_display_implementation() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        let display_str = format!("{}", disc);
+
+        assert!(!display_str.is_empty());
+        assert!(display_str.contains("Wall Discretization"));
+        assert!(display_str.contains("Layers"));
+        assert!(display_str.contains("Nodes per layer"));
+        assert!(display_str.contains("Total nodes"));
+        assert!(display_str.contains("Total thickness"));
+        assert!(display_str.contains("U-value"));
+        assert!(display_str.contains("Thermal mass"));
+        assert!(display_str.contains("Time constant"));
+    }
+
+    #[test]
+    fn test_interface_conductivity_count() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        // Should have total_nodes + 1 interfaces (41 for 40 nodes)
+        assert_eq!(disc.interface_conductivity.len(), disc.total_nodes + 1);
+    }
+
+    #[test]
+    fn test_interface_conductivity_positions() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        // First interface at position 0
+        assert!((disc.interface_conductivity[0].position - 0.0).abs() < 1e-10);
+
+        // Last interface should be near total_thickness
+        let last = disc.interface_conductivity.len() - 1;
+        assert!(disc.interface_conductivity[last].position < disc.total_thickness);
+        assert!(disc.interface_conductivity[last].position > disc.total_thickness * 0.9);
+    }
+
+    #[test]
+    fn test_layer_for_node_invalid() {
+        let layers = case_900_wall();
+        let disc = WallDiscretization::from_layers(&layers, 10);
+
+        assert!(disc.layer_for_node(999).is_none());
+        assert!(disc.layer_for_node(40).is_none()); // index = total_nodes
+    }
+
+    #[test]
+    fn test_material_layer_debug() {
+        let layer = MaterialLayer::new("Test Material", 0.15, 1.2, 1800.0, 950.0);
+        let debug_str = format!("{:?}", layer);
+
+        assert!(!debug_str.is_empty());
+        assert!(debug_str.contains("Test Material"));
+        assert!(debug_str.contains("0.15") || debug_str.contains("1.5"));
+    }
 }
