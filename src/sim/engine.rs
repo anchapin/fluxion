@@ -1314,23 +1314,17 @@ impl ThermalModel<VectorField> {
             h_tr_ms_vec.push(h_ms_physics);
 
             // Opaque conductance (h_tr_em)
-            // Mode-specific factors removed - using physics-based h_tr_em
-            // h_tr_em = k * A / d (thermal conductivity * area / thickness)
+            // Use construction U-values from actual assembly layers
+            // h_tr_em = wall_U * opaque_wall_area + roof_U * roof_area
             let wall_u = spec.construction.wall.u_value(None, None);
             let roof_u = spec.construction.roof.u_value(None, None);
             let h_tr_op =
                 opaque_area * wall_u + zone_floor_area * roof_u + model.thermal_bridge_coefficient;
 
-            // Use physics-based h_tr_em calculation (same formula as h_tr_ms)
-            // For high-mass: k=1.4 W/m·K, d=0.2 m
-            // For low-mass: k=0.7 W/m·K, d=0.1 m
-            let (k_envelope, d_envelope) = if is_900_series_hvac {
-                (1.4, 0.2) // k=1.4 W/m·K, d=200mm (high-mass concrete)
-            } else {
-                (0.7, 0.1) // k=0.7 W/m·K, d=100mm (low-mass lightweight)
-            };
-            let h_tr_em_physics = k_envelope * opaque_area / d_envelope;
-            h_tr_em_vec.push(h_tr_em_physics.max(0.1));
+            // NOTE: Removed physics-based k*A/d calculation which was using
+            // fixed k=0.7, d=0.1 parameters that gave 7.5x too high h_tr_em
+            // The correct approach uses actual construction U-values from assembly layers
+            h_tr_em_vec.push(h_tr_op);
 
             // Thermal capacitance using ISO 13790 effective specific capacitances
             // FIX TASK #9: Only include thermal mass, not air
@@ -1436,7 +1430,13 @@ impl ThermalModel<VectorField> {
         //   - Annual energy over-prediction: cooling 4.68 MWh vs [2.13, 3.67] MWh reference
         //
         // Fix: Decouple the two parameters
-        model.solar_distribution_to_air = 0.0; // Internal radiative gains go to surface, not air
+        // SOLAR-01: Adjust solar_distribution_to_air for different mass classes
+        // Low-mass cases (600 series): Higher direct-to-air for immediate cooling
+        // High-mass cases (900 series): More buffered, lower direct-to-air
+        model.solar_distribution_to_air = match spec.case_id.as_str() {
+            "900" | "910" | "920" | "930" | "940" | "950" => 0.3, // High-mass: 30% to air, 70% to surface
+            _ => 0.7, // Low-mass: 70% to air, 30% to surface (including 960 sunspace)
+        };
         model.solar_beam_to_mass_fraction = match spec.case_id.as_str() {
             "960" => 0.4, // Sunspace: 40% to mass (60% to air + surface)
             // ASHRAE 140 specification: High-mass buildings (900 series) have 70% of beam solar
@@ -3105,10 +3105,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Combine fractions to avoid multiple intermediate VectorField allocations
         let conv_frac = self.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
-        let st_int_frac = rad_frac * (1.0 - self.solar_distribution_to_air);
-        let m_int_frac = rad_frac * self.solar_distribution_to_air;
-        let st_sol_frac = 1.0 - self.solar_beam_to_mass_fraction;
-        let m_sol_frac = self.solar_beam_to_mass_fraction;
+
+        // SOLAR-01 FIX: Separate internal radiative distribution from solar distribution
+        // Internal radiative: 100% to surface (ASHRAE 140 spec)
+        let st_int_frac = rad_frac; // All internal radiative to surface
+        let m_int_frac = 0.0; // No internal radiative to mass
+
+        // Solar gain distribution - add solar directly to air for peak cooling
+        // solar_distribution_to_air: Fraction of solar to air (0.5 = immediate, 0.0 = buffered)
+        // solar_beam_to_mass_fraction: Fraction of beam solar to mass (ASHRAE 140 spec)
+        let st_sol_frac = 1.0 - self.solar_distribution_to_air - self.solar_beam_to_mass_fraction; // Solar to surface (diffuse - beam)
+        let m_sol_frac = self.solar_beam_to_mass_fraction; // Beam solar to mass
 
         let loads_ref = self.loads.as_ref();
         let solar_ref = self.solar_gains.as_ref();
@@ -3122,7 +3129,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
 
-            phi_ia_data.push(load_w * conv_frac);
+            // phi_ia: Internal convective + solar direct to air (SOLAR-01 fix)
+            phi_ia_data.push(load_w * conv_frac + sol_w * self.solar_distribution_to_air);
             phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
             phi_m_data.push(load_w * m_int_frac + sol_w * m_sol_frac);
         }
