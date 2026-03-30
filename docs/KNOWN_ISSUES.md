@@ -225,6 +225,52 @@ These are inherent limitations of the 5R1C thermal network compared to detailed 
 - **Phase Addressed:** N/A
 - **Resolution Notes:** Model calibrated to match annual energy, not hourly free-floating extremes. Free-floating cases are diagnostic only - primary metrics are HVAC energy.
 
+### LIMIT-03: Hardcoded HVAC Capacity Masking Design Errors
+
+- **Description:** HVAC capacity (hvac_heating_capacity, hvac_cooling_capacity) was hardcoded to 100 kW for all cases. This unrealistically high value masked bugs and caused validation results to show peak loads hitting artificial capacity limits instead of actual demand.
+
+- **Affected Cases:** All cases with HVAC (but most noticeable for Case 960 showing Peak H=100 kW vs expected 2-8 kW)
+
+- **Affected Metrics:** Peak Heating, Peak Cooling
+
+- **Severity:** High
+
+- **Status:** ✅ Fixed
+
+- **Phase Addressed:** Phase 7A (HVAC capacity fix)
+
+- **Resolution Notes:** Changed from hardcoded 100 kW to floor-area-based calculation:
+  - Heating: 500 W/m² × total_floor_area
+  - Cooling: 600 W/m² × total_floor_area
+
+  Examples:
+  - Case 600 (96 m²): heating = 48 kW
+  - Case 900 (96 m²): heating = 48 kW
+  - Case 960 (64 m²): heating = 32 kW
+
+  Case 960 now shows Peak H=32 kW (still too high but improved from 100 kW).
+
+- **TODO:** Implement design day load calculation to determine HVAC capacity from actual peak loads at design temperatures (e.g., -5°C heating, 35°C cooling) with 1.1-1.2x safety margin.
+
+### LIMIT-04: Case 960 Peak Heating Overprediction (Multi-Zone)
+
+- **Description:** Case 960 (sunspace + back-zone) shows peak heating of 32 kW (hitting capacity limit) while reference is 2-8 kW. The root cause appears to be incorrect sensitivity calculation for multi-zone buildings with common walls. HVAC demand calculation `((heating_setpoint - t) / sensitivity)` returns very high values when sensitivity is too low.
+
+- **Affected Cases:** 960
+
+- **Affected Metrics:** Peak Heating
+
+- **Severity:** High
+
+- **Status:** 🔄 Open
+
+- **Phase Addressed:** Phase 7A (investigated, HVAC capacity fixed)
+
+- **Resolution Notes:** Common wall fix attempted (subtracting common wall area from exterior envelope) but caused annual heating to drop to 0.29 MWh (too low). The root cause requires deeper investigation into multi-zone sensitivity calculation, possibly related to:
+  1. Inter-zone conductance (h_tr_iz) interaction with sensitivity
+  2. Free-floating zone (zone 1) affecting calculations
+  3. Thermal mass distribution in multi-zone buildings
+
 ## Reporting Issues (REPORT)
 
 ### REPORT-01: Systematic Issues Classification Heuristic
@@ -267,14 +313,14 @@ These are inherent limitations of the 5R1C thermal network compared to detailed 
 
 | Category | Total Issues | Fixed | Open | Partial | Won't Fix |
 |----------|-------------|-------|------|----------|-----------|
-| Foundation (BASE) | 5 | 5 | 0 | 0 | 0 |
+| Foundation (BASE) | 6 | 6 | 0 | 0 | 0 |
 | Solar (SOLAR) | 4 | 0 | 0 | 1 | 0 |
 | Free-Float (FREE) | 3 | 1 | 2 | 0 | 0 |
 | Temperature (TEMP) | 1 | 1 | 0 | 0 | 0 |
-| Multi-Zone (MULTI) | 2 | 1 | 0 | 1 | 0 |
-| Model Limits (LIMIT) | 2 | 0 | 0 | 2 | 0 |
+| Multi-Zone (MULTI) | 3 | 1 | 0 | 2 | 0 |
+| Model Limits (LIMIT) | 2 | 1 | 0 | 1 | 0 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
-| **Total** | **21** | **8** | **6** | **1** | **2** |
+| **Total** | **23** | **10** | **6** | **1** | **2** |
 
 ### Open Issues by Severity
 
