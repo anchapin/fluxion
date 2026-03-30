@@ -1398,15 +1398,37 @@ impl ThermalModel<VectorField> {
         // Night ventilation
         model.night_ventilation = spec.night_ventilation;
 
-        // Set HVAC capacity limits
-        // For ASHRAE 140 analytical validation, we use very high capacities to avoid artificial limiting.
-        // Real buildings would have design capacities, but for validation we want to measure
-        // the energy needed without capacity constraints.
-        // Peak heating for Case 600: ~5-6 kW, Case 900: ~2 kW
-        // Peak cooling for Case 600: ~7-8 kW, Case 900: ~2-3 kW
-        // We set to 100 kW per zone to ensure no artificial limiting for reasonable buildings
-        model.hvac_heating_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
-        model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
+        // Calculate total building floor area for HVAC capacity sizing
+        let mut total_floor_area = 0.0;
+        for zone_idx in 0..num_zones {
+            let zone_floor_area = if zone_idx < spec.geometry.len() {
+                spec.geometry[zone_idx].floor_area()
+            } else {
+                spec.geometry[0].floor_area()
+            };
+            total_floor_area += zone_floor_area;
+        }
+
+        // Set HVAC capacity limits based on building floor area
+        // NOTE: Real buildings should use design day load calculation to determine HVAC capacity.
+        // For ASHRAE 140 validation, we use generous area-based capacity factors to ensure
+        // no artificial limiting while avoiding unrealistically high values that can mask bugs.
+        //
+        // Capacity factors (W/m²):
+        // - Heating: 500 W/m² (~5x typical peak for ASHRAE 140 cases)
+        // - Cooling: 600 W/m² (~3x typical peak for ASHRAE 140 cases)
+        //
+        // Examples:
+        // - Case 600 (96 m²): heating = 48 kW, cooling = 58 kW (ref peak: ~4-8 kW)
+        // - Case 900 (96 m²): heating = 48 kW, cooling = 58 kW (ref peak: ~2-3 kW)
+        // - Case 960 (64 m²): heating = 32 kW, cooling = 38 kW (ref peak: ~2-8 kW)
+        //
+        // TODO: Implement design day load calculation (run simulation at design temps, e.g., -5°C heating,
+        // 35°C cooling) to determine actual peak loads and set capacity with 1.1-1.2x safety margin.
+        let heating_capacity_per_m2 = 500.0; // W/m²
+        let cooling_capacity_per_m2 = 600.0; // W/m²
+        model.hvac_heating_capacity = total_floor_area * heating_capacity_per_m2;
+        model.hvac_cooling_capacity = total_floor_area * cooling_capacity_per_m2;
 
         // Solar gain distribution (ASHRAE 140 calibration)
         // Solar gain distribution (ASHRAE 140 calibration)
@@ -2683,9 +2705,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let heating_setpoint = self.heating_schedule.value(hour);
         let cooling_setpoint = self.cooling_schedule.value(hour);
 
-        // Calculate HVAC demand per zone, accounting for zone-specific setpoints (Issue #273)
-        // For free-floating zones (hvac_enabled = 0), return 0 demand
-
         // Convert to VectorField for element-wise operations
         let t_vec = t_i_free.as_ref();
         let sens_vec = sensitivity.as_ref();
@@ -2716,6 +2735,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for (power, &enabled) in demand_vec.iter_mut().zip(enabled_vec.iter()) {
             *power *= enabled;
         }
+
         T::from(VectorField::new(demand_vec))
     }
 
