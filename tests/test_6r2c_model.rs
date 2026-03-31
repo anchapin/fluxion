@@ -24,7 +24,7 @@ fn test_configure_6r2c_model() {
     let envelope_fraction = 0.75;
     let h_tr_me_value = 100.0;
 
-    model.configure_6r2c_model(envelope_fraction, h_tr_me_value);
+    model.configure_6r2c_model(envelope_fraction, h_tr_me_value, None);
 
     // Check that model is now 6R2C
     assert!(model.is_6r2c_model());
@@ -52,7 +52,7 @@ fn test_configure_6r2c_model() {
 #[test]
 fn test_6r2c_model_cloning() {
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.8, 150.0);
+    model.configure_6r2c_model(0.8, 150.0, None);
 
     let cloned = model.clone();
 
@@ -72,7 +72,7 @@ fn test_6r2c_model_cloning() {
 #[test]
 fn test_6r2c_model_single_timestep() {
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run a single timestep with a temperature difference to trigger heat transfer
     // Use outdoor_temp=10°C (different from default 20°C indoor) to ensure heat transfer
@@ -103,7 +103,7 @@ fn test_6r2c_model_single_timestep() {
 #[test]
 fn test_6r2c_model_energy_conservation() {
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run multiple timesteps and check that energy is conserved
     // (no NaN or infinite values)
@@ -132,7 +132,7 @@ fn test_6r2c_model_thermal_lag() {
     // Test that the 6R2C model captures thermal lag better than 5R1C
     let mut model_5r1c = ThermalModel::new(1);
     let mut model_6r2c = ThermalModel::new(1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
 
     // Initialize both models to same state
     let initial_temp = 20.0;
@@ -188,7 +188,7 @@ fn test_6r2c_model_multi_zone() {
     // Test that 6R2C works with multi-zone buildings
     let num_zones = 2;
     let mut model = ThermalModel::new(num_zones);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run a few timesteps
     for t in 0..10 {
@@ -214,7 +214,7 @@ fn test_6r2c_model_backward_compatibility() {
     // Test that the single mass temperature field is updated correctly
     // for backward compatibility with code that expects a single mass temperature
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run a timestep
     model.step_physics(0, 20.0, 3600.0);
@@ -237,7 +237,7 @@ fn test_5r1c_vs_6r2c_energy_comparison() {
     // They should be in similar ranges (within 20% for this simple test)
     let mut model_5r1c = ThermalModel::new(1);
     let mut model_6r2c = ThermalModel::new(1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
 
     // Run 24 timesteps (one day)
     let steps = 24;
@@ -273,7 +273,7 @@ fn test_6r2c_model_different_mass_fractions() {
     // Test that different envelope mass fractions work correctly
     for fraction in [0.5, 0.6, 0.7, 0.8, 0.9] {
         let mut model = ThermalModel::new(1);
-        model.configure_6r2c_model(fraction, 100.0);
+        model.configure_6r2c_model(fraction, 100.0, None);
 
         // Run a few timesteps
         for t in 0..10 {
@@ -298,7 +298,7 @@ fn test_6r2c_model_with_night_ventilation() {
     use fluxion::validation::ashrae_140_cases::NightVentilation;
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Set up night ventilation (7pm to 8am)
     model.night_ventilation = Some(NightVentilation::new(1000.0, 19, 8));

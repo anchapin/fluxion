@@ -42,6 +42,8 @@ pub struct CTFSolverWrapper {
     h_interior: f64,
     /// Exterior convective coefficient [W/m²·K]
     h_exterior: f64,
+    /// Previous interior heat flux for convection approximation [W/m²]
+    prev_q_flux: f64,
     /// Initialized flag
     initialized: bool,
     /// Valid flag (coefficients converged)
@@ -56,6 +58,7 @@ impl CTFSolverWrapper {
             coefficients: None,
             h_interior: 8.0,
             h_exterior: 25.0,
+            prev_q_flux: 0.0,
             initialized: false,
             valid: false,
         }
@@ -66,6 +69,7 @@ impl CTFSolverWrapper {
         Self {
             h_interior,
             h_exterior,
+            prev_q_flux: 0.0,
             ..Self::new()
         }
     }
@@ -178,10 +182,16 @@ impl HeatConductionSolver for CTFSolverWrapper {
             );
         }
 
+        // Approximate surface temperature accounting for convection resistance
+        // T_surface = T_air - q_conv/h (where q_conv = q_flux)
+        let t_interior_surface = T_interior - self.prev_q_flux / self.h_interior;
+        let t_exterior_surface = T_exterior; // T_exterior assumed to be surface temperature
+
         // Step the CTF solver with surface temperatures
-        // Note: CTF expects surface temperatures, but we're using air temperatures
-        // This is a simplification - a more accurate model would solve surface heat balance
-        let q_flux = solver.step(T_interior, T_exterior);
+        let q_flux = solver.step(t_interior_surface, t_exterior_surface);
+
+        // Store flux for next timestep approximation
+        self.prev_q_flux = q_flux;
 
         Ok(q_flux)
     }
@@ -295,6 +305,7 @@ mod tests {
         let wrapper = CTFSolverWrapper::default();
         assert_eq!(wrapper.h_interior, 8.0);
         assert_eq!(wrapper.h_exterior, 25.0);
+        assert_eq!(wrapper.prev_q_flux, 0.0);
     }
 
     #[test]

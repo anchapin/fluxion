@@ -1030,7 +1030,9 @@ impl HvacSchedule {
         }
 
         let current_setpoint = if let Some((setback_start, setback_end)) = self.setback_hours {
-            if setback_start <= hour || hour < setback_end {
+            if (setback_start <= hour && hour < setback_end)
+                || (setback_start > setback_end && (hour >= setback_start || hour < setback_end))
+            {
                 // During setback period
                 self.setback_setpoint.unwrap_or(self.heating_setpoint)
             } else {
@@ -1043,7 +1045,19 @@ impl HvacSchedule {
 
         // Check if HVAC is operating at this hour
         let (start, end) = self.operating_hours;
-        if start <= hour || hour < end {
+        let is_operating = if start < end {
+            // Non-wrapping range (e.g., 7-18): active from start to end
+            start <= hour && hour < end
+        } else if start > end {
+            // Wrapping range (e.g., 18-7): active from start to 24, then 0 to end
+            hour >= start || hour < end
+        } else {
+            // start == end: all-day operation (0, 24) or disabled (0, 0)
+            // (0, 24) = all-day, (0, 0) = disabled (but is_enabled() handles this)
+            true
+        };
+
+        if is_operating {
             return Some(current_setpoint);
         }
 
@@ -1058,7 +1072,19 @@ impl HvacSchedule {
 
         // Check if HVAC is operating at this hour
         let (start, end) = self.operating_hours;
-        if start <= hour || hour < end {
+        let is_operating = if start < end {
+            // Non-wrapping range (e.g., 7-18): active from start to end
+            start <= hour && hour < end
+        } else if start > end {
+            // Wrapping range (e.g., 18-7): active from start to 24, then 0 to end
+            hour >= start || hour < end
+        } else {
+            // start == end: all-day operation (0, 24) or disabled (0, 0)
+            // (0, 24) = all-day, (0, 0) = disabled (but is_enabled() handles this)
+            true
+        };
+
+        if is_operating {
             return Some(self.cooling_setpoint);
         }
 
@@ -3484,5 +3510,87 @@ mod tests {
             low_mass.construction.wall_u_value(),
             high_mass.construction.wall_u_value()
         );
+    }
+
+    #[test]
+    fn test_setpoint_at_hour_all_day() {
+        // Case 600: All-day cooling (0, 24)
+        let case_600 = HvacSchedule::constant(20.0, 27.0);
+
+        // All hours should return setpoints
+        for hour in 0..24 {
+            let heat = case_600.heating_setpoint_at_hour(hour);
+            let cool = case_600.cooling_setpoint_at_hour(hour);
+
+            assert_eq!(heat, Some(20.0), "Hour {} heating should be 20.0", hour);
+            assert_eq!(cool, Some(27.0), "Hour {} cooling should be 27.0", hour);
+        }
+    }
+
+    #[test]
+    fn test_setpoint_at_hour_operating_hours() {
+        // Case 650: Cooling 7-18 (7, 18)
+        let case_650 = HvacSchedule::with_operating_hours(-100.0, 27.0, 7, 18);
+
+        // Hours 7-17 should have cooling setpoint
+        for hour in 7..18 {
+            let cool = case_650.cooling_setpoint_at_hour(hour);
+            assert_eq!(cool, Some(27.0), "Hour {} cooling should be 27.0", hour);
+        }
+
+        // Hours 0-6 and 18-23 should not have cooling
+        for hour in 0..7 {
+            let cool = case_650.cooling_setpoint_at_hour(hour);
+            assert_eq!(cool, None, "Hour {} cooling should be None", hour);
+        }
+        for hour in 18..24 {
+            let cool = case_650.cooling_setpoint_at_hour(hour);
+            assert_eq!(cool, None, "Hour {} cooling should be None", hour);
+        }
+    }
+
+    #[test]
+    fn test_setpoint_at_hour_wrapping_range() {
+        // Night ventilation: 18-7 (overnight, wraps midnight)
+        let night_vent = NightVentilation::new(1703.16, 18, 7);
+
+        // Hours 18-23 and 0-6 should be active
+        for hour in 18..24 {
+            assert!(
+                night_vent.is_active_at_hour(hour),
+                "Hour {} should be active",
+                hour
+            );
+        }
+        for hour in 0..7 {
+            assert!(
+                night_vent.is_active_at_hour(hour),
+                "Hour {} should be active",
+                hour
+            );
+        }
+
+        // Hours 7-17 should not be active
+        for hour in 7..18 {
+            assert!(
+                !night_vent.is_active_at_hour(hour),
+                "Hour {} should not be active",
+                hour
+            );
+        }
+    }
+
+    #[test]
+    fn test_setpoint_at_hour_free_floating() {
+        // Free-floating: should return None for all hours
+        let free = HvacSchedule::free_floating();
+
+        for hour in 0..24 {
+            let heat = free.heating_setpoint_at_hour(hour);
+            let cool = free.cooling_setpoint_at_hour(hour);
+
+            assert_eq!(heat, None, "Hour {} heating should be None", hour);
+            assert_eq!(cool, None, "Hour {} cooling should be None", hour);
+        }
     }
 }

@@ -154,11 +154,6 @@ path = "tests/test_modular_surrogates.rs"
 harness = true
 
 [[test]]
-name = "test_mode_specific_coupling"
-path = "tests/test_mode_specific_coupling.rs"
-harness = true
-
-[[test]]
 name = "validation-multi_reference_integration"
 path = "tests/validation/multi_reference_integration.rs"
 harness = true

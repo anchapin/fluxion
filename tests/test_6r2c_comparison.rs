@@ -46,7 +46,7 @@ fn run_comparison_simulation(case_name: &str, thermal_cap: f64, days: usize) -> 
     // Create 6R2C model
     let mut model_6r2c = ThermalModel::new(1);
     model_6r2c.thermal_capacitance = VectorField::from_scalar(thermal_cap, 1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
 
     let mut heating_5r1c = 0.0;
     let mut heating_6r2c = 0.0;
@@ -211,7 +211,7 @@ fn test_comparison_mass_temperature_response() {
     // 6R2C model (split mass nodes)
     let mut model_6r2c = ThermalModel::new(1);
     model_6r2c.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
 
     let mut t_mass_5r1c = Vec::new();
     let mut t_env_6r2c = Vec::new();
@@ -269,7 +269,7 @@ fn test_comparison_hvac_power_profiles() {
 
     let mut model_6r2c = ThermalModel::new(1);
     model_6r2c.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
 
     let mut hvac_5r1c_profile = Vec::new();
     let mut hvac_6r2c_profile = Vec::new();

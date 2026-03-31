@@ -1,0 +1,14 @@
+{
+  "case_id": "600FF",
+  "hourly": {
+    "outdoor_drybulb": [],
+    "zone_air_temp": [],
+    "heating_energy": [],
+    "cooling_energy": [],
+    "hours": []
+  },
+  "annual": {
+    "heating_kwh": 0.0,
+    "cooling_kwh": 0.0
+  }
+}

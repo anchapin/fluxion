@@ -12,7 +12,7 @@ fn main() {
 
     // Test 2: Configure 6R2C
     let mut model_6r2c = ThermalModel::new(1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
     assert_eq!(model_6r2c.thermal_model_type, ThermalModelType::SixRTwoC);
     println!("Test 2 PASSED: 6R2C model configured");
 

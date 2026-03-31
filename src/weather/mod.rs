@@ -15,6 +15,7 @@
 //! - **EPW Files**: External EnergyPlus Weather format files via [`epw::EpwWeatherSource`]
 //! - **Embedded TMY**: Pre-defined weather data for ASHRAE 140 via [`denver::DenverTmyWeather`]
 
+pub mod ddy;
 pub mod denver;
 pub mod epw;
 pub mod interpolation;
@@ -22,6 +23,7 @@ pub mod psychrometrics;
 pub mod tmy3;
 
 pub use self::psychrometrics::*;
+pub use ddy::{generate_design_day_hours, DesignDaySource, DesignDaySpec};
 pub use interpolation::{interpolate_weather, select_method_for_field, InterpolationMethod};
 pub use tmy3::{load_weather_locations, Tmy3Cache, WeatherLocation};
 

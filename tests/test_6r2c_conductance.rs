@@ -61,7 +61,7 @@ fn test_capacitance_split_case_900() {
 
     // Set Case 900 capacitance
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_env = model.envelope_thermal_capacitance.as_ref()[0];
     let c_int = model.internal_thermal_capacitance.as_ref()[0];
@@ -87,7 +87,7 @@ fn test_capacitance_split_case_900() {
 fn test_all_conductances_non_negative() {
     // All conductances must be non-negative
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     assert!(
         model.h_tr_em.as_ref()[0] >= 0.0,
@@ -147,7 +147,7 @@ fn test_time_constant_env_reasonable() {
     // Should be in hours range (not seconds, not days)
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_env = model.envelope_thermal_capacitance.as_ref()[0];
     let h_tr_em = model.h_tr_em.as_ref()[0];
@@ -170,7 +170,7 @@ fn test_time_constant_int_reasonable() {
     // Should be in hours range
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_int = model.internal_thermal_capacitance.as_ref()[0];
     let h_tr_me = model.h_tr_me.as_ref()[0];
@@ -192,7 +192,7 @@ fn test_timestep_vs_time_constant_warning() {
     // This test logs a warning if timestep exceeds recommendation
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_env = model.envelope_thermal_capacitance.as_ref()[0];
     let c_int = model.internal_thermal_capacitance.as_ref()[0];
@@ -231,7 +231,7 @@ fn test_conductance_multi_zone() {
     // Conductances should be calculated correctly for multi-zone buildings
     let mut model = ThermalModel::new(2); // 2 zones
 
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Both zones should have positive conductances
     for i in 0..2 {
@@ -246,7 +246,7 @@ fn test_capacitance_split_multi_zone() {
     // Capacitance split should work correctly for multi-zone buildings
     let mut model = ThermalModel::new(2);
     model.thermal_capacitance = VectorField::new(vec![10_000_000.0, 20_000_000.0]);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     for i in 0..2 {
         let c_total = model.thermal_capacitance.as_ref()[i];

@@ -1,6 +1,6 @@
 # Known Systematic Issues - ASHRAE 140 Validation
 
-*Last Updated: 2026-03-30* (Phase 7B: Case 960 investigation)
+*Last Updated: 2026-03-30* (Phase 7B: High-mass peak cooling investigation)
 
 This document catalogs all known systematic issues affecting ASHRAE 140 validation compliance. Issues are categorized by domain and include severity, affected cases/metrics, GitHub issue links, and resolution status.
 
@@ -283,6 +283,39 @@ This is a known limitation of the 5R1C model for multi-zone buildings with free-
   3. Separate sunspace from thermal model (decouple from conditioned zone)
   4. Accept as model limitation and document sunspace validation as out-of-scope
 
+### LIMIT-05: High-Mass Peak Cooling Overprediction (5R1C/6R2C Model Limitation)
+
+- **Description:** High-mass cases (900 series) show peak cooling 2-2.5x above ASHRAE 140 reference. This is a fundamental limitation of the lumped thermal capacitance model (5R1C/6R2C) when combined with:
+  1. High thermal mass (Cm > 5 MJ/K)
+  2. Significant solar forcing (peak summer conditions)
+  3. Large time step (dt = 1 hour)
+
+  The issue stems from thermal time constant (τ ≈ 1.25 hours for Case 900) being comparable to time step, causing solar gains to accumulate in mass faster than they can dissipate. This drives air temperature up and causes excessive cooling demand.
+- **Affected Cases:** 900, 910, 920, 930, 940, 950
+- **Affected Metrics:** Peak Cooling (kW), Annual Cooling (MWh)
+- **Severity:** Medium
+- **GitHub Issue:** (none - documented as model limitation)
+- **Status:** ⚠️ **Known Limitation** (5R1C/6R2C model limitation for high-mass peak cooling)
+- **Phase Addressed:** Phase 7B (investigated, root cause identified, documented)
+- **Resolution Notes:** Phase 7B investigation showed:
+  1. Crank-Nicolson integration (2nd-order) made results worse, not a solution
+  2. Solar distribution adjustment (reducing to-mass fraction) made results worse
+  3. Root cause: Thermal mass time constant (τ ≈ 1.25h) comparable to time step (1h), causing solar energy accumulation
+  4. This is a known limitation of ISO 13790 lumped models with high thermal mass and large dt
+
+**Investigation Summary:**
+- **Thermal Mass Divergence Test:** Mass temperatures stable without solar, accumulate with solar forcing
+- **Crank-Nicolson Test:** Worse results (4.04 kW vs 3.63 kW with Backward Euler)
+- **Solar Fraction Test:** Worse results (4.06 kW when reducing 0.7→0.5)
+- **Thermal Parameters (Case 900):** Cm=8.9 MJ/K, h_tr_ms=2014 W/K, τ=1.23h, dt/τ=0.81
+
+- **Potential Solutions:**
+  1. **Time step sub-stepping:** Reduce mass update dt to 15-30 min while keeping HVAC at 1h (requires ~2 days work)
+  2. **Finite difference model:** Upgrade to multi-layer FD or CTF-based heat transfer (requires Phase 6+ major redesign)
+  3. **Accept as limitation:** Document as known 5R1C/6R2C model constraint
+
+**Recommended Path:** Accept as model limitation (LIMIT-05) and upgrade to more sophisticated heat transfer model in Phase 6+.
+
 ## Reporting Issues (REPORT)
 
 ### REPORT-01: Systematic Issues Classification Heuristic
@@ -330,14 +363,14 @@ This is a known limitation of the 5R1C model for multi-zone buildings with free-
 | Free-Float (FREE) | 3 | 1 | 2 | 0 | 0 |
 | Temperature (TEMP) | 1 | 1 | 0 | 0 | 0 |
 | Multi-Zone (MULTI) | 3 | 1 | 0 | 1 | 1 |
-| Model Limits (LIMIT) | 4 | 0 | 0 | 0 | 4 |
+| Model Limits (LIMIT) | 5 | 0 | 0 | 0 | 5 |
 | Reporting (REPORT) | 4 | 0 | 4 | 0 | 0 |
 | **Total** | **24** | **10** | **6** | **1** | **5** |
 
 ### Open Issues by Severity
 
 - **Critical:** 0 (none - SOLAR-01 partially resolved)
-- **High:** 3 (SOLAR-01 partial, SOLAR-02, FREE-01)
+- **High:** 4 (SOLAR-01 partial, SOLAR-02, FREE-01, LIMIT-05)
 - **Medium:** 6 (SOLAR-03, SOLAR-04, FREE-02, FREE-03, REPORT-01, REPORT-02)
 - **Low:** 1 (REPORT-03)
 

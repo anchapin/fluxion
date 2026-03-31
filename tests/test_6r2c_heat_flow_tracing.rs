@@ -67,7 +67,7 @@ fn test_heat_flow_tracing_case_900() {
 
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let mut traces = Vec::new();
 
@@ -245,7 +245,7 @@ fn test_heat_flow_path_envelope_to_internal() {
     // Verify heat flows from envelope mass to internal mass through h_tr_me
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Create temperature gradient: envelope warmer than internal
     // This should drive heat from envelope → internal
@@ -286,7 +286,7 @@ fn test_heat_flow_path_exterior_to_envelope() {
     // Verify heat flows from exterior to envelope mass through h_tr_em
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let initial_t_env = model.envelope_mass_temperatures.as_ref()[0];
 
@@ -316,7 +316,7 @@ fn test_thermal_lag_envelope_vs_internal() {
     // This is the key dynamic that 6R2C should capture better than 5R1C
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Apply step change in outdoor temperature
     let outdoor_temp_step = 30.0; // Step from 20°C to 50°C
@@ -385,7 +385,7 @@ fn test_energy_balance_hvac_vs_heat_flows() {
     // Verify that HVAC energy balances with heat flows through envelope
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let mut total_hvac_energy = 0.0;
 

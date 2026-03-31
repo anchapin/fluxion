@@ -3,10 +3,10 @@
 //! This module implements the RED-GREEN-REFACTOR TDD cycle for addressing
 //! peak cooling load underprediction by 40-80% across ASHRAE 140 cases.
 
+use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::weather::denver::DenverTmyWeather;
 
 /// Extract peak cooling from Fluxion simulation.
 fn extract_fluxion_peak_cooling(peak_cooling_w: f64) -> f64 {
@@ -33,7 +33,7 @@ fn test_case_600_peak_cooling_red() {
     let weather = DenverTmyWeather::new();
 
     // Run simulation for one year
-    let surrogates = fluxion::SurrogateManager::new().expect("Failed to create surrogate manager");
+    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _eui = model.solve_timesteps(8760, &surrogates, false, None, None, None);
 
     // Extract peak cooling from simulation
@@ -66,7 +66,7 @@ fn test_solar_gain_distribution_analysis() {
     let weather = DenverTmyWeather::new();
 
     // Run simulation for a single day to analyze solar distribution
-    let surrogates = fluxion::SurrogateManager::new().expect("Failed to create surrogate manager");
+    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _eui = model.solve_timesteps(24, &surrogates, false, None, None, None);
 
     println!("\n=== Solar Gain Distribution Analysis ===");
@@ -109,7 +109,7 @@ fn test_case_900_peak_cooling_red() {
     let mut model = ThermalModel::from_spec(&spec);
 
     let weather = DenverTmyWeather::new();
-    let surrogates = fluxion::SurrogateManager::new().expect("Failed to create surrogate manager");
+    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _eui = model.solve_timesteps(8760, &surrogates, false, None, None, None);
 
     let peak_cooling_kw = model.get_peak_cooling_power_kw();

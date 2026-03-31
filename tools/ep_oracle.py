@@ -14,12 +14,10 @@ Usage:
 import argparse
 import json
 import os
-import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 
 class EnergyPlusOracle:
@@ -408,7 +406,7 @@ Output:Variable,
         )
 
         if result.returncode != 0:
-            print(f"EnergyPlus failed:")
+            print("EnergyPlus failed:")
             print(result.stdout)
             print(result.stderr)
             raise RuntimeError(f"EnergyPlus simulation failed: {result.returncode}")
@@ -725,7 +723,20 @@ def main():
 
         for case in cases:
             print(f"\nGenerating EP reference for case {case['id']}...")
-            idf_content = oracle.generate_idf(**case)
+            # Map case dictionary to generate_idf parameters
+            idf_content = oracle.generate_idf(
+                case_id=case["id"],
+                floor_area=case["floor_area"],
+                u_walls=case["walls_u"],
+                u_roof=case["roof_u"],
+                u_floor=case["floor_u"],
+                u_windows=case["window_u"],
+                window_area=case["window_area"],
+                setpoint_heating=case.get("setpoint_heating", 20.0),
+                setpoint_cooling=case.get("setpoint_cooling", 27.0),
+                location=case.get("location", "Denver"),
+                epw_path=case.get("epw"),
+            )
 
             # Write IDF
             output_dir = Path(args.output_dir)
@@ -738,7 +749,7 @@ def main():
             print(f"  IDF written to: {idf_path}")
 
             # Check if EPW file exists
-            epw_path = Path(case.get("epw", f"refdata/epw/Denver.epw"))
+            epw_path = Path(case.get("epw", "refdata/epw/Denver.epw"))
             if not epw_path.exists():
                 print(f"  Warning: EPW file not found: {epw_path}")
                 print(f"  Skipping simulation for case {case['id']}")

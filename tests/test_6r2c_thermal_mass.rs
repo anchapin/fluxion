@@ -12,7 +12,7 @@ fn test_6r2c_thermal_mass_initialization() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Configure for 6R2C mode
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Verify that envelope and internal masses have different initial temperatures
     assert!(

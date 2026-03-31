@@ -27,7 +27,7 @@ fn test_case_900_free_floating_temp_analysis() {
 
     // Create 6R2C model
     let mut model_6r2c = ThermalModel::<VectorField>::from_spec(&spec);
-    model_6r2c.configure_6r2c_model(0.75, 100.0); // 75% envelope mass, h_tr_me = 100 W/K
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None); // 75% envelope mass, h_tr_me = 100 W/K
 
     // Analyze thermal mass coupling in 5R1C
     let h_tr_em_5r1c = model_5r1c.h_tr_em.as_ref()[0];

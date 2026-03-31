@@ -6,6 +6,7 @@ pub mod cta;
 pub mod ctf_coefficients;
 pub mod ctf_solver;
 pub mod ctf_solver_wrapper;
+pub mod ctf_zone_coupling;
 pub mod fd_discretization;
 pub mod fd_solver;
 pub mod fd_solver_wrapper;

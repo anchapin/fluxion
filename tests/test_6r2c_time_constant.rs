@@ -24,7 +24,7 @@ fn test_time_constant_formulas() {
 
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1); // Case 900
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_env = model.envelope_thermal_capacitance.as_ref()[0];
     let c_int = model.internal_thermal_capacitance.as_ref()[0];
@@ -78,8 +78,8 @@ fn test_time_constant_low_mass_vs_high_mass() {
     let mut model_high = ThermalModel::new(1);
     model_high.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1); // ~20 MJ/K
 
-    model_low.configure_6r2c_model(0.75, 100.0);
-    model_high.configure_6r2c_model(0.75, 100.0);
+    model_low.configure_6r2c_model(0.75, 100.0, None);
+    model_high.configure_6r2c_model(0.75, 100.0, None);
 
     let c_env_low = model_low.envelope_thermal_capacitance.as_ref()[0];
     let c_env_high = model_high.envelope_thermal_capacitance.as_ref()[0];
@@ -122,7 +122,7 @@ fn test_timestep_rule_of_thumb() {
 
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_env = model.envelope_thermal_capacitance.as_ref()[0];
     let c_int = model.internal_thermal_capacitance.as_ref()[0];
@@ -208,7 +208,7 @@ fn test_5r1c_vs_6r2c_time_constants() {
     // 6R2C model (split mass nodes)
     let mut model_6r2c = ThermalModel::new(1);
     model_6r2c.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model_6r2c.configure_6r2c_model(0.75, 100.0);
+    model_6r2c.configure_6r2c_model(0.75, 100.0, None);
 
     // 5R1C time constant (single node)
     let c_5r1c = model_5r1c.thermal_capacitance.as_ref()[0];
@@ -254,7 +254,7 @@ fn test_substepping_recommendation() {
 
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let c_int = model.internal_thermal_capacitance.as_ref()[0];
     let h_tr_me = model.h_tr_me.as_ref()[0];
@@ -304,7 +304,7 @@ fn test_numerical_stability_extreme_timestep() {
     // Test model stability with extreme timestep (should not produce NaN/Inf)
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run with extreme outdoor temperatures
     for timestep in 0..48 {
@@ -356,7 +356,7 @@ fn test_energy_conservation_basic() {
     // Basic energy conservation check (not comprehensive, just sanity check)
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run simulation
     let mut total_hvac_energy = 0.0;
@@ -396,7 +396,7 @@ fn test_diagnostic_timestep_impact() {
 
     let mut model = ThermalModel::new(1);
     model.thermal_capacitance = VectorField::from_scalar(19_944_509.0, 1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run baseline simulation (1-hour timestep)
     for timestep in 0..24 {

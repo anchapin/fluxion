@@ -20,7 +20,7 @@ use fluxion::sim::engine::ThermalModel;
 fn test_envelope_mass_node_exists() {
     // 6R2C model should have separate envelope mass node
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Envelope mass temperature should be initialized
     let t_env = model.envelope_mass_temperatures.as_ref()[0];
@@ -41,7 +41,7 @@ fn test_envelope_mass_node_exists() {
 fn test_internal_mass_node_exists() {
     // 6R2C model should have separate internal mass node
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Internal mass temperature should be initialized
     let t_int = model.internal_mass_temperatures.as_ref()[0];
@@ -64,7 +64,7 @@ fn test_mass_nodes_initialized_from_single_mass() {
     let mut model = ThermalModel::new(1);
     let initial_temp = model.mass_temperatures.as_ref()[0];
 
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let t_env = model.envelope_mass_temperatures.as_ref()[0];
     let t_int = model.internal_mass_temperatures.as_ref()[0];
@@ -84,7 +84,7 @@ fn test_mass_nodes_initialized_from_single_mass() {
 fn test_mass_nodes_diverge_during_simulation() {
     // During simulation, envelope and internal mass temps should diverge
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Set up temperature gradient to drive heat transfer
     // Cold outdoor temp will cool envelope mass faster than internal mass
@@ -124,7 +124,7 @@ fn test_mass_nodes_diverge_during_simulation() {
 fn test_exterior_boundary_drives_envelope_mass() {
     // Envelope mass should respond to exterior temperature changes
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let initial_t_env = model.envelope_mass_temperatures.as_ref()[0];
 
@@ -148,7 +148,7 @@ fn test_exterior_boundary_drives_envelope_mass() {
 fn test_interior_boundary_drives_zone_air() {
     // Zone air temperature should respond to HVAC setpoints
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let initial_t_zone = model.temperatures.as_ref()[0];
 
@@ -171,7 +171,7 @@ fn test_interior_boundary_drives_zone_air() {
 fn test_ground_boundary_applied() {
     // Ground coupling should affect zone temperature
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Ground temperature is typically ~10-15°C constant
     // This test just verifies the model runs without error with ground coupling
@@ -210,7 +210,7 @@ fn test_initial_conditions_finite() {
 fn test_6r2c_initial_conditions_finite() {
     // All 6R2C initial temperatures should be finite
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     assert!(
         model.envelope_mass_temperatures.as_ref()[0].is_finite(),
@@ -226,7 +226,7 @@ fn test_6r2c_initial_conditions_finite() {
 fn test_warm_start_continuity() {
     // Reloading final state as initial state should have no temperature jumps
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run for 24 hours
     for timestep in 0..24 {
@@ -346,7 +346,7 @@ fn test_convective_fraction_configured() {
 fn test_internal_gain_split() {
     // Internal gains should split into convective and radiative fractions
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     let conv_frac = model.convective_fraction;
     let rad_frac = 1.0 - conv_frac;
@@ -372,7 +372,7 @@ fn test_internal_gain_split() {
 fn test_multi_zone_mass_nodes() {
     // Multi-zone buildings should have mass nodes for each zone
     let mut model = ThermalModel::new(2);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Both zones should have mass nodes
     assert_eq!(
@@ -406,7 +406,7 @@ fn test_case_960_interzone_coupling() {
     // Case 960 (sunspace) should have inter-zone coupling
     // This test verifies the model runs without error
     let mut model = ThermalModel::new(2);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Run simulation
     for timestep in 0..24 {
@@ -443,7 +443,7 @@ fn test_diagnostic_mass_node_response_time() {
     // This helps identify what physical temperature the node represents
 
     let mut model = ThermalModel::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
 
     // Apply step change in outdoor temperature
     let initial_t_env = model.envelope_mass_temperatures.as_ref()[0];
