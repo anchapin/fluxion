@@ -43,8 +43,7 @@ fn test_heating_diagnostic_case_600() {
 
     // Run first 1000 timesteps and track patterns
     for timestep in 0..1000 {
-        let surrogates =
-            fluxion::SurrogateManager::new().expect("Failed to create surrogate manager");
+        let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
 
         // Get outdoor temp for this hour
         let outdoor_temp = weather.get_hourly_data(timestep).unwrap().dry_bulb_temp;
@@ -125,7 +124,7 @@ fn test_heating_diagnostic_case_600() {
 
     // Run full year to compare with reference
     let mut model_full = ThermalModel::from_spec(&spec);
-    let surrogates = fluxion::SurrogateManager::new().expect("Failed to create surrogate manager");
+    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _eui = model_full.solve_timesteps(8760, &surrogates, false, None, None, None);
 
     println!("=== Full Year Results ===");

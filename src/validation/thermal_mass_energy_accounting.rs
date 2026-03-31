@@ -136,7 +136,12 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
         .iter()
         .zip(model.mass_temperatures.as_ref().iter())
     {
-        total_energy += cap * temp;
+        let product = cap * temp;
+        // Check for NaN or infinity - if detected, return NaN to signal invalid state
+        if !product.is_finite() {
+            return f64::NAN;
+        }
+        total_energy += product;
     }
 
     total_energy
@@ -236,12 +241,20 @@ pub fn validate_energy_balance_over_year(
     let mut previous_zone_energy = initial_zone_energy;
 
     // Run full year simulation and track energy balance at each timestep
+    let mut debug_hvac_sum = 0.0;
+    let mut debug_step_count = 0;
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
 
         // Run physics step and get HVAC energy
         let hvac_energy = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+        // Debug: track HVAC energy for Case 960
+        debug_hvac_sum += hvac_energy;
+        if hvac_energy != 0.0 {
+            debug_step_count += 1;
+        }
 
         // Calculate energy inputs
         // Energy in = solar + internal_gains + hvac_heating (when heating)
@@ -300,6 +313,12 @@ pub fn validate_energy_balance_over_year(
         hourly_errors.push(balance_error);
     }
 
+    // Debug output for Case 960
+    println!("  DEBUG: energy_in_total = {:.6e}", energy_in_total);
+    println!("  DEBUG: energy_out_total = {:.6e}", energy_out_total);
+    println!("  DEBUG: debug_hvac_sum = {:.6e}", debug_hvac_sum);
+    println!("  DEBUG: debug_step_count = {}", debug_step_count);
+
     // Calculate error metric
     // Note: The balance errors represent heat loss to exterior (through walls, windows, etc.)
     // This is NOT a bug - it's a legitimate energy flow that we're not tracking explicitly.
@@ -327,8 +346,12 @@ pub fn validate_energy_balance_over_year(
         0.0
     } else {
         let sum_squares: f64 = hourly_errors.iter().map(|e| e * e).sum();
-        (sum_squares / hourly_errors.len() as f64).sqrt()
+        let result = (sum_squares / hourly_errors.len() as f64).sqrt();
+        // If any hourly error is NaN, the RMS will be NaN - propagate this
+        result
     };
+
+    println!("  DEBUG: rms_total_change = {:.6e}", rms_total_change);
 
     // Calculate RMS energy flow per timestep
     let avg_energy_flow = if steps > 0 {
@@ -337,6 +360,8 @@ pub fn validate_energy_balance_over_year(
         0.0
     };
 
+    println!("  DEBUG: avg_energy_flow = {:.6e}", avg_energy_flow);
+
     // Calculate error percentage as RMS error normalized by average energy flow
     // This represents the relative error in the energy balance equation
     let error_pct = if avg_energy_flow > 0.0 {
@@ -344,6 +369,8 @@ pub fn validate_energy_balance_over_year(
     } else {
         0.0
     };
+
+    println!("  DEBUG: error_pct = {:.6e}", error_pct);
 
     // Energy balance is valid (framework is working correctly)
     // The validation framework confirms that:

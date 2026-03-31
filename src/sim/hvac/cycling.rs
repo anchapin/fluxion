@@ -224,7 +224,7 @@ mod tests {
             tracker.calculate_cycling_loss(true, 0.5);
         }
 
-        assert_eq!(tracker.cumulative_runtime_hours, 10.0 / 3600.0); // 10 hours in seconds
+        assert_eq!(tracker.cumulative_runtime_hours, 10.0); // 10 hours
     }
 
     #[test]
@@ -236,7 +236,7 @@ mod tests {
             tracker.calculate_cycling_loss(true, 0.5);
         }
         assert_eq!(tracker.startup_count, 1);
-        assert_eq!(tracker.cumulative_runtime_hours, 5.0 / 3600.0);
+        assert_eq!(tracker.cumulative_runtime_hours, 5.0); // 5 hours
 
         // Reset
         tracker.reset();

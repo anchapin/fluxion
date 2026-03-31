@@ -56,6 +56,7 @@ fn main() {
         ("test_solar_daily_pattern", "Solar gain daily pattern"),
     ];
 
+    let total_tests = tests.len();
     for (test_name, test_desc) in tests {
         print!("Running: {} - {}...", test_name, test_desc);
 
@@ -78,28 +79,28 @@ fn main() {
     }
 
     println!("\n=== Test Results ===");
-    println!("Total: {} tests", tests.len());
+    println!("Total: {} tests", total_tests);
     println!(
         "Passed: {} ({:.1}%)",
         passed,
-        (passed as f64 / tests.len() as f64) * 100.0
+        (passed as f64 / total_tests as f64) * 100.0
     );
     println!(
         "Failed: {} ({:.1}%)",
         failed,
-        (failed as f64 / tests.len() as f64) * 100.0
+        (failed as f64 / total_tests as f64) * 100.0
     );
     println!(
         "Ignored: {} ({:.1}%)",
         ignored,
-        (ignored as f64 / tests.len() as f64) * 100.0
+        (ignored as f64 / total_tests as f64) * 100.0
     );
 
     // Exit with error code if any tests failed
     std::process::exit(if failed > 0 { 1 } else { 0 });
 }
 
-#[derive(Debug)]
+#[derive(Debug, serde::Deserialize)]
 struct EnergyPlusReference {
     zone_air_temp_c: Vec<f64>,
     heating_energy_wh: Vec<f64>,
@@ -212,8 +213,8 @@ fn test_solar_gain_peaks_at_noon(ep: &EnergyPlusReference) -> TestResult {
     let mut max_hour = 0;
 
     for (i, &solar) in ep.solar_rate_total_w.iter().enumerate() {
-        if *solar > max_solar {
-            max_solar = *solar;
+        if solar > max_solar {
+            max_solar = solar;
             max_hour = i;
         }
     }
@@ -383,10 +384,7 @@ fn test_solar_rate_units(ep: &EnergyPlusReference) -> TestResult {
     // Peak DNI ~900 W/m²
     // Expected peak: 900 * 12 * 0.8 ≈ 8640 W (but actual window area less)
 
-    let max_solar = ep
-        .solar_rate_total_w
-        .iter()
-        .fold(0.0_f64, |a, &b| a.max(*b));
+    let max_solar = ep.solar_rate_total_w.iter().fold(0.0_f64, |a, &b| a.max(b));
 
     // Should be less than 10 kW (typical residential)
     if max_solar > 10000.0 {
@@ -455,8 +453,8 @@ fn test_solar_daily_pattern(ep: &EnergyPlusReference) -> TestResult {
     }
 
     // Solar should increase from morning to noon
-    let morning_peak = day_hours[6..12].iter().fold(0.0_f64, |a, &b| a.max(*b));
-    let noon_peak = day_hours[11..14].iter().fold(0.0_f64, |a, &b| a.max(*b));
+    let morning_peak = day_hours[6..12].iter().fold(0.0_f64, |a, &b| a.max(b));
+    let noon_peak = day_hours[11..14].iter().fold(0.0_f64, |a, &b| a.max(b));
 
     if noon_peak < morning_peak {
         return TestResult::Fail(format!(
@@ -466,7 +464,7 @@ fn test_solar_daily_pattern(ep: &EnergyPlusReference) -> TestResult {
     }
 
     // Solar should decline afternoon
-    let afternoon_peak = day_hours[14..18].iter().fold(0.0_f64, |a, &b| a.max(*b));
+    let afternoon_peak = day_hours[14..18].iter().fold(0.0_f64, |a, &b| a.max(b));
 
     // Noon should be higher than afternoon
     if noon_peak <= afternoon_peak {

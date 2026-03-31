@@ -391,56 +391,14 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
                 case_spec, results.annual_heating_mwh, results.annual_cooling_mwh
             );
         }
-        // Diagnostic ranges
+        // Diagnostic ranges - TODO: Implement diagnostic case runners
         "195-470" => {
-            #[cfg(test)]
-            {
-                use fluxion::tests::ashrae_140::diagnostics;
-                let result = diagnostics::run_cases_195_470();
-                println!(
-                    "Cases 195-470: {}/{} passed ({:.1}%)",
-                    result.passed,
-                    result.total_cases,
-                    result.pass_rate()
-                );
-                if !result.all_passed() {
-                    let failed = result.failed_cases();
-                    if !failed.is_empty() {
-                        println!("Failed cases: {:?}", failed);
-                    }
-                }
-            }
-            #[cfg(not(test))]
-            {
-                eprintln!("Error: Diagnostic case validation is only available in test mode");
-                eprintln!("Run 'cargo test -- --nocapture' to validate diagnostic cases");
-                anyhow::bail!("Diagnostic cases not available in release mode");
-            }
+            eprintln!("Diagnostic case range 195-470 not yet implemented");
+            anyhow::bail!("Diagnostic cases 195-470 not implemented");
         }
         "800-810" => {
-            #[cfg(test)]
-            {
-                use fluxion::tests::ashrae_140::diagnostics;
-                let result = diagnostics::run_cases_800_810();
-                println!(
-                    "Cases 800-810: {}/{} passed ({:.1}%)",
-                    result.passed,
-                    result.total_cases,
-                    result.pass_rate()
-                );
-                if !result.all_passed() {
-                    let failed = result.failed_cases();
-                    if !failed.is_empty() {
-                        println!("Failed cases: {:?}", failed);
-                    }
-                }
-            }
-            #[cfg(not(test))]
-            {
-                eprintln!("Error: Diagnostic case validation is only available in test mode");
-                eprintln!("Run 'cargo test -- --nocapture' to validate diagnostic cases");
-                anyhow::bail!("Diagnostic cases not available in release mode");
-            }
+            eprintln!("Diagnostic case range 800-810 not yet implemented");
+            anyhow::bail!("Diagnostic cases 800-810 not implemented");
         }
         _ => {
             eprintln!("Unknown case specification: {}", case_spec);

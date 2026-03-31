@@ -667,11 +667,12 @@ pub fn calculate_sky_emissivity_with_clouds(dry_bulb_temp: f64, clearness_index:
     let vapor_pressure = 6.1078 * ((7.5 * dry_bulb_temp) / (237.3 + dry_bulb_temp)).exp();
     let emissivity_clear = 0.72 + 0.005 * (vapor_pressure / t_kelvin).exp();
 
-    // Cloud cover effect: Higher clearness index = fewer clouds = lower emissivity
-    // Empirical correction factor: (1 - 0.3 * (1 - kt))
+    // Cloud cover effect: Lower clearness index = more clouds = higher emissivity
+    // Clouds act as a blanket, increasing sky emissivity (trapping longwave radiation)
+    // Empirical correction factor: (1 + 0.41 * (1 - kt))
     // Clear sky (kt=1.0): factor = 1.0 (no cloud effect)
-    // Cloudy sky (kt=0.1): factor = 0.73 (clouds increase emissivity by 37%)
-    let cloud_correction = 1.0 - 0.3 * (1.0 - clearness_index);
+    // Cloudy sky (kt=0.1): factor = 1.369 (~37% increase in emissivity)
+    let cloud_correction = 1.0 + 0.41 * (1.0 - clearness_index);
 
     emissivity_clear * cloud_correction
 }
@@ -958,8 +959,10 @@ mod tests {
         assert!(emissivity_cloudy > emissivity_clear);
 
         // Both should be in valid emissivity range
+        // Clear sky: typically 0.7-0.85
+        // Cloudy sky: can be 0.85-0.98 (clouds act as blackbody)
         assert!(emissivity_clear > 0.6 && emissivity_clear < 0.9);
-        assert!(emissivity_cloudy > 0.6 && emissivity_cloudy < 0.9);
+        assert!(emissivity_cloudy > 0.7 && emissivity_cloudy < 1.0);
     }
 
     #[test]

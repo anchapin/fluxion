@@ -7,6 +7,10 @@
 //! - Low-mass buildings (Case 600) should NOT be corrected
 //! - High-mass buildings (Case 900) should be corrected to coupling ratio > 0.1
 //! - Thermal capacitance threshold detection (5e6 J/K boundary)
+//!
+//! ## Note: Mode-specific coupling (h_tr_em_heating/h_tr_em_cooling) has been removed
+//! from ThermalModel. The model now uses a single h_tr_em with case-specific adjustments
+//! applied during simulation via empirical factors.
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
@@ -95,58 +99,27 @@ fn test_thermal_mass_threshold_detection() {
 
 #[test]
 fn test_thermal_mass_coupling_mode_specific_disabled() {
+    // Note: Mode-specific coupling has been removed from ThermalModel.
+    // This test now verifies that the base h_tr_em coupling ratio is correct.
     let spec = ASHRAE140Case::Case900.spec();
-    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Verify coupling ratios achieve target >= 0.1 in both modes
+    // Verify coupling ratio achieves target >= 0.1
     let h_tr_ms_value: f64 = model.h_tr_ms.as_ref()[0];
-    let h_tr_em_heating_value: f64 = model.h_tr_em_heating.as_ref()[0];
-    let h_tr_em_cooling_value: f64 = model.h_tr_em_cooling.as_ref()[0];
+    let h_tr_em_value: f64 = model.h_tr_em.as_ref()[0];
 
-    // Heating coupling ratio (no factor applied since mode-specific coupling is disabled)
-    let heating_ratio = h_tr_em_heating_value / h_tr_ms_value;
+    let coupling_ratio = h_tr_em_value / h_tr_ms_value;
 
-    // Cooling coupling ratio (no factor applied since mode-specific coupling is disabled)
-    let cooling_ratio = h_tr_em_cooling_value / h_tr_ms_value;
-
-    // Both ratios should be >= 0.1 (target)
     assert!(
-        heating_ratio >= 0.1,
-        "Heating coupling ratio {} should be >= 0.1",
-        heating_ratio
-    );
-    assert!(
-        cooling_ratio >= 0.1,
-        "Cooling coupling ratio {} should be >= 0.1",
-        cooling_ratio
+        coupling_ratio >= 0.1,
+        "High-mass coupling ratio {} should be >= 0.1",
+        coupling_ratio
     );
 
-    // Verify mode-specific factors are disabled (set to 1.0)
-    let heating_factor = model.h_tr_em_heating_factor;
-    let cooling_factor = model.h_tr_em_cooling_factor;
-
-    assert_eq!(
-        heating_factor, 1.0,
-        "Heating factor should be 1.0 (disabled), got {}",
-        heating_factor
-    );
-    assert_eq!(
-        cooling_factor, 1.0,
-        "Cooling factor should be 1.0 (disabled), got {}",
-        cooling_factor
-    );
-
-    // Verify heating and cooling values are equal (no mode-specific difference)
-    assert_eq!(
-        h_tr_em_heating_value, h_tr_em_cooling_value,
-        "Heating and cooling coupling should be equal when mode-specific coupling is disabled"
-    );
-
-    println!("DEBUG: Thermal mass correction with mode-specific coupling disabled:");
-    println!("  Heating factor: {:.2} (disabled)", heating_factor);
-    println!("  Cooling factor: {:.2} (disabled)", cooling_factor);
-    println!("  Heating coupling ratio: {:.3}", heating_ratio);
-    println!("  Cooling coupling ratio: {:.3}", cooling_ratio);
+    println!("DEBUG: Thermal mass coupling (mode-specific removed):");
+    println!("  h_tr_ms: {:.3} W/K", h_tr_ms_value);
+    println!("  h_tr_em: {:.3} W/K", h_tr_em_value);
+    println!("  Coupling ratio: {:.3}", coupling_ratio);
 }
 
 #[test]
@@ -154,29 +127,17 @@ fn test_thermal_mass_correction_low_mass_unchanged() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Calculate initial h_tr_em values
+    // Calculate initial h_tr_em value
     let h_tr_em_initial: f64 = model.h_tr_em.as_ref()[0];
-    let h_tr_em_heating_initial: f64 = model.h_tr_em_heating.as_ref()[0];
-    let h_tr_em_cooling_initial: f64 = model.h_tr_em_cooling.as_ref()[0];
 
     // Apply thermal mass correction (should exit early for low-mass)
     model.apply_thermal_mass_correction();
 
-    // Verify values unchanged (low-mass should not be corrected)
+    // Verify value unchanged (low-mass should not be corrected)
     let h_tr_em_final: f64 = model.h_tr_em.as_ref()[0];
-    let h_tr_em_heating_final: f64 = model.h_tr_em_heating.as_ref()[0];
-    let h_tr_em_cooling_final: f64 = model.h_tr_em_cooling.as_ref()[0];
 
     assert_eq!(
         h_tr_em_initial, h_tr_em_final,
         "Low-mass base h_tr_em should not change"
-    );
-    assert_eq!(
-        h_tr_em_heating_initial, h_tr_em_heating_final,
-        "Low-mass heating h_tr_em should not change"
-    );
-    assert_eq!(
-        h_tr_em_cooling_initial, h_tr_em_cooling_final,
-        "Low-mass cooling h_tr_em should not change"
     );
 }

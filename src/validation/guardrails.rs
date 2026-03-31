@@ -79,3 +79,239 @@ pub fn check(report: &BenchmarkReport, baseline: &GuardrailBaseline) -> (bool, V
     let success = failures.is_empty();
     (success, failures)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::validation::report::{MetricType, ValidationResult, ValidationStatus};
+
+    #[test]
+    fn test_guardrails_all_pass() {
+        let baseline = GuardrailBaseline {
+            mae: 5.0,
+            max_deviation: 10.0,
+            pass_rate: 90.0,
+            validation_time_seconds: 60.0,
+        };
+
+        let mut report = BenchmarkReport::default();
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 5.0,
+            ref_min: 4.5,
+            ref_max: 5.5,
+            percent_error: 0.0,
+            status: ValidationStatus::Pass,
+            per_program: None,
+        };
+        report.results.push(result);
+
+        let (success, failures) = check(&report, &baseline);
+        assert!(success, "Expected all guardrails to pass");
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn test_guardrails_mae_failure() {
+        let baseline = GuardrailBaseline {
+            mae: 5.0,
+            max_deviation: 10.0,
+            pass_rate: 90.0,
+            validation_time_seconds: 60.0,
+        };
+
+        let mut report = BenchmarkReport::default();
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 6.0,
+            ref_min: 5.0,
+            ref_max: 7.0,
+            percent_error: 6.0,
+            status: ValidationStatus::Warning,
+            per_program: None,
+        };
+        report.results.push(result);
+
+        let (success, failures) = check(&report, &baseline);
+        assert!(!success, "Expected MAE guardrail to fail");
+        assert!(failures.iter().any(|f| f.contains("MAE")));
+    }
+
+    #[test]
+    fn test_guardrails_max_deviation_failure() {
+        let baseline = GuardrailBaseline {
+            mae: 5.0,
+            max_deviation: 10.0,
+            pass_rate: 90.0,
+            validation_time_seconds: 60.0,
+        };
+
+        let mut report = BenchmarkReport::default();
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 12.0,
+            ref_min: 10.0,
+            ref_max: 14.0,
+            percent_error: 12.0,
+            status: ValidationStatus::Warning,
+            per_program: None,
+        };
+        report.results.push(result);
+
+        let (success, failures) = check(&report, &baseline);
+        assert!(!success, "Expected max deviation guardrail to fail");
+        assert!(failures.iter().any(|f| f.contains("Max Deviation")));
+    }
+
+    #[test]
+    fn test_guardrails_pass_rate_failure() {
+        let baseline = GuardrailBaseline {
+            mae: 5.0,
+            max_deviation: 10.0,
+            pass_rate: 90.0,
+            validation_time_seconds: 60.0,
+        };
+
+        let mut report = BenchmarkReport::default();
+        let pass_result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 5.0,
+            ref_min: 4.5,
+            ref_max: 5.5,
+            percent_error: 0.0,
+            status: ValidationStatus::Pass,
+            per_program: None,
+        };
+        let fail_result = ValidationResult {
+            case_id: "610".to_string(),
+            metric: MetricType::AnnualCooling,
+            fluxion_value: 10.0,
+            ref_min: 4.5,
+            ref_max: 5.5,
+            percent_error: 50.0,
+            status: ValidationStatus::Fail,
+            per_program: None,
+        };
+        report.results.push(pass_result);
+        report.results.push(fail_result);
+
+        let (success, failures) = check(&report, &baseline);
+        assert!(!success, "Expected pass rate guardrail to fail");
+        assert!(failures.iter().any(|f| f.contains("Pass Rate")));
+    }
+
+    #[test]
+    fn test_guardrails_duration_warning_only() {
+        let baseline = GuardrailBaseline {
+            mae: 5.0,
+            max_deviation: 10.0,
+            pass_rate: 90.0,
+            validation_time_seconds: 60.0,
+        };
+
+        let mut report = BenchmarkReport::default();
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 5.0,
+            ref_min: 4.5,
+            ref_max: 5.5,
+            percent_error: 0.0,
+            status: ValidationStatus::Pass,
+            per_program: None,
+        };
+        report.results.push(result);
+
+        let (success, failures) = check(&report, &baseline);
+        assert!(success, "Duration should only produce warning, not failure");
+        assert!(failures.is_empty());
+    }
+
+    #[test]
+    fn test_guardrails_baseline_load_missing_file() {
+        let result = GuardrailBaseline::load("/nonexistent/path/baseline.json");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to read baseline file"));
+    }
+
+    #[test]
+    fn test_guardrails_baseline_load_invalid_json() {
+        use std::io::Write;
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!(
+            "fluxion_test_invalid_baseline_{}.json",
+            std::process::id()
+        ));
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            writeln!(file, "not valid json").unwrap();
+        }
+
+        let result = GuardrailBaseline::load(file_path.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("Failed to parse baseline JSON"));
+
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_guardrails_baseline_load_valid() {
+        use std::io::Write;
+        let temp_dir = std::env::temp_dir();
+        let file_path = temp_dir.join(format!(
+            "fluxion_test_valid_baseline_{}.json",
+            std::process::id()
+        ));
+        {
+            let mut file = std::fs::File::create(&file_path).unwrap();
+            write!(
+                file,
+                r#"{{"mae": 5.0, "max_deviation": 10.0, "pass_rate": 90.0, "validation_time_seconds": 60.0}}"#
+            )
+            .unwrap();
+        }
+
+        let result = GuardrailBaseline::load(file_path.to_str().unwrap());
+        assert!(result.is_ok());
+        let baseline = result.unwrap();
+        assert_eq!(baseline.mae, 5.0);
+        assert_eq!(baseline.max_deviation, 10.0);
+        assert_eq!(baseline.pass_rate, 90.0);
+        assert_eq!(baseline.validation_time_seconds, 60.0);
+
+        let _ = std::fs::remove_file(&file_path);
+    }
+
+    #[test]
+    fn test_guardrails_multiple_failures() {
+        let baseline = GuardrailBaseline {
+            mae: 5.0,
+            max_deviation: 10.0,
+            pass_rate: 90.0,
+            validation_time_seconds: 60.0,
+        };
+
+        let mut report = BenchmarkReport::default();
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 15.0,
+            ref_min: 10.0,
+            ref_max: 20.0,
+            percent_error: 15.0,
+            status: ValidationStatus::Warning,
+            per_program: None,
+        };
+        report.results.push(result);
+
+        let (success, failures) = check(&report, &baseline);
+        assert!(!success);
+        assert!(failures.len() >= 2, "Expected at least 2 failures");
+    }
+}

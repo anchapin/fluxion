@@ -151,16 +151,24 @@ pub fn calculate_stack_effect_ach(
     temp_b: f64,
     door_height: f64,
     door_area: f64,
+    zone_volume: f64, // FIX: Use actual zone volume instead of door_area * door_height
 ) -> f64 {
+    // Guard against division by zero or negative volume
+    if zone_volume <= 0.0 || door_height <= 0.0 {
+        return 0.0;
+    }
+
     // Temperature difference (absolute value for magnitude)
     let delta_t = (temp_a - temp_b).abs();
 
     // Stack effect volumetric flow rate: Q = C·A·√(ΔT/h)
-    let q_vent = STACK_COEFFICIENT * door_area * (delta_t / door_height).sqrt();
+    // Guard against negative delta_t (shouldn't happen with abs, but be safe)
+    let flow_arg = delta_t / door_height;
+    let flow_sqrt = if flow_arg > 0.0 { flow_arg.sqrt() } else { 0.0 };
+    let q_vent = STACK_COEFFICIENT * door_area * flow_sqrt;
 
-    // ACH = Q_vent / V_zone (assuming door height represents zone height)
-    let zone_volume = door_area * door_height;
-    q_vent / zone_volume // Units: 1/hr (if Q in m³/hr)
+    // ACH = Q_vent / V_zone (use actual zone volume)
+    q_vent / zone_volume // Units: 1/hr
 }
 
 /// Calculates ventilation heat transfer using air enthalpy method.

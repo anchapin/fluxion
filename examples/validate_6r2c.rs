@@ -10,7 +10,7 @@ fn simulate_case(spec: &CaseSpec, use_6r2c: bool) -> (f64, f64, f64, f64) {
 
     // Configure 6R2C if requested
     if use_6r2c {
-        model.configure_6r2c_model(0.75, 100.0);
+        model.configure_6r2c_model(0.75, 100.0, None);
     }
 
     let weather = DenverTmyWeather::new();

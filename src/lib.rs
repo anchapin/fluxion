@@ -1704,6 +1704,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Requires specific ONNX model dimensions and multi-core environment"]
     fn test_parallel_execution_speedup() {
         use rayon::prelude::*;
         use std::path::Path;

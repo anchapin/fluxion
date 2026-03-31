@@ -105,3 +105,104 @@ impl VentilationSchedule for ScheduledVentilation {
 pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> f64 {
     (ach * volume * rho * cp) / 3600.0
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_constant_ventilation() {
+        let vent = ConstantVentilation::new(0.5);
+        assert_eq!(vent.ach, 0.5);
+        assert_eq!(vent.get_ach(0), 0.5);
+        assert_eq!(vent.get_ach(12), 0.5);
+        assert_eq!(vent.get_ach(23), 0.5);
+    }
+
+    #[test]
+    fn test_constant_ventilation_clone() {
+        let vent = ConstantVentilation::new(1.0);
+        let cloned = vent.clone_box();
+        assert_eq!(cloned.get_ach(5), 1.0);
+    }
+
+    #[test]
+    fn test_scheduled_ventilation_default() {
+        let vent = ScheduledVentilation::new(0.3, 2.0);
+        assert_eq!(vent.base_ach, 0.3);
+        assert_eq!(vent.fan_ach, 2.0);
+        assert!(!vent.schedule.iter().any(|&x| x)); // all false
+                                                    // Should return base_ach for all hours
+        for hour in 0..24 {
+            assert_eq!(vent.get_ach(hour), 0.3);
+        }
+    }
+
+    #[test]
+    fn test_night_ventilation_normal_range() {
+        let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 22, 6);
+        // Fan ON from hour 22 to 23, 0 to 5
+        assert_eq!(vent.get_ach(21), 0.3); // before start
+        assert_eq!(vent.get_ach(22), 2.3); // fan on
+        assert_eq!(vent.get_ach(23), 2.3); // fan on
+        assert_eq!(vent.get_ach(0), 2.3); // fan on (next day)
+        assert_eq!(vent.get_ach(5), 2.3); // fan on
+        assert_eq!(vent.get_ach(6), 0.3); // fan off
+        assert_eq!(vent.get_ach(12), 0.3); // fan off
+    }
+
+    #[test]
+    fn test_night_ventilation_same_start_end() {
+        let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 10, 10);
+        // When start == end, fan is on all 24 hours
+        for hour in 0..24 {
+            assert_eq!(vent.get_ach(hour), 2.3);
+        }
+    }
+
+    #[test]
+    fn test_night_ventilation_single_hour() {
+        let vent = ScheduledVentilation::night_ventilation(0.5, 1.5, 14, 15);
+        assert_eq!(vent.get_ach(13), 0.5);
+        assert_eq!(vent.get_ach(14), 2.0); // fan on
+        assert_eq!(vent.get_ach(15), 0.5); // fan off
+    }
+
+    #[test]
+    fn test_scheduled_ventilation_clone() {
+        let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 20, 8);
+        let cloned = vent.clone_box();
+        assert_eq!(cloned.get_ach(21), 2.3);
+        assert_eq!(cloned.get_ach(10), 0.3);
+    }
+
+    #[test]
+    fn test_ach_to_conductance() {
+        // Standard values: ach=1.0, volume=100m³, rho=1.2, cp=1005
+        let conductance = ach_to_conductance(1.0, 100.0, 1.2, 1005.0);
+        assert!((conductance - 33.5).abs() < 0.01); // (1*100*1.2*1005)/3600 = 33.5
+    }
+
+    #[test]
+    fn test_ach_to_conductance_zero() {
+        assert_eq!(ach_to_conductance(0.0, 100.0, 1.2, 1005.0), 0.0);
+    }
+
+    #[test]
+    fn test_ach_to_conductance_scaling() {
+        // Doubling ACH should double conductance
+        let c1 = ach_to_conductance(0.5, 100.0, 1.2, 1005.0);
+        let c2 = ach_to_conductance(1.0, 100.0, 1.2, 1005.0);
+        assert!((c2 - 2.0 * c1).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_ventilation_schedule_trait_object() {
+        let vent1: Box<dyn VentilationSchedule> = Box::new(ConstantVentilation::new(0.5));
+        let vent2: Box<dyn VentilationSchedule> =
+            Box::new(ScheduledVentilation::night_ventilation(0.3, 2.0, 22, 6));
+
+        assert_eq!(vent1.get_ach(10), 0.5);
+        assert_eq!(vent2.get_ach(23), 2.3);
+    }
+}

@@ -4,9 +4,9 @@
 //! peak cooling load underprediction by 40-80% across ASHRAE 140 cases.
 
 use fluxion::ai::surrogate::SurrogateManager;
-use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::denver::DenverTmyWeather;
 
 /// Extract peak cooling from Fluxion simulation.
 fn extract_fluxion_peak_cooling(peak_cooling_w: f64) -> f64 {

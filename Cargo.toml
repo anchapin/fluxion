@@ -196,4 +196,4 @@ harness = false
 [[test]]
 name = "thermal_mass_coupling_tests"
 path = "tests/thermal_mass_coupling_tests.rs"
-harness = false
+harness = true

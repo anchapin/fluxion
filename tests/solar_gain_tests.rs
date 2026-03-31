@@ -11,11 +11,11 @@
 // 4. Solar gain through window (transmittance, area)
 // 5. Direct vs diffuse solar distribution
 
-use fluxion::sim::weather::{DenverTmyWeather, SolarData};
+use fluxion::weather::denver::DenverTmyWeather;
 use serde_json;
 
 const EPSILON: f64 = 1e-10;
-const SQRT_2: f64 = 2.0_f64.sqrt();
+const SQRT_2: f64 = 1.41421356237;
 
 #[derive(Debug)]
 struct EnergyPlusReference {
@@ -29,14 +29,32 @@ impl EnergyPlusReference {
     fn load() -> Self {
         let path = "benchmarks/outputs/bestest_gsr/case_900/run/reference_data.json";
         let file = std::fs::File::open(path).expect("Failed to open reference data");
-        let data: ReferenceData =
+        // Directly parse into our struct fields
+        let data: serde_json::Value =
             serde_json::from_reader(file).expect("Failed to parse reference data");
 
+        // Extract hourly data from JSON
+        let hourly = data.get("hourly").expect("Missing 'hourly' field");
         Self {
-            zone_air_temp_c: data.hourly.zone_air_temp_c,
-            heating_energy_wh: data.hourly.heating_energy_wh,
-            cooling_energy_wh: data.hourly.cooling_energy_wh,
-            solar_rate_total_w: data.hourly.solar_rate_total_w,
+            zone_air_temp_c: serde_json::from_value(
+                hourly.get("zone_air_temp_c").cloned().unwrap_or_default(),
+            )
+            .expect("Failed to parse zone_air_temp_c"),
+            heating_energy_wh: serde_json::from_value(
+                hourly.get("heating_energy_wh").cloned().unwrap_or_default(),
+            )
+            .expect("Failed to parse heating_energy_wh"),
+            cooling_energy_wh: serde_json::from_value(
+                hourly.get("cooling_energy_wh").cloned().unwrap_or_default(),
+            )
+            .expect("Failed to parse cooling_energy_wh"),
+            solar_rate_total_w: serde_json::from_value(
+                hourly
+                    .get("solar_rate_total_w")
+                    .cloned()
+                    .unwrap_or_default(),
+            )
+            .expect("Failed to parse solar_rate_total_w"),
         }
     }
 
@@ -63,8 +81,6 @@ fn load_weather() -> DenverTmyWeather {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fluxion::sim::construction::ConstructionSpec;
-    use fluxion::sim::engine::ThermalModel;
 
     const SOLAR_TOLERANCE: f64 = 0.01; // 1% tolerance
     const ENERGY_TOLERANCE: f64 = 0.05; // 5% tolerance
@@ -141,8 +157,8 @@ mod tests {
         let mut max_hour = 0;
 
         for (i, &solar) in ep.solar_rate_total_w.iter().enumerate() {
-            if *solar > max_solar {
-                max_solar = *solar;
+            if solar > max_solar {
+                max_solar = solar;
                 max_hour = i;
             }
         }
@@ -308,10 +324,7 @@ mod tests {
         // Peak DNI ~900 W/m²
         // Expected peak: 900 * 12 * 0.8 ≈ 8640 W (but actual window area less)
 
-        let max_solar = ep
-            .solar_rate_total_w
-            .iter()
-            .fold(0.0_f64, |a, &b| a.max(*b));
+        let max_solar = ep.solar_rate_total_w.iter().fold(0.0_f64, |a, &b| a.max(b));
 
         // Should be less than 10 kW (typical residential)
         assert!(
@@ -367,7 +380,7 @@ mod tests {
 
         let day_start = 4320; // Hour 4320 = June 21, 0:00
         let day_hours: Vec<f64> = (0..24)
-            .map(|h| ep.solar_rate_total_w[day_start + h] as usize)
+            .map(|h| ep.solar_rate_total_w[day_start + h])
             .collect();
 
         // Night (hours 0-5): should be zero
@@ -381,8 +394,8 @@ mod tests {
         }
 
         // Solar should increase from morning to noon
-        let morning_peak = day_hours[6..12].iter().fold(0.0_f64, |a, &b| a.max(*b));
-        let noon_peak = day_hours[11..14].iter().fold(0.0_f64, |a, &b| a.max(*b));
+        let morning_peak = day_hours[6..12].iter().fold(0.0_f64, |a, &b| a.max(b));
+        let noon_peak = day_hours[11..14].iter().fold(0.0_f64, |a, &b| a.max(b));
 
         assert!(
             noon_peak >= morning_peak,
@@ -392,7 +405,7 @@ mod tests {
         );
 
         // Solar should decline afternoon
-        let afternoon_peak = day_hours[14..18].iter().fold(0.0_f64, |a, &b| a.max(*b));
+        let afternoon_peak = day_hours[14..18].iter().fold(0.0_f64, |a, &b| a.max(b));
 
         // Noon should be higher than afternoon
         assert!(

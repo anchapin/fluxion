@@ -217,3 +217,26 @@ impl CsvExporter {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_csv_exporter_creation() {
+        let exporter = CsvExporter::new(PathBuf::from("/tmp/test_csv"), ',');
+        assert_eq!(exporter.delimiter, ',');
+    }
+
+    #[test]
+    fn test_csv_exporter_semicolon_delimiter() {
+        let exporter = CsvExporter::new(PathBuf::from("/tmp/test_csv"), ';');
+        assert_eq!(exporter.delimiter, ';');
+    }
+
+    #[test]
+    fn test_csv_exporter_tab_delimiter() {
+        let exporter = CsvExporter::new(PathBuf::from("/tmp/test_csv"), '\t');
+        assert_eq!(exporter.delimiter, '\t');
+    }
+}

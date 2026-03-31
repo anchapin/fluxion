@@ -17,7 +17,7 @@ fn test_h_tr_me_configured_value() {
     // h_tr_me should match the configured value exactly
     for h_tr_me_value in [50.0, 100.0, 150.0, 200.0] {
         let mut model = ThermalModel::new(1);
-        model.configure_6r2c_model(0.75, h_tr_me_value);
+        model.configure_6r2c_model(0.75, h_tr_me_value, None);
 
         let h_tr_me = model.h_tr_me.as_ref()[0];
         assert!(
@@ -36,7 +36,7 @@ fn test_capacitance_split_conservation() {
         let mut model = ThermalModel::new(1);
         let total_cap = model.thermal_capacitance.as_ref()[0];
 
-        model.configure_6r2c_model(envelope_fraction, 100.0);
+        model.configure_6r2c_model(envelope_fraction, 100.0, None);
 
         let c_env = model.envelope_thermal_capacitance.as_ref()[0];
         let c_int = model.internal_thermal_capacitance.as_ref()[0];
@@ -105,14 +105,8 @@ fn test_all_conductances_non_negative() {
         model.h_tr_is.as_ref()[0] >= 0.0,
         "h_tr_is must be non-negative"
     );
-    assert!(
-        model.h_tr_em_heating.as_ref()[0] >= 0.0,
-        "h_tr_em_heating must be non-negative"
-    );
-    assert!(
-        model.h_tr_em_cooling.as_ref()[0] >= 0.0,
-        "h_tr_em_cooling must be non-negative"
-    );
+    // Note: h_tr_em_heating and h_tr_em_cooling have been removed from ThermalModel
+    // The model now uses a single h_tr_em with case-specific adjustments during simulation
 }
 
 #[test]
@@ -120,7 +114,7 @@ fn test_coupling_ratio_bounds() {
     // Coupling ratio (h_tr_em / h_tr_ms) should always be between 0 and 1
     for envelope_fraction in [0.5, 0.6, 0.7, 0.75, 0.8] {
         let mut model = ThermalModel::new(1);
-        model.configure_6r2c_model(envelope_fraction, 100.0);
+        model.configure_6r2c_model(envelope_fraction, 100.0, None);
 
         let h_tr_em = model.h_tr_em.as_ref()[0];
         let h_tr_ms = model.h_tr_ms.as_ref()[0];

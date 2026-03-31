@@ -2,8 +2,11 @@
 //!
 //! Simple diagnostic test for solar gain distribution analysis.
 
-use fluxion::weather::DenverTmyWeather;
-use fluxion::ASHRAE140Case;
+use fluxion::ai::surrogate::SurrogateManager;
+use fluxion::physics::cta::VectorField;
+use fluxion::sim::engine::ThermalModel;
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use fluxion::weather::denver::DenverTmyWeather;
 
 /// Test: Solar Gain Distribution Analysis
 ///
@@ -12,11 +15,11 @@ use fluxion::ASHRAE140Case;
 #[test]
 fn test_solar_distribution_diagnostic() {
     let spec = ASHRAE140Case::Case600.spec();
-    let mut model = fluxion::ThermalModel::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let _weather = DenverTmyWeather::new();
 
     // Run simulation for a single day to analyze solar distribution
-    let surrogates = fluxion::SurrogateManager::new().expect("Failed to create surrogate manager");
+    let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _eui = model.solve_timesteps(24, &surrogates, false, None, None, None);
 
     println!("\n=== Solar Gain Distribution Diagnostic ===");

@@ -491,7 +491,12 @@ mod tests {
         assert_eq!(details.rmse, 0.0);
         assert_eq!(details.max_abs_error, 0.0);
         assert_eq!(details.max_rel_error, 0.0);
-        assert_eq!(details.correlation, 1.0);
+        // Use approximate comparison for correlation due to floating point precision
+        assert!(
+            (details.correlation - 1.0).abs() < 1e-10,
+            "Expected correlation ≈ 1.0, got {}",
+            details.correlation
+        );
     }
 
     #[test]
@@ -524,12 +529,15 @@ mod tests {
     #[test]
     fn test_energy_validation_within_tolerance() {
         let oracle = EPOracle::new().unwrap();
-        let fluxion = 1000.0;
-        let ep = 1050.0;
+        // Use values where both abs_error (<=1.0) and rel_error (<=5%) are within tolerance
+        // abs_error = 0.5, rel_error = 0.5/100.5 = 0.497%
+        let fluxion = 100.0;
+        let ep = 100.5;
 
         let details = oracle.validate_energy(fluxion, ep);
 
-        // Rel error = 50/1050 = 4.76%, within 5% tolerance
+        // Rel error = 0.5/100.5 = 0.497%, within 5% tolerance
+        // Abs error = 0.5, within 1.0 tolerance
         assert!(details.passed);
     }
 

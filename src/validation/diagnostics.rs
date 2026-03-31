@@ -360,3 +360,218 @@ impl SimulationDiagnostics {
         trace!("Recorded hour {}: {} zones", hour, num_zones);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_simulation_diagnostics_new() {
+        let diag = SimulationDiagnostics::new(2, 100);
+        assert_eq!(diag.hours.len(), 0);
+        assert_eq!(diag.zone_temps.len(), 0);
+        assert_eq!(diag.mass_temps.len(), 0);
+        assert_eq!(diag.surface_temps.len(), 0);
+        assert_eq!(diag.loads.solar.len(), 0);
+        assert_eq!(diag.loads.internal.len(), 0);
+        assert_eq!(diag.loads.hvac.len(), 0);
+        assert_eq!(diag.loads.inter_zone.len(), 0);
+        assert_eq!(diag.loads.infiltration.len(), 0);
+        assert_eq!(diag.cumulative_energy.heating_kwh, vec![0.0; 2]);
+        assert_eq!(diag.cumulative_energy.cooling_kwh, vec![0.0; 2]);
+        assert_eq!(diag.cumulative_energy.total_kwh, vec![0.0; 2]);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_default() {
+        let diag = SimulationDiagnostics::default();
+        assert_eq!(diag.hours.capacity(), 8760);
+        assert_eq!(diag.cumulative_energy.heating_kwh.len(), 1);
+    }
+
+    #[test]
+    fn test_load_breakdown_clone() {
+        let load = LoadBreakdown {
+            solar: vec![vec![100.0, 200.0]],
+            internal: vec![vec![50.0, 60.0]],
+            hvac: vec![vec![300.0, 0.0]],
+            inter_zone: vec![vec![10.0, -10.0]],
+            infiltration: vec![vec![20.0, 25.0]],
+        };
+        let cloned = load.clone();
+        assert_eq!(cloned.solar[0][0], 100.0);
+        assert_eq!(cloned.infiltration[0][1], 25.0);
+    }
+
+    #[test]
+    fn test_energy_accumulation_clone() {
+        let energy = EnergyAccumulation {
+            heating_kwh: vec![1.5, 2.0],
+            cooling_kwh: vec![0.8, 1.2],
+            total_kwh: vec![2.3, 3.2],
+        };
+        let cloned = energy.clone();
+        assert_eq!(cloned.heating_kwh[0], 1.5);
+        assert_eq!(cloned.total_kwh[1], 3.2);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_clone() {
+        let mut diag = SimulationDiagnostics::new(1, 10);
+        diag.hours.push(0);
+        diag.zone_temps.push(vec![20.0]);
+        diag.mass_temps.push(vec![19.0]);
+        diag.surface_temps.push(vec![19.5]);
+        diag.loads.solar.push(vec![100.0]);
+        diag.loads.internal.push(vec![50.0]);
+        diag.loads.hvac.push(vec![200.0]);
+        diag.loads.inter_zone.push(vec![0.0]);
+        diag.loads.infiltration.push(vec![30.0]);
+
+        let cloned = diag.clone();
+        assert_eq!(cloned.hours[0], 0);
+        assert_eq!(cloned.zone_temps[0][0], 20.0);
+        assert_eq!(cloned.loads.solar[0][0], 100.0);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_export_csv_single_zone() {
+        let mut diag = SimulationDiagnostics::new(1, 10);
+
+        // Manually populate data
+        for i in 0..5 {
+            diag.hours.push(i);
+            diag.zone_temps.push(vec![20.0 + i as f64]);
+            diag.mass_temps.push(vec![19.0 + i as f64]);
+            diag.surface_temps.push(vec![19.5 + i as f64]);
+            diag.loads.solar.push(vec![100.0 + i as f64]);
+            diag.loads.internal.push(vec![50.0]);
+            diag.loads.hvac.push(vec![200.0]);
+            diag.loads.inter_zone.push(vec![0.0]);
+            diag.loads.infiltration.push(vec![30.0]);
+        }
+
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join(format!("fluxion_diag_test_{}.csv", std::process::id()));
+
+        let result = diag.export_csv(&csv_path);
+        assert!(result.is_ok());
+
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        // Header + 5 data rows
+        assert_eq!(lines.len(), 6);
+        assert!(lines[0].contains("Hour"));
+        assert!(lines[0].contains("Zone_Temps"));
+        assert!(lines[0].contains("Solar_Watts"));
+
+        // Check data format
+        assert!(lines[1].contains("0,"));
+        assert!(lines[1].contains("20.00"));
+
+        let _ = std::fs::remove_file(&csv_path);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_export_csv_multi_zone() {
+        let mut diag = SimulationDiagnostics::new(2, 10);
+
+        for i in 0..3 {
+            diag.hours.push(i);
+            diag.zone_temps.push(vec![20.0, 18.0]);
+            diag.mass_temps.push(vec![19.0, 17.0]);
+            diag.surface_temps.push(vec![19.5, 17.5]);
+            diag.loads.solar.push(vec![100.0, 80.0]);
+            diag.loads.internal.push(vec![50.0, 40.0]);
+            diag.loads.hvac.push(vec![200.0, 150.0]);
+            diag.loads.inter_zone.push(vec![5.0, -5.0]);
+            diag.loads.infiltration.push(vec![30.0, 25.0]);
+        }
+
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join(format!("fluxion_diag_mz_{}.csv", std::process::id()));
+
+        let result = diag.export_csv(&csv_path);
+        assert!(result.is_ok());
+
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+
+        assert_eq!(lines.len(), 4); // Header + 3 rows
+                                    // Multi-zone values should be semicolon-separated
+        assert!(lines[1].contains("20.00;18.00"));
+
+        let _ = std::fs::remove_file(&csv_path);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_export_csv_empty() {
+        let diag = SimulationDiagnostics::new(1, 10);
+
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join(format!("fluxion_diag_empty_{}.csv", std::process::id()));
+
+        let result = diag.export_csv(&csv_path);
+        assert!(result.is_ok());
+
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 1); // Header only
+        assert!(lines[0].contains("Hour"));
+
+        let _ = std::fs::remove_file(&csv_path);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_print_summary() {
+        let mut diag = SimulationDiagnostics::new(2, 10);
+
+        for i in 0..5 {
+            diag.hours.push(i);
+            diag.zone_temps.push(vec![20.0 + i as f64, 18.0 + i as f64]);
+            diag.mass_temps.push(vec![19.0, 17.0]);
+            diag.surface_temps.push(vec![19.5, 17.5]);
+            diag.loads.solar.push(vec![100.0, 80.0]);
+            diag.loads.internal.push(vec![50.0, 40.0]);
+            diag.loads.hvac.push(vec![200.0, 150.0]);
+            diag.loads.inter_zone.push(vec![0.0, 0.0]);
+            diag.loads.infiltration.push(vec![30.0, 25.0]);
+        }
+
+        diag.cumulative_energy.heating_kwh = vec![1.5, 1.2];
+        diag.cumulative_energy.cooling_kwh = vec![0.5, 0.3];
+        diag.cumulative_energy.total_kwh = vec![2.0, 1.5];
+
+        // Should not panic
+        diag.print_summary();
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_print_summary_empty() {
+        let diag = SimulationDiagnostics::new(1, 10);
+        // Should handle empty data gracefully
+        diag.print_summary();
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_serialization() {
+        let mut diag = SimulationDiagnostics::new(1, 10);
+        diag.hours.push(0);
+        diag.zone_temps.push(vec![20.0]);
+        diag.mass_temps.push(vec![19.0]);
+        diag.surface_temps.push(vec![19.5]);
+        diag.loads.solar.push(vec![100.0]);
+        diag.loads.internal.push(vec![50.0]);
+        diag.loads.hvac.push(vec![200.0]);
+        diag.loads.inter_zone.push(vec![0.0]);
+        diag.loads.infiltration.push(vec![30.0]);
+
+        let json = serde_json::to_string(&diag).unwrap();
+        let deserialized: SimulationDiagnostics = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.hours[0], 0);
+        assert_eq!(deserialized.zone_temps[0][0], 20.0);
+        assert_eq!(deserialized.loads.solar[0][0], 100.0);
+    }
+}

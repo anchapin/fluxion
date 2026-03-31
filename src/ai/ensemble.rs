@@ -535,4 +535,217 @@ mod tests {
 
         assert_eq!(mean_result, vec![2.0, 3.0]);
     }
+
+    #[test]
+    fn test_ensemble_config_default() {
+        let config = EnsembleConfig::default();
+        assert!(config.model_paths.is_empty());
+        assert_eq!(config.aggregation_method, AggregationMethod::Mean);
+        assert_eq!(config.min_models, 1);
+    }
+
+    #[test]
+    fn test_ensemble_config_builder() {
+        let config = EnsembleConfig::default()
+            .with_method(AggregationMethod::TrimmedMean(0.1))
+            .with_min_models(3);
+
+        assert_eq!(config.min_models, 3);
+        assert!(matches!(
+            config.aggregation_method,
+            AggregationMethod::TrimmedMean(0.1)
+        ));
+    }
+
+    #[test]
+    fn test_aggregation_method_default() {
+        let method = AggregationMethod::default();
+        assert_eq!(method, AggregationMethod::Mean);
+    }
+
+    #[test]
+    fn test_aggregation_method_equality() {
+        assert_eq!(AggregationMethod::Mean, AggregationMethod::Mean);
+        assert_eq!(AggregationMethod::Median, AggregationMethod::Median);
+        assert_ne!(AggregationMethod::Mean, AggregationMethod::Median);
+        assert_eq!(
+            AggregationMethod::TrimmedMean(0.1),
+            AggregationMethod::TrimmedMean(0.1)
+        );
+        assert_eq!(
+            AggregationMethod::BestModel(0),
+            AggregationMethod::BestModel(0)
+        );
+    }
+
+    #[test]
+    fn test_model_metrics_default() {
+        let metrics = ModelMetrics::default();
+        assert_eq!(metrics.mae, 0.0);
+        assert_eq!(metrics.rmse, 0.0);
+        assert_eq!(metrics.r2, 0.0);
+        assert_eq!(metrics.bias, 0.0);
+    }
+
+    #[test]
+    fn test_model_metrics_composite_score() {
+        let metrics = ModelMetrics::new(0.1, 0.2, 0.95, 0.05);
+        let score = metrics.composite_score();
+        assert!((score - 0.35).abs() < 0.001); // 0.1 + 0.2 + 0.05
+    }
+
+    #[test]
+    fn test_model_metrics_composite_score_with_bias() {
+        let metrics = ModelMetrics::new(0.5, 0.7, 0.9, -0.3);
+        let score = metrics.composite_score();
+        assert!((score - 1.5).abs() < 0.001); // 0.5 + 0.7 + 0.3
+    }
+
+    #[test]
+    fn test_ensemble_prediction_disagreement() {
+        let pred = EnsemblePrediction {
+            predictions: vec![1.0, 2.0],
+            disagreement: vec![0.1, 0.2],
+            model_predictions: vec![vec![0.9, 1.8], vec![1.1, 2.2]],
+            weights: None,
+        };
+
+        assert!((pred.mean_disagreement() - 0.15).abs() < 0.001);
+        assert!((pred.max_disagreement() - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_ensemble_prediction_empty_disagreement() {
+        let pred = EnsemblePrediction {
+            predictions: vec![],
+            disagreement: vec![],
+            model_predictions: vec![],
+            weights: None,
+        };
+
+        assert_eq!(pred.mean_disagreement(), 0.0);
+        assert_eq!(pred.max_disagreement(), 0.0);
+    }
+
+    #[test]
+    fn test_ensemble_new_insufficient_models() {
+        let config = EnsembleConfig::new(vec!["nonexistent1.onnx".to_string()]).with_min_models(2);
+
+        let result = EnsembleSurrogate::new(config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Not enough models loaded"));
+    }
+
+    #[test]
+    fn test_ensemble_from_single_missing_model() {
+        let result = EnsembleSurrogate::from_single("nonexistent.onnx");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_ensemble_num_models_empty() {
+        let config = EnsembleConfig::new(vec![]).with_min_models(0);
+        let result = EnsembleSurrogate::new(config);
+        // With min_models=0, empty model list is allowed
+        assert!(result.is_ok());
+        let ensemble = result.unwrap();
+        assert_eq!(ensemble.num_models(), 0);
+    }
+
+    #[test]
+    fn test_ensemble_recalculate_weights_empty() {
+        let config = EnsembleConfig::new(vec!["nonexistent.onnx".to_string()]);
+        let result = EnsembleSurrogate::new(config);
+        // Can't test without valid models, but we verified error handling
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_disagreement_metrics_default() {
+        let metrics = DisagreementMetrics::default();
+        assert_eq!(metrics.avg_pairwise_diff, 0.0);
+        assert_eq!(metrics.max_pairwise_diff, 0.0);
+        assert_eq!(metrics.coefficient_of_variation, 0.0);
+        assert_eq!(metrics.agreement_count, 0);
+    }
+
+    #[test]
+    fn test_disagreement_metrics_single_model() {
+        let prediction = EnsemblePrediction {
+            predictions: vec![1.0, 2.0],
+            disagreement: vec![0.0],
+            model_predictions: vec![vec![1.0, 2.0]],
+            weights: None,
+        };
+
+        let metrics = DisagreementMetrics::from_prediction(&prediction, 0.1);
+        assert_eq!(metrics.avg_pairwise_diff, 0.0);
+        assert_eq!(metrics.max_pairwise_diff, 0.0);
+    }
+
+    #[test]
+    fn test_disagreement_metrics_multi_model() {
+        let prediction = EnsemblePrediction {
+            predictions: vec![1.0, 2.0],
+            disagreement: vec![0.1, 0.2],
+            model_predictions: vec![vec![0.9, 1.8], vec![1.1, 2.2]],
+            weights: None,
+        };
+
+        let metrics = DisagreementMetrics::from_prediction(&prediction, 0.15);
+        assert!(metrics.avg_pairwise_diff > 0.0);
+        assert!(metrics.max_pairwise_diff > 0.0);
+        assert!(metrics.agreement_count >= 0);
+    }
+
+    #[test]
+    fn test_ensemble_config_clone_debug() {
+        let config = EnsembleConfig::new(vec!["model.onnx".to_string()]);
+        let cloned = config.clone();
+        assert_eq!(cloned.model_paths, config.model_paths);
+
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("model_paths"));
+    }
+
+    #[test]
+    fn test_ensemble_prediction_clone_debug() {
+        let pred = EnsemblePrediction {
+            predictions: vec![1.0],
+            disagreement: vec![0.1],
+            model_predictions: vec![vec![1.0]],
+            weights: Some(vec![1.0]),
+        };
+
+        let cloned = pred.clone();
+        assert_eq!(cloned.predictions, pred.predictions);
+
+        let debug_str = format!("{:?}", pred);
+        assert!(debug_str.contains("predictions"));
+    }
+
+    #[test]
+    fn test_model_metrics_clone_debug() {
+        let metrics = ModelMetrics::new(0.1, 0.2, 0.95, 0.05);
+        let cloned = metrics.clone();
+        assert_eq!(cloned.mae, metrics.mae);
+
+        let debug_str = format!("{:?}", metrics);
+        assert!(debug_str.contains("mae"));
+    }
+
+    #[test]
+    fn test_disagreement_metrics_clone_debug() {
+        let metrics = DisagreementMetrics {
+            avg_pairwise_diff: 0.1,
+            max_pairwise_diff: 0.2,
+            coefficient_of_variation: 0.05,
+            agreement_count: 2,
+        };
+        let cloned = metrics.clone();
+        assert_eq!(cloned.agreement_count, metrics.agreement_count);
+
+        let debug_str = format!("{:?}", metrics);
+        assert!(debug_str.contains("avg_pairwise_diff"));
+    }
 }
