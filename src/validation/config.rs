@@ -389,6 +389,7 @@ pub fn validate_constants(path: &str) -> ConfigValidationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
 
     #[test]
     fn test_validation_result_passed() {
@@ -448,5 +449,151 @@ mod tests {
         assert_eq!(parsed.validation, "passed");
         assert!(parsed.errors.is_empty());
         assert!(parsed.warnings.is_empty());
+    }
+
+    #[test]
+    fn test_validation_error_without_suggestion() {
+        let error = ValidationError {
+            path: "config.json:10".to_string(),
+            field: "field".to_string(),
+            value: serde_json::json!("invalid"),
+            message: "Invalid value".to_string(),
+            suggestion: None,
+        };
+
+        let json = serde_json::to_string(&error).unwrap();
+        let parsed: ValidationError = serde_json::from_str(&json).unwrap();
+        assert!(parsed.suggestion.is_none());
+    }
+
+    #[test]
+    fn test_validation_result_with_warnings() {
+        let warning = ValidationError {
+            path: "config.json:15".to_string(),
+            field: "emissivity".to_string(),
+            value: serde_json::json!(0.5),
+            message: "Low emissivity".to_string(),
+            suggestion: Some("Use higher emissivity".to_string()),
+        };
+
+        let result = ConfigValidationResult::failed(vec![], vec![warning]);
+        assert!(!result.is_valid());
+        assert_eq!(result.errors.len(), 0);
+        assert_eq!(result.warnings.len(), 1);
+    }
+
+    #[test]
+    fn test_validation_error_display_invalid_value() {
+        let error = ConfigValidationError::InvalidValue {
+            path: "config.json:5".to_string(),
+            field: "thickness".to_string(),
+            value: serde_json::json!(-1.0),
+        };
+
+        let msg = error.to_string();
+        assert!(msg.contains("Invalid value"));
+        assert!(msg.contains("thickness"));
+        assert!(msg.contains("-1.0"));
+    }
+
+    #[test]
+    fn test_validation_error_display_missing_field() {
+        let error = ConfigValidationError::MissingField {
+            path: "config.json:10".to_string(),
+            field: "required_field".to_string(),
+        };
+
+        let msg = error.to_string();
+        assert!(msg.contains("Missing required field"));
+        assert!(msg.contains("required_field"));
+    }
+
+    #[test]
+    fn test_validation_error_display_out_of_range() {
+        let error = ConfigValidationError::OutOfRange {
+            path: "config.json:15".to_string(),
+            field: "temperature".to_string(),
+            value: serde_json::json!(100.0),
+            min: serde_json::json!(0.0),
+            max: serde_json::json!(50.0),
+        };
+
+        let msg = error.to_string();
+        assert!(msg.contains("Out of range"));
+        assert!(msg.contains("temperature"));
+        assert!(msg.contains("100"));
+    }
+
+    #[test]
+    fn test_validation_error_display_physical_constraint() {
+        let error = ConfigValidationError::PhysicalConstraintViolation {
+            path: "config.json:20".to_string(),
+            message: "Heating capacity must exceed cooling capacity".to_string(),
+        };
+
+        let msg = error.to_string();
+        assert!(msg.contains("Physical constraint violation"));
+        assert!(msg.contains("Heating capacity"));
+    }
+
+    #[test]
+    fn test_validate_assembly_valid_concrete() {
+        let assembly = AssemblyBuilder::new("test".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .unwrap();
+
+        let result = validate_assembly(&assembly, "test.json");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_assembly_valid_insulation() {
+        let assembly = AssemblyBuilder::new("test".to_string())
+            .add_layer(Box::new(InsulationMaterial::new(0.05)))
+            .build()
+            .unwrap();
+
+        let result = validate_assembly(&assembly, "test.json");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_assembly_concrete_material_properties() {
+        let concrete = ConcreteMaterial::new(0.15);
+        assert!(concrete.thickness() > 0.0);
+        assert!(concrete.conductivity() > 0.0);
+        assert!(concrete.density() > 0.0);
+        assert!(concrete.specific_heat() > 0.0);
+        assert!(concrete.emissivity() >= 0.0 && concrete.emissivity() <= 1.0);
+        assert!(concrete.absorptance() >= 0.0 && concrete.absorptance() <= 1.0);
+    }
+
+    #[test]
+    fn test_validate_assembly_insulation_material_properties() {
+        let insulation = InsulationMaterial::new(0.1);
+        assert!(insulation.thickness() > 0.0);
+        assert!(insulation.conductivity() > 0.0);
+        assert!(insulation.density() > 0.0);
+        assert!(insulation.specific_heat() > 0.0);
+        assert!(insulation.emissivity() >= 0.0 && insulation.emissivity() <= 1.0);
+        assert!(insulation.absorptance() >= 0.0 && insulation.absorptance() <= 1.0);
+    }
+
+    #[test]
+    fn test_validate_assembly_thermal_mass_positive() {
+        let assembly = AssemblyBuilder::new("test".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .unwrap();
+
+        let result = validate_assembly(&assembly, "test.json");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_constants_passes_with_defaults() {
+        let result = validate_constants("test.json");
+        assert!(result.is_valid());
     }
 }

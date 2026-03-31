@@ -19,13 +19,13 @@ pub enum HvacType {
 /// Builder for constructing test building scenarios
 #[derive(Debug, Clone)]
 pub struct BuildingScenario {
-    num_zones: usize,
-    weather_path: Option<String>,
-    hvac_type: Option<HvacType>,
-    window_u_value: Option<f64>,
-    heating_setpoint: Option<f64>,
-    cooling_setpoint: Option<f64>,
-    tracer: Option<Arc<super::wiring::WiringTracer>>,
+    pub(crate) num_zones: usize,
+    pub(crate) weather_path: Option<String>,
+    pub(crate) hvac_type: Option<HvacType>,
+    pub(crate) window_u_value: Option<f64>,
+    pub(crate) heating_setpoint: Option<f64>,
+    pub(crate) cooling_setpoint: Option<f64>,
+    pub(crate) tracer: Option<Arc<super::wiring::WiringTracer>>,
 }
 
 impl BuildingScenario {
@@ -168,5 +168,235 @@ impl BuildingScenario {
 impl Default for BuildingScenario {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_building_scenario_new_has_defaults() {
+        let scenario = BuildingScenario::new();
+        assert_eq!(scenario.num_zones, 1);
+        assert!(scenario.weather_path.is_none());
+        assert!(scenario.hvac_type.is_none());
+        assert!(scenario.window_u_value.is_none());
+        assert!(scenario.heating_setpoint.is_none());
+        assert!(scenario.cooling_setpoint.is_none());
+        assert!(scenario.tracer.is_none());
+    }
+
+    #[test]
+    fn test_building_scenario_default_equals_new() {
+        let default = BuildingScenario::default();
+        let new = BuildingScenario::new();
+        assert_eq!(default.num_zones, new.num_zones);
+    }
+
+    #[test]
+    fn test_building_scenario_with_zone_count() {
+        let scenario = BuildingScenario::new().with_zone_count(3);
+        assert_eq!(scenario.num_zones, 3);
+    }
+
+    #[test]
+    fn test_building_scenario_with_weather() {
+        let scenario = BuildingScenario::new().with_weather("/path/to/weather.epw");
+        assert_eq!(
+            scenario.weather_path,
+            Some("/path/to/weather.epw".to_string())
+        );
+    }
+
+    #[test]
+    fn test_building_scenario_with_hvac() {
+        let scenario = BuildingScenario::new().with_hvac(HvacType::VAV);
+        assert_eq!(scenario.hvac_type, Some(HvacType::VAV));
+    }
+
+    #[test]
+    fn test_building_scenario_with_window_u_value() {
+        let scenario = BuildingScenario::new().with_window_u_value(2.5);
+        assert_eq!(scenario.window_u_value, Some(2.5));
+    }
+
+    #[test]
+    fn test_building_scenario_with_heating_setpoint() {
+        let scenario = BuildingScenario::new().with_heating_setpoint(18.0);
+        assert_eq!(scenario.heating_setpoint, Some(18.0));
+    }
+
+    #[test]
+    fn test_building_scenario_with_cooling_setpoint() {
+        let scenario = BuildingScenario::new().with_cooling_setpoint(24.0);
+        assert_eq!(scenario.cooling_setpoint, Some(24.0));
+    }
+
+    #[test]
+    fn test_building_scenario_builder_chaining() {
+        let scenario = BuildingScenario::new()
+            .with_zone_count(2)
+            .with_window_u_value(1.8)
+            .with_heating_setpoint(19.0)
+            .with_cooling_setpoint(25.0);
+
+        assert_eq!(scenario.num_zones, 2);
+        assert_eq!(scenario.window_u_value, Some(1.8));
+        assert_eq!(scenario.heating_setpoint, Some(19.0));
+        assert_eq!(scenario.cooling_setpoint, Some(25.0));
+    }
+
+    #[test]
+    fn test_building_scenario_build_success_valid_params() {
+        let scenario = BuildingScenario::new()
+            .with_zone_count(1)
+            .with_window_u_value(1.5)
+            .with_heating_setpoint(20.0)
+            .with_cooling_setpoint(26.0)
+            .build();
+
+        assert!(scenario.is_ok());
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_zero_zones() {
+        let result = BuildingScenario::new().with_zone_count(0).build();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("num_zones"));
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_low_window_u_value() {
+        let result = BuildingScenario::new().with_window_u_value(0.05).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_high_window_u_value() {
+        let result = BuildingScenario::new().with_window_u_value(6.0).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_low_heating_setpoint() {
+        let result = BuildingScenario::new().with_heating_setpoint(10.0).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_high_heating_setpoint() {
+        let result = BuildingScenario::new().with_heating_setpoint(35.0).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_low_cooling_setpoint() {
+        let result = BuildingScenario::new().with_cooling_setpoint(10.0).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_building_scenario_build_fails_high_cooling_setpoint() {
+        let result = BuildingScenario::new().with_cooling_setpoint(35.0).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_building_scenario_build_boundary_values_window_u() {
+        let result_min = BuildingScenario::new().with_window_u_value(0.1).build();
+        assert!(result_min.is_ok());
+
+        let result_max = BuildingScenario::new().with_window_u_value(5.0).build();
+        assert!(result_max.is_ok());
+    }
+
+    #[test]
+    fn test_building_scenario_build_boundary_values_setpoints() {
+        let result_heat_min = BuildingScenario::new().with_heating_setpoint(15.0).build();
+        assert!(result_heat_min.is_ok());
+
+        let result_heat_max = BuildingScenario::new().with_heating_setpoint(30.0).build();
+        assert!(result_heat_max.is_ok());
+
+        let result_cool_min = BuildingScenario::new().with_cooling_setpoint(15.0).build();
+        assert!(result_cool_min.is_ok());
+
+        let result_cool_max = BuildingScenario::new().with_cooling_setpoint(30.0).build();
+        assert!(result_cool_max.is_ok());
+    }
+
+    #[test]
+    fn test_building_scenario_create_model_defaults() {
+        let scenario = BuildingScenario::new().build().unwrap();
+        let model = scenario.create_model();
+
+        assert_eq!(model.window_u_value, 1.5);
+        assert_eq!(model.heating_setpoint, 20.0);
+        assert_eq!(model.cooling_setpoint, 26.0);
+        assert_eq!(model.case_id, "test");
+    }
+
+    #[test]
+    fn test_building_scenario_create_model_custom_values() {
+        let scenario = BuildingScenario::new()
+            .with_zone_count(2)
+            .with_window_u_value(2.0)
+            .with_heating_setpoint(18.0)
+            .with_cooling_setpoint(24.0)
+            .build()
+            .unwrap();
+
+        let model = scenario.create_model();
+
+        assert_eq!(model.window_u_value, 2.0);
+        assert_eq!(model.heating_setpoint, 18.0);
+        assert_eq!(model.cooling_setpoint, 24.0);
+    }
+
+    #[test]
+    fn test_building_scenario_create_model_initializes_temperatures() {
+        let scenario = BuildingScenario::new()
+            .with_zone_count(3)
+            .with_heating_setpoint(19.0)
+            .build()
+            .unwrap();
+
+        let model = scenario.create_model();
+
+        assert_eq!(model.temperatures.len(), 3);
+        assert_eq!(model.mass_temperatures.len(), 3);
+        assert_eq!(model.zone_area.len(), 3);
+    }
+
+    #[test]
+    fn test_building_scenario_with_tracer() {
+        use crate::testing::integration::wiring::WiringTracer;
+        use std::sync::Arc;
+
+        let tracer = Arc::new(WiringTracer::new());
+        let scenario = BuildingScenario::new().with_tracer(tracer.clone());
+        let model = scenario.create_model();
+
+        tracer.record_call("test_function");
+        assert!(tracer.verify_called(&["test_function"]));
+    }
+
+    #[test]
+    fn test_hvac_type_all_variants() {
+        let types = [
+            HvacType::VAV,
+            HvacType::CAV,
+            HvacType::HeatPump,
+            HvacType::Chiller,
+        ];
+
+        for hvac_type in types {
+            let scenario = BuildingScenario::new()
+                .with_hvac(hvac_type)
+                .build()
+                .unwrap();
+            assert_eq!(scenario.hvac_type, Some(hvac_type));
+        }
     }
 }

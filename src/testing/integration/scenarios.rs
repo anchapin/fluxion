@@ -76,3 +76,107 @@ pub fn chiller_scenario() -> BuildingScenario {
         .build()
         .expect("chiller_scenario validation failed")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_low_mass_scenario() {
+        let scenario = low_mass_scenario();
+        let result = scenario.build();
+        assert!(result.is_ok());
+
+        let scenario = result.unwrap();
+        assert_eq!(scenario.window_u_value, Some(1.5));
+        assert_eq!(scenario.heating_setpoint, Some(20.0));
+        assert_eq!(scenario.cooling_setpoint, Some(26.0));
+    }
+
+    #[test]
+    fn test_high_mass_scenario() {
+        let scenario = high_mass_scenario();
+        let result = scenario.build();
+        assert!(result.is_ok());
+
+        let scenario = result.unwrap();
+        assert_eq!(scenario.window_u_value, Some(2.0));
+        assert_eq!(scenario.heating_setpoint, Some(20.0));
+        assert_eq!(scenario.cooling_setpoint, Some(26.0));
+    }
+
+    #[test]
+    fn test_multi_zone_scenario() {
+        let scenario = multi_zone_scenario();
+        let result = scenario.build();
+        assert!(result.is_ok());
+
+        let scenario = result.unwrap();
+        assert_eq!(scenario.window_u_value, Some(2.5));
+        assert_eq!(scenario.heating_setpoint, Some(20.0));
+        assert_eq!(scenario.cooling_setpoint, Some(26.0));
+    }
+
+    #[test]
+    fn test_vav_scenario() {
+        let scenario = vav_scenario();
+        assert!(scenario.build().is_ok());
+        assert_eq!(scenario.hvac_type, Some(HvacType::VAV));
+    }
+
+    #[test]
+    fn test_heat_pump_scenario() {
+        let scenario = heat_pump_scenario();
+        assert!(scenario.build().is_ok());
+        assert_eq!(scenario.hvac_type, Some(HvacType::HeatPump));
+    }
+
+    #[test]
+    fn test_cav_scenario() {
+        let scenario = cav_scenario();
+        assert!(scenario.build().is_ok());
+        assert_eq!(scenario.hvac_type, Some(HvacType::CAV));
+    }
+
+    #[test]
+    fn test_chiller_scenario() {
+        let scenario = chiller_scenario();
+        assert!(scenario.build().is_ok());
+        assert_eq!(scenario.hvac_type, Some(HvacType::Chiller));
+    }
+
+    #[test]
+    fn test_all_scenarios_create_valid_models() {
+        let scenarios = [
+            ("low_mass", low_mass_scenario()),
+            ("high_mass", high_mass_scenario()),
+            ("multi_zone", multi_zone_scenario()),
+            ("vav", vav_scenario()),
+            ("heat_pump", heat_pump_scenario()),
+            ("cav", cav_scenario()),
+            ("chiller", chiller_scenario()),
+        ];
+
+        for (name, scenario) in scenarios {
+            let built = scenario
+                .build()
+                .expect(&format!("{} scenario failed to build", name));
+            let model = built.create_model();
+            assert!(
+                model.window_u_value > 0.0,
+                "{}: window_u_value should be positive",
+                name
+            );
+            assert!(
+                model.heating_setpoint > 0.0,
+                "{}: heating_setpoint should be positive",
+                name
+            );
+            assert!(
+                model.cooling_setpoint > model.heating_setpoint,
+                "{}: cooling_setpoint should be > heating_setpoint",
+                name
+            );
+        }
+    }
+}

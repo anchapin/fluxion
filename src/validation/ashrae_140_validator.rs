@@ -1367,6 +1367,9 @@ impl ASHRAE140Validator {
             // Other 900-series cases use CTF solver with 5R1C model - works better
             if spec.case_id == "960" {
                 model.configure_6r2c_model(0.75, 100.0, None); // 75% envelope, 100 W/K coupling
+                                                               // Update optimization cache after 6R2C configuration
+                                                               // This recalculates derived values (den, sensitivity, etc.) for the new model
+                model.update_optimization_cache();
                 println!(
                     "[Solver] Case 960: Enabled 6R2C model for sunspace thermal dynamics (envelope_mass_fraction=0.75, h_tr_me=100 W/K)"
                 );
@@ -2194,6 +2197,8 @@ impl ASHRAE140Validator {
         // - Internal thermal mass (furniture, interior surfaces)
         // - Inter-zone coupling between back-zone and sunspace
         model.configure_6r2c_model(0.75, 100.0, None); // 75% envelope mass, 100 W/K coupling
+                                                       // Update optimization cache after 6R2C configuration
+        model.update_optimization_cache();
 
         // Reset peak power tracking
         model.reset_peak_power();

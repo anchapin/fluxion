@@ -127,21 +127,61 @@ impl Default for EnergyBalanceReport {
 /// configurations. For 5R1C, it sums the single `mass_temperatures` array. For 6R2C, it
 /// sums both `envelope_mass_temperatures` and `internal_mass_temperatures` arrays.
 pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
-    // Calculate mass energy from primary mass temperatures (5R1C mode)
+    // Calculate mass energy from thermal mass temperatures
+    // For 5R1C model: use mass_temperatures (single mass node)
+    // For 6R2C model: use envelope_mass_temperatures + internal_mass_temperatures
     let mut total_energy = 0.0;
 
-    // Sum: thermal_capacitance[i] * mass_temperatures[i] for all mass nodes i
-    for (cap, temp) in model
-        .thermal_capacitance
+    // Check if this is a 6R2C model (has envelope/internal mass separation)
+    // 6R2C models have non-zero envelope and internal thermal capacitance
+    let is_6r2c = model
+        .envelope_thermal_capacitance
+        .as_ref()
         .iter()
-        .zip(model.mass_temperatures.as_ref().iter())
-    {
-        let product = cap * temp;
-        // Check for NaN or infinity - if detected, return NaN to signal invalid state
-        if !product.is_finite() {
-            return f64::NAN;
+        .any(|&v| v > 0.0)
+        && model
+            .internal_thermal_capacitance
+            .as_ref()
+            .iter()
+            .any(|&v| v > 0.0);
+
+    if is_6r2c {
+        // 6R2C model: Sum energy from both envelope and internal mass nodes
+        for (cap, temp) in model
+            .envelope_thermal_capacitance
+            .iter()
+            .zip(model.envelope_mass_temperatures.as_ref().iter())
+        {
+            let product = cap * temp;
+            if !product.is_finite() {
+                return f64::NAN;
+            }
+            total_energy += product;
         }
-        total_energy += product;
+        for (cap, temp) in model
+            .internal_thermal_capacitance
+            .iter()
+            .zip(model.internal_mass_temperatures.as_ref().iter())
+        {
+            let product = cap * temp;
+            if !product.is_finite() {
+                return f64::NAN;
+            }
+            total_energy += product;
+        }
+    } else {
+        // 5R1C model: Use single mass node
+        for (cap, temp) in model
+            .thermal_capacitance
+            .iter()
+            .zip(model.mass_temperatures.as_ref().iter())
+        {
+            let product = cap * temp;
+            if !product.is_finite() {
+                return f64::NAN;
+            }
+            total_energy += product;
+        }
     }
 
     total_energy
@@ -670,6 +710,10 @@ mod tests {
         let spec = ASHRAE140Case::Case960.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
+        // Configure 6R2C model for Case 960 (sunspace)
+        model.configure_6r2c_model(0.75, 100.0, None);
+        model.update_optimization_cache();
+
         let report = validate_energy_balance_over_year(&mut model);
 
         println!("  Error Percentage: {:.6}%", report.error_pct);
@@ -839,6 +883,12 @@ mod tests {
 
             let spec = case_enum.spec();
             let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+            // Configure 6R2C model for Case 960 (sunspace)
+            if case_id == "960" {
+                model.configure_6r2c_model(0.75, 100.0, None);
+                model.update_optimization_cache();
+            }
 
             let report = validate_energy_balance_over_year(&mut model);
 

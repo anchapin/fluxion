@@ -218,3 +218,214 @@ impl Tmy3Cache {
         Ok(filepath)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_weather_location_deserialize_all_fields() {
+        let json = r#"{
+            "name": "Denver",
+            "latitude": 39.74,
+            "longitude": -104.99,
+            "elevation": 1634.0,
+            "tmy3_url": "https://example.com/denver.tmy3",
+            "epw_url": "https://example.com/denver.epw",
+            "climate_zone": "5B"
+        }"#;
+
+        let location: WeatherLocation = serde_json::from_str(json).unwrap();
+        assert_eq!(location.name, "Denver");
+        assert_eq!(location.latitude, 39.74);
+        assert_eq!(location.longitude, -104.99);
+        assert_eq!(location.elevation, 1634.0);
+        assert_eq!(location.tmy3_url, "https://example.com/denver.tmy3");
+        assert_eq!(location.epw_url, "https://example.com/denver.epw");
+        assert_eq!(location.climate_zone, Some("5B".to_string()));
+    }
+
+    #[test]
+    fn test_weather_location_deserialize_optional_climate_zone_missing() {
+        let json = r#"{
+            "name": "Test",
+            "latitude": 40.0,
+            "longitude": -100.0,
+            "elevation": 500.0,
+            "tmy3_url": "https://example.com/test.tmy3",
+            "epw_url": "https://example.com/test.epw"
+        }"#;
+
+        let location: WeatherLocation = serde_json::from_str(json).unwrap();
+        assert_eq!(location.climate_zone, None);
+    }
+
+    #[test]
+    fn test_weather_location_serialize_roundtrip() {
+        let location = WeatherLocation {
+            name: "Boston".to_string(),
+            latitude: 42.36,
+            longitude: -71.06,
+            elevation: 6.0,
+            tmy3_url: "https://example.com/boston.tmy3".to_string(),
+            epw_url: "https://example.com/boston.epw".to_string(),
+            climate_zone: Some("6A".to_string()),
+        };
+
+        let json = serde_json::to_string(&location).unwrap();
+        let deserialized: WeatherLocation = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized.name, location.name);
+        assert_eq!(deserialized.latitude, location.latitude);
+        assert_eq!(deserialized.longitude, location.longitude);
+        assert_eq!(deserialized.elevation, location.elevation);
+        assert_eq!(deserialized.tmy3_url, location.tmy3_url);
+        assert_eq!(deserialized.epw_url, location.epw_url);
+        assert_eq!(deserialized.climate_zone, location.climate_zone);
+    }
+
+    #[test]
+    fn test_load_weather_locations_success() {
+        let temp_dir = std::env::temp_dir();
+        let json_path = temp_dir.join("test_weather_locations.json");
+
+        let locations = vec![
+            WeatherLocation {
+                name: "Denver".to_string(),
+                latitude: 39.74,
+                longitude: -104.99,
+                elevation: 1634.0,
+                tmy3_url: "https://example.com/denver.tmy3".to_string(),
+                epw_url: "https://example.com/denver.epw".to_string(),
+                climate_zone: Some("5B".to_string()),
+            },
+            WeatherLocation {
+                name: "Boston".to_string(),
+                latitude: 42.36,
+                longitude: -71.06,
+                elevation: 6.0,
+                tmy3_url: "https://example.com/boston.tmy3".to_string(),
+                epw_url: "https://example.com/boston.epw".to_string(),
+                climate_zone: Some("6A".to_string()),
+            },
+        ];
+
+        let json = serde_json::to_string(&locations).unwrap();
+        std::fs::write(&json_path, json).unwrap();
+
+        let result = load_weather_locations(json_path.to_str().unwrap());
+        assert!(result.is_ok());
+
+        let map = result.unwrap();
+        assert_eq!(map.len(), 2);
+        assert!(map.contains_key("Denver"));
+        assert!(map.contains_key("Boston"));
+        assert_eq!(map["Denver"].latitude, 39.74);
+        assert_eq!(map["Boston"].climate_zone, Some("6A".to_string()));
+
+        std::fs::remove_file(&json_path).ok();
+    }
+
+    #[test]
+    fn test_load_weather_locations_file_not_found() {
+        let result = load_weather_locations("/nonexistent/path/weather.json");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to read"));
+    }
+
+    #[test]
+    fn test_load_weather_locations_invalid_json() {
+        let temp_dir = std::env::temp_dir();
+        let json_path = temp_dir.join("invalid_weather.json");
+        std::fs::write(&json_path, "not valid json").unwrap();
+
+        let result = load_weather_locations(json_path.to_str().unwrap());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse"));
+
+        std::fs::remove_file(&json_path).ok();
+    }
+
+    #[test]
+    fn test_load_weather_locations_empty_array() {
+        let temp_dir = std::env::temp_dir();
+        let json_path = temp_dir.join("empty_weather.json");
+        std::fs::write(&json_path, "[]").unwrap();
+
+        let result = load_weather_locations(json_path.to_str().unwrap());
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+
+        std::fs::remove_file(&json_path).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_with_custom_dir() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache");
+        let result = Tmy3Cache::with_cache_dir(temp_dir.clone());
+        assert!(result.is_ok());
+
+        let cache = result.unwrap();
+        assert!(temp_dir.exists());
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_get_or_download_uses_cache() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_2");
+        let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
+
+        let filename = "Test_Location.tmy3";
+        let filepath = temp_dir.join(filename);
+        let checksum_path = temp_dir.join("Test_Location.sha256");
+
+        std::fs::write(&filepath, "test content").unwrap();
+        let checksum = format!("{:x}", Sha256::digest(b"test content"));
+        std::fs::write(&checksum_path, checksum).unwrap();
+
+        let result = cache.get_or_download("https://example.com/test.tmy3", "Test Location");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), filepath);
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_get_or_download_checksum_mismatch() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_3");
+        let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
+
+        let filename = "Test_Location.tmy3";
+        let filepath = temp_dir.join(filename);
+        let checksum_path = temp_dir.join("Test_Location.sha256");
+
+        std::fs::write(&filepath, "test content").unwrap();
+        std::fs::write(&checksum_path, "wrong_checksum").unwrap();
+
+        let result = cache.get_or_download("https://example.com/test.tmy3", "Test Location");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Checksum mismatch"));
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_filename_sanitization() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_4");
+        let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
+
+        let filename = "New_York_City.tmy3";
+        let filepath = temp_dir.join(filename);
+        let checksum_path = temp_dir.join("New_York_City.sha256");
+
+        std::fs::write(&filepath, "nyc content").unwrap();
+        let checksum = format!("{:x}", Sha256::digest(b"nyc content"));
+        std::fs::write(&checksum_path, checksum).unwrap();
+
+        let result = cache.get_or_download("https://example.com/nyc.tmy3", "New York City");
+        assert!(result.is_ok());
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+}
