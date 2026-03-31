@@ -463,6 +463,80 @@ impl ASHRAE140Case {
         }
     }
 
+    /// Parses a case ID string into the corresponding ASHRAE140Case enum variant.
+    ///
+    /// # Arguments
+    /// * `case_id` - Case identifier string (e.g., "600", "900FF", "195-HM", "800")
+    ///
+    /// # Returns
+    /// * `Some(ASHRAE140Case)` - The matching enum variant
+    /// * `None` - No matching case found
+    ///
+    /// # Example
+    /// ```
+    /// use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    ///
+    /// assert_eq!(ASHRAE140Case::from_case_id("600"), Some(ASHRAE140Case::Case600));
+    /// assert_eq!(ASHRAE140Case::from_case_id("900FF"), Some(ASHRAE140Case::Case900FF));
+    /// assert_eq!(ASHRAE140Case::from_case_id("999"), None);
+    /// ```
+    pub fn from_case_id(case_id: &str) -> Option<Self> {
+        match case_id {
+            "600" => Some(ASHRAE140Case::Case600),
+            "610" => Some(ASHRAE140Case::Case610),
+            "620" => Some(ASHRAE140Case::Case620),
+            "630" => Some(ASHRAE140Case::Case630),
+            "640" => Some(ASHRAE140Case::Case640),
+            "650" => Some(ASHRAE140Case::Case650),
+            "600FF" => Some(ASHRAE140Case::Case600FF),
+            "650FF" => Some(ASHRAE140Case::Case650FF),
+            "900" => Some(ASHRAE140Case::Case900),
+            "910" => Some(ASHRAE140Case::Case910),
+            "920" => Some(ASHRAE140Case::Case920),
+            "930" => Some(ASHRAE140Case::Case930),
+            "940" => Some(ASHRAE140Case::Case940),
+            "950" => Some(ASHRAE140Case::Case950),
+            "900FF" => Some(ASHRAE140Case::Case900FF),
+            "950FF" => Some(ASHRAE140Case::Case950FF),
+            "960" => Some(ASHRAE140Case::Case960),
+            "195" => Some(ASHRAE140Case::Case195),
+            "195-HM" => Some(ASHRAE140Case::Case195HighMass),
+            "195-NL" => Some(ASHRAE140Case::Case195NoLoads),
+            "195-NS" => Some(ASHRAE140Case::Case195NoSolar),
+            "195-TB" => Some(ASHRAE140Case::Case195ThermalBridge),
+            "195-SHGC0.3" => Some(ASHRAE140Case::Case195SHGC03),
+            "195-SHGC0.6" => Some(ASHRAE140Case::Case195SHGC06),
+            "195-SHGC0.9" => Some(ASHRAE140Case::Case195SHGC09),
+            "195-ALB0.1" => Some(ASHRAE140Case::Case195Albedo01),
+            "195-ALB0.5" => Some(ASHRAE140Case::Case195Albedo05),
+            "195-ALB0.9" => Some(ASHRAE140Case::Case195Albedo09),
+            "196" => Some(ASHRAE140Case::Case196),
+            "197" => Some(ASHRAE140Case::Case197),
+            "198" => Some(ASHRAE140Case::Case198),
+            "200" => Some(ASHRAE140Case::Case200),
+            "250" => Some(ASHRAE140Case::Case250),
+            "300" => Some(ASHRAE140Case::Case300),
+            "350" => Some(ASHRAE140Case::Case350),
+            "400" => Some(ASHRAE140Case::Case400),
+            "470" => Some(ASHRAE140Case::Case470),
+            "OFFICE" => Some(ASHRAE140Case::Office),
+            "RETAIL" => Some(ASHRAE140Case::Retail),
+            "SCHOOL" => Some(ASHRAE140Case::School),
+            "800" => Some(ASHRAE140Case::Case800),
+            "801" => Some(ASHRAE140Case::Case801),
+            "802" => Some(ASHRAE140Case::Case802),
+            "803" => Some(ASHRAE140Case::Case803),
+            "804" => Some(ASHRAE140Case::Case804),
+            "805" => Some(ASHRAE140Case::Case805),
+            "806" => Some(ASHRAE140Case::Case806),
+            "807" => Some(ASHRAE140Case::Case807),
+            "808" => Some(ASHRAE140Case::Case808),
+            "809" => Some(ASHRAE140Case::Case809),
+            "810" => Some(ASHRAE140Case::Case810),
+            _ => None,
+        }
+    }
+
     /// Returns a human-readable description of the test case.
     pub fn description(&self) -> String {
         match self {

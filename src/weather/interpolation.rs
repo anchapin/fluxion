@@ -172,25 +172,12 @@ pub fn step_interpolate(t1: f64, t2: f64, fraction: f64) -> f64 {
 ///
 /// Cubic spline interpolated value
 pub fn cubic_spline_interpolate(t1: f64, t2: f64, fraction: f64) -> f64 {
-    // Cubic Hermite spline with C1 continuity
-    let h = t2 - t1;
-    let _h3 = h.powi(3);
-    let _h2 = h.powi(2);
-
-    // Assume zero derivatives at boundaries (simplified)
-    let p0 = t1;
-    let p1 = t2;
-    let m0 = 0.0; // Zero derivative at t1
-    let m1 = 0.0; // Zero derivative at t2
-
     let t = fraction;
     let t2_ = t * t;
     let t3_ = t2_ * t;
 
-    (2.0 * t3_ - 3.0 * t2_ + 1.0) * p0
-        + (t3_ - 2.0 * t2_ + t) * m0 * h
-        + (-2.0 * t3_ + 3.0 * t2_) * p1
-        + (t3_ - t2_) * m1 * h
+    // Hermite basis functions with zero derivatives at boundaries
+    (2.0 * t3_ - 3.0 * t2_ + 1.0) * t1 + (-2.0 * t3_ + 3.0 * t2_) * t2
 }
 
 /// Interpolate weather value between two timesteps.
@@ -283,5 +270,45 @@ pub fn select_method_for_field(field: &str) -> InterpolationMethod {
 
         // Default: Linear
         _ => InterpolationMethod::Linear,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_linear_interpolation_basic() {
+        assert!((linear_interpolate(0.0, 10.0, 0.5) - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_step_interpolation_boundary() {
+        assert_eq!(step_interpolate(1.0, 2.0, 0.4), 1.0);
+        assert_eq!(step_interpolate(1.0, 2.0, 0.6), 2.0);
+    }
+
+    #[test]
+    fn test_method_selection_temperature() {
+        assert_eq!(
+            select_method_for_field("dry_bulb_temp"),
+            InterpolationMethod::Linear
+        );
+    }
+
+    #[test]
+    fn test_method_selection_solar() {
+        assert_eq!(
+            select_method_for_field("ghi"),
+            InterpolationMethod::PiecewiseHermite
+        );
+    }
+
+    #[test]
+    fn test_method_selection_discrete() {
+        assert_eq!(
+            select_method_for_field("cloud_cover"),
+            InterpolationMethod::Step
+        );
     }
 }

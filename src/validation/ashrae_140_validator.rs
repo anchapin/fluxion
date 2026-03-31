@@ -9,7 +9,7 @@ use crate::validation::diagnostic::{
 };
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::multi_reference::MultiReferenceDB;
-use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType};
+use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType, ValidationStatus};
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
@@ -913,6 +913,45 @@ impl ASHRAE140Validator {
         let _ = self.diagnostic.save_all();
 
         (report, self.diagnostic.clone())
+    }
+
+    /// Validates a single case by case_id string and returns a ValidationResult.
+    ///
+    /// This is a convenience method for programmatic validation of cases by their
+    /// numeric identifier (e.g., "600", "900", "960").
+    ///
+    /// # Arguments
+    /// * `case_id` - Case identifier as string (e.g., "600", "900FF")
+    ///
+    /// # Returns
+    /// Ok(ValidationResult) if case found and validated, Err if case not found
+    pub fn validate_case(&self, case_id: &str) -> Result<ValidationResult, String> {
+        let case = ASHRAE140Case::from_case_id(case_id)
+            .ok_or_else(|| format!("Unknown case ID: {}", case_id))?;
+
+        let mut validator = ASHRAE140Validator::new();
+        let (report, _diagnostics) = validator.validate_single_case_with_diagnostics(case);
+
+        // Return combined result - pass if all metrics pass or warn
+        let all_pass = report
+            .results
+            .iter()
+            .all(|r| r.status != ValidationStatus::Fail);
+        let avg_error = if report.results.is_empty() {
+            0.0
+        } else {
+            report
+                .results
+                .iter()
+                .map(|r| r.percent_error.abs())
+                .sum::<f64>()
+                / report.results.len() as f64
+        };
+
+        Ok(ValidationResult {
+            in_range: all_pass,
+            error_pct: avg_error,
+        })
     }
 
     /// Validates the analytical engine against the ASHRAE 140 cases.

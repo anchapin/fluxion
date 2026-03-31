@@ -127,3 +127,154 @@ pub trait HeatConductionSolver: Send + Sync {
     /// Check if solver is valid (coefficients converged, etc.)
     fn is_valid(&self) -> bool;
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_solver_error_display_invalid_config() {
+        let err = SolverError::InvalidConfig("test message".to_string());
+        assert_eq!(format!("{}", err), "Invalid configuration: test message");
+    }
+
+    #[test]
+    fn test_solver_error_display_coefficient() {
+        let err = SolverError::CoefficientError("calculation failed".to_string());
+        assert_eq!(format!("{}", err), "Coefficient error: calculation failed");
+    }
+
+    #[test]
+    fn test_solver_error_display_instability() {
+        let err = SolverError::Instability("diverged".to_string());
+        assert_eq!(format!("{}", err), "Numerical instability: diverged");
+    }
+
+    #[test]
+    fn test_solver_error_display_convergence() {
+        let err = SolverError::ConvergenceError("max iterations exceeded".to_string());
+        assert_eq!(
+            format!("{}", err),
+            "Convergence error: max iterations exceeded"
+        );
+    }
+
+    #[test]
+    fn test_solver_error_display_construction() {
+        let err = SolverError::ConstructionError("invalid layer".to_string());
+        assert_eq!(format!("{}", err), "Construction error: invalid layer");
+    }
+
+    #[test]
+    fn test_solver_error_is_clone() {
+        let err = SolverError::InvalidConfig("test".to_string());
+        let cloned = err.clone();
+        assert_eq!(format!("{}", err), format!("{}", cloned));
+    }
+
+    #[test]
+    fn test_solver_error_is_debug() {
+        let err = SolverError::InvalidConfig("test".to_string());
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("InvalidConfig"));
+        assert!(debug_str.contains("test"));
+    }
+
+    #[test]
+    fn test_solver_error_implements_error_trait() {
+        let err: Box<dyn Error> = Box::new(SolverError::InvalidConfig("test".to_string()));
+        assert!(err.to_string().contains("Invalid configuration"));
+    }
+
+    #[test]
+    fn test_heat_conduction_solver_trait_can_be_implemented() {
+        struct TestSolver {
+            valid: bool,
+            storage_rate: f64,
+        }
+
+        impl HeatConductionSolver for TestSolver {
+            fn name(&self) -> &str {
+                "TestSolver"
+            }
+
+            fn initialize(&mut self, _wall: &BuildingAssembly) -> Result<(), SolverError> {
+                Ok(())
+            }
+
+            fn step(
+                &mut self,
+                _timestep: f64,
+                _T_interior: f64,
+                _T_exterior: f64,
+                _h_interior: f64,
+                _h_exterior: f64,
+            ) -> Result<f64, SolverError> {
+                Ok(42.0)
+            }
+
+            fn energy_storage_rate(&self) -> f64 {
+                self.storage_rate
+            }
+
+            fn is_valid(&self) -> bool {
+                self.valid
+            }
+        }
+
+        let mut solver = TestSolver {
+            valid: true,
+            storage_rate: 10.0,
+        };
+
+        assert_eq!(solver.name(), "TestSolver");
+        assert!(solver.is_valid());
+        assert_eq!(solver.energy_storage_rate(), 10.0);
+
+        let result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42.0);
+    }
+
+    #[test]
+    fn test_heat_conduction_solver_can_return_error() {
+        struct FailingSolver;
+
+        impl HeatConductionSolver for FailingSolver {
+            fn name(&self) -> &str {
+                "FailingSolver"
+            }
+
+            fn initialize(&mut self, _wall: &BuildingAssembly) -> Result<(), SolverError> {
+                Err(SolverError::ConstructionError("bad wall".to_string()))
+            }
+
+            fn step(
+                &mut self,
+                _timestep: f64,
+                _T_interior: f64,
+                _T_exterior: f64,
+                _h_interior: f64,
+                _h_exterior: f64,
+            ) -> Result<f64, SolverError> {
+                Err(SolverError::Instability("NaN detected".to_string()))
+            }
+
+            fn energy_storage_rate(&self) -> f64 {
+                0.0
+            }
+
+            fn is_valid(&self) -> bool {
+                false
+            }
+        }
+
+        let mut solver = FailingSolver;
+        assert!(!solver.is_valid());
+
+        // Note: initialize() returns error before needing BuildingAssembly
+        let step_result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
+        assert!(step_result.is_err());
+        assert!(step_result.unwrap_err().to_string().contains("instability"));
+    }
+}

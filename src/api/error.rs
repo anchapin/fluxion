@@ -81,3 +81,57 @@ impl From<FluxionError> for PyErr {
 
 #[cfg(feature = "python-bindings")]
 pub type FluxionErrorPy = PyFluxionError;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_fluxion_error_validation_display() {
+        let err = FluxionError::Validation("U-value out of range".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Parameter validation error"));
+        assert!(msg.contains("U-value out of range"));
+    }
+
+    #[test]
+    fn test_fluxion_error_surrogate_display() {
+        let err = FluxionError::Surrogate("Model not found".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Surrogate model error"));
+        assert!(msg.contains("Model not found"));
+    }
+
+    #[test]
+    fn test_fluxion_error_simulation_display() {
+        let err = FluxionError::Simulation("Singular matrix".to_string());
+        let msg = format!("{}", err);
+        assert!(msg.contains("Simulation error"));
+        assert!(msg.contains("Singular matrix"));
+    }
+
+    #[test]
+    fn test_fluxion_error_is_debug() {
+        let err = FluxionError::Validation("test".to_string());
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("Validation"));
+    }
+
+    #[test]
+    fn test_fluxion_error_implements_error_trait() {
+        let err: &dyn std::error::Error = &FluxionError::Validation("test".to_string());
+        assert!(err.to_string().contains("Parameter validation error"));
+    }
+
+    #[test]
+    fn test_fluxion_error_matches() {
+        let err = FluxionError::Validation("param missing".to_string());
+        assert!(matches!(err, FluxionError::Validation(_)));
+
+        let err = FluxionError::Surrogate("onnx failed".to_string());
+        assert!(matches!(err, FluxionError::Surrogate(_)));
+
+        let err = FluxionError::Simulation("nan detected".to_string());
+        assert!(matches!(err, FluxionError::Simulation(_)));
+    }
+}
