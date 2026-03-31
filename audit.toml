@@ -1,0 +1,17 @@
+# Cargo Audit Configuration
+# https://rustsec.org/advisories/
+
+# Advisory database configuration
+[advisories]
+# Ignore specific advisories that are acceptable risks
+ignore = [
+    # paste crate is unmaintained but still functional
+    # Used indirectly through nalgebra/statrs and faer
+    # No security vulnerability, just unmaintained
+    "RUSTSEC-2024-0436"
+]
+
+# Output configuration
+[output]
+# Show unmaintained crate warnings but don't fail on them
+deny = ["unmaintained"]
