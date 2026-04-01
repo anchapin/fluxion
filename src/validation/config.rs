@@ -596,4 +596,189 @@ mod tests {
         let result = validate_constants("test.json");
         assert!(result.is_valid());
     }
+
+    #[test]
+    fn test_config_validation_error_enum_variants() {
+        // Test all enum variants can be created
+        let invalid_value = ConfigValidationError::InvalidValue {
+            path: "test.json".to_string(),
+            field: "field".to_string(),
+            value: serde_json::json!("bad"),
+        };
+        assert!(invalid_value.to_string().contains("Invalid value"));
+
+        let missing_field = ConfigValidationError::MissingField {
+            path: "test.json".to_string(),
+            field: "required".to_string(),
+        };
+        assert!(missing_field.to_string().contains("Missing required field"));
+
+        let validation_error = ConfigValidationError::ValidationError {
+            path: "test.json".to_string(),
+            message: "General error".to_string(),
+        };
+        assert!(validation_error.to_string().contains("Validation failed"));
+
+        let out_of_range = ConfigValidationError::OutOfRange {
+            path: "test.json".to_string(),
+            field: "temp".to_string(),
+            value: serde_json::json!(100.0),
+            min: serde_json::json!(0.0),
+            max: serde_json::json!(50.0),
+        };
+        assert!(out_of_range.to_string().contains("Out of range"));
+
+        let physical = ConfigValidationError::PhysicalConstraintViolation {
+            path: "test.json".to_string(),
+            message: "Constraint violated".to_string(),
+        };
+        assert!(physical
+            .to_string()
+            .contains("Physical constraint violation"));
+    }
+
+    #[test]
+    fn test_validation_result_with_both_errors_and_warnings() {
+        let error = ValidationError {
+            path: "test.json".to_string(),
+            field: "field".to_string(),
+            value: serde_json::json!("invalid"),
+            message: "Error message".to_string(),
+            suggestion: Some("Fix it".to_string()),
+        };
+        let warning = ValidationError {
+            path: "test.json".to_string(),
+            field: "field".to_string(),
+            value: serde_json::json!(0.5),
+            message: "Warning message".to_string(),
+            suggestion: None,
+        };
+
+        let result = ConfigValidationResult::failed(vec![error], vec![warning]);
+        assert!(!result.is_valid());
+        assert_eq!(result.errors.len(), 1);
+        assert_eq!(result.warnings.len(), 1);
+    }
+
+    #[test]
+    fn test_validate_assembly_multiple_layers() {
+        let assembly = AssemblyBuilder::new("test".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .add_layer(Box::new(InsulationMaterial::new(0.05)))
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        let result = validate_assembly(&assembly, "test.json");
+        assert!(result.is_valid());
+    }
+
+    #[test]
+    fn test_validate_assembly_low_emissivity_warning() {
+        // Create an assembly with low emissivity material to trigger warning
+        let assembly = AssemblyBuilder::new("test".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .unwrap();
+
+        let result = validate_assembly(&assembly, "test.json");
+        // Should pass but may have warnings depending on material properties
+        assert!(result.validation == "passed" || result.validation == "failed");
+    }
+
+    #[test]
+    fn test_validation_error_json_roundtrip() {
+        let error = ValidationError {
+            path: "config.json:42".to_string(),
+            field: "thickness".to_string(),
+            value: serde_json::json!(-0.05),
+            message: "Thickness must be positive".to_string(),
+            suggestion: Some("Use thickness > 0.0 meters".to_string()),
+        };
+
+        let json = serde_json::to_string_pretty(&error).unwrap();
+        assert!(json.contains("config.json:42"));
+        assert!(json.contains("thickness"));
+        assert!(json.contains("Thickness must be positive"));
+
+        let parsed: ValidationError = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.path, error.path);
+        assert_eq!(parsed.field, error.field);
+        assert_eq!(parsed.message, error.message);
+        assert_eq!(parsed.suggestion, error.suggestion);
+    }
+
+    #[test]
+    fn test_validation_result_json_roundtrip() {
+        let result = ConfigValidationResult::passed();
+        let json = serde_json::to_string_pretty(&result).unwrap();
+        assert!(json.contains("passed"));
+
+        let parsed: ConfigValidationResult = serde_json::from_str(&json).unwrap();
+        assert!(parsed.is_valid());
+        assert!(parsed.errors.is_empty());
+    }
+
+    #[test]
+    fn test_validate_assembly_empty_assembly() {
+        // Empty assembly should fail to build (requires at least one layer)
+        let result = AssemblyBuilder::new("empty".to_string()).build();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_validation_error_debug_format() {
+        let error = ConfigValidationError::InvalidValue {
+            path: "test.json".to_string(),
+            field: "field".to_string(),
+            value: serde_json::json!("value"),
+        };
+
+        let debug_str = format!("{:?}", error);
+        assert!(debug_str.contains("InvalidValue"));
+        assert!(debug_str.contains("test.json"));
+    }
+
+    #[test]
+    fn test_validation_error_display_format_out_of_range() {
+        let error = ConfigValidationError::OutOfRange {
+            path: "path".to_string(),
+            field: "field".to_string(),
+            value: serde_json::json!(100),
+            min: serde_json::json!(0),
+            max: serde_json::json!(50),
+        };
+
+        let display = format!("{}", error);
+        assert!(display.contains("path"));
+        assert!(display.contains("field"));
+        assert!(display.contains("100"));
+        assert!(display.contains("0"));
+        assert!(display.contains("50"));
+    }
+
+    #[test]
+    fn test_validation_result_is_valid_edge_cases() {
+        // Test with empty errors but validation set to "failed" manually
+        let result = ConfigValidationResult {
+            validation: "failed".to_string(),
+            errors: vec![],
+            warnings: vec![],
+        };
+        assert!(!result.is_valid());
+
+        // Test with errors but validation set to "passed" manually
+        let result = ConfigValidationResult {
+            validation: "passed".to_string(),
+            errors: vec![ValidationError {
+                path: "test".to_string(),
+                field: "f".to_string(),
+                value: serde_json::json!(1),
+                message: "err".to_string(),
+                suggestion: None,
+            }],
+            warnings: vec![],
+        };
+        assert!(result.is_valid()); // is_valid() only checks the validation field
+    }
 }

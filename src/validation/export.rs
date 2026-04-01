@@ -221,6 +221,7 @@ impl CsvExporter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::validation::diagnostic::{DiagnosticCollector, DiagnosticConfig, HourlyData};
 
     #[test]
     fn test_csv_exporter_creation() {
@@ -238,5 +239,121 @@ mod tests {
     fn test_csv_exporter_tab_delimiter() {
         let exporter = CsvExporter::new(PathBuf::from("/tmp/test_csv"), '\t');
         assert_eq!(exporter.delimiter, '\t');
+    }
+
+    fn create_test_hourly_data(num_hours: usize, num_zones: usize) -> Vec<HourlyData> {
+        let mut data = Vec::new();
+        for hour in 0..num_hours {
+            let mut record = HourlyData::new(hour, num_zones);
+            record.outdoor_temp = 20.0 + (hour as f64 % 24.0) * 0.5;
+            for z in 0..num_zones {
+                record.zone_temps[z] = 21.0 + (hour as f64 % 10.0) * 0.3;
+                record.mass_temps[z] = 20.5 + (hour as f64 % 8.0) * 0.2;
+                record.solar_gains[z] = 100.0 + (hour as f64 % 500.0);
+                record.internal_loads[z] = 50.0;
+                record.hvac_heating[z] = if hour % 2 == 0 { 200.0 } else { 0.0 };
+                record.hvac_cooling[z] = if hour % 3 == 0 { 150.0 } else { 0.0 };
+                record.infiltration_loss[z] = 30.0;
+                record.envelope_conduction[z] = 45.0;
+            }
+            data.push(record);
+        }
+        data
+    }
+
+    fn create_test_collector(num_hours: usize, num_zones: usize) -> DiagnosticCollector {
+        let mut collector = DiagnosticCollector::new(DiagnosticConfig::full());
+        collector.hourly_data = create_test_hourly_data(num_hours, num_zones);
+        collector
+    }
+
+    fn create_minimal_case_spec(case_id: &str) -> CaseSpec {
+        use crate::validation::ashrae_140_cases::ASHRAE140Case;
+        match case_id {
+            "600" => ASHRAE140Case::Case600.spec(),
+            "960" => {
+                let mut spec = ASHRAE140Case::Case960.spec();
+                spec.case_id = "960".to_string();
+                spec
+            }
+            _ => ASHRAE140Case::Case600.spec(),
+        }
+    }
+
+    #[test]
+    fn test_export_diagnostics_single_zone() {
+        let temp_dir = std::env::temp_dir().join("fluxion_export_test_single");
+        let exporter = CsvExporter::new(temp_dir.clone(), ',');
+
+        let collector = create_test_collector(24, 1);
+        let spec = create_minimal_case_spec("600");
+
+        let result = exporter.export_diagnostics("600", &collector, &spec);
+        assert!(result.is_ok());
+
+        let csv_path = temp_dir.join("600").join("case_600_zone0.csv");
+        assert!(csv_path.exists());
+
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert!(lines.len() > 1);
+        assert!(lines[0].contains("Hour"));
+        assert!(lines[0].contains("Outdoor_Temp"));
+        assert!(lines[0].contains("Zone_Temp"));
+        assert_eq!(lines.len(), 25);
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_export_diagnostics_multi_zone() {
+        let temp_dir = std::env::temp_dir().join("fluxion_export_test_multi");
+        let exporter = CsvExporter::new(temp_dir.clone(), ',');
+
+        let collector = create_test_collector(24, 2);
+        let spec = create_minimal_case_spec("960");
+
+        let result = exporter.export_diagnostics("960", &collector, &spec);
+        assert!(result.is_ok());
+
+        let zone0_path = temp_dir.join("960").join("case_960_zone0.csv");
+        let zone1_path = temp_dir.join("960").join("case_960_zone1.csv");
+        assert!(zone0_path.exists());
+        assert!(zone1_path.exists());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_export_diagnostics_empty_collector() {
+        let temp_dir = std::env::temp_dir().join("fluxion_export_test_empty");
+        let exporter = CsvExporter::new(temp_dir.clone(), ',');
+
+        let collector = DiagnosticCollector::new(DiagnosticConfig::full());
+        let spec = create_minimal_case_spec("600");
+
+        let result = exporter.export_diagnostics("600", &collector, &spec);
+        assert!(result.is_ok());
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_export_diagnostics_semicolon_delimiter() {
+        let temp_dir = std::env::temp_dir().join("fluxion_export_test_semicolon");
+        let exporter = CsvExporter::new(temp_dir.clone(), ';');
+
+        let collector = create_test_collector(24, 1);
+        let spec = create_minimal_case_spec("600");
+
+        let result = exporter.export_diagnostics("600", &collector, &spec);
+        assert!(result.is_ok());
+
+        let csv_path = temp_dir.join("600").join("case_600_zone0.csv");
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        assert!(content.contains(';'));
+        assert!(!content.contains(','));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
     }
 }

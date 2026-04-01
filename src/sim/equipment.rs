@@ -299,4 +299,163 @@ mod tests {
         assert!((power_day - 2500.0).abs() < 1e-10);
         assert!((power_night - 2500.0).abs() < 1e-10);
     }
+
+    #[test]
+    fn test_computer_equipment_validation_valid() {
+        let computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
+        assert!(computers.validate().is_ok());
+    }
+
+    #[test]
+    fn test_computer_equipment_validation_invalid_fractions() {
+        let mut computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
+        computers.radiative_fraction = 0.8;
+        computers.convective_fraction = 0.8; // Sum = 1.6
+        assert!(computers.validate().is_err());
+    }
+
+    #[test]
+    fn test_computer_equipment_validation_invalid_coupling() {
+        let mut computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
+        computers.mass_coupling_factor = 1.5;
+        assert!(computers.validate().is_err());
+    }
+
+    #[test]
+    fn test_computer_equipment_with_schedule() {
+        let schedule = DailySchedule::constant(0.8);
+        let computers =
+            ComputerEquipment::new("Computers".to_string(), 100.0, 5).with_schedule(schedule);
+        let power = computers.power_at_hour(100);
+        assert!((power - 400.0).abs() < 1e-10); // 100 * 5 * 0.8
+    }
+
+    #[test]
+    fn test_server_rack_with_schedule() {
+        let schedule = DailySchedule::constant(0.5);
+        let servers = ServerRack::new("Servers".to_string(), 200.0, 10).with_schedule(schedule);
+        let power = servers.power_at_hour(500);
+        assert!((power - 1000.0).abs() < 1e-10); // 200 * 10 * 0.5
+    }
+
+    #[test]
+    fn test_generic_equipment_default_values() {
+        let generic = GenericEquipment::new("Generic".to_string(), 100.0, 1);
+        assert_eq!(generic.radiative_fraction, 0.5);
+        assert_eq!(generic.convective_fraction, 0.5);
+        assert_eq!(generic.mass_coupling_factor, 0.5);
+    }
+
+    #[test]
+    fn test_generic_equipment_with_schedule() {
+        let schedule = DailySchedule::constant(0.75);
+        let generic =
+            GenericEquipment::new("Generic".to_string(), 200.0, 4).with_schedule(schedule);
+        let power = generic.power_at_hour(1000);
+        assert!((power - 600.0).abs() < 1e-10); // 200 * 4 * 0.75
+    }
+
+    #[test]
+    fn test_equipment_power_zero_count() {
+        let computers = ComputerEquipment::new("Computers".to_string(), 150.0, 0);
+        assert_eq!(computers.power_at_hour(100), 0.0);
+    }
+
+    #[test]
+    fn test_equipment_power_zero_rated() {
+        let computers = ComputerEquipment::new("Computers".to_string(), 0.0, 10);
+        assert_eq!(computers.power_at_hour(100), 0.0);
+    }
+
+    #[test]
+    fn test_equipment_power_off_schedule() {
+        let mut computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
+        computers.schedule = DailySchedule::constant(0.0);
+        assert_eq!(computers.power_at_hour(100), 0.0);
+    }
+
+    #[test]
+    fn test_equipment_hour_wraparound() {
+        let mut computers = ComputerEquipment::new("Computers".to_string(), 100.0, 1);
+        computers.schedule = DailySchedule::constant(1.0);
+        assert_eq!(computers.power_at_hour(24), computers.power_at_hour(0));
+        assert_eq!(computers.power_at_hour(48), computers.power_at_hour(0));
+    }
+
+    #[test]
+    fn test_equipment_as_any_downcast() {
+        let computers = ComputerEquipment::new("Computers".to_string(), 150.0, 10);
+        let any_ref = computers.as_any();
+        let downcasted = any_ref.downcast_ref::<ComputerEquipment>();
+        assert!(downcasted.is_some());
+        assert_eq!(downcasted.unwrap().id, "Computers");
+    }
+
+    #[test]
+    fn test_server_rack_as_any_downcast() {
+        let servers = ServerRack::new("Servers".to_string(), 500.0, 5);
+        let any_ref = servers.as_any();
+        let downcasted = any_ref.downcast_ref::<ServerRack>();
+        assert!(downcasted.is_some());
+        assert_eq!(downcasted.unwrap().id, "Servers");
+    }
+
+    #[test]
+    fn test_equipment_trait_polymorphism() {
+        let computers: Box<dyn Equipment> =
+            Box::new(ComputerEquipment::new("C1".to_string(), 100.0, 2));
+        let servers: Box<dyn Equipment> = Box::new(ServerRack::new("S1".to_string(), 200.0, 3));
+        let generic: Box<dyn Equipment> =
+            Box::new(GenericEquipment::new("G1".to_string(), 150.0, 1));
+
+        let equipment_list: Vec<Box<dyn Equipment>> = vec![computers, servers, generic];
+
+        for eq in &equipment_list {
+            assert!(!eq.id().is_empty());
+            assert!(eq.power_at_hour(100) >= 0.0);
+            assert!(eq.convective_gains(100) >= 0.0);
+            assert!(eq.radiative_gains(100) >= 0.0);
+            let factor = eq.mass_coupling_factor();
+            assert!((0.0..=1.0).contains(&factor));
+        }
+    }
+
+    #[test]
+    fn test_equipment_gains_sum_to_power() {
+        let mut computers = ComputerEquipment::new("Computers".to_string(), 100.0, 5);
+        computers.schedule = DailySchedule::constant(1.0);
+
+        for hour in 0..24 {
+            let power = computers.power_at_hour(hour);
+            let convective = computers.convective_gains(hour);
+            let radiative = computers.radiative_gains(hour);
+            assert!((power - (convective + radiative)).abs() < 1e-10);
+        }
+    }
+
+    #[test]
+    fn test_server_rack_default_schedule_is_24_7() {
+        let servers = ServerRack::new("Servers".to_string(), 100.0, 1);
+        // Check all hours have same power
+        let first_power = servers.power_at_hour(0);
+        for hour in 0..24 {
+            assert_eq!(servers.power_at_hour(hour), first_power);
+        }
+    }
+
+    #[test]
+    fn test_computer_equipment_default_fractions() {
+        let computers = ComputerEquipment::new("Computers".to_string(), 100.0, 1);
+        assert_eq!(computers.radiative_fraction, 0.3);
+        assert_eq!(computers.convective_fraction, 0.7);
+        assert_eq!(computers.mass_coupling_factor, 0.2);
+    }
+
+    #[test]
+    fn test_server_rack_default_fractions() {
+        let servers = ServerRack::new("Servers".to_string(), 100.0, 1);
+        assert_eq!(servers.radiative_fraction, 0.5);
+        assert_eq!(servers.convective_fraction, 0.5);
+        assert_eq!(servers.mass_coupling_factor, 0.8);
+    }
 }

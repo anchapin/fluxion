@@ -414,4 +414,333 @@ mod tests {
         let target = manager.total_reduction_target(11);
         assert!(target > 0.0);
     }
+
+    #[test]
+    fn test_dr_event_min_reduction() {
+        let event = DREvent::new("DR-1".to_string(), DREventType::PeakShaving, 14, 4, 100.0);
+        assert!((event.min_reduction - 80.0).abs() < 1e-10); // 80% of 100
+    }
+
+    #[test]
+    fn test_dr_event_target_met() {
+        let mut event = DREvent::new("DR-1".to_string(), DREventType::PeakShaving, 14, 4, 100.0);
+        event.achieved_reduction = 90.0;
+        assert!(event.target_met()); // 90 >= 80 (min_reduction)
+    }
+
+    #[test]
+    fn test_dr_event_target_not_met() {
+        let mut event = DREvent::new("DR-1".to_string(), DREventType::PeakShaving, 14, 4, 100.0);
+        event.achieved_reduction = 70.0;
+        assert!(!event.target_met()); // 70 < 80 (min_reduction)
+    }
+
+    #[test]
+    fn test_dr_event_start_end() {
+        let mut event = DREvent::new("DR-1".to_string(), DREventType::Emergency, 10, 2, 50.0);
+        assert!(!event.is_active);
+        event.start();
+        assert!(event.is_active);
+        event.end();
+        assert!(!event.is_active);
+    }
+
+    #[test]
+    fn test_dr_event_boundary_hours() {
+        let event = DREvent::new("DR-1".to_string(), DREventType::PeakShaving, 14, 4, 100.0);
+        assert!(event.is_active_at(14)); // Start hour is inclusive
+        assert!(event.is_active_at(15));
+        assert!(event.is_active_at(17));
+        assert!(!event.is_active_at(18)); // End hour is exclusive
+    }
+
+    #[test]
+    fn test_load_shedding_restore_all() {
+        let mut controller = LoadSheddingController::new();
+        controller.add_load(Load {
+            id: "L1".to_string(),
+            name: "HVAC".to_string(),
+            power_kw: 50.0,
+            priority: LoadPriority::Low,
+            can_shed: true,
+            is_shed: false,
+        });
+
+        controller.shed_loads(50.0);
+        assert!(controller.current_shed_load > 0.0);
+
+        controller.restore_all();
+        assert_eq!(controller.current_shed_load, 0.0);
+        for load in &controller.loads {
+            assert!(!load.is_shed);
+        }
+    }
+
+    #[test]
+    fn test_load_shedding_no_sheddable_loads() {
+        let mut controller = LoadSheddingController::new();
+        controller.add_load(Load {
+            id: "L1".to_string(),
+            name: "Critical".to_string(),
+            power_kw: 100.0,
+            priority: LoadPriority::Critical,
+            can_shed: false,
+            is_shed: false,
+        });
+
+        let shed = controller.shed_loads(50.0);
+        assert_eq!(shed, 0.0);
+        assert_eq!(controller.available_capacity(), 0.0);
+    }
+
+    #[test]
+    fn test_load_shedding_priority_order() {
+        let mut controller = LoadSheddingController::new();
+
+        controller.add_load(Load {
+            id: "L1".to_string(),
+            name: "Critical".to_string(),
+            power_kw: 100.0,
+            priority: LoadPriority::Critical,
+            can_shed: false,
+            is_shed: false,
+        });
+        controller.add_load(Load {
+            id: "L2".to_string(),
+            name: "High".to_string(),
+            power_kw: 40.0,
+            priority: LoadPriority::High,
+            can_shed: true,
+            is_shed: false,
+        });
+        controller.add_load(Load {
+            id: "L3".to_string(),
+            name: "Low".to_string(),
+            power_kw: 60.0,
+            priority: LoadPriority::Low,
+            can_shed: true,
+            is_shed: false,
+        });
+
+        let shed = controller.shed_loads(50.0);
+        // Should shed Low priority first (60kW), which covers the 50kW target
+        assert!(shed >= 50.0);
+        assert!(
+            controller
+                .loads
+                .iter()
+                .find(|l| l.id == "L3")
+                .unwrap()
+                .is_shed
+        );
+    }
+
+    #[test]
+    fn test_load_shedding_current_load() {
+        let mut controller = LoadSheddingController::new();
+        controller.add_load(Load {
+            id: "L1".to_string(),
+            name: "Load1".to_string(),
+            power_kw: 30.0,
+            priority: LoadPriority::Low,
+            can_shed: true,
+            is_shed: false,
+        });
+        controller.add_load(Load {
+            id: "L2".to_string(),
+            name: "Load2".to_string(),
+            power_kw: 20.0,
+            priority: LoadPriority::High,
+            can_shed: false,
+            is_shed: false,
+        });
+
+        assert_eq!(controller.current_load(), 50.0);
+        controller.shed_loads(30.0);
+        assert_eq!(controller.current_load(), 20.0); // Only non-shed load
+    }
+
+    #[test]
+    fn test_rtp_pricing_update() {
+        let mut rtp = RealTimePricing::new();
+        rtp.set_time_of_use(0.05, 0.10, 0.25);
+
+        rtp.update(12); // Peak hour
+        assert!((rtp.current_price - 0.25).abs() < 1e-10);
+
+        rtp.update(3); // Off-peak hour
+        assert!((rtp.current_price - 0.05).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_rtp_pricing_statistics() {
+        let mut rtp = RealTimePricing::new();
+        rtp.set_time_of_use(0.05, 0.10, 0.25);
+
+        assert!(rtp.peak_price >= rtp.average_price);
+        assert!(rtp.off_peak_price <= rtp.average_price);
+        assert!(rtp.peak_price > rtp.off_peak_price);
+    }
+
+    #[test]
+    fn test_rtp_pricing_hour_wraparound() {
+        let mut rtp = RealTimePricing::new();
+        rtp.set_time_of_use(0.05, 0.10, 0.25);
+
+        rtp.update(24); // Should wrap to hour 0
+        assert!((rtp.current_price - rtp.hourly_prices[0]).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_dr_manager_active_events() {
+        let mut manager = DRManager::new();
+        manager.add_event(DREvent::new(
+            "DR-1".to_string(),
+            DREventType::Emergency,
+            10,
+            2,
+            50.0,
+        ));
+        manager.add_event(DREvent::new(
+            "DR-2".to_string(),
+            DREventType::Voluntary,
+            20,
+            3,
+            30.0,
+        ));
+
+        let active_at_11 = manager.active_events(11);
+        assert_eq!(active_at_11.len(), 1);
+
+        let active_at_21 = manager.active_events(21);
+        assert_eq!(active_at_21.len(), 1);
+
+        let active_at_15 = manager.active_events(15);
+        assert_eq!(active_at_15.len(), 0);
+    }
+
+    #[test]
+    fn test_dr_manager_is_dr_active() {
+        let mut manager = DRManager::new();
+        manager.add_event(DREvent::new(
+            "DR-1".to_string(),
+            DREventType::PeakShaving,
+            14,
+            4,
+            100.0,
+        ));
+
+        assert!(manager.is_dr_active(15));
+        assert!(!manager.is_dr_active(10));
+    }
+
+    #[test]
+    fn test_dr_manager_set_pricing() {
+        let mut manager = DRManager::new();
+        manager.set_pricing(0.05, 0.10, 0.20);
+
+        assert!((manager.rtp.peak_price - 0.20).abs() < 1e-10);
+        assert!((manager.rtp.off_peak_price - 0.05).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_dr_event_types() {
+        let event_types = vec![
+            DREventType::Emergency,
+            DREventType::Voluntary,
+            DREventType::AncillaryServices,
+            DREventType::PeakShaving,
+            DREventType::LoadShifting,
+        ];
+
+        for et in &event_types {
+            let event = DREvent::new("test".to_string(), *et, 10, 2, 50.0);
+            assert_eq!(event.event_type, *et);
+        }
+    }
+
+    #[test]
+    fn test_dr_signal_sources() {
+        let sources = vec![
+            DRSignalSource::Manual,
+            DRSignalSource::OpenADR,
+            DRSignalSource::RealTimePricing,
+            DRSignalSource::TimeOfUse,
+        ];
+
+        for source in &sources {
+            let event = DREvent::new("test".to_string(), DREventType::Emergency, 10, 2, 50.0);
+            // Default source is Manual
+            assert_eq!(event.source, DRSignalSource::Manual);
+        }
+    }
+
+    #[test]
+    fn test_load_priority_ordering() {
+        assert!(LoadPriority::Low < LoadPriority::Medium);
+        assert!(LoadPriority::Medium < LoadPriority::High);
+        assert!(LoadPriority::High < LoadPriority::Critical);
+    }
+
+    #[test]
+    fn test_load_shedding_available_capacity() {
+        let mut controller = LoadSheddingController::new();
+        controller.add_load(Load {
+            id: "L1".to_string(),
+            name: "Load".to_string(),
+            power_kw: 100.0,
+            priority: LoadPriority::Low,
+            can_shed: true,
+            is_shed: false,
+        });
+
+        assert_eq!(controller.available_capacity(), 100.0);
+        controller.shed_loads(40.0);
+        assert_eq!(controller.available_capacity(), 60.0);
+    }
+
+    #[test]
+    fn test_load_shedding_exceeds_capacity() {
+        let mut controller = LoadSheddingController::new();
+        controller.add_load(Load {
+            id: "L1".to_string(),
+            name: "Load".to_string(),
+            power_kw: 50.0,
+            priority: LoadPriority::Low,
+            can_shed: true,
+            is_shed: false,
+        });
+
+        let shed = controller.shed_loads(100.0); // Request more than available
+        assert_eq!(shed, 50.0); // Can only shed 50kW
+    }
+
+    #[test]
+    fn test_dr_manager_default() {
+        let manager = DRManager::default();
+        assert!(!manager.enabled);
+        assert!(manager.events.is_empty());
+        assert!(manager.signal_url.is_none());
+    }
+
+    #[test]
+    fn test_load_shedding_controller_default() {
+        let controller = LoadSheddingController::default();
+        assert!(controller.loads.is_empty());
+        assert_eq!(controller.total_shedding_capacity, 0.0);
+        assert_eq!(controller.current_shed_load, 0.0);
+    }
+
+    #[test]
+    fn test_real_time_pricing_default() {
+        let rtp = RealTimePricing::default();
+        assert_eq!(rtp.current_price, 0.10);
+        assert_eq!(rtp.average_price, 0.10);
+    }
+
+    #[test]
+    fn test_dr_manager_total_reduction_target_no_events() {
+        let manager = DRManager::new();
+        assert_eq!(manager.total_reduction_target(10), 0.0);
+    }
 }

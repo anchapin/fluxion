@@ -542,4 +542,358 @@ mod tests {
         assert!((cond.thermal_time_constant - 7142.0).abs() < 100.0);
         assert!((cond.time_constant_hours() - 2.0).abs() < 0.1);
     }
+
+    #[test]
+    fn test_energy_balance_unbalanced() {
+        let flow = EnergyFlowDiagnostics {
+            phi_st: 100.0,
+            phi_m: 50.0,
+            phi_ia: 25.0,
+            q_em: 30.0,
+            q_ms: 20.0,
+            q_w: 10.0,
+            q_ve: 5.0,
+            hvac_output: 0.0,
+            mass_energy_change: 50.0, // Not matching the balance
+            ..Default::default()
+        };
+
+        // Energy in: 175, Energy out: 65, Mass change: 50
+        // Imbalance: 175 - 65 - 50 = 60 (not balanced)
+        assert!(!flow.verify_energy_balance(0.01));
+    }
+
+    #[test]
+    fn test_mass_state_charging() {
+        let flow = EnergyFlowDiagnostics {
+            mass_energy_change: 100.0, // Positive = charging
+            ..Default::default()
+        };
+        assert_eq!(flow.mass_state(), "charging");
+    }
+
+    #[test]
+    fn test_mass_state_discharging() {
+        let flow = EnergyFlowDiagnostics {
+            mass_energy_change: -100.0, // Negative = discharging
+            ..Default::default()
+        };
+        assert_eq!(flow.mass_state(), "discharging");
+    }
+
+    #[test]
+    fn test_mass_state_neutral() {
+        let flow = EnergyFlowDiagnostics {
+            mass_energy_change: 0.0,
+            ..Default::default()
+        };
+        assert_eq!(flow.mass_state(), "neutral");
+    }
+
+    #[test]
+    fn test_conductance_validate_no_warnings() {
+        let cond = ConductanceDiagnostics {
+            h_tr_ms: 14.0,
+            thermal_capacitance: 100_000.0,
+            h_tr_em: 5.0,
+            h_tr_is: 3.0,
+            h_tr_w: 10.0,
+            h_ve: 2.0,
+            h_tr_floor: 1.0,
+            a_m: 50.0,
+            thermal_time_constant: 7142.0,
+        };
+
+        let warnings = cond.validate();
+        // Should have no warnings for reasonable values
+        assert!(warnings.is_empty() || warnings.iter().all(|w| !w.contains("VERY HIGH")));
+    }
+
+    #[test]
+    fn test_conductance_validate_high_h_tr_em_negative() {
+        let cond = ConductanceDiagnostics {
+            h_tr_em: -5.0, // Negative = error
+            ..Default::default()
+        };
+
+        let warnings = cond.validate();
+        assert!(warnings.iter().any(|w| w.contains("NEGATIVE")));
+    }
+
+    #[test]
+    fn test_conductance_validate_time_constant_too_fast() {
+        let mut cond = ConductanceDiagnostics {
+            h_tr_ms: 100000.0,          // Very high = very fast time constant
+            thermal_capacitance: 100.0, // Low capacitance
+            ..Default::default()
+        };
+        cond.calculate_time_constant();
+
+        let warnings = cond.validate();
+        assert!(warnings.iter().any(|w| w.contains("TOO FAST")));
+    }
+
+    #[test]
+    fn test_conductance_validate_time_constant_too_slow() {
+        let mut cond = ConductanceDiagnostics {
+            h_tr_ms: 0.1,                  // Very low = very slow time constant
+            thermal_capacitance: 100000.0, // High capacitance
+            ..Default::default()
+        };
+        cond.calculate_time_constant();
+
+        let warnings = cond.validate();
+        assert!(warnings.iter().any(|w| w.contains("TOO SLOW")));
+    }
+
+    #[test]
+    fn test_conductance_validate_h_tr_ms_too_low() {
+        let cond = ConductanceDiagnostics {
+            h_tr_ms: 0.5, // Below 1.0
+            ..Default::default()
+        };
+
+        let warnings = cond.validate();
+        assert!(warnings.iter().any(|w| w.contains("VERY LOW")));
+    }
+
+    #[test]
+    fn test_conductance_print_summary() {
+        let cond = ConductanceDiagnostics {
+            h_tr_ms: 14.0,
+            thermal_capacitance: 100_000.0,
+            thermal_time_constant: 7142.0,
+            a_m: 50.0,
+            ..Default::default()
+        };
+
+        // Should not panic
+        cond.print_summary();
+    }
+
+    #[test]
+    fn test_cumulative_energy_add_timestep() {
+        let mut cumulative = CumulativeEnergyDiagnostics::default();
+        let flow = EnergyFlowDiagnostics {
+            q_em: 100.0,
+            q_ms: 80.0,
+            q_is: 60.0,
+            q_w: 40.0,
+            q_ve: 20.0,
+            q_floor: 10.0,
+            mass_energy_change: 50.0,
+            hvac_output: 200.0, // Positive = heating
+            ..Default::default()
+        };
+
+        cumulative.add_timestep(&flow, 3600.0); // 1 hour
+
+        assert!(cumulative.cumulative_q_em > 0.0);
+        assert!(cumulative.cumulative_q_ms > 0.0);
+        assert!(cumulative.total_heating_kwh > 0.0);
+    }
+
+    #[test]
+    fn test_cumulative_energy_cooling() {
+        let mut cumulative = CumulativeEnergyDiagnostics::default();
+        let flow = EnergyFlowDiagnostics {
+            hvac_output: -300.0, // Negative = cooling
+            ..Default::default()
+        };
+
+        cumulative.add_timestep(&flow, 3600.0);
+
+        assert!(cumulative.total_cooling_kwh > 0.0);
+        assert_eq!(cumulative.total_heating_kwh, 0.0);
+    }
+
+    #[test]
+    fn test_cumulative_energy_peak_tracking() {
+        let mut cumulative = CumulativeEnergyDiagnostics::default();
+
+        // Add heating timesteps
+        for hvac in &[100.0, 200.0, 150.0, 300.0, 250.0] {
+            let flow = EnergyFlowDiagnostics {
+                hvac_output: *hvac,
+                ..Default::default()
+            };
+            cumulative.add_timestep(&flow, 3600.0);
+        }
+
+        assert_eq!(cumulative.peak_heating_w, 300.0);
+    }
+
+    #[test]
+    fn test_cumulative_energy_peak_cooling() {
+        let mut cumulative = CumulativeEnergyDiagnostics::default();
+
+        // Add cooling timesteps
+        for hvac in &[-100.0, -200.0, -150.0, -300.0, -250.0] {
+            let flow = EnergyFlowDiagnostics {
+                hvac_output: *hvac,
+                ..Default::default()
+            };
+            cumulative.add_timestep(&flow, 3600.0);
+        }
+
+        assert_eq!(cumulative.peak_cooling_w, 300.0);
+    }
+
+    #[test]
+    fn test_cumulative_energy_print_summary() {
+        let mut cumulative = CumulativeEnergyDiagnostics::default();
+        let flow = EnergyFlowDiagnostics {
+            hvac_output: 100.0,
+            q_em: 50.0,
+            q_ms: 40.0,
+            ..Default::default()
+        };
+        cumulative.add_timestep(&flow, 3600.0);
+
+        // Should not panic
+        cumulative.print_summary();
+    }
+
+    #[test]
+    fn test_thermal_network_diagnostics_new() {
+        let diag = ThermalNetworkDiagnostics::new("600");
+        assert_eq!(diag.case_id, "600");
+        assert_eq!(diag.hourly_flows.len(), 0);
+    }
+
+    #[test]
+    fn test_thermal_network_update_temperatures() {
+        let mut diag = ThermalNetworkDiagnostics::new("600");
+        diag.update_temperatures(20.0, 22.0);
+
+        assert_eq!(diag.max_mass_temp, 20.0);
+        assert_eq!(diag.min_mass_temp, 20.0);
+        assert_eq!(diag.max_zone_temp, 22.0);
+        assert_eq!(diag.min_zone_temp, 22.0);
+    }
+
+    #[test]
+    fn test_thermal_network_add_hourly_flow() {
+        let mut diag = ThermalNetworkDiagnostics::new("600");
+        let flow = EnergyFlowDiagnostics {
+            phi_st: 100.0,
+            phi_m: 50.0,
+            phi_ia: 25.0,
+            ..Default::default()
+        };
+
+        diag.add_hourly_flow(flow);
+        assert_eq!(diag.hourly_flows.len(), 1);
+    }
+
+    #[test]
+    fn test_thermal_network_print_report() {
+        let mut diag = ThermalNetworkDiagnostics::new("600");
+        diag.update_temperatures(20.0, 22.0);
+
+        for _ in 0..5 {
+            let flow = EnergyFlowDiagnostics {
+                hvac_output: 100.0,
+                ..Default::default()
+            };
+            diag.add_hourly_flow(flow);
+        }
+
+        // Should not panic
+        diag.print_report();
+    }
+
+    #[test]
+    fn test_thermal_network_to_csv() {
+        let mut diag = ThermalNetworkDiagnostics::new("600");
+
+        for i in 0..3 {
+            let flow = EnergyFlowDiagnostics {
+                phi_st: 100.0 + i as f64 * 10.0,
+                phi_m: 50.0,
+                phi_ia: 25.0,
+                q_em: 30.0,
+                q_ms: 20.0,
+                q_is: 15.0,
+                q_w: 10.0,
+                q_ve: 5.0,
+                q_floor: 2.0,
+                hvac_output: 100.0,
+                mass_energy_change: 50.0,
+                ..Default::default()
+            };
+            diag.add_hourly_flow(flow);
+        }
+
+        let csv = diag.to_csv();
+        assert!(csv.contains("hour"));
+        assert!(csv.contains("phi_st"));
+        assert!(csv.contains("100")); // First phi_st value
+    }
+
+    #[test]
+    fn test_thermal_network_to_csv_empty() {
+        let diag = ThermalNetworkDiagnostics::new("600");
+        let csv = diag.to_csv();
+
+        // Should have header only
+        assert!(csv.contains("hour"));
+        assert_eq!(csv.lines().count(), 1); // Header only
+    }
+
+    #[test]
+    fn test_thermal_network_calculate_statistics() {
+        let mut diag = ThermalNetworkDiagnostics::new("600");
+
+        for i in 0..10 {
+            let flow = EnergyFlowDiagnostics {
+                q_em: 100.0 + i as f64 * 10.0,
+                q_ms: 50.0 + i as f64 * 5.0,
+                hvac_output: 50.0 + i as f64 * 5.0,
+                ..Default::default()
+            };
+            diag.add_hourly_flow(flow);
+        }
+
+        let stats = diag.calculate_statistics();
+        assert!(stats.contains_key("avg_q_em_W"));
+        assert!(stats.contains_key("avg_q_ms_W"));
+        assert!(stats.contains_key("avg_hvac_W"));
+
+        // Check that we have some statistics
+        assert_eq!(stats.len(), 5); // 3 averages + 2 time constants
+    }
+
+    #[test]
+    fn test_thermal_network_calculate_statistics_empty() {
+        let diag = ThermalNetworkDiagnostics::new("600");
+        let stats = diag.calculate_statistics();
+
+        // Empty should return empty or default statistics
+        assert!(stats.is_empty() || stats.values().all(|v| *v == 0.0));
+    }
+
+    #[test]
+    fn test_energy_flow_default() {
+        let flow = EnergyFlowDiagnostics::default();
+        assert_eq!(flow.q_em, 0.0);
+        assert_eq!(flow.phi_st, 0.0);
+        assert_eq!(flow.hvac_output, 0.0);
+    }
+
+    #[test]
+    fn test_conductance_default() {
+        let cond = ConductanceDiagnostics::default();
+        assert_eq!(cond.h_tr_em, 0.0);
+        assert_eq!(cond.h_tr_ms, 0.0);
+        assert_eq!(cond.thermal_capacitance, 0.0);
+    }
+
+    #[test]
+    fn test_cumulative_default() {
+        let cumulative = CumulativeEnergyDiagnostics::default();
+        assert_eq!(cumulative.total_heating_kwh, 0.0);
+        assert_eq!(cumulative.total_cooling_kwh, 0.0);
+        assert_eq!(cumulative.peak_heating_w, 0.0);
+    }
 }

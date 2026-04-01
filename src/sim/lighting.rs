@@ -346,12 +346,217 @@ mod tests {
     #[test]
     fn test_lighting_system() {
         let mut system = LightingSystem::new(10.0, 100.0);
-
         let mut dz = DaylightZone::new("DZ-1".to_string(), 0, 10.0, 2.0);
         dz.dimming_threshold = 500.0;
         system.add_daylight_zone(dz);
-
         let power = system.effective_lighting_power(12, 10000.0, 0.8);
         assert!(power < 1000.0);
+    }
+
+    #[test]
+    fn test_daylight_zone_default_values() {
+        let zone = DaylightZone::new("test".to_string(), 1, 15.0, 3.0);
+        assert_eq!(zone.daylight_zone_depth, 4.5);
+        assert_eq!(zone.daylight_factor, 5.0);
+        assert_eq!(zone.dimming_threshold, 300.0);
+        assert_eq!(zone.min_dimming_level, 0.1);
+    }
+
+    #[test]
+    fn test_daylight_zone_interior_illuminance_clear_sky() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        assert_eq!(zone.interior_illuminance(50000.0, 1.0), 2500.0);
+    }
+
+    #[test]
+    fn test_daylight_zone_interior_illuminance_overcast() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        assert_eq!(zone.interior_illuminance(20000.0, 0.5), 500.0);
+    }
+
+    #[test]
+    fn test_daylight_zone_dimming_above_threshold() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        assert_eq!(zone.dimming_level(500.0), zone.min_dimming_level);
+    }
+
+    #[test]
+    fn test_daylight_zone_dimming_below_threshold() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        let dimming = zone.dimming_level(150.0);
+        assert!(dimming > zone.min_dimming_level && dimming < 1.0);
+    }
+
+    #[test]
+    fn test_daylight_zone_dimming_zero_illuminance() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        assert_eq!(zone.dimming_level(0.0), zone.min_dimming_level);
+    }
+
+    #[test]
+    fn test_daylight_zone_annual_energy_savings() {
+        let zone = DaylightZone::new("test".to_string(), 0, 10.0, 2.0);
+        assert!(zone.annual_energy_savings(1000.0, 10.0, 250.0, 600.0) > 0.0);
+    }
+
+    #[test]
+    fn test_shading_control_default_values() {
+        let shading = ShadingControl::new(ShadingType::ExteriorBlinds);
+        assert_eq!(shading.position, 0.0);
+        assert_eq!(shading.deployment_threshold, 300.0);
+        assert_eq!(shading.min_temp_deployment, 15.0);
+        assert!(!shading.is_deployed);
+    }
+
+    #[test]
+    fn test_shading_update_deploy() {
+        let mut shading = ShadingControl::new(ShadingType::InteriorBlinds);
+        shading.update(400.0, 25.0);
+        assert!(shading.is_deployed);
+        assert_eq!(shading.position, 1.0);
+    }
+
+    #[test]
+    fn test_shading_update_retract_low_solar() {
+        let mut shading = ShadingControl::new(ShadingType::InteriorBlinds);
+        shading.is_deployed = true;
+        shading.update(100.0, 25.0);
+        assert!(!shading.is_deployed);
+    }
+
+    #[test]
+    fn test_shading_update_retract_low_temp() {
+        let mut shading = ShadingControl::new(ShadingType::InteriorBlinds);
+        shading.is_deployed = true;
+        shading.update(400.0, 10.0);
+        assert!(!shading.is_deployed);
+    }
+
+    #[test]
+    fn test_shading_shgc_reduction_not_deployed() {
+        assert_eq!(
+            ShadingControl::new(ShadingType::InteriorBlinds).shgc_reduction(),
+            0.0
+        );
+    }
+
+    #[test]
+    fn test_shading_shgc_reduction_interior_blinds() {
+        let mut s = ShadingControl::new(ShadingType::InteriorBlinds);
+        s.is_deployed = true;
+        s.position = 1.0;
+        assert_eq!(s.shgc_reduction(), 0.3);
+    }
+
+    #[test]
+    fn test_shading_shgc_reduction_exterior_blinds() {
+        let mut s = ShadingControl::new(ShadingType::ExteriorBlinds);
+        s.is_deployed = true;
+        s.position = 1.0;
+        assert_eq!(s.shgc_reduction(), 0.6);
+    }
+
+    #[test]
+    fn test_shading_shgc_reduction_roller_shades() {
+        let mut s = ShadingControl::new(ShadingType::RollerShades);
+        s.is_deployed = true;
+        s.position = 1.0;
+        assert_eq!(s.shgc_reduction(), 0.5);
+    }
+
+    #[test]
+    fn test_shading_shgc_reduction_light_shelves() {
+        let mut s = ShadingControl::new(ShadingType::LightShelves);
+        s.is_deployed = true;
+        s.position = 1.0;
+        assert_eq!(s.shgc_reduction(), 0.2);
+    }
+
+    #[test]
+    fn test_shading_shgc_reduction_partial_position() {
+        let mut s = ShadingControl::new(ShadingType::ExteriorBlinds);
+        s.is_deployed = true;
+        s.position = 0.5;
+        assert_eq!(s.shgc_reduction(), 0.3);
+    }
+
+    #[test]
+    fn test_lighting_schedule_default() {
+        let schedule = LightingSchedule::new(10.0, 100.0);
+        assert_eq!(schedule.power_density, 10.0);
+        assert_eq!(schedule.convective_fraction, 0.2);
+        assert_eq!(schedule.radiative_fraction, 0.8);
+        assert!(schedule.hourly_schedule.iter().all(|&v| v == 0.0));
+    }
+
+    #[test]
+    fn test_lighting_schedule_office_hours() {
+        let schedule = LightingSchedule::office_schedule(10.0, 100.0);
+        assert_eq!(schedule.lighting_power(8), 1000.0);
+        assert_eq!(schedule.lighting_power(12), 1000.0);
+        assert_eq!(schedule.lighting_power(17), 1000.0);
+        assert_eq!(schedule.lighting_power(7), 0.0);
+        assert_eq!(schedule.lighting_power(18), 0.0);
+    }
+
+    #[test]
+    fn test_lighting_schedule_retail_hours() {
+        let schedule = LightingSchedule::retail_schedule(10.0, 100.0);
+        assert_eq!(schedule.lighting_power(9), 1000.0);
+        assert_eq!(schedule.lighting_power(15), 1000.0);
+        assert_eq!(schedule.lighting_power(20), 1000.0);
+        assert_eq!(schedule.lighting_power(8), 0.0);
+        assert_eq!(schedule.lighting_power(21), 0.0);
+    }
+
+    #[test]
+    fn test_lighting_schedule_hour_wraparound() {
+        let schedule = LightingSchedule::office_schedule(10.0, 100.0);
+        assert_eq!(schedule.lighting_power(24), 0.0);
+        assert_eq!(schedule.lighting_power(30), schedule.lighting_power(6));
+    }
+
+    #[test]
+    fn test_lighting_schedule_annual_energy() {
+        let schedule = LightingSchedule::office_schedule(10.0, 100.0);
+        assert!((schedule.annual_energy(250) - 2500.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_lighting_schedule_annual_energy_zero_days() {
+        assert_eq!(
+            LightingSchedule::office_schedule(10.0, 100.0).annual_energy(0),
+            0.0
+        );
+    }
+
+    #[test]
+    fn test_lighting_system_no_daylight_zones() {
+        let system = LightingSystem::new(10.0, 100.0);
+        assert_eq!(system.effective_lighting_power(12, 10000.0, 0.8), 1000.0);
+    }
+
+    #[test]
+    fn test_lighting_system_multiple_zones() {
+        let mut system = LightingSystem::new(10.0, 100.0);
+        system.add_daylight_zone(DaylightZone::new("DZ-1".to_string(), 0, 10.0, 2.0));
+        system.add_daylight_zone(DaylightZone::new("DZ-2".to_string(), 0, 15.0, 3.0));
+        let power = system.effective_lighting_power(12, 10000.0, 0.8);
+        assert!(power > 0.0 && power < 1000.0);
+    }
+
+    #[test]
+    fn test_lighting_control_type_equality() {
+        assert_eq!(LightingControlType::Manual, LightingControlType::Manual);
+        assert_ne!(
+            LightingControlType::Manual,
+            LightingControlType::ContinuousDimming
+        );
+    }
+
+    #[test]
+    fn test_shading_type_equality() {
+        assert_eq!(ShadingType::InteriorBlinds, ShadingType::InteriorBlinds);
+        assert_ne!(ShadingType::InteriorBlinds, ShadingType::ExteriorBlinds);
     }
 }

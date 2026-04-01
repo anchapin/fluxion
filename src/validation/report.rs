@@ -85,6 +85,15 @@ impl fmt::Display for ValidationStatus {
 }
 
 impl ValidationStatus {
+    /// Returns the display name for this status.
+    pub fn display_name(&self) -> &str {
+        match self {
+            ValidationStatus::Pass => "PASS",
+            ValidationStatus::Warning => "WARN",
+            ValidationStatus::Fail => "FAIL",
+        }
+    }
+
     /// Returns the emoji icon for this status (for terminal output).
     pub fn icon(&self) -> &str {
         match self {

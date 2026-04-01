@@ -311,4 +311,215 @@ mod tests {
             InterpolationMethod::Step
         );
     }
+
+    #[test]
+    fn test_linear_interpolation_boundaries() {
+        assert!((linear_interpolate(10.0, 20.0, 0.0) - 10.0).abs() < 1e-10);
+        assert!((linear_interpolate(10.0, 20.0, 1.0) - 20.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_linear_interpolation_negative_values() {
+        assert!((linear_interpolate(-10.0, -20.0, 0.5) - (-15.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_linear_interpolation_zero_to_value() {
+        assert!((linear_interpolate(0.0, 100.0, 0.25) - 25.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_linear_interpolation_fraction_outside_range() {
+        assert!((linear_interpolate(0.0, 10.0, 1.5) - 15.0).abs() < 1e-10);
+        assert!((linear_interpolate(0.0, 10.0, -0.5) - (-5.0)).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cubic_spline_interpolation_boundaries() {
+        assert!((cubic_spline_interpolate(10.0, 20.0, 0.0) - 10.0).abs() < 1e-10);
+        assert!((cubic_spline_interpolate(10.0, 20.0, 1.0) - 20.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cubic_spline_interpolation_midpoint() {
+        let result = cubic_spline_interpolate(0.0, 10.0, 0.5);
+        assert!((result - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_cubic_spline_interpolation_quarter() {
+        let result = cubic_spline_interpolate(0.0, 100.0, 0.25);
+        // Cubic spline with zero derivatives: at 0.25 should be ~15.625
+        assert!((result - 15.625).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_piecewise_hermite_interpolation_boundaries() {
+        assert!((piecewise_hermite_interpolate(10.0, 20.0, 0.0) - 10.0).abs() < 1e-10);
+        assert!((piecewise_hermite_interpolate(10.0, 20.0, 1.0) - 20.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_piecewise_hermite_interpolation_midpoint() {
+        let result = piecewise_hermite_interpolate(0.0, 10.0, 0.5);
+        // With zero derivatives, midpoint should be exactly 5.0
+        assert!((result - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_piecewise_hermite_interpolation_quarter() {
+        let result = piecewise_hermite_interpolate(0.0, 100.0, 0.25);
+        // With zero derivatives, should follow cubic curve
+        assert!(result > 15.0 && result < 35.0);
+    }
+
+    #[test]
+    fn test_step_interpolation_exact_boundary() {
+        assert_eq!(step_interpolate(1.0, 2.0, 0.5), 2.0);
+    }
+
+    #[test]
+    fn test_step_interpolation_zero_fraction() {
+        assert_eq!(step_interpolate(1.0, 2.0, 0.0), 1.0);
+    }
+
+    #[test]
+    fn test_step_interpolation_one_fraction() {
+        assert_eq!(step_interpolate(1.0, 2.0, 1.0), 2.0);
+    }
+
+    #[test]
+    fn test_interpolate_weather_linear() {
+        let result = interpolate_weather("temp", 10.0, 20.0, 0.5, InterpolationMethod::Linear);
+        assert!((result - 15.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_interpolate_weather_cubic_spline() {
+        let result = interpolate_weather("temp", 0.0, 10.0, 0.5, InterpolationMethod::CubicSpline);
+        assert!((result - 5.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_interpolate_weather_piecewise_hermite() {
+        let result = interpolate_weather(
+            "dni",
+            0.0,
+            100.0,
+            0.5,
+            InterpolationMethod::PiecewiseHermite,
+        );
+        assert!((result - 50.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_interpolate_weather_step() {
+        let result = interpolate_weather("cloud_cover", 1.0, 2.0, 0.3, InterpolationMethod::Step);
+        assert_eq!(result, 1.0);
+    }
+
+    #[test]
+    fn test_select_method_for_field_solar_radiation() {
+        assert_eq!(
+            select_method_for_field("dni"),
+            InterpolationMethod::PiecewiseHermite
+        );
+        assert_eq!(
+            select_method_for_field("dhi"),
+            InterpolationMethod::PiecewiseHermite
+        );
+        assert_eq!(
+            select_method_for_field("horizontal_illuminance"),
+            InterpolationMethod::PiecewiseHermite
+        );
+    }
+
+    #[test]
+    fn test_select_method_for_field_wind() {
+        assert_eq!(
+            select_method_for_field("wind_speed"),
+            InterpolationMethod::Linear
+        );
+        assert_eq!(
+            select_method_for_field("wind_direction"),
+            InterpolationMethod::Linear
+        );
+    }
+
+    #[test]
+    fn test_select_method_for_field_pressure() {
+        assert_eq!(
+            select_method_for_field("atmospheric_pressure"),
+            InterpolationMethod::Linear
+        );
+    }
+
+    #[test]
+    fn test_select_method_for_field_ground_temp() {
+        assert_eq!(
+            select_method_for_field("ground_temperature"),
+            InterpolationMethod::Linear
+        );
+    }
+
+    #[test]
+    fn test_select_method_for_field_snow() {
+        assert_eq!(
+            select_method_for_field("snow_depth"),
+            InterpolationMethod::Step
+        );
+        assert_eq!(
+            select_method_for_field("snow_cover"),
+            InterpolationMethod::Step
+        );
+    }
+
+    #[test]
+    fn test_select_method_for_field_unknown_defaults_to_linear() {
+        assert_eq!(
+            select_method_for_field("unknown_field"),
+            InterpolationMethod::Linear
+        );
+        assert_eq!(select_method_for_field(""), InterpolationMethod::Linear);
+    }
+
+    #[test]
+    fn test_select_method_for_field_dew_point() {
+        assert_eq!(
+            select_method_for_field("dew_point"),
+            InterpolationMethod::Linear
+        );
+    }
+
+    #[test]
+    fn test_select_method_for_field_present_weather() {
+        assert_eq!(
+            select_method_for_field("present_weather"),
+            InterpolationMethod::Step
+        );
+        assert_eq!(
+            select_method_for_field("present_weather_code"),
+            InterpolationMethod::Step
+        );
+    }
+
+    #[test]
+    fn test_interpolation_method_clone_and_copy() {
+        let method = InterpolationMethod::Linear;
+        let cloned = method;
+        assert_eq!(method, cloned);
+    }
+
+    #[test]
+    fn test_interpolation_method_debug() {
+        let method = InterpolationMethod::PiecewiseHermite;
+        let debug_str = format!("{:?}", method);
+        assert!(debug_str.contains("PiecewiseHermite"));
+    }
+
+    #[test]
+    fn test_interpolation_method_equality() {
+        assert_eq!(InterpolationMethod::Linear, InterpolationMethod::Linear);
+        assert_ne!(InterpolationMethod::Linear, InterpolationMethod::Step);
+    }
 }

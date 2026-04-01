@@ -123,7 +123,7 @@ pub fn expand_variants(config: &DeltaConfig) -> Result<Vec<(String, CaseSpec)>> 
 }
 
 /// Apply a patch hashmap to a YAML value (deep merge).
-fn apply_patch(
+pub fn apply_patch(
     mut base: serde_yaml::Value,
     patch: &HashMap<String, serde_yaml::Value>,
 ) -> Result<serde_yaml::Value> {
@@ -134,7 +134,7 @@ fn apply_patch(
 }
 
 /// Set a nested field in a YAML value using dot notation.
-fn set_nested(
+pub fn set_nested(
     value: &mut serde_yaml::Value,
     path: &str,
     new_value: serde_yaml::Value,
@@ -180,7 +180,7 @@ fn set_nested(
 }
 
 /// Recursively generate all combinations for a sweep.
-fn generate_sweep_combinations(
+pub fn generate_sweep_combinations(
     base: &serde_yaml::Value,
     sweep_items: &[(String, Vec<f64>)],
     idx: usize,
