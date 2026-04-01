@@ -11,3 +11,6 @@
 ## 2024-11-13 - [Optimize Hot Loop Memory Allocations]
 **Learning:** In hot loops, chaining operations on tensors (like `VectorField * scalar * scalar`) creates redundant intermediate vector allocations and causes a measurable slowdown. Calculating combined scalar terms before multiplying the `VectorField` minimizes the allocations needed per iteration.
 **Action:** When working with math routines in `ThermalModel::step_physics`, algebraically group scalars out of vector operations beforehand to minimize the number of `VectorField` instantiations in inner loops.
+## 2024-11-14 - [Optimize HVAC Power Demand Loop]
+**Learning:** Found that `hvac_power_demand` in `src/sim/engine.rs` was iterating over `demand_vec` twice: once to calculate the power demand and push to the vector, and a second time to multiply by `hvac_enabled`. It was also performing calculations even when the HVAC system was disabled.
+**Action:** Merged the loops to apply the `hvac_enabled` multiplier during the initial calculation. Added a fast-path to immediately push 0.0 and `continue` if the HVAC system is disabled for the current zone, avoiding unnecessary floating point divisions and clamp operations.

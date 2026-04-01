@@ -3025,7 +3025,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
-    fn hvac_power_demand(&self, hour: usize, t_i_free: &T, sensitivity: &T) -> T {
+    fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
         // Use direct setpoints for HVAC control (updated by validation loop each hour)
         // This ensures per-hour setpoint changes from validation loop are respected
         let heating_setpoint = self.heating_setpoint;
@@ -3035,40 +3035,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_vec = t_i_free.as_ref();
         let sens_vec = sensitivity.as_ref();
 
+        let enabled_vec = self.hvac_enabled.as_ref();
+
         // Compute HVAC demand per zone
         let mut demand_vec = Vec::with_capacity(self.num_zones);
         for i in 0..self.num_zones {
+            let enabled = enabled_vec[i];
+
+            // Fast path: if HVAC is disabled, zero power
+            if enabled == 0.0 {
+                demand_vec.push(0.0);
+                continue;
+            }
+
             let t = t_vec[i];
 
             // Determine HVAC mode based on time-varying setpoints
             let power = if t < heating_setpoint {
                 // Heating mode
                 // Use the full HVAC capacity for heating (no artificial limit)
-                ((heating_setpoint - t) / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
+                ((heating_setpoint - t) / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity) * enabled
             } else if t >= cooling_setpoint {
                 // Cooling mode (provide cooling when at or above setpoint)
-                ((cooling_setpoint - t) / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
+                ((cooling_setpoint - t) / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0) * enabled
             } else {
                 // Off/deadband
                 0.0
             };
             demand_vec.push(power);
-        }
-
-        // Convert back to T and apply per-zone HVAC enable flag
-        // Multiply in place to avoid an extra VectorField allocation
-        let enabled_vec = self.hvac_enabled.as_ref();
-        for (power, &enabled) in demand_vec.iter_mut().zip(enabled_vec.iter()) {
-            *power *= enabled;
-        }
-
-        // Debug: Print HVAC demand for Case 600
-        if self.case_id == "600" && hour == 12 {
-            let temp_diff = cooling_setpoint - t_vec[0];
-            let raw_power = temp_diff / sens_vec[0];
-            let clamped_power = raw_power.clamp(-self.hvac_cooling_capacity, 0.0);
-            println!("DEBUG HVAC Case 600 hour {}: t={:.2}°C, cooling_sp={:.1}°C, sens={:.6} K/W, cap={:.2}W, diff={:.2}K, raw={:.2}W, clamped={:.2}W, enabled={}, final={:.2}W",
-                hour, t_vec[0], cooling_setpoint, sens_vec[0], self.hvac_cooling_capacity, temp_diff, raw_power, clamped_power, enabled_vec[0], demand_vec[0]);
         }
 
         T::from(VectorField::new(demand_vec))
