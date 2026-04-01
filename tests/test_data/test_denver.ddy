@@ -1,0 +1,26 @@
+! Denver-Stapleton Intl_CO_USA
+LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005
+SizingPeriod:DesignDay,
+  Denver-Stapleton Intl Ann Htg 99.6% Condns DB,
+  12,      !- Month
+  21,      !- Day of Month
+  WinterDesignDay,
+  -18.6,   !- Maximum Dry-Bulb Temperature {C}
+  0.0,     !- Daily Dry-Bulb Temperature Range {C}
+  ,        !- Humidity Indicating Conditions
+  Wetbulb, !- Humidity Indicating Condition Type
+  -18.6,   !- Wetbulb at Max Dry-Bulb {C}
+  0.004,   !- Humidity Ratio
+  10000.0; !- Enthalpy {J/kg}
+SizingPeriod:DesignDay,
+  Denver-Stapleton Intl Ann Clg 0.4% Condns DB=>MWB,
+  7,       !- Month
+  21,      !- Day of Month
+  SummerDesignDay,
+  34.4,    !- Maximum Dry-Bulb Temperature {C}
+  12.6,    !- Daily Dry-Bulb Temperature Range {C}
+  ,        !- Humidity Indicating Conditions
+  Wetbulb, !- Humidity Indicating Condition Type
+  15.6,    !- Wetbulb at Max Dry-Bulb {C}
+  0.008,   !- Humidity Ratio
+  50000.0; !- Enthalpy {J/kg}

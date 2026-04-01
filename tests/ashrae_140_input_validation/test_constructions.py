@@ -41,8 +41,6 @@ class TestASHRAE140Constructions:
         """Verify wall U-value is 0.51 W/m²K."""
         # ASHRAE 140 Case 900 high-mass wall U-value: 0.51 W/m²K
         # This includes interior and exterior film coefficients
-        expected_u_value = 0.51
-        tolerance = 0.05  # ±5% tolerance
 
         result = self._run_rust_test("test_case_900_wall_u_value")
         assert (
@@ -54,8 +52,6 @@ class TestASHRAE140Constructions:
         # High-mass wall: 100mm concrete block
         # Heat capacity = thickness × density × specific_heat
         # = 0.1 m × 800 kg/m³ × 1000 J/kg-K = 80 kJ/m²K
-        expected_heat_capacity = 80000  # J/m²K
-        tolerance = 0.1  # ±10% tolerance
 
         result = self._run_rust_test("test_case_900_wall_heat_capacity")
         assert (
@@ -65,8 +61,6 @@ class TestASHRAE140Constructions:
     def test_case_900_roof_u_value(self):
         """Verify roof U-value is 0.32 W/m²K."""
         # ASHRAE 140 Case 900 roof U-value: 0.32 W/m²K
-        expected_u_value = 0.32
-        tolerance = 0.05
 
         result = self._run_rust_test("test_case_900_roof_u_value")
         assert (
@@ -76,8 +70,6 @@ class TestASHRAE140Constructions:
     def test_case_900_floor_u_value(self):
         """Verify floor U-value is 0.38 W/m²K."""
         # ASHRAE 140 Case 900 floor U-value: 0.38 W/m²K
-        expected_u_value = 0.38
-        tolerance = 0.05
 
         result = self._run_rust_test("test_case_900_floor_u_value")
         assert (
@@ -87,8 +79,6 @@ class TestASHRAE140Constructions:
     def test_case_900_window_u_value(self):
         """Verify window U-value is 3.0 W/m²K."""
         # ASHRAE 140 specifies double clear glass with U-value = 3.0 W/m²K
-        expected_u_value = 3.0
-        tolerance = 0.05
 
         result = self._run_rust_test("test_case_900_window_u_value")
         assert (
@@ -98,8 +88,6 @@ class TestASHRAE140Constructions:
     def test_case_900_window_shgc(self):
         """Verify window SHGC is 0.789."""
         # Solar Heat Gain Coefficient for double clear glass: 0.789
-        expected_shgc = 0.789
-        tolerance = 0.01
 
         result = self._run_rust_test("test_case_900_window_shgc")
         assert (
@@ -109,8 +97,6 @@ class TestASHRAE140Constructions:
     def test_case_900_window_tvis(self):
         """Verify window visible transmittance is 0.86156."""
         # Visible transmittance for double clear glass: 0.86156
-        expected_tvis = 0.86156
-        tolerance = 0.01
 
         result = self._run_rust_test("test_case_900_window_tvis")
         assert (

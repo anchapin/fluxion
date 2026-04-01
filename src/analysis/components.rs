@@ -85,7 +85,6 @@ pub fn check_conservation(breakdown: &EnergyBreakdown, tolerance_pct: f64) -> Co
     let tolerance = if total_input > 0.0 {
         total_input * (tolerance_pct / 100.0)
     } else {
-        // If no input, tolerance absolute (e.g., 0.01 MWh)
         0.01
     };
     let is_valid = net.abs() <= tolerance;
@@ -113,7 +112,6 @@ mod tests {
         };
         let entries = aggregate_from_validator(vec![("600".to_string(), breakdown)].into_iter());
         assert_eq!(entries.len(), 6);
-        // Find heating entry
         let heating_entry = entries
             .iter()
             .find(|e| e.component == "heating" && e.case_id == "600")
@@ -133,7 +131,6 @@ mod tests {
             net_balance_mwh: 0.0,
         };
         let result = check_conservation(&balanced, 1.0);
-        // net = 4+1-3-2 = 0, should be valid
         assert!(result.is_valid);
     }
 
@@ -149,7 +146,121 @@ mod tests {
             net_balance_mwh: 0.0,
         };
         let result = check_conservation(&unbalanced, 1.0);
-        // net = -0.5, tolerance ~0.05, so invalid
         assert!(!result.is_valid);
+    }
+
+    #[test]
+    fn test_conservation_zero_input() {
+        let breakdown = EnergyBreakdown {
+            solar_gains_mwh: 0.0,
+            internal_gains_mwh: 0.0,
+            heating_mwh: 0.0,
+            cooling_mwh: 0.0,
+            envelope_conduction_mwh: 0.0,
+            infiltration_mwh: 0.0,
+            net_balance_mwh: 0.0,
+        };
+        let result = check_conservation(&breakdown, 1.0);
+        assert!(result.is_valid);
+        assert!((result.net_balance_mwh - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_aggregate_multiple_cases() {
+        let b1 = EnergyBreakdown {
+            envelope_conduction_mwh: 1.0,
+            infiltration_mwh: 0.5,
+            solar_gains_mwh: 2.0,
+            internal_gains_mwh: 1.0,
+            heating_mwh: 3.0,
+            cooling_mwh: 1.5,
+            net_balance_mwh: 0.0,
+        };
+        let b2 = EnergyBreakdown {
+            envelope_conduction_mwh: 2.0,
+            infiltration_mwh: 1.0,
+            solar_gains_mwh: 3.0,
+            internal_gains_mwh: 1.5,
+            heating_mwh: 4.0,
+            cooling_mwh: 2.5,
+            net_balance_mwh: 0.0,
+        };
+        let entries = aggregate_from_validator(
+            vec![("600".to_string(), b1), ("900".to_string(), b2)].into_iter(),
+        );
+        assert_eq!(entries.len(), 12);
+        let cooling_900 = entries
+            .iter()
+            .find(|e| e.component == "cooling" && e.case_id == "900")
+            .unwrap();
+        assert_eq!(cooling_900.energy_mwh, 2.5);
+    }
+
+    #[test]
+    fn test_component_entry_clone() {
+        let entry = ComponentEntry {
+            case_id: "600".to_string(),
+            component: "heating".to_string(),
+            energy_mwh: 5.0,
+        };
+        let cloned = entry.clone();
+        assert_eq!(cloned.case_id, entry.case_id);
+        assert_eq!(cloned.component, entry.component);
+        assert_eq!(cloned.energy_mwh, entry.energy_mwh);
+    }
+
+    #[test]
+    fn test_conservation_result_fields() {
+        let breakdown = EnergyBreakdown {
+            solar_gains_mwh: 10.0,
+            internal_gains_mwh: 5.0,
+            heating_mwh: 8.0,
+            cooling_mwh: 7.0,
+            envelope_conduction_mwh: 0.0,
+            infiltration_mwh: 0.0,
+            net_balance_mwh: 0.0,
+        };
+        let result = check_conservation(&breakdown, 5.0);
+        assert!((result.net_balance_mwh - 0.0).abs() < 1e-6);
+        assert!((result.tolerance_pct - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_export_csv_to_temp_file() {
+        let entries = vec![
+            ComponentEntry {
+                case_id: "600".to_string(),
+                component: "heating".to_string(),
+                energy_mwh: 5.0,
+            },
+            ComponentEntry {
+                case_id: "600".to_string(),
+                component: "cooling".to_string(),
+                energy_mwh: 3.0,
+            },
+        ];
+
+        let temp_path = std::env::temp_dir().join("fluxion_test_components.csv");
+        let result = export_component_csv(&entries, &temp_path);
+        assert!(result.is_ok());
+
+        let content = std::fs::read_to_string(&temp_path).unwrap();
+        assert!(content.contains("Case,Component,Energy_MWh"));
+        assert!(content.contains("600,heating,5.0000"));
+        assert!(content.contains("600,cooling,3.0000"));
+
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn test_conservation_result_clone() {
+        let result = ConservationResult {
+            net_balance_mwh: 0.5,
+            tolerance_pct: 1.0,
+            is_valid: true,
+        };
+        let cloned = result.clone();
+        assert_eq!(cloned.net_balance_mwh, result.net_balance_mwh);
+        assert!(cloned.is_valid);
     }
 }

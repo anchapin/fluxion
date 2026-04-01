@@ -17,7 +17,6 @@ Usage:
 
 import argparse
 import json
-import os
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -291,7 +290,7 @@ class ASHRAE140TestHarness:
         # Overall summary
         total_tests = sum(r.total_tests for r in self.test_results)
         total_passed = sum(r.passed for r in self.test_results)
-        total_failed = sum(r.failed for r in self.test_results)
+        sum(r.failed for r in self.test_results)
         overall_rate = (total_passed / total_tests * 100) if total_tests > 0 else 0
 
         print("\n" + "-" * 60)

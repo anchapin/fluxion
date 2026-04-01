@@ -13,10 +13,8 @@ Generates:
 """
 
 import csv
-import json
 import math
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
 import matplotlib.pyplot as plt

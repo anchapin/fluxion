@@ -39,8 +39,6 @@ class TestASHRAE140Infiltration:
     def test_case_900_ach(self):
         """Verify infiltration is 0.5 ACH."""
         # ASHRAE 140 Case 900 specifies 0.5 air changes per hour
-        expected_ach = 0.5
-        tolerance = 0.01  # ±1% tolerance
 
         result = self._run_rust_test("test_case_900_infiltration_ach")
         assert (
@@ -53,8 +51,7 @@ class TestASHRAE140Infiltration:
         # = 0.5 ACH × 129.6 m³ / 3600 = 0.018 m³/s
         zone_volume = 129.6  # m³
         ach = 0.5
-        expected_flow_m3s = ach * zone_volume / 3600
-        tolerance = 0.01
+        ach * zone_volume / 3600
 
         result = self._run_rust_test("test_case_900_infiltration_flow")
         assert (

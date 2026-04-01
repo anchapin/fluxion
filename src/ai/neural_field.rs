@@ -150,4 +150,232 @@ mod tests {
         let expected = 2.0 / PI;
         assert!((integral - expected).abs() < 1e-6);
     }
+
+    #[test]
+    fn test_neural_field_not_square() {
+        let weights = vec![1.0, 2.0, 3.0];
+        let result = NeuralScalarField::new(weights);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("perfect square"));
+    }
+
+    #[test]
+    fn test_neural_field_empty() {
+        let weights: Vec<f64> = vec![];
+        let result = NeuralScalarField::new(weights);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("empty"));
+    }
+
+    #[test]
+    fn test_neural_field_invalid_order() {
+        let weights = vec![1.0; 4];
+        let result = NeuralScalarField::new(weights);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Must be odd"));
+    }
+
+    #[test]
+    fn test_neural_field_order_2() {
+        let weights = vec![1.0; 25];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let val = field.at(0.0, 0.0);
+        assert!(val.is_finite());
+        let integral = field.integrate(0.0, 1.0, 0.0, 1.0);
+        assert!(integral.is_finite());
+    }
+
+    #[test]
+    fn test_neural_field_evaluate_basis() {
+        let basis = NeuralScalarField::<f64>::evaluate_basis_1d(0.0, 1);
+        assert_eq!(basis.len(), 3);
+        assert!((basis[0] - 1.0).abs() < 1e-10);
+        assert!((basis[1] - 1.0).abs() < 1e-10);
+        assert!((basis[2] - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_integrate_basis() {
+        let int = NeuralScalarField::<f64>::integrate_basis_1d(0.0, 1.0, 1);
+        assert_eq!(int.len(), 3);
+        assert!((int[0] - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_evaluate_basis_order_0() {
+        let basis = NeuralScalarField::<f64>::evaluate_basis_1d(0.5, 0);
+        assert_eq!(basis.len(), 1);
+        assert!((basis[0] - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_integrate_basis_order_0() {
+        let int = NeuralScalarField::<f64>::integrate_basis_1d(0.0, 2.0, 0);
+        assert_eq!(int.len(), 1);
+        assert!((int[0] - 2.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_integrate_subrange() {
+        let weights = vec![5.0];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let integral = field.integrate(0.25, 0.75, 0.25, 0.75);
+        assert!((integral - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_neural_field_at_various_points() {
+        let weights = vec![3.0];
+        let field = NeuralScalarField::new(weights).unwrap();
+        assert_eq!(field.at(0.0, 0.0), 3.0);
+        assert_eq!(field.at(1.0, 1.0), 3.0);
+        assert_eq!(field.at(0.33, 0.67), 3.0);
+    }
+
+    #[test]
+    fn test_neural_field_order_1_at_origin() {
+        let weights = vec![1.0; 9];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let val = field.at(0.0, 0.0);
+        assert!(val.is_finite());
+    }
+
+    #[test]
+    fn test_neural_field_clone() {
+        let weights = vec![5.0];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let cloned = field.clone();
+        assert_eq!(field.at(0.0, 0.0), cloned.at(0.0, 0.0));
+        assert_eq!(field.order, cloned.order);
+    }
+
+    #[test]
+    fn test_neural_field_debug_format() {
+        let weights = vec![5.0];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let debug_str = format!("{:?}", field);
+        assert!(debug_str.contains("NeuralScalarField"));
+    }
+
+    #[test]
+    fn test_neural_field_evaluate_basis_at_half() {
+        let basis = NeuralScalarField::<f64>::evaluate_basis_1d(0.5, 2);
+        assert_eq!(basis.len(), 5);
+        // cos(pi * 0.5) = 0, sin(pi * 0.5) = 1
+        assert!((basis[1] - 0.0).abs() < 1e-10);
+        assert!((basis[2] - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_integrate_basis_symmetric() {
+        let int = NeuralScalarField::<f64>::integrate_basis_1d(-1.0, 1.0, 1);
+        assert_eq!(int.len(), 3);
+        // Integral of cos(k*pi*x) from -1 to 1 for k=1 should be 0
+        assert!((int[1] - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_order_2_at_multiple_points() {
+        let weights = vec![2.0; 25];
+        let field = NeuralScalarField::new(weights).unwrap();
+
+        for u in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            for v in [0.0, 0.5, 1.0] {
+                let val = field.at(u, v);
+                assert!(val.is_finite(), "Value at ({}, {}) should be finite", u, v);
+            }
+        }
+    }
+
+    #[test]
+    fn test_neural_field_integrate_full_domain() {
+        let weights = vec![1.0; 9];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let integral = field.integrate(0.0, 1.0, 0.0, 1.0);
+        assert!(integral.is_finite());
+        // For order=1 with all weights=1, the integral should be positive
+        assert!(integral > 0.0);
+    }
+
+    #[test]
+    fn test_neural_field_order_2_integrate_non_unit_domain() {
+        let weights = vec![1.0; 25];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let integral = field.integrate(-1.0, 1.0, -1.0, 1.0);
+        assert!(integral.is_finite());
+    }
+
+    #[test]
+    fn test_neural_field_order_1_integrate_subrange() {
+        let weights = vec![2.0; 9];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let integral = field.integrate(0.0, 0.5, 0.0, 0.5);
+        assert!(integral.is_finite());
+        assert!(integral > 0.0);
+    }
+
+    #[test]
+    fn test_neural_field_evaluate_basis_at_quarter() {
+        let basis = NeuralScalarField::<f64>::evaluate_basis_1d(0.25, 2);
+        assert_eq!(basis.len(), 5);
+        assert!((basis[0] - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_integrate_basis_at_half_domain() {
+        let int = NeuralScalarField::<f64>::integrate_basis_1d(0.0, 0.5, 1);
+        assert_eq!(int.len(), 3);
+        assert!((int[0] - 0.5).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_order_2_at_corner_points() {
+        let weights = vec![1.0; 25];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let val_00 = field.at(0.0, 0.0);
+        let val_11 = field.at(1.0, 1.0);
+        assert!(val_00.is_finite());
+        assert!(val_11.is_finite());
+    }
+
+    #[test]
+    fn test_neural_field_new_error_not_square() {
+        let weights = vec![1.0; 5];
+        let result = NeuralScalarField::new(weights);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_neural_field_new_error_even_side() {
+        let weights = vec![1.0; 16];
+        let result = NeuralScalarField::new(weights);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Must be odd"));
+    }
+
+    #[test]
+    fn test_neural_field_evaluate_basis_1d_order_3() {
+        let basis = NeuralScalarField::<f64>::evaluate_basis_1d(0.0, 3);
+        assert_eq!(basis.len(), 7);
+        assert!((basis[0] - 1.0).abs() < 1e-10);
+        assert!((basis[1] - 1.0).abs() < 1e-10);
+        assert!((basis[2] - 0.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_integrate_basis_1d_order_2() {
+        let int = NeuralScalarField::<f64>::integrate_basis_1d(0.0, 1.0, 2);
+        assert_eq!(int.len(), 5);
+        assert!((int[0] - 1.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_neural_field_order_3_evaluation() {
+        let weights = vec![1.0; 49];
+        let field = NeuralScalarField::new(weights).unwrap();
+        let val = field.at(0.5, 0.5);
+        assert!(val.is_finite());
+        let integral = field.integrate(0.0, 1.0, 0.0, 1.0);
+        assert!(integral.is_finite());
+    }
 }

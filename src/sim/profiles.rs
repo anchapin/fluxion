@@ -332,4 +332,155 @@ mod tests {
         let power_day = computers.power_at_hour(10); // Hour 10 (10am) during work hours
         assert!(power_day > 0.0); // Should be on during work hours
     }
+
+    #[test]
+    fn test_profile_bundle_debug() {
+        let bundle = ProfileBundle {
+            lighting: LightingSchedule::new(10.0, 100.0),
+            equipment: Vec::new(),
+            occupancy: OccupancyProfile::new("Test".to_string(), BuildingType::Office, 100.0),
+        };
+
+        let debug_str = format!("{:?}", bundle);
+        assert!(debug_str.contains("ProfileBundle"));
+        assert!(debug_str.contains("equipment_count"));
+    }
+
+    #[test]
+    fn test_profile_bundle_clone_empty_equipment() {
+        let bundle = ProfileBundle {
+            lighting: LightingSchedule::new(10.0, 100.0),
+            equipment: Vec::new(),
+            occupancy: OccupancyProfile::new("Test".to_string(), BuildingType::Office, 100.0),
+        };
+
+        let cloned = bundle.clone();
+        assert_eq!(cloned.equipment.len(), 0);
+        assert_eq!(cloned.lighting.power_density, bundle.lighting.power_density);
+    }
+
+    #[test]
+    fn test_profile_bundle_clone_with_equipment() {
+        let mut equipment: Vec<Box<dyn Equipment + Send + Sync>> = Vec::new();
+        let mut computers = ComputerEquipment::new("test-computers".to_string(), 100.0, 5);
+        computers.radiative_fraction = 0.5;
+        computers.convective_fraction = 0.5;
+        equipment.push(Box::new(computers));
+
+        let bundle = ProfileBundle {
+            lighting: LightingSchedule::new(10.0, 100.0),
+            equipment,
+            occupancy: OccupancyProfile::new("Test".to_string(), BuildingType::Office, 100.0),
+        };
+
+        let cloned = bundle.clone();
+        assert_eq!(cloned.equipment.len(), 1);
+        assert_eq!(cloned.equipment[0].id(), "test-computers");
+    }
+
+    #[test]
+    fn test_profile_bundle_clone_with_server_rack() {
+        let mut equipment: Vec<Box<dyn Equipment + Send + Sync>> = Vec::new();
+        let mut servers = ServerRack::new("test-servers".to_string(), 500.0, 2);
+        servers.radiative_fraction = 0.8;
+        servers.convective_fraction = 0.2;
+        equipment.push(Box::new(servers));
+
+        let bundle = ProfileBundle {
+            lighting: LightingSchedule::new(10.0, 100.0),
+            equipment,
+            occupancy: OccupancyProfile::new("Test".to_string(), BuildingType::Office, 100.0),
+        };
+
+        let cloned = bundle.clone();
+        assert_eq!(cloned.equipment.len(), 1);
+        assert_eq!(cloned.equipment[0].id(), "test-servers");
+    }
+
+    #[test]
+    fn test_profile_bundle_clone_with_generic_equipment() {
+        let mut equipment: Vec<Box<dyn Equipment + Send + Sync>> = Vec::new();
+        let mut generic = GenericEquipment::new("test-generic".to_string(), 200.0, 1);
+        generic.radiative_fraction = 0.6;
+        generic.convective_fraction = 0.4;
+        equipment.push(Box::new(generic));
+
+        let bundle = ProfileBundle {
+            lighting: LightingSchedule::new(10.0, 100.0),
+            equipment,
+            occupancy: OccupancyProfile::new("Test".to_string(), BuildingType::Office, 100.0),
+        };
+
+        let cloned = bundle.clone();
+        assert_eq!(cloned.equipment.len(), 1);
+        assert_eq!(cloned.equipment[0].id(), "test-generic");
+    }
+
+    #[test]
+    fn test_building_profiles_struct() {
+        let mut profiles = HashMap::new();
+        profiles.insert(
+            "office".to_string(),
+            BuildingProfileData {
+                lighting: LightingData {
+                    power_density_w_m2: 10.0,
+                    convective_fraction: 0.2,
+                    radiative_fraction: 0.8,
+                },
+                equipment: vec![EquipmentData {
+                    equipment_type: "ComputerEquipment".to_string(),
+                    id: "test".to_string(),
+                    rated_power_w: 100.0,
+                    count: 5,
+                    radiative_fraction: 0.5,
+                    convective_fraction: 0.5,
+                    mass_coupling_factor: 0.3,
+                    schedule_type: "daily".to_string(),
+                }],
+                occupancy: OccupancyData {
+                    max_occupancy: 100.0,
+                },
+            },
+        );
+
+        let bp = BuildingProfiles { profiles };
+        assert!(bp.profiles.contains_key("office"));
+    }
+
+    #[test]
+    fn test_lighting_data_struct() {
+        let ld = LightingData {
+            power_density_w_m2: 15.0,
+            convective_fraction: 0.3,
+            radiative_fraction: 0.7,
+        };
+
+        assert!((ld.power_density_w_m2 - 15.0).abs() < 1e-6);
+        assert!((ld.convective_fraction + ld.radiative_fraction - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_equipment_data_struct() {
+        let ed = EquipmentData {
+            equipment_type: "GenericEquipment".to_string(),
+            id: "test-eq".to_string(),
+            rated_power_w: 250.0,
+            count: 3,
+            radiative_fraction: 0.4,
+            convective_fraction: 0.6,
+            mass_coupling_factor: 0.2,
+            schedule_type: "constant".to_string(),
+        };
+
+        assert_eq!(ed.equipment_type, "GenericEquipment");
+        assert_eq!(ed.count, 3);
+    }
+
+    #[test]
+    fn test_occupancy_data_struct() {
+        let od = OccupancyData {
+            max_occupancy: 150.0,
+        };
+        assert!((od.max_occupancy - 150.0).abs() < 1e-6);
+    }
 }

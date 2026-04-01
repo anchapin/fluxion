@@ -30,8 +30,6 @@ import numpy as np
 from .statistical_metrics import (
     MetricsResult,
     calculate_all_metrics,
-    check_ashrae_guideline_14,
-    time_series_comparison,
 )
 
 
@@ -240,10 +238,8 @@ class ComponentComparator:
         """
         try:
             import matplotlib
-            import pandas as pd
 
             matplotlib.use("Agg")  # Non-interactive backend
-            import matplotlib.pyplot as plt
         except ImportError as e:
             raise ImportError(f"Required library not found: {e.name}")
 
@@ -256,7 +252,7 @@ class ComponentComparator:
 
         plot_files = []
         for i, comp in enumerate(self.comparisons[:10]):  # Limit to first 10
-            plot_path = self._generate_component_plots(comp, plots_dir, i)
+            plot_path = self._generate_component_plots(comp, plots_dir, i, output_path)
             if plot_path:
                 plot_files.append(plot_path)
 
@@ -266,10 +262,8 @@ class ComponentComparator:
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html)
 
-        print(f"Generated HTML report: {output_path}")
-
     def _generate_component_plots(
-        self, comp: ComponentComparison, plots_dir: Path, idx: int
+        self, comp: ComponentComparison, plots_dir: Path, idx: int, output_path: Path
     ) -> Optional[Path]:
         """Generate plots for a single component.
 
@@ -277,6 +271,7 @@ class ComponentComparator:
             comp: Component comparison
             plots_dir: Directory for plot files
             idx: Index for filename
+            output_path: Root output path for relative path calculation
 
         Returns:
             Path to generated plot file

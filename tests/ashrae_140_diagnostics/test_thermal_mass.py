@@ -9,9 +9,7 @@ These tests validate thermal mass effects on building thermal response:
 """
 
 import math
-import subprocess
-from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict
 
 import pytest
 

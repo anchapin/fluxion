@@ -5,7 +5,6 @@ Debug Perez sky model calculation to find the bug.
 
 import csv
 import math
-from pathlib import Path
 
 
 def perez_diffuse_tilted(
@@ -174,7 +173,7 @@ for i, pt in enumerate(sample_points):
         solar_azimuth_deg=solar_azimuth,
     )
 
-    print(f"\nPerez calculation:")
+    print("\nPerez calculation:")
     print(f"  Sky clearness (epsilon): {debug['epsilon']:.2f} (bin {debug['ebin']})")
     print(f"  Delta: {debug['delta']:.3f}")
     print(f"  F1: {debug['f1']:.3f}")

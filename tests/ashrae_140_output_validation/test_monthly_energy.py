@@ -9,7 +9,7 @@ These tests compare monthly energy profiles between Fluxion and EnergyPlus:
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import List
 
 import numpy as np
 import pytest
@@ -275,7 +275,7 @@ class TestASHRAE140MonthlyEnergy:
         fluxion = self._load_monthly_energy("600")
 
         # Similar tests as Case 900
-        heating_profile = fluxion.heating_profile_normalized()
+        fluxion.heating_profile_normalized()
 
         # Winter heating ratio
         winter_heating = sum([fluxion.heating[i] for i in [11, 0, 1]])

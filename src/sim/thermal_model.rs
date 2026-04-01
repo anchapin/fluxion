@@ -644,4 +644,274 @@ mod tests {
         assert_eq!(model.num_zones(), 10);
         assert_eq!(model.mode(), ThermalModelMode::Hybrid);
     }
+
+    #[test]
+    fn test_thermal_model_mode_default() {
+        let mode = ThermalModelMode::default();
+        assert_eq!(mode, ThermalModelMode::Physics);
+    }
+
+    #[test]
+    fn test_physics_model_set_mode() {
+        let mut model = PhysicsThermalModel::new(1);
+        assert_eq!(model.mode(), ThermalModelMode::Physics);
+        model.set_mode(ThermalModelMode::Hybrid);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+    }
+
+    #[test]
+    fn test_surrogate_model_set_mode() {
+        let mut model = SurrogateThermalModel::new(1);
+        assert_eq!(model.mode(), ThermalModelMode::Surrogate);
+        model.set_mode(ThermalModelMode::Physics);
+        assert_eq!(model.mode(), ThermalModelMode::Physics);
+    }
+
+    #[test]
+    fn test_unified_model_set_mode() {
+        let mut model = UnifiedThermalModel::new(1);
+        assert_eq!(model.mode(), ThermalModelMode::Physics);
+        assert!(!model.is_using_surrogates());
+        model.set_mode(ThermalModelMode::Surrogate);
+        assert_eq!(model.mode(), ThermalModelMode::Surrogate);
+        assert!(model.is_using_surrogates());
+        model.set_mode(ThermalModelMode::Hybrid);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+    }
+
+    #[test]
+    fn test_unified_mode_switching_methods() {
+        let mut model = UnifiedThermalModel::new(1);
+        model.use_physics();
+        assert_eq!(model.mode(), ThermalModelMode::Physics);
+        assert!(!model.is_using_surrogates());
+        model.use_hybrid();
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+        model.use_surrogates();
+        assert_eq!(model.mode(), ThermalModelMode::Surrogate);
+        assert!(model.is_using_surrogates());
+    }
+
+    #[test]
+    fn test_physics_model_set_temperatures() {
+        let mut model = PhysicsThermalModel::new(3);
+        model.set_temperatures(&[20.0, 22.0, 24.0]);
+        let temps = model.get_temperatures();
+        assert_eq!(temps, vec![20.0, 22.0, 24.0]);
+    }
+
+    #[test]
+    fn test_surrogate_model_set_temperatures() {
+        let mut model = SurrogateThermalModel::new(2);
+        model.set_temperatures(&[18.0, 25.0]);
+        let temps = model.get_temperatures();
+        assert_eq!(temps, vec![18.0, 25.0]);
+    }
+
+    #[test]
+    fn test_unified_model_set_temperatures() {
+        let mut model = UnifiedThermalModel::new(4);
+        model.set_temperatures(&[15.0, 18.0, 21.0, 24.0]);
+        let temps = model.get_temperatures();
+        assert_eq!(temps, vec![15.0, 18.0, 21.0, 24.0]);
+    }
+
+    #[test]
+    fn test_physics_model_hvac_power_demand_heating() {
+        let mut model = PhysicsThermalModel::new(1);
+        model.set_temperatures(&[15.0]);
+        let power = model.hvac_power_demand(0, 10.0);
+        assert!(power > 0.0, "Should return positive heating power");
+    }
+
+    #[test]
+    fn test_physics_model_hvac_power_demand_cooling() {
+        let mut model = PhysicsThermalModel::new(1);
+        model.set_temperatures(&[30.0]);
+        let power = model.hvac_power_demand(0, 35.0);
+        assert!(power < 0.0, "Should return negative cooling power");
+    }
+
+    #[test]
+    fn test_physics_model_hvac_power_demand_deadband() {
+        let mut model = PhysicsThermalModel::new(1);
+        model.set_temperatures(&[22.0]); // Between heating (20°C) and cooling (24°C)
+        let power = model.hvac_power_demand(0, 22.0);
+        assert_eq!(power, 0.0, "Should be zero in deadband");
+    }
+
+    #[test]
+    fn test_surrogate_model_hvac_power_demand_heating() {
+        let mut model = SurrogateThermalModel::new(1);
+        model.set_temperatures(&[15.0]);
+        let power = model.hvac_power_demand(0, 10.0);
+        assert!(power > 0.0);
+    }
+
+    #[test]
+    fn test_surrogate_model_hvac_power_demand_cooling() {
+        let mut model = SurrogateThermalModel::new(1);
+        model.set_temperatures(&[30.0]);
+        let power = model.hvac_power_demand(0, 35.0);
+        assert!(power < 0.0);
+    }
+
+    #[test]
+    fn test_unified_model_hvac_power_demand() {
+        let mut model = UnifiedThermalModel::new(1);
+        model.set_temperatures(&[15.0]);
+        let power = model.hvac_power_demand(0, 10.0);
+        assert!(power > 0.0);
+    }
+
+    #[test]
+    fn test_physics_model_apply_parameters() {
+        let mut model = PhysicsThermalModel::new(1);
+        model.apply_parameters(&[1.5, 22.0, 26.0]);
+        assert_eq!(model.heating_setpoint(), 22.0);
+        assert_eq!(model.cooling_setpoint(), 26.0);
+    }
+
+    #[test]
+    fn test_surrogate_model_apply_parameters() {
+        let mut model = SurrogateThermalModel::new(1);
+        model.apply_parameters(&[2.0, 18.0, 28.0]);
+        assert_eq!(model.heating_setpoint(), 18.0);
+        assert_eq!(model.cooling_setpoint(), 28.0);
+    }
+
+    #[test]
+    fn test_unified_model_apply_parameters() {
+        let mut model = UnifiedThermalModel::new(1);
+        model.apply_parameters(&[1.0, 19.0, 25.0]);
+        assert_eq!(model.heating_setpoint(), 19.0);
+        assert_eq!(model.cooling_setpoint(), 25.0);
+    }
+
+    #[test]
+    fn test_physics_model_is_valid() {
+        let model = PhysicsThermalModel::new(1);
+        assert!(model.is_valid());
+    }
+
+    #[test]
+    fn test_surrogate_model_is_valid() {
+        let model = SurrogateThermalModel::new(1);
+        assert!(model.is_valid());
+    }
+
+    #[test]
+    fn test_unified_model_is_valid() {
+        let model = UnifiedThermalModel::new(1);
+        assert!(model.is_valid());
+    }
+
+    #[test]
+    fn test_surrogate_with_fallback() {
+        let model = SurrogateThermalModel::new(1).with_fallback(false);
+        assert_eq!(model.num_zones(), 1);
+        assert_eq!(model.mode(), ThermalModelMode::Surrogate);
+    }
+
+    #[test]
+    fn test_builder_hybrid_mode() {
+        let model = ThermalModelBuilder::new()
+            .num_zones(2)
+            .mode(ThermalModelMode::Hybrid)
+            .build();
+        assert_eq!(model.num_zones(), 2);
+        // Hybrid builds UnifiedThermalModel which defaults to Physics mode
+        assert_eq!(model.mode(), ThermalModelMode::Physics);
+    }
+
+    #[test]
+    fn test_builder_hybrid_mode_unified() {
+        let model = ThermalModelBuilder::new()
+            .num_zones(2)
+            .mode(ThermalModelMode::Hybrid)
+            .build_unified();
+        assert_eq!(model.num_zones(), 2);
+        assert_eq!(model.mode(), ThermalModelMode::Hybrid);
+    }
+
+    #[test]
+    fn test_builder_fallback_setting() {
+        let model = ThermalModelBuilder::new()
+            .num_zones(1)
+            .use_surrogates(true)
+            .fallback_to_physics(false)
+            .build();
+        assert_eq!(model.mode(), ThermalModelMode::Surrogate);
+    }
+
+    #[test]
+    fn test_builder_mode_sets_use_surrogates() {
+        let builder = ThermalModelBuilder::new().mode(ThermalModelMode::Surrogate);
+        assert_eq!(builder.use_surrogates, true);
+        let builder = ThermalModelBuilder::new().mode(ThermalModelMode::Physics);
+        assert_eq!(builder.use_surrogates, false);
+    }
+
+    #[test]
+    fn test_builder_use_surrogates_sets_mode() {
+        let builder = ThermalModelBuilder::new().use_surrogates(true);
+        assert_eq!(builder.mode, ThermalModelMode::Surrogate);
+        let builder = ThermalModelBuilder::new().use_surrogates(false);
+        assert_eq!(builder.mode, ThermalModelMode::Physics);
+    }
+
+    #[test]
+    fn test_builder_default_impl() {
+        let builder = ThermalModelBuilder::default();
+        assert_eq!(builder.num_zones, 1);
+        assert_eq!(builder.mode, ThermalModelMode::Physics);
+        assert!(!builder.use_surrogates);
+        assert!(builder.fallback_to_physics);
+        assert!(builder.spec.is_none());
+    }
+
+    #[test]
+    fn test_physics_model_inner_access() {
+        let mut model = PhysicsThermalModel::new(1);
+        let inner_ref = model.inner();
+        assert_eq!(inner_ref.num_zones, 1);
+        let inner_mut = model.inner_mut();
+        inner_mut.num_zones = 2;
+        assert_eq!(model.num_zones(), 2);
+    }
+
+    #[test]
+    fn test_surrogate_model_inner_access() {
+        let mut model = SurrogateThermalModel::new(3);
+        let inner_ref = model.inner();
+        assert_eq!(inner_ref.num_zones, 3);
+        let inner_mut = model.inner_mut();
+        inner_mut.num_zones = 5;
+        assert_eq!(model.num_zones(), 5);
+    }
+
+    #[test]
+    fn test_unified_model_inner_access() {
+        let mut model = UnifiedThermalModel::new(2);
+        let inner_ref = model.inner();
+        assert_eq!(inner_ref.num_zones, 2);
+        let inner_mut = model.inner_mut();
+        inner_mut.num_zones = 4;
+        assert_eq!(model.num_zones(), 4);
+    }
+
+    #[test]
+    fn test_solve_timesteps_uses_mode_flag() {
+        let mut model = PhysicsThermalModel::new(1);
+        model.set_mode(ThermalModelMode::Surrogate);
+        assert_eq!(model.mode(), ThermalModelMode::Surrogate);
+    }
+
+    #[test]
+    fn test_thermal_model_result_type() {
+        let result: ThermalModelResult<i32> = Ok(42);
+        assert_eq!(result.unwrap(), 42);
+        let err: ThermalModelResult<i32> = Err("test error".into());
+        assert!(err.is_err());
+    }
 }

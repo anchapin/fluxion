@@ -8,7 +8,6 @@ for comparison with Fluxion ASHRAE 140 validation results.
 
 import json
 import sqlite3
-import sys
 from pathlib import Path
 
 

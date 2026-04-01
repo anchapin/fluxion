@@ -12,7 +12,6 @@ Key Questions:
 3. Is the SHGC calculation correct at different incidence angles?
 """
 
-import json
 import math
 
 # ASHRAE 140 Case 900/920 specifications
@@ -196,12 +195,12 @@ def compare_cases():
     print(f"Expected Ratio (from cooling ref): ~{expected_ratio:.2f}")
 
     if gain_920 / gain_900 < expected_ratio * 0.8:
-        print(f"\n⚠️  WARNING: E/W solar gain is TOO LOW!")
-        print(f"   This could explain the cooling energy underestimation.")
+        print("\n⚠️  WARNING: E/W solar gain is TOO LOW!")
+        print("   This could explain the cooling energy underestimation.")
     elif gain_920 / gain_900 > expected_ratio * 1.2:
-        print(f"\n⚠️  WARNING: E/W solar gain is TOO HIGH!")
+        print("\n⚠️  WARNING: E/W solar gain is TOO HIGH!")
     else:
-        print(f"\n✓ Solar gain ratio appears reasonable.")
+        print("\n✓ Solar gain ratio appears reasonable.")
 
     print(f"\n{'=' * 70}")
     print("RECOMMENDATION")

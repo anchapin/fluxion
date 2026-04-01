@@ -39,8 +39,6 @@ class TestASHRAE140InternalGains:
     def test_case_900_equipment_power(self):
         """Verify electric equipment is 200W."""
         # ASHRAE 140 Case 900 specifies 200W continuous equipment load
-        expected_power_w = 200.0
-        tolerance = 0.01  # ±1% tolerance
 
         result = self._run_rust_test("test_case_900_equipment_power")
         assert (
@@ -52,9 +50,6 @@ class TestASHRAE140InternalGains:
         # Equipment schedule:
         # - Day (6:00-22:00): 60% of full load
         # - Night (22:00-6:00): 40% of full load
-        expected_day_fraction = 0.6
-        expected_night_fraction = 0.4
-        tolerance = 0.01
 
         result = self._run_rust_test("test_case_900_equipment_schedule")
         assert (
@@ -65,8 +60,7 @@ class TestASHRAE140InternalGains:
         """Verify annual equipment energy calculation."""
         # Annual energy = Power × Hours × Average Schedule Fraction
         # = 200W × 24hr × 365days × 0.5 (avg) = 876 kWh = 0.876 MWh
-        expected_annual_mwh = 0.2 * 24 * 365 * 0.5 / 1000
-        tolerance = 0.05  # ±5% tolerance
+        0.2 * 24 * 365 * 0.5 / 1000
 
         result = self._run_rust_test("test_case_900_equipment_annual_energy")
         assert (

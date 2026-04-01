@@ -285,11 +285,11 @@ def analyze_time_of_day_pattern(data_by_case):
 
             # Expected: Afternoon should be similar or slightly higher due to higher ambient temp
             if avg_afternoon_west / avg_morning_east < 0.8:
-                print(f"  ⚠️  Afternoon West beam is too low!")
+                print("  ⚠️  Afternoon West beam is too low!")
             elif avg_afternoon_west / avg_morning_east > 1.2:
-                print(f"  ⚠️  Afternoon West beam is too high!")
+                print("  ⚠️  Afternoon West beam is too high!")
             else:
-                print(f"  ✓ Ratio is reasonable")
+                print("  ✓ Ratio is reasonable")
 
 
 def identify_root_cause(data_by_case):

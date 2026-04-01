@@ -7,9 +7,7 @@ These tests isolate envelope heat transfer from other loads to validate:
 - Surface heat balance
 """
 
-import subprocess
-from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 import pytest
 
@@ -193,7 +191,7 @@ class TestEnvelopeHeatTransfer:
     def test_conduction_temp_dependence(self):
         """Verify conduction scales linearly with temperature difference."""
         # Run at two different temperature differences
-        results_10k = self._run_simplified_simulation("900")
+        self._run_simplified_simulation("900")
 
         # Manually calculate for different ΔT
         u_value = 0.51

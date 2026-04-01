@@ -963,4 +963,276 @@ mod tests {
         )];
         assert!(!HourlyWeatherData::is_complete(&incomplete_weather));
     }
+
+    #[test]
+    fn test_hourly_weather_data_with_infrared() {
+        let weather =
+            HourlyWeatherData::with_infrared(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 350.0, 100);
+        assert_eq!(weather.dry_bulb_temp, 20.0);
+        assert_eq!(weather.horizontal_infrared, 350.0);
+        assert_eq!(weather.hour_of_year, 100);
+        assert!(weather.ground_temperature.is_none());
+    }
+
+    #[test]
+    fn test_sky_temperature_from_infrared() {
+        let weather =
+            HourlyWeatherData::with_infrared(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 350.0, 100);
+        let t_sky = weather.sky_temperature();
+        // Should be calculated from IR, not default
+        assert!(t_sky > -50.0 && t_sky < 20.0);
+    }
+
+    #[test]
+    fn test_sky_temperature_zero_infrared() {
+        let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        let t_sky = weather.sky_temperature();
+        // Should use default: dry_bulb_temp - 15.0
+        assert!((t_sky - 5.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_sky_temperature_negative_infrared() {
+        let mut weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        weather.horizontal_infrared = -10.0;
+        let t_sky = weather.sky_temperature();
+        // Should use default for negative IR
+        assert!((t_sky - 5.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_sky_emissivity_from_infrared() {
+        let weather =
+            HourlyWeatherData::with_infrared(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 350.0, 100);
+        let emissivity = weather.sky_emissivity();
+        assert!(emissivity > 0.0 && emissivity < 1.0);
+    }
+
+    #[test]
+    fn test_sky_emissivity_zero_infrared() {
+        let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        let emissivity = weather.sky_emissivity();
+        assert_eq!(emissivity, 0.8);
+    }
+
+    #[test]
+    fn test_sky_emissivity_negative_infrared() {
+        let mut weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        weather.horizontal_infrared = -5.0;
+        let emissivity = weather.sky_emissivity();
+        assert_eq!(emissivity, 0.8);
+    }
+
+    #[test]
+    fn test_month_boundary_december() {
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 8759);
+        assert_eq!(weather.month(), 12);
+    }
+
+    #[test]
+    fn test_month_january_end() {
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 743);
+        assert_eq!(weather.month(), 1);
+    }
+
+    #[test]
+    fn test_month_february_start() {
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 744);
+        assert_eq!(weather.month(), 2);
+    }
+
+    #[test]
+    fn test_month_july() {
+        let weather = HourlyWeatherData::new(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 4368);
+        assert_eq!(weather.month(), 7);
+    }
+
+    #[test]
+    fn test_validate_all_boundary_temps() {
+        let valid_cold = vec![HourlyWeatherData::new(-50.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0)];
+        assert!(HourlyWeatherData::validate_all(&valid_cold).is_ok());
+
+        let valid_hot = vec![HourlyWeatherData::new(60.0, 0.0, 0.0, 0.0, 0.0, 50.0, 0)];
+        assert!(HourlyWeatherData::validate_all(&valid_hot).is_ok());
+    }
+
+    #[test]
+    fn test_validate_all_infinite_temp() {
+        let inf_weather = vec![HourlyWeatherData::new(
+            f64::INFINITY,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            50.0,
+            0,
+        )];
+        let result = HourlyWeatherData::validate_all(&inf_weather);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("infinite"));
+    }
+
+    #[test]
+    fn test_validate_all_negative_dhi() {
+        let neg_dhi = vec![HourlyWeatherData::new(
+            20.0, 800.0, -50.0, 900.0, 3.5, 50.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&neg_dhi);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Diffuse"));
+    }
+
+    #[test]
+    fn test_validate_all_negative_ghi() {
+        let neg_ghi = vec![HourlyWeatherData::new(
+            20.0, 800.0, 100.0, -100.0, 3.5, 50.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&neg_ghi);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Global"));
+    }
+
+    #[test]
+    fn test_validate_all_negative_wind() {
+        let neg_wind = vec![HourlyWeatherData::new(
+            20.0, 800.0, 100.0, 900.0, -1.0, 50.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&neg_wind);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Wind speed"));
+    }
+
+    #[test]
+    fn test_validate_all_negative_humidity() {
+        let neg_hum = vec![HourlyWeatherData::new(
+            20.0, 800.0, 100.0, 900.0, 3.5, -10.0, 0,
+        )];
+        let result = HourlyWeatherData::validate_all(&neg_hum);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("humidity"));
+    }
+
+    #[test]
+    fn test_validate_all_negative_infrared() {
+        let mut weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
+        weather.horizontal_infrared = -5.0;
+        let result = HourlyWeatherData::validate_all(&[weather]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Infrared"));
+    }
+
+    #[test]
+    fn test_validate_all_empty_slice() {
+        let empty: Vec<HourlyWeatherData> = vec![];
+        assert!(HourlyWeatherData::validate_all(&empty).is_ok());
+    }
+
+    #[test]
+    fn test_is_complete_empty_slice() {
+        let empty: Vec<HourlyWeatherData> = vec![];
+        assert!(HourlyWeatherData::is_complete(&empty));
+    }
+
+    #[test]
+    fn test_is_complete_with_infinite_values() {
+        let inf_weather = vec![HourlyWeatherData::new(
+            f64::NEG_INFINITY,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            50.0,
+            0,
+        )];
+        assert!(!HourlyWeatherData::is_complete(&inf_weather));
+    }
+
+    #[test]
+    fn test_weather_error_clone() {
+        let err1 = WeatherError::InvalidHour(100);
+        let err2 = err1.clone();
+        assert_eq!(err1, err2);
+
+        let err3 = WeatherError::ParseError("test".to_string());
+        let err4 = err3.clone();
+        assert_eq!(err3, err4);
+    }
+
+    #[test]
+    fn test_weather_error_debug() {
+        let err = WeatherError::InvalidHour(5000);
+        let debug_str = format!("{:?}", err);
+        assert!(debug_str.contains("InvalidHour"));
+    }
+
+    #[test]
+    fn test_weather_error_is_error_trait() {
+        let err: WeatherError = WeatherError::IoError("test".to_string());
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_weather_iterator_stops_at_invalid_hour() {
+        struct ShortSource;
+        impl WeatherSource for ShortSource {
+            fn location(&self) -> Option<String> {
+                Some("Short".to_string())
+            }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 5 {
+                    Err(WeatherError::InvalidHour(hour))
+                } else {
+                    Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 2.0, 50.0, hour))
+                }
+            }
+        }
+        let source = ShortSource;
+        let mut count = 0;
+        for result in source.iter_hours() {
+            if result.is_err() {
+                break;
+            }
+            count += 1;
+        }
+        assert_eq!(count, 5);
+    }
+
+    #[test]
+    fn test_weather_source_validate_all_success() {
+        struct ValidSource;
+        impl WeatherSource for ValidSource {
+            fn location(&self) -> Option<String> {
+                Some("Valid".to_string())
+            }
+            fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError> {
+                if hour >= 8760 {
+                    Err(WeatherError::InvalidHour(hour))
+                } else {
+                    Ok(HourlyWeatherData::new(20.0, 0.0, 0.0, 0.0, 2.0, 50.0, hour))
+                }
+            }
+        }
+        let source = ValidSource;
+        assert!(source.validate_all().is_ok());
+    }
+
+    #[test]
+    fn test_hourly_weather_data_serialize_deserialize() {
+        let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        let json = serde_json::to_string(&weather).unwrap();
+        let deserialized: HourlyWeatherData = serde_json::from_str(&json).unwrap();
+        assert_eq!(weather.dry_bulb_temp, deserialized.dry_bulb_temp);
+        assert_eq!(weather.dni, deserialized.dni);
+        assert_eq!(weather.hour_of_year, deserialized.hour_of_year);
+    }
+
+    #[test]
+    fn test_hourly_weather_data_partial_equality() {
+        let w1 = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        let w2 = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        assert_eq!(w1, w2);
+
+        let w3 = HourlyWeatherData::new(21.0, 800.0, 100.0, 900.0, 3.5, 50.0, 100);
+        assert_ne!(w1, w3);
+    }
 }

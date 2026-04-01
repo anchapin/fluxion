@@ -7,9 +7,7 @@ These tests isolate infiltration heat loss from other loads to validate:
 - Air flow rate calculations
 """
 
-import subprocess
-from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 import pytest
 
@@ -121,7 +119,7 @@ class TestInfiltrationLoss:
         loss_arr = np.array([r[1] for r in results])
 
         # Fit linear model
-        coeffs = np.polyfit(ach_arr, loss_arr, 1)
+        np.polyfit(ach_arr, loss_arr, 1)
         r2 = np.corrcoef(ach_arr, loss_arr)[0, 1] ** 2
 
         assert r2 > 0.99, f"Infiltration not linear with ACH: R²={r2:.4f}"

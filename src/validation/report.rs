@@ -2715,4 +2715,478 @@ mod tests {
         // Clean up
         let _ = std::fs::remove_file(csv_path);
     }
+
+    #[test]
+    fn test_compute_status_pass() {
+        let status = compute_status(5.0, 4.0, 6.0);
+        assert_eq!(status, ValidationStatus::Pass);
+    }
+
+    #[test]
+    fn test_compute_status_warning_within_range() {
+        let status = compute_status(4.01, 4.0, 6.0);
+        assert_eq!(status, ValidationStatus::Warning);
+    }
+
+    #[test]
+    fn test_compute_status_warning_tolerance_band() {
+        let status = compute_status(6.2, 4.0, 6.0);
+        assert_eq!(status, ValidationStatus::Warning);
+    }
+
+    #[test]
+    fn test_compute_status_fail_below() {
+        let status = compute_status(3.0, 4.0, 6.0);
+        assert_eq!(status, ValidationStatus::Fail);
+    }
+
+    #[test]
+    fn test_compute_status_fail_above() {
+        let status = compute_status(7.0, 4.0, 6.0);
+        assert_eq!(status, ValidationStatus::Fail);
+    }
+
+    #[test]
+    fn test_compute_status_zero_ref_mid() {
+        let status = compute_status(0.5, 0.0, 0.0);
+        assert_eq!(status, ValidationStatus::Fail);
+    }
+
+    #[test]
+    fn test_validation_status_color_and_icon() {
+        assert_eq!(ValidationStatus::Pass.color(), "green");
+        assert_eq!(ValidationStatus::Warning.color(), "orange");
+        assert_eq!(ValidationStatus::Fail.color(), "red");
+        assert_eq!(ValidationStatus::Pass.icon(), "✓");
+        assert_eq!(ValidationStatus::Warning.icon(), "⚠");
+        assert_eq!(ValidationStatus::Fail.icon(), "✗");
+        assert_eq!(ValidationStatus::Pass.display_name(), "PASS");
+        assert_eq!(ValidationStatus::Warning.display_name(), "WARN");
+        assert_eq!(ValidationStatus::Fail.display_name(), "FAIL");
+    }
+
+    #[test]
+    fn test_reference_program_display() {
+        assert_eq!(format!("{}", ReferenceProgram::EnergyPlus), "EnergyPlus");
+        assert_eq!(format!("{}", ReferenceProgram::EspR), "ESP-r");
+        assert_eq!(format!("{}", ReferenceProgram::TRNSYS), "TRNSYS");
+        assert_eq!(format!("{}", ReferenceProgram::DOE2), "DOE2");
+    }
+
+    #[test]
+    fn test_benchmark_data_new_and_default() {
+        let data = BenchmarkData::new();
+        assert_eq!(data.annual_heating_min, 0.0);
+        assert_eq!(data.annual_cooling_max, 0.0);
+        assert_eq!(data.peak_heating_min, 0.0);
+        assert_eq!(data.peak_cooling_max, 0.0);
+        assert_eq!(data.min_free_float_min, 0.0);
+        assert_eq!(data.max_free_float_max, 0.0);
+        let default_data = BenchmarkData::default();
+        assert_eq!(default_data.annual_heating_min, 0.0);
+    }
+
+    #[test]
+    fn test_benchmark_data_all_ranges() {
+        let data = BenchmarkData {
+            annual_heating_min: 1.0,
+            annual_heating_max: 2.0,
+            annual_cooling_min: 3.0,
+            annual_cooling_max: 4.0,
+            peak_heating_min: 5.0,
+            peak_heating_max: 6.0,
+            peak_cooling_min: 7.0,
+            peak_cooling_max: 8.0,
+            min_free_float_min: 9.0,
+            min_free_float_max: 10.0,
+            max_free_float_min: 11.0,
+            max_free_float_max: 12.0,
+        };
+        assert_eq!(data.get_range(MetricType::AnnualHeating), Some((1.0, 2.0)));
+        assert_eq!(data.get_range(MetricType::AnnualCooling), Some((3.0, 4.0)));
+        assert_eq!(data.get_range(MetricType::PeakHeating), Some((5.0, 6.0)));
+        assert_eq!(data.get_range(MetricType::PeakCooling), Some((7.0, 8.0)));
+        assert_eq!(data.get_range(MetricType::MinFreeFloat), Some((9.0, 10.0)));
+        assert_eq!(data.get_range(MetricType::MaxFreeFloat), Some((11.0, 12.0)));
+        assert_eq!(data.midpoint(MetricType::AnnualHeating), Some(1.5));
+    }
+
+    #[test]
+    fn test_validation_result_is_pass_warning_fail() {
+        let pass = ValidationResult::new("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        assert!(pass.is_pass());
+        assert!(!pass.is_warning());
+        assert!(!pass.is_fail());
+
+        let fail = ValidationResult::new("600", MetricType::AnnualHeating, 1.0, 4.30, 5.71);
+        assert!(!fail.is_pass());
+        assert!(!fail.is_warning());
+        assert!(fail.is_fail());
+    }
+
+    #[test]
+    fn test_validation_result_deviation_string() {
+        let result = ValidationResult::new("600", MetricType::AnnualHeating, 5.5, 4.30, 5.71);
+        let dev = result.deviation_string();
+        assert!(dev.contains("%"));
+    }
+
+    #[test]
+    fn test_interpretation_default() {
+        let interp = Interpretation::default();
+        assert!(interp.root_cause_hypotheses.is_empty());
+        assert!(interp.parameter_sensitivity.is_empty());
+        assert!(interp.recommended_next_steps.is_empty());
+        assert!(interp.what_if_scenarios.is_empty());
+        assert!(interp.references.is_empty());
+    }
+
+    #[test]
+    fn test_benchmark_report_to_json() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let json = report.to_json();
+        assert!(json.contains("results"));
+        assert!(json.contains("600"));
+    }
+
+    #[test]
+    fn test_benchmark_report_add_result_simple() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        assert_eq!(report.results.len(), 1);
+        assert_eq!(report.results[0].case_id, "600");
+        assert_eq!(report.results[0].fluxion_value, 5.0);
+    }
+
+    #[test]
+    fn test_benchmark_report_add_benchmark_data() {
+        let mut report = BenchmarkReport::new();
+        let data = BenchmarkData {
+            annual_heating_min: 4.30,
+            annual_heating_max: 5.71,
+            ..Default::default()
+        };
+        report.add_benchmark_data("600", data);
+        assert!(report.benchmark_data.contains_key("600"));
+    }
+
+    #[test]
+    fn test_benchmark_report_delta_analysis() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("610", MetricType::AnnualHeating, 5.5, 4.30, 5.71);
+        report.add_result_simple("600", MetricType::AnnualCooling, 7.0, 6.14, 8.45);
+        report.add_result_simple("610", MetricType::AnnualCooling, 6.5, 6.14, 8.45);
+
+        let deltas = report.delta_analysis("600");
+        assert!(!deltas.is_empty());
+        assert!(deltas.contains_key("610 - Annual Heating (MWh)"));
+        assert!((deltas["610 - Annual Heating (MWh)"] - 0.5).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_benchmark_report_delta_analysis_no_baseline_match() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("610", MetricType::AnnualHeating, 5.5, 4.30, 5.71);
+        let deltas = report.delta_analysis("600");
+        assert!(deltas.is_empty());
+    }
+
+    #[test]
+    fn test_benchmark_report_pass_rate_empty() {
+        let report = BenchmarkReport::new();
+        assert_eq!(report.pass_rate(), 100.0);
+    }
+
+    #[test]
+    fn test_benchmark_report_fail_count_and_warning_count() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("600", MetricType::AnnualCooling, 1.0, 6.14, 8.45);
+        assert_eq!(report.fail_count(), 1);
+        assert_eq!(report.warning_count(), 0);
+    }
+
+    #[test]
+    fn test_benchmark_report_mae_empty() {
+        let report = BenchmarkReport::new();
+        assert_eq!(report.mae(), 0.0);
+    }
+
+    #[test]
+    fn test_benchmark_report_max_deviation() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("600", MetricType::AnnualCooling, 9.0, 6.14, 8.45);
+        let max_dev = report.max_deviation();
+        assert!(max_dev > 20.0);
+    }
+
+    #[test]
+    fn test_benchmark_report_worst_cases() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("600", MetricType::AnnualCooling, 9.0, 6.14, 8.45);
+        report.add_result_simple("900", MetricType::AnnualHeating, 0.5, 1.17, 2.04);
+        let worst = report.worst_cases(2);
+        assert_eq!(worst.len(), 2);
+        assert!(worst[0].percent_error.abs() >= worst[1].percent_error.abs());
+    }
+
+    #[test]
+    fn test_benchmark_report_worst_cases_empty() {
+        let report = BenchmarkReport::new();
+        let worst = report.worst_cases(5);
+        assert!(worst.is_empty());
+    }
+
+    #[test]
+    fn test_benchmark_report_duration_and_throughput() {
+        let mut report = BenchmarkReport::new();
+        report.add_benchmark_data("600", BenchmarkData::new());
+        assert_eq!(report.duration_seconds(), 0.0);
+        assert_eq!(report.cases_per_second(), 0.0);
+        report.set_start();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        report.set_end();
+        assert!(report.duration_seconds() > 0.0);
+        assert!(report.cases_per_second() > 0.0);
+    }
+
+    #[test]
+    fn test_benchmark_report_to_html() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let html = report.to_html();
+        assert!(html.contains("<!DOCTYPE html>"));
+        assert!(html.contains("ASHRAE 140 Validation Report"));
+        assert!(html.contains("600"));
+        assert!(html.contains("class=\"pass\""));
+    }
+
+    #[test]
+    fn test_benchmark_report_to_html_with_delta() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("610", MetricType::AnnualHeating, 5.5, 4.30, 5.71);
+        report.add_benchmark_data("600", BenchmarkData::new());
+        let html = report.to_html();
+        assert!(html.contains("Delta Analysis"));
+    }
+
+    #[test]
+    fn test_benchmark_report_to_html_with_worst() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("600", MetricType::AnnualCooling, 15.0, 6.14, 8.45);
+        let html = report.to_html();
+        assert!(html.contains("Worst Performing Cases"));
+        assert!(html.contains("class=\"fail\""));
+    }
+
+    #[test]
+    fn test_benchmark_report_to_csv() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.add_result_simple("900", MetricType::AnnualCooling, 3.0, 2.13, 3.67);
+        let csv = report.to_csv();
+        assert!(csv.contains("Case,Metric,Fluxion,Ref Min,Ref Max,Percent Error,Status"));
+        assert!(csv.contains("600"));
+        assert!(csv.contains("900"));
+        assert!(csv.contains("Annual Heating"));
+        assert!(csv.contains("Annual Cooling"));
+    }
+
+    #[test]
+    fn test_benchmark_report_save_to_file_markdown() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_report.md");
+        assert!(report.save_to_file(&path).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("ASHRAE 140 Validation Report"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_benchmark_report_save_to_file_html() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_report.html");
+        assert!(report.save_to_file(&path).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("<!DOCTYPE html>"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_benchmark_report_save_to_file_csv() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_report.csv");
+        assert!(report.save_to_file(&path).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("Case,Metric"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_benchmark_report_save_to_file_txt() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_report.txt");
+        assert!(report.save_to_file(&path).is_ok());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_benchmark_report_save_to_file_unsupported() {
+        let report = BenchmarkReport::new();
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_report.xml");
+        let result = report.save_to_file(&path);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_benchmark_report_to_markdown_with_interpretations() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 1.0, 4.30, 5.71);
+        let mut interp = Interpretation::default();
+        interp
+            .root_cause_hypotheses
+            .push("Test hypothesis".to_string());
+        interp
+            .parameter_sensitivity
+            .push("Test sensitivity".to_string());
+        interp.recommended_next_steps.push("Test step".to_string());
+        interp.what_if_scenarios.push("Test scenario".to_string());
+        interp.references.push("Test reference".to_string());
+        report.interpretations.insert("600".to_string(), interp);
+        let md = report.to_markdown();
+        assert!(md.contains("Interpretation Guidance"));
+        assert!(md.contains("Test hypothesis"));
+        assert!(md.contains("Test sensitivity"));
+        assert!(md.contains("Test step"));
+        assert!(md.contains("Test scenario"));
+        assert!(md.contains("Test reference"));
+    }
+
+    #[test]
+    fn test_benchmark_report_add_result_with_multi_case_not_found() {
+        use crate::validation::multi_reference::MultiReferenceDB;
+        let mut report = BenchmarkReport::new();
+        let db = MultiReferenceDB {
+            version: "test".to_string(),
+            source: None,
+            cases: std::collections::HashMap::new(),
+        };
+        report.add_result_with_multi("NONEXISTENT", MetricType::AnnualHeating, 5.0, &db);
+        assert_eq!(report.results.len(), 1);
+        assert_eq!(report.results[0].status, ValidationStatus::Fail);
+        assert!(report.results[0].per_program.is_none());
+    }
+
+    #[test]
+    fn test_benchmark_report_enrich_with_multi_reference_empty() {
+        use crate::validation::multi_reference::MultiReferenceDB;
+        let mut report = BenchmarkReport::new();
+        let db = MultiReferenceDB {
+            version: "test".to_string(),
+            source: None,
+            cases: std::collections::HashMap::new(),
+        };
+        report.enrich_with_multi_reference(&db);
+        assert!(report.results.is_empty());
+    }
+
+    #[test]
+    fn test_benchmark_report_enrich_with_multi_reference_free_float_unchanged() {
+        use crate::validation::multi_reference::MultiReferenceDB;
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600FF", MetricType::MinFreeFloat, -10.0, -18.8, -15.6);
+        let db = MultiReferenceDB {
+            version: "test".to_string(),
+            source: None,
+            cases: std::collections::HashMap::new(),
+        };
+        report.enrich_with_multi_reference(&db);
+        assert_eq!(report.results.len(), 1);
+        assert!(report.results[0].per_program.is_none());
+    }
+
+    #[test]
+    fn test_validation_suite_with_ashrae140_data() {
+        let suite = ValidationSuite::with_ashrae140_data();
+        assert!(!suite.benchmark_data.is_empty());
+    }
+
+    #[test]
+    fn test_validation_suite_add_benchmark_data() {
+        let mut suite = ValidationSuite::new();
+        suite.add_benchmark_data("600", BenchmarkData::new());
+        assert!(suite.benchmark_data.contains_key("600"));
+    }
+
+    #[test]
+    fn test_validation_suite_generate_report_with_benchmark_data() {
+        let mut suite = ValidationSuite::new();
+        suite.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let data = BenchmarkData {
+            annual_heating_min: 4.30,
+            annual_heating_max: 5.71,
+            ..Default::default()
+        };
+        suite.add_benchmark_data("600", data);
+        let report = suite.generate_report();
+        assert!(report.benchmark_data.contains_key("600"));
+    }
+
+    #[test]
+    fn test_validation_suite_print_detailed_summary() {
+        let mut suite = ValidationSuite::new();
+        suite.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        suite.add_result_simple("600", MetricType::AnnualCooling, 7.0, 6.14, 8.45);
+        suite.print_detailed_summary();
+    }
+
+    #[test]
+    fn test_validation_suite_generate_interpretations() {
+        let mut suite = ValidationSuite::new();
+        suite.add_result_simple("900", MetricType::AnnualHeating, 5.0, 1.17, 2.04);
+        suite.generate_interpretations();
+        assert!(!suite.interpretations.is_empty());
+        assert!(suite.interpretations.contains_key("900"));
+    }
+
+    #[test]
+    fn test_validation_suite_generate_interpretations_no_failures() {
+        let mut suite = ValidationSuite::new();
+        suite.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        suite.generate_interpretations();
+        assert!(suite.interpretations.is_empty());
+    }
+
+    #[test]
+    fn test_validation_suite_generate_interpretations_case_960() {
+        let mut suite = ValidationSuite::new();
+        suite.add_result_simple("960", MetricType::AnnualCooling, 5.0, 1.55, 2.78);
+        suite.generate_interpretations();
+        assert!(suite.interpretations.contains_key("960"));
+        let interp = suite.interpretations.get("960").unwrap();
+        assert!(!interp.root_cause_hypotheses.is_empty());
+    }
+
+    #[test]
+    fn test_validation_suite_generate_interpretations_unknown_case() {
+        let mut suite = ValidationSuite::new();
+        suite.add_result_simple("XXX", MetricType::AnnualHeating, 5.0, 1.0, 2.0);
+        suite.generate_interpretations();
+        assert!(suite.interpretations.contains_key("XXX"));
+    }
 }

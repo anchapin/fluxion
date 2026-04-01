@@ -8,10 +8,7 @@ These tests isolate solar heat gain from other loads to validate:
 - SHGC implementation
 """
 
-import math
-import subprocess
-from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 import pytest
 

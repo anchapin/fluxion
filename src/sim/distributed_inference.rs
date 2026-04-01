@@ -120,14 +120,9 @@ impl ParallelThermalEvaluator {
                 model.apply_parameters(&variant.parameters);
 
                 // Run a simplified simulation (8760 hourly timesteps = 1 year)
-                let eui = model.solve_timesteps(
-                    8760,
-                    &crate::ai::surrogate::default(),
-                    false,
-                    None,
-                    None,
-                    None,
-                );
+                let surrogate = crate::ai::surrogate::SurrogateManager::new()
+                    .unwrap_or_else(|_| crate::ai::surrogate::SurrogateManager::new().unwrap());
+                let eui = model.solve_timesteps(8760, &surrogate, false);
 
                 VariantResult {
                     id: variant.id,
@@ -137,62 +132,6 @@ impl ParallelThermalEvaluator {
                 }
             })
             .collect()
-    }
-
-    /// Evaluate population in chunks for memory efficiency with large populations.
-    ///
-    /// # Arguments
-    /// * `population` - Vector of building variants to evaluate
-    /// * `model_factory` - Factory function to create thermal models
-    ///
-    /// # Returns
-    /// Vector of results for each variant
-    pub fn evaluate_chunked<F>(
-        &self,
-        population: Vec<BuildingVariant>,
-        mut model_factory: F,
-    ) -> Vec<VariantResult>
-    where
-        F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync,
-    {
-        let chunk_size = self.config.chunk_size;
-
-        let chunks: Vec<Vec<BuildingVariant>> =
-            population.chunks(chunk_size).map(|c| c.to_vec()).collect();
-
-        let results: Vec<Vec<VariantResult>> = chunks
-            .par_iter()
-            .map(|chunk| {
-                // Create a new model factory for each parallel chunk to avoid borrow issues
-                // This works because we create a fresh closure that captures nothing
-                let mut chunk_model: Box<dyn ThermalModelTrait> =
-                    Box::new(crate::sim::thermal_model::PhysicsThermalModel::new(1));
-
-                chunk
-                    .iter()
-                    .map(|variant| {
-                        chunk_model.apply_parameters(&variant.parameters);
-                        let eui = chunk_model.solve_timesteps(
-                            8760,
-                            &crate::ai::surrogate::default(),
-                            false,
-                            None,
-                            None,
-                            None,
-                        );
-
-                        VariantResult {
-                            id: variant.id,
-                            eui,
-                            success: true,
-                            error: None,
-                        }
-                    })
-                    .collect()
-            })
-            .collect();
-
-        results.into_iter().flatten().collect()
     }
 
     /// Get the configuration.

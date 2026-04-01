@@ -685,4 +685,262 @@ mod tests {
         assert_eq!(runner.variants.len(), 2);
         assert_eq!(runner.cases.len(), 14);
     }
+
+    #[test]
+    fn test_ab_test_runner_with_variants() {
+        let runner = ABTestRunner::new().with_variants(vec![ThermalNetworkVariant::EightR3C]);
+        assert_eq!(runner.variants.len(), 1);
+        assert_eq!(runner.variants[0], ThermalNetworkVariant::EightR3C);
+    }
+
+    #[test]
+    fn test_ab_test_runner_with_cases() {
+        let runner = ABTestRunner::new().with_cases(vec!["600", "900"]);
+        assert_eq!(runner.cases.len(), 2);
+    }
+
+    #[test]
+    fn test_test_results_out_of_range() {
+        let result = TestResults {
+            variant: ThermalNetworkVariant::FiveR1C,
+            case_id: "600".to_string(),
+            annual_heating_mwh: 10.0,
+            annual_cooling_mwh: 10.0,
+            peak_heating_kw: 10.0,
+            peak_cooling_kw: 15.0,
+            annual_heating_ref_min: 5.0,
+            annual_heating_ref_max: 5.5,
+            annual_cooling_ref_min: 3.0,
+            annual_cooling_ref_max: 3.5,
+        };
+
+        assert!(!result.heating_ok());
+        assert!(!result.cooling_ok());
+        assert!(!result.all_ok());
+    }
+
+    #[test]
+    fn test_ab_test_result_pass_rate_empty() {
+        let result = ABTestResult {
+            variant: ThermalNetworkVariant::FiveR1C,
+            cases: vec![],
+            nmbe_heating: 0.0,
+            nmbe_cooling: 0.0,
+            cv_rmse_heating: 0.0,
+            cv_rmse_cooling: 0.0,
+            pass_rate: 0.0,
+        };
+        assert_eq!(result.pass_rate(15.0), 0.0);
+    }
+
+    #[test]
+    fn test_ab_test_result_pass_rate_all_pass() {
+        let cases = vec![TestResults {
+            variant: ThermalNetworkVariant::FiveR1C,
+            case_id: "600".to_string(),
+            annual_heating_mwh: 5.0,
+            annual_cooling_mwh: 3.0,
+            peak_heating_kw: 10.0,
+            peak_cooling_kw: 15.0,
+            annual_heating_ref_min: 5.0,
+            annual_heating_ref_max: 5.5,
+            annual_cooling_ref_min: 3.0,
+            annual_cooling_ref_max: 3.5,
+        }];
+        let result = ABTestResult {
+            variant: ThermalNetworkVariant::FiveR1C,
+            cases,
+            nmbe_heating: 0.0,
+            nmbe_cooling: 0.0,
+            cv_rmse_heating: 0.0,
+            cv_rmse_cooling: 0.0,
+            pass_rate: 100.0,
+        };
+        assert_eq!(result.pass_rate(15.0), 100.0);
+    }
+
+    #[test]
+    fn test_ab_test_result_compare() {
+        let baseline = ABTestResult {
+            variant: ThermalNetworkVariant::FiveR1C,
+            cases: vec![],
+            nmbe_heating: 10.0,
+            nmbe_cooling: 8.0,
+            cv_rmse_heating: 12.0,
+            cv_rmse_cooling: 10.0,
+            pass_rate: 50.0,
+        };
+        let test = ABTestResult {
+            variant: ThermalNetworkVariant::SixR2C,
+            cases: vec![],
+            nmbe_heating: 5.0,
+            nmbe_cooling: 4.0,
+            cv_rmse_heating: 6.0,
+            cv_rmse_cooling: 5.0,
+            pass_rate: 75.0,
+        };
+        let comparison = test.compare(&baseline);
+        assert!(comparison.contains("5R1C"));
+        assert!(comparison.contains("6R2C"));
+        assert!(comparison.contains("improvement"));
+    }
+
+    #[test]
+    fn test_comparison_report_to_markdown() {
+        let report = ComparisonReport {
+            baseline_variant: ThermalNetworkVariant::FiveR1C,
+            test_variant: ThermalNetworkVariant::SixR2C,
+            heating_nmbe_improvement: 2.0,
+            cooling_nmbe_improvement: 1.5,
+            pass_rate_improvement: 10.0,
+            heating_cv_rmse_improvement: 3.0,
+            cooling_cv_rmse_improvement: 2.5,
+            recommendation: "ADOPT".to_string(),
+            explanation: "Test variant shows improvement".to_string(),
+        };
+        let markdown = report.to_markdown();
+        assert!(markdown.contains("5R1C"));
+        assert!(markdown.contains("6R2C"));
+        assert!(markdown.contains("ADOPT"));
+    }
+
+    #[test]
+    fn test_determine_recommendation_adopt_substantial() {
+        let runner = ABTestRunner::new();
+        let (rec, _) = runner.determine_recommendation(3.0, 2.5, 20.0, 3.0, 2.5);
+        assert_eq!(rec, "ADOPT");
+    }
+
+    #[test]
+    fn test_determine_recommendation_adopt_moderate() {
+        let runner = ABTestRunner::new();
+        let (rec, _) = runner.determine_recommendation(1.0, 0.8, 8.0, 1.0, 0.8);
+        assert_eq!(rec, "ADOPT");
+    }
+
+    #[test]
+    fn test_determine_recommendation_defer() {
+        let runner = ABTestRunner::new();
+        let (rec, _) = runner.determine_recommendation(0.1, 0.1, 1.0, 0.1, 0.1);
+        assert_eq!(rec, "DEFER");
+    }
+
+    #[test]
+    fn test_run_variant_returns_valid_results() {
+        let runner = ABTestRunner::new().with_cases(vec!["600"]);
+        let result = runner.run_variant(ThermalNetworkVariant::FiveR1C, "600");
+        assert_eq!(result.case_id, "600");
+        assert!(result.annual_heating_mwh > 0.0);
+        assert!(result.annual_cooling_mwh > 0.0);
+        assert!(result.peak_heating_kw > 0.0);
+        assert!(result.peak_cooling_kw > 0.0);
+    }
+
+    #[test]
+    fn test_run_all_variants_returns_results() {
+        let runner = ABTestRunner::new().with_cases(vec!["600"]);
+        let result = runner.run_all_variants(ThermalNetworkVariant::FiveR1C);
+        assert_eq!(result.cases.len(), 1);
+        assert_eq!(result.variant, ThermalNetworkVariant::FiveR1C);
+    }
+
+    #[test]
+    fn test_compare_results_generates_report() {
+        let runner = ABTestRunner::new().with_cases(vec!["600"]);
+        let baseline = runner.run_all_variants(ThermalNetworkVariant::FiveR1C);
+        let test = runner.run_all_variants(ThermalNetworkVariant::SixR2C);
+        let report = runner.compare_results(&baseline, &test);
+        assert_eq!(report.baseline_variant, ThermalNetworkVariant::FiveR1C);
+        assert_eq!(report.test_variant, ThermalNetworkVariant::SixR2C);
+        assert!(!report.recommendation.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_metrics_empty() {
+        let runner = ABTestRunner::new();
+        let (nmbe_h, nmbe_c, cv_h, cv_c) = runner.calculate_metrics(&[]);
+        assert_eq!(nmbe_h, 0.0);
+        assert_eq!(nmbe_c, 0.0);
+        assert_eq!(cv_h, 0.0);
+        assert_eq!(cv_c, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_pass_rate_empty() {
+        let runner = ABTestRunner::new();
+        let pass_rate = runner.calculate_pass_rate(&[], 15.0);
+        assert_eq!(pass_rate, 0.0);
+    }
+
+    #[test]
+    fn test_thermal_network_variant_equality() {
+        assert_eq!(
+            ThermalNetworkVariant::FiveR1C,
+            ThermalNetworkVariant::FiveR1C
+        );
+        assert_ne!(
+            ThermalNetworkVariant::FiveR1C,
+            ThermalNetworkVariant::SixR2C
+        );
+    }
+
+    #[test]
+    fn test_thermal_network_variant_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(ThermalNetworkVariant::FiveR1C);
+        set.insert(ThermalNetworkVariant::SixR2C);
+        assert_eq!(set.len(), 2);
+    }
+
+    #[test]
+    fn test_test_results_debug_format() {
+        let result = TestResults {
+            variant: ThermalNetworkVariant::FiveR1C,
+            case_id: "600".to_string(),
+            annual_heating_mwh: 5.0,
+            annual_cooling_mwh: 3.0,
+            peak_heating_kw: 10.0,
+            peak_cooling_kw: 15.0,
+            annual_heating_ref_min: 5.0,
+            annual_heating_ref_max: 5.5,
+            annual_cooling_ref_min: 3.0,
+            annual_cooling_ref_max: 3.5,
+        };
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("600"));
+    }
+
+    #[test]
+    fn test_ab_test_result_debug_format() {
+        let result = ABTestResult {
+            variant: ThermalNetworkVariant::FiveR1C,
+            cases: vec![],
+            nmbe_heating: 5.0,
+            nmbe_cooling: 3.0,
+            cv_rmse_heating: 6.0,
+            cv_rmse_cooling: 4.0,
+            pass_rate: 80.0,
+        };
+        let debug_str = format!("{:?}", result);
+        assert!(debug_str.contains("ABTestResult"));
+        assert!(debug_str.contains("FiveR1C"));
+    }
+
+    #[test]
+    fn test_comparison_report_debug_format() {
+        let report = ComparisonReport {
+            baseline_variant: ThermalNetworkVariant::FiveR1C,
+            test_variant: ThermalNetworkVariant::SixR2C,
+            heating_nmbe_improvement: 2.0,
+            cooling_nmbe_improvement: 1.5,
+            pass_rate_improvement: 10.0,
+            heating_cv_rmse_improvement: 3.0,
+            cooling_cv_rmse_improvement: 2.5,
+            recommendation: "ADOPT".to_string(),
+            explanation: "Test".to_string(),
+        };
+        let debug_str = format!("{:?}", report);
+        assert!(debug_str.contains("ADOPT"));
+    }
 }

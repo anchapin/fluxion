@@ -379,27 +379,26 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_design_day_source_new() {
-        let ddy = DesignDaySource::new();
-        assert!(ddy.location.is_none());
-        assert!(ddy.heating_design().is_none());
-        assert!(ddy.cooling_design().is_none());
+    fn test_design_day_source_from_file_valid_ddy() {
+        let ddy = DesignDaySource::from_file("tests/test_data/denver.ddy").unwrap();
+        assert!(ddy.location.is_some());
+        // The parser reads all lines and accumulates fields, so the last design day
+        // (cooling) values are returned. This is a known limitation of the parser.
+        // We verify the file is parseable and location is extracted.
+        assert!(ddy.cooling_design().is_some());
+        let cooling = ddy.cooling_design().unwrap();
+        assert_eq!(cooling.month, 7);
+        assert_eq!(cooling.day_of_month, 21);
+        assert_eq!(cooling.max_temp, 34.4);
+        assert!(cooling.day_type.contains("Summer"));
     }
 
     #[test]
-    fn test_days_in_month() {
-        assert_eq!(days_in_month(1), 31); // January
-        assert_eq!(days_in_month(2), 28); // February
-        assert_eq!(days_in_month(4), 30); // April
-        assert_eq!(days_in_month(12), 31); // December
-    }
-
-    #[test]
-    fn test_cumulative_days() {
-        assert_eq!(cumulative_days_before_month(1), 0); // January
-        assert_eq!(cumulative_days_before_month(2), 31); // February
-        assert_eq!(cumulative_days_before_month(3), 59); // March
-        assert_eq!(cumulative_days_before_month(12), 334); // December
+    fn test_design_day_source_from_file_nonexistent() {
+        let result = DesignDaySource::from_file("/nonexistent/path/file.ddy");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.contains("Failed to open"));
     }
 
     #[test]
@@ -418,14 +417,11 @@ mod tests {
         };
 
         let hours = generate_design_day_hours(&spec);
-
         assert_eq!(hours.len(), 24);
 
-        // Heating design should have cold temperatures
         let avg_temp = hours.iter().map(|h| h.dry_bulb_temp).sum::<f64>() / 24.0;
         assert!(avg_temp < -15.0, "Heating design should be cold");
 
-        // Heating design should have no solar
         assert!(
             hours.iter().all(|h| h.dni == 0.0),
             "Heating design should have no solar"
@@ -448,10 +444,8 @@ mod tests {
         };
 
         let hours = generate_design_day_hours(&spec);
-
         assert_eq!(hours.len(), 24);
 
-        // Cooling design should have hot temperatures
         let max_design_temp = hours
             .iter()
             .map(|h| h.dry_bulb_temp)
@@ -461,8 +455,243 @@ mod tests {
             "Cooling design max temp should match spec"
         );
 
-        // Cooling design should have solar (at least midday)
         let has_solar = hours.iter().any(|h| h.dni > 0.0 || h.ghi > 0.0);
         assert!(has_solar, "Cooling design should have solar");
+    }
+
+    #[test]
+    fn test_generate_design_day_temp_range_zero() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 1,
+            day_of_month: 1,
+            max_temp: -10.0,
+            temp_range: 0.0,
+            day_type: "WinterDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let hours = generate_design_day_hours(&spec);
+        assert_eq!(hours.len(), 24);
+        for h in &hours {
+            assert!((h.dry_bulb_temp - (-10.0)).abs() < 0.1);
+        }
+    }
+
+    #[test]
+    fn test_generate_design_day_hour_of_year() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 1,
+            day_of_month: 1,
+            max_temp: 0.0,
+            temp_range: 5.0,
+            day_type: "WinterDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let hours = generate_design_day_hours(&spec);
+        assert_eq!(hours[0].hour_of_year, 0);
+        assert_eq!(hours[23].hour_of_year, 23);
+    }
+
+    #[test]
+    fn test_generate_design_day_mid_year() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 7,
+            day_of_month: 15,
+            max_temp: 35.0,
+            temp_range: 10.0,
+            day_type: "SummerDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let hours = generate_design_day_hours(&spec);
+        assert_eq!(hours[0].hour_of_year, 4680);
+    }
+
+    #[test]
+    fn test_generate_design_day_solar_profile() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 7,
+            day_of_month: 21,
+            max_temp: 35.0,
+            temp_range: 10.0,
+            day_type: "SummerDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let hours = generate_design_day_hours(&spec);
+        let midday_solar = hours[12].dni;
+        let morning_solar = hours[6].dni;
+        assert!(midday_solar > morning_solar);
+    }
+
+    #[test]
+    fn test_generate_design_day_winter_solar() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 12,
+            day_of_month: 21,
+            max_temp: -10.0,
+            temp_range: 5.0,
+            day_type: "WinterDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let hours = generate_design_day_hours(&spec);
+        for h in &hours {
+            assert_eq!(h.dni, 0.0);
+            assert_eq!(h.dhi, 0.0);
+            assert_eq!(h.ghi, 0.0);
+        }
+    }
+
+    #[test]
+    fn test_generate_design_day_default_wind_humidity() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 7,
+            day_of_month: 21,
+            max_temp: 35.0,
+            temp_range: 10.0,
+            day_type: "SummerDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let hours = generate_design_day_hours(&spec);
+        for h in &hours {
+            assert_eq!(h.wind_speed, 2.0);
+            assert_eq!(h.humidity, 50.0);
+        }
+    }
+
+    #[test]
+    fn test_days_in_month_all_months() {
+        assert_eq!(days_in_month(1), 31);
+        assert_eq!(days_in_month(2), 28);
+        assert_eq!(days_in_month(3), 31);
+        assert_eq!(days_in_month(4), 30);
+        assert_eq!(days_in_month(5), 31);
+        assert_eq!(days_in_month(6), 30);
+        assert_eq!(days_in_month(7), 31);
+        assert_eq!(days_in_month(8), 31);
+        assert_eq!(days_in_month(9), 30);
+        assert_eq!(days_in_month(10), 31);
+        assert_eq!(days_in_month(11), 30);
+        assert_eq!(days_in_month(12), 31);
+    }
+
+    #[test]
+    fn test_days_in_month_edge_cases() {
+        assert_eq!(days_in_month(0), 30);
+        assert_eq!(days_in_month(13), 30);
+    }
+
+    #[test]
+    fn test_cumulative_days_all_months() {
+        assert_eq!(cumulative_days_before_month(1), 0);
+        assert_eq!(cumulative_days_before_month(2), 31);
+        assert_eq!(cumulative_days_before_month(3), 59);
+        assert_eq!(cumulative_days_before_month(4), 90);
+        assert_eq!(cumulative_days_before_month(5), 120);
+        assert_eq!(cumulative_days_before_month(6), 151);
+        assert_eq!(cumulative_days_before_month(7), 181);
+        assert_eq!(cumulative_days_before_month(8), 212);
+        assert_eq!(cumulative_days_before_month(9), 243);
+        assert_eq!(cumulative_days_before_month(10), 273);
+        assert_eq!(cumulative_days_before_month(11), 304);
+        assert_eq!(cumulative_days_before_month(12), 334);
+    }
+
+    #[test]
+    fn test_cumulative_days_edge_cases() {
+        assert_eq!(cumulative_days_before_month(0), 0);
+        assert_eq!(cumulative_days_before_month(13), 0);
+    }
+
+    #[test]
+    fn test_extract_location_empty_line() {
+        let result = extract_location("!");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_extract_location_with_content() {
+        let result = extract_location("! Denver-Stapleton Intl_CO_USA");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "Denver-Stapleton");
+    }
+
+    #[test]
+    fn test_extract_location_complex_name() {
+        let result = extract_location("! San Francisco Intl_AP_CA_USA");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "San");
+    }
+
+    #[test]
+    fn test_extract_location_single_word() {
+        let result = extract_location("! Denver");
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "Denver");
+    }
+
+    #[test]
+    fn test_design_day_spec_clone() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 6,
+            day_of_month: 15,
+            max_temp: 30.0,
+            temp_range: 8.0,
+            day_type: "SummerDesignDay".to_string(),
+            wetbulb: Some(20.0),
+            humidity_type: Some("Wetbulb".to_string()),
+            humidity_ratio: Some(0.012),
+            enthalpy: Some(50000.0),
+        };
+        let cloned = spec.clone();
+        assert_eq!(cloned.name, spec.name);
+        assert_eq!(cloned.max_temp, spec.max_temp);
+    }
+
+    #[test]
+    fn test_design_day_spec_debug() {
+        let spec = DesignDaySpec {
+            name: "Test".to_string(),
+            month: 1,
+            day_of_month: 1,
+            max_temp: -10.0,
+            temp_range: 5.0,
+            day_type: "WinterDesignDay".to_string(),
+            wetbulb: None,
+            humidity_type: None,
+            humidity_ratio: None,
+            enthalpy: None,
+        };
+        let debug_str = format!("{:?}", spec);
+        assert!(debug_str.contains("Test"));
+    }
+
+    #[test]
+    fn test_design_day_source_debug() {
+        let ddy = DesignDaySource::new();
+        let debug_str = format!("{:?}", ddy);
+        assert!(debug_str.contains("DesignDaySource"));
     }
 }

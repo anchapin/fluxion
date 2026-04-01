@@ -460,4 +460,201 @@ mod tests {
             "Test skipped due to Session 84 physics changes - see TODO comment"
         );
     }
+
+    #[test]
+    fn test_thermal_mass_correction_zero_capacitance() {
+        let correction = calculate_thermal_mass_correction(0.0);
+        assert_eq!(correction, 1.0);
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_boundary_values() {
+        let correction = calculate_thermal_mass_correction(2.4e6);
+        assert!((correction - 1.0).abs() < 0.01);
+
+        let correction_very_small = calculate_thermal_mass_correction(1.0);
+        assert!(correction_very_small > 0.99);
+    }
+
+    #[test]
+    fn test_thermal_mass_validation_result_default() {
+        let result = ThermalMassValidationResult::default();
+        assert!(!result.passed);
+        assert_eq!(result.low_mass_capacitance, 0.0);
+        assert_eq!(result.high_mass_capacitance, 0.0);
+        assert_eq!(result.capacitance_ratio, 0.0);
+        assert_eq!(result.low_mass_correction_factor, 1.0);
+        assert_eq!(result.high_mass_correction_factor, 1.0);
+        assert!(result.messages.is_empty());
+    }
+
+    #[test]
+    fn test_generate_thermal_mass_report_content() {
+        let result = ThermalMassValidationResult {
+            passed: true,
+            low_mass_capacitance: 2.4e6,
+            high_mass_capacitance: 12.0e6,
+            capacitance_ratio: 5.0,
+            low_mass_correction_factor: 1.0,
+            high_mass_correction_factor: 0.447,
+            messages: vec!["Test message".to_string()],
+        };
+
+        let report = generate_thermal_mass_report(&result);
+        assert!(report.contains("PASSED"));
+        assert!(report.contains("2.40e6"));
+        assert!(report.contains("1.20e7"));
+        assert!(report.contains("5.00"));
+        assert!(report.contains("1.000"));
+        assert!(report.contains("0.447"));
+        assert!(report.contains("Test message"));
+    }
+
+    #[test]
+    fn test_generate_thermal_mass_report_failed() {
+        let result = ThermalMassValidationResult {
+            passed: false,
+            low_mass_capacitance: 1.0e6,
+            high_mass_capacitance: 2.0e6,
+            capacitance_ratio: 2.0,
+            low_mass_correction_factor: 1.0,
+            high_mass_correction_factor: 0.707,
+            messages: vec!["Failed check".to_string()],
+        };
+
+        let report = generate_thermal_mass_report(&result);
+        assert!(report.contains("FAILED"));
+        assert!(report.contains("Messages:"));
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_extreme_high() {
+        let correction = calculate_thermal_mass_correction(1.0e12);
+        assert_eq!(correction, 0.2);
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_intermediate() {
+        let correction = calculate_thermal_mass_correction(9.6e6);
+        assert!(correction > 0.2);
+        assert!(correction < 1.0);
+    }
+
+    #[test]
+    fn test_6r2c_thermal_mass_report() {
+        let result = validate_6r2c_thermal_mass();
+        let report = generate_thermal_mass_report(&result);
+        assert!(report.contains("Thermal Mass Validation Report"));
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_negative_capacitance() {
+        let correction = calculate_thermal_mass_correction(-1.0);
+        // Negative capacitance should produce NaN or be clamped
+        assert!(correction.is_nan() || correction >= 0.2);
+    }
+
+    #[test]
+    fn test_generate_thermal_mass_report_empty_messages() {
+        let result = ThermalMassValidationResult {
+            passed: false,
+            low_mass_capacitance: 0.0,
+            high_mass_capacitance: 0.0,
+            capacitance_ratio: 0.0,
+            low_mass_correction_factor: 1.0,
+            high_mass_correction_factor: 1.0,
+            messages: vec![],
+        };
+
+        let report = generate_thermal_mass_report(&result);
+        assert!(report.contains("FAILED"));
+        assert!(report.contains("Messages:"));
+    }
+
+    #[test]
+    fn test_thermal_mass_validation_result_clone() {
+        let result = ThermalMassValidationResult {
+            passed: true,
+            low_mass_capacitance: 2.4e6,
+            high_mass_capacitance: 12.0e6,
+            capacitance_ratio: 5.0,
+            low_mass_correction_factor: 1.0,
+            high_mass_correction_factor: 0.447,
+            messages: vec!["Test message".to_string()],
+        };
+        let cloned = result.clone();
+        assert!(cloned.passed);
+        assert_eq!(cloned.low_mass_capacitance, 2.4e6);
+        assert_eq!(cloned.capacitance_ratio, 5.0);
+        assert_eq!(cloned.messages.len(), 1);
+    }
+
+    #[test]
+    fn test_generate_thermal_mass_report_with_zero_capacitance() {
+        let result = ThermalMassValidationResult {
+            passed: false,
+            low_mass_capacitance: 0.0,
+            high_mass_capacitance: 0.0,
+            capacitance_ratio: 0.0,
+            low_mass_correction_factor: 1.0,
+            high_mass_correction_factor: 1.0,
+            messages: vec!["Zero capacitance test".to_string()],
+        };
+        let report = generate_thermal_mass_report(&result);
+        assert!(report.contains("0.00e0"));
+        assert!(report.contains("Zero capacitance test"));
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_very_small_capacitance() {
+        let correction = calculate_thermal_mass_correction(0.001);
+        assert!(correction > 0.99);
+        assert!(correction <= 1.0);
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_exactly_reference() {
+        let correction = calculate_thermal_mass_correction(2.4e6);
+        assert!((correction - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_generate_thermal_mass_report_passed() {
+        let result = ThermalMassValidationResult {
+            passed: true,
+            low_mass_capacitance: 2.4e6,
+            high_mass_capacitance: 12.0e6,
+            capacitance_ratio: 5.0,
+            low_mass_correction_factor: 1.0,
+            high_mass_correction_factor: 0.447,
+            messages: vec!["All checks passed".to_string()],
+        };
+        let report = generate_thermal_mass_report(&result);
+        assert!(report.contains("PASSED"));
+        assert!(report.contains("All checks passed"));
+    }
+
+    #[test]
+    fn test_thermal_mass_correction_factor_edge_cases() {
+        // Test at exactly the clamping boundary
+        let cap_at_min = 25.0e6; // 1/sqrt(25e6/2.4e6) ≈ 0.3098
+        let correction = calculate_thermal_mass_correction(cap_at_min);
+        assert!(correction >= 0.2);
+        assert!(correction <= 1.0);
+    }
+
+    #[test]
+    fn test_validate_thermal_mass_report_structure() {
+        let result = validate_thermal_mass();
+        let report = generate_thermal_mass_report(&result);
+
+        assert!(report.contains("=== Thermal Mass Validation Report ==="));
+        assert!(report.contains("Overall Status:"));
+        assert!(report.contains("Low Mass Capacitance:"));
+        assert!(report.contains("High Mass Capacitance:"));
+        assert!(report.contains("Capacitance Ratio:"));
+        assert!(report.contains("Low Mass Correction Factor:"));
+        assert!(report.contains("High Mass Correction Factor:"));
+        assert!(report.contains("Messages:"));
+    }
 }

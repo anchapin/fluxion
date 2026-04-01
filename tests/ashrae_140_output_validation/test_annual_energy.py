@@ -7,11 +7,10 @@ These tests compare annual HVAC energy consumption between Fluxion and EnergyPlu
 - Total site energy (target: <30% error)
 """
 
-import json
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Dict
 
 import pytest
 

@@ -39,8 +39,6 @@ class TestASHRAE140Weather:
     def test_case_900_location(self):
         """Verify location is Denver, CO."""
         # ASHRAE 140 uses Denver, Colorado as the reference location
-        expected_city = "Denver"
-        expected_state = "CO"
 
         result = self._run_rust_test("test_case_900_location")
         assert (
@@ -50,7 +48,6 @@ class TestASHRAE140Weather:
     def test_case_900_climate_zone(self):
         """Verify climate zone is 5B."""
         # Denver climate zone: 5B (Cool - Dry, High Elevation)
-        expected_climate_zone = "5B"
 
         result = self._run_rust_test("test_case_900_climate_zone")
         assert (
@@ -62,9 +59,6 @@ class TestASHRAE140Weather:
         # Denver design days:
         # - Winter: -17.9°C (0% annual exceedance)
         # - Summer: 33.9°C (1% annual exceedance)
-        expected_winter_temp_c = -17.9
-        expected_summer_temp_c = 33.9
-        tolerance = 1.0  # ±1°C tolerance
 
         result = self._run_rust_test("test_case_900_design_days")
         assert (

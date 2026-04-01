@@ -1075,7 +1075,7 @@ impl ValidationReportGenerator {
 mod tests {
     use super::*;
     use crate::validation::report::{
-        BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
+        BenchmarkData, BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
     };
     use std::fs;
 
@@ -1608,6 +1608,425 @@ mod tests {
 
         // Clean up
         let _ = fs::remove_file(csv_path);
+    }
+
+    #[test]
+    fn test_systematic_issue_display_names() {
+        assert_eq!(
+            issue_display_name(&SystematicIssue::SolarGains),
+            "Solar Gain Calculations"
+        );
+        assert_eq!(
+            issue_display_name(&SystematicIssue::ThermalMass),
+            "Thermal Mass Dynamics"
+        );
+        assert_eq!(
+            issue_display_name(&SystematicIssue::InterZoneTransfer),
+            "Inter-Zone Heat Transfer"
+        );
+        assert_eq!(
+            issue_display_name(&SystematicIssue::HvacLoad),
+            "HVAC Load Calculation"
+        );
+        assert_eq!(
+            issue_display_name(&SystematicIssue::WeatherData),
+            "Weather Data"
+        );
+        assert_eq!(
+            issue_display_name(&SystematicIssue::ModelLimitation),
+            "5R1C Model Limitation (Accepted)"
+        );
+        assert_eq!(
+            issue_display_name(&SystematicIssue::Unknown),
+            "Unknown/Unclassified"
+        );
+    }
+
+    #[test]
+    fn test_classify_issue_960_cooling() {
+        let issue = classify_issue("960", MetricType::AnnualCooling);
+        assert_eq!(issue, SystematicIssue::InterZoneTransfer);
+    }
+
+    #[test]
+    fn test_classify_issue_900_series_annual() {
+        for case in &["900", "910", "920", "930", "940", "950", "900FF", "950FF"] {
+            let issue = classify_issue(case, MetricType::AnnualHeating);
+            assert_eq!(
+                issue,
+                SystematicIssue::ModelLimitation,
+                "Failed for {}",
+                case
+            );
+            let issue = classify_issue(case, MetricType::AnnualCooling);
+            assert_eq!(
+                issue,
+                SystematicIssue::ModelLimitation,
+                "Failed for {}",
+                case
+            );
+        }
+    }
+
+    #[test]
+    fn test_classify_issue_low_mass_peak_cooling() {
+        for case in &["600", "610", "620", "630", "640", "650"] {
+            let issue = classify_issue(case, MetricType::PeakCooling);
+            assert_eq!(issue, SystematicIssue::SolarGains, "Failed for {}", case);
+        }
+    }
+
+    #[test]
+    fn test_classify_issue_free_float_high_mass() {
+        let issue = classify_issue("900FF", MetricType::MinFreeFloat);
+        assert_eq!(issue, SystematicIssue::ThermalMass);
+        let issue = classify_issue("950FF", MetricType::MaxFreeFloat);
+        assert_eq!(issue, SystematicIssue::ThermalMass);
+    }
+
+    #[test]
+    fn test_classify_issue_unknown() {
+        let issue = classify_issue("XXX", MetricType::PeakHeating);
+        assert_eq!(issue, SystematicIssue::Unknown);
+    }
+
+    #[test]
+    fn test_classify_issue_low_mass_ff_excluded() {
+        let issue = classify_issue("600FF", MetricType::PeakCooling);
+        assert_eq!(issue, SystematicIssue::Unknown);
+        let issue = classify_issue("650FF", MetricType::PeakCooling);
+        assert_eq!(issue, SystematicIssue::Unknown);
+    }
+
+    #[test]
+    fn test_classify_systematic_issues_empty() {
+        let report = BenchmarkReport::new();
+        let map = ValidationReportGenerator::classify_systematic_issues(&report);
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn test_classify_systematic_issues_with_failures() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("960", MetricType::AnnualCooling, 5.0, 1.55, 2.78);
+        report.add_result_simple("900", MetricType::AnnualHeating, 5.0, 1.17, 2.04);
+        let map = ValidationReportGenerator::classify_systematic_issues(&report);
+        assert!(!map.is_empty());
+        assert!(map
+            .values()
+            .any(|v| *v == SystematicIssue::InterZoneTransfer));
+        assert!(map.values().any(|v| *v == SystematicIssue::ModelLimitation));
+    }
+
+    #[test]
+    fn test_render_markdown_with_systematic_issues_empty() {
+        let report = BenchmarkReport::new();
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_empty_issues.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let issues = SystematicIssueMap::new();
+        let markdown = generator
+            .render_markdown(&report, Some(&issues), None)
+            .unwrap();
+        assert!(markdown.contains("No systematic issues identified"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_render_markdown_with_systematic_issues_populated() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("960", MetricType::AnnualCooling, 5.0, 1.55, 2.78);
+        let issues = ValidationReportGenerator::classify_systematic_issues(&report);
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_populated_issues.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator
+            .render_markdown(&report, Some(&issues), None)
+            .unwrap();
+        assert!(markdown.contains("Inter-Zone Heat Transfer"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_render_markdown_with_baseline_comparison() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        report.set_start();
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        report.set_end();
+        report.add_benchmark_data("600", BenchmarkData::new());
+        let baseline = BaselineMetrics {
+            mae: 3.0,
+            max_deviation: 10.0,
+            pass_rate: 80.0,
+            validation_time_seconds: 1.0,
+        };
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_baseline.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator
+            .render_markdown(&report, None, Some(&baseline))
+            .unwrap();
+        assert!(markdown.contains("Performance Comparison"));
+        assert!(markdown.contains("Mean Absolute Error (MAE)"));
+        assert!(markdown.contains("Max Deviation"));
+        assert!(markdown.contains("Pass Rate"));
+        assert!(markdown.contains("Validation Time"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_render_markdown_with_baseline_degradation() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualCooling, 15.0, 6.14, 8.45);
+        let baseline = BaselineMetrics {
+            mae: 1.0,
+            max_deviation: 2.0,
+            pass_rate: 100.0,
+            validation_time_seconds: 0.1,
+        };
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_degradation.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator
+            .render_markdown(&report, None, Some(&baseline))
+            .unwrap();
+        assert!(markdown.contains("Performance Comparison"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_generate_report_creates_directory() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 4.30, 5.71);
+        let temp_dir = std::env::temp_dir();
+        let nested_path = temp_dir.join("nested").join("dir").join("test_report.md");
+        let generator = ValidationReportGenerator::new(nested_path.clone());
+        let result = generator.generate(&report, None, None);
+        assert!(result.is_ok());
+        assert!(nested_path.exists());
+        let _ = fs::remove_file(&nested_path);
+        let _ = fs::remove_dir_all(temp_dir.join("nested"));
+    }
+
+    #[test]
+    fn test_render_markdown_free_floating_cases() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600FF", MetricType::MinFreeFloat, -17.0, -18.8, -15.6);
+        report.add_result_simple("600FF", MetricType::MaxFreeFloat, 70.0, 64.9, 75.1);
+        report.add_result_simple("900FF", MetricType::MinFreeFloat, -4.0, -6.4, -1.6);
+        report.add_result_simple("900FF", MetricType::MaxFreeFloat, 43.0, 41.8, 46.4);
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_free_float.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator.render_markdown(&report, None, None).unwrap();
+        assert!(markdown.contains("Free-Floating Cases"));
+        assert!(markdown.contains("600FF"));
+        assert!(markdown.contains("900FF"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_render_markdown_special_cases() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("960", MetricType::AnnualHeating, 2.0, 1.65, 2.45);
+        report.add_benchmark_data("960", BenchmarkData::new());
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_special.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator.render_markdown(&report, None, None).unwrap();
+        assert!(markdown.contains("Special Cases"));
+        assert!(markdown.contains("960"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_render_markdown_case_not_found() {
+        let report = BenchmarkReport::new();
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_no_cases.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator.render_markdown(&report, None, None).unwrap();
+        assert!(markdown.contains("Unknown"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_append_case_row_with_benchmark_data() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600", MetricType::AnnualHeating, 5.0, 0.0, 0.0);
+        report.add_result_simple("600", MetricType::AnnualCooling, 7.0, 0.0, 0.0);
+        report.add_result_simple("600", MetricType::PeakHeating, 3.0, 0.0, 0.0);
+        report.add_result_simple("600", MetricType::PeakCooling, 4.0, 0.0, 0.0);
+        let data = BenchmarkData {
+            annual_heating_min: 4.30,
+            annual_heating_max: 5.71,
+            annual_cooling_min: 6.14,
+            annual_cooling_max: 8.45,
+            peak_heating_min: 2.0,
+            peak_heating_max: 4.0,
+            peak_cooling_min: 3.0,
+            peak_cooling_max: 5.0,
+            ..Default::default()
+        };
+        report.add_benchmark_data("600", data);
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_case_row.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator.render_markdown(&report, None, None).unwrap();
+        assert!(markdown.contains("600"));
+        assert!(markdown.contains("Ref:"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_append_free_floating_row_with_benchmark_data() {
+        let mut report = BenchmarkReport::new();
+        report.add_result_simple("600FF", MetricType::MinFreeFloat, -17.0, 0.0, 0.0);
+        report.add_result_simple("600FF", MetricType::MaxFreeFloat, 70.0, 0.0, 0.0);
+        let data = BenchmarkData {
+            min_free_float_min: -18.8,
+            min_free_float_max: -15.6,
+            max_free_float_min: 64.9,
+            max_free_float_max: 75.1,
+            ..Default::default()
+        };
+        report.add_benchmark_data("600FF", data);
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_ff_row.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator.render_markdown(&report, None, None).unwrap();
+        assert!(markdown.contains("600FF"));
+        assert!(markdown.contains("Ref:"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_format_group_validation() {
+        use crate::validation::statistical::ValidationGroup;
+        let mut groups = std::collections::HashMap::new();
+        groups.insert(ValidationGroup::Baseline, true);
+        groups.insert(ValidationGroup::HighMass, false);
+        groups.insert(ValidationGroup::FreeFloating, true);
+        groups.insert(ValidationGroup::Diagnostics, true);
+        groups.insert(ValidationGroup::Equipment, false);
+        let output = ValidationReportGenerator::format_group_validation(&groups);
+        assert!(output.contains("Group-Level Validation Results"));
+        assert!(output.contains("Baseline (600-650)"));
+        assert!(output.contains("High-Mass (900-950)"));
+        assert!(output.contains("Free-Floating"));
+        assert!(output.contains("Diagnostics"));
+        assert!(output.contains("HVAC Equipment (800-810)"));
+        assert!(output.contains("PASS"));
+        assert!(output.contains("FAIL"));
+    }
+
+    #[test]
+    fn test_format_bh_correction_from_report() {
+        use crate::validation::statistical::{
+            EffectDirection, StatisticalMetrics, StatisticalReport, ValidationGroup,
+        };
+        let mut corrected_p = std::collections::HashMap::new();
+        corrected_p.insert(
+            ValidationGroup::Baseline,
+            vec![true, true, true, true, true],
+        );
+        corrected_p.insert(
+            ValidationGroup::HighMass,
+            vec![true, false, false, false, false],
+        );
+        let report = StatisticalReport {
+            metrics: StatisticalMetrics {
+                nmbe: 2.0,
+                cv_rmse: 8.0,
+                nmbe_ci: (1.0, 3.0),
+                cv_rmse_ci: (7.0, 9.0),
+                cohens_d: 0.3,
+                effect_direction: EffectDirection::Underprediction,
+                excluded_cases: 0,
+            },
+            tolerance: BenchmarkReport::new(),
+            group_validation: std::collections::HashMap::new(),
+            corrected_p_values: corrected_p,
+        };
+        let output = ValidationReportGenerator::format_bh_correction_from_report(&report);
+        assert!(output.contains("Benjamini-Hochberg FDR Correction"));
+        assert!(output.contains("Baseline (600-650)"));
+        assert!(output.contains("High-Mass (900-950)"));
+        assert!(output.contains("PASS"));
+        assert!(output.contains("FAIL"));
+    }
+
+    #[test]
+    fn test_render_markdown_with_statistics() {
+        use crate::validation::statistical::{
+            EffectDirection, StatisticalMetrics, StatisticalReport, ValidationGroup,
+        };
+        let mut corrected_p = std::collections::HashMap::new();
+        corrected_p.insert(ValidationGroup::Baseline, vec![true, true]);
+        let mut group_validation = std::collections::HashMap::new();
+        group_validation.insert(ValidationGroup::Baseline, true);
+        let stat_report = StatisticalReport {
+            metrics: StatisticalMetrics {
+                nmbe: 1.5,
+                cv_rmse: 5.0,
+                nmbe_ci: (0.5, 2.5),
+                cv_rmse_ci: (4.0, 6.0),
+                cohens_d: 0.25,
+                effect_direction: EffectDirection::Overprediction,
+                excluded_cases: 1,
+            },
+            tolerance: BenchmarkReport::new(),
+            group_validation,
+            corrected_p_values: corrected_p,
+        };
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_render_with_stats.md");
+        let generator = ValidationReportGenerator::new(output_path.clone());
+        let markdown = generator
+            .render_markdown_with_statistics(&stat_report, None, None)
+            .unwrap();
+        assert!(markdown.contains("Statistical Metrics"));
+        assert!(markdown.contains("Benjamini-Hochberg FDR Correction"));
+        assert!(markdown.contains("Group-Level Validation Results"));
+        assert!(markdown.contains("Overprediction"));
+        let _ = fs::remove_file(output_path);
+    }
+
+    #[test]
+    fn test_format_bh_correction_with_mismatched_lengths() {
+        let p_values = vec![0.01, 0.02];
+        let corrected = vec![true];
+        let metric_types = vec![MetricType::AnnualHeating];
+        let output =
+            ValidationReportGenerator::format_bh_correction(&p_values, &corrected, &metric_types);
+        assert!(output.contains("Annual Heating (MWh)"));
+        assert!(output.contains("Metric 2"));
+    }
+
+    #[test]
+    fn test_export_statistical_csv_without_stats() {
+        let report = BenchmarkReport::new();
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join("test_no_stats.csv");
+        let result = ValidationReportGenerator::export_statistical_csv(&report, &csv_path);
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&csv_path).unwrap();
+        assert!(content.contains("case_id"));
+        let _ = fs::remove_file(csv_path);
+    }
+
+    #[test]
+    fn test_export_statistical_json_without_stats() {
+        let report = BenchmarkReport::new();
+        let temp_dir = std::env::temp_dir();
+        let json_path = temp_dir.join("test_no_stats.json");
+        let result = ValidationReportGenerator::export_statistical_json(&report, &json_path);
+        assert!(result.is_ok());
+        let content = fs::read_to_string(&json_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(json.get("metadata").is_some());
+        let _ = fs::remove_file(json_path);
     }
 
     #[test]

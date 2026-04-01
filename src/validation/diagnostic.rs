@@ -1233,4 +1233,330 @@ mod tests {
         // Cleanup
         let _ = std::fs::remove_file(&temp_path);
     }
+
+    #[test]
+    fn test_hourly_data_csv_row() {
+        let mut data = HourlyData::new(0, 2);
+        data.outdoor_temp = 15.5;
+        data.zone_temps = vec![20.0, 22.0];
+        data.solar_gains = vec![100.0, 200.0];
+        data.hvac_heating = vec![500.0, 600.0];
+        data.hvac_cooling = vec![-100.0, -200.0];
+        let row = data.to_csv_row();
+        assert!(row.contains("0,1,1,0"));
+        assert!(row.contains("15.50"));
+        assert!(row.contains("20.00,22.00"));
+    }
+
+    #[test]
+    fn test_hourly_data_aggregations() {
+        let mut data = HourlyData::new(100, 2);
+        data.hvac_heating = vec![1000.0, 2000.0];
+        data.hvac_cooling = vec![-500.0, -300.0];
+        data.solar_gains = vec![200.0, 300.0];
+        data.internal_loads = vec![100.0, 150.0];
+        assert!((data.total_hvac_power() - 2200.0).abs() < 0.01);
+        assert!((data.total_solar_gains() - 500.0).abs() < 0.01);
+        assert!((data.total_internal_loads() - 250.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_hour_to_date_boundaries() {
+        assert_eq!(hour_to_date(0), (1, 1, 0));
+        assert_eq!(hour_to_date(23), (1, 1, 23));
+        assert_eq!(hour_to_date(24), (1, 2, 0));
+        assert_eq!(hour_to_date(743), (1, 31, 23));
+        assert_eq!(hour_to_date(744), (2, 1, 0));
+        assert_eq!(hour_to_date(8759), (12, 31, 23));
+        assert_eq!(hour_to_date(4380), (7, 2, 12));
+    }
+
+    #[test]
+    fn test_energy_breakdown_default() {
+        let breakdown = EnergyBreakdown::new();
+        assert_eq!(breakdown.envelope_conduction_mwh, 0.0);
+        assert_eq!(breakdown.heating_mwh, 0.0);
+        assert_eq!(breakdown.cooling_mwh, 0.0);
+    }
+
+    #[test]
+    fn test_energy_breakdown_total_input_and_loss() {
+        let mut breakdown = EnergyBreakdown::new();
+        breakdown.solar_gains_mwh = 10.0;
+        breakdown.internal_gains_mwh = 5.0;
+        breakdown.envelope_conduction_mwh = 8.0;
+        breakdown.infiltration_mwh = 3.0;
+        assert!((breakdown.total_input_mwh() - 15.0).abs() < 0.01);
+        assert!((breakdown.total_loss_mwh() - 11.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_energy_breakdown_print() {
+        let mut breakdown = EnergyBreakdown::new();
+        breakdown.heating_mwh = 5.0;
+        breakdown.cooling_mwh = 7.0;
+        breakdown.envelope_conduction_mwh = 3.0;
+        breakdown.infiltration_mwh = 2.0;
+        breakdown.solar_gains_mwh = 10.0;
+        breakdown.internal_gains_mwh = 5.0;
+        breakdown.net_balance_mwh = 1.0;
+        breakdown.print("600");
+    }
+
+    #[test]
+    fn test_energy_breakdown_formatted_string() {
+        let mut breakdown = EnergyBreakdown::new();
+        breakdown.heating_mwh = 5.0;
+        breakdown.cooling_mwh = 7.0;
+        let formatted = breakdown.to_formatted_string("600");
+        assert!(formatted.contains("Case 600"));
+        assert!(formatted.contains("5.00"));
+        assert!(formatted.contains("7.00"));
+    }
+
+    #[test]
+    fn test_peak_timing_default() {
+        let timing = PeakTiming::new();
+        assert_eq!(timing.peak_heating_kw, 0.0);
+        assert_eq!(timing.peak_heating_hour, 0);
+        assert_eq!(timing.peak_cooling_kw, 0.0);
+        assert_eq!(timing.peak_cooling_hour, 0);
+    }
+
+    #[test]
+    fn test_peak_timing_datetime_various() {
+        assert_eq!(PeakTiming::hour_to_datetime(0), "Jan 1 00:00");
+        assert_eq!(PeakTiming::hour_to_datetime(743), "Jan 31 23:00");
+        assert_eq!(PeakTiming::hour_to_datetime(744), "Feb 1 00:00");
+        assert_eq!(PeakTiming::hour_to_datetime(4380), "Jul 2 12:00");
+        assert_eq!(PeakTiming::hour_to_datetime(8759), "Dec 31 23:00");
+    }
+
+    #[test]
+    fn test_peak_timing_time_strs() {
+        let timing = PeakTiming {
+            peak_heating_kw: 5.0,
+            peak_heating_hour: 744,
+            peak_cooling_kw: 3.0,
+            peak_cooling_hour: 4380,
+        };
+        assert_eq!(timing.peak_heating_time_str(), "Month 02 Day 01, 00:00");
+        assert_eq!(timing.peak_cooling_time_str(), "Month 07 Day 02, 12:00");
+    }
+
+    #[test]
+    fn test_peak_timing_print() {
+        let timing = PeakTiming {
+            peak_heating_kw: 5.5,
+            peak_heating_hour: 500,
+            peak_cooling_kw: 3.2,
+            peak_cooling_hour: 4500,
+        };
+        timing.print("600");
+    }
+
+    #[test]
+    fn test_temperature_profile_finalize_empty() {
+        let mut profile = TemperatureProfile::new("600FF");
+        profile.finalize();
+        assert_eq!(profile.min_temp, f64::INFINITY);
+        assert_eq!(profile.max_temp, f64::NEG_INFINITY);
+        assert_eq!(profile.avg_temp, 0.0);
+        assert_eq!(profile.swing, 0.0);
+    }
+
+    #[test]
+    fn test_temperature_profile_csv() {
+        let mut profile = TemperatureProfile::new("600FF");
+        profile.update(15.0);
+        profile.update(20.0);
+        profile.update(25.0);
+        profile.finalize();
+        let csv = profile.to_csv();
+        assert!(csv.contains("Hour,Zone_Temp,Outdoor_Temp"));
+        assert!(csv.contains("0,15.00"));
+        assert!(csv.contains("1,20.00"));
+        assert!(csv.contains("2,25.00"));
+    }
+
+    #[test]
+    fn test_comparison_row_markdown_row() {
+        let row = ComparisonRow::new("600", "Heating", 5.0, 4.30, 5.71);
+        let md = row.to_markdown_row();
+        assert!(md.contains("| 600 |"));
+        assert!(md.contains("Heating"));
+        assert!(md.contains("PASS"));
+    }
+
+    #[test]
+    fn test_comparison_row_fail_markdown() {
+        let row = ComparisonRow::new("600", "Heating", 10.0, 4.30, 5.71);
+        let md = row.to_markdown_row();
+        assert!(md.contains("FAIL"));
+    }
+
+    #[test]
+    fn test_diagnostic_report_save_to_file_json() {
+        let config = DiagnosticConfig::full();
+        let mut report = DiagnosticReport::new(config);
+        let breakdown = EnergyBreakdown {
+            heating_mwh: 5.0,
+            ..Default::default()
+        };
+        report.add_energy_breakdown("600", breakdown);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_diag.json");
+        assert!(report.save_to_file(&path).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("600"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_diagnostic_report_save_to_file_unsupported_ext() {
+        let config = DiagnosticConfig::disabled();
+        let report = DiagnosticReport::new(config);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_diag.txt");
+        assert!(report.save_to_file(&path).is_ok());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_diagnostic_report_export_hourly_csv() {
+        let config = DiagnosticConfig::full();
+        let mut report = DiagnosticReport::new(config);
+        let data = HourlyData::new(0, 1);
+        report.add_hourly_data(data);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_hourly_export.csv");
+        assert!(report.export_hourly_csv(&path).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("Hour,Month,Day"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_diagnostic_report_print_summary_verbose_false() {
+        let config = DiagnosticConfig::disabled();
+        let report = DiagnosticReport::new(config);
+        report.print_summary();
+    }
+
+    #[test]
+    fn test_diagnostic_report_markdown_empty_sections() {
+        let config = DiagnosticConfig::disabled();
+        let report = DiagnosticReport::new(config);
+        let md = report.to_markdown();
+        assert!(md.contains("ASHRAE 140 Diagnostic Report"));
+        assert!(!md.contains("Energy Breakdowns"));
+        assert!(!md.contains("Peak Load Timing"));
+    }
+
+    #[test]
+    fn test_diagnostic_report_markdown_temperature_profiles() {
+        let config = DiagnosticConfig::full();
+        let mut report = DiagnosticReport::new(config);
+        let mut profile = TemperatureProfile::new("600FF");
+        profile.update(15.0);
+        profile.update(25.0);
+        profile.finalize();
+        report.add_temperature_profile(profile);
+        let md = report.to_markdown();
+        assert!(md.contains("Temperature Profiles"));
+        assert!(md.contains("600FF"));
+        assert!(md.contains("15.0"));
+        assert!(md.contains("25.0"));
+    }
+
+    #[test]
+    fn test_diagnostic_report_markdown_comparison_table() {
+        let config = DiagnosticConfig::full();
+        let mut report = DiagnosticReport::new(config);
+        let row = ComparisonRow::new("600", "Heating", 5.0, 4.30, 5.71);
+        report.add_comparison_row(row);
+        let md = report.to_markdown();
+        assert!(md.contains("Validation Comparison Table"));
+        assert!(md.contains("600"));
+        assert!(md.contains("PASS"));
+    }
+
+    #[test]
+    fn test_diagnostic_collector_from_env() {
+        let collector = DiagnosticCollector::from_env();
+        assert!(!collector.config.enabled || std::env::var("ASHRAE_140_DEBUG").is_ok());
+    }
+
+    #[test]
+    fn test_diagnostic_collector_disabled_methods() {
+        let mut collector = DiagnosticCollector::disabled();
+        collector.start_case("600", 1);
+        collector.add_comparison("600", "Heating", 5.0, 4.30, 5.71, "PASS", 0.0);
+        collector.print_comparison_table();
+        assert!(collector.comparison_rows.is_empty());
+    }
+
+    #[test]
+    fn test_diagnostic_collector_export_temperature_profile() {
+        let config = DiagnosticConfig::full();
+        let mut collector = DiagnosticCollector::new(config);
+        collector.start_case("600", 2);
+        let mut data = HourlyData::new(0, 2);
+        data.zone_temps = vec![20.0, 22.0];
+        data.outdoor_temp = 10.0;
+        collector.record_hour(data);
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_temp_profile.csv");
+        let path_str = path.to_string_lossy().into_owned();
+        assert!(collector.export_temperature_profile(&path_str).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("Hour,OutdoorTemp"));
+        assert!(content.contains("Zone0_Temp"));
+        assert!(content.contains("Zone1_Temp"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_diagnostic_collector_save_all() {
+        let config = DiagnosticConfig::full();
+        let mut collector = DiagnosticCollector::new(config);
+        collector.start_case("600", 1);
+        let data = HourlyData::new(0, 1);
+        collector.record_hour(data);
+        assert!(collector.save_all().is_ok());
+    }
+
+    #[test]
+    fn test_diagnostic_collector_verbose_output() {
+        let config = DiagnosticConfig::full();
+        let mut collector = DiagnosticCollector::new(config);
+        collector.start_case("600", 1);
+        let mut data = HourlyData::new(0, 1);
+        data.zone_temps[0] = 20.0;
+        data.outdoor_temp = 10.0;
+        collector.record_hour(data);
+        let data2 = HourlyData::new(1000, 1);
+        collector.record_hour(data2);
+        collector.finalize_case(5.0, 7.0);
+        collector.print_comparison_table();
+        assert!(collector.energy_breakdowns.contains_key("600"));
+    }
+
+    #[test]
+    fn test_diagnostic_collector_finalize_case_multi_zone() {
+        let config = DiagnosticConfig::full();
+        let mut collector = DiagnosticCollector::new(config);
+        collector.start_case("960", 2);
+        let mut data = HourlyData::new(0, 2);
+        data.solar_gains = vec![100.0, 200.0];
+        data.internal_loads = vec![50.0, 60.0];
+        data.infiltration_loss = vec![-10.0, -20.0];
+        data.envelope_conduction = vec![-30.0, -40.0];
+        data.hvac_heating = vec![500.0, 600.0];
+        data.hvac_cooling = vec![-100.0, -200.0];
+        collector.record_hour(data);
+        collector.finalize_case(0.5, 0.7);
+        let breakdown = collector.energy_breakdowns.get("960").unwrap();
+        assert!(breakdown.solar_gains_mwh > 0.0);
+    }
 }

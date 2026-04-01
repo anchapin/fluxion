@@ -23,9 +23,8 @@ import argparse
 import csv
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -437,11 +436,11 @@ def main():
     # Print summary
     if args.verbose:
         summary = parser_obj.get_summary()
-        print(f"\nSummary:")
+        print("\nSummary:")
         print(f"  Total records: {summary['total_records']}")
         print(f"  Timestep range: {summary['timestep_range']}")
         print(f"  Zones: {summary['zones']}")
-        print(f"  By component:")
+        print("  By component:")
         for comp, count in summary["by_component"].items():
             print(f"    {comp}: {count}")
 

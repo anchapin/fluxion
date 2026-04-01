@@ -428,4 +428,122 @@ mod tests {
 
         std::fs::remove_dir_all(&temp_dir).ok();
     }
+
+    #[test]
+    fn test_tmy3_cache_filename_with_special_chars() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_5");
+        let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
+
+        let filename = "Los_Angeles.tmy3";
+        let filepath = temp_dir.join(filename);
+        let checksum_path = temp_dir.join("Los_Angeles.sha256");
+
+        std::fs::write(&filepath, "la content").unwrap();
+        let checksum = format!("{:x}", Sha256::digest(b"la content"));
+        std::fs::write(&checksum_path, checksum).unwrap();
+
+        let result = cache.get_or_download("https://example.com/la.tmy3", "Los Angeles");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), filepath);
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_new_creates_dir() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_new");
+        std::fs::remove_dir_all(&temp_dir).ok();
+        let result = Tmy3Cache::with_cache_dir(temp_dir.clone());
+        assert!(result.is_ok());
+        assert!(temp_dir.exists());
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_weather_location_debug() {
+        let location = WeatherLocation {
+            name: "Test".to_string(),
+            latitude: 40.0,
+            longitude: -100.0,
+            elevation: 500.0,
+            tmy3_url: "https://example.com/test.tmy3".to_string(),
+            epw_url: "https://example.com/test.epw".to_string(),
+            climate_zone: Some("4A".to_string()),
+        };
+        let debug_str = format!("{:?}", location);
+        assert!(debug_str.contains("Test"));
+        assert!(debug_str.contains("40.0"));
+    }
+
+    #[test]
+    fn test_weather_location_clone() {
+        let location = WeatherLocation {
+            name: "Clone".to_string(),
+            latitude: 35.0,
+            longitude: -95.0,
+            elevation: 300.0,
+            tmy3_url: "https://example.com/clone.tmy3".to_string(),
+            epw_url: "https://example.com/clone.epw".to_string(),
+            climate_zone: None,
+        };
+        let cloned = location.clone();
+        assert_eq!(cloned.name, location.name);
+        assert_eq!(cloned.latitude, location.latitude);
+        assert_eq!(cloned.climate_zone, None);
+    }
+
+    #[test]
+    fn test_load_weather_locations_duplicate_names() {
+        let temp_dir = std::env::temp_dir();
+        let json_path = temp_dir.join("test_duplicate_locations.json");
+
+        let locations = vec![
+            WeatherLocation {
+                name: "Denver".to_string(),
+                latitude: 39.74,
+                longitude: -104.99,
+                elevation: 1634.0,
+                tmy3_url: "https://example.com/denver1.tmy3".to_string(),
+                epw_url: "https://example.com/denver1.epw".to_string(),
+                climate_zone: Some("5B".to_string()),
+            },
+            WeatherLocation {
+                name: "Denver".to_string(),
+                latitude: 40.0,
+                longitude: -105.0,
+                elevation: 1700.0,
+                tmy3_url: "https://example.com/denver2.tmy3".to_string(),
+                epw_url: "https://example.com/denver2.epw".to_string(),
+                climate_zone: Some("5B".to_string()),
+            },
+        ];
+
+        let json = serde_json::to_string(&locations).unwrap();
+        std::fs::write(&json_path, json).unwrap();
+
+        let result = load_weather_locations(json_path.to_str().unwrap());
+        assert!(result.is_ok());
+        let map = result.unwrap();
+        // Second entry should overwrite first
+        assert_eq!(map.len(), 1);
+        assert_eq!(map["Denver"].latitude, 40.0);
+
+        std::fs::remove_file(&json_path).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_get_or_download_no_checksum_file() {
+        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_6");
+        let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
+
+        let filename = "No_Checksum.tmy3";
+        let filepath = temp_dir.join(filename);
+
+        std::fs::write(&filepath, "content without checksum").unwrap();
+
+        let result = cache.get_or_download("https://example.com/test.tmy3", "No Checksum");
+        assert!(result.is_ok());
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
 }

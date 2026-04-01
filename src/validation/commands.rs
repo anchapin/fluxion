@@ -314,4 +314,212 @@ mod tests {
 
         Ok(())
     }
+
+    #[test]
+    fn test_update_references_already_up_to_date() -> anyhow::Result<()> {
+        let mock_db = json!({
+            "version": "2025-01",
+            "source": "Test",
+            "cases": {
+                "600": {
+                    "annual_heating": { "EnergyPlus": { "min": 5.0, "max": 7.0 } },
+                    "annual_cooling": { "EnergyPlus": { "min": 8.0, "max": 10.0 } },
+                    "peak_heating": { "EnergyPlus": { "min": 3.0, "max": 4.0 } },
+                    "peak_cooling": { "EnergyPlus": { "min": 5.0, "max": 6.0 } }
+                }
+            }
+        })
+        .to_string();
+
+        let mut server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&mock_db)
+            .create();
+
+        let temp = tempdir()?;
+        let _guard = DirGuard::new(temp.path())?;
+
+        fs::create_dir("docs")?;
+        let output_path = Path::new("docs/ashrae_140_references.json");
+
+        // Write the same version file
+        let existing_db = json!({
+            "version": "2025-01",
+            "source": "Existing",
+            "cases": {}
+        });
+        fs::write(output_path, serde_json::to_string_pretty(&existing_db)?)?;
+
+        let result = update_references(Some(&url));
+        assert!(result.is_ok());
+
+        // File is NOT updated when versions match (early return at line 66-67)
+        let content = fs::read_to_string(output_path)?;
+        let parsed: MultiReferenceDB = serde_json::from_str(&content)?;
+        assert_eq!(parsed.version, "2025-01");
+        // Source remains from existing file (no update happened)
+        assert_eq!(parsed.source, Some("Existing".to_string()));
+        // No backup should exist (no update happened)
+        let backup_path = Path::new("docs/ashrae_140_references.json.bak");
+        assert!(!backup_path.exists());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_references_empty_cases() {
+        let mock_db = json!({
+            "version": "2025-01",
+            "source": "Test",
+            "cases": {}
+        })
+        .to_string();
+
+        let mut server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&mock_db)
+            .create();
+
+        let result = update_references(Some(&url));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("no cases"));
+    }
+
+    #[test]
+    fn test_update_references_missing_energyplus() {
+        let mock_db = json!({
+            "version": "2025-01",
+            "source": "Test",
+            "cases": {
+                "600": {
+                    "annual_heating": {
+                        "ESP-r": { "min": 5.0, "max": 7.0 }
+                    },
+                    "annual_cooling": { "EnergyPlus": { "min": 8.0, "max": 10.0 } },
+                    "peak_heating": { "EnergyPlus": { "min": 3.0, "max": 4.0 } },
+                    "peak_cooling": { "EnergyPlus": { "min": 5.0, "max": 6.0 } }
+                }
+            }
+        })
+        .to_string();
+
+        let mut server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&mock_db)
+            .create();
+
+        let result = update_references(Some(&url));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("EnergyPlus"));
+    }
+
+    #[test]
+    fn test_update_references_empty_annual_heating() {
+        let mock_db = json!({
+            "version": "2025-01",
+            "source": "Test",
+            "cases": {
+                "600": {
+                    "annual_heating": {},
+                    "annual_cooling": { "EnergyPlus": { "min": 8.0, "max": 10.0 } },
+                    "peak_heating": { "EnergyPlus": { "min": 3.0, "max": 4.0 } },
+                    "peak_cooling": { "EnergyPlus": { "min": 5.0, "max": 6.0 } }
+                }
+            }
+        })
+        .to_string();
+
+        let mut server = mockito::Server::new();
+        let url = server.url();
+        let _mock = server
+            .mock("GET", Matcher::Any)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(&mock_db)
+            .create();
+
+        let result = update_references(Some(&url));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("annual_heating"));
+    }
+
+    #[test]
+    fn test_update_references_local_validation_success() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let _guard = DirGuard::new(temp.path())?;
+
+        fs::create_dir("docs")?;
+        let output_path = Path::new("docs/ashrae_140_references.json");
+
+        let valid_db = json!({
+            "version": "2025-01",
+            "source": "Test",
+            "cases": {
+                "600": {
+                    "annual_heating": { "EnergyPlus": { "min": 5.0, "max": 7.0 } },
+                    "annual_cooling": { "EnergyPlus": { "min": 8.0, "max": 10.0 } },
+                    "peak_heating": { "EnergyPlus": { "min": 3.0, "max": 4.0 } },
+                    "peak_cooling": { "EnergyPlus": { "min": 5.0, "max": 6.0 } }
+                }
+            }
+        });
+        fs::write(output_path, serde_json::to_string_pretty(&valid_db)?)?;
+
+        let result = update_references(None);
+        assert!(result.is_ok());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_update_references_local_file_not_found() {
+        let temp = tempdir().unwrap();
+        let _guard = DirGuard::new(temp.path()).unwrap();
+
+        let result = update_references(None);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("not found"));
+    }
+
+    #[test]
+    fn test_update_references_local_invalid_json() -> anyhow::Result<()> {
+        let temp = tempdir()?;
+        let _guard = DirGuard::new(temp.path())?;
+
+        fs::create_dir("docs")?;
+        let output_path = Path::new("docs/ashrae_140_references.json");
+        fs::write(output_path, "not valid json")?;
+
+        let result = update_references(None);
+        assert!(result.is_err());
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_dir_guard_restores_directory() {
+        let original = std::env::current_dir().unwrap();
+        let temp = tempdir().unwrap();
+        {
+            let _guard = DirGuard::new(temp.path()).unwrap();
+            assert_eq!(std::env::current_dir().unwrap(), temp.path());
+        }
+        assert_eq!(std::env::current_dir().unwrap(), original);
+    }
 }

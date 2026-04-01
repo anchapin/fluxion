@@ -10,7 +10,6 @@ These tests validate that building geometry matches ASHRAE 140 specifications:
 - Surface orientations (azimuth angles)
 """
 
-import json
 import subprocess
 from pathlib import Path
 from typing import Any, Dict

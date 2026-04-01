@@ -1060,4 +1060,379 @@ mod tests {
             tilt_factor
         );
     }
+
+    #[test]
+    fn test_sky_radiation_new_with_clamping() {
+        let sky = SkyRadiationExchange::new(1.5, -0.5);
+        assert!((sky.surface_emissivity - 1.0).abs() < 1e-6);
+        assert!((sky.sky_view_factor - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sky_radiation_tilted_surface() {
+        let sky = SkyRadiationExchange::tilted_surface(45.0, 0.9);
+        assert!(sky.sky_view_factor > 0.5 && sky.sky_view_factor < 1.0);
+        assert!((sky.surface_emissivity - 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sky_radiation_horizontal_roof() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        assert!((sky.sky_view_factor - 1.0).abs() < 1e-6);
+        assert!((sky.surface_emissivity - 0.9).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_net_radiative_flux_zero_difference() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        let flux = sky.net_radiative_flux(20.0, 20.0);
+        assert!(flux.abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_net_radiative_flux_heating() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        let flux = sky.net_radiative_flux(-10.0, 10.0);
+        assert!(flux > 0.0);
+    }
+
+    #[test]
+    fn test_radiative_coefficient() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        let h_r = sky.radiative_coefficient(20.0, 10.0);
+        assert!(h_r > 0.0 && h_r < 10.0);
+    }
+
+    #[test]
+    fn test_radiative_coefficient_same_temp() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        let h_r = sky.radiative_coefficient(20.0, 20.0);
+        assert!(h_r > 0.0);
+    }
+
+    #[test]
+    fn test_sky_temperature_from_ir_zero() {
+        let t_sky = SkyRadiationExchange::sky_temperature_from_ir(0.0);
+        assert!((t_sky - (-20.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sky_temperature_from_ir_negative() {
+        let t_sky = SkyRadiationExchange::sky_temperature_from_ir(-100.0);
+        assert!((t_sky - (-20.0)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sky_temperature_from_ir_valid() {
+        let t_sky = SkyRadiationExchange::sky_temperature_from_ir(315.0);
+        assert!(t_sky > -50.0 && t_sky < 50.0);
+    }
+
+    #[test]
+    fn test_sky_temperature_from_emissivity() {
+        let t_sky = SkyRadiationExchange::sky_temperature_from_emissivity(20.0, 0.8);
+        assert!(t_sky < 20.0);
+        assert!(t_sky > -50.0);
+    }
+
+    #[test]
+    fn test_sky_temperature_from_emissivity_clear() {
+        let t_sky = SkyRadiationExchange::sky_temperature_from_emissivity(20.0, 0.6);
+        let t_sky_cloudy = SkyRadiationExchange::sky_temperature_from_emissivity(20.0, 0.9);
+        assert!(t_sky < t_sky_cloudy);
+    }
+
+    #[test]
+    fn test_roof_heat_loss() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        let loss = sky.roof_heat_loss(50.0, 30.0, -10.0);
+        assert!(loss < 0.0);
+        assert!(loss.abs() > 1000.0);
+    }
+
+    #[test]
+    fn test_roof_heat_loss_zero_area() {
+        let sky = SkyRadiationExchange::horizontal_roof();
+        let loss = sky.roof_heat_loss(0.0, 30.0, -10.0);
+        assert!((loss - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_estimate_sky_emissivity_bounds() {
+        let e1 = estimate_sky_emissivity(0.0, 0.0);
+        let e2 = estimate_sky_emissivity(100.0, 1.0);
+        assert!(e1 >= 0.6 && e1 <= 0.98);
+        assert!(e2 >= 0.6 && e2 <= 0.98);
+    }
+
+    #[test]
+    fn test_estimate_sky_emissivity_mid_range() {
+        let e = estimate_sky_emissivity(50.0, 0.5);
+        assert!(e > 0.6 && e < 0.98);
+    }
+
+    #[test]
+    fn test_sol_air_new_clamping() {
+        let sol = SolAirTemperature::new(1.5, -0.5, 0.5);
+        assert!((sol.solar_absorptance - 1.0).abs() < 1e-6);
+        assert!((sol.emissivity - 0.0).abs() < 1e-6);
+        assert!(sol.exterior_conductance >= 1.0);
+    }
+
+    #[test]
+    fn test_sol_air_light_surface() {
+        let sol = SolAirTemperature::light_surface();
+        assert!((sol.solar_absorptance - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sol_air_dark_surface() {
+        let sol = SolAirTemperature::dark_surface();
+        assert!((sol.solar_absorptance - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sol_air_with_ground_reflected() {
+        let sol = SolAirTemperature::ashrae_140_default();
+        let t_sol = sol.calculate(30.0, 500.0, -10.0, Some(50.0));
+        let t_sol_no_ground = sol.calculate(30.0, 500.0, -10.0, None);
+        assert!(t_sol > t_sol_no_ground);
+    }
+
+    #[test]
+    fn test_sol_air_for_roof_vs_calculate() {
+        let sol = SolAirTemperature::ashrae_140_default();
+        let t_roof = sol.for_roof(30.0, 500.0, -10.0);
+        let t_calc = sol.calculate(30.0, 500.0, -10.0, None);
+        assert!((t_roof - t_calc).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sol_air_for_wall_no_longwave() {
+        let sol = SolAirTemperature::ashrae_140_default();
+        let t_wall = sol.for_wall(30.0, 500.0, 50.0);
+        assert!(t_wall > 30.0);
+    }
+
+    #[test]
+    fn test_sol_air_for_wall_zero_ground() {
+        let sol = SolAirTemperature::ashrae_140_default();
+        let t_wall = sol.for_wall(30.0, 500.0, 0.0);
+        let t_wall_with_ground = sol.for_wall(30.0, 500.0, 50.0);
+        assert!(t_wall_with_ground > t_wall);
+    }
+
+    #[test]
+    fn test_calculate_exterior_conductance_zero_wind() {
+        let h = SolAirTemperature::calculate_exterior_conductance(0.0);
+        assert!((h - 10.8).abs() < 0.1);
+    }
+
+    #[test]
+    fn test_calculate_exterior_conductance_high_wind() {
+        let h_low = SolAirTemperature::calculate_exterior_conductance(1.0);
+        let h_high = SolAirTemperature::calculate_exterior_conductance(20.0);
+        assert!(h_high > h_low);
+    }
+
+    #[test]
+    fn test_heat_flux_zero_difference() {
+        let sol = SolAirTemperature::default();
+        let flux = sol.heat_flux(25.0, 25.0, 0.5);
+        assert!((flux - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_heat_flux_negative() {
+        let sol = SolAirTemperature::default();
+        let flux = sol.heat_flux(20.0, 30.0, 0.5);
+        assert!(flux < 0.0);
+    }
+
+    #[test]
+    fn test_sol_air_simple_zero_solar() {
+        let t_sol = sol_air_temperature_simple(25.0, 0.0, 0.6, 22.7);
+        assert!((t_sol - 25.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sol_air_simple_high_absorptance() {
+        let t_sol_dark = sol_air_temperature_simple(30.0, 500.0, 0.9, 22.7);
+        let t_sol_light = sol_air_temperature_simple(30.0, 500.0, 0.3, 22.7);
+        assert!(t_sol_dark > t_sol_light);
+    }
+
+    #[test]
+    fn test_extraterrestrial_irradiance() {
+        let dni_jan = extraterrestrial_irradiance(1);
+        let dni_jul = extraterrestrial_irradiance(182);
+        assert!(dni_jan > 1300.0 && dni_jan < 1450.0);
+        assert!(dni_jul > 1300.0 && dni_jul < 1450.0);
+    }
+
+    #[test]
+    fn test_extraterrestrial_irradiance_perihelion() {
+        let dni_peri = extraterrestrial_irradiance(3);
+        let dni_aph = extraterrestrial_irradiance(185);
+        assert!(dni_peri > dni_aph);
+    }
+
+    #[test]
+    fn test_relative_airmass_zenith() {
+        let am_0 = relative_airmass(0.0);
+        let am_60 = relative_airmass(60.0);
+        assert!(am_0 > 0.0 && am_0 < 2.0);
+        assert!(am_60 > am_0);
+    }
+
+    #[test]
+    fn test_relative_airmass_high_zenith() {
+        let am_85 = relative_airmass(85.0);
+        assert!(am_85 > 5.0);
+    }
+
+    #[test]
+    fn test_perez_diffuse_zero_dhi() {
+        let diffuse = PerezSkyModel::calculate_diffuse_tilted(
+            0.0, 800.0, 1366.0, 1.5, 30.0, 45.0, 180.0, 180.0,
+        );
+        assert!((diffuse - 0.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_perez_diffuse_horizontal_surface() {
+        let diffuse = PerezSkyModel::calculate_diffuse_tilted(
+            100.0, 800.0, 1366.0, 1.5, 30.0, 0.0, 0.0, 180.0,
+        );
+        assert!(diffuse > 0.0);
+    }
+
+    #[test]
+    fn test_perez_classify_sky_clearness() {
+        assert_eq!(PerezSkyModel::classify_sky_clearness(0.5), 1);
+        assert_eq!(PerezSkyModel::classify_sky_clearness(1.0), 1);
+        assert_eq!(PerezSkyModel::classify_sky_clearness(1.1), 2);
+        assert_eq!(PerezSkyModel::classify_sky_clearness(1.5), 3);
+        assert_eq!(PerezSkyModel::classify_sky_clearness(3.0), 6);
+        assert_eq!(PerezSkyModel::classify_sky_clearness(10.0), 7);
+    }
+
+    #[test]
+    fn test_perez_coefficients_all_bins() {
+        for ebin in 0..8 {
+            let (f1c, f2c) = PerezSkyModel::get_perez_coefficients(ebin);
+            assert_eq!(f1c.len(), 3);
+            assert_eq!(f2c.len(), 3);
+        }
+    }
+
+    #[test]
+    fn test_perez_coefficients_clamped() {
+        let (f1c, f2c) = PerezSkyModel::get_perez_coefficients(10);
+        let (f1c7, f2c7) = PerezSkyModel::get_perez_coefficients(7);
+        assert_eq!(f1c, f1c7);
+        assert_eq!(f2c, f2c7);
+    }
+
+    #[test]
+    fn test_perez_cos_incidence_bounds() {
+        let cos = PerezSkyModel::calculate_cos_incidence(90.0, 180.0, 30.0, 180.0);
+        assert!(cos >= -1.0 && cos <= 1.0);
+    }
+
+    #[test]
+    fn test_perez_cos_incidence_zero_tilt() {
+        let cos = PerezSkyModel::calculate_cos_incidence(0.0, 0.0, 30.0, 180.0);
+        assert!(cos >= 0.0 && cos <= 1.0);
+    }
+
+    #[test]
+    fn test_calculate_clearness_index_zero_ghi() {
+        let kt = calculate_clearness_index(0.0, 0.5, 1366.1);
+        assert!((kt - 0.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_clearness_index_zenith_90() {
+        let kt = calculate_clearness_index(500.0, std::f64::consts::PI / 2.0, 1366.1);
+        assert!(kt >= 0.0 && kt <= 1.0);
+    }
+
+    #[test]
+    fn test_calculate_clear_sky_ghi_zenith_90() {
+        let ghi = calculate_clear_sky_ghi(std::f64::consts::PI / 2.0, 1366.1);
+        assert!(ghi > 0.0);
+    }
+
+    #[test]
+    fn test_sky_emissivity_with_clouds_extreme_clear() {
+        let e = calculate_sky_emissivity_with_clouds(30.0, 1.0);
+        assert!(e > 0.6 && e < 0.9);
+    }
+
+    #[test]
+    fn test_sky_emissivity_with_clouds_extreme_cloudy() {
+        let e = calculate_sky_emissivity_with_clouds(-10.0, 0.0);
+        assert!(e > 0.7 && e < 1.1);
+    }
+
+    #[test]
+    fn test_sky_emissivity_with_clouds_mid() {
+        let e = calculate_sky_emissivity_with_clouds(20.0, 0.5);
+        let e_clear = calculate_sky_emissivity_with_clouds(20.0, 1.0);
+        let e_cloudy = calculate_sky_emissivity_with_clouds(20.0, 0.1);
+        assert!(e_clear < e && e < e_cloudy);
+    }
+
+    #[test]
+    fn test_total_irradiance_tilted() {
+        let total =
+            total_irradiance_tilted(800.0, 100.0, None, 1366.0, 30.0, 180.0, 45.0, 180.0, 0.2);
+        assert!(total > 0.0);
+    }
+
+    #[test]
+    fn test_total_irradiance_tilted_with_ghi() {
+        let total = total_irradiance_tilted(
+            800.0,
+            100.0,
+            Some(900.0),
+            1366.0,
+            30.0,
+            180.0,
+            45.0,
+            180.0,
+            0.2,
+        );
+        assert!(total > 0.0);
+    }
+
+    #[test]
+    fn test_total_irradiance_night() {
+        let total = total_irradiance_tilted(0.0, 0.0, None, 1366.0, 90.0, 180.0, 45.0, 180.0, 0.2);
+        assert!(total >= 0.0);
+    }
+
+    #[test]
+    fn test_total_irradiance_high_albedo() {
+        let total_low =
+            total_irradiance_tilted(800.0, 100.0, None, 1366.0, 30.0, 180.0, 45.0, 180.0, 0.2);
+        let total_high =
+            total_irradiance_tilted(800.0, 100.0, None, 1366.0, 30.0, 180.0, 45.0, 180.0, 0.8);
+        assert!(total_high > total_low);
+    }
+
+    #[test]
+    fn test_sky_radiation_clone_copy() {
+        let sky1 = SkyRadiationExchange::horizontal_roof();
+        let sky2 = sky1;
+        assert!((sky1.surface_emissivity - sky2.surface_emissivity).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_sol_air_clone_copy() {
+        let sol1 = SolAirTemperature::ashrae_140_default();
+        let sol2 = sol1;
+        assert!((sol1.solar_absorptance - sol2.solar_absorptance).abs() < 1e-6);
+    }
 }

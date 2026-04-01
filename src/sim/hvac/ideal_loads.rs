@@ -271,11 +271,7 @@ impl SimpleHVACEquipment {
     ///
     /// # Returns
     /// Electrical power consumption in watts
-    pub fn calculate_electrical_consumption(
-        &self,
-        thermal_load_watts: f64,
-        mode: HVACMode,
-    ) -> f64 {
+    pub fn calculate_electrical_consumption(&self, thermal_load_watts: f64, mode: HVACMode) -> f64 {
         match mode {
             HVACMode::Cooling => thermal_load_watts / self.cooling_cop,
             HVACMode::Heating => thermal_load_watts / self.heating_efficiency,
@@ -379,9 +375,7 @@ impl IdealLoadsSystem {
             HVACMode::None => 0.0,
         };
 
-        let electrical_kw = self
-            .equipment
-            .calculate_electrical_kw(thermal_load, mode);
+        let electrical_kw = self.equipment.calculate_electrical_kw(thermal_load, mode);
 
         HVACEnergyResult::new(thermal_load, electrical_kw, mode)
     }
@@ -409,7 +403,10 @@ mod tests {
     fn test_sensible_cooling_load_above_setpoint() {
         // Zone at 25°C, cooling setpoint 24°C, supply 13°C
         let load = ZoneIdealLoads::calculate_sensible_cooling_load(25.0, 24.0, 13.0);
-        assert!(load > 0.0, "Should have positive cooling load when zone > setpoint");
+        assert!(
+            load > 0.0,
+            "Should have positive cooling load when zone > setpoint"
+        );
     }
 
     #[test]
@@ -423,7 +420,10 @@ mod tests {
     fn test_sensible_heating_load_below_setpoint() {
         // Zone at 18°C, heating setpoint 20°C, supply 40°C
         let load = ZoneIdealLoads::calculate_sensible_heating_load(18.0, 20.0, 40.0);
-        assert!(load > 0.0, "Should have positive heating load when zone < setpoint");
+        assert!(
+            load > 0.0,
+            "Should have positive heating load when zone < setpoint"
+        );
     }
 
     #[test]
@@ -581,7 +581,8 @@ mod tests {
 
         // Part 2: Equipment converts thermal to electrical
         let equipment = SimpleHVACEquipment::default();
-        let electrical_watts = equipment.calculate_electrical_consumption(cooling_load, HVACMode::Cooling);
+        let electrical_watts =
+            equipment.calculate_electrical_consumption(cooling_load, HVACMode::Cooling);
 
         // Verify the calculation: thermal / COP = electrical
         let expected = cooling_load / 3.0;
@@ -604,8 +605,14 @@ mod tests {
         let high_heating = high_eff.calculate_electrical_kw(thermal_load, HVACMode::Heating);
 
         // Verify high efficiency uses less electricity
-        assert!(high_cooling < standard_cooling, "High COP should use less power");
-        assert!(high_heating < standard_heating, "High efficiency should use less power");
+        assert!(
+            high_cooling < standard_cooling,
+            "High COP should use less power"
+        );
+        assert!(
+            high_heating < standard_heating,
+            "High efficiency should use less power"
+        );
     }
 
     #[test]
@@ -621,8 +628,10 @@ mod tests {
 
         // Verify the math works as expected
         let thermal_3000w = 3000.0;
-        let cooling_power = equipment.calculate_electrical_consumption(thermal_3000w, HVACMode::Cooling);
-        let heating_power = equipment.calculate_electrical_consumption(thermal_3000w, HVACMode::Heating);
+        let cooling_power =
+            equipment.calculate_electrical_consumption(thermal_3000w, HVACMode::Cooling);
+        let heating_power =
+            equipment.calculate_electrical_consumption(thermal_3000w, HVACMode::Heating);
 
         // Cooling: 3000W / 3.0 = 1000W
         assert!((cooling_power - 1000.0).abs() < 0.1);

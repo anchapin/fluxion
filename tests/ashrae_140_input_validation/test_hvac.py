@@ -40,8 +40,6 @@ class TestASHRAE140HVAC:
     def test_case_900_heating_setpoint(self):
         """Verify heating setpoint is 20°C."""
         # ASHRAE 140 Case 900 heating setpoint: 20°C
-        expected_setpoint_c = 20.0
-        tolerance = 0.01  # ±0.01°C tolerance
 
         result = self._run_rust_test("test_case_900_heating_setpoint")
         assert (
@@ -51,8 +49,6 @@ class TestASHRAE140HVAC:
     def test_case_900_cooling_setpoint(self):
         """Verify cooling setpoint is 27°C."""
         # ASHRAE 140 Case 900 cooling setpoint: 27°C
-        expected_setpoint_c = 27.0
-        tolerance = 0.01
 
         result = self._run_rust_test("test_case_900_cooling_setpoint")
         assert (

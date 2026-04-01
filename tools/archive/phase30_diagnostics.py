@@ -13,12 +13,9 @@ Usage:
 
 import argparse
 import csv
-import json
-import math
-from dataclasses import dataclass, field
-from datetime import datetime
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 
 @dataclass
@@ -210,7 +207,7 @@ def analyze_daily_patterns(data: List[HourlyDiagnosticData], case_id: str):
 def analyze_orientation_effect(cases_data: Dict[str, List[HourlyDiagnosticData]]):
     """Compare solar gain patterns between different window orientations."""
     print(f"\n{'=' * 80}")
-    print(f"WINDOW ORIENTATION EFFECT ANALYSIS")
+    print("WINDOW ORIENTATION EFFECT ANALYSIS")
     print(f"{'=' * 80}\n")
 
     # Case 900: South windows
@@ -239,7 +236,7 @@ def analyze_orientation_effect(cases_data: Dict[str, List[HourlyDiagnosticData]]
         )
 
     print(f"\n{'=' * 80}")
-    print(f"KEY INSIGHTS:")
+    print("KEY INSIGHTS:")
     print(f"{'=' * 80}")
 
     # Compare 900 (South) vs 920 (E+W)
@@ -250,7 +247,7 @@ def analyze_orientation_effect(cases_data: Dict[str, List[HourlyDiagnosticData]]
         summer_900 = analyze_summer_week(data_900)
         summer_920 = analyze_summer_week(data_920)
 
-        print(f"\n1. South vs East/West Solar Gain:")
+        print("\n1. South vs East/West Solar Gain:")
         print(
             f"   - Case 900 (South): Avg summer solar = {summer_900.get('avg_solar_w', 0):.2f} W"
         )
@@ -266,14 +263,14 @@ def analyze_orientation_effect(cases_data: Dict[str, List[HourlyDiagnosticData]]
             r.solar_gain_w for r in data_920 if 14 <= r.hour <= 18
         ) / max(1, sum(1 for r in data_920 if 14 <= r.hour <= 18))
 
-        print(f"\n2. East/West Asymmetry (Case 920):")
+        print("\n2. East/West Asymmetry (Case 920):")
         print(f"   - Morning solar (6-10h, East): {morning_solar_920:.2f} W")
         print(f"   - Afternoon solar (14-18h, West): {afternoon_solar_920:.2f} W")
         print(
             f"   - Afternoon/Morning ratio: {afternoon_solar_920 / max(1, morning_solar_920):.2f}"
         )
 
-        print(f"\n3. Cooling Response:")
+        print("\n3. Cooling Response:")
         print(f"   - Case 900 cooling: {summer_900.get('avg_cooling_w', 0):.2f} W avg")
         print(f"   - Case 920 cooling: {summer_920.get('avg_cooling_w', 0):.2f} W avg")
 
@@ -296,7 +293,7 @@ def analyze_orientation_effect(cases_data: Dict[str, List[HourlyDiagnosticData]]
             hourly_920.keys(), key=lambda h: sum(hourly_920[h]) / len(hourly_920[h])
         )
 
-        print(f"\n4. Peak Solar Timing:")
+        print("\n4. Peak Solar Timing:")
         print(f"   - Case 900 (South): Peak at {peak_hour_900}:00")
         print(f"   - Case 920 (E+W): Peak at {peak_hour_920}:00")
 

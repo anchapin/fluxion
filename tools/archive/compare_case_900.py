@@ -6,7 +6,6 @@ This script extracts results from the EnergyPlus simulation run via OpenStudio M
 and compares them with Fluxion simulation results.
 """
 
-import json
 import subprocess
 from pathlib import Path
 
@@ -53,14 +52,14 @@ def run_fluxion_simulation():
                 fluxion_heating_mwh = float(
                     line.split(":")[1].strip().replace(" MWh", "")
                 )
-            except:
+            except Exception:
                 pass
         if "Cooling:" in line and "MWh" in line:
             try:
                 fluxion_cooling_mwh = float(
                     line.split(":")[1].strip().replace(" MWh", "")
                 )
-            except:
+            except Exception:
                 pass
 
     return {
@@ -285,7 +284,7 @@ def main():
     print("Comparison Complete!")
     print("=" * 80)
     print(f"\nReport: {report_path}")
-    print(f"\nKey Findings:")
+    print("\nKey Findings:")
     print(
         f"  Heating Difference: {metrics['heating_diff_mwh']:.3f} MWh ({metrics['heating_diff_pct']:.1f}%)"
     )

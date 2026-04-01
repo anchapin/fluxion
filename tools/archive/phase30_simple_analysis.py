@@ -78,34 +78,32 @@ def analyze_cooling_season_ratio(data_by_case):
         ratio = ew / south if south > 0 else 0
 
         print(f"\n{'=' * 80}")
-        print(f"KEY METRIC: E/W to South Ratio (Cooling Season)")
+        print("KEY METRIC: E/W to South Ratio (Cooling Season)")
         print(f"{'=' * 80}")
         print(f"  Case 900 (South): {south:.1f} kWh")
         print(f"  Case 920 (E/W):   {ew:.1f} kWh")
         print(f"  Ratio (E/W ÷ South): {ratio:.3f}")
-        print(f"  Expected range: 0.75-0.85")
+        print("  Expected range: 0.75-0.85")
         print(f"  Deviation: {(ratio - 0.80) / 0.80 * 100:+.1f}% from expected 0.80")
 
         if ratio > 0.90:
-            print(
-                f"\  ⚠️  WARNING: Ratio is TOO HIGH - E/W solar gain is overestimated!"
-            )
-            print(f"     This suggests the model is NOT properly accounting for:")
-            print(f"     - Higher incidence angles on E/W surfaces during summer")
-            print(f"     - Lower SHGC effectiveness at high incidence angles")
-            print(f"     - Potential Perez sky model issues for vertical surfaces")
+            print("\  ⚠️  WARNING: Ratio is TOO HIGH - E/W solar gain is overestimated!")
+            print("     This suggests the model is NOT properly accounting for:")
+            print("     - Higher incidence angles on E/W surfaces during summer")
+            print("     - Lower SHGC effectiveness at high incidence angles")
+            print("     - Potential Perez sky model issues for vertical surfaces")
         elif ratio < 0.70:
             print(
-                f"\n  ⚠️  WARNING: Ratio is TOO LOW - E/W solar gain is underestimated!"
+                "\n  ⚠️  WARNING: Ratio is TOO LOW - E/W solar gain is underestimated!"
             )
         else:
-            print(f"\n  ✓ Ratio is within acceptable range")
+            print("\n  ✓ Ratio is within acceptable range")
 
 
 def analyze_daily_profile(data_by_case, month=7, day=15):
     """Analyze daily solar gain profile for July 15."""
     print(f"\n{'=' * 80}")
-    print(f"DAILY SOLAR GAIN PROFILE - July 15 (Peak Summer)")
+    print("DAILY SOLAR GAIN PROFILE - July 15 (Peak Summer)")
     print("=" * 80)
 
     for case_id, data in data_by_case.items():
@@ -353,14 +351,14 @@ def main():
 
     # Print key findings
     if "summary" in report:
-        print(f"\nKEY FINDING:")
+        print("\nKEY FINDING:")
         print(f"  E/W to South ratio: {report['summary']['ew_to_south_ratio']:.3f}")
         print(
             f"  Expected: {report['summary']['expected_ratio_min']}-{report['summary']['expected_ratio_max']}"
         )
 
         if report["recommendations"]:
-            print(f"\nRECOMMENDATIONS:")
+            print("\nRECOMMENDATIONS:")
             for rec in report["recommendations"]:
                 print(f"  {rec}")
 

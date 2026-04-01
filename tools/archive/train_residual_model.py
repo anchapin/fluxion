@@ -17,14 +17,14 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset, random_split
+from torch.utils.data import DataLoader, Dataset
 
 # Configure logging
 logging.basicConfig(
@@ -445,7 +445,7 @@ def main():
         (targets_np - np.mean(targets_np)) ** 2
     )
 
-    logger.info(f"Test Results:")
+    logger.info("Test Results:")
     logger.info(f"  RMSE: {rmse:.2f} W")
     logger.info(f"  MAE: {mae:.2f} W")
     logger.info(f"  R²: {r2:.4f}")

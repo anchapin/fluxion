@@ -1,0 +1,13 @@
+! Denver-Stapleton Intl_CO_USA TMY3
+LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005
+DESIGN CONDITIONS,0
+EXTREME PERIODS,0
+TYPICAL/EXTREME PERIODS,0
+GROUND TEMPERATURES,0
+HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0
+COMMENTS 1,Test DDY file for Fluxion
+COMMENTS 2,Denver design day conditions
+SizingPeriod:DesignDay,
+Denver-Stapleton Intl Ann Htg 99.6% Condns DB,12,21,WinterDesignDay,-18.6,0.0,,Wetbulb,-18.6,,0.009,50000.0
+SizingPeriod:DesignDay,
+Denver-Stapleton Intl Ann Clg 0.4% Condns DB=>MWB,7,21,SummerDesignDay,34.4,12.8,,Wetbulb,18.3,,0.009,70000.0

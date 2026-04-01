@@ -10,7 +10,7 @@ These tests compare hourly zone air temperatures between Fluxion and EnergyPlus:
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Dict, List
 
 import numpy as np
 import pytest

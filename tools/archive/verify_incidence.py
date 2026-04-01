@@ -46,7 +46,7 @@ print("  Surface: tilt=90°, azimuth=180° (South)")
 print("  Sun: altitude=73°, azimuth=180° (South)")
 theta, cos_theta = calculate_incidence_angle(90, 180, 73, 180)
 print(f"  Result: incidence angle = {theta:.1f}°")
-print(f"  Expected: ~73° (incidence = altitude for vertical surface facing sun)")
+print("  Expected: ~73° (incidence = altitude for vertical surface facing sun)")
 
 # Test case 2: Vertical East surface, morning
 print("\nTest 2: Vertical East surface, 9am, June 21")

@@ -13,9 +13,8 @@ import argparse
 import csv
 import json
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -144,11 +143,11 @@ def analyze_solar_gains(hourly_data: List[SolarGainData], case_id: str):
     if total_solar > 0:
         cooling_to_solar_ratio = total_cooling / total_solar
         print(f"\nCooling-to-Solar Ratio: {cooling_to_solar_ratio:.3f}")
-        print(f"  (Higher ratio = more cooling needed per unit solar gain)")
+        print("  (Higher ratio = more cooling needed per unit solar gain)")
 
     # Peak solar gain analysis
     max_solar = max(hourly_data, key=lambda x: x.solar_gain_w)
-    print(f"\nPeak Solar Gain:")
+    print("\nPeak Solar Gain:")
     print(
         f"  Timestep: {max_solar.timestep} (Month {max_solar.month}, Day {max_solar.day}, Hour {max_solar.hour})"
     )
@@ -158,7 +157,7 @@ def analyze_solar_gains(hourly_data: List[SolarGainData], case_id: str):
     print(f"  Zone Temp: {max_solar.zone_temp_c:.2f} °C")
 
     # Summer week analysis (typical design week)
-    print(f"\nSummer Week Analysis (Day 180-186, June 29 - July 5):")
+    print("\nSummer Week Analysis (Day 180-186, June 29 - July 5):")
     summer_week_solar = 0.0
     summer_week_cooling = 0.0
     for data in hourly_data:

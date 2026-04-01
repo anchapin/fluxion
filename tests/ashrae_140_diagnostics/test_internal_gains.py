@@ -7,9 +7,7 @@ These tests validate internal heat gain calculations:
 - Convective/radiative split
 """
 
-import subprocess
-from pathlib import Path
-from typing import Any, Dict
+from typing import Dict
 
 import pytest
 

@@ -569,4 +569,223 @@ mod tests {
             eui_15min
         );
     }
+
+    #[test]
+    fn test_timestep_mode_default() {
+        let mode = TimestepMode::default();
+        assert!(!mode.is_adaptive());
+        assert_eq!(mode.get_timestep(1.0), Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn test_timestep_mode_adaptive_boundary() {
+        let mode = TimestepMode::adaptive(Duration::from_secs(360), Duration::from_secs(60), 2.0);
+        assert_eq!(mode.get_timestep(2.0), Duration::from_secs(360));
+        assert_eq!(mode.get_timestep(1.99), Duration::from_secs(3600));
+    }
+
+    #[test]
+    fn test_scheduler_timesteps_per_hour_edge_cases() {
+        let scheduler =
+            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(0)), 1.0);
+        assert_eq!(scheduler.timesteps_per_hour(), 60);
+    }
+
+    #[test]
+    fn test_scheduler_get_timestep_for_hour() {
+        let scheduler = AdaptiveTimestepScheduler::new(
+            TimestepMode::adaptive(Duration::from_secs(360), Duration::from_secs(60), 2.0),
+            5.0,
+        );
+        assert_eq!(scheduler.get_timestep_for_hour(0), Duration::from_secs(360));
+        assert_eq!(
+            scheduler.get_timestep_for_hour(12),
+            Duration::from_secs(360)
+        );
+        assert_eq!(
+            scheduler.get_timestep_for_hour(23),
+            Duration::from_secs(360)
+        );
+    }
+
+    #[test]
+    fn test_scheduler_schedule_empty() {
+        let scheduler =
+            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+        let timesteps = scheduler.schedule_simulation(0);
+        assert!(timesteps.is_empty());
+    }
+
+    #[test]
+    fn test_calculate_time_constant() {
+        let tau = AdaptiveTimestepScheduler::calculate_time_constant(1.2e7, 650.0);
+        assert!((tau - 5.13).abs() < 0.1);
+        let tau = AdaptiveTimestepScheduler::calculate_time_constant(1.0e6, 0.0);
+        assert!(tau == f64::INFINITY);
+        let tau = AdaptiveTimestepScheduler::calculate_time_constant(1.0e6, -10.0);
+        assert!(tau == f64::INFINITY);
+    }
+
+    #[test]
+    fn test_stability_criterion_edge_cases() {
+        let scheduler =
+            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+        assert!(!scheduler.is_stable(0.1));
+        assert!(scheduler.is_stable(10.0));
+        assert!(!scheduler.is_stable(0.5));
+        assert!(scheduler.is_stable(0.51));
+    }
+
+    #[test]
+    fn test_accuracy_criterion_edge_cases() {
+        let scheduler =
+            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+        assert!(!scheduler.is_accurate(1.0));
+        assert!(scheduler.is_accurate(100.0));
+        assert!(!scheduler.is_accurate(10.0));
+        assert!(scheduler.is_accurate(10.1));
+    }
+
+    #[test]
+    fn test_stability_margin() {
+        let scheduler =
+            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+        let margin = scheduler.stability_margin(5.0);
+        assert!((margin - 0.1).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_accuracy_margin() {
+        let scheduler =
+            AdaptiveTimestepScheduler::new(TimestepMode::fixed(Duration::from_secs(3600)), 1.0);
+        let margin = scheduler.accuracy_margin(5.0);
+        assert!((margin - 2.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_time_constant_analyzer_unknown_case() {
+        assert!(TimeConstantAnalyzer::for_case("999").is_none());
+        assert!(TimeConstantAnalyzer::for_case("unknown").is_none());
+        assert!(TimeConstantAnalyzer::for_case("").is_none());
+    }
+
+    #[test]
+    fn test_time_constant_analyzer_classify_unknown() {
+        assert!(TimeConstantAnalyzer::classify_case("999").is_none());
+        assert!(TimeConstantAnalyzer::classify_case("").is_none());
+    }
+
+    #[test]
+    fn test_time_constant_analyzer_all_low_mass_cases() {
+        let low_mass_cases = vec!["600", "610", "620", "630", "640", "650", "600FF", "650FF"];
+        for case_id in low_mass_cases {
+            let tau = TimeConstantAnalyzer::for_case(case_id).unwrap();
+            assert!(
+                tau < 2.0,
+                "Case {} should be low-mass (tau={})",
+                case_id,
+                tau
+            );
+            assert_eq!(
+                TimeConstantAnalyzer::classify_case(case_id),
+                Some("low-mass")
+            );
+        }
+    }
+
+    #[test]
+    fn test_time_constant_analyzer_all_high_mass_cases() {
+        let high_mass_cases = vec![
+            "900", "910", "920", "930", "940", "950", "900FF", "950FF", "960",
+        ];
+        for case_id in high_mass_cases {
+            let tau = TimeConstantAnalyzer::for_case(case_id).unwrap();
+            assert!(
+                tau > 2.0,
+                "Case {} should be high-mass (tau={})",
+                case_id,
+                tau
+            );
+            assert_eq!(
+                TimeConstantAnalyzer::classify_case(case_id),
+                Some("high-mass")
+            );
+        }
+    }
+
+    #[test]
+    fn test_recommended_timestep_unknown_case() {
+        assert!(TimeConstantAnalyzer::recommended_timestep("unknown").is_none());
+    }
+
+    #[test]
+    fn test_generate_table() {
+        let table = TimeConstantAnalyzer::generate_table();
+        assert_eq!(table.len(), 17);
+        assert_eq!(table[0].case_id, "600");
+        assert!(table[0].tau_hours > 0.0);
+        assert_eq!(table[0].classification, "low-mass");
+        assert!(table[0].recommended_timestep_secs > 0);
+    }
+
+    #[test]
+    fn test_case_time_constant_debug() {
+        let ctc = CaseTimeConstant {
+            case_id: "600".to_string(),
+            tau_hours: 0.83,
+            classification: "low-mass".to_string(),
+            recommended_timestep_secs: 360,
+        };
+        let debug_str = format!("{:?}", ctc);
+        assert!(debug_str.contains("600"));
+        assert!(debug_str.contains("low-mass"));
+    }
+
+    #[test]
+    fn test_case_time_constant_clone() {
+        let ctc = CaseTimeConstant {
+            case_id: "900".to_string(),
+            tau_hours: 5.13,
+            classification: "high-mass".to_string(),
+            recommended_timestep_secs: 360,
+        };
+        let cloned = ctc.clone();
+        assert_eq!(cloned.case_id, "900");
+        assert_eq!(cloned.tau_hours, 5.13);
+    }
+
+    #[test]
+    fn test_serde_timestep_mode_fixed() {
+        let mode = TimestepMode::fixed(Duration::from_secs(1800));
+        let json = serde_json::to_string(&mode).unwrap();
+        assert!(json.contains("Fixed"));
+        assert!(json.contains("1800"));
+        let deserialized: TimestepMode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.get_timestep(1.0), Duration::from_secs(1800));
+    }
+
+    #[test]
+    fn test_serde_timestep_mode_adaptive() {
+        let mode = TimestepMode::adaptive(Duration::from_secs(360), Duration::from_secs(60), 2.0);
+        let json = serde_json::to_string(&mode).unwrap();
+        assert!(json.contains("Adaptive"));
+        assert!(json.contains("360"));
+        let deserialized: TimestepMode = serde_json::from_str(&json).unwrap();
+        assert!(deserialized.is_adaptive());
+    }
+
+    #[test]
+    fn test_scheduler_with_adaptive_mode() {
+        let scheduler = AdaptiveTimestepScheduler::new(
+            TimestepMode::adaptive(Duration::from_secs(360), Duration::from_secs(60), 2.0),
+            5.0,
+        );
+        assert_eq!(scheduler.timestep(), Duration::from_secs(360));
+        assert_eq!(scheduler.timesteps_per_hour(), 10);
+        let timesteps = scheduler.schedule_simulation(1);
+        assert_eq!(timesteps.len(), 10);
+        for dt in &timesteps {
+            assert_eq!(*dt, Duration::from_secs(360));
+        }
+    }
 }

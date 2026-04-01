@@ -715,8 +715,8 @@ mod tests {
     #[test]
     fn test_empty_validator() {
         let validator = CrossValidator::with_default_config();
-        let surrogates = SurrogateManager::new().unwrap();
-        let result = validator.validate(&surrogates);
+        // Use validate_analytical instead (no ONNX needed)
+        let result = validator.validate_analytical();
         assert_eq!(result.fold_results.len(), 0);
     }
 
@@ -753,5 +753,837 @@ mod tests {
         assert!(markdown.contains("Cross-Validation Report"));
         assert!(markdown.contains("MAE"));
         assert!(markdown.contains("RMSE"));
+    }
+
+    #[test]
+    fn test_validate_analytical_with_data() {
+        let mut validator = CrossValidator::with_default_config();
+        for i in 0..10 {
+            validator.add_data(ValidationDataPoint {
+                inputs: vec![i as f64],
+                targets: vec![(i * 2) as f64],
+                metadata: HashMap::new(),
+            });
+        }
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 5);
+        assert!(!result.aggregated_metrics.mean_mae.is_nan());
+    }
+
+    #[test]
+    fn test_validate_analytical_without_shuffle() {
+        let config = CrossValidatorConfig {
+            shuffle: false,
+            ..Default::default()
+        };
+        let mut validator = CrossValidator::new(config);
+        for i in 0..10 {
+            validator.add_data(ValidationDataPoint {
+                inputs: vec![i as f64],
+                targets: vec![(i * 2) as f64],
+                metadata: HashMap::new(),
+            });
+        }
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 5);
+    }
+
+    #[test]
+    fn test_validate_analytical_with_remainder() {
+        let config = CrossValidatorConfig {
+            k_folds: 3,
+            ..Default::default()
+        };
+        let mut validator = CrossValidator::new(config);
+        for i in 0..10 {
+            validator.add_data(ValidationDataPoint {
+                inputs: vec![i as f64],
+                targets: vec![1.0],
+                metadata: HashMap::new(),
+            });
+        }
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 3);
+    }
+
+    #[test]
+    fn test_validate_analytical_empty() {
+        let validator = CrossValidator::with_default_config();
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 0);
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_empty() {
+        let validator = CrossValidator::with_default_config();
+        let result = validator.compute_fold_metrics(0, vec![], vec![], &[], &[]);
+        assert_eq!(result.mae, 0.0);
+        assert_eq!(result.rmse, 0.0);
+        assert_eq!(result.mape, 0.0);
+        assert_eq!(result.r_squared, 0.0);
+        assert_eq!(result.max_error, 0.0);
+        assert!(result.energy_balance_metrics.is_none());
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_zero_actuals() {
+        let validator = CrossValidator::with_default_config();
+        let predictions = vec![1.0, 2.0, 3.0];
+        let actuals = vec![0.0, 0.0, 0.0];
+        let result = validator.compute_fold_metrics(0, vec![], vec![], &predictions, &actuals);
+        assert!(result.mae > 0.0);
+        assert_eq!(result.mape, 0.0);
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_energy_balance_disabled() {
+        let config = CrossValidatorConfig {
+            compute_energy_balance: false,
+            ..Default::default()
+        };
+        let validator = CrossValidator::new(config);
+        let result = validator.compute_fold_metrics(0, vec![], vec![], &[100.0], &[98.0]);
+        assert!(result.energy_balance_metrics.is_none());
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_energy_balance_enabled() {
+        let config = CrossValidatorConfig {
+            compute_energy_balance: true,
+            ..Default::default()
+        };
+        let validator = CrossValidator::new(config);
+        let result =
+            validator.compute_fold_metrics(0, vec![], vec![], &[100.0, 110.0], &[98.0, 112.0]);
+        assert!(result.energy_balance_metrics.is_some());
+        let eb = result.energy_balance_metrics.unwrap();
+        assert!((eb.analytical_total - 210.0).abs() < 0.01);
+        assert!((eb.surrogate_total - 210.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_mixed_zeros() {
+        let validator = CrossValidator::with_default_config();
+        let result =
+            validator.compute_fold_metrics(0, vec![], vec![], &[1.0, 2.0, 3.0], &[1.0, 0.0, 3.0]);
+        assert!(result.mae > 0.0);
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_max_error() {
+        let validator = CrossValidator::with_default_config();
+        let result = validator.compute_fold_metrics(
+            0,
+            vec![],
+            vec![],
+            &[10.0, 20.0, 30.0],
+            &[12.0, 18.0, 35.0],
+        );
+        assert!((result.max_error - 5.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_fold_metrics_r_squared_perfect() {
+        let validator = CrossValidator::with_default_config();
+        let result = validator.compute_fold_metrics(
+            0,
+            vec![],
+            vec![],
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+            &[1.0, 2.0, 3.0, 4.0, 5.0],
+        );
+        assert!((result.r_squared - 1.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_compute_analytical_comparison_placeholder() {
+        let validator = CrossValidator::with_default_config();
+        let comp = validator.compute_analytical_comparison();
+        assert_eq!(comp.analytical_mean_heating, 0.0);
+        assert_eq!(comp.analytical_mean_cooling, 0.0);
+        assert_eq!(comp.correlation, 0.0);
+        assert!(comp.predictions.is_empty());
+    }
+
+    #[test]
+    fn test_load_ashrae140_data() {
+        let mut validator = CrossValidator::with_default_config();
+        validator.load_ashrae140_data();
+        assert_eq!(validator.data.len(), 0);
+    }
+
+    #[test]
+    fn test_load_from_csv_not_implemented() {
+        let mut validator = CrossValidator::with_default_config();
+        let result = validator.load_from_csv("/tmp/nonexistent.csv");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_add_data_batch() {
+        let mut validator = CrossValidator::with_default_config();
+        let data = vec![
+            ValidationDataPoint {
+                inputs: vec![1.0],
+                targets: vec![2.0],
+                metadata: HashMap::new(),
+            },
+            ValidationDataPoint {
+                inputs: vec![3.0],
+                targets: vec![4.0],
+                metadata: HashMap::new(),
+            },
+        ];
+        validator.add_data_batch(data);
+        assert_eq!(validator.data.len(), 2);
+    }
+
+    #[test]
+    fn test_save_and_load_data() {
+        let mut validator = CrossValidator::with_default_config();
+        let mut metadata = HashMap::new();
+        metadata.insert("case".to_string(), "900".to_string());
+        validator.add_data(ValidationDataPoint {
+            inputs: vec![1.0, 2.0],
+            targets: vec![3.0],
+            metadata,
+        });
+        let temp_path = std::env::temp_dir().join("test_cv_data.json");
+        assert!(validator.save_data(&temp_path).is_ok());
+        let mut validator2 = CrossValidator::with_default_config();
+        assert!(validator2.load_data(&temp_path).is_ok());
+        assert_eq!(validator2.data.len(), 1);
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn test_load_data_nonexistent_file() {
+        let mut validator = CrossValidator::with_default_config();
+        assert!(validator.load_data("/tmp/nonexistent_cv.json").is_err());
+    }
+
+    #[test]
+    fn test_validation_data_point_with_metadata() {
+        let mut metadata = HashMap::new();
+        metadata.insert("case_id".to_string(), "900".to_string());
+        let dp = ValidationDataPoint {
+            inputs: vec![20.0, 15.0],
+            targets: vec![100.0],
+            metadata,
+        };
+        assert_eq!(dp.metadata.get("case_id").unwrap(), "900");
+    }
+
+    #[test]
+    fn test_fold_result_clone() {
+        let fr = FoldResult {
+            fold_index: 0,
+            train_indices: vec![0, 1],
+            test_indices: vec![2, 3],
+            mae: 1.5,
+            rmse: 2.0,
+            mape: 5.0,
+            r_squared: 0.95,
+            max_error: 3.0,
+            energy_balance_metrics: None,
+        };
+        let cloned = fr.clone();
+        assert_eq!(cloned.fold_index, fr.fold_index);
+        assert_eq!(cloned.mae, fr.mae);
+    }
+
+    #[test]
+    fn test_energy_balance_metrics_clone() {
+        let eb = EnergyBalanceMetrics {
+            analytical_total: 1000.0,
+            surrogate_total: 980.0,
+            balance_error_percent: 2.0,
+            heating_balance: 500.0,
+            cooling_balance: 480.0,
+        };
+        let cloned = eb.clone();
+        assert_eq!(cloned.analytical_total, eb.analytical_total);
+    }
+
+    #[test]
+    fn test_aggregated_metrics_default() {
+        let m = AggregatedMetrics::default();
+        assert_eq!(m.mean_mae, 0.0);
+        assert_eq!(m.mean_rmse, 0.0);
+        assert!(m.energy_balance.is_none());
+    }
+
+    #[test]
+    fn test_prediction_pair_clone() {
+        let pp = PredictionPair {
+            analytical: 100.0,
+            surrogate: 105.0,
+            difference: 5.0,
+        };
+        let cloned = pp.clone();
+        assert_eq!(cloned.analytical, pp.analytical);
+    }
+
+    #[test]
+    fn test_analytical_comparison_clone() {
+        let ac = AnalyticalComparison {
+            analytical_mean_heating: 100.0,
+            analytical_mean_cooling: 50.0,
+            surrogate_mean_heating: 105.0,
+            surrogate_mean_cooling: 55.0,
+            correlation: 0.95,
+            predictions: vec![PredictionPair {
+                analytical: 100.0,
+                surrogate: 105.0,
+                difference: 5.0,
+            }],
+        };
+        let cloned = ac.clone();
+        assert_eq!(cloned.correlation, ac.correlation);
+    }
+
+    #[test]
+    fn test_config_clone() {
+        let config = CrossValidatorConfig {
+            k_folds: 10,
+            seed: 123,
+            shuffle: false,
+            compute_energy_balance: false,
+            compare_analytical: false,
+        };
+        let cloned = config.clone();
+        assert_eq!(cloned.k_folds, 10);
+        assert_eq!(cloned.seed, 123);
+    }
+
+    #[test]
+    fn test_cross_validation_result_new() {
+        let config = CrossValidatorConfig::default();
+        let result = CrossValidationResult::new(config.clone());
+        assert_eq!(result.fold_results.len(), 0);
+        assert!(result.analytical_comparison.is_none());
+    }
+
+    #[test]
+    fn test_to_markdown_with_analytical_comparison() {
+        let config = CrossValidatorConfig::default();
+        let mut result = CrossValidationResult::new(config);
+        result.add_fold_result(FoldResult {
+            fold_index: 0,
+            train_indices: vec![0],
+            test_indices: vec![1],
+            mae: 1.0,
+            rmse: 1.5,
+            mape: 5.0,
+            r_squared: 0.9,
+            max_error: 2.0,
+            energy_balance_metrics: None,
+        });
+        result.compute_aggregated_metrics();
+        result.analytical_comparison = Some(AnalyticalComparison {
+            analytical_mean_heating: 100.0,
+            analytical_mean_cooling: 50.0,
+            surrogate_mean_heating: 105.0,
+            surrogate_mean_cooling: 48.0,
+            correlation: 0.95,
+            predictions: vec![PredictionPair {
+                analytical: 100.0,
+                surrogate: 105.0,
+                difference: 5.0,
+            }],
+        });
+        let md = result.to_markdown();
+        assert!(md.contains("Analytical vs Surrogate"));
+        assert!(md.contains("Correlation"));
+    }
+
+    #[test]
+    fn test_to_markdown_pass_threshold() {
+        let config = CrossValidatorConfig::default();
+        let mut result = CrossValidationResult::new(config);
+        result.add_fold_result(FoldResult {
+            fold_index: 0,
+            train_indices: vec![0],
+            test_indices: vec![1],
+            mae: 1.0,
+            rmse: 1.5,
+            mape: 5.0,
+            r_squared: 0.9,
+            max_error: 2.0,
+            energy_balance_metrics: None,
+        });
+        result.compute_aggregated_metrics();
+        assert!(result.to_markdown().contains("PASSED"));
+    }
+
+    #[test]
+    fn test_to_markdown_fail_threshold() {
+        let config = CrossValidatorConfig::default();
+        let mut result = CrossValidationResult::new(config);
+        result.add_fold_result(FoldResult {
+            fold_index: 0,
+            train_indices: vec![0],
+            test_indices: vec![1],
+            mae: 10.0,
+            rmse: 15.0,
+            mape: 20.0,
+            r_squared: 0.5,
+            max_error: 20.0,
+            energy_balance_metrics: None,
+        });
+        result.compute_aggregated_metrics();
+        assert!(result.to_markdown().contains("FAILED"));
+    }
+
+    #[test]
+    fn test_to_markdown_without_energy_balance() {
+        let config = CrossValidatorConfig {
+            compute_energy_balance: false,
+            ..Default::default()
+        };
+        let mut result = CrossValidationResult::new(config);
+        result.add_fold_result(FoldResult {
+            fold_index: 0,
+            train_indices: vec![0],
+            test_indices: vec![1],
+            mae: 1.0,
+            rmse: 1.5,
+            mape: 5.0,
+            r_squared: 0.9,
+            max_error: 2.0,
+            energy_balance_metrics: None,
+        });
+        result.compute_aggregated_metrics();
+        let md = result.to_markdown();
+        assert!(md.contains("Cross-Validation Report"));
+        assert!(result.aggregated_metrics.energy_balance.is_none());
+    }
+
+    #[test]
+    fn test_aggregated_metrics_energy_balance_zero_analytical() {
+        let config = CrossValidatorConfig::default();
+        let mut result = CrossValidationResult::new(config);
+        result.add_fold_result(FoldResult {
+            fold_index: 0,
+            train_indices: vec![0],
+            test_indices: vec![1],
+            mae: 1.0,
+            rmse: 1.0,
+            mape: 0.0,
+            r_squared: 0.0,
+            max_error: 1.0,
+            energy_balance_metrics: Some(EnergyBalanceMetrics {
+                analytical_total: 0.0,
+                surrogate_total: 100.0,
+                balance_error_percent: 0.0,
+                heating_balance: 0.0,
+                cooling_balance: 0.0,
+            }),
+        });
+        result.compute_aggregated_metrics();
+        let eb = result.aggregated_metrics.energy_balance.unwrap();
+        assert_eq!(eb.balance_error_percent, 0.0);
+    }
+
+    #[test]
+    fn test_aggregated_metrics_multiple_folds() {
+        let config = CrossValidatorConfig {
+            k_folds: 3,
+            ..Default::default()
+        };
+        let mut result = CrossValidationResult::new(config);
+        for i in 0..3 {
+            result.add_fold_result(FoldResult {
+                fold_index: i,
+                train_indices: vec![0, 1, 2],
+                test_indices: vec![3, 4],
+                mae: 1.0 + i as f64,
+                rmse: 2.0 + i as f64,
+                mape: 5.0 + i as f64,
+                r_squared: 0.9 - i as f64 * 0.1,
+                max_error: 3.0 + i as f64,
+                energy_balance_metrics: Some(EnergyBalanceMetrics {
+                    analytical_total: 1000.0,
+                    surrogate_total: 980.0 + i as f64 * 10.0,
+                    balance_error_percent: 2.0 + i as f64,
+                    heating_balance: 0.0,
+                    cooling_balance: 0.0,
+                }),
+            });
+        }
+        result.compute_aggregated_metrics();
+        assert!((result.aggregated_metrics.mean_mae - 2.0).abs() < 0.01);
+        assert!(result.aggregated_metrics.std_mae > 0.0);
+        assert!(result.aggregated_metrics.energy_balance.is_some());
+    }
+
+    #[test]
+    fn test_compare_to_ashrae140_delegates() {
+        let mut validator = CrossValidator::with_default_config();
+        validator.add_data(ValidationDataPoint {
+            inputs: vec![20.0],
+            targets: vec![100.0],
+            metadata: HashMap::new(),
+        });
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 5);
+    }
+
+    #[test]
+    fn test_rand_simple_deterministic() {
+        let mut rng1 = rand_simple(42);
+        let mut rng2 = rand_simple(42);
+        for _ in 0..10 {
+            assert_eq!(rng1(), rng2());
+        }
+    }
+
+    #[test]
+    fn test_rand_simple_different_seeds() {
+        let mut rng1 = rand_simple(42);
+        let mut rng2 = rand_simple(123);
+        assert_ne!(rng1(), rng2());
+    }
+
+    #[test]
+    fn test_cross_validation_result_serialization() {
+        let config = CrossValidatorConfig {
+            k_folds: 3,
+            seed: 42,
+            shuffle: true,
+            compute_energy_balance: true,
+            compare_analytical: true,
+        };
+        let mut result = CrossValidationResult::new(config);
+        result.add_fold_result(FoldResult {
+            fold_index: 0,
+            train_indices: vec![0, 1],
+            test_indices: vec![2],
+            mae: 1.0,
+            rmse: 1.5,
+            mape: 5.0,
+            r_squared: 0.9,
+            max_error: 2.0,
+            energy_balance_metrics: Some(EnergyBalanceMetrics {
+                analytical_total: 100.0,
+                surrogate_total: 95.0,
+                balance_error_percent: 5.0,
+                heating_balance: 60.0,
+                cooling_balance: 35.0,
+            }),
+        });
+        result.compute_aggregated_metrics();
+        let json = serde_json::to_string(&result).unwrap();
+        let deserialized: CrossValidationResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.config.k_folds, 3);
+        assert_eq!(deserialized.fold_results.len(), 1);
+        assert_eq!(deserialized.aggregated_metrics.mean_mae, 1.0);
+    }
+
+    #[test]
+    fn test_validation_data_point_serialization() {
+        let mut metadata = HashMap::new();
+        metadata.insert("case".to_string(), "900".to_string());
+        let dp = ValidationDataPoint {
+            inputs: vec![20.0, 15.0],
+            targets: vec![100.0],
+            metadata,
+        };
+        let json = serde_json::to_string(&dp).unwrap();
+        let deserialized: ValidationDataPoint = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.inputs, vec![20.0, 15.0]);
+        assert_eq!(deserialized.targets, vec![100.0]);
+    }
+
+    #[test]
+    fn test_fold_result_serialization() {
+        let fr = FoldResult {
+            fold_index: 1,
+            train_indices: vec![0, 1, 2],
+            test_indices: vec![3, 4],
+            mae: 2.0,
+            rmse: 2.5,
+            mape: 8.0,
+            r_squared: 0.85,
+            max_error: 4.0,
+            energy_balance_metrics: None,
+        };
+        let json = serde_json::to_string(&fr).unwrap();
+        let deserialized: FoldResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.fold_index, 1);
+        assert_eq!(deserialized.mae, 2.0);
+    }
+
+    #[test]
+    fn test_energy_balance_serialization() {
+        let eb = EnergyBalanceMetrics {
+            analytical_total: 500.0,
+            surrogate_total: 480.0,
+            balance_error_percent: 4.0,
+            heating_balance: 300.0,
+            cooling_balance: 180.0,
+        };
+        let json = serde_json::to_string(&eb).unwrap();
+        let deserialized: EnergyBalanceMetrics = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.analytical_total, 500.0);
+    }
+
+    #[test]
+    fn test_aggregated_metrics_serialization() {
+        let metrics = AggregatedMetrics {
+            mean_mae: 1.5,
+            mean_rmse: 2.0,
+            mean_mape: 5.0,
+            mean_r2: 0.9,
+            mean_max_error: 3.0,
+            std_mae: 0.5,
+            std_rmse: 0.3,
+            energy_balance: None,
+        };
+        let json = serde_json::to_string(&metrics).unwrap();
+        let deserialized: AggregatedMetrics = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.mean_mae, 1.5);
+    }
+
+    #[test]
+    fn test_config_serialization() {
+        let config = CrossValidatorConfig {
+            k_folds: 10,
+            seed: 123,
+            shuffle: false,
+            compute_energy_balance: false,
+            compare_analytical: false,
+        };
+        let json = serde_json::to_string(&config).unwrap();
+        let deserialized: CrossValidatorConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.k_folds, 10);
+        assert_eq!(deserialized.seed, 123);
+    }
+
+    #[test]
+    fn test_fold_result_debug() {
+        let fr = FoldResult {
+            fold_index: 2,
+            train_indices: vec![0, 1, 3],
+            test_indices: vec![2, 4],
+            mae: 1.5,
+            rmse: 2.0,
+            mape: 5.0,
+            r_squared: 0.95,
+            max_error: 3.0,
+            energy_balance_metrics: None,
+        };
+        let debug_str = format!("{:?}", fr);
+        assert!(debug_str.contains("FoldResult"));
+        assert!(debug_str.contains("fold_index"));
+    }
+
+    #[test]
+    fn test_config_debug() {
+        let config = CrossValidatorConfig::default();
+        let debug_str = format!("{:?}", config);
+        assert!(debug_str.contains("CrossValidatorConfig"));
+    }
+
+    #[test]
+    fn test_energy_balance_metrics_debug() {
+        let eb = EnergyBalanceMetrics {
+            analytical_total: 1000.0,
+            surrogate_total: 950.0,
+            balance_error_percent: 5.0,
+            heating_balance: 600.0,
+            cooling_balance: 350.0,
+        };
+        let debug_str = format!("{:?}", eb);
+        assert!(debug_str.contains("EnergyBalanceMetrics"));
+    }
+
+    #[test]
+    fn test_aggregated_metrics_debug() {
+        let metrics = AggregatedMetrics {
+            mean_mae: 1.5,
+            mean_rmse: 2.0,
+            mean_mape: 5.0,
+            mean_r2: 0.9,
+            mean_max_error: 3.0,
+            std_mae: 0.5,
+            std_rmse: 0.3,
+            energy_balance: None,
+        };
+        let debug_str = format!("{:?}", metrics);
+        assert!(debug_str.contains("AggregatedMetrics"));
+    }
+
+    #[test]
+    fn test_prediction_pair_debug() {
+        let pp = PredictionPair {
+            analytical: 100.0,
+            surrogate: 105.0,
+            difference: 5.0,
+        };
+        let debug_str = format!("{:?}", pp);
+        assert!(debug_str.contains("PredictionPair"));
+    }
+
+    #[test]
+    fn test_analytical_comparison_debug() {
+        let ac = AnalyticalComparison {
+            analytical_mean_heating: 100.0,
+            analytical_mean_cooling: 50.0,
+            surrogate_mean_heating: 105.0,
+            surrogate_mean_cooling: 55.0,
+            correlation: 0.95,
+            predictions: vec![],
+        };
+        let debug_str = format!("{:?}", ac);
+        assert!(debug_str.contains("AnalyticalComparison"));
+    }
+
+    #[test]
+    fn test_validate_with_large_k_folds() {
+        let config = CrossValidatorConfig {
+            k_folds: 20,
+            shuffle: false,
+            ..Default::default()
+        };
+        let mut validator = CrossValidator::new(config);
+        for i in 0..100 {
+            validator.add_data(ValidationDataPoint {
+                inputs: vec![i as f64],
+                targets: vec![i as f64],
+                metadata: HashMap::new(),
+            });
+        }
+        // Use validate_analytical instead (no ONNX needed)
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 20);
+    }
+
+    #[test]
+    fn test_validate_with_single_fold() {
+        let config = CrossValidatorConfig {
+            k_folds: 1,
+            shuffle: false,
+            ..Default::default()
+        };
+        let mut validator = CrossValidator::new(config);
+        for i in 0..5 {
+            validator.add_data(ValidationDataPoint {
+                inputs: vec![i as f64],
+                targets: vec![i as f64],
+                metadata: HashMap::new(),
+            });
+        }
+        // Use validate_analytical instead (no ONNX needed)
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 1);
+    }
+
+    #[test]
+    fn test_validate_with_compare_analytical_true() {
+        let config = CrossValidatorConfig {
+            k_folds: 3,
+            shuffle: false,
+            compare_analytical: true,
+            ..Default::default()
+        };
+        let mut validator = CrossValidator::new(config);
+        for i in 0..15 {
+            validator.add_data(ValidationDataPoint {
+                inputs: vec![i as f64],
+                targets: vec![i as f64],
+                metadata: HashMap::new(),
+            });
+        }
+        // Use validate_analytical instead (no ONNX needed)
+        let result = validator.validate_analytical();
+        assert_eq!(result.fold_results.len(), 3);
+    }
+
+    #[test]
+    fn test_markdown_report_multiple_folds() {
+        let config = CrossValidatorConfig {
+            k_folds: 5,
+            ..Default::default()
+        };
+        let mut result = CrossValidationResult::new(config);
+        for i in 0..5 {
+            result.add_fold_result(FoldResult {
+                fold_index: i,
+                train_indices: vec![0, 1, 2],
+                test_indices: vec![3, 4],
+                mae: 1.0 + i as f64 * 0.5,
+                rmse: 2.0 + i as f64 * 0.3,
+                mape: 5.0 + i as f64 * 2.0,
+                r_squared: 0.95 - i as f64 * 0.05,
+                max_error: 3.0 + i as f64,
+                energy_balance_metrics: Some(EnergyBalanceMetrics {
+                    analytical_total: 1000.0 + i as f64 * 100.0,
+                    surrogate_total: 980.0 + i as f64 * 90.0,
+                    balance_error_percent: 2.0 + i as f64 * 0.5,
+                    heating_balance: 500.0,
+                    cooling_balance: 480.0,
+                }),
+            });
+        }
+        result.compute_aggregated_metrics();
+        let markdown = result.to_markdown();
+        assert!(markdown.contains("Cross-Validation Report"));
+        assert!(markdown.contains("Configuration"));
+        assert!(markdown.contains("Aggregated Metrics"));
+        assert!(markdown.contains("Energy Balance"));
+        assert!(markdown.contains("Per-Fold Results"));
+        assert!(markdown.contains("| 0 |"));
+        assert!(markdown.contains("| 4 |"));
+    }
+
+    #[test]
+    fn test_mape_all_nonzero_actuals() {
+        let validator = CrossValidator::with_default_config();
+        let predictions = vec![110.0, 220.0, 330.0];
+        let actuals = vec![100.0, 200.0, 300.0];
+        let result = validator.compute_fold_metrics(0, vec![], vec![], &predictions, &actuals);
+        assert!((result.mape - 10.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_save_data_error_handling() {
+        let validator = CrossValidator::with_default_config();
+        let result = validator.save_data("/nonexistent/path/data.json");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_load_data_invalid_json() {
+        let mut validator = CrossValidator::with_default_config();
+        let temp_path = std::env::temp_dir().join("test_invalid_cv.json");
+        std::fs::write(&temp_path, "not valid json").unwrap();
+        let result = validator.load_data(&temp_path);
+        assert!(result.is_err());
+        let _ = std::fs::remove_file(&temp_path);
+    }
+
+    #[test]
+    fn test_validation_data_point_clone() {
+        let mut metadata = HashMap::new();
+        metadata.insert("key".to_string(), "value".to_string());
+        let dp = ValidationDataPoint {
+            inputs: vec![1.0, 2.0, 3.0],
+            targets: vec![4.0, 5.0],
+            metadata,
+        };
+        let cloned = dp.clone();
+        assert_eq!(cloned.inputs, dp.inputs);
+        assert_eq!(cloned.targets, dp.targets);
+        assert_eq!(cloned.metadata.get("key").unwrap(), "value");
+    }
+
+    #[test]
+    fn test_r_squared_negative_prediction() {
+        let validator = CrossValidator::with_default_config();
+        let predictions = vec![1.0, 1.0, 1.0];
+        let actuals = vec![1.0, 2.0, 3.0];
+        let result = validator.compute_fold_metrics(0, vec![], vec![], &predictions, &actuals);
+        assert!(result.r_squared < 0.0);
     }
 }

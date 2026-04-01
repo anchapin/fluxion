@@ -606,4 +606,320 @@ mod tests {
         assert_eq!(change.improvements, 4); // Passes increased from 6 to 10
         assert_eq!(change.regressions, 0);
     }
+
+    #[test]
+    fn test_quality_metrics_new_default() {
+        let metrics = QualityMetrics::new();
+        assert_eq!(metrics.total_cases, 0);
+        assert_eq!(metrics.passed_cases, 0);
+        assert_eq!(metrics.pass_rate, 0.0);
+        assert_eq!(metrics.total_metrics, 0);
+        assert_eq!(metrics.passed_metrics, 0);
+        assert!(metrics.mae.is_nan());
+        assert_eq!(metrics.max_deviation, 0.0);
+        assert!(metrics.deviations.is_empty());
+        assert!(metrics.status_counts.is_empty());
+    }
+
+    #[test]
+    fn test_quality_metrics_default_trait() {
+        let metrics = QualityMetrics::default();
+        assert_eq!(metrics.total_cases, 0);
+        assert_eq!(metrics.pass_rate, 0.0);
+    }
+
+    #[test]
+    fn test_quality_metrics_empty_report() {
+        let report = BenchmarkReport {
+            results: vec![],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let metrics = QualityMetrics::from_benchmark_report(&report);
+        assert_eq!(metrics.total_cases, 0);
+        assert_eq!(metrics.passed_cases, 0);
+        assert_eq!(metrics.pass_rate, 0.0);
+        assert_eq!(metrics.total_metrics, 0);
+        assert!(metrics.mae.is_nan());
+        assert_eq!(metrics.max_deviation, 0.0);
+    }
+
+    #[test]
+    fn test_quality_metrics_multiple_cases() {
+        let report = BenchmarkReport {
+            results: vec![
+                ValidationResult::new("600", MetricType::AnnualHeating, 6.5, 5.5, 7.5),
+                ValidationResult::new("610", MetricType::AnnualHeating, 7.0, 5.8, 7.8),
+                ValidationResult::new("620", MetricType::AnnualCooling, 4.0, 3.2, 5.0),
+            ],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let metrics = QualityMetrics::from_benchmark_report(&report);
+        assert_eq!(metrics.total_cases, 3);
+        assert_eq!(metrics.passed_cases, 3);
+        assert_eq!(metrics.pass_rate, 100.0);
+        assert_eq!(metrics.total_metrics, 3);
+        assert_eq!(metrics.passed_metrics, 3);
+    }
+
+    #[test]
+    fn test_quality_metrics_warning_status_propagation() {
+        let report = BenchmarkReport {
+            results: vec![
+                ValidationResult::new("600", MetricType::AnnualHeating, 6.5, 5.5, 7.5),
+                ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
+            ],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let metrics = QualityMetrics::from_benchmark_report(&report);
+        assert_eq!(metrics.total_cases, 1);
+        assert_eq!(metrics.passed_cases, 0);
+        assert_eq!(metrics.pass_rate, 0.0);
+    }
+
+    #[test]
+    fn test_quality_metrics_summary() {
+        let metrics = QualityMetrics {
+            total_cases: 10,
+            passed_cases: 7,
+            pass_rate: 70.0,
+            total_metrics: 20,
+            passed_metrics: 15,
+            mae: 12.5,
+            max_deviation: 45.0,
+            deviations: Vec::new(),
+            status_counts: HashMap::new(),
+        };
+
+        let summary = metrics.summary();
+        assert!(summary.contains("70.0%"));
+        assert!(summary.contains("7 / 10"));
+        assert!(summary.contains("12.50%"));
+        assert!(summary.contains("45.00%"));
+    }
+
+    #[test]
+    fn test_change_report_regression() {
+        let old = QualityMetrics {
+            total_cases: 10,
+            passed_cases: 8,
+            pass_rate: 80.0,
+            total_metrics: 20,
+            passed_metrics: 16,
+            mae: 20.0,
+            max_deviation: 50.0,
+            deviations: Vec::new(),
+            status_counts: {
+                let mut h = HashMap::new();
+                h.insert(ValidationStatus::Pass, 16);
+                h.insert(ValidationStatus::Fail, 4);
+                h
+            },
+        };
+
+        let new = QualityMetrics {
+            total_cases: 10,
+            passed_cases: 5,
+            pass_rate: 50.0,
+            total_metrics: 20,
+            passed_metrics: 10,
+            mae: 35.0,
+            max_deviation: 70.0,
+            deviations: Vec::new(),
+            status_counts: {
+                let mut h = HashMap::new();
+                h.insert(ValidationStatus::Pass, 10);
+                h.insert(ValidationStatus::Fail, 10);
+                h
+            },
+        };
+
+        let change = ChangeReport::new(&old, &new);
+        assert_eq!(change.pass_rate_delta, -30.0);
+        assert_eq!(change.mae_delta, 15.0);
+        assert_eq!(change.max_deviation_delta, 20.0);
+        assert_eq!(change.regressions, 6);
+        assert_eq!(change.improvements, 0);
+    }
+
+    #[test]
+    fn test_analyzer_render_markdown_many_deviations() {
+        let analyzer = Analyzer::default();
+        let mut deviations = Vec::new();
+        for i in 0..35 {
+            deviations.push(MetricDeviation {
+                case_id: format!("case_{:03}", i),
+                metric: MetricType::AnnualHeating,
+                actual: 10.0 + i as f64,
+                reference: 5.0,
+                error_pct: (i as f64) * 5.0,
+                status: if i % 2 == 0 {
+                    ValidationStatus::Fail
+                } else {
+                    ValidationStatus::Pass
+                },
+            });
+        }
+
+        let metrics = QualityMetrics {
+            total_cases: 35,
+            passed_cases: 17,
+            pass_rate: 48.6,
+            total_metrics: 35,
+            passed_metrics: 17,
+            mae: 85.0,
+            max_deviation: 170.0,
+            deviations,
+            status_counts: {
+                let mut h = HashMap::new();
+                h.insert(ValidationStatus::Pass, 17);
+                h.insert(ValidationStatus::Fail, 18);
+                h
+            },
+        };
+
+        let markdown = analyzer.render_metrics_markdown(&metrics);
+        assert!(markdown.contains("case_"));
+        assert!(markdown.contains("Problematic Cases"));
+    }
+
+    #[test]
+    fn test_analyzer_update_quality_metrics_no_output_path() {
+        let config = AnalyzerConfig {
+            historical_data_path: None,
+            generate_report: true,
+            output_path: None,
+        };
+        let analyzer = Analyzer::new(config);
+
+        let report = BenchmarkReport {
+            results: vec![ValidationResult::new(
+                "600",
+                MetricType::AnnualHeating,
+                6.5,
+                5.5,
+                7.5,
+            )],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let result = analyzer.update_quality_metrics(&report);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_analyzer_update_quality_metrics_no_generate() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let output_path = temp_dir.path().join("metrics.md");
+
+        let config = AnalyzerConfig {
+            historical_data_path: None,
+            generate_report: false,
+            output_path: Some(output_path.clone()),
+        };
+        let analyzer = Analyzer::new(config);
+
+        let report = BenchmarkReport {
+            results: vec![ValidationResult::new(
+                "600",
+                MetricType::AnnualHeating,
+                6.5,
+                5.5,
+                7.5,
+            )],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let result = analyzer.update_quality_metrics(&report);
+        assert!(result.is_ok());
+        assert!(!output_path.exists());
+    }
+
+    #[test]
+    fn test_analyzer_error_io_error() {
+        let config = AnalyzerConfig {
+            historical_data_path: None,
+            generate_report: true,
+            output_path: Some(PathBuf::from("/nonexistent/path/metrics.md")),
+        };
+        let analyzer = Analyzer::new(config);
+
+        let report = BenchmarkReport {
+            results: vec![],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let result = analyzer.update_quality_metrics(&report);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_quality_metrics_case_with_only_warning() {
+        let report = BenchmarkReport {
+            results: vec![ValidationResult::new(
+                "600",
+                MetricType::AnnualHeating,
+                14.5,
+                10.0,
+                20.0,
+            )],
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        };
+
+        let metrics = QualityMetrics::from_benchmark_report(&report);
+        assert_eq!(metrics.total_cases, 1);
+        assert_eq!(metrics.passed_cases, 1);
+        assert_eq!(metrics.pass_rate, 100.0);
+    }
 }

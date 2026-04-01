@@ -574,4 +574,93 @@ mod tests {
         assert_eq!(deserialized.zone_temps[0][0], 20.0);
         assert_eq!(deserialized.loads.solar[0][0], 100.0);
     }
+
+    #[test]
+    fn test_simulation_diagnostics_export_csv_with_empty_loads() {
+        let mut diag = SimulationDiagnostics::new(1, 10);
+        diag.hours.push(0);
+        diag.zone_temps.push(vec![20.0]);
+        diag.mass_temps.push(vec![19.0]);
+        diag.surface_temps.push(vec![19.5]);
+        diag.loads.solar.push(vec![]);
+        diag.loads.internal.push(vec![]);
+        diag.loads.hvac.push(vec![]);
+        diag.loads.inter_zone.push(vec![]);
+        diag.loads.infiltration.push(vec![]);
+
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join(format!(
+            "fluxion_diag_empty_loads_{}.csv",
+            std::process::id()
+        ));
+        let result = diag.export_csv(&csv_path);
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2);
+        let _ = std::fs::remove_file(&csv_path);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_export_csv_missing_timestep() {
+        let diag = SimulationDiagnostics::new(1, 10);
+        let temp_dir = std::env::temp_dir();
+        let csv_path = temp_dir.join(format!("fluxion_diag_missing_{}.csv", std::process::id()));
+        let result = diag.export_csv(&csv_path);
+        assert!(result.is_ok());
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        assert_eq!(content.lines().count(), 1);
+        let _ = std::fs::remove_file(&csv_path);
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_new_capacity() {
+        let diag = SimulationDiagnostics::new(3, 500);
+        assert_eq!(diag.hours.capacity(), 500);
+        assert_eq!(diag.zone_temps.capacity(), 500);
+        assert_eq!(diag.cumulative_energy.heating_kwh.len(), 3);
+        assert_eq!(diag.cumulative_energy.cooling_kwh.len(), 3);
+        assert_eq!(diag.cumulative_energy.total_kwh.len(), 3);
+    }
+
+    #[test]
+    fn test_load_breakdown_default() {
+        let load = LoadBreakdown {
+            solar: vec![],
+            internal: vec![],
+            hvac: vec![],
+            inter_zone: vec![],
+            infiltration: vec![],
+        };
+        assert!(load.solar.is_empty());
+        assert!(load.hvac.is_empty());
+    }
+
+    #[test]
+    fn test_energy_accumulation_default() {
+        let energy = EnergyAccumulation {
+            heating_kwh: vec![],
+            cooling_kwh: vec![],
+            total_kwh: vec![],
+        };
+        assert!(energy.heating_kwh.is_empty());
+    }
+
+    #[test]
+    fn test_simulation_diagnostics_print_summary_single_zone() {
+        let mut diag = SimulationDiagnostics::new(1, 10);
+        diag.hours.push(0);
+        diag.zone_temps.push(vec![20.0]);
+        diag.mass_temps.push(vec![19.0]);
+        diag.surface_temps.push(vec![19.5]);
+        diag.loads.solar.push(vec![100.0]);
+        diag.loads.internal.push(vec![50.0]);
+        diag.loads.hvac.push(vec![200.0]);
+        diag.loads.inter_zone.push(vec![0.0]);
+        diag.loads.infiltration.push(vec![30.0]);
+        diag.cumulative_energy.heating_kwh = vec![1.0];
+        diag.cumulative_energy.cooling_kwh = vec![0.5];
+        diag.cumulative_energy.total_kwh = vec![1.5];
+        diag.print_summary();
+    }
 }

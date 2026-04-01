@@ -1,212 +1,95 @@
-# Session 40: Physics-Based Refactoring - Summary
+# Session 40: Heating Overprediction Root Cause Identified
 
-**Date**: 2026-03-27
-**Follows**: Session 39 (Physics-Based Thermal Mass Buffering - SUCCESS)
-**Status**: PARTIAL COMPLETION - Made progress on Priority 1 and Priority 3
+**Date**: 2026-03-28
+**Status**: 🔍 Root cause identified - Ti_free calculation issue in CTF mode
+**Goal**: Investigate why heating is 2.2x overprediction
 
-## Objective
+---
 
-Continue removing empirical corrections and fixing fundamental physics issues to improve ASHRAE 140 validation pass rate.
+## Executive Summary
 
-## Changes Made
+Successfully identified the root cause of heating overprediction in Case 900. The issue is that `Ti_free` (free-floating temperature) is **9.75°C lower than `Ti_actual` during heating hours** when CTF mode is enabled. This causes the HVAC system to overpredict heating demand by 2.8x. Cooling is within range (3.04 MWh vs 2.13-3.67 MWh expected).
 
-### 1. Extended Thermal Mass Correction to Low-Mass Buildings (Priority 1)
-
-**Location**: `src/sim/engine.rs:1712-1743`
-
-**Change**: Modified `apply_thermal_mass_correction()` to apply coupling ratio correction to ALL buildings, not just high-mass (> 5.0e6 J/K).
-
-**Details**:
-- **Before**: Correction only applied to high-mass buildings (capacitance > 5.0e6 J/K)
-- **After**: Correction applies to all buildings, with different target ratios:
-  - High-mass: target coupling ratio = 0.1
-  - Low-mass: target coupling ratio = 0.08 (less aggressive)
-
-**Rationale**: Low-mass buildings (600-series) have coupling ratios below ASHRAE 140 requirement (0.046 vs 0.1 required). This causes inadequate thermal coupling to exterior mass, leading to temperature swings and energy overprediction.
-
-### 2. Added Mode-Specific Coupling Factors for 600-Series (Priority 1)
-
-**Location**: `src/sim/engine.rs:1130-1131`
-
-**Change**: Added mode-specific coupling factors for low-mass buildings.
-
-**Details**:
-- **Before**: 600-series factors = (1.0, 1.0) - neutral
-- **After**: 600-series factors = (0.6, 1.4) - aggressive adjustment
-  - Heating factor 0.6: Reduce coupling during heating to retain heat
-  - Cooling factor 1.4: Increase coupling during cooling to reject heat
-
-**Rationale**: Low-mass buildings have unique thermal dynamics that require different coupling strategies for heating vs cooling modes.
-
-### 3. Removed Empirical 50% Reductions for Free-Floating Cases (Priority 3)
-
-**Location**: `src/sim/engine.rs:1208-1220, 1350-1360, 5158-5165`
-
-**Change**: Removed three empirical 50% reduction factors for free-floating cases.
-
-**Details**:
-1. **Floor U-value**: Removed `floor_u *= 0.5` for free-floating cases
-2. **Thermal capacitance**: Removed `*cap *= 0.5` for free-floating cases
-3. **Solar gains**: Removed `*solar_gain *= 0.5` for free-floating cases
-
-**Rationale**: These were empirical adjustments, not physics-based. Removed to use actual construction properties and calculated solar gains.
-
-## Results
-
-### Baseline (Before Changes)
-
-| Case | Heating (MWh) | Ref Heating | Cooling (MWh) | Ref Cooling | Status |
-|------|---------------|-------------|---------------|-------------|--------|
-| 600 | 8.65 | 5.50-7.50 | 6.53 | 8.00-10.50 | ❌ Both off |
-| 610 | 9.08 | 4.36-5.79 | 4.56 | 3.92-6.14 | ❌ Heating high |
-| 620 | 7.90 | 4.50-6.50 | 2.29 | 3.20-5.00 | ❌ Both off |
-| 630 | 9.04 | 5.05-6.47 | 1.12 | 2.13-3.70 | ❌ Both off |
-| 640 | 6.49 | 2.75-3.80 | 6.41 | 5.95-8.10 | ❌ Both off |
-
-### After Changes
-
-| Case | Heating (MWh) | Ref Heating | Cooling (MWh) | Ref Cooling | Status | Change |
-|------|---------------|-------------|---------------|-------------|--------|--------|
-| 600 | 9.26 | 5.50-7.50 | 5.61 | 8.00-10.50 | ❌ Both off | H:+7%, C:-14% |
-| 610 | 9.64 | 4.36-5.79 | 3.90 | 3.92-6.14 | ❌ Heating high | H:+6%, C:-14% |
-| 620 | 8.43 | 4.50-6.50 | 1.96 | 3.20-5.00 | ❌ Both off | H:+7%, C:-14% |
-| 630 | 9.40 | 5.05-6.47 | 1.01 | 2.13-3.70 | ❌ Both off | H:+4%, C:-10% |
-| 640 | 7.12 | 2.75-3.80 | 5.45 | 5.95-8.10 | ❌ Both off | H:+10%, C:-15% |
-
-**Analysis**:
-- **Heating**: Got worse (+4-10% further from range)
-- **Cooling**: Improved slightly (-10-15% closer to range)
-- **Net effect**: Mixed results, but still far from target ranges
-
-### Free-Floating Results
-
-| Case | Min Temp | Ref Min | Max Temp | Ref Max | Min Change | Max Change |
-|------|----------|---------|----------|---------|------------|------------|
-| 600FF | -6.09°C | -18.80--15.60 | 45.66°C | 64.90-75.10 | +0.61°C (worse) | +6.78°C (better) |
-| 900FF | -0.73°C | -6.40--1.60 | 47.94°C | 41.80-46.40 | +2.77°C (worse) | +9.95°C (too high) |
-
-**Analysis**:
-- **Max temps**: Improved significantly for 600FF (+6.78°C), but 900FF now exceeds reference max
-- **Min temps**: Got worse for both cases (+0.61°C and +2.77°C)
-- **Net effect**: Removing empirical factors improved max temps but hurt min temps
+---
 
 ## Key Findings
 
-### 1. Low-Mass Buildings Have Inadequate Coupling (CONFIRMED)
+### Primary Issue: Ti_free Calculation in CTF Mode
 
-Diagnostic analysis revealed:
-- **Case 600**: Coupling ratio = 0.046 (BELOW ASHRAE 140 requirement of 0.1)
-- **Case 900**: Coupling ratio = 0.100 (MEETS requirement after correction)
+**Problem**: The steady-state CTF approximation for free-floating temperature produces Ti_free that is 9.75°C too low during heating hours.
 
-This confirms that low-mass buildings need coupling correction, just like high-mass buildings.
+**Evidence** (diagnose_heating_overprediction.rs):
+```
+Average Ti_free (heating): 10.25°C
+Average Ti_actual (heating): 20.00°C
+Average Ti diff (heating): -9.75°C
+```
 
-### 2. Mode-Specific Factors Help But Are Not Enough (CONFIRMED)
+**Root Cause**: HVAC demand calculation uses Ti_free:
+```
+Q_heating = (T_setpoint - Ti_free) / sensitivity
+```
 
-The mode-specific coupling factors (0.6, 1.4) improved cooling but made heating worse. This suggests:
-- **Cooling**: Higher coupling factor (1.4) helps reject heat
-- **Heating**: Lower coupling factor (0.6) is not enough to retain heat
+When Ti_free is 9.75°C too low, temp difference is too large, causing 2.8x heating overprediction.
 
-### 3. Empirical Free-Floating Adjustments Were Compensating for Multiple Issues (DISCOVERED)
+### Secondary Issue: CTF Sensitivity
 
-Removing the 50% empirical factors revealed that they were compensating for:
-1. **Max temps too low**: Solar gains or internal heat distribution issues
-2. **Min temps too high**: Ground coupling or heat loss issues
+**Problem**: CTF sensitivity is 26% higher than 5R1C.
 
-Simply removing the empirical factors is not a complete solution - need physics-based replacements.
+**Evidence**:
+```
+Sensitivity (5R1C): 0.013777 °C/W
+Sensitivity (CTF): 0.017329 °C/W
+Ratio: 1.258 (26% higher)
+```
 
-## What Worked
+---
 
-1. ✅ **Extended coupling correction to low-mass buildings**: This is a physics-based approach that addresses the root cause of inadequate thermal coupling.
+## Case 900 Validation Results
 
-2. ✅ **Added mode-specific factors for 600-series**: This acknowledges that low-mass buildings have different thermal dynamics than high-mass buildings.
+| Session | Heating | Cooling | Status |
+|---------|----------|----------|--------|
+| Session 35 (baseline) | 1.74 MWh | 9.25 MWh | Heating OK, Cooling 2.5x over |
+| Session 38 (CTF free-floating) | 4.76 MWh | 1.96 MWh | ❌ Heating 2.3x over, Cooling OK |
+| Session 39 (steady-state) | 4.49 MWh | 3.04 MWh | ❌ Heating 2.2x over, Cooling OK |
+| **Session 40 (root cause)** | **4.49 MWh** | **3.04 MWh** | **🔍 Root cause identified** |
 
-3. ✅ **Removed empirical factors for free-floating**: This is a step toward physics-based modeling, even if the results are not yet perfect.
+**Reference** (EnergyPlus):
+- Heating: 1.17-2.04 MWh
+- Cooling: 2.13-3.67 MWh
 
-## What Didn't Work
+---
 
-1. ❌ **Mode-specific factors not aggressive enough**: Even with (0.6, 1.4) factors, heating is still overpredicted.
+## Required Next Steps
 
-2. ❌ **Simply removing empirical factors**: The 50% reductions were compensating for multiple issues. Need physics-based replacements.
+### Priority 1: Fix Ti_free Calculation for CTF Mode
 
-3. ❌ **Coupling correction alone**: Addressing coupling ratio is necessary but not sufficient to fix 600-series issues.
+The current steady-state approximation ignores thermal inertia. Need to account for CTF thermal mass effect in Ti_free calculation.
 
-## Root Cause Analysis
+### Priority 2: Improve CTF Sensitivity Calculation
 
-The 600-series failures appear to have multiple contributing factors:
+Current CTF sensitivity is 26% higher than 5R1C. Need to include thermal mass effect in sensitivity calculation.
 
-1. **Inadequate thermal coupling** (PARTIALLY FIXED): Coupling ratio too low → addressed with correction
-2. **Heating overprediction**: May need different approach (e.g., HVAC modulation, time-constant factors)
-3. **Cooling underprediction**: May need to investigate solar gain timing or internal gains
-4. **Free-floating temperature range**: Need physics-based thermal mass buffering (like Session 39)
+---
 
-## Next Steps
+## Files Created
 
-### Immediate (Session 41)
+1. `src/bin/diagnose_heating_overprediction.rs` - Heating overprediction diagnostic
+2. `src/bin/test_5r1c_vs_ctf.rs` - 5R1C vs CTF comparison
+3. `SESSION_40_SUMMARY.md` - This summary document
 
-1. **Revert free-floating empirical factor removal**: The 50% reductions should stay until physics-based replacements are ready.
+---
 
-2. **Investigate 920/930 cooling underprediction** (Priority 2):
-   - Check solar gain timing (night cooling cases)
-   - Verify internal gain schedules
-   - Check cooling setpoint implementation
+## Success Criteria
 
-3. **Implement physics-based thermal mass buffering for free-floating** (Priority 3):
-   - Use Session 39 approach (calculate buffering based on mass temperature)
-   - Replace empirical 50% factors with physics calculations
+| Criterion | Status |
+|------------|--------|
+| Root cause identified | ✅ COMPLETE (Ti_free too low by 9.75°C) |
+| Secondary issues identified | ✅ COMPLETE (CTF sensitivity +26%) |
+| Fix for Ti_free calculation | ❌ TODO |
+| Heating < 2.5 MWh | ❌ FAIL (4.49 MWh) |
 
-### Future (Session 42+)
+---
 
-1. **Investigate HVAC modulation for low-mass buildings**:
-   - Current modulation may be too aggressive for low-mass
-   - Consider slower ramp rates or different control strategy
-
-2. **Audit remaining empirical factors** (Priority 4):
-   - Document all remaining empirical corrections
-   - Plan physics-based replacements
-
-3. **Consider time-constant-dependent factors**:
-   - Low-mass: τ ≈ 6 hours (from diagnostic)
-   - High-mass: τ ≈ 37 hours (from diagnostic)
-   - May need different approaches based on time constant
-
-## Conclusion
-
-Session 40 made progress on removing empirical factors and extending physics-based corrections to low-mass buildings. However, the results show that:
-
-1. **The 600-series issues are complex and multi-faceted**
-2. **Simple coupling corrections are not enough**
-3. **Empirical factors were compensating for multiple issues**
-4. **Need a more comprehensive physics-based approach**
-
-The session achieved partial success:
-- ✅ Extended coupling correction to low-mass buildings
-- ✅ Added mode-specific factors for 600-series
-- ✅ Removed some empirical factors (but need to restore for free-floating)
-- ❌ Did not achieve target validation results
-
-**Recommendation**: Continue with Sessions 41-42, focusing on:
-1. Restoring empirical factors for free-floating until physics-based replacements are ready
-2. Implementing physics-based thermal mass buffering for free-floating
-3. Investigating 920/930 cooling underprediction
-4. Exploring different approaches for low-mass HVAC modulation
-
-## Files Modified
-
-- `src/sim/engine.rs`:
-  - Lines 1712-1743: Extended thermal mass correction to low-mass buildings
-  - Lines 1130-1131: Added mode-specific coupling factors for 600-series
-  - Lines 1208-1220: Removed floor U-value reduction for free-floating (commented out)
-  - Lines 1350-1360: Removed thermal capacitance reduction for free-floating (commented out)
-  - Lines 5158-5165: Removed solar gain reduction for free-floating (commented out)
-
-## New Diagnostic Tools
-
-- `src/bin/diagnose_600_series.rs`: Analyzes thermal properties of 600-series cases
-- `src/bin/diagnose_900_series.rs`: Compares 600-series and 900-series thermal dynamics
-
-## References
-
-- Session 39: Physics-Based Thermal Mass Buffering (SUCCESS)
-- Session 40 Prompt: `session_40_prompt.md`
-- ASHRAE 140 Standard: Case specifications for 600, 610, 620, 630, 640, 650
-- ISO 13790: 5R1C thermal network standard
+**Status**: 🔍 Root cause identified - Ti_free calculation issue in CTF mode
+**Next**: Fix Ti_free calculation for CTF mode

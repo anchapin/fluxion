@@ -364,7 +364,7 @@ if __name__ == "__main__":
     # Calculate metrics
     metrics = calculate_all_metrics(reference, predicted, units="W")
 
-    print(f"\nMetrics:")
+    print("\nMetrics:")
     print(f"  RMSE: {metrics.rmse:.2f} {metrics.rmse_units}")
     print(f"  NMBE: {metrics.nmbe:.2f}%")
     print(f"  CV(RMSE): {metrics.cv_rmse:.2f}%")

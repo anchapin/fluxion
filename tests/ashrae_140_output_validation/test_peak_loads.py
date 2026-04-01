@@ -10,7 +10,7 @@ These tests compare peak heating and cooling loads between Fluxion and EnergyPlu
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Tuple
+from typing import Any, Dict
 
 import pytest
 
@@ -90,9 +90,9 @@ class TestASHRAE140PeakLoads:
                     parts = line.strip().split(",")
                     if len(parts) >= 10:
                         timestep = int(parts[0])
-                        month = int(parts[1])
-                        day = int(parts[2])
-                        hour = int(parts[3])
+                        int(parts[1])
+                        int(parts[2])
+                        int(parts[3])
 
                         # Fluxion heating/cooling (columns 8-9)
                         fluxion_heating = float(parts[8])
@@ -242,7 +242,7 @@ class TestASHRAE140PeakLoads:
         # This test checks that peak heating occurs during coldest hours
         # and peak cooling during hottest hours
 
-        data = self._load_peak_loads("900")
+        self._load_peak_loads("900")
 
         # Peak heating hour should coincide with minimum outdoor temperature
         # Peak cooling hour should coincide with maximum outdoor temperature

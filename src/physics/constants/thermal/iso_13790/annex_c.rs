@@ -139,3 +139,119 @@ pub fn calculate_effective_thermal_mass(layers: &[(f64, f64, f64)]) -> f64 {
         .sum::<f64>()
         / 1000.0
 }
+
+/// Classifies thermal mass based on ISO 13790 Annex C thresholds.
+///
+/// # Arguments
+/// * `thermal_mass_kj_m2k` - Effective thermal mass in kJ/m²K
+///
+/// # Returns
+/// Classification string: "VeryLight", "Light", "Medium", "Heavy", or "VeryHeavy"
+pub fn classify_thermal_mass(thermal_mass_kj_m2k: f64) -> &'static str {
+    if thermal_mass_kj_m2k < THERMAL_MASS_VERY_LIGHT {
+        "VeryLight"
+    } else if thermal_mass_kj_m2k < THERMAL_MASS_MEDIUM {
+        "Light"
+    } else if thermal_mass_kj_m2k < THERMAL_MASS_HEAVY {
+        "Medium"
+    } else if thermal_mass_kj_m2k < THERMAL_MASS_VERY_HEAVY {
+        "Heavy"
+    } else {
+        "VeryHeavy"
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_thermal_mass_thresholds_ordering() {
+        assert!(THERMAL_MASS_VERY_LIGHT <= THERMAL_MASS_LIGHT_UPPER);
+        assert!(THERMAL_MASS_LIGHT_UPPER <= THERMAL_MASS_MEDIUM_UPPER);
+        assert!(THERMAL_MASS_MEDIUM_UPPER <= THERMAL_MASS_HEAVY_UPPER);
+        assert!(THERMAL_MASS_HEAVY_UPPER <= THERMAL_MASS_VERY_HEAVY);
+    }
+
+    #[test]
+    fn test_thermal_mass_threshold_values() {
+        assert_eq!(THERMAL_MASS_VERY_LIGHT, 50.0);
+        assert_eq!(THERMAL_MASS_LIGHT, 50.0);
+        assert_eq!(THERMAL_MASS_LIGHT_UPPER, 150.0);
+        assert_eq!(THERMAL_MASS_MEDIUM, 150.0);
+        assert_eq!(THERMAL_MASS_MEDIUM_UPPER, 260.0);
+        assert_eq!(THERMAL_MASS_HEAVY, 260.0);
+        assert_eq!(THERMAL_MASS_HEAVY_UPPER, 370.0);
+        assert_eq!(THERMAL_MASS_VERY_HEAVY, 370.0);
+    }
+
+    #[test]
+    fn test_calculate_effective_thermal_mass_single_layer() {
+        let layers = [(0.2, 2300.0, 840.0)];
+        let result = calculate_effective_thermal_mass(&layers);
+        let expected = 2300.0 * 840.0 * 0.2 / 1000.0;
+        assert!((result - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_effective_thermal_mass_multiple_layers() {
+        let layers = [(0.1, 2300.0, 840.0), (0.05, 50.0, 840.0)];
+        let result = calculate_effective_thermal_mass(&layers);
+        let expected = (2300.0 * 840.0 * 0.1 + 50.0 * 840.0 * 0.05) / 1000.0;
+        assert!((result - expected).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_calculate_effective_thermal_mass_empty() {
+        let layers: [(f64, f64, f64); 0] = [];
+        let result = calculate_effective_thermal_mass(&layers);
+        assert_eq!(result, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_effective_thermal_mass_concrete_wall() {
+        let layers = [(0.2, 2400.0, 880.0)];
+        let result = calculate_effective_thermal_mass(&layers);
+        assert!(result > 260.0, "Concrete wall should be Heavy or VeryHeavy");
+    }
+
+    #[test]
+    fn test_calculate_effective_thermal_mass_lightweight() {
+        let layers = [(0.1, 400.0, 1000.0)];
+        let result = calculate_effective_thermal_mass(&layers);
+        assert!(result < 50.0, "Lightweight wall should be VeryLight");
+    }
+
+    #[test]
+    fn test_classify_thermal_mass_very_light() {
+        assert_eq!(classify_thermal_mass(30.0), "VeryLight");
+    }
+
+    #[test]
+    fn test_classify_thermal_mass_light() {
+        assert_eq!(classify_thermal_mass(100.0), "Light");
+    }
+
+    #[test]
+    fn test_classify_thermal_mass_medium() {
+        assert_eq!(classify_thermal_mass(200.0), "Medium");
+    }
+
+    #[test]
+    fn test_classify_thermal_mass_heavy() {
+        assert_eq!(classify_thermal_mass(300.0), "Heavy");
+    }
+
+    #[test]
+    fn test_classify_thermal_mass_very_heavy() {
+        assert_eq!(classify_thermal_mass(400.0), "VeryHeavy");
+    }
+
+    #[test]
+    fn test_classify_thermal_mass_boundaries() {
+        assert_eq!(classify_thermal_mass(50.0), "Light");
+        assert_eq!(classify_thermal_mass(150.0), "Medium");
+        assert_eq!(classify_thermal_mass(260.0), "Heavy");
+        assert_eq!(classify_thermal_mass(370.0), "VeryHeavy");
+    }
+}

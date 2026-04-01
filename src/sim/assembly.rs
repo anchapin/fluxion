@@ -1065,4 +1065,276 @@ mod tests {
         assert!(thermal_mass >= 260.0 && thermal_mass < 370.0);
         assert_eq!(heavy.classification(), ThermalMassClassification::Heavy);
     }
+
+    #[test]
+    fn test_assembly_clone() {
+        let assembly = AssemblyBuilder::new("clone_test".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .add_layer(Box::new(InsulationMaterial::new(0.05)))
+            .build()
+            .unwrap();
+        let cloned = assembly.clone();
+        assert_eq!(cloned.name, "clone_test");
+        assert_eq!(cloned.layers.len(), 2);
+        assert_eq!(cloned.total_r_value(), assembly.total_r_value());
+    }
+
+    #[test]
+    fn test_assembly_clone_gypsum() {
+        let assembly = AssemblyBuilder::new("gypsum_clone".to_string())
+            .add_layer(Box::new(GypsumMaterial::new(0.012)))
+            .build()
+            .unwrap();
+        let cloned = assembly.clone();
+        assert_eq!(cloned.name, "gypsum_clone");
+        assert_eq!(cloned.layers.len(), 1);
+    }
+
+    #[test]
+    fn test_assembly_clone_brick() {
+        let assembly = AssemblyBuilder::new("brick_clone".to_string())
+            .add_layer(Box::new(BrickMaterial::new(0.1)))
+            .build()
+            .unwrap();
+        let cloned = assembly.clone();
+        assert_eq!(cloned.name, "brick_clone");
+        assert_eq!(cloned.layers.len(), 1);
+    }
+
+    #[test]
+    fn test_assembly_debug() {
+        let assembly = AssemblyBuilder::new("debug_test".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .unwrap();
+        let debug_str = format!("{:?}", assembly);
+        assert!(debug_str.contains("debug_test"));
+        assert!(debug_str.contains("num_layers"));
+    }
+
+    #[test]
+    fn test_assembly_error_display() {
+        let err = AssemblyError::NoLayers;
+        let msg = format!("{}", err);
+        assert!(msg.contains("at least one layer"));
+    }
+
+    #[test]
+    fn test_assembly_error_invalid_thickness_display() {
+        let err = AssemblyError::InvalidThickness {
+            layer_name: "TestLayer".to_string(),
+            thickness: -0.5,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("TestLayer"));
+        assert!(msg.contains("-0.5"));
+    }
+
+    #[test]
+    fn test_assembly_error_invalid_conductivity_display() {
+        let err = AssemblyError::InvalidConductivity {
+            layer_name: "BadCond".to_string(),
+            conductivity: 0.0,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("BadCond"));
+        assert!(msg.contains("conductivity"));
+    }
+
+    #[test]
+    fn test_assembly_error_invalid_density_display() {
+        let err = AssemblyError::InvalidDensity {
+            layer_name: "NoDensity".to_string(),
+            density: -10.0,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("NoDensity"));
+        assert!(msg.contains("density"));
+    }
+
+    #[test]
+    fn test_assembly_error_invalid_specific_heat_display() {
+        let err = AssemblyError::InvalidSpecificHeat {
+            layer_name: "NoHeat".to_string(),
+            specific_heat: 0.0,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("NoHeat"));
+        assert!(msg.contains("specific heat"));
+    }
+
+    #[test]
+    fn test_assembly_error_invalid_emissivity_display() {
+        let err = AssemblyError::InvalidEmissivity {
+            layer_name: "BadEmiss".to_string(),
+            emissivity: 1.5,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("BadEmiss"));
+        assert!(msg.contains("emissivity"));
+    }
+
+    #[test]
+    fn test_assembly_error_invalid_absorptance_display() {
+        let err = AssemblyError::InvalidAbsorptance {
+            layer_name: "BadAbsorb".to_string(),
+            absorptance: -0.1,
+        };
+        let msg = format!("{}", err);
+        assert!(msg.contains("BadAbsorb"));
+        assert!(msg.contains("absorptance"));
+    }
+
+    #[test]
+    fn test_assembly_error_is_error() {
+        let err = AssemblyError::NoLayers;
+        let _: &dyn std::error::Error = &err;
+    }
+
+    #[test]
+    fn test_load_materials_invalid_path() {
+        let result = load_materials("/nonexistent/path/materials.yaml");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.contains("Failed to read"));
+    }
+
+    #[test]
+    fn test_load_assemblies_invalid_path() {
+        let result = load_assemblies("/nonexistent/path/assemblies.yaml");
+        assert!(result.is_err());
+        let err_msg = result.unwrap_err();
+        assert!(err_msg.contains("Failed to read"));
+    }
+
+    #[test]
+    fn test_material_layer_downcast() {
+        let concrete = ConcreteMaterial::new(0.15);
+        let layer: &dyn MaterialLayer = &concrete;
+        assert!(layer.as_any().downcast_ref::<ConcreteMaterial>().is_some());
+        assert!(layer
+            .as_any()
+            .downcast_ref::<InsulationMaterial>()
+            .is_none());
+        assert!(layer.as_any().downcast_ref::<GypsumMaterial>().is_none());
+        assert!(layer.as_any().downcast_ref::<BrickMaterial>().is_none());
+    }
+
+    #[test]
+    fn test_thermal_mass_classification_display() {
+        assert_eq!(
+            format!("{}", ThermalMassClassification::VeryLight),
+            "VeryLight"
+        );
+        assert_eq!(format!("{}", ThermalMassClassification::Light), "Light");
+        assert_eq!(format!("{}", ThermalMassClassification::Medium), "Medium");
+        assert_eq!(format!("{}", ThermalMassClassification::Heavy), "Heavy");
+        assert_eq!(
+            format!("{}", ThermalMassClassification::VeryHeavy),
+            "VeryHeavy"
+        );
+    }
+
+    #[test]
+    fn test_thermal_mass_classification_copy() {
+        let c1 = ThermalMassClassification::Heavy;
+        let c2 = c1;
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn test_assembly_builder_add_multiple_layers() {
+        let builder = AssemblyBuilder::new("multi".to_string());
+        let layers = vec![
+            Box::new(BrickMaterial::new(0.1)) as Box<dyn MaterialLayer>,
+            Box::new(ConcreteMaterial::new(0.15)),
+            Box::new(InsulationMaterial::new(0.05)),
+            Box::new(GypsumMaterial::new(0.012)),
+        ];
+        let builder = layers.into_iter().fold(builder, |b, l| b.add_layer(l));
+        let assembly = builder.build().unwrap();
+        assert_eq!(assembly.layers.len(), 4);
+    }
+
+    #[test]
+    fn test_assembly_r_value_single_layer() {
+        let assembly = AssemblyBuilder::new("single".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+        let expected_r = 0.2 / 1.4;
+        assert!((assembly.total_r_value() - expected_r).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_assembly_total_thickness_single_layer() {
+        let assembly = AssemblyBuilder::new("single".to_string())
+            .add_layer(Box::new(BrickMaterial::new(0.15)))
+            .build()
+            .unwrap();
+        assert!((assembly.total_thickness() - 0.15).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_material_properties_ranges() {
+        let concrete = ConcreteMaterial::new(0.1);
+        assert!((0.0..=1.0).contains(&concrete.absorptance()));
+        assert!((0.0..=1.0).contains(&concrete.emissivity()));
+        assert!(concrete.conductivity() > 0.0);
+        assert!(concrete.density() > 0.0);
+        assert!(concrete.specific_heat() > 0.0);
+        assert!(concrete.thickness() > 0.0);
+    }
+
+    #[test]
+    fn test_insulation_material_properties() {
+        let insulation = InsulationMaterial::new(0.1);
+        assert_eq!(insulation.name(), "Insulation");
+        assert_eq!(insulation.conductivity(), 0.04);
+        assert_eq!(insulation.density(), 50.0);
+        assert_eq!(insulation.specific_heat(), 840.0);
+        assert_eq!(insulation.absorptance(), 0.5);
+        assert_eq!(insulation.emissivity(), 0.9);
+        assert_eq!(insulation.r_value(), 0.1 / 0.04);
+    }
+
+    #[test]
+    fn test_gypsum_material_properties() {
+        let gypsum = GypsumMaterial::new(0.013);
+        assert_eq!(gypsum.name(), "Gypsum");
+        assert_eq!(gypsum.conductivity(), 0.17);
+        assert_eq!(gypsum.density(), 960.0);
+        assert_eq!(gypsum.specific_heat(), 840.0);
+        assert_eq!(gypsum.absorptance(), 0.3);
+        assert_eq!(gypsum.emissivity(), 0.9);
+        assert_eq!(gypsum.r_value(), 0.013 / 0.17);
+    }
+
+    #[test]
+    fn test_brick_material_properties() {
+        let brick = BrickMaterial::new(0.09);
+        assert_eq!(brick.name(), "Brick");
+        assert_eq!(brick.conductivity(), 0.7);
+        assert_eq!(brick.density(), 1920.0);
+        assert_eq!(brick.specific_heat(), 840.0);
+        assert_eq!(brick.absorptance(), 0.9);
+        assert_eq!(brick.emissivity(), 0.9);
+        assert_eq!(brick.r_value(), 0.09 / 0.7);
+    }
+
+    #[test]
+    fn test_load_materials_from_data() {
+        let materials = load_materials("data/materials.yaml");
+        assert!(materials.is_ok());
+        let materials = materials.unwrap();
+        assert!(!materials.is_empty());
+    }
+
+    #[test]
+    fn test_load_assemblies_from_data() {
+        let assemblies = load_assemblies("data/assemblies.yaml");
+        assert!(assemblies.is_ok());
+        let assemblies = assemblies.unwrap();
+        assert!(!assemblies.is_empty());
+    }
 }

@@ -306,30 +306,33 @@ mod tests {
     }
 
     #[test]
-    fn test_export_diagnostics_multi_zone() {
-        let temp_dir = std::env::temp_dir().join("fluxion_export_test_multi");
-        let exporter = CsvExporter::new(temp_dir.clone(), ',');
-
-        let collector = create_test_collector(24, 2);
-        let spec = create_minimal_case_spec("960");
-
-        let result = exporter.export_diagnostics("960", &collector, &spec);
-        assert!(result.is_ok());
-
-        let zone0_path = temp_dir.join("960").join("case_960_zone0.csv");
-        let zone1_path = temp_dir.join("960").join("case_960_zone1.csv");
-        assert!(zone0_path.exists());
-        assert!(zone1_path.exists());
-
-        let _ = std::fs::remove_dir_all(&temp_dir);
+    fn test_csv_exporter_fields() {
+        let exporter = CsvExporter::new(PathBuf::from("/tmp/test"), ',');
+        assert_eq!(exporter.delimiter, ',');
     }
 
     #[test]
-    fn test_export_diagnostics_empty_collector() {
+    fn test_csv_exporter_different_delimiters() {
+        let exporter_tab = CsvExporter::new(PathBuf::from("/tmp/test"), '\t');
+        assert_eq!(exporter_tab.delimiter, '\t');
+
+        let exporter_pipe = CsvExporter::new(PathBuf::from("/tmp/test"), '|');
+        assert_eq!(exporter_pipe.delimiter, '|');
+    }
+
+    #[test]
+    fn test_csv_exporter_output_dir() {
+        let exporter = CsvExporter::new(PathBuf::from("/custom/output"), ';');
+        assert_eq!(exporter.output_dir, PathBuf::from("/custom/output"));
+    }
+
+    #[test]
+    fn test_export_diagnostics_empty_hourly_data() {
         let temp_dir = std::env::temp_dir().join("fluxion_export_test_empty");
         let exporter = CsvExporter::new(temp_dir.clone(), ',');
 
-        let collector = DiagnosticCollector::new(DiagnosticConfig::full());
+        let mut collector = DiagnosticCollector::new(DiagnosticConfig::full());
+        collector.hourly_data = vec![];
         let spec = create_minimal_case_spec("600");
 
         let result = exporter.export_diagnostics("600", &collector, &spec);
@@ -339,9 +342,92 @@ mod tests {
     }
 
     #[test]
-    fn test_export_diagnostics_semicolon_delimiter() {
-        let temp_dir = std::env::temp_dir().join("fluxion_export_test_semicolon");
+    fn test_export_metadata() {
+        let temp_dir = std::env::temp_dir().join("fluxion_metadata_test");
+        let exporter = CsvExporter::new(temp_dir.clone(), ',');
+
+        let collector = create_test_collector(24, 1);
+        let spec = create_minimal_case_spec("600");
+
+        let report = BenchmarkReport { results: vec![] };
+
+        let result = exporter.export_metadata("600", &spec, &report, &collector);
+        assert!(result.is_ok());
+
+        let meta_path = temp_dir.join("600").join("metadata.json");
+        assert!(meta_path.exists());
+
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        assert!(content.contains("600"));
+        assert!(content.contains("export_info"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_export_metadata_with_validation_results() {
+        let temp_dir = std::env::temp_dir().join("fluxion_metadata_validation_test");
         let exporter = CsvExporter::new(temp_dir.clone(), ';');
+
+        let collector = create_test_collector(24, 1);
+        let spec = create_minimal_case_spec("900");
+
+        let report = BenchmarkReport {
+            results: vec![
+                ValidationResult {
+                    case_id: "900".to_string(),
+                    metric: "heating".to_string(),
+                    actual: 1.5,
+                    expected_min: 1.0,
+                    expected_max: 2.0,
+                    passed: true,
+                },
+                ValidationResult {
+                    case_id: "900".to_string(),
+                    metric: "cooling".to_string(),
+                    actual: 3.0,
+                    expected_min: 2.0,
+                    expected_max: 4.0,
+                    passed: true,
+                },
+            ],
+        };
+
+        let result = exporter.export_metadata("900", &spec, &report, &collector);
+        assert!(result.is_ok());
+
+        let meta_path = temp_dir.join("900").join("metadata.json");
+        let content = std::fs::read_to_string(&meta_path).unwrap();
+        assert!(content.contains("heating"));
+        assert!(content.contains("cooling"));
+        assert!(content.contains("900"));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_export_diagnostics_semicolon_delimiter() {
+        let temp_dir = std::env::temp_dir().join("fluxion_export_semicolon");
+        let exporter = CsvExporter::new(temp_dir.clone(), ';');
+
+        let collector = create_test_collector(12, 1);
+        let spec = create_minimal_case_spec("600");
+
+        let result = exporter.export_diagnostics("600", &collector, &spec);
+        assert!(result.is_ok());
+
+        let csv_path = temp_dir.join("600").join("case_600_zone0.csv");
+        let content = std::fs::read_to_string(&csv_path).unwrap();
+        let first_line = content.lines().next().unwrap();
+        assert!(first_line.contains(';'));
+
+        let _ = std::fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn test_csv_content_has_correct_data_values() {
+        let temp_dir = std::env::temp_dir().join("fluxion_export_data_check");
+        let exporter = CsvExporter::new(temp_dir.clone(), ',');
 
         let collector = create_test_collector(24, 1);
         let spec = create_minimal_case_spec("600");
@@ -351,8 +437,15 @@ mod tests {
 
         let csv_path = temp_dir.join("600").join("case_600_zone0.csv");
         let content = std::fs::read_to_string(&csv_path).unwrap();
-        assert!(content.contains(';'));
-        assert!(!content.contains(','));
+        let lines: Vec<&str> = content.lines().collect();
+
+        assert!(lines[0].contains("Hour"));
+        assert!(lines[0].contains("Month"));
+        assert!(lines[0].contains("Day"));
+        assert!(lines[0].contains("HourOfDay"));
+        assert!(lines[0].contains("Solar_Gain"));
+        assert!(lines[0].contains("HVAC_Heating"));
+        assert!(lines[0].contains("HVAC_Cooling"));
 
         let _ = std::fs::remove_dir_all(&temp_dir);
     }

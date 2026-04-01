@@ -1640,4 +1640,409 @@ mod tests {
             serde_json::from_str(&json).expect("Failed to deserialize");
         assert_eq!(deserialized.layer_count(), wall.layer_count());
     }
+
+    #[test]
+    fn test_surface_type_interior_film_coeff() {
+        assert_eq!(
+            SurfaceType::interior_film_coeff(SurfaceType::Wall),
+            INTERIOR_FILM_COEFF_WALL
+        );
+        assert_eq!(
+            SurfaceType::interior_film_coeff(SurfaceType::Ceiling),
+            INTERIOR_FILM_COEFF_CEILING
+        );
+        assert_eq!(
+            SurfaceType::interior_film_coeff(SurfaceType::Floor),
+            INTERIOR_FILM_COEFF_FLOOR
+        );
+    }
+
+    #[test]
+    fn test_r_value_materials() {
+        let wall = Assemblies::low_mass_wall();
+        let r_mat = wall.r_value_materials();
+        let expected = 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14;
+        assert!((r_mat - expected).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_r_value_total_with_surface_type() {
+        let wall = Assemblies::low_mass_wall();
+        let r_wall = wall.r_value_total(Some(SurfaceType::Wall), None);
+        let r_ceiling = wall.r_value_total(Some(SurfaceType::Ceiling), None);
+        let r_floor = wall.r_value_total(Some(SurfaceType::Floor), None);
+        assert!(r_wall != r_ceiling || r_wall != r_floor);
+    }
+
+    #[test]
+    fn test_r_value_total_with_wind_speed() {
+        let wall = Assemblies::low_mass_wall();
+        let r_calm = wall.r_value_total(None, Some(0.0));
+        let r_breezy = wall.r_value_total(None, Some(5.0));
+        let r_stormy = wall.r_value_total(None, Some(20.0));
+        assert!(r_calm > r_breezy);
+        assert!(r_breezy > r_stormy);
+    }
+
+    #[test]
+    fn test_u_value_internal() {
+        let wall = Assemblies::low_mass_wall();
+        let u_int = wall.u_value_internal();
+        let u_ext = wall.u_value(None, None);
+        assert!(
+            u_int < u_ext,
+            "Internal U-value should be lower (more resistance)"
+        );
+    }
+
+    #[test]
+    fn test_find_dominant_insulation_layer() {
+        let wall = Assemblies::low_mass_wall();
+        assert_eq!(wall.find_dominant_insulation_layer_index(), 1);
+    }
+
+    #[test]
+    fn test_find_dominant_insulation_layer_high_mass() {
+        let wall = Assemblies::high_mass_wall();
+        assert_eq!(wall.find_dominant_insulation_layer_index(), 1);
+    }
+
+    #[test]
+    fn test_find_dominant_insulation_single_layer() {
+        let wall = Construction::simple_wall(2.0);
+        assert_eq!(wall.find_dominant_insulation_layer_index(), 0);
+    }
+
+    #[test]
+    fn test_iso_13790_effective_capacitance() {
+        let wall = Assemblies::low_mass_wall();
+        let kappa = wall.iso_13790_effective_capacitance_per_area();
+        let expected = 950.0 * 0.012 * 840.0 + 500.0 * 0.009 * 1300.0;
+        assert!((kappa - expected).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_iso_13790_effective_capacitance_high_mass() {
+        let wall = Assemblies::high_mass_wall();
+        let kappa = wall.iso_13790_effective_capacitance_per_area();
+        let expected = 1400.0 * 0.100 * 1000.0 + 500.0 * 0.009 * 1300.0;
+        assert!((kappa - expected).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_iso_13790_mass_class_very_light() {
+        let wall = Construction::new(vec![Materials::fiberglass(0.05)]);
+        assert_eq!(wall.iso_13790_mass_class(), MassClass::VeryLight);
+    }
+
+    #[test]
+    fn test_iso_13790_mass_class_medium() {
+        let layer = ConstructionLayer::with_surface_properties(
+            "Concrete", 1.0, 2000.0, 1000.0, 0.1, 0.9, 0.7,
+        );
+        let wall = Construction::new(vec![layer]);
+        assert_eq!(wall.iso_13790_mass_class(), MassClass::Medium);
+    }
+
+    #[test]
+    fn test_iso_13790_mass_class_heavy() {
+        let layer = ConstructionLayer::with_surface_properties(
+            "ThickConcrete",
+            1.5,
+            2400.0,
+            1000.0,
+            0.15,
+            0.9,
+            0.7,
+        );
+        let wall = Construction::new(vec![layer]);
+        assert_eq!(wall.iso_13790_mass_class(), MassClass::Heavy);
+    }
+
+    #[test]
+    fn test_iso_13790_mass_class_very_heavy() {
+        let layer = ConstructionLayer::with_surface_properties(
+            "MassiveConcrete",
+            1.5,
+            2400.0,
+            1000.0,
+            0.2,
+            0.9,
+            0.7,
+        );
+        let wall = Construction::new(vec![layer]);
+        assert_eq!(wall.iso_13790_mass_class(), MassClass::VeryHeavy);
+    }
+
+    #[test]
+    fn test_mass_class_a_m_factor() {
+        assert_eq!(MassClass::VeryLight.a_m_factor(), 2.5);
+        assert_eq!(MassClass::Light.a_m_factor(), 2.5);
+        assert_eq!(MassClass::Medium.a_m_factor(), 2.5);
+        assert_eq!(MassClass::Heavy.a_m_factor(), 3.0);
+        assert_eq!(MassClass::VeryHeavy.a_m_factor(), 3.5);
+    }
+
+    #[test]
+    fn test_mass_class_kappa_range() {
+        assert_eq!(MassClass::VeryLight.kappa_range(), (0.0, 80_000.0));
+        assert_eq!(MassClass::Light.kappa_range(), (80_000.0, 165_000.0));
+        assert_eq!(MassClass::Medium.kappa_range(), (165_000.0, 260_000.0));
+        assert_eq!(MassClass::Heavy.kappa_range(), (260_000.0, 370_000.0));
+        assert_eq!(
+            MassClass::VeryHeavy.kappa_range(),
+            (370_000.0, f64::INFINITY)
+        );
+    }
+
+    #[test]
+    fn test_mass_class_equality() {
+        assert_eq!(MassClass::Light, MassClass::Light);
+        assert_ne!(MassClass::Light, MassClass::Heavy);
+    }
+
+    #[test]
+    fn test_calc_h_tr_em() {
+        let wall = Assemblies::low_mass_wall();
+        let h = wall.calc_h_tr_em(1.5, 48.0);
+        assert!(h > 0.0);
+        let u = wall.u_value(None, None);
+        assert!((h - u * 48.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_calc_h_tr_w() {
+        let wall = Assemblies::low_mass_wall();
+        assert_eq!(wall.calc_h_tr_w(3.0, 12.0), 36.0);
+    }
+
+    #[test]
+    fn test_calc_h_tr_ms() {
+        let wall = Assemblies::low_mass_wall();
+        assert_eq!(wall.calc_h_tr_ms(48.0), 2.0 * 48.0);
+    }
+
+    #[test]
+    fn test_calc_h_tr_is() {
+        let wall = Assemblies::low_mass_wall();
+        assert_eq!(wall.calc_h_tr_is(48.0), 3.45 * 48.0);
+    }
+
+    #[test]
+    fn test_calc_h_tr_em_with_thermal_bridge() {
+        let wall = Assemblies::low_mass_wall();
+        let h_no_bridge = wall.calc_h_tr_em_with_thermal_bridge(1.5, 48.0, false);
+        let h_with_bridge = wall.calc_h_tr_em_with_thermal_bridge(1.5, 48.0, true);
+        assert!(h_with_bridge > h_no_bridge);
+        assert!((h_with_bridge - h_no_bridge * 1.15).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_simple_wall() {
+        let wall = Construction::simple_wall(3.0);
+        assert_eq!(wall.layer_count(), 1);
+        assert_eq!(wall.layers[0].name, "Simple Wall");
+        assert!((wall.r_value_materials() - 3.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_concrete_wall_factory() {
+        let wall = Assemblies::concrete_wall(0.2);
+        assert_eq!(wall.layer_count(), 1);
+        assert_eq!(wall.layers[0].name, "Concrete");
+        assert_eq!(wall.layers[0].thickness, 0.2);
+    }
+
+    #[test]
+    fn test_high_mass_wall_standard_alias() {
+        let wall1 = Assemblies::high_mass_wall();
+        let wall2 = Assemblies::high_mass_wall_standard();
+        assert_eq!(wall1.layer_count(), wall2.layer_count());
+    }
+
+    #[test]
+    fn test_high_mass_floor() {
+        let floor = Assemblies::high_mass_floor();
+        assert_eq!(floor.layer_count(), 2);
+        assert_eq!(floor.layers[0].name, "Concrete Slab");
+        assert_eq!(floor.layers[1].name, "Insulation");
+    }
+
+    #[test]
+    fn test_calc_h_ve() {
+        let assemblies = Assemblies;
+        let h_ve = assemblies.calc_h_ve(0.5, 240.0);
+        assert!(h_ve > 0.0);
+        let expected = AIR_DENSITY_SEA_LEVEL * AIR_SPECIFIC_HEAT * (0.5 / 3600.0) * 240.0;
+        assert!((h_ve - expected).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_calc_h_ve_zero_ach() {
+        let assemblies = Assemblies;
+        assert_eq!(assemblies.calc_h_ve(0.0, 240.0), 0.0);
+    }
+
+    #[test]
+    fn test_materials_concrete_block() {
+        let layer = Materials::concrete_block(0.1);
+        assert_eq!(layer.conductivity, 0.51);
+        assert_eq!(layer.density, 1400.0);
+        assert_eq!(layer.specific_heat, 1000.0);
+    }
+
+    #[test]
+    fn test_materials_timber() {
+        let layer = Materials::timber(0.15);
+        assert_eq!(layer.conductivity, 0.14);
+        assert_eq!(layer.density, 600.0);
+        assert_eq!(layer.specific_heat, 1600.0);
+    }
+
+    #[test]
+    fn test_materials_roof_deck() {
+        let layer = Materials::roof_deck(0.02);
+        assert_eq!(layer.conductivity, 0.14);
+        assert_eq!(layer.density, 500.0);
+        assert_eq!(layer.specific_heat, 1300.0);
+    }
+
+    #[test]
+    fn test_materials_concrete_slab() {
+        let layer = Materials::concrete_slab(0.1);
+        assert_eq!(layer.conductivity, 1.13);
+        assert_eq!(layer.density, 1400.0);
+        assert_eq!(layer.specific_heat, 1000.0);
+    }
+
+    #[test]
+    fn test_materials_insulation_high_mass() {
+        let layer = Materials::insulation_high_mass(0.1);
+        assert_eq!(layer.conductivity, 0.04);
+        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.specific_heat, 1400.0);
+    }
+
+    #[test]
+    fn test_construction_layer_thermal_capacitance() {
+        let layer = ConstructionLayer::new("Test", 0.5, 2000.0, 1000.0, 0.1);
+        assert_eq!(layer.thermal_capacitance_per_area(), 200000.0);
+    }
+
+    #[test]
+    fn test_construction_clone() {
+        let wall = Assemblies::low_mass_wall();
+        let cloned = wall.clone();
+        assert_eq!(cloned.layer_count(), wall.layer_count());
+        assert_eq!(cloned.r_value_materials(), wall.r_value_materials());
+    }
+
+    #[test]
+    fn test_surface_type_equality() {
+        assert_eq!(SurfaceType::Wall, SurfaceType::Wall);
+        assert_ne!(SurfaceType::Wall, SurfaceType::Ceiling);
+    }
+
+    #[test]
+    fn test_exterior_film_coeff_zero_wind() {
+        assert_eq!(exterior_film_coeff(0.0), 10.0);
+    }
+
+    #[test]
+    fn test_exterior_film_coeff_various_speeds() {
+        assert!((exterior_film_coeff(1.0) - 14.0).abs() < EPSILON);
+        assert!((exterior_film_coeff(4.0) - 18.0).abs() < EPSILON);
+        assert!((exterior_film_coeff(9.0) - 22.0).abs() < EPSILON);
+    }
+
+    #[test]
+    fn test_construction_layer_with_surface_properties_boundary() {
+        let l1 = ConstructionLayer::with_surface_properties(
+            "Boundary", 0.5, 1000.0, 840.0, 0.1, 0.0, 0.0,
+        );
+        assert_eq!(l1.emissivity, 0.0);
+        assert_eq!(l1.absorptance, 0.0);
+        let l2 = ConstructionLayer::with_surface_properties(
+            "Boundary", 0.5, 1000.0, 840.0, 0.1, 1.0, 1.0,
+        );
+        assert_eq!(l2.emissivity, 1.0);
+        assert_eq!(l2.absorptance, 1.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Absorptance must be in [0, 1]")]
+    fn test_construction_layer_with_surface_properties_invalid_absorptance() {
+        ConstructionLayer::with_surface_properties("Bad", 0.5, 1000.0, 840.0, 0.1, 0.9, 1.5);
+    }
+
+    #[test]
+    #[should_panic(expected = "Specific heat must be positive")]
+    fn test_construction_layer_with_surface_properties_invalid_specific_heat() {
+        ConstructionLayer::with_surface_properties("Bad", 0.5, 1000.0, -840.0, 0.1, 0.9, 0.7);
+    }
+
+    #[test]
+    fn test_all_materials_factory_methods() {
+        let t = 0.1;
+        assert_eq!(Materials::plasterboard(t).thickness, t);
+        assert_eq!(Materials::fiberglass(t).thickness, t);
+        assert_eq!(Materials::wood_siding(t).thickness, t);
+        assert_eq!(Materials::concrete(t).thickness, t);
+        assert_eq!(Materials::concrete_block(t).thickness, t);
+        assert_eq!(Materials::foam(t).thickness, t);
+        assert_eq!(Materials::timber(t).thickness, t);
+        assert_eq!(Materials::roof_deck(t).thickness, t);
+        assert_eq!(Materials::concrete_slab(t).thickness, t);
+        assert_eq!(Materials::insulation_high_mass(t).thickness, t);
+    }
+
+    #[test]
+    fn test_assemblies_all_factory_methods() {
+        assert_eq!(Assemblies::low_mass_wall().layer_count(), 3);
+        assert_eq!(Assemblies::low_mass_roof().layer_count(), 3);
+        assert_eq!(Assemblies::high_mass_wall().layer_count(), 3);
+        assert_eq!(Assemblies::high_mass_roof().layer_count(), 3);
+        assert_eq!(Assemblies::insulated_floor().layer_count(), 2);
+        assert_eq!(Assemblies::high_mass_floor().layer_count(), 2);
+        assert_eq!(Assemblies::concrete_wall(0.1).layer_count(), 1);
+    }
+
+    #[test]
+    fn test_mass_class_serialization() {
+        let class = MassClass::Heavy;
+        let json = serde_json::to_string(&class).unwrap();
+        assert!(json.contains("Heavy"));
+        let restored: MassClass = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored, MassClass::Heavy);
+    }
+
+    #[test]
+    fn test_construction_layer_equality() {
+        let l1 = ConstructionLayer::new("Test", 0.5, 1000.0, 840.0, 0.1);
+        let l2 = ConstructionLayer::new("Test", 0.5, 1000.0, 840.0, 0.1);
+        assert_eq!(l1, l2);
+    }
+
+    #[test]
+    fn test_construction_layer_not_equal() {
+        let l1 = ConstructionLayer::new("Test", 0.5, 1000.0, 840.0, 0.1);
+        let l2 = ConstructionLayer::new("Test", 0.6, 1000.0, 840.0, 0.1);
+        assert_ne!(l1, l2);
+    }
+
+    #[test]
+    fn test_construction_u_value_with_ceiling_surface_type() {
+        let roof = Assemblies::low_mass_roof();
+        let u_ceiling = roof.u_value(Some(SurfaceType::Ceiling), None);
+        let u_default = roof.u_value(None, None);
+        assert!(u_ceiling != u_default);
+    }
+
+    #[test]
+    fn test_construction_u_value_with_floor_surface_type() {
+        let floor = Assemblies::insulated_floor();
+        let u_floor = floor.u_value(Some(SurfaceType::Floor), None);
+        let u_default = floor.u_value(None, None);
+        assert!(u_floor != u_default);
+    }
 }

@@ -295,4 +295,141 @@ mod tests {
             h_b_to_a
         );
     }
+
+    #[test]
+    fn test_interzone_constants() {
+        assert!((STACK_COEFFICIENT - 0.025).abs() < 0.001);
+        assert!((AIR_DENSITY - 1.2).abs() < 0.01);
+        assert!((AIR_SPECIFIC_HEAT - 1000.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_view_factor_basic() {
+        let vf = calculate_zone_to_zone_view_factor(10.0, 50.0, 50.0);
+        assert!(vf > 0.0);
+        assert!(vf < 1.0);
+        // F_12 = (10/50) * (10/50) = 0.04
+        assert!((vf - 0.04).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_view_factor_equal_areas() {
+        let vf = calculate_zone_to_zone_view_factor(20.0, 20.0, 20.0);
+        assert!((vf - 1.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_view_factor_zero_common_wall() {
+        let vf = calculate_zone_to_zone_view_factor(0.0, 50.0, 50.0);
+        assert_eq!(vf, 0.0);
+    }
+
+    #[test]
+    fn test_radiative_conductance_basic() {
+        let h_rad = calculate_radiative_conductance(10.0, 0.9, 293.15, 0.5);
+        assert!(h_rad > 0.0);
+    }
+
+    #[test]
+    fn test_radiative_conductance_zero_area() {
+        let h_rad = calculate_radiative_conductance(0.0, 0.9, 293.15, 0.5);
+        assert_eq!(h_rad, 0.0);
+    }
+
+    #[test]
+    fn test_radiative_conductance_zero_emissivity() {
+        let h_rad = calculate_radiative_conductance(10.0, 0.0, 293.15, 0.5);
+        assert_eq!(h_rad, 0.0);
+    }
+
+    #[test]
+    fn test_window_radiative_conductance() {
+        let h_rad = calculate_window_radiative_conductance(5.0, 0.84, 293.15, 0.8);
+        assert!(h_rad > 0.0);
+    }
+
+    #[test]
+    fn test_stack_effect_ach_basic() {
+        let ach = calculate_stack_effect_ach(25.0, 20.0, 2.1, 1.5, 50.0);
+        assert!(ach > 0.0);
+    }
+
+    #[test]
+    fn test_stack_effect_ach_zero_temp_diff() {
+        let ach = calculate_stack_effect_ach(20.0, 20.0, 2.1, 1.5, 50.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_stack_effect_ach_zero_volume() {
+        let ach = calculate_stack_effect_ach(25.0, 20.0, 2.1, 1.5, 0.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_stack_effect_ach_zero_height() {
+        let ach = calculate_stack_effect_ach(25.0, 20.0, 0.0, 1.5, 50.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_stack_effect_ach_negative_volume() {
+        let ach = calculate_stack_effect_ach(25.0, 20.0, 2.1, 1.5, -10.0);
+        assert_eq!(ach, 0.0);
+    }
+
+    #[test]
+    fn test_stack_effect_ach_large_temp_diff() {
+        let ach = calculate_stack_effect_ach(40.0, 10.0, 2.1, 1.5, 50.0);
+        assert!(ach > calculate_stack_effect_ach(25.0, 20.0, 2.1, 1.5, 50.0));
+    }
+
+    #[test]
+    fn test_ventilation_heat_transfer_basic() {
+        let q = calculate_ventilation_heat_transfer(1.0, 25.0, 20.0, 50.0);
+        assert!(q > 0.0);
+    }
+
+    #[test]
+    fn test_ventilation_heat_transfer_zero_ach() {
+        let q = calculate_ventilation_heat_transfer(0.0, 25.0, 20.0, 50.0);
+        assert_eq!(q, 0.0);
+    }
+
+    #[test]
+    fn test_ventilation_heat_transfer_zero_temp_diff() {
+        let q = calculate_ventilation_heat_transfer(1.0, 20.0, 20.0, 50.0);
+        assert_eq!(q, 0.0);
+    }
+
+    #[test]
+    fn test_ventilation_heat_transfer_cooling() {
+        let q = calculate_ventilation_heat_transfer(1.0, 15.0, 25.0, 50.0);
+        assert!(q < 0.0);
+    }
+
+    #[test]
+    fn test_ventilation_heat_transfer_heating() {
+        let q = calculate_ventilation_heat_transfer(1.0, 30.0, 20.0, 50.0);
+        assert!(q > 0.0);
+    }
+
+    #[test]
+    fn test_interzone_conductance_thin_wall() {
+        let wall = Assemblies::concrete_wall(0.100);
+        let area = 10.0;
+        let h = calculate_interzone_conductance(area, &wall);
+        assert!(h > 0.0);
+    }
+
+    #[test]
+    fn test_directional_interzone_conductance_high_insulation() {
+        let wall = Assemblies::concrete_wall(0.200);
+        let area = 21.6;
+        let (h_a_to_b, h_b_to_a) =
+            calculate_directional_interzone_conductance(area, &wall, 5.0, 5.0);
+        assert!(h_a_to_b > 0.0);
+        assert!(h_b_to_a > 0.0);
+        assert!((h_a_to_b - h_b_to_a).abs() < 0.01);
+    }
 }

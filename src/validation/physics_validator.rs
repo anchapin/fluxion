@@ -250,4 +250,219 @@ mod tests {
         assert!(validator.validate_prediction(&[20.0, 21.0], &[10.0, 15.0]));
         assert!(!validator.validate_prediction(&[-60.0], &[10.0]));
     }
+
+    #[test]
+    fn test_temperature_bounds_high_violation() {
+        let validator = PhysicsValidator::default();
+        let temps = vec![150.0];
+        let loads = vec![10.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 20.0);
+        assert!(!result.passed);
+        assert_eq!(result.temperature_violations.len(), 1);
+        assert_eq!(result.temperature_violations[0].zone, 0);
+        assert_eq!(result.temperature_violations[0].temperature, 150.0);
+    }
+
+    #[test]
+    fn test_multiple_temperature_violations() {
+        let validator = PhysicsValidator::default();
+        let temps = vec![-60.0, 20.0, 150.0];
+        let loads = vec![10.0, 10.0, 10.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 20.0);
+        assert!(!result.passed);
+        assert_eq!(result.temperature_violations.len(), 2);
+    }
+
+    #[test]
+    fn test_thermal_load_negative_exceeds_max() {
+        let validator = PhysicsValidator::default();
+        let temps = vec![20.0];
+        let loads = vec![-600.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 20.0);
+        assert!(!result.passed);
+    }
+
+    #[test]
+    fn test_energy_balance_passes() {
+        let validator = PhysicsValidator::default();
+        let temps = vec![20.0, 22.0];
+        let loads = vec![5.0, 5.0];
+
+        let result = validator.validate(&temps, &loads, 15.0, 20.0);
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn test_energy_balance_fails() {
+        let validator = PhysicsValidator::new(-50.0, 100.0, 500.0, 1.0);
+        let temps = vec![20.0];
+        let loads = vec![200.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 10.0);
+        assert!(!result.passed);
+        assert!(result.energy_balance_error > 1.0);
+    }
+
+    #[test]
+    fn test_validate_empty_temperatures() {
+        let validator = PhysicsValidator::default();
+        let temps: Vec<f64> = vec![];
+        let loads = vec![10.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 20.0);
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn test_validate_zero_zone_area() {
+        let validator = PhysicsValidator::default();
+        let temps = vec![20.0];
+        let loads = vec![10.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 0.0);
+        assert!(result.passed);
+    }
+
+    #[test]
+    fn test_validate_prediction_high_temp() {
+        let validator = PhysicsValidator::default();
+        assert!(!validator.validate_prediction(&[150.0], &[10.0]));
+    }
+
+    #[test]
+    fn test_validate_prediction_high_load() {
+        let validator = PhysicsValidator::default();
+        assert!(!validator.validate_prediction(&[20.0], &[600.0]));
+    }
+
+    #[test]
+    fn test_validate_prediction_negative_load_exceeds() {
+        let validator = PhysicsValidator::default();
+        assert!(!validator.validate_prediction(&[20.0], &[-600.0]));
+    }
+
+    #[test]
+    fn test_validate_prediction_all_valid() {
+        let validator = PhysicsValidator::default();
+        assert!(validator.validate_prediction(&[-40.0, 0.0, 50.0, 99.0], &[-400.0, 0.0, 400.0]));
+    }
+
+    #[test]
+    fn test_new_custom_bounds() {
+        let validator = PhysicsValidator::new(-30.0, 80.0, 300.0, 5.0);
+        assert_eq!(validator.min_temperature, -30.0);
+        assert_eq!(validator.max_temperature, 80.0);
+        assert_eq!(validator.max_thermal_load, 300.0);
+        assert_eq!(validator.energy_balance_tolerance, 5.0);
+    }
+
+    #[test]
+    fn test_default_values() {
+        let validator = PhysicsValidator::default();
+        assert_eq!(validator.min_temperature, -50.0);
+        assert_eq!(validator.max_temperature, 100.0);
+        assert_eq!(validator.max_thermal_load, 500.0);
+        assert_eq!(validator.energy_balance_tolerance, 10.0);
+    }
+
+    #[test]
+    fn test_generate_validation_report_passed() {
+        let result = PhysicsValidationResult {
+            passed: true,
+            energy_balance_error: 2.5,
+            temperature_violations: vec![],
+            messages: vec!["All physics validations passed".to_string()],
+        };
+
+        let report = generate_validation_report(&result);
+        assert!(report.contains("PASSED"));
+        assert!(report.contains("2.50"));
+        assert!(report.contains("All physics validations passed"));
+        assert!(!report.contains("Temperature Violations"));
+    }
+
+    #[test]
+    fn test_generate_validation_report_failed() {
+        let result = PhysicsValidationResult {
+            passed: false,
+            energy_balance_error: 15.0,
+            temperature_violations: vec![TemperatureViolation {
+                zone: 1,
+                temperature: -60.0,
+                min_temp: -50.0,
+                max_temp: 100.0,
+            }],
+            messages: vec![
+                "Zone 1: Temperature -60°C below minimum -50°C".to_string(),
+                "Energy balance error: 15W/m² exceeds tolerance 10W/m²".to_string(),
+            ],
+        };
+
+        let report = generate_validation_report(&result);
+        assert!(report.contains("FAILED"));
+        assert!(report.contains("15.00"));
+        assert!(report.contains("Temperature Violations"));
+        assert!(report.contains("Zone 1"));
+        assert!(report.contains("-60"));
+    }
+
+    #[test]
+    fn test_temperature_violation_debug() {
+        let violation = TemperatureViolation {
+            zone: 2,
+            temperature: -70.0,
+            min_temp: -50.0,
+            max_temp: 100.0,
+        };
+
+        let debug = format!("{:?}", violation);
+        assert!(debug.contains("TemperatureViolation"));
+        assert!(debug.contains("zone"));
+        assert!(debug.contains("2"));
+    }
+
+    #[test]
+    fn test_validation_result_clone() {
+        let result = PhysicsValidationResult {
+            passed: true,
+            energy_balance_error: 5.0,
+            temperature_violations: vec![TemperatureViolation {
+                zone: 0,
+                temperature: 20.0,
+                min_temp: -50.0,
+                max_temp: 100.0,
+            }],
+            messages: vec!["Test message".to_string()],
+        };
+
+        let cloned = result.clone();
+        assert_eq!(cloned.passed, true);
+        assert_eq!(cloned.energy_balance_error, 5.0);
+        assert_eq!(cloned.temperature_violations.len(), 1);
+        assert_eq!(cloned.messages.len(), 1);
+    }
+
+    #[test]
+    fn test_validate_multiple_zones_all_pass() {
+        let validator = PhysicsValidator::default();
+        let temps = vec![18.0, 20.0, 22.0, 24.0];
+        let loads = vec![50.0, 100.0, 75.0, 25.0];
+
+        let result = validator.validate(&temps, &loads, 15.0, 50.0);
+        assert!(result.passed);
+        assert!(result.temperature_violations.is_empty());
+    }
+
+    #[test]
+    fn test_validate_energy_balance_tolerance_edge() {
+        let validator = PhysicsValidator::new(-50.0, 100.0, 500.0, 0.01);
+        let temps = vec![20.0];
+        let loads = vec![50.0];
+
+        let result = validator.validate(&temps, &loads, 10.0, 10.0);
+        assert!(!result.passed);
+    }
 }

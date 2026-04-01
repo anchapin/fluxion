@@ -1327,7 +1327,7 @@ mod statistical_report_tests {
 #[cfg(test)]
 mod statistical_metrics_tests {
     use super::*;
-    use crate::validation::report::MetricType;
+    use crate::validation::report::{MetricType, ValidationStatus};
 
     #[test]
     fn test_nmbe_calculation() {
@@ -1509,5 +1509,132 @@ mod statistical_metrics_tests {
         // Test deserialization
         let deserialized: StatisticalMetrics = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.nmbe, metrics.nmbe);
+    }
+
+    #[test]
+    fn test_nmbe_empty_results() {
+        let results: Vec<ValidationResult> = vec![];
+        let nmbe = calculate_nmbe(&results);
+        assert!(nmbe.is_nan());
+    }
+
+    #[test]
+    fn test_cv_rmse_empty_results() {
+        let results: Vec<ValidationResult> = vec![];
+        let cv_rmse = calculate_cv_rmse(&results);
+        assert!(cv_rmse.is_nan());
+    }
+
+    #[test]
+    fn test_calculate_standard_error_mismatched_lengths() {
+        let predicted = vec![1.0, 2.0];
+        let refs = vec![1.0];
+        let se = calculate_standard_error(&predicted, &refs);
+        assert!(se.is_nan());
+    }
+
+    #[test]
+    fn test_calculate_standard_error_empty() {
+        let se = calculate_standard_error(&[], &[]);
+        assert!(se.is_nan());
+    }
+
+    #[test]
+    fn test_calculate_ci_cv_rmse_insufficient_data() {
+        let (lower, upper) = calculate_ci_cv_rmse(5.0, 1.0, 1);
+        assert!(lower.is_nan());
+        assert!(upper.is_nan());
+    }
+
+    #[test]
+    fn test_calculate_ci_cv_rmse_nan_input() {
+        let (lower, upper) = calculate_ci_cv_rmse(f64::NAN, 1.0, 10);
+        assert!(lower.is_nan());
+        assert!(upper.is_nan());
+
+        let (lower2, upper2) = calculate_ci_cv_rmse(5.0, f64::NAN, 10);
+        assert!(lower2.is_nan());
+        assert!(upper2.is_nan());
+    }
+
+    #[test]
+    fn test_cohens_d_empty_input() {
+        let (d, dir) = calculate_cohens_d(&[], &[1.0]);
+        assert!(d.is_nan());
+        assert_eq!(dir, EffectDirection::Underprediction);
+
+        let (d2, dir2) = calculate_cohens_d(&[1.0], &[]);
+        assert!(d2.is_nan());
+        assert_eq!(dir2, EffectDirection::Underprediction);
+    }
+
+    #[test]
+    fn test_cohens_d_zero_std() {
+        let predicted = vec![1.0, 2.0];
+        let reference = vec![5.0, 5.0];
+        let (d, dir) = calculate_cohens_d(&predicted, &reference);
+        assert!(d.is_nan());
+        assert_eq!(dir, EffectDirection::Underprediction);
+    }
+
+    #[test]
+    fn test_effect_direction_equality() {
+        assert_eq!(
+            EffectDirection::Overprediction,
+            EffectDirection::Overprediction
+        );
+        assert_ne!(
+            EffectDirection::Overprediction,
+            EffectDirection::Underprediction
+        );
+    }
+
+    #[test]
+    fn test_statistical_metrics_empty_report() {
+        let report = BenchmarkReport::new();
+        let metrics = StatisticalMetrics::calculate(&report);
+        assert!(metrics.nmbe.is_nan());
+        assert!(metrics.cv_rmse.is_nan());
+        assert!(metrics.cohens_d.is_nan());
+        assert_eq!(metrics.excluded_cases, 0);
+    }
+
+    #[test]
+    fn test_validate_groups_empty_report() {
+        let report = BenchmarkReport::new();
+        let results = validate_groups(&report, 0.05);
+        assert_eq!(results.len(), 5);
+        for group in [
+            ValidationGroup::Baseline,
+            ValidationGroup::HighMass,
+            ValidationGroup::FreeFloating,
+            ValidationGroup::Diagnostics,
+            ValidationGroup::Equipment,
+        ] {
+            assert_eq!(results.get(&group), Some(&false));
+        }
+    }
+
+    #[test]
+    fn test_calculate_p_value_insufficient_reference_count() {
+        let result = ValidationResult {
+            case_id: "600".to_string(),
+            metric: MetricType::AnnualHeating,
+            fluxion_value: 5.2,
+            ref_min: 5.0,
+            ref_max: 5.5,
+            percent_error: 3.6,
+            status: ValidationStatus::Pass,
+            per_program: None,
+        };
+        let p_value = calculate_p_value(&result, 1);
+        assert_eq!(p_value, 1.0);
+    }
+
+    #[test]
+    fn test_benjamini_hochberg_single_non_significant() {
+        let p_values = vec![0.10];
+        let result = BenjaminiHochberg::apply(&p_values, 0.05);
+        assert_eq!(result, vec![false]);
     }
 }

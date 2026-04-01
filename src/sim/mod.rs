@@ -5,6 +5,7 @@ pub mod components;
 pub mod construction;
 pub mod demand_response;
 pub mod diagnostics;
+pub mod distributed_inference;
 pub mod engine;
 pub mod equipment;
 pub mod holiday;

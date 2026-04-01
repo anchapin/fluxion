@@ -170,7 +170,7 @@ with open("/tmp/solar_diagnostics/case_920_solar.csv") as f:
                 dhi, dni, dni_extra, airmass, zen, 90.0, 270.0, sun_az
             )
 
-            print(f"Perez calculation:")
+            print("Perez calculation:")
             print(f"  DNI_extra: {dni_extra:.1f}")
             print(f"  Airmass: {airmass:.2f}")
             print(f"  Diffuse calculated: {diffuse_calc:.1f} W/m²")

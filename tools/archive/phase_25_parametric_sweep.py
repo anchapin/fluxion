@@ -177,7 +177,7 @@ def main():
     with open(plan_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"\n=== Sweep Plan Saved ===")
+    print("\n=== Sweep Plan Saved ===")
     print(f"  Total variants created: {sum(len(v) for v in results.values())}")
     print(f"  Plan saved to: {plan_path}")
 
