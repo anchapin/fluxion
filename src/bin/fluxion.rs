@@ -21,7 +21,6 @@ use fluxion::validation::ASHRAE140Validator;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::BatchOracle;
 use serde::Deserialize;
-use serde_yaml;
 use std::env;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -425,7 +424,7 @@ fn main() -> Result<()> {
             all,
             diagnostics,
             range,
-            case,
+            case: _,
             statistical,
             alpha,
             format,
@@ -433,7 +432,7 @@ fn main() -> Result<()> {
             ci,
         } => {
             // Validate alpha is in valid range [0, 1]
-            if alpha < 0.0 || alpha > 1.0 {
+            if !(0.0..=1.0).contains(&alpha) {
                 anyhow::bail!("Alpha must be in range [0.0, 1.0], got: {}", alpha);
             }
 

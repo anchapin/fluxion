@@ -57,7 +57,9 @@ class TestNumPyArrays:
         assert result_f64.shape == (3,), f"Expected shape (3,), got {result_f64.shape}"
 
         # Verify both produce same results
-        assert np.allclose(result_f32, result_f64), "f32 and f64 should produce same results"
+        assert np.allclose(
+            result_f32, result_f64
+        ), "f32 and f64 should produce same results"
 
     def test_large_numpy_array_handling(self, fluxion_module):
         """Validate large arrays don't cause FFI issues"""
@@ -121,4 +123,6 @@ class TestNumPyArrays:
 
         # Integration should handle NaN/Inf gracefully
         integral = vf.integrate()
-        assert not np.isfinite(integral), f"Integral with NaN/Inf should not be finite, got {integral}"
+        assert not np.isfinite(
+            integral
+        ), f"Integral with NaN/Inf should not be finite, got {integral}"
