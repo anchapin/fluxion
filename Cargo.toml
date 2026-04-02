@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine."
 repository = "https://github.com/anchapin/fluxion"
-license = "OTHER"
+license = "Apache-2.0"
 
 # Exclude large files/dirs from crate distribution - only src/ is needed
 # This reduces package from 79MB to ~4MB (well under 10MB crates.io limit)
