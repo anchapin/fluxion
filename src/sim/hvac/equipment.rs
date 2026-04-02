@@ -901,4 +901,57 @@ mod tests {
         // Power = load / EER (with PLR degradation)
         assert!(power_cooling < 3000.0); // Should be less than load/2
     }
+
+    #[test]
+    fn test_any_equipment_wrapper() {
+        let chiller = Chiller::new("CH-1".to_string(), 10000.0, 4.0, 35.0);
+        let mut any = AnyEquipment::Chiller(chiller);
+
+        // Test all trait methods through AnyEquipment wrapper
+        assert_eq!(any.rated_capacity(), 10000.0);
+        assert!(any.calculate_capacity(1.0, 35.0) > 0.0);
+        assert!(any.calculate_efficiency(1.0, 35.0, HVACMode::Cooling) > 0.0);
+        assert!(any.calculate_power(5000.0, 35.0, HVACMode::Cooling) > 0.0);
+        assert_eq!(any.rated_efficiency(HVACMode::Cooling), 4.0);
+        assert_eq!(any.current_plr(), 0.0);
+
+        any.update_state(5000.0, 35.0, HVACMode::Cooling);
+        assert!(any.current_plr() > 0.0);
+
+        // Test other variants thoroughly
+        let boiler = Boiler::new("BO-1".to_string(), 10000.0, 0.8, 0.0);
+        let mut any_boiler = AnyEquipment::Boiler(boiler);
+        assert_eq!(any_boiler.rated_capacity(), 10000.0);
+        assert!(any_boiler.calculate_capacity(1.0, 0.0) > 0.0);
+        assert!(any_boiler.calculate_efficiency(1.0, 0.0, HVACMode::Heating) > 0.0);
+        assert!(any_boiler.calculate_power(5000.0, 0.0, HVACMode::Heating) > 0.0);
+        assert_eq!(any_boiler.rated_efficiency(HVACMode::Heating), 0.8);
+        any_boiler.update_state(5000.0, 0.0, HVACMode::Heating);
+        assert!(any_boiler.current_plr() > 0.0);
+
+        let vav = VAVTerminal::new("VAV-1".to_string(), 0, 0.5);
+        let mut any_vav = AnyEquipment::VAVTerminal(vav);
+        assert!(any_vav.rated_capacity() > 0.0);
+        assert!(any_vav.calculate_capacity(1.0, 20.0) > 0.0);
+        assert!(any_vav.calculate_efficiency(1.0, 20.0, HVACMode::Heating) > 0.0);
+        any_vav.update_state(5000.0, 20.0, HVACMode::Heating);
+        assert!(any_vav.current_plr() > 0.0);
+
+        let cav = CAVSystem::new("CAV-1".to_string(), 1.0);
+        let mut any_cav = AnyEquipment::CAVSystem(cav);
+        assert!(any_cav.rated_capacity() > 0.0);
+        assert!(any_cav.calculate_capacity(1.0, 20.0) > 0.0);
+        assert!(any_cav.calculate_efficiency(1.0, 20.0, HVACMode::Cooling) > 0.0);
+        any_cav.update_state(5000.0, 20.0, HVACMode::Cooling);
+        assert!(any_cav.current_plr() > 0.0);
+
+        let hp = HeatPump::new("HP-1".to_string(), 10000.0, 10000.0, 3.0, 3.0);
+        let mut any_hp = AnyEquipment::HeatPump(hp);
+        assert!(any_hp.rated_capacity() > 0.0);
+        assert!(any_hp.calculate_capacity(1.0, 20.0) > 0.0);
+        assert!(any_hp.calculate_efficiency(1.0, 20.0, HVACMode::Heating) > 0.0);
+        assert!(any_hp.calculate_efficiency(1.0, 20.0, HVACMode::Cooling) > 0.0);
+        any_hp.update_state(5000.0, 20.0, HVACMode::Heating);
+        assert!(any_hp.current_plr() > 0.0);
+    }
 }

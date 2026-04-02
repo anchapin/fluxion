@@ -153,6 +153,9 @@ impl CsvExporter {
         collector: &DiagnosticCollector,
     ) -> Result<()> {
         let case_dir = self.output_dir.join(case_id);
+        fs::create_dir_all(&case_dir).with_context(|| {
+            format!("Failed to create output directory: {}", case_dir.display())
+        })?;
         let meta_path = case_dir.join("metadata.json");
 
         #[derive(Serialize)]
@@ -222,6 +225,9 @@ impl CsvExporter {
 mod tests {
     use super::*;
     use crate::validation::diagnostic::{DiagnosticCollector, DiagnosticConfig, HourlyData};
+    use crate::validation::report::{
+        BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
+    };
 
     #[test]
     fn test_csv_exporter_creation() {
@@ -349,7 +355,7 @@ mod tests {
         let collector = create_test_collector(24, 1);
         let spec = create_minimal_case_spec("600");
 
-        let report = BenchmarkReport { results: vec![] };
+        let report = BenchmarkReport::default();
 
         let result = exporter.export_metadata("600", &spec, &report, &collector);
         assert!(result.is_ok());
@@ -376,21 +382,26 @@ mod tests {
             results: vec![
                 ValidationResult {
                     case_id: "900".to_string(),
-                    metric: "heating".to_string(),
-                    actual: 1.5,
-                    expected_min: 1.0,
-                    expected_max: 2.0,
-                    passed: true,
+                    metric: MetricType::AnnualHeating,
+                    fluxion_value: 1.5,
+                    ref_min: 1.0,
+                    ref_max: 2.0,
+                    percent_error: 0.0,
+                    status: ValidationStatus::Pass,
+                    per_program: None,
                 },
                 ValidationResult {
                     case_id: "900".to_string(),
-                    metric: "cooling".to_string(),
-                    actual: 3.0,
-                    expected_min: 2.0,
-                    expected_max: 4.0,
-                    passed: true,
+                    metric: MetricType::AnnualCooling,
+                    fluxion_value: 3.0,
+                    ref_min: 2.0,
+                    ref_max: 4.0,
+                    percent_error: 0.0,
+                    status: ValidationStatus::Pass,
+                    per_program: None,
                 },
             ],
+            ..BenchmarkReport::default()
         };
 
         let result = exporter.export_metadata("900", &spec, &report, &collector);

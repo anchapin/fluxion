@@ -647,20 +647,28 @@ mod tests {
     }
 
     #[test]
-    fn test_simulation_diagnostics_print_summary_single_zone() {
+    fn test_record_timestep() {
+        use crate::physics::cta::VectorField;
+
+        let mut model = ThermalModel::new(1);
+        model.temperatures = VectorField::new(vec![22.0]);
+        model.mass_temperatures = VectorField::new(vec![21.0]);
+        model.zone_area = VectorField::new(vec![50.0]);
+        model.solar_gains = VectorField::new(vec![10.0]);
+        model.loads = VectorField::new(vec![5.0]);
+        model.current_hvac_output = Some(VectorField::new(vec![1000.0]));
+        model.infiltration_rate = VectorField::new(vec![0.5]);
+        model.ceiling_height = VectorField::new(vec![2.5]);
+
         let mut diag = SimulationDiagnostics::new(1, 10);
-        diag.hours.push(0);
-        diag.zone_temps.push(vec![20.0]);
-        diag.mass_temps.push(vec![19.0]);
-        diag.surface_temps.push(vec![19.5]);
-        diag.loads.solar.push(vec![100.0]);
-        diag.loads.internal.push(vec![50.0]);
-        diag.loads.hvac.push(vec![200.0]);
-        diag.loads.inter_zone.push(vec![0.0]);
-        diag.loads.infiltration.push(vec![30.0]);
-        diag.cumulative_energy.heating_kwh = vec![1.0];
-        diag.cumulative_energy.cooling_kwh = vec![0.5];
-        diag.cumulative_energy.total_kwh = vec![1.5];
-        diag.print_summary();
+        diag.record_timestep(0, &model);
+
+        assert_eq!(diag.hours.len(), 1);
+        assert_eq!(diag.zone_temps[0][0], 22.0);
+        assert_eq!(diag.mass_temps[0][0], 21.0);
+        assert_eq!(diag.loads.solar[0][0], 500.0); // 10.0 * 50.0
+        assert_eq!(diag.loads.internal[0][0], 250.0); // 5.0 * 50.0
+        assert_eq!(diag.loads.hvac[0][0], 1000.0);
+        assert!(diag.cumulative_energy.heating_kwh[0] > 0.0);
     }
 }

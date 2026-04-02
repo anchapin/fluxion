@@ -171,6 +171,16 @@ impl EnsembleSurrogate {
         })
     }
 
+    /// Create a new ensemble from pre-loaded models.
+    pub fn with_models(models: Vec<SurrogateManager>, config: EnsembleConfig) -> Self {
+        EnsembleSurrogate {
+            models,
+            config,
+            model_weights: None,
+            validation_metrics: HashMap::new(),
+        }
+    }
+
     /// Create ensemble from a single model (for consistent API)
     pub fn from_single(model_path: &str) -> Result<Self, String> {
         let config = EnsembleConfig::new(vec![model_path.to_string()]);
@@ -320,7 +330,7 @@ impl EnsembleSurrogate {
             let mut values: Vec<f64> = predictions.iter().map(|p| p[i]).collect();
             values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let mid = values.len() / 2;
-            let median = if values.len().is_multiple_of(2) {
+            let median = if values.len() % 2 == 0 {
                 (values[mid - 1] + values[mid]) / 2.0
             } else {
                 values[mid]
@@ -684,18 +694,101 @@ mod tests {
     }
 
     #[test]
-    fn test_disagreement_metrics_multi_model() {
-        let prediction = EnsemblePrediction {
-            predictions: vec![1.0, 2.0],
-            disagreement: vec![0.1, 0.2],
-            model_predictions: vec![vec![0.9, 1.8], vec![1.1, 2.2]],
-            weights: None,
-        };
+    fn test_ensemble_aggregation_full() {
+        let models = vec![
+            SurrogateManager::new().unwrap(),
+            SurrogateManager::new().unwrap(),
+            SurrogateManager::new().unwrap(),
+        ];
 
-        let metrics = DisagreementMetrics::from_prediction(&prediction, 0.15);
-        assert!(metrics.avg_pairwise_diff > 0.0);
-        assert!(metrics.max_pairwise_diff > 0.0);
-        assert!(metrics.agreement_count >= 0);
+        let temps = vec![20.0, 25.0];
+
+        // Test Mean
+        let ensemble = EnsembleSurrogate::with_models(models.clone(), EnsembleConfig::default());
+        let pred = ensemble.predict(&temps);
+        assert_eq!(pred.predictions.len(), 2);
+        // Each mock returns 1.2, so mean should be 1.2
+        assert!((pred.predictions[0] - 1.2).abs() < 0.001);
+        assert_eq!(pred.disagreement, vec![0.0, 0.0]); // Identical mocks
+
+        // Test Median
+        let ensemble = EnsembleSurrogate::with_models(
+            models.clone(),
+            EnsembleConfig::default().with_method(AggregationMethod::Median),
+        );
+        let pred = ensemble.predict(&temps);
+        assert!((pred.predictions[0] - 1.2).abs() < 0.001);
+
+        // Test TrimmedMean
+        let ensemble = EnsembleSurrogate::with_models(
+            models.clone(),
+            EnsembleConfig::default().with_method(AggregationMethod::TrimmedMean(0.3)),
+        );
+        let pred = ensemble.predict(&temps);
+        assert!((pred.predictions[0] - 1.2).abs() < 0.001);
+
+        // Test BestModel
+        let ensemble = EnsembleSurrogate::with_models(
+            models.clone(),
+            EnsembleConfig::default().with_method(AggregationMethod::BestModel(1)),
+        );
+        let pred = ensemble.predict(&temps);
+        assert!((pred.predictions[0] - 1.2).abs() < 0.001);
+
+        // Test BestModel out of range
+        let ensemble = EnsembleSurrogate::with_models(
+            models.clone(),
+            EnsembleConfig::default().with_method(AggregationMethod::BestModel(10)),
+        );
+        let pred = ensemble.predict(&temps);
+        assert!((pred.predictions[0] - 1.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_ensemble_weighted_mean() {
+        let models = vec![
+            SurrogateManager::new().unwrap(),
+            SurrogateManager::new().unwrap(),
+        ];
+        let mut ensemble = EnsembleSurrogate::with_models(
+            models,
+            EnsembleConfig::default().with_method(AggregationMethod::WeightedMean),
+        );
+
+        // Add metrics to trigger weight calculation
+        ensemble.add_model_metrics(0, ModelMetrics::new(0.1, 0.1, 0.9, 0.0));
+        ensemble.add_model_metrics(1, ModelMetrics::new(0.2, 0.2, 0.8, 0.0));
+
+        let pred = ensemble.predict(&vec![20.0]);
+        assert!(pred.weights.is_some());
+        assert!((pred.predictions[0] - 1.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_ensemble_predict_with_uncertainty() {
+        let models = vec![
+            SurrogateManager::new().unwrap(),
+            SurrogateManager::new().unwrap(),
+        ];
+        let ensemble = EnsembleSurrogate::with_models(models, EnsembleConfig::default());
+        let uncertainty = ensemble.predict_with_uncertainty(&vec![20.0]);
+        assert_eq!(uncertainty.mean.len(), 1);
+        assert_eq!(uncertainty.std.len(), 1);
+    }
+
+    #[test]
+    fn test_recalculate_weights_edge_cases() {
+        let models = vec![
+            SurrogateManager::new().unwrap(),
+            SurrogateManager::new().unwrap(),
+        ];
+        let mut ensemble = EnsembleSurrogate::with_models(models, EnsembleConfig::default());
+
+        // Case: zero score (perfect model) -> should handle division by zero/inverse
+        ensemble.add_model_metrics(0, ModelMetrics::new(0.0, 0.0, 1.0, 0.0));
+        assert!(ensemble.model_weights.is_some());
+        let weights = ensemble.model_weights.as_ref().unwrap();
+        assert_eq!(weights[0], 0.5); // Fallback to equal weights in my implementation if any score is 0
     }
 
     #[test]

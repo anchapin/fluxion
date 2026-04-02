@@ -302,4 +302,40 @@ mod tests {
         hp.set_mode(22.0, 20.0, 27.0);
         assert_eq!(hp.mode, HeatPumpMode::Off);
     }
+
+    #[test]
+    fn test_heat_pump_power_consumption() {
+        let mut hp = HeatPump::new("HP-1".to_string(), 12000.0, 10000.0, 3.5, 3.0);
+
+        // Test heating power
+        hp.mode = HeatPumpMode::Heating;
+        let power_heat = hp.heating_power(0.0);
+        assert!(power_heat > 0.0);
+
+        // Power should be 0 when mode is off
+        hp.mode = HeatPumpMode::Off;
+        assert_eq!(hp.heating_power(0.0), 0.0);
+
+        // Test cooling power
+        hp.mode = HeatPumpMode::Cooling;
+        let power_cool = hp.cooling_power(30.0);
+        assert!(power_cool > 0.0);
+
+        // Power should be 0 when mode is off
+        hp.mode = HeatPumpMode::Off;
+        assert_eq!(hp.cooling_power(30.0), 0.0);
+    }
+
+    #[test]
+    fn test_heat_pump_cop_cooling() {
+        let hp = HeatPump::new("HP-1".to_string(), 12000.0, 10000.0, 3.5, 3.0);
+
+        // At design cooling temp (35.0), COP should be rated
+        let cop_at_design = hp.cooling_cop_at_temperature(35.0);
+        assert!((cop_at_design - 3.0).abs() < 0.1);
+
+        // At hotter temp, COP should degrade
+        let cop_hot = hp.cooling_cop_at_temperature(45.0);
+        assert!(cop_hot < 3.0);
+    }
 }

@@ -1565,6 +1565,7 @@ pub use validation::ashrae_140::{Case600Model, SimulationResult};
 // Tests for core physics engine (no Python bindings required)
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::ai::surrogate::SurrogateManager;
     use crate::physics::cta::VectorField;
     use crate::sim::engine::ThermalModel;
@@ -1671,6 +1672,13 @@ mod tests {
     }
 
     #[test]
+    fn test_thermal_model_default() {
+        let model = ThermalModel::<VectorField>::new(1);
+        assert_eq!(model.num_zones, 1);
+        assert_eq!(model.temperatures.as_ref().len(), 1);
+    }
+
+    #[test]
     fn test_apply_parameters() {
         let mut model = ThermalModel::<VectorField>::new(10);
         let params = vec![1.5, 20.0, 27.0];
@@ -1693,14 +1701,60 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "requires ONNX model")]
     fn test_solve_timesteps_with_surrogates() {
         let mut model = ThermalModel::<VectorField>::new(10);
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         model.apply_parameters(&[1.5, 20.0, 27.0]);
-        // Should panic since no model is loaded
-        let _energy = model.solve_timesteps(8760, &surrogates, true, None, None, None);
+        // Should NOT panic now since it returns mock loads
+        let energy = model.solve_timesteps(8760, &surrogates, true, None, None, None);
+        assert!(energy.is_finite());
+    }
+
+    #[test]
+    fn test_async_task_creation() {
+        let task = InferenceTask::new(1, vec![1.5, 20.0, 27.0]);
+        assert_eq!(task.id, 1);
+        assert_eq!(task.parameters.len(), 3);
+        assert_eq!(task.status, TaskStatus::Pending);
+    }
+
+    #[tokio::test]
+    async fn test_async_task_manager_basic() {
+        let mut manager = AsyncTaskManager::new(2);
+        let task_id = manager.submit_task(vec![1.5, 20.0, 27.0]).await;
+        assert_eq!(task_id, 0);
+        assert_eq!(manager.tasks_submitted(), 1);
+        assert_eq!(manager.max_concurrent(), 2);
+
+        let results: Vec<Result<f64, String>> = manager.collect_results(1).await;
+        assert_eq!(results.len(), 1);
+        assert!(results[0].is_ok());
+        assert_eq!(manager.tasks_completed(), 1);
+    }
+
+    #[test]
+    fn test_distributed_executor_basic() {
+        let executor = DistributedInferenceExecutor::new(2, 4);
+        assert_eq!(executor.rayon_workers(), 2);
+        assert_eq!(executor.async_tasks(), 4);
+
+        let population = vec![vec![1.5, 20.0, 27.0], vec![2.0, 18.0, 28.0]];
+        let results = executor.execute_population(population, false);
+        assert_eq!(results.len(), 2);
+        assert!(results[0] > 0.0);
+    }
+
+    #[test]
+    fn test_distributed_executor_chunked() {
+        let executor = DistributedInferenceExecutor::default();
+        let population = vec![
+            vec![1.5, 20.0, 27.0],
+            vec![2.0, 18.0, 28.0],
+            vec![1.0, 22.0, 24.0],
+        ];
+        let results = executor.execute_chunked(population, 2, false);
+        assert_eq!(results.len(), 3);
     }
 
     #[test]

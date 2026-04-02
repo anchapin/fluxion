@@ -99,23 +99,23 @@ mockito = "1.7"
 
 [[bench]]
 name = "cta_bench"
-harness = false
+harness = true
 
 [[bench]]
 name = "engine_bench"
-harness = false
+harness = true
 
 [[bench]]
 name = "cta_perf_comparison"
-harness = false
+harness = true
 
 [[bench]]
 name = "batch_oracle_bench"
-harness = false
+harness = true
 
 [[bench]]
 name = "performance_regression"
-harness = false
+harness = true
 
 [[bin]]
 name = "fluxion-delta"
@@ -186,12 +186,12 @@ harness = true
 [[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
-harness = false
+harness = true
 
 [[test]]
 name = "solar_distribution_tests"
 path = "tests/solar_distribution_tests.rs"
-harness = false
+harness = true
 
 [[test]]
 name = "thermal_mass_coupling_tests"

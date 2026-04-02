@@ -328,4 +328,27 @@ mod tests {
         let expected_predictive_factor = controller.temp_rate_gain * temp_rate;
         assert!((expected_predictive_factor - 0.0001).abs() < 0.00001);
     }
+
+    #[test]
+    fn test_calculate_modulation_with_setpoints() {
+        let mut controller = PredictiveController::new(20.0, 27.0);
+
+        // Test with dynamic setpoints (e.g. night setback)
+        let (mode, modulation) =
+            controller.calculate_modulation_with_setpoints(16.0, 17.0, 0.0, 15.0, 30.0);
+
+        // zone_temp (16.0) is above heating threshold (15.0 - inertia - deadband)
+        // inertia = 0.1 * (16-17) = -0.1
+        // effective_heating_sp = 15.0 - 0.1 - 0.0 = 14.9
+        // heating_threshold = 14.9 - 0.5 = 14.4
+        // 16.0 > 14.4, so should be OFF
+        assert_eq!(mode, HVACMode::Off);
+        assert_eq!(modulation, 0.0);
+
+        // Test heating with dynamic setpoint
+        let (mode2, modulation2) =
+            controller.calculate_modulation_with_setpoints(14.0, 14.0, 0.0, 15.0, 30.0);
+        assert_eq!(mode2, HVACMode::Heating);
+        assert!(modulation2 > 0.0);
+    }
 }

@@ -37,6 +37,15 @@ impl DistributedSurrogateManager {
         Ok(DistributedSurrogateManager { managers, queue })
     }
 
+    /// Create a DistributedSurrogateManager from existing managers.
+    pub fn from_managers(managers: Vec<SurrogateManager>) -> Self {
+        let queue = Arc::new(SegQueue::new());
+        for i in 0..managers.len() {
+            queue.push(i);
+        }
+        DistributedSurrogateManager { managers, queue }
+    }
+
     /// Evaluate a population using distributed inference.
     ///
     /// # Arguments
@@ -55,21 +64,11 @@ impl DistributedSurrogateManager {
         }
 
         // Simple parallel iteration using rayon
-        // Note: We need to access managers. Rayon's parallel iterator might be tricky
-        // if we need to check out a manager from the queue.
-
-        // Approach: Chunk the population and process each chunk in parallel using rayon.
-        // Inside the map, acquire a manager from the queue, use it, and return it.
-
-        let chunk_size = population.len().div_ceil(num_devices);
-
-        // We use par_chunks if we had a slice, but we have Vec<Vec<f64>>.
-        // We can use par_iter, but we want to batch.
-        // Let's just use chunks and map.
-
-        // Since population is Vec<Vec<f64>>, we can't easily chunk it into mutable slices without ownership issues
-        // or extensive cloning if we want to return a new Vec.
-        // But we can use par_chunks on slice.
+        let chunk_size = if population.is_empty() {
+            1
+        } else {
+            population.len().div_ceil(num_devices)
+        };
 
         let results: Result<Vec<Vec<Vec<f64>>>, String> = population
             .par_chunks(chunk_size)
@@ -79,13 +78,11 @@ impl DistributedSurrogateManager {
                     if let Some(idx) = self.queue.pop() {
                         break idx;
                     }
-                    // Spin wait or backoff - in a real system we might use a condition variable or channel
+                    // Spin wait or backoff
                     std::thread::yield_now();
                 };
 
                 let manager = &self.managers[manager_idx];
-                // Convert chunk (slice of Vec<f64>) to Vec<Vec<f64>> for the method
-                // (Optimally predict_loads_batched should accept slice)
                 let batch = chunk.to_vec();
                 let res = manager.predict_loads_batched(&batch);
 
@@ -108,21 +105,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_distributed_mock() {
-        // Since we don't have a real model or GPU in test environment,
-        // we can test with CPU backend and mock fallback if model not found (it won't be).
-        // But SurrogateManager::with_gpu_backend fails if model not found.
-        // We need to create a dummy file or modify SurrogateManager to allow lazy loading or mock.
+    fn test_distributed_evaluate() {
+        let managers = vec![
+            SurrogateManager::new().unwrap(),
+            SurrogateManager::new().unwrap(),
+        ];
+        let manager = DistributedSurrogateManager::from_managers(managers);
 
-        // Since creating a dummy ONNX file is hard without ort/python here,
-        // I'll rely on the fact that I updated SurrogateManager to fallback to mock if model not found?
-        // Wait, SurrogateManager::with_gpu_backend returns Result.
+        let population = vec![
+            vec![20.0, 21.0],
+            vec![22.0, 23.0],
+            vec![24.0, 25.0],
+            vec![26.0, 27.0],
+        ];
 
-        // I should probably add a mock mode to DistributedSurrogateManager or SurrogateManager for testing.
-        // But for now, let's just check that it compiles and basic logic holds if we could create it.
+        let results = manager.evaluate_population_distributed(population).unwrap();
+        assert_eq!(results.len(), 4);
+        assert_eq!(results[0][0], 1.2);
+    }
 
-        // Since I can't easily run this test without a model file, I will skip runtime test
-        // and rely on compilation check.
+    #[test]
+    fn test_distributed_evaluate_empty() {
+        let managers = vec![SurrogateManager::new().unwrap()];
+        let manager = DistributedSurrogateManager::from_managers(managers);
+        let results = manager.evaluate_population_distributed(vec![]).unwrap();
+        assert!(results.is_empty());
     }
 
     #[test]
@@ -139,15 +146,6 @@ mod tests {
         // Should fail gracefully when model file doesn't exist
         let result =
             DistributedSurrogateManager::new("nonexistent_model.onnx", InferenceBackend::CPU, &[0]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_distributed_evaluate_empty_population() {
-        // Test with empty population - should return empty results
-        let result =
-            DistributedSurrogateManager::new("nonexistent_model.onnx", InferenceBackend::CPU, &[0]);
-        // Can't test evaluate without valid manager, but we verified error handling above
         assert!(result.is_err());
     }
 

@@ -617,38 +617,64 @@ mod tests {
 
         let ids = manager.submit_batch(variants).await;
         assert_eq!(ids.len(), 2);
-
-        // Give some time for processing
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        assert_eq!(manager.tasks_submitted(), 2);
 
         let results = manager.collect_results(2).await;
+        assert_eq!(results.len(), 2);
+        assert_eq!(manager.tasks_completed(), 2);
+        assert_eq!(manager.max_concurrent(), 5);
+    }
+
+    #[test]
+    fn test_execute_chunked_boundary() {
+        let mut config = DistributedInferenceConfig::default();
+        config.chunk_size = 2;
+        let executor = DistributedInferenceExecutor::with_config(config);
+
+        let population = vec![
+            vec![1.5, 20.0, 26.0],
+            vec![2.0, 18.0, 28.0],
+            vec![1.0, 22.0, 24.0],
+        ];
+
+        let results = executor.execute_chunked(population, true);
+        assert_eq!(results.len(), 3);
+    }
+
+    #[test]
+    fn test_execute_invalid_params() {
+        let executor = DistributedInferenceExecutor::new();
+        let population = vec![vec![1.0, 2.0]]; // Too few params
+        let results = executor.execute_population(population, false);
+        assert!(results[0].is_nan());
+    }
+
+    #[tokio::test]
+    async fn test_run_async_inference_convenience() {
+        let population = vec![
+            BuildingVariant::new(0, vec![1.5, 20.0, 26.0]),
+            BuildingVariant::new(1, vec![2.0, 18.0, 28.0]),
+        ];
+
+        // We need a dummy model factory that satisfies the bounds
+        let results = run_async_inference(population, 2, |params| {
+            Box::new(PhysicsThermalModel::new(1))
+        })
+        .await;
+
         assert_eq!(results.len(), 2);
     }
 
     #[test]
-    fn test_variant_result_creation() {
-        let result = VariantResult {
-            id: 1,
-            eui: 100.0,
-            success: true,
-            error: None,
-        };
+    fn test_evaluate_population_parallel() {
+        let population = vec![
+            BuildingVariant::new(0, vec![1.5, 20.0, 26.0]),
+            BuildingVariant::new(1, vec![2.0, 18.0, 28.0]),
+        ];
 
-        assert_eq!(result.id, 1);
-        assert!(result.success);
-        assert!(result.error.is_none());
-    }
+        let results =
+            run_parallel_inference(population, |params| Box::new(PhysicsThermalModel::new(1)));
 
-    #[test]
-    fn test_variant_result_with_error() {
-        let result = VariantResult {
-            id: 1,
-            eui: f64::NAN,
-            success: false,
-            error: Some("Invalid parameters".to_string()),
-        };
-
-        assert!(!result.success);
-        assert!(result.error.is_some());
+        assert_eq!(results.len(), 2);
     }
 }

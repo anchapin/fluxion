@@ -532,18 +532,65 @@ mod tests {
     }
 
     #[test]
-    fn test_tmy3_cache_get_or_download_no_checksum_file() {
-        let temp_dir = std::env::temp_dir().join("test_tmy3_cache_6");
+    fn test_tmy3_cache_get_or_download_success() {
+        let mut server = mockito::Server::new();
+        let url = server.url();
+        let mock_content = b"downloaded content";
+        let _m = server
+            .mock("GET", "/test.tmy3")
+            .with_status(200)
+            .with_body(mock_content)
+            .create();
+
+        let temp_dir = std::env::temp_dir().join("test_tmy3_download_success");
+        std::fs::remove_dir_all(&temp_dir).ok();
         let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
 
-        let filename = "No_Checksum.tmy3";
-        let filepath = temp_dir.join(filename);
+        let full_url = format!("{}/test.tmy3", url);
+        let result = cache.get_or_download(&full_url, "Downloaded Location");
 
-        std::fs::write(&filepath, "content without checksum").unwrap();
-
-        let result = cache.get_or_download("https://example.com/test.tmy3", "No Checksum");
         assert!(result.is_ok());
+        let filepath = result.unwrap();
+        assert!(filepath.exists());
+        assert_eq!(std::fs::read(&filepath).unwrap(), mock_content);
+
+        // Check checksum file
+        let checksum_path = filepath.with_extension("sha256");
+        assert!(checksum_path.exists());
+        let expected_checksum = format!("{:x}", Sha256::digest(mock_content));
+        assert_eq!(
+            std::fs::read_to_string(checksum_path).unwrap(),
+            expected_checksum
+        );
 
         std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_get_or_download_http_error() {
+        let mut server = mockito::Server::new();
+        let url = server.url();
+        let _m = server.mock("GET", "/fail.tmy3").with_status(404).create();
+
+        let temp_dir = std::env::temp_dir().join("test_tmy3_download_fail");
+        std::fs::remove_dir_all(&temp_dir).ok();
+        let cache = Tmy3Cache::with_cache_dir(temp_dir.clone()).unwrap();
+
+        let full_url = format!("{}/fail.tmy3", url);
+        let result = cache.get_or_download(&full_url, "Fail Location");
+
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("HTTP error: 404"));
+
+        std::fs::remove_dir_all(&temp_dir).ok();
+    }
+
+    #[test]
+    fn test_tmy3_cache_new_default() {
+        // Just test that it can be created without error
+        // Note: this might fail in some CI environments if HOME is not set,
+        // but directories crate usually handles it.
+        let cache = Tmy3Cache::new();
+        assert!(cache.is_ok());
     }
 }

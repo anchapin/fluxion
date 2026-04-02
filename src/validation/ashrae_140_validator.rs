@@ -2534,6 +2534,43 @@ mod tests {
     use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
 
     #[test]
+    fn test_validator_creation() {
+        let validator = ASHRAE140Validator::new();
+        assert!(!validator.diagnostic_cases_added.is_empty());
+    }
+
+    #[test]
+    fn test_with_full_diagnostics() {
+        let validator = ASHRAE140Validator::with_full_diagnostics();
+        assert!(!validator.diagnostic_cases_added.is_empty());
+    }
+
+    #[test]
+    fn test_add_diagnostic_case_range() {
+        let mut validator = ASHRAE140Validator::new();
+        let initial_count = validator.diagnostic_cases_added.len();
+        validator.add_diagnostic_case_range("custom-range".to_string());
+        assert_eq!(validator.diagnostic_cases_added.len(), initial_count + 1);
+        assert!(validator
+            .diagnostic_cases_added
+            .contains(&"custom-range".to_string()));
+    }
+
+    #[test]
+    fn test_skip_baseline_cases() {
+        let mut validator = ASHRAE140Validator::new();
+        validator.skip_baseline_cases(true);
+        assert!(validator.is_skip_baseline_cases());
+    }
+
+    #[test]
+    fn test_disable_diagnostics() {
+        let mut validator = ASHRAE140Validator::new();
+        validator.disable_diagnostics();
+        assert!(validator.diagnostic_cases_added.is_empty());
+    }
+
+    #[test]
     fn test_validator_multireference_enrichment() {
         // This test verifies that the validator automatically loads multi-reference data
         // and enriches BenchmarkReport with per-program statuses.

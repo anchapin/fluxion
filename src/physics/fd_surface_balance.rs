@@ -256,13 +256,31 @@ mod tests {
     }
 
     #[test]
-    fn test_zone_properties() {
-        let zone = ZoneProperties::new(50.0, 135.0);
+    fn test_fd_zone_coupler_solve_step() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+        let mut wall = test_wall();
 
-        assert!((zone.floor_area - 50.0).abs() < 0.01);
-        assert!((zone.volume - 135.0).abs() < 0.01);
-        assert!(zone.heat_capacity > 100_000.0);
-        assert!(zone.interior_surface_area > 100.0); // Relaxed
+        // Initial state
+        assert_eq!(coupler.t_zone, 20.0);
+
+        // Update weather
+        coupler.update_weather(10.0, 500.0, 5.0);
+
+        // Solve one step
+        let t_new = coupler.solve_step(&mut wall, 1000.0, 3600.0);
+        assert!(t_new > 20.0); // Heating and solar flux should increase temp
+        assert_eq!(coupler.t_zone, t_new);
+    }
+
+    #[test]
+    fn test_fd_zone_coupler_subcycling() {
+        let mut coupler = FDZoneCoupler::case_900(20.0);
+        let mut wall = test_wall();
+
+        // Use moderate cooling power and shorter total time to stay stable
+        let t_new = coupler.solve_step_subcycled(&mut wall, -100.0, 60.0, 10);
+        println!("DEBUG: t_new = {}", t_new);
+        assert!(t_new < 20.0);
     }
 
     #[test]

@@ -35,7 +35,7 @@ impl MultiReferenceDB {
     /// Loads a multi-reference database from a JSON file.
     pub fn from_file(path: &Path) -> Result<Self, Box<dyn std::error::Error>> {
         let content = fs::read_to_string(path)?;
-        let db: MultiReferenceDB = serde_json::from_str(&content)?;
+        let db: MultiReferenceDB = serde_json::from_str(content.trim())?;
         Ok(db)
     }
 
