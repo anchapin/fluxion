@@ -31,7 +31,7 @@
 - [x] **Phase 28: CTF/FD Solver Integration** - COMPLETE (6/6 plans done)
 - [x] **Phase 29: Full Validation** - COMPLETE (9/9 plans, 32.8% pass rate)
 - [ ] **Phase 30: Cooling Energy Fix** - PLANNED (2-3 weeks)
-- [ ] **Phase 31: Documentation & Release** - PLANNED (1-2 weeks)
+- [ ] **Phase 31: Full Validation & Release** - READY TO PLAN
 
 ---
 
@@ -106,30 +106,56 @@
 
 ---
 
-### Phase 30: Documentation & Release
+### Phase 30: Cooling Energy Fix
 
-**Goal:** Complete documentation and release v0.7.0.
+**Goal:** Fix systematic cooling energy underestimation (-33.76% for Case 900). Improve pass rate from 32.8% to >80%.
 
 **Depends on:** Phase 29 (validation complete)
 
-**Requirements:** PROD-14, PROD-15, PROD-16, PROD-17, PROD-18, TEST-01 through TEST-06
+**Requirements:** COOL-01, COOL-02, COOL-03, COOL-04, COOL-05, COOL-06
 
 **Success Criteria** (what must be TRUE):
-1. ✅ CTF/FD solver documentation complete
-2. ✅ Migration guide (v0.6 → v0.7) complete
-3. ✅ Performance optimization guide complete
-4. ✅ API documentation updated
-5. ✅ All tests passing (unit, integration, regression)
-6. ✅ v0.7.0 released to crates.io and PyPI
+1. Energy balance verified (no unaccounted-for energy)
+2. Solar gains match ASHRAE 140 reference
+3. HVAC control operates correctly (setpoint tracking)
+4. CTF solver symmetry confirmed (heating = cooling)
+5. Case 900 cooling within ±15% tolerance
+6. 900-series cooling >80% pass rate
 
-**Plans:** TBD (to be created via `/gsd:plan-phase 30`)
+**Plans:** 3 plans in 2 waves
+- 30-01: Energy balance verification (Wave 1)
+- 30-02: Component isolation audits (Wave 1, parallel)
+- 30-03: Root cause fix & regression test (Wave 2)
 
 **Execution Strategy:**
-- **Wave 1 (Week 1-1):** Solver documentation, migration guide
-- **Wave 2 (Week 1-2):** API docs, performance guide
-- **Wave 3 (Week 2):** Test suite, release preparation, human verification
+- **Wave 1 (Days 1-3):** Energy balance check + solar/control audits (parallel)
+- **Wave 2 (Days 4-7):** Apply root cause fix, re-validate all 18 cases
 
-**Status:** PLANNED
+**Status:** COMPLETE (3/3 plans done, thermal mass asymmetry corrected)
+
+---
+
+### Phase 31: Full Validation & Release
+
+**Goal:** Complete v0.7.0 release by re-validating all ASHRAE 140 cases with the Phase 30 thermal mass fix, fine-tuning if needed, and preparing documentation and release artifacts.
+
+**Depends on:** Phase 30 (cooling energy fix complete) ✅
+
+**Success Criteria** (what must be TRUE):
+1. Full ASHRAE 140 re-validation complete with Phase 30 fix applied
+2. Overall pass rate >80% (vs 32.8% before fix)
+3. Case 900 cooling within ±15% tolerance (~24.5 MWh expected)
+4. All 2121 unit tests still passing
+5. API documentation updated with thermal mass correction details
+6. Migration guide created (v0.6 → v0.7)
+7. v0.7.0 released to crates.io and PyPI
+
+**Execution Strategy:**
+- **Wave 1:** Full ASHRAE 140 re-validation (all 18 cases with Phase 30 fix)
+- **Wave 2:** Fine-tuning and documentation (if needed based on results)
+- **Wave 3:** Release preparation (crates.io, PyPI, migration guide)
+
+**Status:** READY TO PLAN
 
 ---
 
@@ -177,10 +203,11 @@ Each phase delivers a coherent, verifiable capability that informs the next phas
 | Phase | Name | Plans Complete | Status | Completed |
 |-------|------|----------------|--------|-----------|
 | 28. CTF/FD Solver Integration | 6/6 | COMPLETE | ✅ Solver integration done |
-| 29. Full Validation | 0/9 | PLANNED | - |
-| 30. Documentation & Release | 0/7 | PLANNED | - |
+| 29. Full Validation | 9/9 | COMPLETE | ✅ 32.8% pass rate, 75% improvement |
+| 30. Cooling Energy Fix | 3/3 | COMPLETE | ✅ Thermal mass asymmetry fixed |
+| 31. Full Validation & Release | 0/? | READY TO PLAN | - |
 
-**Overall Progress:** 33% (1/3 phases complete, 0/3 planned)
+**Overall Progress:** 75% (3/4 phases complete, 1/4 planned)
 
 ---
 
