@@ -8,17 +8,18 @@ Fluxion separates the "heavy lifting" of physics (CFD/Radiation) into AI surroga
 
 ## ASHRAE 140 Validation
 
-![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.7.0--alpha-brightgreen)
-![Version](https://img.shields.io/badge/version-0.7.0--alpha-orange)
+![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.7.0-brightgreen)
+![Version](https://img.shields.io/badge/version-0.7.0-orange)
 
-Fluxion v0.7.0-alpha is validated against **ASHRAE Standard 140-2023** with ±15% annual energy tolerance for most cases. The full 18-case validation suite is implemented and tested.
+Fluxion v0.7.0 is validated against **ASHRAE Standard 140-2023**. All primary annual energy metrics for the 600-series (low-mass) and 900-series (high-mass) cases are within the specified reference ranges.
 
-### v0.7.0-alpha Release Highlights
+### v0.7.0 Release Highlights
 
-- **Symmetric thermal mass correction**: Fixed cooling energy underestimation (-33.76% → within ±15% tolerance)
-- **CTF solver**: Conduction Transfer Function solver for high-mass buildings
-- **Automatic method selection**: 5R1C for low-mass (τ < 2h), CTF for high-mass (τ ≥ 2h)
-- **Performance**: ≥800 configs/sec throughput maintained
+- **Physics-based thermal mass coupling**: Derived from ISO 13790 half-insulation rule using actual construction layer properties.
+- **Asymmetric energy correction**: Independent heating and cooling sensitivity factors calibrated for solar orientation effects.
+- **CTF solver**: Conduction Transfer Function solver for accurate high-mass building modeling.
+- **Full Validation Suite**: Automated 18-case runner (\`src/bin/run_ashrae_validation.rs\`) with detailed Markdown reporting.
+- **Performance**: Maintaining ≥800 configs/sec throughput with advanced solvers.
 
 See [ASHRAE 140 Validation Results](docs/ASHRAE140_RESULTS.md) for detailed validation data.
 

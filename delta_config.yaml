@@ -1,0 +1,125 @@
+base:
+  case_id: '600'
+  description: Low mass baseline - standard construction with south windows
+  geometry:
+  - width: 8.0
+    depth: 6.0
+    height: 2.7
+    name: null
+  construction_type: LowMass
+  construction:
+    wall:
+      layers:
+      - name: Plasterboard
+        conductivity: 0.16
+        density: 950.0
+        specific_heat: 840.0
+        thickness: 0.012
+        emissivity: 0.9
+        absorptance: 0.7
+      - name: Fiberglass
+        conductivity: 0.04
+        density: 12.0
+        specific_heat: 840.0
+        thickness: 0.066
+        emissivity: 0.9
+        absorptance: 0.7
+      - name: Wood Siding
+        conductivity: 0.14
+        density: 500.0
+        specific_heat: 1300.0
+        thickness: 0.009
+        emissivity: 0.9
+        absorptance: 0.7
+    roof:
+      layers:
+      - name: Plasterboard
+        conductivity: 0.16
+        density: 950.0
+        specific_heat: 840.0
+        thickness: 0.01
+        emissivity: 0.9
+        absorptance: 0.7
+      - name: Fiberglass
+        conductivity: 0.04
+        density: 12.0
+        specific_heat: 840.0
+        thickness: 0.1118
+        emissivity: 0.9
+        absorptance: 0.7
+      - name: Roof Deck
+        conductivity: 0.14
+        density: 500.0
+        specific_heat: 1300.0
+        thickness: 0.019
+        emissivity: 0.9
+        absorptance: 0.7
+    floor:
+      layers:
+      - name: Timber
+        conductivity: 0.14
+        density: 600.0
+        specific_heat: 1600.0
+        thickness: 0.025
+        emissivity: 0.9
+        absorptance: 0.7
+      - name: Fiberglass
+        conductivity: 0.04
+        density: 12.0
+        specific_heat: 840.0
+        thickness: 0.197
+        emissivity: 0.9
+        absorptance: 0.7
+  windows:
+  - - area: 12.0
+      orientation: South
+      height: 2.0
+      width: 6.0
+      sill_height: 0.2
+      left_offset: 0.5
+  window_properties:
+    u_value: 3.0
+    shgc: 0.789
+    normal_transmittance: 0.86156
+    glass_type: DoubleClear
+    emissivity: 0.84
+  shading: null
+  internal_loads:
+  - total_load: 200.0
+    radiative_fraction: 0.6
+    convective_fraction: 0.4
+  hvac:
+  - heating_setpoint: 20.0
+    cooling_setpoint: 27.0
+    operating_hours:
+    - 0
+    - 24
+    setback_setpoint: null
+    setback_hours: null
+    efficiency: 1.0
+  night_ventilation: null
+  common_walls: []
+  infiltration_ach: 0.5
+  opaque_absorptance: 0.6
+  num_zones: 1
+  weather_data: null
+  door_height: null
+  door_area: null
+  epw_path: null
+  hvac_equipment: null
+variants:
+- name: high_infil
+  patch:
+    infiltration_ach: 1.5
+  sweep: null
+- name: low_infil
+  patch:
+    infiltration_ach: 0.5
+  sweep: null
+- name: u_sweep
+  patch: null
+  sweep:
+    window_u_value:
+    - 2.0
+    - 3.0
+    - 4.0

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "fluxion"
-version = "0.2.0"
+version = "0.7.0"
 requires-python = ">=3.10"
 authors = [
     {name = "Fluxion Team", email = "team@fluxion.org"},

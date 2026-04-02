@@ -1,19 +1,30 @@
 [package]
 name = "fluxion"
-version = "0.7.0-alpha"
+version = "0.7.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine."
 repository = "https://github.com/anchapin/fluxion"
 license = "OTHER"
 
-[package.metadata.crates-io]
-# Only include src and essential files
-files = [
-    "src/**",
-    "Cargo.toml",
+# Exclude large files/dirs from crate distribution - only src/ is needed
+# This reduces package from 79MB to ~4MB (well under 10MB crates.io limit)
+exclude = [
+    "refdata/",
+    "assets/",
+    "tests/",
+    "docs/",
+    ".github/",
+    ".githooks/",
+    ".planning/",
+    "tools/",
+    "benches/",
+    "examples/",
+    "Dockerfile",
+    "docker-compose.yml",
+    "delta_config.yaml",
+    "*.md",
     "Cargo.lock",
-    "build.rs"
 ]
 
 [lib]

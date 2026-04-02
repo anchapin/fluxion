@@ -1042,45 +1042,12 @@ impl ASHRAE140Validator {
                 // Target: Gradually reduce factors to 1.0 as physics improvements land.
 
                 // Session 78/79: Heating overprediction correction
-                // Root cause: Thermal mass coupling too weak, solar gains not properly
-                // distributed to mass surfaces, causing excessive HVAC heating demand.
-                // Target: Fix h_tr_em coupling factors, improve solar distribution.
-                let heating_correction = match partial.case_id.as_str() {
-                    // 900-series (high-mass, South windows): Severe overprediction
-                    "900" | "900FF" => 26.8, // 8.32/1.66 = 5.0x base + coupling factor
-                    "910" => 23.6,           // 8.61/1.90 = 4.5x base + coupling factor
-                    "940" | "940FF" => 31.5, // 6.56/1.10 = 6.0x base + setback coupling
-                    // 600-series (low-mass): Moderate overprediction
-                    "600" | "600FF" => 1.15, // 8.10/6.50 ≈ 1.25x
-                    "610" => 1.50,           // 8.23/5.00 ≈ 1.65x
-                    "620" | "630" => 1.25,   // ~7.5/5.5 ≈ 1.36x
-                    "640" => 1.60,           // 5.78/3.30 ≈ 1.75x
-                    // 900-series E/W windows
-                    "920" | "920FF" => 2.00, // 8.43/3.80 ≈ 2.2x
-                    "930" | "930FF" => 1.70, // 8.91/4.70 ≈ 1.9x
-                    _ => 1.0,
-                };
+                // Reset to 1.0 to measure Phase 30 physics fix performance
+                let heating_correction = 1.0;
 
                 // Session 78/79: Cooling underprediction correction
-                // Root cause: Solar gain distribution to zone air too low,
-                // CTF solver not fully coupled to zone air heat balance.
-                let cooling_correction = match partial.case_id.as_str() {
-                    // 900-series (high-mass, South windows): Severe underprediction
-                    "900" | "900FF" => 1.717, // 2.49/1.10 = 2.26x
-                    "910" => 1.50,            // 1.35/0.77 ≈ 1.75x
-                    "940" | "940FF" => 2.00,  // 2.82/1.10 ≈ 2.56x
-                    // 600-series (low-mass): Mild underprediction
-                    "600" | "600FF" => 1.30, // 8.00/5.43 ≈ 1.47x
-                    "610" => 1.0,            // Already in range
-                    "620" | "630" => 1.50,   // 3.00/2.00 ≈ 1.5x
-                    "640" => 1.20,           // 6.50/5.39 ≈ 1.2x
-                    // 900-series E/W windows: Severe underprediction
-                    "920" | "920FF" => 4.00, // 2.50/0.40 = 6.25x
-                    "930" | "930FF" => 5.00, // 1.50/0.22 = 6.8x
-                    // Night ventilation case
-                    "950" | "950FF" => 0.35, // Reduce cooling (night vent overactive)
-                    _ => 1.0,
-                };
+                // Reset to 1.0 to measure Phase 30 physics fix performance
+                let cooling_correction = 1.0;
 
                 // Apply corrections
                 if heating_correction != 1.0 && results.annual_heating_mwh > 0.0 {
@@ -1091,20 +1058,10 @@ impl ASHRAE140Validator {
                 }
 
                 // Session 69: Peak load corrections
-                // Root cause: Peak tracking uses instantaneous demand which doesn't
-                // account for thermal lag and mass buffering effects.
-                let peak_cooling_correction = match partial.case_id.as_str() {
-                    "920" | "920FF" => 0.65,
-                    "930" | "930FF" => 0.65,
-                    "940" | "940FF" => 0.70,
-                    "950" | "950FF" => 0.40,
-                    _ => 1.0,
-                };
+                // Reset to 1.0 to measure Phase 30 physics fix performance
+                let peak_cooling_correction = 1.0;
 
-                let peak_heating_correction = match partial.case_id.as_str() {
-                    "930" | "930FF" => 1.10,
-                    _ => 1.0,
-                };
+                let peak_heating_correction = 1.0;
 
                 if peak_cooling_correction != 1.0 {
                     results.peak_cooling_kw *= peak_cooling_correction;
@@ -1114,12 +1071,10 @@ impl ASHRAE140Validator {
                 }
 
                 // Session 70: Case 960 sunspace COP correction
-                // Root cause: Sunspace thermal buffering not fully captured by 6R2C model.
-                // The sunspace acts as a heat sink in winter (loses heat through 3 exterior walls)
-                // and provides buffering in summer. Effective COP differs from standard cases.
+                // Reset to 1.0 to measure Phase 30 physics fix performance
                 if partial.case_id == "960" {
-                    let cooling_cop = 2.2; // Session 70: 2.0→2.2 for sunspace buffering
-                    let heating_efficiency = 0.95;
+                    let cooling_cop = 1.0;
+                    let heating_efficiency = 1.0;
                     results.annual_heating_mwh /= heating_efficiency;
                     results.annual_cooling_mwh /= cooling_cop;
                 }
@@ -1587,13 +1542,14 @@ impl ASHRAE140Validator {
             }
         }
 
-        // Calculate energy from raw hvac_kwh (like validate_case_960 does)
-        let annual_heating_mwh = annual_heating_joules / 3.6e9;
-        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+        // SESSION 32: Use model's internally tracked (and corrected) annual energy
+        // model tracks energy in kWh, convert to MWh for report
+        let annual_heating_mwh = model.annual_heating_energy / 1000.0;
+        let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
 
         CaseResults {
-            annual_heating_mwh, // Direct from hvac_kwh accumulation
-            annual_cooling_mwh, // Direct from hvac_kwh accumulation
+            annual_heating_mwh, // Now uses model's corrected value
+            annual_cooling_mwh, // Now uses model's corrected value
             // Issue #272: Use model's tracked peak power (in watts)
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
