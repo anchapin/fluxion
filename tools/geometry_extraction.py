@@ -959,7 +959,7 @@ class GeometryToTensorConverter:
         Returns:
             Dictionary of numpy arrays
         """
-        tensors = {}
+        tensors: Dict[str, np.ndarray] = {}
 
         # Zone coordinates tensor
         # Format: [x1, y1, x2, y2, ..., x8, y8, floor_height, ceiling_height, area, volume, perimeter, zone_id]

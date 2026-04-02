@@ -128,7 +128,9 @@ class ASHRAE140TestHarness:
             duration = (datetime.now() - start_time).total_seconds()
 
             # Parse test output
-            total, passed, failed, skipped = self._parse_cTest_output(result.stdout)
+            total, passed, failed, skipped = self._parse_cargo_test_output(
+                result.stdout
+            )
 
             suite_result = TestSuiteResult(
                 suite_name=test_pattern,

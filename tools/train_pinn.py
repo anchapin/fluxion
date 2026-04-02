@@ -33,7 +33,7 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
@@ -126,7 +126,7 @@ class ThermalPINN(nn.Module):
     ):
         super().__init__()
 
-        layers = []
+        layers: List[nn.Module] = []
         prev_dim = input_dim
 
         # First layer: input -> first hidden
@@ -477,13 +477,13 @@ class ThermalDataGenerator:
         Returns:
             Tuple of (inputs_dict, targets_array)
         """
-        X: Dict[str, List[float]] = {
+        X: Dict[str, Any] = {
             "time": [],
             "t_outdoor": [],
             "q_solar": [],
             "q_internal": [],
         }
-        y = []
+        y: List[float] = []
 
         for _ in range(n_samples):
             # Generate outdoor temperature profile (daily cycle with noise)
@@ -521,11 +521,12 @@ class ThermalDataGenerator:
             y.extend(t_indoor)
 
         # Convert to arrays
+        X_array: Dict[str, np.ndarray] = {}
         for key in X:
-            X[key] = np.array(X[key], dtype=np.float32)
-        y = np.array(y, dtype=np.float32).reshape(-1, 1)
+            X_array[key] = np.array(X[key], dtype=np.float32)
+        y_array = np.array(y, dtype=np.float32).reshape(-1, 1)
 
-        return X, y
+        return X_array, y_array
 
     def generate_collocation_points(
         self,
@@ -800,8 +801,8 @@ def export_onnx(
     model.eval()
     torch.onnx.export(
         model,
-        sample_input,
-        output_path,
+        (sample_input,),
+        str(output_path),
         input_names=["input"],
         output_names=["t_indoor"],
         dynamic_axes={
@@ -810,6 +811,7 @@ def export_onnx(
         },
         opset_version=17,
     )
+
     logger.info("ONNX export successful")
 
 

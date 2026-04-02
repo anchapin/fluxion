@@ -17,7 +17,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 
 class EnergyPlusOracle:
@@ -382,8 +382,8 @@ Output:Variable,
         Returns:
             Dictionary with simulation results
         """
-        output_dir = Path(output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
 
         # Build EnergyPlus command
         ep_cmd = [
@@ -391,7 +391,7 @@ Output:Variable,
             "-w",
             str(epw_path),
             "-d",
-            str(output_dir),
+            str(output_path),
             "-r",  # Read variables
             idf_path,
         ]
@@ -412,17 +412,17 @@ Output:Variable,
             raise RuntimeError(f"EnergyPlus simulation failed: {result.returncode}")
 
         # Parse SQL output
-        sql_file = output_dir / "eplusout.sql"
+        sql_file = output_path / "eplusout.sql"
         if sql_file.exists():
             return self._parse_sql_results(sql_file)
         else:
             raise RuntimeError("EnergyPlus SQL output file not found")
 
-    def _parse_sql_results(self, sql_file: Path) -> Dict:
+    def _parse_sql_results(self, sql_file: Path) -> Dict[str, Any]:
         """Parse EnergyPlus SQL output."""
         import sqlite3
 
-        results = {}
+        results: Dict[str, Any] = {}
 
         try:
             conn = sqlite3.connect(sql_file)
@@ -529,14 +529,14 @@ Output:Variable,
         ep_results: Dict,
         tolerance_abs: float = 1.0,
         tolerance_rel: float = 0.05,
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         """
         Compare Fluxion and EnergyPlus results.
 
         Returns:
             Comparison report with metrics
         """
-        report = {
+        report: Dict[str, Any] = {
             "passed": True,
             "metrics": {},
             "details": {},

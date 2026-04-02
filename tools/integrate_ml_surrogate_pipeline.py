@@ -358,14 +358,13 @@ def export_onnx_model(
         # Export to ONNX
         torch.onnx.export(
             model,
-            dummy_input,
-            output_path,
+            (dummy_input,),
+            str(output_path),
             input_names=["input"],
             output_names=["output"],
             dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
             opset_version=17,
         )
-
         logger.info(f"✓ Model exported successfully to {output_path}")
         return True
 

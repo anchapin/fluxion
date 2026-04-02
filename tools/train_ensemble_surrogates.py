@@ -39,7 +39,7 @@ class SurrogateModel(nn.Module):
         torch.manual_seed(seed)
         np.random.seed(seed)
 
-        layers = []
+        layers: List[nn.Module] = []
         prev_dim = input_dim
 
         for hidden_dim in hidden_dims:
@@ -153,8 +153,8 @@ def export_onnx(model: nn.Module, sample_input: np.ndarray, output_path: Path):
 
     torch.onnx.export(
         model,
-        dummy_input,
-        output_path,
+        (dummy_input,),
+        str(output_path),
         input_names=["input"],
         output_names=["output"],
         dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
@@ -253,20 +253,19 @@ def evaluate_ensemble(
     X_t = torch.from_numpy(X)
 
     # Get predictions from all models
-    all_predictions = []
+    all_predictions_list = []
     with torch.no_grad():
         for model in models:
             pred = model(X_t).numpy()
-            all_predictions.append(pred)
+            all_predictions_list.append(pred)
 
-    all_predictions = np.array(
-        all_predictions
+    all_predictions_arr = np.array(
+        all_predictions_list
     )  # Shape: (num_models, num_samples, output_dim)
 
     # Calculate ensemble statistics
-    mean_pred = np.mean(all_predictions, axis=0)
-    std_pred = np.std(all_predictions, axis=0)
-
+    mean_pred = np.mean(all_predictions_arr, axis=0)
+    std_pred = np.std(all_predictions_arr, axis=0)
     # Calculate metrics
     mse = np.mean((y - mean_pred) ** 2)
     mae = np.mean(np.abs(y - mean_pred))

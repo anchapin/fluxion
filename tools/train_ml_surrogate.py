@@ -370,7 +370,7 @@ def train_surrogate(
     # Optimizer and loss
     optimizer = optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, "min", patience=10, factor=0.5, verbose=True
+        optimizer, "min", patience=10, factor=0.5
     )
     criterion = PhysicsLoss()
 

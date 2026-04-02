@@ -169,6 +169,9 @@ class PhysicsInformedLoss(nn.Module):
     Physics-informed loss function that combines MSE with physics constraints.
     """
 
+    min_temp: torch.Tensor
+    max_temp: torch.Tensor
+
     def __init__(
         self,
         mse_weight: float = 1.0,

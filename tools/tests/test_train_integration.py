@@ -9,8 +9,8 @@ import numpy as np
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
-from tools import train_surrogate
 from tools.data_gen import geometry, simulation
+from tools.train_ml_surrogate import train_surrogate
 
 
 class TestTrainIntegration(unittest.TestCase):
