@@ -141,9 +141,9 @@ class TestEnvelopeHeatTransfer:
         tolerance = 0.10
         error = abs(results["roof_conduction_w"] - expected_w) / expected_w * 100
 
-        assert (
-            error < tolerance * 100
-        ), f"Roof conduction error {error:.1f}% > {tolerance * 100:.0f}%"
+        assert error < tolerance * 100, (
+            f"Roof conduction error {error:.1f}% > {tolerance * 100:.0f}%"
+        )
 
     def test_floor_conduction_only(self):
         """Test floor conduction with no solar, no infiltration, no internal gains."""
@@ -163,9 +163,9 @@ class TestEnvelopeHeatTransfer:
         tolerance = 0.10
         error = abs(results["floor_conduction_w"] - expected_w) / expected_w * 100
 
-        assert (
-            error < tolerance * 100
-        ), f"Floor conduction error {error:.1f}% > {tolerance * 100:.0f}%"
+        assert error < tolerance * 100, (
+            f"Floor conduction error {error:.1f}% > {tolerance * 100:.0f}%"
+        )
 
     def test_total_envelope_conduction(self):
         """Test total envelope conduction."""
@@ -184,9 +184,9 @@ class TestEnvelopeHeatTransfer:
         )
 
         # Verify consistency
-        assert (
-            abs(total - results["total_conduction_w"]) < 1.0
-        ), f"Total conduction mismatch: {total:.1f} vs {results['total_conduction_w']:.1f}"
+        assert abs(total - results["total_conduction_w"]) < 1.0, (
+            f"Total conduction mismatch: {total:.1f} vs {results['total_conduction_w']:.1f}"
+        )
 
     def test_conduction_temp_dependence(self):
         """Verify conduction scales linearly with temperature difference."""

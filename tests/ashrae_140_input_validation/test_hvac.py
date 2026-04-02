@@ -42,18 +42,18 @@ class TestASHRAE140HVAC:
         # ASHRAE 140 Case 900 heating setpoint: 20°C
 
         result = self._run_rust_test("test_case_900_heating_setpoint")
-        assert (
-            result["returncode"] == 0
-        ), f"Heating setpoint validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Heating setpoint validation failed: {result['stderr']}"
+        )
 
     def test_case_900_cooling_setpoint(self):
         """Verify cooling setpoint is 27°C."""
         # ASHRAE 140 Case 900 cooling setpoint: 27°C
 
         result = self._run_rust_test("test_case_900_cooling_setpoint")
-        assert (
-            result["returncode"] == 0
-        ), f"Cooling setpoint validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Cooling setpoint validation failed: {result['stderr']}"
+        )
 
     def test_case_900_ideal_air_loads(self):
         """Verify ideal air loads is enabled."""
@@ -61,9 +61,9 @@ class TestASHRAE140HVAC:
         # This means HVAC meets demand exactly with no capacity limitations
 
         result = self._run_rust_test("test_case_900_ideal_air_loads")
-        assert (
-            result["returncode"] == 0
-        ), f"Ideal air loads validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Ideal air loads validation failed: {result['stderr']}"
+        )
 
     def test_case_900_hvac_capacity_autosize(self):
         """Verify HVAC capacity is autosized."""

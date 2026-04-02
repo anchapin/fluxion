@@ -85,9 +85,9 @@ class TestInfiltrationLoss:
         # Loss should double when ΔT doubles
         ratio = results_20k["infiltration_loss_w"] / results_10k["infiltration_loss_w"]
 
-        assert (
-            1.95 < ratio < 2.05
-        ), f"Infiltration not linear with ΔT: ratio={ratio:.2f} (expected ~2.0)"
+        assert 1.95 < ratio < 2.05, (
+            f"Infiltration not linear with ΔT: ratio={ratio:.2f} (expected ~2.0)"
+        )
 
     def test_infiltration_flow_rate_calculation(self):
         """Verify infiltration flow rate calculation."""
@@ -148,9 +148,9 @@ class TestInfiltrationLoss:
         )
 
         # Expected: ~0.3-0.5 MWh for Case 900
-        assert (
-            0.2 < annual_heating_mwh < 1.0
-        ), f"Annual infiltration heating {annual_heating_mwh:.2f} MWh unexpected"
+        assert 0.2 < annual_heating_mwh < 1.0, (
+            f"Annual infiltration heating {annual_heating_mwh:.2f} MWh unexpected"
+        )
 
 
 if __name__ == "__main__":

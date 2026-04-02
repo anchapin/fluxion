@@ -93,9 +93,9 @@ class TestInternalGainsDiagnostic:
 
         weighted_avg = (day_hours * day_fraction + night_hours * night_fraction) / 24
 
-        assert (
-            abs(weighted_avg - 0.533) < 0.01
-        ), f"Schedule average {weighted_avg:.3f} unexpected"
+        assert abs(weighted_avg - 0.533) < 0.01, (
+            f"Schedule average {weighted_avg:.3f} unexpected"
+        )
 
     def test_convective_radiative_split(self):
         """Verify internal gains convective/radiative split."""
@@ -129,9 +129,9 @@ class TestInternalGainsDiagnostic:
         annual_mwh = annual_kwh / 1000
 
         # Expected: ~0.9-1.0 MWh
-        assert (
-            0.8 < annual_mwh < 1.2
-        ), f"Annual equipment energy {annual_mwh:.2f} MWh unexpected"
+        assert 0.8 < annual_mwh < 1.2, (
+            f"Annual equipment energy {annual_mwh:.2f} MWh unexpected"
+        )
 
     def test_internal_gains_heat_balance(self):
         """Verify internal gains in zone heat balance."""

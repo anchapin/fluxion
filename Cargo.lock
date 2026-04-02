@@ -820,7 +820,6 @@ dependencies = [
  "rand 0.8.5",
  "rand_distr",
  "rayon",
- "regex",
  "reqwest",
  "rstest 0.18.2",
  "rstest 0.25.0",
@@ -833,7 +832,6 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
- "walkdir",
 ]
 
 [[package]]

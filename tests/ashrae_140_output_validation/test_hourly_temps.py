@@ -146,36 +146,36 @@ class TestASHRAE140HourlyTemps:
         data = self._load_hourly_data("900")
         rmse = self._calculate_rmse(data["fluxion"], data["energyplus"])
 
-        assert (
-            rmse < self.CRITERIA["rmse_max"]
-        ), f"Temperature RMSE {rmse:.2f}°C > {self.CRITERIA['rmse_max']}°C"
+        assert rmse < self.CRITERIA["rmse_max"], (
+            f"Temperature RMSE {rmse:.2f}°C > {self.CRITERIA['rmse_max']}°C"
+        )
 
     def test_case_900_temperature_nmbe(self):
         """Verify temperature NMBE is <10%."""
         data = self._load_hourly_data("900")
         nmbe = self._calculate_nmbe(data["fluxion"], data["energyplus"])
 
-        assert (
-            abs(nmbe) < self.CRITERIA["nmbe_max"]
-        ), f"Temperature NMBE {nmbe:.1f}% > {self.CRITERIA['nmbe_max']}%"
+        assert abs(nmbe) < self.CRITERIA["nmbe_max"], (
+            f"Temperature NMBE {nmbe:.1f}% > {self.CRITERIA['nmbe_max']}%"
+        )
 
     def test_case_900_temperature_cvrmse(self):
         """Verify temperature CV-RMSE is <30%."""
         data = self._load_hourly_data("900")
         cvrmse = self._calculate_cvrmse(data["fluxion"], data["energyplus"])
 
-        assert (
-            cvrmse < self.CRITERIA["cvrmse_max"]
-        ), f"Temperature CV-RMSE {cvrmse:.1f}% > {self.CRITERIA['cvrmse_max']}%"
+        assert cvrmse < self.CRITERIA["cvrmse_max"], (
+            f"Temperature CV-RMSE {cvrmse:.1f}% > {self.CRITERIA['cvrmse_max']}%"
+        )
 
     def test_case_900_temperature_r2(self):
         """Verify temperature R² is >0.8."""
         data = self._load_hourly_data("900")
         r2 = self._calculate_r2(data["fluxion"], data["energyplus"])
 
-        assert (
-            r2 > self.CRITERIA["r2_min"]
-        ), f"Temperature R² {r2:.2f} < {self.CRITERIA['r2_min']}"
+        assert r2 > self.CRITERIA["r2_min"], (
+            f"Temperature R² {r2:.2f} < {self.CRITERIA['r2_min']}"
+        )
 
     def test_case_900_temperature_bounds(self):
         """Verify temperatures stay within physical bounds."""
@@ -185,12 +185,12 @@ class TestASHRAE140HourlyTemps:
         fluxion_min = min(data["fluxion"])
         fluxion_max = max(data["fluxion"])
 
-        assert (
-            fluxion_min > -10.0
-        ), f"Temperature {fluxion_min:.1f}°C below physical bounds"
-        assert (
-            fluxion_max < 50.0
-        ), f"Temperature {fluxion_max:.1f}°C above physical bounds"
+        assert fluxion_min > -10.0, (
+            f"Temperature {fluxion_min:.1f}°C below physical bounds"
+        )
+        assert fluxion_max < 50.0, (
+            f"Temperature {fluxion_max:.1f}°C above physical bounds"
+        )
 
     def test_case_600_temperature_metrics(self):
         """Verify Case 600 temperature comparison metrics."""
@@ -215,14 +215,14 @@ class TestASHRAE140HourlyTemps:
         std_error = np.std(errors)
 
         # Mean error should be small (<1°C)
-        assert (
-            abs(mean_error) < 1.0
-        ), f"Mean temperature bias {mean_error:.2f}°C too large"
+        assert abs(mean_error) < 1.0, (
+            f"Mean temperature bias {mean_error:.2f}°C too large"
+        )
 
         # Standard deviation should be reasonable (<2°C)
-        assert (
-            std_error < 2.0
-        ), f"Temperature error variability {std_error:.2f}°C too high"
+        assert std_error < 2.0, (
+            f"Temperature error variability {std_error:.2f}°C too high"
+        )
 
 
 if __name__ == "__main__":

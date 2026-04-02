@@ -138,6 +138,7 @@ tests/*_ORIG             # Backup/orig files
 *.log
 validation_*.txt
 diagnostics_*.csv
+hourly_output.csv
 session_*_test_results.txt
 *.profraw
 

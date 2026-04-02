@@ -11,7 +11,6 @@ sys.path.insert(0, ".")
 
 import numpy as np
 import pytest
-
 from tools.gymnasium_env import GYMNASIUM_AVAILABLE, EnvConfig, FluxionEnv
 
 

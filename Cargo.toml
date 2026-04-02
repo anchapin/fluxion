@@ -40,10 +40,6 @@ chrono = { version = "0.4", features = ["serde"] }
 directories = "5.0"
 sha2 = "0.10"
 
-# Codebase audit
-walkdir = "2.5"
-regex = "1.10"
-
 # Numerical & Math
 faer = { version = "0.23.2", default-features = false, features = ["std"] }
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex

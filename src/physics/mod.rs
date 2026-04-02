@@ -1,7 +1,7 @@
-pub mod combined_heat_balance;
+
 pub mod constants;
 pub mod continuous;
-pub mod convection;
+
 pub mod cta;
 pub mod ctf_coefficients;
 pub mod ctf_solver;
@@ -16,11 +16,11 @@ pub mod geometry_tensor;
 pub mod method_selector;
 // pub mod multi_node_ctf; // Session 46: EnergyPlus-accurate multi-node thermal mass
 pub mod nd_array;
-pub mod newton_solver;
+
 // pub mod per_surface_ctf;
 // pub mod per_surface_integration;
 // pub mod per_surface_model;
-pub mod radiation;
+
 pub mod solver_manager;
 pub mod solver_trait;
 // pub mod view_factor;

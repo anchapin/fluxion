@@ -41,9 +41,9 @@ class TestASHRAE140InternalGains:
         # ASHRAE 140 Case 900 specifies 200W continuous equipment load
 
         result = self._run_rust_test("test_case_900_equipment_power")
-        assert (
-            result["returncode"] == 0
-        ), f"Equipment power validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Equipment power validation failed: {result['stderr']}"
+        )
 
     def test_case_900_equipment_schedule(self):
         """Verify equipment schedule fractions."""
@@ -52,9 +52,9 @@ class TestASHRAE140InternalGains:
         # - Night (22:00-6:00): 40% of full load
 
         result = self._run_rust_test("test_case_900_equipment_schedule")
-        assert (
-            result["returncode"] == 0
-        ), f"Equipment schedule validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Equipment schedule validation failed: {result['stderr']}"
+        )
 
     def test_case_900_equipment_annual_energy(self):
         """Verify annual equipment energy calculation."""
@@ -63,9 +63,9 @@ class TestASHRAE140InternalGains:
         0.2 * 24 * 365 * 0.5 / 1000
 
         result = self._run_rust_test("test_case_900_equipment_annual_energy")
-        assert (
-            result["returncode"] == 0
-        ), f"Annual equipment energy validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Annual equipment energy validation failed: {result['stderr']}"
+        )
 
     def test_case_900_internal_loads_radiative_convective_split(self):
         """Verify internal loads radiative/convective split."""
