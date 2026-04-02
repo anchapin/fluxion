@@ -4,7 +4,7 @@
 **Milestone:** v0.7 Thermal Physics Complete
 **Current Phase:** Phase 29 COMPLETE, Phase 30 PLANNED (Cooling Energy Fix)
 **Last Updated:** 2026-03-18
-**Decision:** Delay v0.7.0 to fix cooling energy gaps and improve pass rate to >80%
+**Decision:** Phase 30 fix applied. Now proceed with Phase 31 re-validation and v0.7.0 release.
 
 ---
 
@@ -21,8 +21,8 @@
 ## Current Status
 
 **Milestone:** v0.7 Thermal Physics Complete
-**Phase:** Phase 29 COMPLETE (Full Validation), Phase 30 PLANNED (Cooling Energy Fix)
-**Status:** Phase 29 complete (9/9 plans), overall pass rate 32.8%. **Decision:** Fix cooling energy before release.
+**Phase:** Phase 30 COMPLETE (Cooling Energy Fix), Phase 31 PLANNED (Full Validation & Release)
+**Status:** Phase 30 complete (3/3 plans), thermal mass fix applied. Phase 31 plans created (3 plans).
 
 ---
 
@@ -30,8 +30,8 @@
 
 - [x] **Phase 28: CTF/FD Solver Integration** - COMPLETE (6/6 plans done)
 - [x] **Phase 29: Full Validation** - COMPLETE (9/9 plans, 32.8% pass rate)
-- [ ] **Phase 30: Cooling Energy Fix** - PLANNED (2-3 weeks)
-- [ ] **Phase 31: Full Validation & Release** - READY TO PLAN
+- [x] **Phase 30: Cooling Energy Fix** - COMPLETE (3/3 plans done)
+- [ ] **Phase 31: Full Validation & Release** - READY TO EXECUTE (3 plans)
 
 ---
 
@@ -150,12 +150,17 @@
 6. Migration guide created (v0.6 → v0.7)
 7. v0.7.0 released to crates.io and PyPI
 
+**Plans:** 1/3 plans executed
+- 31-01: Full ASHRAE 140 Re-validation (Wave 1)
+- 31-02: Documentation & Version Update (Wave 2, depends on 31-01)
+- 31-03: Release Execution (Wave 3, depends on 31-02)
+
 **Execution Strategy:**
 - **Wave 1:** Full ASHRAE 140 re-validation (all 18 cases with Phase 30 fix)
-- **Wave 2:** Fine-tuning and documentation (if needed based on results)
-- **Wave 3:** Release preparation (crates.io, PyPI, migration guide)
+- **Wave 2:** Version bump, changelog, documentation updates
+- **Wave 3:** Release to crates.io, PyPI, GitHub release
 
-**Status:** READY TO PLAN
+**Status:** READY TO EXECUTE (plans created)
 
 ---
 
@@ -205,9 +210,9 @@ Each phase delivers a coherent, verifiable capability that informs the next phas
 | 28. CTF/FD Solver Integration | 6/6 | COMPLETE | ✅ Solver integration done |
 | 29. Full Validation | 9/9 | COMPLETE | ✅ 32.8% pass rate, 75% improvement |
 | 30. Cooling Energy Fix | 3/3 | COMPLETE | ✅ Thermal mass asymmetry fixed |
-| 31. Full Validation & Release | 0/? | READY TO PLAN | - |
+| 31. Full Validation & Release | 1/3 | In Progress|  |
 
-**Overall Progress:** 75% (3/4 phases complete, 1/4 planned)
+**Overall Progress:** 75% (3/4 phases complete, 1/4 with plans ready)
 
 ---
 
