@@ -7,6 +7,15 @@ description = "A differentiable, AI-accelerated Building Energy Modeling engine.
 repository = "https://github.com/anchapin/fluxion"
 license = "OTHER"
 
+[package.metadata.crates-io]
+# Only include src and essential files
+files = [
+    "src/**",
+    "Cargo.toml",
+    "Cargo.lock",
+    "build.rs"
+]
+
 [lib]
 name = "fluxion"
 crate-type = ["cdylib", "rlib"]

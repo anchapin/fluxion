@@ -1,0 +1,54 @@
+# Fluxion .cargoignore - Aggressive exclusion to meet 10MB limit
+
+# === Large Data (not needed for crate) ===
+refdata/
+data/
+models/
+assets/
+
+# === Test & Benchmark files ===
+tests/
+benches/
+test_case_900_fix.sh
+
+# === Documentation (available on GitHub) ===
+docs/
+README.md
+CHANGELOG.md
+LICENSE
+
+# === Large config files ===
+delta_config.yaml
+dhat-heap.json
+sensitivity_report.*
+
+# === Docker & CI ===
+Dockerfile
+docker-compose.yml
+.githooks/
+.github/
+
+# === Session/IDE files ===
+session_*.md
+*.swp
+*~
+
+# === Planning files ===
+.planning/
+
+# === Build outputs ===
+target/
+Cargo.lock
+
+# === Examples (can be separate crate) ===
+examples/
+tools/
+api/
+
+# === Config files ===
+config/
+audit.toml
+codecov.yml
+.editorconfig
+.env*
+.dockerignore
