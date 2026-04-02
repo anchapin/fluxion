@@ -1,6 +1,6 @@
 [package]
 name = "fluxion"
-version = "0.1.0"
+version = "0.7.0-alpha"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine."
