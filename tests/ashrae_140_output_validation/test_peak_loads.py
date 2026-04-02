@@ -201,9 +201,9 @@ class TestASHRAE140PeakLoads:
 
         # Peak heating should occur during cold hours (night/early morning)
         # Typically 4-8 AM
-        assert 0 <= peak_dt.hour <= 8 or 20 <= peak_dt.hour <= 24, (
-            f"Peak heating should be at night, got hour {peak_dt.hour}"
-        )
+        assert (
+            0 <= peak_dt.hour <= 8 or 20 <= peak_dt.hour <= 24
+        ), f"Peak heating should be at night, got hour {peak_dt.hour}"
 
     def test_case_900_peak_cooling_timing(self):
         """Verify peak cooling occurs in summer during hot hours."""
@@ -219,9 +219,9 @@ class TestASHRAE140PeakLoads:
 
         # Peak cooling should occur during hot hours (afternoon)
         # Typically 2-6 PM
-        assert 12 <= peak_dt.hour <= 18, (
-            f"Peak cooling should be in afternoon, got hour {peak_dt.hour}"
-        )
+        assert (
+            12 <= peak_dt.hour <= 18
+        ), f"Peak cooling should be in afternoon, got hour {peak_dt.hour}"
 
     def test_case_600_peak_loads(self):
         """Verify Case 600 peak loads."""

@@ -41,9 +41,9 @@ class TestASHRAE140Infiltration:
         # ASHRAE 140 Case 900 specifies 0.5 air changes per hour
 
         result = self._run_rust_test("test_case_900_infiltration_ach")
-        assert result["returncode"] == 0, (
-            f"Infiltration ACH validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Infiltration ACH validation failed: {result['stderr']}"
 
     def test_case_900_infiltration_flow_rate(self):
         """Verify infiltration volumetric flow rate."""
@@ -54,9 +54,9 @@ class TestASHRAE140Infiltration:
         ach * zone_volume / 3600
 
         result = self._run_rust_test("test_case_900_infiltration_flow")
-        assert result["returncode"] == 0, (
-            f"Infiltration flow rate validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Infiltration flow rate validation failed: {result['stderr']}"
 
     def test_case_900_infiltration_schedule(self):
         """Verify infiltration schedule is always on."""
@@ -79,9 +79,9 @@ class TestASHRAE140Infiltration:
         # Q = 1.2 × 1005 × 129.6 × 0.5 × 20 / 3600 ≈ 435 W
 
         result = self._run_rust_test("test_case_900_infiltration_heat_loss")
-        assert result["returncode"] == 0, (
-            f"Infiltration heat loss validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Infiltration heat loss validation failed: {result['stderr']}"
 
 
 if __name__ == "__main__":

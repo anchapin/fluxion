@@ -9,11 +9,6 @@ import logging
 import os
 from typing import List, Optional
 
-import httpx
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-
 # Import distributed inference modules
 from api.distributed_inference import (
     DistributedInferenceManager,
@@ -30,6 +25,9 @@ from api.distributed_inference_config import (
 
 # Import monitoring module for real-time monitoring and BAS integration
 from api.monitoring import router as monitoring_router
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

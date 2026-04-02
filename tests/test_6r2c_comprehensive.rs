@@ -5,9 +5,9 @@
 //! - Envelope mass (walls, roof, floor)
 //! - Internal mass (furniture, partitions)
 
+use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
-use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 // ============================================================================
@@ -58,8 +58,14 @@ fn test_6r2c_thermal_mass_initialization() {
     assert!(!model.internal_mass_temperatures.as_ref().is_empty());
 
     let initial_mass_temp = model.mass_temperatures.as_ref()[0];
-    assert_eq!(model.envelope_mass_temperatures.as_ref()[0], initial_mass_temp);
-    assert_eq!(model.internal_mass_temperatures.as_ref()[0], initial_mass_temp);
+    assert_eq!(
+        model.envelope_mass_temperatures.as_ref()[0],
+        initial_mass_temp
+    );
+    assert_eq!(
+        model.internal_mass_temperatures.as_ref()[0],
+        initial_mass_temp
+    );
 }
 
 // ============================================================================
@@ -120,10 +126,19 @@ fn test_thermal_lag_envelope_vs_internal() {
     let t_int_final = *t_int_curve.last().unwrap();
     let target_int = t_int_initial + 0.5 * (t_int_final - t_int_initial);
 
-    let t50_env = t_env_curve.iter().position(|&t| t >= target_env).unwrap_or(0);
-    let t50_int = t_int_curve.iter().position(|&t| t >= target_int).unwrap_or(0);
+    let t50_env = t_env_curve
+        .iter()
+        .position(|&t| t >= target_env)
+        .unwrap_or(0);
+    let t50_int = t_int_curve
+        .iter()
+        .position(|&t| t >= target_int)
+        .unwrap_or(0);
 
-    assert!(t50_int >= t50_env, "Internal mass should respond slower than envelope");
+    assert!(
+        t50_int >= t50_env,
+        "Internal mass should respond slower than envelope"
+    );
 }
 
 #[test]
@@ -144,7 +159,10 @@ fn test_mass_nodes_diverge_during_simulation() {
     let delta_t_env = initial_t_env - final_t_env;
     let delta_t_int = initial_t_int - final_t_int;
 
-    assert!(delta_t_env > delta_t_int, "Envelope mass should cool faster than internal mass");
+    assert!(
+        delta_t_env > delta_t_int,
+        "Envelope mass should cool faster than internal mass"
+    );
 }
 
 // ============================================================================
@@ -178,7 +196,10 @@ fn test_warm_start_continuity() {
     model.step_physics(24, 15.0, 3600.0);
     let t_env_next = model.envelope_mass_temperatures.as_ref()[0];
 
-    assert!((t_env_next - t_env_final).abs() < 5.0, "Large temperature jump detected");
+    assert!(
+        (t_env_next - t_env_final).abs() < 5.0,
+        "Large temperature jump detected"
+    );
 }
 
 // ============================================================================

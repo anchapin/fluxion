@@ -12,7 +12,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import yaml  # type: ignore
-
 from api.distributed_inference import (
     DistributedInferenceManager,
     EndpointConfig,

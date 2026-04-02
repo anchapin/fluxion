@@ -83,9 +83,9 @@ class TestASHRAE140Geometry:
         # Sill height: 0.2 m from floor
 
         result = self._run_rust_test("test_case_900_windows")
-        assert result["returncode"] == 0, (
-            f"Window validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Window validation failed: {result['stderr']}"
 
         # Verify no windows on other orientations
         # (Validated in Rust test)
@@ -159,9 +159,9 @@ class TestASHRAE140Geometry:
         # Total floor area: 72 m²
 
         result = self._run_rust_test("test_case_960_geometry")
-        assert result["returncode"] == 0, (
-            f"Case 960 geometry validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Case 960 geometry validation failed: {result['stderr']}"
 
 
 if __name__ == "__main__":

@@ -121,9 +121,9 @@ class TestThermalMass:
         damping_ratio = indoor_swing / outdoor_swing
 
         # Low-mass construction should have less damping (0.5-0.7)
-        assert 0.4 < damping_ratio < 0.8, (
-            f"Damping ratio {damping_ratio:.2f} outside expected range (0.4-0.8)"
-        )
+        assert (
+            0.4 < damping_ratio < 0.8
+        ), f"Damping ratio {damping_ratio:.2f} outside expected range (0.4-0.8)"
 
     def test_temperature_phase_lag_case_900(self):
         """Verify thermal mass creates appropriate phase lag (Case 900)."""
@@ -150,9 +150,9 @@ class TestThermalMass:
         ) % 24
 
         # Low-mass construction should have 2-4 hour lag
-        assert 1 <= phase_lag_hours <= 6, (
-            f"Phase lag {phase_lag_hours}h outside expected range (1-6h)"
-        )
+        assert (
+            1 <= phase_lag_hours <= 6
+        ), f"Phase lag {phase_lag_hours}h outside expected range (1-6h)"
 
     def test_thermal_mass_comparison_high_vs_low(self):
         """Compare thermal mass effects between high-mass and low-mass."""
@@ -200,9 +200,9 @@ class TestThermalMass:
 
         heat_capacity = concrete_density * concrete_specific_heat * thickness
 
-        assert abs(heat_capacity - 80000) < 1000, (
-            f"Wall heat capacity {heat_capacity:.0f} J/m²-K unexpected"
-        )
+        assert (
+            abs(heat_capacity - 80000) < 1000
+        ), f"Wall heat capacity {heat_capacity:.0f} J/m²-K unexpected"
 
     def test_ctf_coefficient_validation(self):
         """Validate CTF (Conduction Transfer Function) coefficients."""

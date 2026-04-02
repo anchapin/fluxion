@@ -96,9 +96,7 @@ def main():
     cases_to_generate = (
         discrepancy_cases
         if args.all_discrepancies
-        else [args.case]
-        if args.case
-        else []
+        else [args.case] if args.case else []
     )
 
     if not cases_to_generate:

@@ -147,9 +147,9 @@ class TestSolarHeatGain:
 
         altitude_noon = 90 - latitude + declination_summer
 
-        assert 72 < altitude_noon < 75, (
-            f"Summer solstice solar altitude {altitude_noon:.1f}° unexpected"
-        )
+        assert (
+            72 < altitude_noon < 75
+        ), f"Summer solstice solar altitude {altitude_noon:.1f}° unexpected"
 
     def test_solar_position_winter_solstice(self):
         """Test solar position on winter solstice (Dec 21)."""
@@ -161,9 +161,9 @@ class TestSolarHeatGain:
         altitude_noon = 90 - latitude + declination_winter
 
         # Expected: ~26.85°
-        assert 25 < altitude_noon < 28, (
-            f"Winter solstice solar altitude {altitude_noon:.1f}° unexpected"
-        )
+        assert (
+            25 < altitude_noon < 28
+        ), f"Winter solstice solar altitude {altitude_noon:.1f}° unexpected"
 
     def test_shgc_implementation(self):
         """Test SHGC implementation matches specification."""

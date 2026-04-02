@@ -41,18 +41,18 @@ class TestASHRAE140Weather:
         # ASHRAE 140 uses Denver, Colorado as the reference location
 
         result = self._run_rust_test("test_case_900_location")
-        assert result["returncode"] == 0, (
-            f"Location validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Location validation failed: {result['stderr']}"
 
     def test_case_900_climate_zone(self):
         """Verify climate zone is 5B."""
         # Denver climate zone: 5B (Cool - Dry, High Elevation)
 
         result = self._run_rust_test("test_case_900_climate_zone")
-        assert result["returncode"] == 0, (
-            f"Climate zone validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Climate zone validation failed: {result['stderr']}"
 
     def test_case_900_design_days(self):
         """Verify design day temperatures."""
@@ -61,9 +61,9 @@ class TestASHRAE140Weather:
         # - Summer: 33.9°C (1% annual exceedance)
 
         result = self._run_rust_test("test_case_900_design_days")
-        assert result["returncode"] == 0, (
-            f"Design day validation failed: {result['stderr']}"
-        )
+        assert (
+            result["returncode"] == 0
+        ), f"Design day validation failed: {result['stderr']}"
 
     def test_case_900_weather_file(self):
         """Verify Denver TMY3 weather file is used."""

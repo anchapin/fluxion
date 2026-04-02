@@ -2634,7 +2634,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // by artificially reducing h_total, leading to 60-90% under-prediction.
         let h_is_m = self.derived_h_ms_is_prod.clone() / self.derived_term_rest_1.clone();
         let h_total = self.derived_h_ext.clone() + h_is_m.clone();
-        
+
         self.derived_sensitivity = self.temperatures.constant_like(1.0) / h_total.clone();
 
         // Debug: Print sensitivity calculation for Case 600

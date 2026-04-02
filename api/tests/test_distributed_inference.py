@@ -11,7 +11,6 @@ Tests the distributed inference system including:
 from unittest.mock import AsyncMock
 
 import pytest
-
 from api.distributed_inference import (
     ConsistentHashLoadBalancer,
     DistributedInferenceManager,

@@ -204,9 +204,9 @@ class TestASHRAE140MonthlyEnergy:
         # Profile correlation should be >0.8
         correlation = self._calculate_profile_correlation(fluxion_profile, ep_profile)
 
-        assert correlation > 0.8, (
-            f"Monthly cooling profile correlation {correlation:.2f} < 0.8"
-        )
+        assert (
+            correlation > 0.8
+        ), f"Monthly cooling profile correlation {correlation:.2f} < 0.8"
 
     def test_case_900_winter_heating_ratio(self):
         """Verify winter (Dec-Feb) heating is majority of annual."""
