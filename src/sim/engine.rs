@@ -616,6 +616,11 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// Cumulative cooling energy in kilowatt-hours (kWh)
     pub annual_cooling_energy: f64,
 
+    /// CTF-driven heating energy in joules (for thermal mass correction)
+    pub ctf_annual_heating_joules: f64,
+    /// CTF-driven cooling energy in joules (for thermal mass correction)
+    pub ctf_annual_cooling_joules: f64,
+
     // Electrical energy tracking for HVAC equipment (Plan 18-08)
     /// Cumulative electrical energy consumption in kilowatt-hours (kWh)
     pub annual_electrical_energy: f64,
@@ -738,6 +743,11 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             peak_power_cooling: self.peak_power_cooling,
             annual_heating_energy: self.annual_heating_energy,
             annual_cooling_energy: self.annual_cooling_energy,
+
+            // CTF thermal mass correction tracking
+            ctf_annual_heating_joules: self.ctf_annual_heating_joules,
+            ctf_annual_cooling_joules: self.ctf_annual_cooling_joules,
+
             annual_electrical_energy: self.annual_electrical_energy,
             weather: self.weather.clone(),
             latitude_deg: self.latitude_deg,
@@ -2407,6 +2417,10 @@ impl ThermalModel<VectorField> {
             annual_heating_energy: 0.0, // Cumulative heating energy in kWh
             annual_cooling_energy: 0.0, // Cumulative cooling energy in kWh
 
+            // CTF thermal mass correction tracking
+            ctf_annual_heating_joules: 0.0,
+            ctf_annual_cooling_joules: 0.0,
+
             // Electrical energy tracking for HVAC equipment (Plan 18-08)
             annual_electrical_energy: 0.0, // Cumulative electrical energy consumption in kWh
 
@@ -3772,8 +3786,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let h_tr_em_i = self.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
 
-                    // Add net CTF flux (CTF - 5R1C)
-                    slice[i] += q_ctf - q_5r1c;
+                    // Net CTF contribution (CTF - 5R1C)
+                    let net_ctf_flux = q_ctf - q_5r1c;
+                    slice[i] += net_ctf_flux;
+
+                    // Track CTF energy for thermal mass correction
+                    // Positive net flux = heating contribution, negative = cooling
+                    if net_ctf_flux > 0.0 {
+                        self.ctf_annual_heating_joules += net_ctf_flux * dt;
+                    } else {
+                        self.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
+                    }
                 }
             }
         }
@@ -4031,9 +4054,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.annual_heating_energy += heating_energy_joules / 3.6e6 / corr;
             // Apply correction to cooling: multiply to increase reported cooling energy (compensate for mass absorption)
             self.annual_cooling_energy += cooling_energy_joules / 3.6e6 * corr;
+
+            // Apply thermal mass correction to CTF-driven energy (Phase 32)
+            // CTF energy bypasses the standard 5R1C path, so correction must be applied separately
+            if self.ctf_annual_heating_joules > 0.0 || self.ctf_annual_cooling_joules > 0.0 {
+                self.annual_heating_energy += self.ctf_annual_heating_joules / 3.6e6 / corr;
+                self.annual_cooling_energy += self.ctf_annual_cooling_joules / 3.6e6 * corr;
+                // Reset CTF energy trackers after applying correction
+                self.ctf_annual_heating_joules = 0.0;
+                self.ctf_annual_cooling_joules = 0.0;
+            }
         } else {
             self.annual_heating_energy += heating_energy_joules / 3.6e6;
             self.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+
+            // Apply CTF energy without correction (low-mass buildings)
+            if self.ctf_annual_heating_joules > 0.0 || self.ctf_annual_cooling_joules > 0.0 {
+                self.annual_heating_energy += self.ctf_annual_heating_joules / 3.6e6;
+                self.annual_cooling_energy += self.ctf_annual_cooling_joules / 3.6e6;
+                self.ctf_annual_heating_joules = 0.0;
+                self.ctf_annual_cooling_joules = 0.0;
+            }
         }
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
@@ -4427,9 +4468,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.annual_heating_energy += heating_energy_joules / 3.6e6 / corr;
             // Apply correction to cooling: multiply to increase reported cooling energy (compensate for mass absorption)
             self.annual_cooling_energy += cooling_energy_joules / 3.6e6 * corr;
+
+            // Apply thermal mass correction to CTF-driven energy (Phase 32)
+            // CTF energy bypasses the standard 6R2C path, so correction must be applied separately
+            if self.ctf_annual_heating_joules > 0.0 || self.ctf_annual_cooling_joules > 0.0 {
+                self.annual_heating_energy += self.ctf_annual_heating_joules / 3.6e6 / corr;
+                self.annual_cooling_energy += self.ctf_annual_cooling_joules / 3.6e6 * corr;
+                // Reset CTF energy trackers after applying correction
+                self.ctf_annual_heating_joules = 0.0;
+                self.ctf_annual_cooling_joules = 0.0;
+            }
         } else {
             self.annual_heating_energy += heating_energy_joules / 3.6e6;
             self.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+
+            // Apply CTF energy without correction (low-mass buildings)
+            if self.ctf_annual_heating_joules > 0.0 || self.ctf_annual_cooling_joules > 0.0 {
+                self.annual_heating_energy += self.ctf_annual_heating_joules / 3.6e6;
+                self.annual_cooling_energy += self.ctf_annual_cooling_joules / 3.6e6;
+                self.ctf_annual_heating_joules = 0.0;
+                self.ctf_annual_cooling_joules = 0.0;
+            }
         }
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
