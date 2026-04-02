@@ -13,6 +13,12 @@ The primary goal is to provide a high-throughput **Batch Oracle** capable of eva
 - **Bindings**: `PyO3` and `maturin` for seamless Python integration.
 - **Validation**: Rigorous adherence to the **ASHRAE Standard 140** validation suite.
 
+## Gemini Added Memories
+- **Status:** Phase 8B: Thermal Network Calibration.
+- **Key Progress:** Systematic energy under-prediction root cause identified (incorrect sensitivity calculation).
+- **Latest Fix:** Removed empirical weighting in `h_total` calculation, enabling full physics-based sensitivity. HVAC energy prediction increased by ~100% for high-mass cases.
+- **Current Milestone:** Stabilizing 900-series ASHRAE 140 cases and resolving peak power over-prediction.
+
 ## Building and Running
 
 ### Prerequisites
@@ -57,8 +63,8 @@ The primary goal is to provide a high-throughput **Batch Oracle** capable of eva
 - `tools/`: Python scripts for data generation, training, and benchmarking.
 - `docs/`: Technical documentation, PRDs, and architecture deep-dives.
 
-## Current Focus (as of Feb 2026)
-- Stabilizing ASHRAE 140 annual energy metrics (currently high variance in controlled cases).
-- Implementing Peak Load Tracking and reporting.
-- Improving multi-zone heat transfer (Case 960).
-- Automating validation reports via GitHub Actions.
+## Current Focus (as of April 2026)
+- Calibrating ASHRAE 140 high-mass cases (900 series) after sensitivity fix.
+- Resolving over-prediction in E/W window cases (920/930).
+- Investigating peak load over-prediction in 5R1C model.
+- Implementing seasonal solar distribution variation.

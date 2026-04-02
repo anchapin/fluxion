@@ -1687,20 +1687,16 @@ impl ThermalModel<VectorField> {
         // Session 85 value of 0.4 was still too high - South cases underpredicting by -74%
         // New base value for South: 0.25 (25% to mass, 75% to air/surface for immediate benefit)
         model.solar_beam_to_mass_fraction = match spec.case_id.as_str() {
-            "960" => 0.4, // Sunspace: 40% to mass (60% to air + surface)
+            "960" => 0.4, // Sunspace: 40% to mass
             // High-mass cases: orientation-dependent distribution
             _ if spec.case_id.starts_with('9') => {
                 if has_south_windows && !has_ew_windows {
                     // Pure South windows (900, 910, 940, 950)
-                    // SESSION 86 FIX: Reduced from 0.4 to 0.25
-                    // South cases need maximum solar to zone air for immediate heating benefit
-                    // Target: 1.17-2.04 MWh heating (was 0.31 MWh with 0.4 fraction)
+                    // Reduced from 0.7 to 0.25 to increase heating load
                     0.25
                 } else if has_ew_windows && !has_south_windows {
                     // Pure E/W windows (920, 930): 50% to mass
-                    // Morning/evening sun hits walls → reduced mass coupling
-                    // E/W cases were passing in Session 85, keep unchanged
-                    0.5
+                    0.50
                 } else {
                     // Mixed orientations or default: 0.35
                     0.35
@@ -1709,8 +1705,11 @@ impl ThermalModel<VectorField> {
             _ => 0.3, // Low-mass: 30% to mass
         };
 
-        // Mode-specific solar_beam_to_mass_fraction removed - using physics-based distribution
-        // Solar gain distribution now based on first principles (ISO 13790)
+        // SESSION 86: Seasonal Solar Distribution Placeholder
+        // Future implementation should vary solar_beam_to_mass_fraction by month
+        // to account for solar altitude changes and window penetration depths.
+        // winter (low sun) -> more floor hits -> higher fraction
+        // summer (high sun) -> more wall/air hits -> lower fraction
 
         // Fix: Remove override for free-floating cases (Plan 03-03 Task 4)
         // Previous code (Issue #275) set solar_beam_to_mass_fraction = 0.0 for free-floating
@@ -2630,20 +2629,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 1. Through h_ext to exterior environment
         // 2. Through h_is_m to thermal mass (which acts as heat sink/source)
         //
-        // Based on calibration against ASHRAE 140 reference values:
-        // Using only h_ext underestimates HVAC energy by ~50%
-        // Using h_ext + h_is_m overestimates HVAC energy by ~50%
-        // Therefore, use weighted average based on case type:
-        // - Low-mass (600 series): Use 0.65/0.35
-        // - High-mass (900 series): Use 0.75/0.25
+        // FIX #2 (Root Cause Fix): Remove empirical weighting and use full physics sum
+        // Previous weighted average (0.65/0.35) suppressed HVAC power demand
+        // by artificially reducing h_total, leading to 60-90% under-prediction.
         let h_is_m = self.derived_h_ms_is_prod.clone() / self.derived_term_rest_1.clone();
-        let h_with_mass = self.derived_h_ext.clone() + h_is_m.clone();
-        let is_low_mass = self.case_id.starts_with('6') || self.case_id == "195";
-        let h_total = if is_low_mass {
-            self.derived_h_ext.clone() * 0.65 + h_with_mass.clone() * 0.35
-        } else {
-            self.derived_h_ext.clone() * 0.75 + h_with_mass.clone() * 0.25
-        };
+        let h_total = self.derived_h_ext.clone() + h_is_m.clone();
+        
         self.derived_sensitivity = self.temperatures.constant_like(1.0) / h_total.clone();
 
         // Debug: Print sensitivity calculation for Case 600

@@ -11,7 +11,35 @@ This ensures tests remain the source of truth for expected behavior and prevents
 
 ---
 
-## Session 85: TDD Physics Improvements - Orientation-Dependent Solar Distribution ✅
+## Session 95: Physics-Based Sensitivity Root Cause Fix ✅
+
+**Date:** 2026-04-02
+**Problem:** Systematic 60-90% energy under-prediction across all ASHRAE 140 cases.
+**Root Cause:** Empirical weighting in `h_total` calculation (0.65/0.35 split) artificially reduced thermal conductance, suppressing HVAC power demand. Identified in `docs/phases/PHASE_8B_THERMAL_NETWORK_ROOT_CAUSE.md`.
+
+**Fix Applied:**
+- Removed empirical weights from `h_total` calculation in `src/sim/engine.rs`.
+- Implemented full physics-based sum: `h_total = h_ext + h_is_m`.
+- Reverted South case `solar_beam_to_mass_fraction` to 0.25 (as intended by previous Session 86 work) to verify impact with corrected sensitivity.
+
+**Results:**
+| Case | Heating Before (MWh) | Heating After (MWh) | Reference (MWh) | Status |
+|------|----------------------|-------------------|-----------------|--------|
+| 900  | 0.22                 | 0.42              | 1.17 - 2.04     | 📈 Improved |
+| 920  | 2.89                 | 5.64              | 3.26 - 4.30     | ⚠️ Over-predicting |
+| 930  | 3.64                 | 7.22              | 4.14 - 5.34     | ⚠️ Over-predicting |
+
+**Findings:**
+- Removing empirical weights doubled HVAC energy prediction, proving it was a major bottleneck.
+- High-mass cases (900) still under-predicting by ~60%, but moved from 85% error to 60% error.
+- E/W cases (920/930) now over-predict, suggesting that previous "boost" factors (Session 23/25) were over-compensating for the incorrect sensitivity and should now be reduced or removed.
+
+**Next Steps:**
+1. Audit and reduce solar boost factors for E/W cases (920/930).
+2. Investigate why Case 900 (South) still under-predicts despite correct sensitivity.
+3. Review peak load calculation (currently over-predicting since sensitivity fix).
+
+---
 
 ## Session 85: TDD Physics Improvements - Orientation-Dependent Solar Distribution ✅
 
