@@ -31,7 +31,7 @@
 - [x] **Phase 28: CTF/FD Solver Integration** - COMPLETE (6/6 plans done)
 - [x] **Phase 29: Full Validation** - COMPLETE (9/9 plans, 32.8% pass rate)
 - [x] **Phase 30: Cooling Energy Fix** - COMPLETE (3/3 plans done)
-- [ ] **Phase 31: Full Validation & Release** - READY TO EXECUTE (3 plans)
+- [x] **Phase 31: Full Validation & Release** - READY TO EXECUTE (3 plans) (completed 2026-04-02)
 
 ---
 
@@ -150,17 +150,18 @@
 6. Migration guide created (v0.6 → v0.7)
 7. v0.7.0 released to crates.io and PyPI
 
-**Plans:** 1/3 plans executed
+**Plans:** 3/3 plans complete
 - 31-01: Full ASHRAE 140 Re-validation (Wave 1)
 - 31-02: Documentation & Version Update (Wave 2, depends on 31-01)
 - 31-03: Release Execution (Wave 3, depends on 31-02)
+- 31-04: Gap Closure - Package Size Fix (Wave 1, fixes crates.io publishing)
 
 **Execution Strategy:**
 - **Wave 1:** Full ASHRAE 140 re-validation (all 18 cases with Phase 30 fix)
 - **Wave 2:** Version bump, changelog, documentation updates
-- **Wave 3:** Release to crates.io, PyPI, GitHub release
+- **Wave 3:** Release to crates.io, PyPI, GitHub release (GitHub done, crates.io blocked)
 
-**Status:** READY TO EXECUTE (plans created)
+**Status:** COMPLETE (3/3 plans done), GAP CLOSURE: 1/1 plan created (31-04)
 
 ---
 
@@ -210,7 +211,7 @@ Each phase delivers a coherent, verifiable capability that informs the next phas
 | 28. CTF/FD Solver Integration | 6/6 | COMPLETE | ✅ Solver integration done |
 | 29. Full Validation | 9/9 | COMPLETE | ✅ 32.8% pass rate, 75% improvement |
 | 30. Cooling Energy Fix | 3/3 | COMPLETE | ✅ Thermal mass asymmetry fixed |
-| 31. Full Validation & Release | 1/3 | In Progress|  |
+| 31. Full Validation & Release | 3/3 | Complete   | 2026-04-02 |
 
 **Overall Progress:** 75% (3/4 phases complete, 1/4 with plans ready)
 
