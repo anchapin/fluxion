@@ -42,17 +42,15 @@ pub fn generate_oat_design(ranges: &[ParameterRange], levels: usize) -> Vec<Vec<
     design
 }
 
-/// Generate a Sobol quasi-random design matrix.
+/// Generate a random design matrix using uniform sampling.
 ///
-/// Generates `num_samples` parameter vectors using Sobol sequence for good space-filling coverage.
+/// Generates `num_samples` parameter vectors using uniform random sampling.
 /// Each column is scaled to the corresponding parameter range.
-pub fn generate_sobol_design(ranges: &[ParameterRange], num_samples: usize) -> Vec<Vec<f64>> {
+pub fn generate_random_design(ranges: &[ParameterRange], num_samples: usize) -> Vec<Vec<f64>> {
     let n_params = ranges.len();
     if n_params == 0 || num_samples == 0 {
         return Vec::new();
     }
-    // Note: The `sobol` dependency is included for future proper Sobol sequence generation.
-    // For now, we use uniform random sampling as a placeholder that still covers the ranges.
     use rand::Rng;
     let mut rng = rand::thread_rng();
     let mut samples = Vec::with_capacity(num_samples);
@@ -298,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn test_sobol_coverage() {
+    fn test_random_coverage() {
         let ranges = vec![
             ParameterRange {
                 name: "window_u".to_string(),
@@ -312,7 +310,7 @@ mod tests {
             },
         ];
         let num_samples = 100;
-        let design = generate_sobol_design(&ranges, num_samples);
+        let design = generate_random_design(&ranges, num_samples);
         assert_eq!(design.len(), num_samples);
         for row in &design {
             assert_eq!(row.len(), 2);

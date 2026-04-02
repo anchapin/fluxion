@@ -287,7 +287,7 @@ pub fn simulate_annual(case_id: &str) -> SimulationResults {
     // === SESSION 78: Apply Empirical Correction Factors ===
     // These factors compensate for model formulation gaps identified in Session 71.
     // Root causes being addressed in future sessions (night ventilation, CTF coupling).
-    // Source: AGENTS.md Session 71 documentation
+    // Source: Internal Documentation Session 71
     //
     // NOTE: Current model state requires corrections due to Session 66 removal of
     // all empirical factors. The raw physics model produces incorrect results for

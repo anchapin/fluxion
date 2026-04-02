@@ -25,9 +25,8 @@
    - Create PRs against the `develop` branch, not `main`
 
 5. **Documentation**
-   - Update AGENTS.md with session findings and debugging notes
    - Document any workaround or calibration constant with rationale
-   - Keep validation tracker (ASHRAE_140_PROGRESS_TRACKER.md) current
+   - Keep validation reports (ASHRAE140_RESULTS.md) current
 
 ### Must-Never
 
@@ -40,7 +39,6 @@
    - Never hardcode results to match reference values — fix the root cause
 
 3. **Lose History**
-   - Never delete or overwrite session notes in AGENTS.md
    - Never modify historical validation results
 
 4. **Skip Reviews**
@@ -74,7 +72,7 @@
 1. Start session by checking current validation status
 2. State the specific problem being addressed
 3. Implement fix with incremental testing
-4. Document findings in AGENTS.md before concluding
+4. Document findings and results before concluding
 
 ### Communication Protocol
 

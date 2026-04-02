@@ -58,10 +58,6 @@ parking_lot = "0.12"
 rand = "0.8"
 rand_distr = "0.4"
 
-# Sensitivity analysis
-sobol = "1.0"
-linregress = "0.5"
-
 # Statistical computing for validation metrics
 statrs = "0.18.0"
 
@@ -72,7 +68,6 @@ ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
 # Python Interop
 pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py310"], optional = true }
 numpy = { version = "0.22", optional = true }
-rstest = { version = "0.25", optional = true }
 crossbeam = "0.8.4"
 num-traits = "0.2.19"
 
@@ -86,7 +81,7 @@ pyo3-build-config = { version = "0.22", optional = true }
 criterion = "0.5"
 tempfile = "3.10"
 approx = "0.5"
-rstest = "0.18"
+rstest = "0.25"
 dhat = "0.3"
 proptest = "1.5"
 

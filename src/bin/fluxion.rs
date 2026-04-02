@@ -776,9 +776,9 @@ fn main() -> Result<()> {
                     let levels = sens_config.levels.unwrap_or(10);
                     sensitivity::generate_oat_design(&sens_config.parameters, levels)
                 }
-                "sobol" => {
+                "random" => {
                     let samples = sens_config.samples.unwrap_or(100);
-                    sensitivity::generate_sobol_design(&sens_config.parameters, samples)
+                    sensitivity::generate_random_design(&sens_config.parameters, samples)
                 }
                 _ => anyhow::bail!("Unknown method: {}", sens_config.method),
             };
