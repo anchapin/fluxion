@@ -90,8 +90,8 @@ Requirements for v0.8 Peak Load & Free-Float Validation milestone. **Focus: Peak
 
 - [ ] **PEAK-01**: High-mass peak heating within ASHRAE 140 tolerance (Case 900: 1.10-2.10 kW)
 - [ ] **PEAK-02**: High-mass peak cooling within ASHRAE 140 tolerance (Case 900: 2.10-3.50 kW)
-- [ ] **PEAK-03**: Peak load timing matches reference programs (within ±1 hour)
-- [ ] **PEAK-04**: Peak load diagnostic suite compares hourly profiles against EnergyPlus
+- [x] **PEAK-03**: Peak load timing matches reference programs (within ±1 hour)
+- [x] **PEAK-04**: Peak load diagnostic suite compares hourly profiles against EnergyPlus
 
 ### Free-Floating Temperature Deviations (FLOAT)
 
