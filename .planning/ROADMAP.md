@@ -27,7 +27,7 @@
 ## Phases
 
 - [x] **Phase 33: Peak Load Diagnostics** - Diagnostic suite for hourly peak analysis (completed 2026-04-03)
-- [ ] **Phase 34: Peak Load Physics Fix** - Address high-mass peak load overestimation
+- [x] **Phase 34: Peak Load Physics Fix** - Address high-mass peak load overestimation (completed 2026-04-03)
 - [ ] **Phase 35: Free-Floating Validation** - Improve free-floating temperature profiles
 - [ ] **Phase 36: v0.8.0 Release** - Documentation, release artifacts, and final validation
 
@@ -72,7 +72,7 @@
 3. No regression on annual energy (maintain ±15% tolerance)
 4. No regression on low-mass peak loads
 
-**Plans:** 2 plans in 2 waves
+**Plans:** 3/2 plans complete
 - 34-01: Thermal capacitance fix (Cm includes wall + roof + floor) - COMPLETE
 - 34-02: Conductance fix (h_tr_ms and h_tr_em include roof) - PLANNED
 
