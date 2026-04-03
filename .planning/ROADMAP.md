@@ -67,12 +67,16 @@
 **Requirements:** PEAK-01, PEAK-02
 
 **Success Criteria** (what must be TRUE):
-1. ✅ Case 900 peak heating: 1.10-2.10 kW (PASS)
-2. ✅ Case 900 peak cooling: 2.10-3.50 kW (PASS)
-3. ✅ No regression on annual energy (maintain ±15% tolerance)
-4. ✅ No regression on low-mass peak loads
+1. Case 900 peak heating: 1.10-2.10 kW (Current: 4.42 kW - needs fix)
+2. Case 900 peak cooling: 2.10-3.50 kW (Current: 3.36 kW - PASS)
+3. No regression on annual energy (maintain ±15% tolerance)
+4. No regression on low-mass peak loads
 
-**Status:** PLANNED
+**Plans:** 2 plans in 2 waves
+- 34-01: Thermal capacitance fix (Cm includes wall + roof + floor) - COMPLETE
+- 34-02: Conductance fix (h_tr_ms and h_tr_em include roof) - PLANNED
+
+**Status:** PARTIAL (1/2 plans complete)
 
 ---
 
