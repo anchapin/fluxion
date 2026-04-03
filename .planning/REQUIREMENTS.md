@@ -97,8 +97,8 @@ Requirements for v0.8 Peak Load & Free-Float Validation milestone. **Focus: Peak
 
 - [ ] **FLOAT-01**: Free-floating temperature maximum within ±0.5°C of ASHRAE 140 reference
 - [ ] **FLOAT-02**: Free-floating temperature minimum within ±0.5°C of ASHRAE 140 reference
-- [ ] **FLOAT-03**: Diurnal temperature swing matches reference programs (±10% amplitude)
-- [ ] **FLOAT-04**: Hourly temperature profiles validated for free-floating cases (600FF, 900FF)
+- [x] **FLOAT-03**: Diurnal temperature swing matches reference programs (±10% amplitude)
+- [x] **FLOAT-04**: Hourly temperature profiles validated for free-floating cases (600FF, 900FF)
 
 ---
 

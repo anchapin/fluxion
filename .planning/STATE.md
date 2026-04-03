@@ -1,22 +1,22 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.8
-milestone_name: Peak Load & Free-Float Validation
+milestone: v0.8.0
+milestone_name: Release
 current_phase: 33
-status: planned
-last_updated: "2026-04-02T23:58:00.000Z"
+status: unknown
+last_updated: "2026-04-03T01:24:06.317Z"
 progress:
-  total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  total_phases: 8
+  completed_phases: 2
+  total_plans: 10
+  completed_plans: 8
 ---
 
 # Fluxion Project State
 
 **Milestone:** v0.8 Peak Load & Free-Float Validation
 **Last Updated:** 2026-04-02
-**Current Phase:** 33 (PLANNED)
+**Current Phase:** 33
 **Decision:** v0.7.0 milestone COMPLETE (100% annual energy compliance). Proceeding to v0.8.0 to resolve peak load and free-floating temperature deviations.
 
 ---
@@ -30,6 +30,7 @@ progress:
 ### Milestone Objectives
 
 **v0.8 Peak Load & Free-Float Validation:**
+
 1. 🎯 Peak loads within ±10% for all ASHRAE 140 cases.
 2. 🎯 Free-floating temperature max/min within ±0.5°C of reference.
 3. 🎯 Hourly profile alignment with EnergyPlus/ESP-r/TRNSYS references.
@@ -39,8 +40,8 @@ progress:
 
 ## Current Position
 
-Phase: 33 (peak-load-diagnostics) — PLANNED
-Plan: 0 of 0
+Phase: 33 (peak-load-diagnostics) — EXECUTING
+Plan: 2 of 3
 
 ### Progress Bar
 
@@ -59,6 +60,7 @@ Overall:  [          ] 0% (v0.8 Milestone Initialized)
 **Achievement:** 100% compliance for annual energy in high-mass (900-series) cases.
 
 **Key Results:**
+
 - ✅ **Case 900 Heating:** 1.60 MWh (Ref: 1.17-2.04) — **PASS**
 - ✅ **Case 900 Cooling:** 3.01 MWh (Ref: 2.13-3.67) — **PASS**
 - ✅ **900-Series Annual Energy:** All 6 cases (900-950) now PASS or WARN.
@@ -71,12 +73,14 @@ Overall:  [          ] 0% (v0.8 Milestone Initialized)
 ## Accumulated Context
 
 ### Key Decisions (v0.7.0)
+
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
 | CTF Integration | RC networks (5R1C) fundamentally limited for high-mass annual energy | ✅ 100% annual energy compliance achieved |
 | Symmetric Correction Factor | Thermal mass correction must apply equally to heating and cooling | ✅ Resolved systematic cooling underestimation |
 
 ### Technical Debt / Remaining Gaps
+
 - **Peak Load Accuracy:** High-mass peaks overestimate by nearly 100% in some cases.
 - **Thermal Lag:** Free-floating cases show insufficient thermal damping in the 5R1C/CTF integration.
 - **Diagnostic Visibility:** Need better tools to compare hourly internal states against EnergyPlus.
@@ -86,9 +90,11 @@ Overall:  [          ] 0% (v0.8 Milestone Initialized)
 ## Session Continuity
 
 ### Last Action
+
 Initialized v0.8.0 milestone. Updated REQUIREMENTS.md, ROADMAP.md, and STATE.md.
 
 ### Next Actions
+
 1. **Plan Phase 33:** Create diagnostic plans for peak load analysis.
 2. **Execute Phase 33:** Run hourly comparisons and identify physics gaps.
 3. **Research:** Investigate if time step sensitivity or surface-to-core gradients are the root cause.
