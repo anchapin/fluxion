@@ -827,14 +827,18 @@ where
 {
     /// Prepare sol-air temperature and calculate CTF/FD heat fluxes.
     /// This is a shared helper for 5R1C and 6R2C models.
-    fn prepare_solvers_and_sol_air(&mut self, timestep: usize, outdoor_temp: f64) -> (Vec<f64>, Option<Vec<f64>>, Option<Vec<f64>>) {
+    fn prepare_solvers_and_sol_air(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+    ) -> (Vec<f64>, Option<Vec<f64>>, Option<Vec<f64>>) {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
         };
         let solar_ref = self.solar_gains.as_ref();
         let alpha = SOLAR_ABSORPTANCE_DEFAULT;
         let h_se = EXTERIOR_FILM_COEFF_DEFAULT;
-        
+
         let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
         for i in 0..self.num_zones {
             let i_sol = solar_ref[i];
@@ -844,14 +848,14 @@ where
 
         let ctf_flux_w: Option<Vec<f64>> = if self.ctf_enabled && !self.ctf_solvers.is_empty() {
             let temps = self.temperatures.as_ref();
-            // Use envelope mass temperatures for high-mass physics if available, 
+            // Use envelope mass temperatures for high-mass physics if available,
             // otherwise fallback to air temperatures (as an estimate) or zone mass.
             let ext_temps = if self.is_6r2c_model() {
                 self.envelope_mass_temperatures.as_ref()
             } else {
                 self.mass_temperatures.as_ref()
             };
-            
+
             let mut ctf_fluxes = Vec::with_capacity(self.num_zones);
 
             for (i, solver) in self.ctf_solvers.iter_mut().enumerate() {
@@ -861,7 +865,13 @@ where
 
                 if let Some(ref coupling_solver) = self.ctf_zone_coupling_solver {
                     let solar_absorbed_interior = solar_ref.get(i).copied().unwrap_or(0.0) * 0.3;
-                    let result = coupling_solver.solve(solver, t_zone, t_mass, t_ext, solar_absorbed_interior);
+                    let result = coupling_solver.solve(
+                        solver,
+                        t_zone,
+                        t_mass,
+                        t_ext,
+                        solar_absorbed_interior,
+                    );
                     ctf_fluxes.push(result.q_ctf_interior);
                 } else {
                     ctf_fluxes.push(solver.step(t_zone, t_ext));
@@ -882,7 +892,7 @@ where
                 let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
                 let interior_bc = SurfaceBC::new_interior(8.0, t_zone);
                 let exterior_bc = SurfaceBC::new_exterior(25.0, t_ext, 0.0);
-                
+
                 // Step FD solver and get interior surface heat flux
                 solver.step(3600.0, &interior_bc, &exterior_bc);
                 let q_flux = solver.interior_heat_flux(8.0, t_zone);
@@ -1505,7 +1515,56 @@ impl ThermalModel<VectorField> {
             }
 
             let h_ms_physics = opaque_area / r_interior_to_mass.max(0.001);
-            h_tr_ms_vec.push(h_ms_physics);
+
+            // PHASE 34-02 FIX: Add roof contribution to h_tr_ms
+            // Roof construction also contributes to thermal mass coupling
+            let roof_construction = &spec.construction.roof;
+            let roof_ins_idx = roof_construction.find_dominant_insulation_layer_index();
+            let mut r_interior_to_mass_roof = 0.0;
+
+            let roof_layers = &roof_construction.layers;
+            for (idx, layer) in roof_layers.iter().enumerate() {
+                let layer_r = layer.r_value();
+                if idx < roof_ins_idx {
+                    // Layer is interior to insulation - full contribution
+                    r_interior_to_mass_roof += layer_r;
+                } else if idx == roof_ins_idx {
+                    // This is the insulation layer - half contribution
+                    r_interior_to_mass_roof += layer_r / 2.0;
+                    break;
+                }
+            }
+
+            let h_ms_roof = zone_floor_area / r_interior_to_mass_roof.max(0.001);
+
+            // PHASE 34-02 FIX: Add floor contribution to h_tr_ms
+            // Floor construction also contributes to thermal mass coupling
+            let floor_construction = &spec.construction.floor;
+            let floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
+            let mut r_interior_to_mass_floor = 0.0;
+
+            let floor_layers = &floor_construction.layers;
+            for (idx, layer) in floor_layers.iter().enumerate() {
+                let layer_r = layer.r_value();
+                if idx < floor_ins_idx {
+                    // Layer is interior to insulation - full contribution
+                    r_interior_to_mass_floor += layer_r;
+                } else if idx == floor_ins_idx {
+                    // This is the insulation layer - half contribution
+                    r_interior_to_mass_floor += layer_r / 2.0;
+                    break;
+                }
+            }
+
+            let h_ms_floor = zone_floor_area / r_interior_to_mass_floor.max(0.001);
+            let h_ms_total = h_ms_physics + h_ms_roof + h_ms_floor;
+
+            // Debug output for all contributions
+            if zone_idx == 0 && spec.case_id == "900" {
+                eprintln!("PHASE 34-02 DEBUG: h_ms_physics={:.3}, h_ms_roof={:.3}, h_ms_floor={:.3}, h_ms_total={:.3}", h_ms_physics, h_ms_roof, h_ms_floor, h_ms_total);
+            }
+
+            h_tr_ms_vec.push(h_ms_total);
 
             // === SESSION 82/84: Physics-Based h_tr_em Calculation ===
             //
@@ -1557,6 +1616,55 @@ impl ThermalModel<VectorField> {
             // h_tr_em_base = opaque_area / R_exterior_to_mass
             let h_tr_em_base = opaque_area / r_exterior_to_mass;
 
+            // PHASE 34-02 FIX: Add roof contribution to h_tr_em
+            // Roof construction also contributes to exterior-to-mass conductance
+            let roof_construction = &spec.construction.roof;
+            let roof_ins_idx = roof_construction.find_dominant_insulation_layer_index();
+
+            // Calculate resistance from exterior to mass node for roof
+            // Start with exterior film resistance
+            let r_ext_film_roof =
+                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
+            let mut r_exterior_to_mass_roof = r_ext_film_roof;
+
+            // Add resistance of layers from exterior side up to (and including half of) insulation
+            let roof_layers = &roof_construction.layers;
+            let num_roof_layers = roof_layers.len();
+
+            for (idx, layer) in roof_layers.iter().enumerate() {
+                // Layers are ordered interior to exterior (index 0 = interior)
+                // So we iterate from exterior (high index) to interior
+                let reverse_idx = num_roof_layers - 1 - idx;
+                let layer_r = layer.r_value();
+
+                if reverse_idx > roof_ins_idx {
+                    // Layer is exterior to insulation - full contribution
+                    r_exterior_to_mass_roof += layer_r;
+                } else if reverse_idx == roof_ins_idx {
+                    // This is the insulation layer - half contribution (half-insulation rule)
+                    r_exterior_to_mass_roof += layer_r / 2.0;
+                    break; // Stop at insulation
+                } else {
+                    // Layer is interior to insulation - don't include
+                    break;
+                }
+            }
+
+            // h_tr_em_roof = roof_area / R_exterior_to_mass_roof
+            let h_tr_em_roof = zone_floor_area / r_exterior_to_mass_roof;
+
+            // PHASE 34-02 FIX: Add floor contribution to h_tr_em
+            // Floor construction also contributes to exterior-to-mass conductance
+            let floor_construction = &spec.construction.floor;
+            let floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
+
+            // Calculate resistance from exterior to mass node for floor
+            // For floor, exterior is typically ground, so we use a different approach
+            // Use the floor's U-value which already includes ground coupling
+            let floor_u = spec.construction.floor.u_value(None, None);
+            let r_exterior_to_mass_floor = 1.0 / floor_u; // Resistance = 1/U
+            let h_tr_em_floor = zone_floor_area / r_exterior_to_mass_floor;
+
             // === SESSION 84 FIX: Remove cm_ratio scaling ===
             // Session 82 scaling (cm_ratio.powf(0.8)) was causing:
             // - E/W cases (920, 930): Heating OVERPREDICTION (+69%)
@@ -1568,8 +1676,14 @@ impl ThermalModel<VectorField> {
             // Fix: Use h_tr_em_base directly (no scaling) - the physics-based
             // calculation from layer resistances is sufficient.
             let h_tr_em_physics = h_tr_em_base;
+            let h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
 
-            h_tr_em_vec.push(h_tr_em_physics.max(0.1));
+            // Debug output for all contributions
+            if zone_idx == 0 && spec.case_id == "900" {
+                eprintln!("PHASE 34-02 DEBUG: h_tr_em_physics={:.3}, h_tr_em_roof={:.3}, h_tr_em_floor={:.3}, h_tr_em_total={:.3}", h_tr_em_physics, h_tr_em_roof, h_tr_em_floor, h_tr_em_total);
+            }
+
+            h_tr_em_vec.push(h_tr_em_total.max(0.1));
 
             // === SESSION 83 DIAGNOSTIC: Output h_tr_em, h_tr_ms, solar distribution ===
             // SESSION 84: Debug output for h_tr_em calculation
@@ -1579,8 +1693,8 @@ impl ThermalModel<VectorField> {
                     || spec.case_id == "930"
                     || spec.case_id == "910")
             {
-                eprintln!("SESSION 84 DIAG Case {}: zone_idx={}, h_tr_em_base={:.3}, h_tr_em_physics={:.3}, h_ms_physics={:.3}",
-                spec.case_id, zone_idx, h_tr_em_base, h_tr_em_physics, h_ms_physics);
+                eprintln!("SESSION 84 DIAG Case {}: zone_idx={}, h_tr_em_base={:.3}, h_tr_em_physics={:.3}, h_ms_physics={:.3}, h_tr_em_total={:.3}, h_ms_total={:.3}",
+                spec.case_id, zone_idx, h_tr_em_base, h_tr_em_physics, h_ms_physics, h_tr_em_total, h_ms_total);
                 eprintln!(
                     "  total_thermal_cap={:.2e}, target_tau_hours={:.1}",
                     total_thermal_cap, target_tau_hours
@@ -1588,15 +1702,10 @@ impl ThermalModel<VectorField> {
             }
 
             // Thermal capacitance using ISO 13790 effective specific capacitances
-            // FIX TASK #9: Only include thermal mass, not air
-            // This replaces the previous approach that summed ALL layers regardless of
-            // their position relative to insulation (violating ISO 13790 Annex C)
-            // For 5R1C model with single mass node, thermal capacitance should only
-            // include the mass elements (walls), not air
-            let wall_cap = kappa_wall * opaque_area;
-            // Only use wall capacitance for thermal mass (excluding air, roof, floor)
-            // This matches ASHRAE 140 5R1C model structure
-            thermal_cap_vec.push(wall_cap);
+            // PHASE 34 FIX: Include ALL envelope mass (walls + roof + floor) in Cm
+            // Previously only wall_cap was used, excluding ~60% of thermal mass
+            let total_mass_cap = wall_cap + roof_cap + floor_cap;
+            thermal_cap_vec.push(total_mass_cap);
         }
 
         model.h_tr_w = VectorField::new(h_tr_w_vec);
@@ -3496,7 +3605,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
-        let (t_sol_air_data, ctf_flux_w, fd_flux_w) = self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
+        let (t_sol_air_data, ctf_flux_w, fd_flux_w) =
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
 
         // Get ground temperature at this timestep
         let t_g = self.ground_temperature.ground_temperature(timestep);
@@ -4017,7 +4127,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Apply correction ONLY to 5R1C component
             // Advanced solver component remains uncorrected (corr = 1.0)
             // CRITICAL: Advanced solver component should only be added if there is HVAC demand,
-            // and we cap it to a reasonable fraction (10%) of total demand to prevent 
+            // and we cap it to a reasonable fraction (10%) of total demand to prevent
             // the physically accurate flux from over-dominating the 5R1C-based total energy.
             if heating_energy_joules > 0.0 {
                 let corrected_adv_h = advanced_h_joules.min(heating_energy_joules * 0.1).max(0.0);
@@ -4216,7 +4326,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
-        let (t_sol_air_data, ctf_flux_w, fd_flux_w) = self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
+        let (t_sol_air_data, ctf_flux_w, fd_flux_w) =
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
 
         // Get ground temperature at this timestep
         let t_g = self.ground_temperature.ground_temperature(timestep);
@@ -4374,7 +4485,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let area = self.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_ctf = q_flux * area;
                     let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self.envelope_mass_temperatures.as_ref().get(i).copied().unwrap_or(20.0);
+                    let t_mass = self
+                        .envelope_mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
                     let h_tr_em_i = self.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_ctf_flux = q_ctf - q_5r1c;
@@ -4396,7 +4512,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let area = self.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_fd = q_flux * area;
                     let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self.envelope_mass_temperatures.as_ref().get(i).copied().unwrap_or(20.0);
+                    let t_mass = self
+                        .envelope_mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
                     let h_tr_em_i = self.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_fd_flux = q_fd - q_5r1c;
@@ -4500,7 +4621,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Apply correction ONLY to 5R1C component
             // Advanced solver component remains uncorrected (corr = 1.0)
             // CRITICAL: Advanced solver component should only be added if there is HVAC demand,
-            // and we cap it to a reasonable fraction (10%) of total demand to prevent 
+            // and we cap it to a reasonable fraction (10%) of total demand to prevent
             // the physically accurate flux from over-dominating the 5R1C-based total energy.
             if heating_energy_joules > 0.0 {
                 let corrected_adv_h = advanced_h_joules.min(heating_energy_joules * 0.1).max(0.0);
