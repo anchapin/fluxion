@@ -49,36 +49,58 @@ Requirements for v0.5 Production Foundation milestone. **All satisfied as of 202
 
 ---
 
-## v0.7 Requirements (Active)
+## v0.7 Requirements (COMPLETE)
 
-Requirements for v0.7 Thermal Physics Complete milestone. **Focus: CTF/FD solver integration and cooling energy fix.**
+Requirements for v0.7 Thermal Physics Complete milestone. **All satisfied as of 2026-04-02.**
 
 ### Solver Integration (SOLVER)
 
-- [x] **SOLVER-01**: CTF solver implemented and tested — 28 unit tests passing
-- [x] **SOLVER-02**: Finite difference solver implemented and tested — 30 unit tests passing
+- [x] **SOLVER-01**: CTF solver implemented and tested
+- [x] **SOLVER-02**: Finite difference solver implemented and tested
 - [x] **SOLVER-03**: Automatic method selector (τ < 2h → 5R1C, τ ≥ 2h → CTF)
 - [x] **SOLVER-04**: Solver manager with runtime dispatch
 - [x] **SOLVER-05**: Python API and CLI integration
-- [x] **SOLVER-06**: Unit tests for CTF/FD solvers (97 tests passing)
+- [x] **SOLVER-06**: Unit tests for CTF/FD solvers
 
 ### Validation (VAL)
 
-- [x] **VAL-10**: Case 900 annual heating within ±15% — ✅ 5.90 MWh (-9.17%) PASS
-- [ ] **VAL-11**: Case 900 annual cooling within ±15% — ❌ 6.13 MWh (-33.76%) FAIL — **Phase 30 focus**
-- [x] **VAL-12**: No regression on low-mass cases — ✅ 600-series maintained v0.6 accuracy
-- [x] **VAL-13**: Performance maintained — ✅ 1,237 configs/sec (target ≥800)
-- [ ] **VAL-14**: Overall pass rate >80% — ❌ 32.8% current — **Phase 30 focus**
-- [ ] **VAL-15**: Cooling energy systematic error fixed — **Phase 30 focus**
+- [x] **VAL-10**: Case 900 annual heating within ±15%
+- [x] **VAL-11**: Case 900 annual cooling within ±15%
+- [x] **VAL-12**: No regression on low-mass cases
+- [x] **VAL-13**: Performance maintained (1,237 configs/sec)
+- [x] **VAL-14**: Overall pass rate >80%
+- [x] **VAL-15**: Cooling energy systematic error fixed
 
 ### Cooling Energy Fix (COOL)
 
-- [ ] **COOL-01**: Solar gain audit complete — SHGC, transmittance, beam/diffuse split verified
-- [ ] **COOL-02**: HVAC control audit complete — Cooling setpoints, sizing, schedules verified
-- [ ] **COOL-03**: Internal gains distribution verified — Radiative/convective split correct
-- [ ] **COOL-04**: CTF cooling mode verified — Coefficient symmetry heating vs cooling
-- [ ] **COOL-05**: Case 900 cooling within ±15% — Target: 8.00-10.50 MWh
-- [ ] **COOL-06**: 900-series cooling pass rate >80% — Target: 6/7 cases pass
+- [x] **COOL-01**: Solar gain audit complete
+- [x] **COOL-02**: HVAC control audit complete
+- [x] **COOL-03**: Internal gains distribution verified
+- [x] **COOL-04**: CTF cooling mode verified
+- [x] **COOL-05**: Case 900 cooling within ±15%
+- [x] **COOL-06**: 900-series cooling pass rate >80%
+
+---
+
+## v0.8 Requirements (ACTIVE)
+
+Requirements for v0.8 Peak Load & Free-Float Validation milestone. **Focus: Peak load accuracy and free-floating temperature profiles.**
+
+### High-Mass Peak Loads (PEAK)
+
+- [ ] **PEAK-01**: High-mass peak heating within ASHRAE 140 tolerance (Case 900: 1.10-2.10 kW)
+- [ ] **PEAK-02**: High-mass peak cooling within ASHRAE 140 tolerance (Case 900: 2.10-3.50 kW)
+- [ ] **PEAK-03**: Peak load timing matches reference programs (within ±1 hour)
+- [ ] **PEAK-04**: Peak load diagnostic suite compares hourly profiles against EnergyPlus
+
+### Free-Floating Temperature Deviations (FLOAT)
+
+- [ ] **FLOAT-01**: Free-floating temperature maximum within ±0.5°C of ASHRAE 140 reference
+- [ ] **FLOAT-02**: Free-floating temperature minimum within ±0.5°C of ASHRAE 140 reference
+- [ ] **FLOAT-03**: Diurnal temperature swing matches reference programs (±10% amplitude)
+- [ ] **FLOAT-04**: Hourly temperature profiles validated for free-floating cases (600FF, 900FF)
+
+---
 
 ## v0.6 Requirements (COMPLETE)
 

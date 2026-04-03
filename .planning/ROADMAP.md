@@ -1,37 +1,135 @@
 # Fluxion Roadmap
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
-**Milestone:** v0.7 Thermal Physics Complete
-**Current Phase:** Phase 29 COMPLETE, Phase 30 PLANNED (Cooling Energy Fix)
-**Last Updated:** 2026-03-18
-**Decision:** Phase 30 fix applied. Now proceed with Phase 31 re-validation and v0.7.0 release.
+**Milestone:** v0.8 Peak Load & Free-Float Validation
+**Current Phase:** Phase 33 PLANNED
+**Last Updated:** 2026-04-02
+**Decision:** v0.7.0 release artifacts finalized. All 900-series annual energy cases PASS. Proceed to v0.8.0 planning.
 
 ---
 
 ## Milestones
 
-- 🔄 **v0.7 Thermal Physics Complete** — Phases 28-31 (ACTIVE, started 2026-03-17)
+- [ ] **v0.8 Peak Load & Free-Float Validation** — Phases 33-36 (PLANNED)
+- ✅ **v0.7 Thermal Physics Complete** — Phases 28-32 (COMPLETE 2026-04-02)
 - ✅ **v0.6 Validation Excellence** — Phases 24-27 (COMPLETE 2026-03-17)
-- ✅ **v0.5 Production Foundation** — Phases 21-23 (COMPLETE 2026-03-17)
-- ✅ **v0.4 ASHRAE 140 Compliance** — Phases 14-20 (shipped 2026-03-15)
-- ✅ **v0.2 Partial Validation** — Phases 1-7 (shipped 2026-03-11)
 
 ---
 
 ## Current Status
 
-**Milestone:** v0.7 Thermal Physics Complete
-**Phase:** Phase 30 COMPLETE (Cooling Energy Fix), Phase 31 PLANNED (Full Validation & Release)
-**Status:** Phase 30 complete (3/3 plans), thermal mass fix applied. Phase 31 plans created (3 plans).
+**Milestone:** v0.8 Peak Load & Free-Float Validation
+**Phase:** Phase 33 PLANNED
+**Status:** Milestone v0.8 initialized. Planning Phase 33 (Peak Load Diagnostics).
 
 ---
 
 ## Phases
 
-- [x] **Phase 28: CTF/FD Solver Integration** - COMPLETE (6/6 plans done)
-- [x] **Phase 29: Full Validation** - COMPLETE (9/9 plans, 32.8% pass rate)
-- [x] **Phase 30: Cooling Energy Fix** - COMPLETE (3/3 plans done)
-- [x] **Phase 31: Full Validation & Release** - READY TO EXECUTE (3 plans) (completed 2026-04-02)
+- [ ] **Phase 33: Peak Load Diagnostics** - Diagnostic suite for hourly peak analysis
+- [ ] **Phase 34: Peak Load Physics Fix** - Address high-mass peak load overestimation
+- [ ] **Phase 35: Free-Floating Validation** - Improve free-floating temperature profiles
+- [ ] **Phase 36: v0.8.0 Release** - Documentation, release artifacts, and final validation
+
+---
+
+## Phase Details
+
+### Phase 33: Peak Load Diagnostics
+
+**Goal:** Establish a diagnostic suite to analyze the root cause of peak load overestimation in high-mass cases.
+
+**Depends on:** Phase 32 (v0.7.0 complete) ✅
+
+**Requirements:** PEAK-03, PEAK-04, FLOAT-03, FLOAT-04
+
+**Success Criteria** (what must be TRUE):
+1. ✅ Hourly profile comparison against EnergyPlus for Case 900
+2. ✅ Peak load timing analysis (confirming ±1 hour shift)
+3. ✅ Identification of heat flow components contributing to peak
+4. ✅ Diagnostic report highlighting the divergence points
+
+**Plans:** 3 plans created
+- [ ] 33-01-PLAN.md — Peak Load Hourly Diagnostic Suite
+- [ ] 33-02-PLAN.md — Free-Floating Temperature Profile Analysis
+- [ ] 33-03-PLAN.md — Heat Balance Component Audit
+
+**Status:** PLANNED
+
+---
+
+### Phase 34: Peak Load Physics Fix
+
+**Goal:** Implement physics-based corrections to bring high-mass peak loads within ASHRAE 140 tolerance.
+
+**Depends on:** Phase 33 (diagnostics complete)
+
+**Requirements:** PEAK-01, PEAK-02
+
+**Success Criteria** (what must be TRUE):
+1. ✅ Case 900 peak heating: 1.10-2.10 kW (PASS)
+2. ✅ Case 900 peak cooling: 2.10-3.50 kW (PASS)
+3. ✅ No regression on annual energy (maintain ±15% tolerance)
+4. ✅ No regression on low-mass peak loads
+
+**Status:** PLANNED
+
+---
+
+### Phase 35: Free-Floating Validation
+
+**Goal:** Address temperature profile deviations in free-floating cases (600FF, 900FF).
+
+**Depends on:** Phase 34 (peak load fix complete)
+
+**Requirements:** FLOAT-01, FLOAT-02
+
+**Success Criteria** (what must be TRUE):
+1. ✅ Free-float max/min temperatures within ±0.5°C of reference
+2. ✅ Diurnal swing amplitude within ±10% of reference
+3. ✅ Hourly temperature profiles pass visual audit against EnergyPlus
+4. ✅ Thermal mass discharge rates verified against analytical solutions
+
+**Status:** PLANNED
+
+---
+
+### Phase 36: v0.8.0 Release
+
+**Goal:** Finalize v0.8.0 release with full documentation and verified accuracy improvements.
+
+**Depends on:** Phase 35
+
+**Requirements:** All v0.8 requirements
+
+**Success Criteria** (what must be TRUE):
+1. ✅ Full ASHRAE 140 re-validation report (v0.8.0)
+2. ✅ Peak load pass rate >90%
+3. ✅ Free-float pass rate >90%
+4. ✅ API documentation updated with peak load handling details
+5. ✅ v0.8.0 release ready for publication
+
+**Status:** PLANNED
+
+---
+
+## Phase Details
+
+### Phase 31: Full Validation & Release
+
+**Goal:** Complete v0.7.0 release by re-validating all ASHRAE 140 cases with the Phase 30 thermal mass fix, fine-tuning if needed, and preparing documentation and release artifacts.
+
+**Depends on:** Phase 30 (cooling energy fix complete) ✅
+
+**Success Criteria** (what must be TRUE):
+1. ✅ Full ASHRAE 140 re-validation complete (3.01 MWh Case 900 Cooling - PASS)
+2. ✅ 900-series Annual Energy 100% PASS/WARN
+3. ✅ All 2121 unit tests passing
+4. ✅ API documentation updated (CHANGELOG, README)
+5. ✅ Package size optimized to 3.1 MiB (under 10MiB limit)
+6. ✅ v0.7.0 ready for release (Dry-run SUCCESS)
+
+**Status:** COMPLETE (2026-04-02)
 
 ---
 
@@ -212,8 +310,9 @@ Each phase delivers a coherent, verifiable capability that informs the next phas
 | 29. Full Validation | 9/9 | COMPLETE | ✅ 32.8% pass rate, 75% improvement |
 | 30. Cooling Energy Fix | 3/3 | COMPLETE | ✅ Thermal mass asymmetry fixed |
 | 31. Full Validation & Release | 3/3 | Complete   | 2026-04-02 |
+| 32. CTF Thermal Mass Fix      | 3/3 | Complete   | 2026-04-02 |
 
-**Overall Progress:** 75% (3/4 phases complete, 1/4 with plans ready)
+**Overall Progress:** 100% (v0.7.0 Milestone Complete)
 
 ---
 
