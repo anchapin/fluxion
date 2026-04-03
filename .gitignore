@@ -179,3 +179,4 @@ tools/energyplus_*.csv
 .planning/phases/
 .planning/debug/
 .planning/V07_RELEASE_DECISION.md
+case_900ff_profile_hourly.csv
