@@ -3501,7 +3501,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             t_sol_air_data.push(t_sol_air_zone);
         }
         // Keep t_sol_air_data for CTF calculation, create VectorField for standard 5R1C
-        let t_sol_air = VectorField::new(t_sol_air_data.clone());
+        // let t_sol_air = VectorField::new(t_sol_air_data.clone());
 
         // === CTF (Conduction Transfer Function) Heat Flux Calculation ===
         // If CTF is enabled, calculate heat flux through envelope using CTF method
@@ -4112,10 +4112,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         h_tr_ms,
                         // Use weighted average of sol-air and outdoor temp for ventilation
                         if h_vent_mass_zone > 0.0 {
-                            (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
+                            (h_tr_em * t_sol_air_data[i] + h_vent_mass_zone * outdoor_temp)
                                 / effective_h_tr_em
                         } else {
-                            t_sol_air[i]
+                            t_sol_air_data[i]
                         },
                         t_s,
                         phi_m_zone,
@@ -4126,7 +4126,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     // SESSION 72: Include ventilation-to-mass cooling
                     let q_vent_mass = h_vent_mass_zone * (outdoor_temp - tm_old);
-                    let q_m_net = h_tr_em * (t_sol_air[i] - tm_old)
+                    let q_m_net = h_tr_em * (t_sol_air_data[i] - tm_old)
                         + h_tr_ms * (t_s - tm_old)
                         + phi_m_zone
                         + q_vent_mass;
@@ -4141,7 +4141,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         cm,
                         h_tr_em,
                         h_tr_ms,
-                        t_sol_air[i],
+                        t_sol_air_data[i],
                         t_s,
                         phi_m_zone,
                     )
@@ -4455,7 +4455,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
-        let t_sol_air = VectorField::new(t_sol_air_data);
+        // let t_sol_air = VectorField::new(t_sol_air_data);
 
         // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
@@ -4499,7 +4499,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Simplified approach: treat multiple sources as combined thermal link
                     let effective_conductance = h_tr_em + h_tr_ms + h_tr_me;
                     let effective_temp =
-                        (h_tr_em * t_sol_air[i] + h_tr_ms * t_s + h_tr_me * tm_int)
+                        (h_tr_em * t_sol_air_data[i] + h_tr_ms * t_s + h_tr_me * tm_int)
                             / effective_conductance;
                     backward_euler_update(
                         tm_env_old,
@@ -4515,7 +4515,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 ThermalIntegrationMethod::ExplicitEuler => {
                     // Use explicit Euler for low thermal mass
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    let q_env_net = h_tr_em * (t_sol_air[i] - tm_env_old)
+                    let q_env_net = h_tr_em * (t_sol_air_data[i] - tm_env_old)
                         + h_tr_ms * (t_s - tm_env_old)
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
@@ -4528,7 +4528,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         );
                         println!(
                             "  Components: h_tr_em*({:.1}-{:.1})={:.2}, h_tr_ms*({:.1}-{:.1})={:.2}, h_tr_me*({:.1}-{:.1})={:.2}, phi_m_env={:.2}",
-                            t_sol_air[i], tm_env_old, h_tr_em * (t_sol_air[i] - tm_env_old),
+                            t_sol_air_data[i], tm_env_old, h_tr_em * (t_sol_air_data[i] - tm_env_old),
                             t_s, tm_env_old, h_tr_ms * (t_s - tm_env_old),
                             tm_int, tm_env_old, h_tr_me * (tm_int - tm_env_old),
                             phi_m_env_zone
@@ -4540,7 +4540,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    let q_env_net = h_tr_em * (t_sol_air[i] - tm_env_old)
+                    let q_env_net = h_tr_em * (t_sol_air_data[i] - tm_env_old)
                         + h_tr_ms * (t_s - tm_env_old)
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
@@ -4551,7 +4551,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         cm_env,
                         h_tr_em + h_tr_ms + h_tr_me,
                         0.0,
-                        t_sol_air[i],
+                        t_sol_air_data[i],
                         t_s + phi_m_env_zone / (h_tr_ms + h_tr_me),
                         phi_m_env_zone,
                     )
