@@ -48,10 +48,10 @@
 4. ✅ API documentation updated with peak load handling details
 5. ✅ v0.8.0 release ready for publication
 
-**Plans:** 2/1 plans (combined with Phase 35)
-- 35-01: Combined Phase 35-36 Physics Fix & v0.8.0 Release
+**Plans:** 1/1 plans
+- 36-01: Peak load & free-float physics fix (gap closure from investigation) - PLANNED
 
-**Gap Closure:** 36-04: Peak Load & Free-Float Physics Fix (addresses verification gaps)
+**Gap Closure:** 36-01: Peak Load & Free-Float Physics Fix (addresses verification gaps)
 
 **Status:** PLANNED
 
