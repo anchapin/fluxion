@@ -3,12 +3,12 @@
 //! Objective: Identify root cause of peak load overestimation in high-mass buildings.
 //! Exports hourly internal state variables to CSV for direct comparison with EnergyPlus.
 
+use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::diagnostics::SimulationDiagnostics;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
-use fluxion::physics::cta::VectorField;
 use std::path::Path;
 
 #[test]
@@ -29,15 +29,15 @@ fn test_case_900_peak_diagnostic() {
 
     // 5. Run full year simulation
     println!("Running Case 900 simulation (8760 hours)...");
-    
+
     let num_zones = model.num_zones;
-    
+
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
-        
+
         // Update weather data on model for solar gain calculation
         model.weather = Some(weather_data.clone());
-        
+
         // Match ashrae_140_validator logic:
         // Set dynamic setpoints from spec (handles setback cases)
         if let Some(hvac_schedule) = spec.hvac.first() {
@@ -48,13 +48,15 @@ fn test_case_900_peak_diagnostic() {
             let cooling_sp = model.cooling_schedule.value(hour as usize);
             model.heating_setpoint = heating_sp;
             model.cooling_setpoint = cooling_sp;
-            
+
             if spec.hvac.len() > 1 {
                 let mut heating_sps = vec![heating_sp; num_zones];
                 let mut cooling_sps = vec![cooling_sp; num_zones];
                 for (zone_idx, hvac) in spec.hvac.iter().enumerate() {
                     if zone_idx < num_zones {
-                        let h_sp = hvac.heating_setpoint_at_hour(hour).unwrap_or(hvac.heating_setpoint);
+                        let h_sp = hvac
+                            .heating_setpoint_at_hour(hour)
+                            .unwrap_or(hvac.heating_setpoint);
                         let c_sp = model.cooling_schedule.value(hour as usize);
                         heating_sps[zone_idx] = h_sp;
                         cooling_sps[zone_idx] = c_sp;
@@ -64,7 +66,7 @@ fn test_case_900_peak_diagnostic() {
                 model.cooling_setpoints = VectorField::new(cooling_sps);
             }
         }
-        
+
         // Set internal loads
         let mut internal_loads: Vec<f64> = Vec::with_capacity(num_zones);
         for zone_idx in 0..num_zones {
@@ -91,17 +93,20 @@ fn test_case_900_peak_diagnostic() {
 
     // 6. Export diagnostics to CSV
     let csv_path = "case_900_peak_hourly.csv";
-    let diag = model.get_diagnostics().expect("Diagnostics should be attached");
-    diag.export_csv(csv_path).expect("Should export CSV successfully");
-    
+    let diag = model
+        .get_diagnostics()
+        .expect("Diagnostics should be attached");
+    diag.export_csv(csv_path)
+        .expect("Should export CSV successfully");
+
     println!("Exported diagnostics to {}", csv_path);
-    
+
     // 7. Report peak values
     let mut max_heating = 0.0;
     let mut max_cooling = 0.0;
     let mut peak_heating_hour = 0;
     let mut peak_cooling_hour = 0;
-    
+
     for i in 0..diag.hours.len() {
         let hvac = diag.loads.hvac[i][0]; // Zone 0
         if hvac > max_heating {
@@ -113,10 +118,16 @@ fn test_case_900_peak_diagnostic() {
             peak_cooling_hour = diag.hours[i];
         }
     }
-    
-    println!("Peak Heating: {:.2} W at hour {}", max_heating, peak_heating_hour);
-    println!("Peak Cooling: {:.2} W at hour {}", -max_cooling, peak_cooling_hour);
-    
+
+    println!(
+        "Peak Heating: {:.2} W at hour {}",
+        max_heating, peak_heating_hour
+    );
+    println!(
+        "Peak Cooling: {:.2} W at hour {}",
+        -max_cooling, peak_cooling_hour
+    );
+
     // Success criteria: CSV exists
     assert!(Path::new(csv_path).exists());
 }

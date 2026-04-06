@@ -101,10 +101,12 @@ mod tests {
         annual_heating.insert("ESP-r".to_string(), ProgramRange { min: 6.0, max: 6.5 });
 
         let case_refs = CaseRefs {
-            annual_heating: annual_heating,
-            annual_cooling: HashMap::new(),
-            peak_heating: HashMap::new(),
-            peak_cooling: HashMap::new(),
+            annual_heating: Some(annual_heating),
+            annual_cooling: Some(HashMap::new()),
+            peak_heating: Some(HashMap::new()),
+            peak_cooling: Some(HashMap::new()),
+            min_free_float: None,
+            max_free_float: None,
         };
         cases.insert("600".to_string(), case_refs);
 

@@ -4,23 +4,27 @@ use std::fs;
 use std::path::Path;
 
 /// Reference range for a single program (EnergyPlus, ESP-r, TRNSYS).
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProgramRange {
     pub min: f64,
     pub max: f64,
 }
 
 /// Reference ranges for all metrics of a single test case.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct CaseRefs {
     #[serde(rename = "annual_heating")]
-    pub annual_heating: HashMap<String, ProgramRange>,
+    pub annual_heating: Option<HashMap<String, ProgramRange>>,
     #[serde(rename = "annual_cooling")]
-    pub annual_cooling: HashMap<String, ProgramRange>,
+    pub annual_cooling: Option<HashMap<String, ProgramRange>>,
     #[serde(rename = "peak_heating")]
-    pub peak_heating: HashMap<String, ProgramRange>,
+    pub peak_heating: Option<HashMap<String, ProgramRange>>,
     #[serde(rename = "peak_cooling")]
-    pub peak_cooling: HashMap<String, ProgramRange>,
+    pub peak_cooling: Option<HashMap<String, ProgramRange>>,
+    #[serde(rename = "min_free_float")]
+    pub min_free_float: Option<HashMap<String, ProgramRange>>,
+    #[serde(rename = "max_free_float")]
+    pub max_free_float: Option<HashMap<String, ProgramRange>>,
 }
 
 /// Multi-reference database containing versioned reference ranges from multiple programs.
@@ -43,7 +47,7 @@ impl MultiReferenceDB {
     ///
     /// # Arguments
     /// - `case_id`: Case identifier (e.g., "600", "900")
-    /// - `metric`: One of "annual_heating", "annual_cooling", "peak_heating", "peak_cooling"
+    /// - `metric`: One of "annual_heating", "annual_cooling", "peak_heating", "peak_cooling", "min_free_float", "max_free_float"
     ///
     /// # Returns
     /// A HashMap mapping program names to their respective min/max ranges, or `None` if not found.
@@ -54,10 +58,12 @@ impl MultiReferenceDB {
     ) -> Option<&HashMap<String, ProgramRange>> {
         let case = self.cases.get(case_id)?;
         match metric {
-            "annual_heating" => Some(&case.annual_heating),
-            "annual_cooling" => Some(&case.annual_cooling),
-            "peak_heating" => Some(&case.peak_heating),
-            "peak_cooling" => Some(&case.peak_cooling),
+            "annual_heating" => case.annual_heating.as_ref(),
+            "annual_cooling" => case.annual_cooling.as_ref(),
+            "peak_heating" => case.peak_heating.as_ref(),
+            "peak_cooling" => case.peak_cooling.as_ref(),
+            "min_free_float" => case.min_free_float.as_ref(),
+            "max_free_float" => case.max_free_float.as_ref(),
             _ => None,
         }
     }
@@ -76,7 +82,10 @@ mod tests {
 
         // Verify case 600 exists and has at least EnergyPlus data
         let case_600 = db.cases.get("600").expect("Case 600 not found");
-        let ah = &case_600.annual_heating;
+        let ah = case_600
+            .annual_heating
+            .as_ref()
+            .expect("annual_heating should exist");
         assert!(
             ah.contains_key("EnergyPlus"),
             "EnergyPlus missing for case 600 annual_heating"
@@ -184,11 +193,39 @@ mod tests {
 
         let case_600 = db.cases.get("600").expect("Case 600 not found");
 
-        // All metric maps should have at least EnergyPlus
-        assert!(!case_600.annual_heating.is_empty());
-        assert!(!case_600.annual_cooling.is_empty());
-        assert!(!case_600.peak_heating.is_empty());
-        assert!(!case_600.peak_cooling.is_empty());
+        // All metric maps should have at least EnergyPlus (since they are now Option)
+        assert!(
+            case_600
+                .annual_heating
+                .as_ref()
+                .map(|m| !m.is_empty())
+                .unwrap_or(false),
+            "annual_heating should exist for case 600"
+        );
+        assert!(
+            case_600
+                .annual_cooling
+                .as_ref()
+                .map(|m| !m.is_empty())
+                .unwrap_or(false),
+            "annual_cooling should exist for case 600"
+        );
+        assert!(
+            case_600
+                .peak_heating
+                .as_ref()
+                .map(|m| !m.is_empty())
+                .unwrap_or(false),
+            "peak_heating should exist for case 600"
+        );
+        assert!(
+            case_600
+                .peak_cooling
+                .as_ref()
+                .map(|m| !m.is_empty())
+                .unwrap_or(false),
+            "peak_cooling should exist for case 600"
+        );
     }
 
     #[test]

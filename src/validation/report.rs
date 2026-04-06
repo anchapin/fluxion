@@ -545,11 +545,19 @@ impl BenchmarkReport {
         };
 
         // Get the program ranges for this metric
-        let program_ranges: &std::collections::HashMap<String, ProgramRange> = match metric {
-            MetricType::AnnualHeating => &case_refs.annual_heating,
-            MetricType::AnnualCooling => &case_refs.annual_cooling,
-            MetricType::PeakHeating => &case_refs.peak_heating,
-            MetricType::PeakCooling => &case_refs.peak_cooling,
+        let program_ranges: std::collections::HashMap<String, ProgramRange> = match metric {
+            MetricType::AnnualHeating => case_refs
+                .annual_heating
+                .as_ref()
+                .cloned()
+                .unwrap_or_default(),
+            MetricType::AnnualCooling => case_refs
+                .annual_cooling
+                .as_ref()
+                .cloned()
+                .unwrap_or_default(),
+            MetricType::PeakHeating => case_refs.peak_heating.as_ref().cloned().unwrap_or_default(),
+            MetricType::PeakCooling => case_refs.peak_cooling.as_ref().cloned().unwrap_or_default(),
             _ => {
                 // For free-floating metrics, multi-reference may not be defined; fall back to no per_program
                 let result = ValidationResult::new(case_id, metric, fluxion_value, 0.0, 0.0);
@@ -557,6 +565,13 @@ impl BenchmarkReport {
                 return;
             }
         };
+
+        // If no program ranges available, return fail
+        if program_ranges.is_empty() {
+            let result = ValidationResult::new(case_id, metric, fluxion_value, 0.0, 0.0);
+            self.results.push(result);
+            return;
+        }
 
         // Compute aggregated ref_min and ref_max as envelope of all programs
         let agg_min = program_ranges

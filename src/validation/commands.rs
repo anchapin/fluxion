@@ -47,10 +47,20 @@ pub fn update_references_ext(url: Option<&str>, output_path: &Path) -> Result<()
                 .iter()
                 .next()
                 .ok_or_else(|| anyhow::anyhow!("Cases map is empty"))?;
-            if sample_case.annual_heating.is_empty() {
+            if sample_case
+                .annual_heating
+                .as_ref()
+                .map(|m| m.is_empty())
+                .unwrap_or(true)
+            {
                 anyhow::bail!("Invalid reference data: sample case has no annual_heating programs");
             }
-            if !sample_case.annual_heating.contains_key("EnergyPlus") {
+            if !sample_case
+                .annual_heating
+                .as_ref()
+                .map(|m| m.contains_key("EnergyPlus"))
+                .unwrap_or(false)
+            {
                 anyhow::bail!("Invalid reference data: annual_heating missing EnergyPlus");
             }
 
