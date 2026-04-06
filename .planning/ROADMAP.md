@@ -33,26 +33,23 @@
 
 ---
 
-## Phase Details
+### Phase 36: v0.8.0 Release
 
-### Phase 33: Peak Load Diagnostics
+**Goal:** Finalize v0.8.0 release with full documentation and verified accuracy improvements.
 
-**Goal:** Establish a diagnostic suite to analyze the root cause of peak load overestimation in high-mass cases.
+**Depends on:** Phase 35
 
-**Depends on:** Phase 32 (v0.7.0 complete) ✅
-
-**Requirements:** PEAK-03, PEAK-04, FLOAT-03, FLOAT-04
+**Requirements:** PEAK-01, PEAK-02, FLOAT-01, FLOAT-02
 
 **Success Criteria** (what must be TRUE):
-1. ✅ Hourly profile comparison against EnergyPlus for Case 900
-2. ✅ Peak load timing analysis (confirming ±1 hour shift)
-3. ✅ Identification of heat flow components contributing to peak
-4. ✅ Diagnostic report highlighting the divergence points
+1. ✅ Full ASHRAE 140 re-validation report (v0.8.0)
+2. ✅ Peak load pass rate >90%
+3. ✅ Free-float pass rate >90%
+4. ✅ API documentation updated with peak load handling details
+5. ✅ v0.8.0 release ready for publication
 
-**Plans:** 3/3 plans complete
-- [x] 33-01-PLAN.md — Peak Load Hourly Diagnostic Suite
-- [x] 33-02-PLAN.md — Free-Floating Temperature Profile Analysis
-- [x] 33-03-PLAN.md — Heat Balance Component Audit
+**Plans:** 2/1 plans (combined with Phase 35)
+- 35-01: Combined Phase 35-36 Physics Fix & v0.8.0 Release
 
 **Status:** PLANNED
 
@@ -93,6 +90,9 @@
 2. ✅ Diurnal swing amplitude within ±10% of reference
 3. ✅ Hourly temperature profiles pass visual audit against EnergyPlus
 4. ✅ Thermal mass discharge rates verified against analytical solutions
+
+**Plans:** 1/1 plans
+- 35-01: Combined Phase 35-36 Physics Fix & v0.8.0 Release
 
 **Status:** PLANNED
 

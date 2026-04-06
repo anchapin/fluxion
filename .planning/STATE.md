@@ -40,8 +40,8 @@ progress:
 
 ## Current Position
 
-Phase: 36 (v0.8.0-release) — IN PROGRESS
-Plan: 1 of 3 (36-01 executed, awaiting human verification)
+Phase: 35-36 (Free-Floating + v0.8.0 Release) — PLANNED
+Plan: 35-01 combined plan covering both phases
 
 ### Progress Bar
 
