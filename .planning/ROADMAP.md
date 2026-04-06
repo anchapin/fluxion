@@ -51,6 +51,8 @@
 **Plans:** 2/1 plans (combined with Phase 35)
 - 35-01: Combined Phase 35-36 Physics Fix & v0.8.0 Release
 
+**Gap Closure:** 36-04: Peak Load & Free-Float Physics Fix (addresses verification gaps)
+
 **Status:** PLANNED
 
 ---
