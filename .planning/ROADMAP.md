@@ -11,7 +11,7 @@
 ## Milestones
 
 - [ ] **v0.8 Peak Load & Free-Float Validation** — Phases 33-36 (PLANNED)
-- ✅ **v0.7 Thermal Physics Complete** — Phases 28-32 (COMPLETE 2026-04-02)
+- ✅ **v0.7 Thermal Physics Complete** — Phases 28-32 ([COMPLETE 2026-04-02](.planning/milestones/v0.7-ROADMAP.md))
 - ✅ **v0.6 Validation Excellence** — Phases 24-27 (COMPLETE 2026-03-17)
 
 ---
