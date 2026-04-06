@@ -2,21 +2,21 @@
 gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Release
-current_phase: 34
+current_phase: 36
 status: unknown
-last_updated: "2026-04-03T12:58:14.207Z"
+last_updated: "2026-04-06T19:29:29.526Z"
 progress:
-  total_phases: 8
-  completed_phases: 5
-  total_plans: 13
-  completed_plans: 14
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 5
 ---
 
 # Fluxion Project State
 
 **Milestone:** v0.8 Peak Load & Free-Float Validation
 **Last Updated:** 2026-04-02
-**Current Phase:** 34
+**Current Phase:** 36
 **Decision:** v0.7.0 milestone COMPLETE (100% annual energy compliance). Proceeding to v0.8.0 to resolve peak load and free-floating temperature deviations.
 
 ---
@@ -40,18 +40,32 @@ progress:
 
 ## Current Position
 
-Phase: 34 (peak-load-physics-fix) — EXECUTING
-Plan: 1 of 2
+Phase: 36 (v0.8.0-release) — IN PROGRESS
+Plan: 1 of 3 (36-01 executed, awaiting human verification)
 
 ### Progress Bar
 
 ```
 Phase 33: [██████████] 100% — Peak Load Diagnostics (COMPLETE)
-Phase 34: [          ] 0% — Peak Load Physics Fix (PLANNED)
-Phase 35: [          ] 0% — Free-Floating Validation (PLANNED)
-Phase 36: [          ] 0% — v0.8.0 Release (PLANNED)
-Overall:  [██        ] 20% (v0.8 Milestone Active)
+Phase 34: [██        ] 33% — Peak Load Physics Fix (PARTIAL)
+Phase 35: [          ] 0% — Free-Floating Validation (NOT STARTED)
+Phase 36: [█         ] 33% — v0.8.0 Release (IN PROGRESS)
+Overall:  [██        ] 30% (v0.8 Milestone Active)
 ```
+
+### v0.8.0 Validation Results (36-01)
+
+- **Overall Pass Rate:** 25% (16 PASS, 11 WARN, 37 FAIL)
+- **Peak Load Pass Rate:** 25% (4/16 for 900-series)
+- **Free-Float Pass Rate:** 25% (2/8 for FF cases)
+- **⚠️ Both below >90% target - Phase 34/35 fixes needed**
+
+### Blockers
+
+1. **Phase 34/35 Not Complete:** Peak load and free-float pass rates at 25%, below >90% target
+   - Phase 34 (Peak Load Physics Fix) shows as PARTIAL in planning
+   - Phase 35 (Free-Floating Validation) not started
+   - Need to verify/complete Phase 34-35 before proceeding
 
 ---
 
@@ -91,10 +105,13 @@ Overall:  [██        ] 20% (v0.8 Milestone Active)
 
 ### Last Session
 
-- **Phase 33 Completed**: Diagnostic report created, root causes for peak load overestimation identified.
-- **Stopped At**: Completed 33-03-PLAN.md
+- **Phase 36-01 Executed**: ASHRAE validation suite run
+- **Validation Results**: 25% pass rate (below >90% target)
+- **Stopped At**: Awaiting human verification checkpoint (36-01)
 
 ### Next Actions
 
-1. **Phase 34 Physics Fix**: Integrate missing thermal mass and unify envelope conduction in `src/sim/engine.rs`.
-2. **Re-validation**: Run Case 900 and 900FF to verify peak load improvement.
+1. **Human Verification**: Review validation results in docs/ASHRAE140_RESULTS_v0.8.0.md
+2. **Phase 34 Verification**: Confirm Peak Load Physics Fix is fully applied
+3. **Phase 35 Execution**: Complete Free-Floating Validation
+4. **Continue Phase 36**: Execute 36-02 and 36-03 after Phase 34/35 are complete
