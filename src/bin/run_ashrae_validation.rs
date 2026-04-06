@@ -4,7 +4,12 @@
 //! ASHRAE 140 Validation Runner
 //!
 //! This binary runs the full ASHRAE 140 validation suite and outputs
-//! the results to docs/ASHRAE140_RESULTS.md and console.
+//! the results to docs/ASHRAE140_RESULTS_v0.8.0.md and console.
+//!
+//! # v0.8.0 Changes
+//! - Validates peak load fixes from Phase 34
+//! - Validates free-floating temperature improvements from Phase 35
+//! - Output file: docs/ASHRAE140_RESULTS_v0.8.0.md
 
 use fluxion::validation::ashrae_140_validator::ASHRAE140Validator;
 use std::path::Path;
