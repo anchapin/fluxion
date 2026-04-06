@@ -75,7 +75,7 @@ jobs:
           cargo test --test integration-cli
       - name: Upload test results
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: integration-test-results
           path: |
@@ -118,7 +118,7 @@ jobs:
           cargo bench --bench performance_regression --no-fail-fast
       - name: Upload Criterion HTML report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: criterion-report
           path: target/criterion/

@@ -80,7 +80,7 @@ jobs:
 
       - name: Upload Criterion HTML report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: criterion-report
           path: target/criterion/
@@ -88,7 +88,7 @@ jobs:
 
       - name: Upload benchmark summary
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-summary
           path: benchmark_report.md
