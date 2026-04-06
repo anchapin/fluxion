@@ -83,62 +83,62 @@
 
 ## Delta Analysis
 
-Baseline: 610
+Baseline: 910
 
 | Case - Metric | Delta from Baseline |
 |---------------|---------------------|
-| 650 - Peak Heating (kW) | -6.62 |
-| 650 - Peak Cooling (kW) | +0.81 |
-| 630 - Annual Cooling (MWh) | -3.12 |
-| 640 - Peak Heating (kW) | -0.02 |
-| 640 - Annual Heating (MWh) | -2.72 |
-| 640 - Peak Cooling (kW) | +0.86 |
-| 930 - Annual Heating (MWh) | -6.73 |
-| 960 - Peak Cooling (kW) | -1.37 |
-| 640 - Annual Cooling (MWh) | +1.69 |
-| 900 - Peak Cooling (kW) | -1.52 |
-| 930 - Peak Heating (kW) | -2.56 |
-| 960 - Annual Heating (MWh) | +1.21 |
-| 600 - Peak Heating (kW) | -0.00 |
-| 620 - Annual Heating (MWh) | -0.72 |
-| 900 - Annual Heating (MWh) | -7.56 |
-| 920 - Peak Cooling (kW) | -2.92 |
-| 620 - Peak Cooling (kW) | -1.33 |
-| 630 - Peak Cooling (kW) | -2.39 |
-| 620 - Peak Heating (kW) | -0.03 |
-| 600 - Peak Cooling (kW) | +0.86 |
-| 620 - Annual Cooling (MWh) | -2.08 |
-| 650 - Annual Cooling (MWh) | +0.67 |
-| 950 - Peak Heating (kW) | -6.62 |
-| 960 - Peak Heating (kW) | -0.30 |
-| 910 - Peak Cooling (kW) | -2.09 |
-| 600 - Annual Heating (MWh) | -0.20 |
-| 630 - Annual Heating (MWh) | -0.12 |
-| 900 - Annual Cooling (MWh) | -1.86 |
-| 920 - Peak Heating (kW) | -2.62 |
-| 940 - Peak Heating (kW) | -2.06 |
-| 930 - Peak Cooling (kW) | -3.58 |
-| 920 - Annual Heating (MWh) | -7.00 |
-| 960 - Annual Cooling (MWh) | -1.79 |
-| 950 - Peak Cooling (kW) | -1.64 |
-| 195 - Annual Cooling (MWh) | -4.72 |
-| 195 - Peak Cooling (kW) | -4.77 |
-| 630 - Peak Heating (kW) | -0.02 |
-| 940 - Annual Cooling (MWh) | -1.87 |
-| 910 - Annual Heating (MWh) | -7.22 |
-| 920 - Annual Cooling (MWh) | -3.03 |
-| 950 - Annual Heating (MWh) | -9.43 |
-| 650 - Annual Heating (MWh) | -9.43 |
-| 900 - Peak Heating (kW) | -2.41 |
-| 930 - Annual Cooling (MWh) | -3.89 |
-| 195 - Annual Heating (MWh) | +1.97 |
-| 940 - Annual Heating (MWh) | -8.00 |
-| 600 - Annual Cooling (MWh) | +1.80 |
-| 910 - Peak Heating (kW) | -2.40 |
-| 940 - Peak Cooling (kW) | -1.52 |
-| 950 - Annual Cooling (MWh) | -3.97 |
-| 195 - Peak Heating (kW) | -2.68 |
-| 910 - Annual Cooling (MWh) | -3.27 |
+| 640 - Annual Cooling (MWh) | +4.96 |
+| 195 - Peak Cooling (kW) | -2.68 |
+| 630 - Annual Heating (MWh) | +7.10 |
+| 630 - Peak Heating (kW) | +2.38 |
+| 950 - Annual Cooling (MWh) | -0.70 |
+| 600 - Peak Cooling (kW) | +2.95 |
+| 620 - Peak Heating (kW) | +2.38 |
+| 620 - Annual Heating (MWh) | +6.50 |
+| 900 - Peak Cooling (kW) | +0.57 |
+| 900 - Peak Heating (kW) | -0.01 |
+| 930 - Peak Heating (kW) | -0.15 |
+| 940 - Peak Cooling (kW) | +0.57 |
+| 940 - Annual Heating (MWh) | -0.78 |
+| 610 - Peak Heating (kW) | +2.40 |
+| 650 - Annual Heating (MWh) | -2.21 |
+| 950 - Annual Heating (MWh) | -2.21 |
+| 920 - Peak Heating (kW) | -0.22 |
+| 620 - Peak Cooling (kW) | +0.76 |
+| 960 - Annual Cooling (MWh) | +1.48 |
+| 620 - Annual Cooling (MWh) | +1.19 |
+| 610 - Annual Cooling (MWh) | +3.27 |
+| 640 - Peak Cooling (kW) | +2.95 |
+| 195 - Annual Heating (MWh) | +9.19 |
+| 600 - Annual Cooling (MWh) | +5.07 |
+| 640 - Peak Heating (kW) | +2.38 |
+| 630 - Annual Cooling (MWh) | +0.15 |
+| 630 - Peak Cooling (kW) | -0.30 |
+| 900 - Annual Cooling (MWh) | +1.41 |
+| 920 - Annual Heating (MWh) | +0.22 |
+| 600 - Annual Heating (MWh) | +7.02 |
+| 650 - Peak Heating (kW) | -4.21 |
+| 900 - Annual Heating (MWh) | -0.34 |
+| 930 - Annual Heating (MWh) | +0.49 |
+| 610 - Annual Heating (MWh) | +7.22 |
+| 940 - Annual Cooling (MWh) | +1.40 |
+| 930 - Annual Cooling (MWh) | -0.62 |
+| 940 - Peak Heating (kW) | +0.35 |
+| 960 - Peak Heating (kW) | +2.10 |
+| 600 - Peak Heating (kW) | +2.40 |
+| 650 - Annual Cooling (MWh) | +3.94 |
+| 950 - Peak Cooling (kW) | +0.44 |
+| 920 - Peak Cooling (kW) | -0.84 |
+| 930 - Peak Cooling (kW) | -1.50 |
+| 960 - Annual Heating (MWh) | +8.43 |
+| 195 - Annual Cooling (MWh) | -1.45 |
+| 195 - Peak Heating (kW) | -0.28 |
+| 960 - Peak Cooling (kW) | +0.71 |
+| 650 - Peak Cooling (kW) | +2.90 |
+| 640 - Annual Heating (MWh) | +4.50 |
+| 950 - Peak Heating (kW) | -4.21 |
+| 610 - Peak Cooling (kW) | +2.09 |
+| 920 - Annual Cooling (MWh) | +0.24 |
 
 ## Worst Performing Cases
 
