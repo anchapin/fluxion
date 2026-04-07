@@ -2541,6 +2541,7 @@ mod tests {
         report.set_end();
 
         // Setup temporary directory guard to isolate file operations
+        use std::path::PathBuf;
         struct DirGuard(PathBuf);
         impl Drop for DirGuard {
             fn drop(&mut self) {

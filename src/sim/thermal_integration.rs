@@ -479,6 +479,7 @@ mod tests {
         let phi_m = 0.0;
 
         // Simulate 24 hours with sinusoidal exterior temperature
+        use std::f64::consts::PI;
         let mut tm = 20.0;
 
         for hour in 0..24 {

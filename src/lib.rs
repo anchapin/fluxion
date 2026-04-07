@@ -1216,11 +1216,11 @@ impl BatchOracle {
     /// ```
     pub fn evaluate_population_typed(
         &self,
-        population: Vec<BuildingParameters>,
+        population: Vec<crate::api::BuildingParameters>,
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
         // Convert BuildingParameters to Vec<Vec<f64>> for existing implementation
-        let vec_population: Vec<Vec<f64>> = population.iter().map(|p| p.to_vec()).collect();
+        let vec_population: Vec<Vec<f64>> = population.iter().map(|p: &crate::api::BuildingParameters| p.to_vec()).collect();
 
         // Call existing implementation
         Ok(Self::evaluate_population(
@@ -1546,7 +1546,7 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Model>()?;
     m.add_class::<BatchOracle>()?;
     m.add_class::<ParameterBounds>()?;
-    m.add_class::<BuildingParameters>()?;
+    m.add_class::<crate::api::BuildingParameters>()?;
     m.add_class::<PyVectorField>()?;
     m.add_class::<PyConstruction>()?;
     m.add_class::<PyConstructionLayer>()?;

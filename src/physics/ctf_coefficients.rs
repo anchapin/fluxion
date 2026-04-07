@@ -1593,6 +1593,7 @@ mod tests {
         assert!(s.im > 0.0);
 
         // Should match expected frequency
+        use std::f64::consts::PI;
         let expected_omega = 2.0 * PI * 5.0 / (10.0 * 3600.0);
         assert_relative_eq!(s.im, expected_omega, max_relative = 0.01);
     }
