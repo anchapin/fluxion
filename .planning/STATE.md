@@ -1,24 +1,24 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: Multi-Zone Support
-current_phase: completed
-status: shipped
-stopped_at: v1.0 milestone completion
-last_updated: "2026-04-07T23:00:00.000Z"
+milestone: v1.1
+milestone_name: ASHRAE 140 Completion
+current_phase: 40
+status: roadmap_complete
+stopped_at: roadmap_creation
+last_updated: "2026-04-07T23:45:00.000Z"
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 12
-  completed_plans: 12
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Fluxion Project State
 
-**Milestone:** v1.0 Multi-Zone Support ✅ SHIPPED 2026-04-07
+**Milestone:** v1.1 ASHRAE 140 Completion
 **Last Updated:** 2026-04-07
-**Current Phase:** Milestone Complete
-**Decision:** v1.0 milestone completed successfully. Ready for next milestone planning.
+**Current Phase:** 40 - Case Expansion Foundation
+**Decision:** v1.1 roadmap complete. Ready for phase planning.
 
 ---
 
@@ -33,18 +33,23 @@ See: .planning/PROJECT.md (updated 2026-04-07 after v1.0 milestone)
 
 ## Current Position
 
-Phase: M3-ashrae-140 (validation) — EXECUTING
-Plan: Not started
+Phase: 40 - Case Expansion Foundation
+Plan: TBD
 
 ### Progress Bar
 
 ```
+v1.0 Milestone: [████████████████████] 100% — COMPLETE
+v1.1 Milestone: [                      ] 0% — ROADMAP COMPLETE
+Overall:  [████████████████████] 0% (v1.1 Roadmap Complete)
+```
 v0.8.0 Milestone: [████████████████████] 100% — COMPLETE
-v1.0 Milestone: [████████████████████] 40% — IN PROGRESS
-Phase M1: [████████████████████] 100% — Multi-Zone Thermal Network Foundation (COMPLETE)
-Phase M2: [████████████████    ] 60% — Zone-Level HVAC Controls (PARTIAL - BLOCKED)
-Phase M3: [████████████████    ] 33% — ASHRAE 140 Multi-Zone Validation (STARTED)
-Overall:  [████████████████████] 43% (v1.0 Milestone In Progress)
+v1.0 Milestone: [████████████████████] 100% — COMPLETE
+Phase 40: [                      ] 0% — Case Expansion Foundation (NOT STARTED)
+Phase 41: [                      ] 0% — High-Mass Physics & Performance (NOT STARTED)
+Phase 42: [                      ] 0% — Advanced Cross-Validation & Automation (NOT STARTED)
+Phase 43: [                      ] 0% — Validation Optimization & Polish (NOT STARTED)
+Overall:  [                      ] 0% (v1.1 Milestone Ready)
 ```
 
 ### v1.0 Requirements (MZ-01 through MZ-10)
@@ -64,16 +69,10 @@ Overall:  [████████████████████] 43% (v1
 
 ---
 
-## v0.8 Context (Active)
+## v1.0 Context (Completed)
 
-**Previous milestone:** v0.8 Peak Load & Free-Float Validation
-**Status:** Milestone complete
-
-### v0.8 Recent Results
-
-- Phase 36-01 validation: 25% pass rate (below >90% target)
-- Phase 34 (Peak Load Physics Fix): PARTIAL
-- Phase 35 (Free-Floating Validation): NOT STARTED
+**Previous milestone:** v1.0 Multi-Zone Support
+**Status:** Milestone complete ✅
 
 ### v1.0 Accomplishments
 
@@ -84,6 +83,33 @@ Overall:  [████████████████████] 43% (v1
 - ✅ Performance maintained: <50ms per timestep for 10-zone simulations
 - ✅ Full Python API and CLI support for multi-zone configuration
 - ✅ 100% requirements completion (10/10 requirements)
+
+## v1.1 Planning (Current)
+
+**Current milestone:** v1.1 ASHRAE 140 Completion
+**Status:** Roadmap complete, ready for phase planning
+
+### v1.1 Requirements (CASE-01 through PERF-04)
+
+| Requirement | Description | Phase | Status |
+|-------------|-------------|-------|--------|
+| CASE-01 | Run ASHRAE 140 Cases 800-810 | Phase 40 | Pending |
+| CASE-02 | Run ASHRAE 140 Cases 195-470 | Phase 40 | Pending |
+| CASE-03 | Extended reference database | Phase 40 | Pending |
+| CASE-04 | Validation reports for all cases | Phase 43 | Pending |
+| CROSS-01 | Compare vs EnergyPlus | Phase 40 | Pending |
+| CROSS-02 | Compare vs TRNSYS | Phase 40 | Pending |
+| CROSS-03 | Compare vs ESP-r | Phase 42 | Pending |
+| CROSS-04 | Multi-reference comparison reports | Phase 42 | Pending |
+| CROSS-05 | Configurable tolerance bands | Phase 42 | Pending |
+| MASS-01 | High-mass validation | Phase 41 | Pending |
+| MASS-02 | Thermal mass diagnostics | Phase 41 | Pending |
+| MASS-03 | Construction-type physics | Phase 41 | Pending |
+| MASS-04 | <50% error reduction | Phase 43 | Pending |
+| PERF-01 | <50ms/timestep performance | Phase 41 | Pending |
+| PERF-02 | Parallel validation | Phase 41 | Pending |
+| PERF-03 | Performance benchmark reports | Phase 42 | Pending |
+| PERF-04 | CI/CD optimization | Phase 43 | Pending |
 
 ---
 
@@ -147,24 +173,22 @@ Overall:  [████████████████████] 43% (v1
 
 ### Last Session
 
-- Created v1.0 milestone (Multi-Zone Support)
-- Research complete: 5 research files in `.planning/research/`
-- Requirements defined: MZ-01 through MZ-10
-- Roadmap initialized: 3 phases planned
-- **M2-01 Execution**: Completed zone-level HVAC controls foundation
-- **M2-02 Execution**: Partial - Python bindings implementation with build failures
-- **M1-01 Execution**: Completed multi-zone thermal network foundation
+- Completed v1.0 milestone (Multi-Zone Support)
+- Created v1.1 milestone (ASHRAE 140 Completion)
+- Research complete: SUMMARY.md available
+- Requirements defined: CASE-01 through PERF-04 (16 requirements)
+- Roadmap complete: 4 phases planned (40-43)
+- Traceability updated: 100% coverage achieved
 
 ### Next Actions
 
-1. **Fix HVAC Module:** Resolve VectorField API incompatibility issues
-2. **Complete Python Bindings:** Finalize M2-02 after API fixes
-3. **Test CLI Integration:** Complete M2-03 after HVAC module works
-4. **M3 Planning:** Prepare ASHRAE 140 multi-zone validation
-5. **Address Blockers:** Resolve all active blockers before proceeding
+1. **Phase 40 Planning:** Prepare Case Expansion Foundation
+2. **Research Phase 40:** Investigate ASHRAE 140 case expansion
+3. **Plan Execution:** Begin implementation of Phase 40
+4. **Monitor Progress:** Track v1.1 milestone completion
 
 ### Session Info
 
-- **Last Session:** 2026-04-07T13:52:01.486Z
-- **Stopped At:** Completed M2-06-PLAN.md gap closure
-- **Status:** Phase complete but blocked on technical debt
+- **Last Session:** 2026-04-07T23:45:00.000Z
+- **Stopped At:** v1.1 roadmap creation complete
+- **Status:** Ready for Phase 40 planning

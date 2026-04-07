@@ -1,122 +1,80 @@
-# Fluxion v1.0 Requirements - Multi-Zone Support
+# Fluxion v1.1 ASHRAE 140 Completion - Requirements
 
-**Milestone:** v1.0 (Multi-Zone Support)
-**Status:** In Progress (4/10 requirements completed)
+**Milestone:** v1.1 ASHRAE 140 Completion
+**Goal:** Complete full ASHRAE 140 compliance with expanded validation coverage and accuracy improvements
 **Last Updated:** 2026-04-07
 
 ---
 
-## Requirements Traceability
+## Validation Expansion Requirements
 
-### Multi-Zone Foundation (Phase M1) ✅
+### Case Expansion (CASE)
+- [ ] **CASE-01**: User can run ASHRAE 140 Cases 800-810 (HVAC equipment validation)
+- [ ] **CASE-02**: User can run ASHRAE 140 Cases 195-470 (diagnostic validation)
+- [ ] **CASE-03**: User can access extended reference database for new cases
+- [ ] **CASE-04**: User can generate validation reports for all supported cases
 
-| ID | Requirement | Description | Status | Completed | Verified In |
-|----|-------------|-------------|--------|-----------|------------|
-| MZ-01 | N-Zone Thermal Network | Extend ThermalModel to support N zones with VectorField integration | ✅ COMPLETE | 2026-04-07 | M1-01-SUMMARY.md |
-| MZ-02 | Inter-Zone Heat Transfer | Implement inter-zone conductance calculation with proper sign convention | ✅ COMPLETE | 2026-04-07 | M1-01-SUMMARY.md |
-| MZ-05 | Energy Balance Verification | Verify energy conservation across zones (< 1W tolerance) | ✅ COMPLETE | 2026-04-07 | M1-01-SUMMARY.md |
-| MZ-08 | Performance Maintenance | Multi-zone performance within 2× of single-zone for N=10 | ✅ COMPLETE | 2026-04-07 | M1-01-SUMMARY.md |
+### Cross-Validation (CROSS)
+- [ ] **CROSS-01**: User can compare Fluxion results against EnergyPlus references
+- [ ] **CROSS-02**: User can compare Fluxion results against TRNSYS references
+- [ ] **CROSS-03**: User can compare Fluxion results against ESP-r references
+- [ ] **CROSS-04**: User can generate multi-reference comparison reports
+- [ ] **CROSS-05**: User can configure tolerance bands per reference tool
 
-### Zone-Level HVAC Controls (Phase M2) 🏗️
+### High-Mass Accuracy (MASS)
+- [ ] **MASS-01**: User can validate high-mass building cases with improved accuracy
+- [ ] **MASS-02**: User can access thermal mass diagnostics for high-mass buildings
+- [ ] **MASS-03**: User can configure construction-type-specific physics
+- [ ] **MASS-04**: User can achieve <50% error reduction for high-mass annual energy
 
-| ID | Requirement | Description | Status | Completed | Verified In |
-|----|-------------|-------------|--------|-----------|------------|
-| MZ-03 | Zone-Specific HVAC Setpoints | Per-zone heating/cooling setpoints with deadband control | ⏳ PLANNED | - | - |
-| MZ-04 | Zone-Level HVAC Control | Independent HVAC control for each thermal zone | ⏳ PLANNED | - | - |
-| MZ-09 | Python API Multi-Zone | Python bindings for multi-zone thermal model | ⏳ PLANNED | - | - |
-| MZ-10 | CLI Multi-Zone | Command-line interface for multi-zone simulation | ⏳ PLANNED | - | - |
-
-### ASHRAE 140 Validation (Phase M3) 📋
-
-| ID | Requirement | Description | Status | Completed | Verified In |
-|----|-------------|-------------|--------|-----------|------------|
-| MZ-06 | ASHRAE 140 Case 960 | Multi-zone validation against reference implementation | ⏳ PLANNED | - | - |
-| MZ-07 | ASHRAE 140 Case 970 | Additional multi-zone validation case | ⏳ PLANNED | - | - |
-
----
-
-## Completion Summary
-
-### Phase M1: Foundation ✅ (100%)
-- **Plans completed:** 1/3
-- **Requirements completed:** 4/4
-- **Key artifacts:**
-  - `src/thermal/thermal_model.rs` (N-zone support)
-  - `src/thermal/inter_zone.rs` (conductance calculations)
-  - `src/thermal/coupled_solver.rs` (ODE solver)
-  - `tests/thermal/multi_zone_tests.rs` (energy conservation tests)
-
-### Overall Progress
-- **Total requirements:** 10
-- **Completed:** 4 (40%)
-- **In progress:** 0
-- **Planned:** 6 (60%)
+### Performance Optimization (PERF)
+- [ ] **PERF-01**: User can maintain <50ms/timestep performance for expanded validation
+- [ ] **PERF-02**: User can run parallel validation across multiple cases
+- [ ] **PERF-03**: User can generate performance benchmark reports
+- [ ] **PERF-04**: User can optimize validation suite for CI/CD integration
 
 ---
 
-## Verification Status
+## Future Requirements (Deferred)
 
-### Completed Requirements ✅
-
-**MZ-01: N-Zone Thermal Network**
-- ✅ ThermalModel extends to N zones
-- ✅ VectorField integration for zone properties
-- ✅ Flexible constructors and property management
-- ✅ Unit tests pass (8/8)
-
-**MZ-02: Inter-Zone Heat Transfer**
-- ✅ Conductance calculation: h_tr_iz = A × U (W/K)
-- ✅ Heat flow: Q_ij = h_tr_ij × (T_i - T_j) (Watts)
-- ✅ Sign convention verified: Q_ij = -Q_ji
-- ✅ Unit tests pass (6/6)
-
-**MZ-05: Energy Balance Verification**
-- ✅ Total energy conservation within 1W tolerance
-- ✅ 100-time-step stability validation
-- ✅ Symmetric zone equalization test
-- ✅ Unit tests pass (8/8)
-
-**MZ-08: Performance Maintenance**
-- ✅ N=10 zones: < 1 second for 100 steps
-- ✅ Linear complexity O(N)
-- ✅ Memory efficient (~500 bytes/zone)
-- ✅ Performance tests pass (1/1)
-
-### Pending Requirements ⏳
-
-**Phase M2 (Zone-Level HVAC Controls)**
-- MZ-03: Zone-specific setpoints implementation
-- MZ-04: Independent HVAC control per zone
-- MZ-09: Python API bindings
-- MZ-10: CLI interface extension
-
-**Phase M3 (ASHRAE 140 Validation)**
-- MZ-06: Case 960 validation
-- MZ-07: Case 970 validation
+### Advanced Features
+- [ ] **ADV-01**: Surrogate-assisted validation for complex HVAC cases
+- [ ] **ADV-02**: Automated validation workflow with all reference tools
+- [ ] **ADV-03**: Comprehensive thermal mass contribution breakdown
 
 ---
 
-## Key Decisions
+## Out of Scope
 
-1. **VectorField Architecture:** Multi-zone implementation uses VectorField for all zone properties, enabling future SIMD optimization and maintaining compatibility with existing Fluxion patterns.
-
-2. **Energy Conservation Priority:** Inter-zone heat transfer implementation prioritizes energy conservation, with comprehensive tests validating <1W tolerance in isolated systems.
-
-3. **Backward Euler Integration:** Coupled ODE solver uses implicit backward Euler method for stability, with matrix structure ensuring diagonal dominance.
-
-4. **Sign Convention Standard:** Adopted Q_ij = -Q_ji convention for inter-zone heat flow, consistent with physics literature and EnergyPlus methodology.
+**Explicit exclusions with reasoning:**
+- **Real-time validation**: Not required for building energy modeling use case
+- **Cloud-based validation**: Focus on local execution for research workflows
+- **GUI validation interface**: CLI and API focus for integration with optimization tools
 
 ---
 
-## Traceability Links
+## Traceability
 
-| Requirement | Plan | Artifact | Test |
-|-------------|------|----------|------|
-| MZ-01 | M1-01 | `thermal_model.rs` | `test_thermal_model_creation()` |
-| MZ-02 | M1-01 | `inter_zone.rs` | `test_inter_zone_sign_convention()` |
-| MZ-05 | M1-01 | `multi_zone_tests.rs` | `test_energy_conservation()` |
-| MZ-08 | M1-01 | `coupled_solver.rs` | `test_performance_regression()` |
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| CASE-01 | Phase 40 | Pending |
+| CASE-02 | Phase 40 | Pending |
+| CASE-03 | Phase 40 | Pending |
+| CASE-04 | Phase 43 | Pending |
+| CROSS-01 | Phase 40 | Pending |
+| CROSS-02 | Phase 40 | Pending |
+| CROSS-03 | Phase 42 | Pending |
+| CROSS-04 | Phase 42 | Pending |
+| CROSS-05 | Phase 42 | Pending |
+| MASS-01 | Phase 41 | Pending |
+| MASS-02 | Phase 41 | Pending |
+| MASS-03 | Phase 41 | Pending |
+| MASS-04 | Phase 43 | Pending |
+| PERF-01 | Phase 41 | Pending |
+| PERF-02 | Phase 41 | Pending |
+| PERF-03 | Phase 42 | Pending |
+| PERF-04 | Phase 43 | Pending |
 
 ---
 
-*Last updated: 2026-04-07 after M1-01 completion*
+*Last updated: 2026-04-07 during requirements definition*
