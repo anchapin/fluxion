@@ -15,6 +15,7 @@ pub mod export;
 pub mod fdd;
 pub mod guardrails;
 pub mod multi_reference;
+pub mod reference_data;
 
 pub mod physics_validator;
 pub mod report;
@@ -65,6 +66,11 @@ pub use diagnostic::{
 pub use energy_balance::EnergyBalanceValidator;
 pub use physics_validator::{
     generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,
+};
+pub use reference_data::{
+    calculate_mbe, calculate_percentage_difference, calculate_rmse, load_case_960_reference,
+    load_case_970_reference, load_csv_reference, load_multi_zone_reference, parse_hourly_data,
+    within_tolerance, ReferenceData, ReferenceDataError,
 };
 pub use report::{
     BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
