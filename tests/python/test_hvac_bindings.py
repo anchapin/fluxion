@@ -3,12 +3,17 @@ Python tests for HVAC bindings
 """
 
 import pytest
-import fluxion.hvac
+import fluxion
+
+# Use direct imports since hvac submodule is not working
+ZoneSetpoints = fluxion.ZoneSetpoints
+ZoneControl = fluxion.ZoneControl
+create_zone_setpoints = fluxion.create_zone_setpoints
 
 
 def test_setpoint_creation():
     """Test ZoneSetpoints creation and basic properties"""
-    setpoints = fluxion.hvac.ZoneSetpoints(3)
+    setpoints = ZoneSetpoints(3)
     assert setpoints.num_zones() == 3
 
     # Test default values
@@ -19,7 +24,7 @@ def test_setpoint_creation():
 
 def test_setpoint_getters_setters():
     """Test all getter and setter methods"""
-    setpoints = fluxion.hvac.ZoneSetpoints(2)
+    setpoints = ZoneSetpoints(2)
 
     # Set and verify heating setpoint
     setpoints.set_heating_setpoint(0, 22.0)
@@ -37,7 +42,7 @@ def test_setpoint_getters_setters():
 def test_setpoint_validation():
     """Test validation with various configurations"""
     # Valid configuration
-    setpoints = fluxion.hvac.ZoneSetpoints(1)
+    setpoints = ZoneSetpoints(1)
     setpoints.set_heating_setpoint(0, 21.0)
     setpoints.set_cooling_setpoint(0, 25.0)
     setpoints.set_deadband(0, 2.0)
@@ -62,7 +67,7 @@ def test_setpoint_validation():
         setpoints.set_heating_setpoint(5, 22.0)
 
     # Heating setpoint >= cooling setpoint
-    setpoints2 = fluxion.hvac.ZoneSetpoints(1)
+    setpoints2 = ZoneSetpoints(1)
     setpoints2.set_heating_setpoint(0, 25.0)
     setpoints2.set_cooling_setpoint(0, 23.0)
     with pytest.raises(ValueError, match="must be below"):
