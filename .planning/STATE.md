@@ -32,32 +32,33 @@ See: .planning/PROJECT.md (updated 2026-04-07 after v0.8.0 milestone)
 
 ## Current Position
 
-Phase: M1-multi-zone (foundation) — EXECUTING
-Plan: Not started
+Phase: M2-zone-hvac-controls (HVAC controls) — PLANNED
+Plan: Ready for execution
 
 ### Progress Bar
 
 ```
 v0.8.0 Milestone: [████████████████████] 100% — COMPLETE
-v1.0 Milestone: [          ] 0% — PLANNING
-Phase M3: [          ] 0% — ASHRAE 140 Multi-Zone Validation (PLANNED)
-Overall:  [          ] 0% (v1.0 Milestone Planned)
+v1.0 Milestone: [████████████████████] 38% — PLANNED
+Phase M2: [████████████████████] 100% — Zone-Level HVAC Controls (PLANNED)
+Phase M3: [          ] 0% — ASHRAE 140 Multi-Zone Validation (NOT PLANNED)
+Overall:  [████████████████████] 38% (v1.0 Milestone Planned)
 ```
 
 ### v1.0 Requirements (MZ-01 through MZ-10)
 
-| Requirement | Description | Phase |
-|-------------|-------------|-------|
-| MZ-01 | N-Zone Thermal Network | M1 |
-| MZ-02 | Inter-Zone Heat Transfer | M1 |
-| MZ-03 | Zone-Specific HVAC Setpoints | M2 |
-| MZ-04 | Zone-Level HVAC Control | M2 |
-| MZ-05 | Energy Balance Verification | M1 |
-| MZ-06 | ASHRAE 140 Case 960 | M3 |
-| MZ-07 | ASHRAE 140 Case 970 | M3 |
-| MZ-08 | Performance Maintenance | M1 |
-| MZ-09 | Python API Multi-Zone | M2 |
-| MZ-10 | CLI Multi-Zone | M2 |
+| Requirement | Description | Phase | Status |
+|-------------|-------------|-------|--------|
+| MZ-01 | N-Zone Thermal Network | M1 | ✅ COMPLETE |
+| MZ-02 | Inter-Zone Heat Transfer | M1 | ✅ COMPLETE |
+| MZ-03 | Zone-Specific HVAC Setpoints | M2 | 📋 PLANNED |
+| MZ-04 | Zone-Level HVAC Control | M2 | 📋 PLANNED |
+| MZ-05 | Energy Balance Verification | M1 | ✅ COMPLETE |
+| MZ-06 | ASHRAE 140 Case 960 | M3 | ⏳ NOT PLANNED |
+| MZ-07 | ASHRAE 140 Case 970 | M3 | ⏳ NOT PLANNED |
+| MZ-08 | Performance Maintenance | M1 | ✅ COMPLETE |
+| MZ-09 | Python API Multi-Zone | M2 | 📋 PLANNED |
+| MZ-10 | CLI Multi-Zone | M2 | 📋 PLANNED |
 
 ---
 
@@ -109,6 +110,6 @@ Overall:  [          ] 0% (v1.0 Milestone Planned)
 
 ### Next Actions
 
-1. **M1-02 Planning**: Prepare for inter-zone HVAC integration
-2. **Energy conservation**: Validate against ASHRAE 140 Case 960
-3. **Performance optimization**: Integrate faer matrix solver
+1. **M2 Execution**: Implement zone-level HVAC controls
+2. **Python API extension**: Complete multi-zone HVAC bindings
+3. **CLI integration**: Add HVAC command-line interface
