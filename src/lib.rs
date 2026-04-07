@@ -48,6 +48,7 @@ pub mod analysis;
 pub mod api;
 pub mod physics;
 pub mod sim;
+pub mod hvac;
 pub mod testing;
 pub mod validation;
 pub mod weather;
@@ -1556,6 +1557,13 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySurfaceType>()?;
     m.add_class::<PyWallSurface>()?;
     m.add_class::<PyGeometryTensor>()?;
+    
+    // Register multi-zone module
+    m.add_submodule(python::multi_zone(_py, m)?)?;
+    
+    // Register HVAC module
+    m.add_submodule(python::hvac(_py, m)?)?;
+    
     Ok(())
 }
 

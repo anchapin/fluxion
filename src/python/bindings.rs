@@ -229,3 +229,15 @@ pub fn multi_zone(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     Ok(())
 }
+
+/// Register HVAC module in main bindings
+pub fn register_hvac_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    let hvac_module = PyModule::from_code_bound(
+        _py,
+        "hvac",
+        include_str!("hvac_bindings.rs"),
+        "hvac_bindings.rs",
+    )?;
+    m.add_submodule(&hvac_module)?;
+    Ok(())
+}
