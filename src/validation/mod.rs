@@ -17,6 +17,7 @@ pub mod export;
 pub mod fdd;
 pub mod guardrails;
 pub mod multi_reference;
+pub mod performance;
 pub mod reference_data;
 
 pub mod physics_validator;
@@ -44,6 +45,10 @@ pub use cross_validator::{
 pub use ep_oracle::{
     EPOracle, EPReference, FluxionResults, ValidationCriteria, ValidationDetails, ValidationReport,
     DEFAULT_MAX_ABS_ERROR, DEFAULT_MAX_RMSE,
+};
+pub use performance::{
+    analyze_bottlenecks, generate_performance_report, log_performance_metrics, profile_case,
+    PerformanceMetrics,
 };
 pub use statistical::{
     calculate_ci_cv_rmse, calculate_ci_nmbe, calculate_cohens_d, calculate_cv_rmse, calculate_nmbe,

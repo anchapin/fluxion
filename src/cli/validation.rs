@@ -54,7 +54,60 @@ pub enum ValidationSubcommand {
         tolerance: Option<f64>,
         /// Generate detailed hourly comparison
         #[clap(short, long)]
-        _detailed: bool,
+        detailed: bool,
+    },
+
+    /// Profile performance of a single case
+    #[clap(name = "profile")]
+    Profile {
+        /// Case number to profile
+        case: u32,
+        /// Number of iterations for accurate measurement
+        #[clap(short, long, default_value = "3")]
+        iterations: usize,
+        /// Output performance report
+        #[clap(short, long, default_value = "./performance")]
+        output: String,
+    },
+
+    /// Profile performance of an entire series
+    #[clap(name = "profile-series")]
+    ProfileSeries {
+        /// Series to profile (800-810 or 195-470)
+        series: String,
+        /// Number of iterations per case
+        #[clap(short, long, default_value = "1")]
+        iterations: usize,
+        /// Output performance report
+        #[clap(short, long, default_value = "./performance")]
+        output: String,
+        /// Maximum parallel profiling jobs
+        #[clap(short, long, default_value = "2")]
+        parallel: usize,
+    },
+
+    /// Generate performance report for all cases
+    #[clap(name = "performance-report")]
+    PerformanceReport {
+        /// Output file for report
+        #[clap(short, long, default_value = "./validation_performance.md")]
+        output: String,
+        /// Include detailed per-case metrics
+        #[clap(short, long)]
+        detailed: bool,
+    },
+
+    /// Run validation with performance monitoring
+    #[clap(name = "run-with-perf")]
+    RunWithPerf {
+        /// Case number to run
+        case: u32,
+        /// Output directory for results
+        #[clap(short, long, default_value = "./results")]
+        output: String,
+        /// Show performance metrics in console
+        #[clap(short, long)]
+        show_metrics: bool,
     },
 
     /// Batch cross-validation for multiple cases
@@ -232,6 +285,123 @@ fn run_batch_cross_validation(
     Ok(())
 }
 
+/// Profile performance of a single case
+fn run_performance_profile(case_num: u32, iterations: usize, output_dir: String) -> Result<()> {
+    let case = parse_case_number(case_num)?;
+    let metrics = crate::validation::performance::profile_case(case, iterations);
+    let report = crate::validation::performance::generate_performance_report(&[metrics]);
+
+    // Save report
+    std::fs::create_dir_all(&output_dir)?;
+    let report_path = format!("{}/case_{:03}_performance.txt", output_dir, case_num);
+    std::fs::write(report_path, report)?;
+
+    println!("Performance profile saved to: {}", report_path);
+    println!("{}", report);
+
+    Ok(())
+}
+
+/// Profile performance of an entire series
+fn run_series_performance_profile(
+    series: String,
+    iterations: usize,
+    output_dir: String,
+    parallel: usize,
+) -> Result<()> {
+    let cases = parse_series(&series)?;
+
+    // Use Rayon for parallel profiling
+    let metrics: Vec<_> = cases
+        .par_iter()
+        .map(|case| crate::validation::performance::profile_case(*case, iterations))
+        .collect();
+
+    let report = crate::validation::performance::generate_performance_report(&metrics);
+    let analysis = crate::validation::performance::analyze_bottlenecks(&metrics);
+
+    // Save comprehensive report
+    std::fs::create_dir_all(&output_dir)?;
+    let report_path = format!("{}/{}_performance_report.txt", output_dir, series);
+    let mut full_report = report;
+    full_report.push_str("\n\nBottleneck Analysis:\n");
+    full_report.push_str(&analysis.join("\n"));
+
+    std::fs::write(report_path, full_report)?;
+
+    println!("Series performance profile saved to: {}", report_path);
+    println!("Bottlenecks found: {}", analysis.len());
+
+    Ok(())
+}
+
+/// Generate comprehensive performance report
+fn generate_comprehensive_performance_report(output_path: String, detailed: bool) -> Result<()> {
+    // Profile all cases and generate comprehensive report
+    let all_cases = vec![
+        (800..=810).collect::<Vec<_>>(),
+        (195..=470).collect::<Vec<_>>(),
+    ]
+    .concat();
+
+    let metrics: Vec<_> = all_cases
+        .iter()
+        .map(|&case_num| {
+            let case = parse_case_number(case_num).unwrap();
+            crate::validation::performance::profile_case(case, 1)
+        })
+        .collect();
+
+    let report = if detailed {
+        crate::validation::performance::generate_detailed_performance_report(&metrics)
+    } else {
+        crate::validation::performance::generate_performance_report(&metrics)
+    };
+
+    std::fs::write(&output_path, report)?;
+    println!(
+        "Comprehensive performance report generated: {}",
+        output_path
+    );
+
+    Ok(())
+}
+
+/// Run validation with performance monitoring
+fn run_validation_with_performance_monitoring(
+    case_num: u32,
+    output_dir: String,
+    show_metrics: bool,
+) -> Result<()> {
+    let case = parse_case_number(case_num)?;
+
+    if show_metrics {
+        println!("Profiling case {:?}...", case);
+    }
+
+    let (case_def, metrics) = crate::validation::ashrae140::run_validation_with_performance(case);
+
+    if show_metrics {
+        println!("Performance: {:.4}ms/timestep", metrics.per_timestep_ms);
+        if metrics.per_timestep_ms >= 50.0 {
+            println!("WARNING: Performance target not met!");
+        }
+    }
+
+    // Save results (placeholder - in real implementation this would save actual results)
+    std::fs::create_dir_all(&output_dir)?;
+    let results_path = format!("{}/case_{:03}_results.json", output_dir, case_num);
+    let results_content = format!("{:?}", case_def);
+    std::fs::write(results_path, results_content)?;
+
+    if show_metrics {
+        println!("Case {:?} completed successfully", case);
+        println!("Results saved to: {}", results_path);
+    }
+
+    Ok(())
+}
+
 /// Main validation command handler
 pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
     match command {
@@ -274,5 +444,29 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             output,
             _parallel,
         } => run_batch_cross_validation(series, tool, reference_dir, output, 4),
+        ValidationSubcommand::Profile {
+            case,
+            iterations,
+            output,
+        } => run_performance_profile(*case, *iterations, output.to_string()),
+        ValidationSubcommand::ProfileSeries {
+            series,
+            iterations,
+            output,
+            parallel,
+        } => run_series_performance_profile(
+            series.to_string(),
+            *iterations,
+            output.to_string(),
+            *parallel,
+        ),
+        ValidationSubcommand::PerformanceReport { output, detailed } => {
+            generate_comprehensive_performance_report(output.to_string(), *detailed)
+        }
+        ValidationSubcommand::RunWithPerf {
+            case,
+            output,
+            show_metrics,
+        } => run_validation_with_performance_monitoring(*case, output.to_string(), *show_metrics),
     }
 }
