@@ -3,7 +3,7 @@
 //! This module provides functionality to compare Fluxion results
 //! against EnergyPlus reference simulations.
 
-use super::super::{ComparisonReport, CrossValidationAdapter, ValidationResults};
+use super::super::{ComparisonDetail, ComparisonReport, CrossValidationAdapter, ValidationResults};
 use crate::validation::ashrae140::ASHRAE140Case;
 use anyhow::Result;
 use csv::Reader;
