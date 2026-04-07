@@ -147,4 +147,69 @@
 
 ---
 
-*Roadmap updated: 2026-04-07 - M2 gap closure plan added to address technical blockers*
+## v1.1 ASHRAE 140 Completion (Current Milestone)
+
+### Phase 40: Case Expansion Foundation
+
+**Goal:** Extend ASHRAE 140 case support and establish cross-validation framework
+
+**Requirements:** [CASE-01, CASE-02, CASE-03, CROSS-01, CROSS-02]
+
+**Status:** Gap closure in progress
+
+- [x] 40-01: ASHRAE 140 Case Expansion - Extend case definitions (COMPLETE)
+  - Implemented Cases 800-810 (HVAC equipment validation)
+  - Implemented Cases 195-470 (diagnostic validation)
+  - Modular organization by series
+
+- [x] 40-02: Extended Reference Database - Reference data infrastructure (COMPLETE)
+  - Reference data loading module
+  - Directory structure and documentation
+  - CSV parsing infrastructure
+
+- [x] 40-03: Cross-Validation Framework - Adapter pattern implementation (COMPLETE)
+  - EnergyPlus adapter with file-based comparison
+  - TRNSYS adapter with file-based comparison
+  - Core comparison logic and reporting
+
+- [x] 40-04: CLI Integration - Command-line interface (COMPLETE)
+  - Validation commands for single cases and series
+  - Cross-validation commands
+  - Performance profiling commands
+
+- [x] 40-05: Performance Optimization - Initial optimization (COMPLETE)
+  - Parallel execution infrastructure
+  - Performance monitoring framework
+  - Basic optimization strategies
+
+- [⚠️] 40-06: Reference Data Generation - Gap closure (IN PROGRESS)
+  - Generate series_800.csv with 96,360 rows
+  - Generate series_195.csv with 2,418,560 rows
+  - Enhance reference data loading with caching
+
+- [⚠️] 40-07: Case Execution Implementation - Gap closure (PLANNED)
+  - Implement actual simulation logic for Cases 800-810
+  - Implement actual simulation logic for Cases 195-470
+  - Validation execution with real Fluxion simulations
+
+- [⚠️] 40-08: CLI and Cross-Validation Enhancement - Gap closure (PLANNED)
+  - Replace stubbed CLI commands with real execution
+  - Enhance cross-validation with real Fluxion results
+  - Update batch processing with parallel execution
+
+- [⚠️] 40-09: Real Performance Monitoring - Gap closure (PLANNED)
+  - Replace simulated delays with actual timing
+  - Enhance performance reporting and analysis
+  - Verify <50ms/timestep target compliance
+
+### Progress
+
+| Phase | Milestone | Plans Complete | Status | Completed |
+|-------|----------|----------------|--------|-----------|
+| 40. Case Expansion Foundation | v1.1 | 5/9 | In Progress|  |
+
+**v1.1 Progress:** 56% complete (5/9 plans)
+
+---
+
+*Roadmap updated: 2026-04-07 - Phase 40 gap closure plans added to address verification gaps*
