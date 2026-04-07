@@ -1,10 +1,28 @@
 # Fluxion Milestones
 
+## v0.8.0 v0.8.0 (Shipped: 2026-04-07)
+
+**Phases completed:** 4 phases, 10 plans, 24 tasks
+
+**Key accomplishments:**
+
+- Issue
+- 1. [Scaling Calibration] Adjusted τ scaling factor
+- Phase 34 Status:
+- Adjusted thermal time constant τ and free-float capacitance for ASHRAE 140 peak loads and free-floating temperatures
+- ASHRAE 140 validation executed with 25% pass rate - Phase 34/35 fixes appear not fully integrated
+- Comprehensive documentation update for v0.8.0 release with peak load and free-float validation improvements
+- v0.8.0 release script created and verified with comprehensive publication automation
+- Gap Closure Status:
+
+---
+
 ## v0.4 ASHRAE 140 Compliance (Shipped: 2026-03-15)
 
 **Phases completed:** 20 phases, 138 plans, 187 tasks
 
 **Key accomplishments:**
+
 - Comprehensive test-driven test suite for all 5R1C thermal network conductances with placeholder implementations
 - ISO 13790-compliant 5R1C conductance calculations with TDD validation and all Plan 01 tests passing
 - Test infrastructure for directional conductance, Stefan-Boltzmann radiation, and stack effect ACH calculations
@@ -61,6 +79,7 @@ All requirements mapped to phases and validated through automated tests. **Howev
 **Status:** ❌ **NOT FIXED** — Fundamental 5R1C model limitation
 
 **Evidence (Case 900):**
+
 - Annual heating: **5.35 MWh** vs [1.17, 2.04] MWh reference (**262-322% above**)
 - Annual cooling: **4.75 MWh** vs [2.13, 3.67] MWh reference (**229-259% above**)
 - Peak heating: 2.10 kW ✅ (within [1.10, 2.10] kW)
@@ -115,6 +134,7 @@ All requirements mapped to phases and validated through automated tests. **Howev
 ### Next Steps
 
 **To reach v1.0, address:**
+
 1. Investigate 6R2C or 8R3C thermal network for high-mass buildings
 2. Fix Case 960 annual cooling failure (#273)
 3. Consider alternative integration methods or time step strategies

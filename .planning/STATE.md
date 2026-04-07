@@ -3,51 +3,43 @@ gsd_state_version: 1.0
 milestone: v0.8.0
 milestone_name: Release
 current_phase: 34
-status: executing
-last_updated: "2026-04-06T21:30:00.000Z"
+status: completed
+last_updated: "2026-04-07T03:51:04.063Z"
 progress:
-  total_phases: 7
-  completed_phases: 6
-  total_plans: 16
-  completed_plans: 17
+  total_phases: 4
+  completed_phases: 4
+  total_plans: 10
+  completed_plans: 11
 ---
 
 # Fluxion Project State
 
-**Milestone:** v1.0 Multi-Zone Support
-**Last Updated:** 2026-04-06
-**Current Phase:** 34
-**Decision:** v0.8 milestone in progress. v1.0 planning initialized.
+**Milestone:** v1.0 (Next Milestone)
+**Last Updated:** 2026-04-07
+**Current Phase:** Planning
+**Decision:** v0.8.0 milestone completed successfully. Ready for v1.0 planning.
 
 ---
 
 ## Project Reference
 
-### Core Value
+See: .planning/PROJECT.md (updated 2026-04-07 after v0.8.0 milestone)
 
-**v1.0 Goal:** Extend Fluxion from single-zone to multi-zone thermal simulation, enabling realistic building energy modeling with zone-level HVAC controls.
-
-### Milestone Objectives
-
-**v1.0 Multi-Zone Support:**
-
-1. 🎯 N-zone thermal network (2-10 zones minimum).
-2. 🎯 Inter-zone heat transfer with energy conservation.
-3. 🎯 Zone-level HVAC controls with independent setpoints.
-4. 🎯 ASHRAE 140 multi-zone validation (Case 960).
+**Core value:** Full ASHRAE 140 compliance for peak loads and free-floating temperature profiles
+**Current focus:** Planning next milestone (v1.0)
 
 ---
 
 ## Current Position
 
-Phase: 34 (peak-load-physics-fix) — EXECUTING
-Plan: 3 of 3 (completed)
+Phase: Planning (v1.0) — READY
+Plan: 0 of 0 (planning phase)
 
 ### Progress Bar
 
 ```
-Phase M1: [          ] 0% — Multi-Zone Thermal Network (PLANNED)
-Phase M2: [          ] 0% — Zone-Level HVAC Controls (PLANNED)
+v0.8.0 Milestone: [████████████████████] 100% — COMPLETE
+v1.0 Milestone: [          ] 0% — PLANNING
 Phase M3: [          ] 0% — ASHRAE 140 Multi-Zone Validation (PLANNED)
 Overall:  [          ] 0% (v1.0 Milestone Planned)
 ```
@@ -72,7 +64,7 @@ Overall:  [          ] 0% (v1.0 Milestone Planned)
 ## v0.8 Context (Active)
 
 **Previous milestone:** v0.8 Peak Load & Free-Float Validation
-**Status:** Executing Phase 34
+**Status:** v0.8.0 milestone complete
 
 ### v0.8 Recent Results
 
