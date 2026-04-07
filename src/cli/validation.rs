@@ -5,6 +5,7 @@ use anyhow::{anyhow, Result};
 use clap::Subcommand;
 use serde::{Deserialize, Serialize};
 use serde_json;
+use std::path::Path;
 use std::time::Instant;
 
 use crate::validation::ashrae140::ASHRAE140Case;
@@ -304,7 +305,7 @@ fn list_available_cases() -> Result<()> {
     Ok(())
 }
 
-/// Run cross-validation against external tool
+/// Run cross-validation against external tool with real Fluxion results
 fn run_cross_validation(
     case_num: u32,
     tool: String,
@@ -318,25 +319,51 @@ fn run_cross_validation(
         case_num, tool
     );
 
-    // Create output directory if it doesn't exist
+    // Parse case number
+    let case = parse_case_number(case_num)?;
+    let case_enum = ASHRAE140Case::from_case_id(&case.to_string()).expect("Invalid case number");
+
+    // Create output directory
     std::fs::create_dir_all(&output_dir)?;
 
-    // Generate a simple report
-    let report = format!(
-        "Cross-Validation Report\n======================\n\nCase: {}\nTool: {}\nReference File: {}\nTolerance: {:?}\nStatus: COMPLETED\n\nDetailed Analysis:\n- RMSE: 0.5°C\n- Percentage Difference: 5.2%\n- Max Deviation: 1.2°C\n- Within Tolerance: YES\n",
-        case_num, tool, reference_file, tolerance
+    // Perform real cross-validation
+    let report = crate::validation::cross_validation::perform_cross_validation(
+        case_enum,
+        &tool,
+        Path::new(&reference_file),
+        tolerance,
+    )?;
+
+    // Save full report
+    let filename = format!(
+        "{}/comparison_case_{:03}_{}.txt",
+        output_dir, case_num, tool
     );
+    std::fs::write(&filename, &report.report)?;
 
-    // Save report to file
-    let filename = format!("{}/comparison_case_{}_{}.txt", output_dir, case_num, tool);
-    std::fs::write(&filename, report)?;
+    // Save JSON results for further analysis
+    let json_filename = format!(
+        "{}/comparison_case_{:03}_{}.json",
+        output_dir, case_num, tool
+    );
+    let json_report = serde_json::to_string_pretty(&report)?;
+    std::fs::write(&json_filename, json_report)?;
 
+    println!("Cross-validation completed successfully!");
     println!("Report saved to: {}", filename);
+    println!("JSON results saved to: {}", json_filename);
+    println!("RMSE: {:.4}", report.comparison.rmse);
+    println!("Within tolerance: {}", report.comparison.within_tolerance);
+
+    if detailed {
+        println!("\nDetailed Comparison:");
+        println!("{}", report.report);
+    }
 
     Ok(())
 }
 
-/// Run batch cross-validation for multiple cases
+/// Run batch cross-validation with real Fluxion results
 fn run_batch_cross_validation(
     series: &str,
     tool: &str,
@@ -352,34 +379,23 @@ fn run_batch_cross_validation(
         tool
     );
 
-    // Create output directory if it doesn't exist
+    // Create output directory
     std::fs::create_dir_all(output_dir)?;
 
-    // Process each case
-    for case in cases {
-        let reference_file = format!("{}/case_{:03}.csv", reference_dir, case);
-
-        // Check if reference file exists
-        if std::path::Path::new(&reference_file).exists() {
-            if let Err(e) = run_cross_validation(
-                case,
-                tool.to_string(),
-                reference_file,
-                output_dir.to_string(),
-                None,
-                false,
-            ) {
-                eprintln!("Failed to validate case {}: {}", case, e);
-            }
-        } else {
-            eprintln!(
-                "Reference file not found for case {}: {}",
-                case, reference_file
-            );
-        }
-    }
+    // Perform batch cross-validation
+    let summary = crate::validation::cross_validation::batch_cross_validate(
+        &cases,
+        tool,
+        reference_dir,
+        output_dir,
+        parallel,
+    )?;
 
     println!("Batch cross-validation completed!");
+    println!("Successful comparisons: {}", summary.successful);
+    println!("Failed comparisons: {}", summary.failed);
+    println!("Average RMSE: {:.4}", summary.avg_rmse);
+    println!("Summary report saved to: {}/batch_summary.json", output_dir);
 
     Ok(())
 }
