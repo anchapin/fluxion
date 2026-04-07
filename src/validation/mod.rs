@@ -1,5 +1,6 @@
 pub mod ab_testing;
 pub mod analyzer;
+pub mod ashrae140;
 pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
@@ -7,6 +8,7 @@ pub mod assembly_library;
 pub mod benchmark;
 pub mod commands;
 pub mod config;
+pub mod cross_validation;
 pub mod cross_validator;
 pub mod diagnostic;
 pub mod diagnostics;
@@ -33,6 +35,8 @@ pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetwork
 pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
 pub use ashrae_140_validator::{validate_case_with_diagnostics, ASHRAE140Validator};
 pub use config::{validate_assembly, validate_constants, ConfigValidationResult, ValidationError};
+pub use cross_validation::adapters::{EnergyPlusAdapter, TRNSYSAdapter};
+pub use cross_validation::{CrossValidationAdapter, ValidationResults};
 pub use cross_validator::{
     AnalyticalComparison, CrossValidationResult, CrossValidator, CrossValidatorConfig,
     EnergyBalanceMetrics, FoldResult, ValidationDataPoint,
@@ -48,6 +52,9 @@ pub use statistical::{
     StatisticalMetrics, StatisticalReport, StatisticalValidator, ValidationGroup,
 };
 
+pub use ashrae140::cases::build_case;
+pub use ashrae140::ASHRAE140Case;
+pub use ashrae140::ASHRAE140CaseDefinition;
 pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
     ASHRAE140Case, CaseBuilder, CaseSpec, ConstructionSpec, ConstructionType, GeometrySpec,

@@ -10,6 +10,7 @@ use fluxion::analysis::swing::{
 use fluxion::analysis::visualization::{
     generate_animation, generate_html, Dataset, PlotPanel, TimeSeriesData,
 };
+use fluxion::cli::validation::ValidationSubcommand;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
 use fluxion::validation::benchmark::{get_high_mass_cases, get_low_mass_cases, get_special_cases};
@@ -352,6 +353,12 @@ enum Commands {
         /// Output HTML file path
         #[arg(short, long)]
         output: Option<PathBuf>,
+    },
+
+    /// Building energy model validation commands
+    Validation {
+        #[command(subcommand)]
+        command: ValidationSubcommand,
     },
 }
 
@@ -892,6 +899,10 @@ fn main() -> Result<()> {
             };
             generate_animation(&data, &output_path)?;
             println!("Animation saved to {}", output_path.display());
+        }
+
+        Commands::Validation { command } => {
+            fluxion::cli::validation::handle_validation_command(&command)?;
         }
     }
 

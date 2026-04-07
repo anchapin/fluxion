@@ -46,6 +46,7 @@
 pub mod ai;
 pub mod analysis;
 pub mod api;
+pub mod cli;
 pub mod physics;
 pub mod sim;
 pub mod hvac;

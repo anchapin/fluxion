@@ -4,8 +4,8 @@ milestone: v1.0
 milestone_name: milestone
 current_phase: 40
 status: executing
-stopped_at: v1.1 roadmap creation complete
-last_updated: "2026-04-07T20:20:02.259Z"
+stopped_at: Completed 40-04-PLAN.md CLI Integration
+last_updated: "2026-04-07T20:41:47.970Z"
 progress:
   total_phases: 2
   completed_phases: 0
@@ -34,7 +34,7 @@ See: .planning/PROJECT.md (updated 2026-04-07 after v1.0 milestone)
 ## Current Position
 
 Phase: 40 (case-expansion-foundation) — EXECUTING
-Plan: 1 of 5
+Plan: 2 of 5
 
 ### Progress Bar
 
@@ -74,7 +74,7 @@ Overall:  [                      ] 0% (v1.1 Milestone Ready)
 ## v1.0 Context (Completed)
 
 **Previous milestone:** v1.0 Multi-Zone Support
-**Status:** Executing Phase 40
+**Status:** Ready to execute
 
 ### v1.0 Accomplishments
 
@@ -144,6 +144,7 @@ Overall:  [                      ] 0% (v1.1 Milestone Ready)
 | Phase M2-zone-hvac-controls P06 | 3600 | 3 tasks | 5 files |
 | Phase M2-zone-hvac-controls P07 | 45 | 3 tasks | 3 files |
 | Phase M2-zone-hvac-controls P08 | 60min | 3 tasks | 2 files |
+| Phase 40 P04 | 1800 | 3 tasks | 4 files |
 
 ## Decisions
 
@@ -191,6 +192,6 @@ Overall:  [                      ] 0% (v1.1 Milestone Ready)
 
 ### Session Info
 
-- **Last Session:** 2026-04-07T23:45:00.000Z
-- **Stopped At:** v1.1 roadmap creation complete
+- **Last Session:** 2026-04-07T20:41:47.967Z
+- **Stopped At:** Completed 40-04-PLAN.md CLI Integration
 - **Status:** Ready for Phase 40 planning
