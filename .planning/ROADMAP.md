@@ -47,23 +47,23 @@
 
 **Requirements:** [MZ-03, MZ-04, MZ-09, MZ-10]
 
-### Plans
+**Status:** Gap closure in progress - addressing compilation errors and completing integration
 
 - [x] M2-01: Zone-Level HVAC Controls Foundation (COMPLETE)
   - Implemented ZoneSetpoints and ZoneControl structs
   - Created comprehensive HVAC control tests
   - Verified independent zone control logic
-  
+   
 - [⚠️] M2-02: Python API Multi-Zone HVAC Bindings (PARTIAL - Build failures)
   - Created PyZoneSetpoints and PyZoneControl wrappers
   - Implemented Python module registration
   - Blocked by VectorField API incompatibility
-  
+   
 - [⚠️] M2-03: CLI Multi-Zone HVAC Support (PARTIAL - Integration blocked)
   - Created HVAC CLI command structure
   - Integrated with multi-zone CLI
   - Blocked by unresolved HVAC module dependencies
-  
+   
 - [✅] M2-04: Fix Python Bindings Technical Blockers (COMPLETE)
   - Fixed ThermalModel import paths
   - Resolved PyO3 API compatibility issues
@@ -79,6 +79,26 @@
   - Enable HVAC bindings module registration
   - Build and test Python bindings
   - Verify end-to-end Python HVAC functionality
+  
+- [ ] M2-07: Fix Critical Compilation Errors (Gap Closure)
+  - Fix ThermalModel import paths
+  - Fix VectorField API usage in tests
+  - Fix zone_setpoints module imports
+  
+- [ ] M2-08: Complete Python Bindings Verification (Gap Closure)
+  - Enable HVAC bindings module registration
+  - Build and test Python bindings
+  - Verify end-to-end Python HVAC functionality
+
+- [ ] M2-07: Fix Critical Compilation Errors (Gap Closure)
+  - Fix ThermalModel import paths
+  - Fix VectorField API usage in tests
+  - Fix zone_setpoints module imports
+  
+- [ ] M2-08: Complete Python Bindings Verification (Gap Closure)
+  - Enable HVAC bindings module registration
+  - Build and test Python bindings
+  - Verify end-to-end Python HVAC functionality
 
 ---
 
@@ -91,7 +111,7 @@
 | 35. Free-Floating Validation | v0.8 | 1/1 | Complete | ✅ 2026-04-06 |
 | 36. v0.8.0 Release | v0.8 | 4/4 | Complete | ✅ 2026-04-06 |
 | 37. Multi-Zone Thermal Network Foundation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
-| 38. Zone-Level HVAC Controls | v1.0 | 3/6 | In Progress | ⚠️ Gap Closure |
+| 38. Zone-Level HVAC Controls | v1.0 | 5/8 | In Progress | ⚠️ Gap Closure |
 | 39. ASHRAE 140 Multi-Zone Validation | v1.0 | 0/0 | Not started | - |
 
 **Overall Progress:** v0.8.0 milestone complete (100%), v1.0 in progress (40%)
