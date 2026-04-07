@@ -6,7 +6,7 @@ use crate::hvac::zone_control::{HVACStatus, ZoneControl};
 use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
 use crate::python::bindings::PyMultiZoneThermalModel;
-use crate::thermal::thermal_model::ThermalModel;
+use crate::thermal::ThermalModel;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::{Arc, Mutex};

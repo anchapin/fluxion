@@ -61,7 +61,7 @@ impl ZoneControl {
         let mut energy_input = VectorField::from_scalar(0.0, self.thermal_model.num_zones);
 
         for zone_id in 0..self.thermal_model.num_zones {
-            let current_temp = current_temperatures.get(zone_id);
+            let current_temp = current_temperatures.as_slice()[zone_id];
             let heating_setpoint = self.setpoints.get_heating_setpoint(zone_id);
             let cooling_setpoint = self.setpoints.get_cooling_setpoint(zone_id);
             let deadband = self.setpoints.get_deadband(zone_id);
@@ -75,18 +75,15 @@ impl ZoneControl {
             );
 
             // Update status tracking
-            self.zone_status.set(
-                zone_id,
-                match status {
-                    HVACStatus::Heating => 1.0,
-                    HVACStatus::Cooling => -1.0,
-                    HVACStatus::Off => 0.0,
-                },
-            );
+            self.zone_status.as_mut_slice()[zone_id] = match status {
+                HVACStatus::Heating => 1.0,
+                HVACStatus::Cooling => -1.0,
+                HVACStatus::Off => 0.0,
+            };
 
             // Calculate energy input based on status
             let energy = self.calculate_energy_input(zone_id, current_temp, &status);
-            energy_input.set(zone_id, energy);
+            energy_input.as_mut_slice()[zone_id] = energy;
         }
 
         energy_input
@@ -121,7 +118,7 @@ impl ZoneControl {
     /// # Returns
     /// HVACStatus enum value
     pub fn get_zone_hvac_status(&self, zone_id: usize) -> HVACStatus {
-        let status_value = self.zone_status.get(zone_id);
+        let status_value = self.zone_status.as_slice()[zone_id];
         if status_value > 0.0 {
             HVACStatus::Heating
         } else if status_value < 0.0 {
@@ -167,7 +164,7 @@ impl ZoneControl {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thermal::thermal_model::ThermalModel;
+    use crate::thermal::ThermalModel;
 
     #[test]
     fn test_zone_control_creation() {

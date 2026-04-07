@@ -49,7 +49,10 @@ pub mod api;
 pub mod physics;
 pub mod sim;
 pub mod hvac;
+#[cfg(feature = "python-bindings")]
+pub mod python;
 pub mod testing;
+pub mod thermal;
 pub mod validation;
 pub mod weather;
 
@@ -1559,10 +1562,10 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyGeometryTensor>()?;
     
     // Register multi-zone module
-    m.add_submodule(python::multi_zone(_py, m)?)?;
+    python::multi_zone(_py, m)?;
     
     // Register HVAC module
-    m.add_submodule(python::hvac(_py, m)?)?;
+    python::bindings::register_hvac_module(m)?;
     
     Ok(())
 }

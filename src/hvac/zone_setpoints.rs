@@ -48,8 +48,7 @@ impl ZoneSetpoints {
     /// Result indicating success or validation error
     pub fn set_heating_setpoint(&mut self, zone_id: usize, temperature: f64) -> Result<(), String> {
         self.validate_temperature(temperature)?;
-        self.validate_zone_id(zone_id)?;
-        self.heating_setpoints.set(zone_id, temperature);
+        self.heating_setpoints.as_mut_slice()[zone_id] = temperature;
         Ok(())
     }
 
@@ -63,8 +62,7 @@ impl ZoneSetpoints {
     /// Result indicating success or validation error
     pub fn set_cooling_setpoint(&mut self, zone_id: usize, temperature: f64) -> Result<(), String> {
         self.validate_temperature(temperature)?;
-        self.validate_zone_id(zone_id)?;
-        self.cooling_setpoints.set(zone_id, temperature);
+        self.cooling_setpoints.as_mut_slice()[zone_id] = temperature;
         Ok(())
     }
 
@@ -78,8 +76,7 @@ impl ZoneSetpoints {
     /// Result indicating success or validation error
     pub fn set_deadband(&mut self, zone_id: usize, deadband: f64) -> Result<(), String> {
         self.validate_deadband(deadband)?;
-        self.validate_zone_id(zone_id)?;
-        self.deadbands.set(zone_id, deadband);
+        self.deadbands.as_mut_slice()[zone_id] = deadband;
         Ok(())
     }
 
@@ -91,7 +88,7 @@ impl ZoneSetpoints {
     /// # Returns
     /// Heating setpoint temperature (°C)
     pub fn get_heating_setpoint(&self, zone_id: usize) -> f64 {
-        self.heating_setpoints.get(zone_id)
+        self.heating_setpoints.as_slice()[zone_id]
     }
 
     /// Get cooling setpoint for a specific zone.
@@ -102,7 +99,7 @@ impl ZoneSetpoints {
     /// # Returns
     /// Cooling setpoint temperature (°C)
     pub fn get_cooling_setpoint(&self, zone_id: usize) -> f64 {
-        self.cooling_setpoints.get(zone_id)
+        self.cooling_setpoints.as_slice()[zone_id]
     }
 
     /// Get deadband for a specific zone.
@@ -113,7 +110,7 @@ impl ZoneSetpoints {
     /// # Returns
     /// Deadband value (°C)
     pub fn get_deadband(&self, zone_id: usize) -> f64 {
-        self.deadbands.get(zone_id)
+        self.deadbands.as_slice()[zone_id]
     }
 
     /// Validate all setpoints and deadbands.
