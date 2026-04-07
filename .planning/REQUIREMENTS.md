@@ -15,8 +15,8 @@
 - [ ] **CASE-04**: User can generate validation reports for all supported cases
 
 ### Cross-Validation (CROSS)
-- [ ] **CROSS-01**: User can compare Fluxion results against EnergyPlus references
-- [ ] **CROSS-02**: User can compare Fluxion results against TRNSYS references
+- [x] **CROSS-01**: User can compare Fluxion results against EnergyPlus references
+- [x] **CROSS-02**: User can compare Fluxion results against TRNSYS references
 - [ ] **CROSS-03**: User can compare Fluxion results against ESP-r references
 - [ ] **CROSS-04**: User can generate multi-reference comparison reports
 - [ ] **CROSS-05**: User can configure tolerance bands per reference tool
@@ -61,8 +61,8 @@
 | CASE-02 | Phase 40 | Pending |
 | CASE-03 | Phase 40 | Complete |
 | CASE-04 | Phase 43 | Pending |
-| CROSS-01 | Phase 40 | Pending |
-| CROSS-02 | Phase 40 | Pending |
+| CROSS-01 | Phase 40 | Complete |
+| CROSS-02 | Phase 40 | Complete |
 | CROSS-03 | Phase 42 | Pending |
 | CROSS-04 | Phase 42 | Pending |
 | CROSS-05 | Phase 42 | Pending |
