@@ -5,6 +5,8 @@ use clap::{Args, Subcommand};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::cli::hvac_commands::{handle_command as handle_hvac_command, HvacCommand};
+
 /// Multi-zone simulation command
 #[derive(Debug, Args)]
 pub struct SimulateCommand {
@@ -79,6 +81,9 @@ pub enum MultiZoneCommand {
     /// Run multi-zone simulation
     Simulate(SimulateCommand),
 
+    /// HVAC control commands
+    Hvac(HvacCommand),
+
     /// Validate multi-zone functionality
     Validate(ValidateCommand),
 
@@ -118,6 +123,11 @@ impl Default for MultiZoneConfig {
             },
         }
     }
+}
+
+/// Execute HVAC command
+pub fn execute_hvac_command(command: &HvacCommand) -> Result<(), anyhow::Error> {
+    handle_hvac_command(*command.clone()).map_err(|e| anyhow::anyhow!(e))
 }
 
 /// Execute multi-zone simulation

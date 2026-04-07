@@ -1,6 +1,7 @@
 // CLI module for Fluxion
 // This module provides the main CLI interface and subcommand structure
 
+pub mod hvac_commands;
 pub mod multi_zone;
 
 pub use multi_zone::*;
@@ -33,6 +34,7 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
     match cli.command {
         Commands::MultiZone(subcommand) => match subcommand {
             MultiZoneCommand::Simulate(cmd) => multi_zone::execute_simulate_command(&cmd),
+            MultiZoneCommand::Hvac(cmd) => multi_zone::execute_hvac_command(&cmd),
             MultiZoneCommand::Validate(cmd) => multi_zone::execute_validate_command(&cmd),
             MultiZoneCommand::Performance(cmd) => multi_zone::execute_performance_command(&cmd),
         },
