@@ -28,7 +28,7 @@ mod delta_unit_tests {
 
         let map = value.as_mapping().unwrap();
         assert_eq!(
-            map.get(&serde_yaml::Value::String("heating_setpoint".to_string())),
+            map.get(serde_yaml::Value::String("heating_setpoint".to_string())),
             Some(&serde_yaml::Value::Number(serde_yaml::Number::from(20)))
         );
     }
@@ -57,12 +57,12 @@ mod delta_unit_tests {
         let hvac = value
             .as_mapping()
             .unwrap()
-            .get(&serde_yaml::Value::String("hvac".to_string()))
+            .get(serde_yaml::Value::String("hvac".to_string()))
             .unwrap()
             .as_mapping()
             .unwrap();
         assert_eq!(
-            hvac.get(&serde_yaml::Value::String("field".to_string())),
+            hvac.get(serde_yaml::Value::String("field".to_string())),
             Some(&serde_yaml::Value::Number(serde_yaml::Number::from(42)))
         );
     }
@@ -111,7 +111,7 @@ mod delta_unit_tests {
 
         let result = apply_patch(base, &patch).unwrap();
         let map = result.as_mapping().unwrap();
-        assert!(map.contains_key(&serde_yaml::Value::String("heating_setpoint".to_string())));
+        assert!(map.contains_key(serde_yaml::Value::String("heating_setpoint".to_string())));
     }
 
     #[test]

@@ -120,11 +120,11 @@ mod modulation_tests {
         let (_, mod_cooling) = controller.calculate_modulation(50.0, 45.0, 0.1);
 
         assert!(
-            mod_heating >= 0.0 && mod_heating <= 1.0,
+            (0.0..=1.0).contains(&mod_heating),
             "Heating modulation should be bounded [0, 1]"
         );
         assert!(
-            mod_cooling >= 0.0 && mod_cooling <= 1.0,
+            (0.0..=1.0).contains(&mod_cooling),
             "Cooling modulation should be bounded [0, 1]"
         );
     }
@@ -609,7 +609,7 @@ mod integration_scenarios {
         // Zone reaches setpoint
         zone_temp = 20.0;
         mass_temp = 19.0;
-        let (mode, modulation) = controller.calculate_modulation(zone_temp, mass_temp, 0.001);
+        let (mode, _modulation) = controller.calculate_modulation(zone_temp, mass_temp, 0.001);
         assert_eq!(mode, HVACMode::Off);
     }
 

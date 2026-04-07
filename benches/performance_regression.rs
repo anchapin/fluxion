@@ -38,7 +38,7 @@ fn bench_thermal_model_solve(c: &mut Criterion) {
         let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
         // Warm up
-        model.solve_timesteps(100, &surrogates, false);
+        model.solve_timesteps(100, &surrogates, false, None, None, None);
 
         let name = format!("thermal_model_solve_{}zones", num_zones);
         let mut group = c.benchmark_group("thermal_model");
@@ -46,7 +46,7 @@ fn bench_thermal_model_solve(c: &mut Criterion) {
         group.bench_function(&name, |b| {
             b.iter(|| {
                 let mut model = ThermalModel::<VectorField>::new(num_zones);
-                model.solve_timesteps(black_box(8760), black_box(&surrogates), black_box(false));
+                model.solve_timesteps(black_box(8760), black_box(&surrogates), black_box(false), None, None, None);
             })
         });
         group.finish();
