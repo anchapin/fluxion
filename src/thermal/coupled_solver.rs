@@ -105,7 +105,7 @@ pub fn build_system_matrix(c: &[f64], h_tr_iz: &[f64], dt: f64) -> Vec<Vec<f64>>
 ///
 /// # Note
 /// In full implementation, this would use faer::solve
-pub fn solve_with_faer(matrix: Vec<Vec<f64>>, rhs: Vec<f64>) -> Vec<f64> {
+pub fn solve_with_faer(mut matrix: Vec<Vec<f64>>, rhs: Vec<f64>) -> Vec<f64> {
     // Simplified: use Gaussian elimination for small systems
     // In practice, this would call faer::solve
     let n = matrix.len();

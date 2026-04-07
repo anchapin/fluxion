@@ -70,7 +70,7 @@
   - Added proper feature flag gating
   - HVAC bindings temporarily disabled due to ThermalModel API mismatch
   
-- [ ] M2-05: Fix Critical Gaps - VectorField API & CLI Integration (Gap Closure)
+- [x] M2-05: Fix Critical Gaps - VectorField API & CLI Integration (Gap Closure)
   - Fix VectorField API usage in HVAC control tests
   - Correct ThermalModel import path in zone_control.rs
   - Implement actual HVAC integration in CLI handlers

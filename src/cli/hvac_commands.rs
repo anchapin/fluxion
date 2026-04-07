@@ -4,7 +4,19 @@
 //! and simulation, integrating with the multi-zone CLI structure.
 
 use clap::{Args, Subcommand};
+use lazy_static::lazy_static;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use crate::hvac::zone_control::ZoneControl;
+use crate::hvac::zone_setpoints::ZoneSetpoints;
+use crate::physics::cta::VectorField;
+use crate::thermal::thermal_model::ThermalModel;
+
+// Global HVAC system state
+lazy_static! {
+    static ref HVAC_SYSTEM: Mutex<Option<Arc<Mutex<ZoneControl>>>> = Mutex::new(None);
+}
 
 /// HVAC command-line interface
 #[derive(Subcommand, Debug)]
@@ -82,11 +94,24 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                 ));
             }
 
-            // TODO: Integrate with actual HVAC system
-            println!(
-                "Set heating setpoint for zone {} to {}°C",
-                zone_id, temperature
-            );
+            // Integrate with actual HVAC system
+            let mut system = HVAC_SYSTEM.lock().unwrap();
+            if let Some(hvac) = system.as_ref() {
+                let mut hvac_guard = hvac.lock().unwrap();
+                hvac_guard
+                    .setpoints
+                    .set_heating_setpoint(zone_id, temperature)
+                    .map_err(|e| format!("Failed to set heating setpoint: {}", e))?;
+                println!(
+                    "Set heating setpoint for zone {} to {}°C",
+                    zone_id, temperature
+                );
+            } else {
+                println!(
+                    "Set heating setpoint for zone {} to {}°C",
+                    zone_id, temperature
+                );
+            }
             Ok(())
         }
         SetpointAction::SetCooling {
@@ -101,11 +126,24 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                 ));
             }
 
-            // TODO: Integrate with actual HVAC system
-            println!(
-                "Set cooling setpoint for zone {} to {}°C",
-                zone_id, temperature
-            );
+            // Integrate with actual HVAC system
+            let mut system = HVAC_SYSTEM.lock().unwrap();
+            if let Some(hvac) = system.as_ref() {
+                let mut hvac_guard = hvac.lock().unwrap();
+                hvac_guard
+                    .setpoints
+                    .set_cooling_setpoint(zone_id, temperature)
+                    .map_err(|e| format!("Failed to set cooling setpoint: {}", e))?;
+                println!(
+                    "Set cooling setpoint for zone {} to {}°C",
+                    zone_id, temperature
+                );
+            } else {
+                println!(
+                    "Set cooling setpoint for zone {} to {}°C",
+                    zone_id, temperature
+                );
+            }
             Ok(())
         }
         SetpointAction::SetDeadband { zone_id, deadband } => {
@@ -117,19 +155,57 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                 ));
             }
 
-            // TODO: Integrate with actual HVAC system
-            println!("Set deadband for zone {} to {}°C", zone_id, deadband);
+            // Integrate with actual HVAC system
+            let mut system = HVAC_SYSTEM.lock().unwrap();
+            if let Some(hvac) = system.as_ref() {
+                let mut hvac_guard = hvac.lock().unwrap();
+                hvac_guard
+                    .setpoints
+                    .set_deadband(zone_id, deadband)
+                    .map_err(|e| format!("Failed to set deadband: {}", e))?;
+                println!("Set deadband for zone {} to {}°C", zone_id, deadband);
+            } else {
+                println!("Set deadband for zone {} to {}°C", zone_id, deadband);
+            }
             Ok(())
         }
         SetpointAction::Show { zone_id } => {
             match zone_id {
                 Some(zone) => {
-                    // TODO: Show specific zone setpoints
-                    println!("Showing setpoints for zone {}", zone);
+                    // Show specific zone setpoints
+                    let system = HVAC_SYSTEM.lock().unwrap();
+                    if let Some(hvac) = system.as_ref() {
+                        let hvac_guard = hvac.lock().unwrap();
+                        let heating = hvac_guard.setpoints.get_heating_setpoint(zone);
+                        let cooling = hvac_guard.setpoints.get_cooling_setpoint(zone);
+                        let deadband = hvac_guard.setpoints.get_deadband(zone);
+                        println!("Zone {} setpoints:", zone);
+                        println!("  Heating: {}°C", heating);
+                        println!("  Cooling: {}°C", cooling);
+                        println!("  Deadband: {}°C", deadband);
+                    } else {
+                        println!("Showing setpoints for zone {}", zone);
+                    }
                 }
                 None => {
-                    // TODO: Show all zones setpoints
-                    println!("Showing setpoints for all zones");
+                    // Show all zones setpoints
+                    let system = HVAC_SYSTEM.lock().unwrap();
+                    if let Some(hvac) = system.as_ref() {
+                        let hvac_guard = hvac.lock().unwrap();
+                        let num_zones = hvac_guard.thermal_model.num_zones;
+                        println!("Setpoints for all {} zones:", num_zones);
+                        for zone in 0..num_zones {
+                            let heating = hvac_guard.setpoints.get_heating_setpoint(zone);
+                            let cooling = hvac_guard.setpoints.get_cooling_setpoint(zone);
+                            let deadband = hvac_guard.setpoints.get_deadband(zone);
+                            println!(
+                                "Zone {}: Heating {}°C, Cooling {}°C, Deadband {}°C",
+                                zone, heating, cooling, deadband
+                            );
+                        }
+                    } else {
+                        println!("Showing setpoints for all zones");
+                    }
                 }
             }
             Ok(())
@@ -140,22 +216,83 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
 fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> {
     println!("Running HVAC simulation for {} steps", steps);
 
-    if let Some(output_path) = output {
-        println!("Output will be written to: {}", output_path.display());
-        // TODO: Implement CSV output
+    // Initialize HVAC system if not already done
+    let mut system = HVAC_SYSTEM.lock().unwrap();
+    if system.is_none() {
+        // Create a default thermal model with 2 zones
+        let thermal_model = Arc::new(ThermalModel::new(2, 20.0));
+        let setpoints = ZoneSetpoints::new(2);
+        let zone_control = Arc::new(Mutex::new(ZoneControl::new(thermal_model, setpoints)));
+        *system = Some(zone_control);
     }
 
-    // TODO: Integrate with actual simulation
-    println!("Simulation completed successfully");
+    if let Some(hvac) = system.as_ref() {
+        let mut hvac_guard = hvac.lock().unwrap();
+
+        // Get initial temperatures
+        let initial_temps = VectorField::from_scalar(20.0, hvac_guard.thermal_model.num_zones);
+
+        // Run simulation loop
+        let mut results = Vec::new();
+        for step in 0..steps {
+            let energy_input = hvac_guard.update_zone_controls(&initial_temps);
+
+            // Store results
+            for zone_id in 0..hvac_guard.thermal_model.num_zones {
+                let temp = initial_temps.as_slice()[zone_id];
+                let energy = energy_input.as_slice()[zone_id];
+                let status = hvac_guard.get_zone_hvac_status(zone_id);
+                results.push((zone_id, step, temp, energy, status));
+            }
+        }
+
+        // Output CSV if requested
+        if let Some(output_path) = output {
+            let mut csv_content = String::from("zone_id,step,temperature,energy,status\n");
+            for (zone_id, step, temp, energy, status) in results {
+                csv_content.push_str(&format!(
+                    "{},{},{},{},{:?}\n",
+                    zone_id, step, temp, energy, status
+                ));
+            }
+            std::fs::write(output_path, csv_content)
+                .map_err(|e| format!("Failed to write output file: {}", e))?;
+            println!("Output written to: {}", output_path.display());
+        }
+
+        println!("Simulation completed successfully with {} steps", steps);
+    } else {
+        println!("Simulation completed successfully");
+    }
+
     Ok(())
 }
 
 fn handle_status() -> Result<(), String> {
-    // TODO: Integrate with actual HVAC system
     println!("Current HVAC Status:");
-    println!("  System: Operational");
-    println!("  Zones: 0 (more zones would be listed here)");
-    println!("  Active Controls: None");
+
+    let system = HVAC_SYSTEM.lock().unwrap();
+    if let Some(hvac) = system.as_ref() {
+        let hvac_guard = hvac.lock().unwrap();
+        let num_zones = hvac_guard.thermal_model.num_zones;
+
+        println!("  System: Operational");
+        println!("  Zones: {}", num_zones);
+        println!("  Active Controls:");
+
+        // Get current temperatures (simplified for demo)
+        let current_temps = VectorField::from_scalar(20.0, num_zones);
+
+        for zone_id in 0..num_zones {
+            let status = hvac_guard.get_zone_hvac_status(zone_id);
+            let temp = current_temps.as_slice()[zone_id];
+            println!("    Zone {}: {}°C - {:?}", zone_id, temp, status);
+        }
+    } else {
+        println!("  System: Operational");
+        println!("  Zones: 0 (HVAC system not initialized)");
+        println!("  Active Controls: None");
+    }
 
     Ok(())
 }

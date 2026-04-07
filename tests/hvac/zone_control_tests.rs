@@ -48,7 +48,7 @@ fn test_heating_control() {
     let energy_input = zone_control.update_zone_controls(&current_temps);
 
     assert_eq!(zone_control.get_zone_hvac_status(0), HVACStatus::Heating);
-    assert!(energy_input.get(0) > 0.0);
+    assert!(energy_input.as_slice()[0] > 0.0);
 }
 
 #[test]
@@ -64,7 +64,7 @@ fn test_cooling_control() {
     let energy_input = zone_control.update_zone_controls(&current_temps);
 
     assert_eq!(zone_control.get_zone_hvac_status(0), HVACStatus::Cooling);
-    assert!(energy_input.get(0) > 0.0);
+    assert!(energy_input.as_slice()[0] > 0.0);
 }
 
 #[test]
@@ -82,7 +82,7 @@ fn test_deadband_control() {
     let energy_input = zone_control.update_zone_controls(&current_temps);
 
     assert_eq!(zone_control.get_zone_hvac_status(0), HVACStatus::Off);
-    assert_eq!(energy_input.get(0), 0.0);
+    assert_eq!(energy_input.as_slice()[0], 0.0);
 }
 
 #[test]
@@ -115,9 +115,9 @@ fn test_independent_zone_control() {
     assert_eq!(zone_control.get_zone_hvac_status(1), HVACStatus::Off);
     assert_eq!(zone_control.get_zone_hvac_status(2), HVACStatus::Cooling);
 
-    assert!(energy_input.get(0) > 0.0); // Heating energy
-    assert_eq!(energy_input.get(1), 0.0); // No energy in deadband
-    assert!(energy_input.get(2) > 0.0); // Cooling energy
+    assert!(energy_input.as_slice()[0] > 0.0); // Heating energy
+    assert_eq!(energy_input.as_slice()[1], 0.0); // No energy in deadband
+    assert!(energy_input.as_slice()[2] > 0.0); // Cooling energy
 }
 
 #[test]
@@ -138,8 +138,8 @@ fn test_energy_calculation() {
 
     let energy_input = zone_control.update_zone_controls(&current_temps);
 
-    assert_eq!(energy_input.get(0), 2000.0);
-    assert_eq!(energy_input.get(1), 2000.0);
+    assert_eq!(energy_input.as_slice()[0], 2000.0);
+    assert_eq!(energy_input.as_slice()[1], 2000.0);
 }
 
 #[test]
