@@ -6,7 +6,7 @@
 //! back to requesters via oneshot channels.
 
 use crate::ai::surrogate::SurrogateManager;
-use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender};
+use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender, TrySendError};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;

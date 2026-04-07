@@ -103,7 +103,7 @@ impl FDSolverWrapper {
 
     /// Calculate surface heat flux from temperature profile.
     fn calculate_surface_flux(
-        _solver: &ImplicitFDSolver,
+        solver: &ImplicitFDSolver,
         _discretization: &WallDiscretization,
         T_interior: f64,
         h_interior: f64,

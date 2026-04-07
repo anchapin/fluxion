@@ -111,7 +111,7 @@ impl HeatConductionSolver for FiveR1CSolver {
 
     fn step(
         &mut self,
-        _timestep: f64,
+        timestep: f64,
         T_interior: f64,
         T_exterior: f64,
         _h_interior: f64,

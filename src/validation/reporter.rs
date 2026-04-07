@@ -715,7 +715,7 @@ impl ValidationReportGenerator {
                 false
             };
 
-            let _cohens_d = if let Some(ref metrics) = report.statistical_metrics {
+            let cohens_d = if let Some(ref metrics) = report.statistical_metrics {
                 metrics.cohens_d
             } else {
                 f64::NAN

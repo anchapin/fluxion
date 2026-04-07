@@ -324,7 +324,7 @@ impl SimplifiedCtfCoupling {
     pub fn flux_corrected(
         solver: &mut CTFSolver,
         t_zone: f64,
-        _t_mass: f64,
+        t_mass: f64,
         t_sol_air: f64,
         solar_interior: f64,
         h_i: f64,

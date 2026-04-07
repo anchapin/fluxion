@@ -4,7 +4,7 @@
 //! using rayon for running thousands of building variants simultaneously.
 //! This is essential for high-throughput building energy analysis and optimization.
 
-use crate::sim::thermal_model::ThermalModelTrait;
+use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
@@ -101,7 +101,7 @@ impl ParallelThermalEvaluator {
     pub fn evaluate_population<F>(
         &self,
         population: Vec<BuildingVariant>,
-        model_factory: F,
+        mut model_factory: F,
     ) -> Vec<VariantResult>
     where
         F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync,
@@ -490,7 +490,7 @@ impl Default for DistributedInferenceExecutor {
 pub async fn run_async_inference<F>(
     population: Vec<BuildingVariant>,
     max_concurrent: usize,
-    _model_factory: F,
+    mut model_factory: F,
 ) -> Vec<VariantResult>
 where
     F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync + 'static,
@@ -513,7 +513,7 @@ where
 /// This is a convenience function to run parallel inference using rayon.
 pub fn run_parallel_inference<F>(
     population: Vec<BuildingVariant>,
-    model_factory: F,
+    mut model_factory: F,
 ) -> Vec<VariantResult>
 where
     F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync,
