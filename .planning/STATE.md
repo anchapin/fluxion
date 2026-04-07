@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: M2-zone-hvac
-status: completed
+current_phase: M2
+status: executing
 stopped_at: Completed M2-06-PLAN.md gap closure
-last_updated: "2026-04-07T14:16:12.956Z"
+last_updated: "2026-04-07T16:06:58.072Z"
 progress:
   total_phases: 1
   completed_phases: 0
@@ -17,7 +17,7 @@ progress:
 
 **Milestone:** v1.0 (Next Milestone)
 **Last Updated:** 2026-04-07
-**Current Phase:** M2-zone-hvac
+**Current Phase:** M2
 **Decision:** v0.8.0 milestone completed successfully. Ready for v1.0 planning.
 
 ---
@@ -27,14 +27,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07 after v0.8.0 milestone)
 
 **Core value:** Full ASHRAE 140 compliance for peak loads and free-floating temperature profiles
-**Current focus:** Phase M2-zone-hvac — controls
+**Current focus:** Phase M2 — zone-hvac-controls
 
 ---
 
 ## Current Position
 
-Phase: M2-zone-hvac (controls) — EXECUTING
-Plan: Not started
+Phase: M2 (zone-hvac-controls) — EXECUTING
+Plan: 3 of 8
 
 ### Progress Bar
 
@@ -59,7 +59,7 @@ Overall:  [████████████████████] 40% (v1
 | MZ-06 | ASHRAE 140 Case 960 | M3 | ⏳ NOT PLANNED |
 | MZ-07 | ASHRAE 140 Case 970 | M3 | ⏳ NOT PLANNED |
 | MZ-08 | Performance Maintenance | M1 | ✅ COMPLETE |
-| MZ-09 | Python API Multi-Zone | M2 | ⚠️ PARTIAL |
+| MZ-09 | Python API Multi-Zone | M2 | ✅ COMPLETE |
 | MZ-10 | CLI Multi-Zone | M2 | ⚠️ PARTIAL |
 
 ---
@@ -67,7 +67,7 @@ Overall:  [████████████████████] 40% (v1
 ## v0.8 Context (Active)
 
 **Previous milestone:** v0.8 Peak Load & Free-Float Validation
-**Status:** Milestone complete
+**Status:** Ready to execute
 
 ### v0.8 Recent Results
 
@@ -111,6 +111,8 @@ Overall:  [████████████████████] 40% (v1
 | Phase M2-zone-hvac-controls P04 | 3600 | 3 tasks | 6 files |
 | Phase M2-zone-hvac-controls P05 | 8 | 3 tasks | 4 files |
 | Phase M2-zone-hvac-controls P06 | 3600 | 3 tasks | 5 files |
+| Phase M2-zone-hvac-controls P07 | 45 | 3 tasks | 3 files |
+| Phase M2-zone-hvac-controls P08 | 60min | 3 tasks | 2 files |
 
 ## Decisions
 
@@ -124,6 +126,9 @@ Overall:  [████████████████████] 40% (v1
 - [Phase M2-zone-hvac-controls]: Designed CLI with subcommand pattern for intuitive HVAC control interface
 - [Phase M2-zone-hvac-controls]: Used lazy_static for global HVAC system state management
 - [Phase M2-zone-hvac-controls]: Used PyO3 module registration pattern for HVAC bindings
+- [Phase M2-zone-hvac-controls]: Fixed ThermalModel import to use correct module path: crate::thermal::thermal_model::ThermalModel — Resolved compilation error blocking HVAC module integration
+- [Phase M2-zone-hvac-controls]: Standardized VectorField access using as_slice()[index] pattern — Replaced deprecated .get() method calls throughout test code
+- [Phase M2-zone-hvac-controls]: Added comprehensive zone ID validation to ZoneSetpoints methods — Prevents index out of bounds errors and improves error handling
 
 ## Blockers
 
