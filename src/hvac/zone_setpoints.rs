@@ -47,6 +47,7 @@ impl ZoneSetpoints {
     /// # Returns
     /// Result indicating success or validation error
     pub fn set_heating_setpoint(&mut self, zone_id: usize, temperature: f64) -> Result<(), String> {
+        self.validate_zone_id(zone_id)?;
         self.validate_temperature(temperature)?;
         self.heating_setpoints.as_mut_slice()[zone_id] = temperature;
         Ok(())
@@ -61,6 +62,7 @@ impl ZoneSetpoints {
     /// # Returns
     /// Result indicating success or validation error
     pub fn set_cooling_setpoint(&mut self, zone_id: usize, temperature: f64) -> Result<(), String> {
+        self.validate_zone_id(zone_id)?;
         self.validate_temperature(temperature)?;
         self.cooling_setpoints.as_mut_slice()[zone_id] = temperature;
         Ok(())
@@ -75,6 +77,7 @@ impl ZoneSetpoints {
     /// # Returns
     /// Result indicating success or validation error
     pub fn set_deadband(&mut self, zone_id: usize, deadband: f64) -> Result<(), String> {
+        self.validate_zone_id(zone_id)?;
         self.validate_deadband(deadband)?;
         self.deadbands.as_mut_slice()[zone_id] = deadband;
         Ok(())
