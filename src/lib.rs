@@ -1564,9 +1564,14 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register multi-zone module
     python::multi_zone(_py, m)?;
     
-    // Register HVAC module
-    python::bindings::register_hvac_module(m)?;
-    
+    // Register HVAC classes directly in main module for now
+    m.add_class::<python::hvac_bindings::PyZoneSetpoints>()?;
+    m.add_class::<python::hvac_bindings::PyZoneControl>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        python::hvac_bindings::create_zone_setpoints,
+        m
+    )?)?;
+
     Ok(())
 }
 
