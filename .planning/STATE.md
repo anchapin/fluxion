@@ -1,23 +1,23 @@
 ---
 gsd_state_version: 1.0
-milestone: v0.7.0
-milestone_name: Thermal Physics Complete
-current_phase: 32
-status: complete
-last_updated: "2026-04-06T21:25:45.865Z"
+milestone: v0.8.0
+milestone_name: Release
+current_phase: 34
+status: executing
+last_updated: "2026-04-06T21:30:00.000Z"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 24
-  completed_plans: 24
+  total_phases: 7
+  completed_phases: 6
+  total_plans: 16
+  completed_plans: 17
 ---
 
 # Fluxion Project State
 
-**Milestone:** v0.8 Peak Load & Free-Float Validation
-**Last Updated:** 2026-04-02
-**Current Phase:** 36
-**Decision:** v0.7.0 milestone COMPLETE (100% annual energy compliance). Proceeding to v0.8.0 to resolve peak load and free-floating temperature deviations.
+**Milestone:** v1.0 Multi-Zone Support
+**Last Updated:** 2026-04-06
+**Current Phase:** 34
+**Decision:** v0.8 milestone in progress. v1.0 planning initialized.
 
 ---
 
@@ -25,79 +25,83 @@ progress:
 
 ### Core Value
 
-**v0.8 Goal:** Achieve full ASHRAE 140 compliance for peak loads and free-floating temperature profiles in high-mass buildings.
+**v1.0 Goal:** Extend Fluxion from single-zone to multi-zone thermal simulation, enabling realistic building energy modeling with zone-level HVAC controls.
 
 ### Milestone Objectives
 
-**v0.8 Peak Load & Free-Float Validation:**
+**v1.0 Multi-Zone Support:**
 
-1. 🎯 Peak loads within ±10% for all ASHRAE 140 cases.
-2. 🎯 Free-floating temperature max/min within ±0.5°C of reference.
-3. 🎯 Hourly profile alignment with EnergyPlus/ESP-r/TRNSYS references.
-4. 🎯 Zero regression on annual energy (already 100% compliant in v0.7.0).
+1. 🎯 N-zone thermal network (2-10 zones minimum).
+2. 🎯 Inter-zone heat transfer with energy conservation.
+3. 🎯 Zone-level HVAC controls with independent setpoints.
+4. 🎯 ASHRAE 140 multi-zone validation (Case 960).
 
 ---
 
 ## Current Position
 
-Phase: 36 (v0.8.0-release) — EXECUTING
-Plan: 3 of 3
+Phase: 34 (peak-load-physics-fix) — EXECUTING
+Plan: 3 of 3 (completed)
 
 ### Progress Bar
 
 ```
-Phase 33: [██████████] 100% — Peak Load Diagnostics (COMPLETE)
-Phase 34: [██        ] 33% — Peak Load Physics Fix (PARTIAL)
-Phase 35: [          ] 0% — Free-Floating Validation (NOT STARTED)
-Phase 36: [█         ] 33% — v0.8.0 Release (IN PROGRESS)
-Overall:  [██        ] 30% (v0.8 Milestone Active)
+Phase M1: [          ] 0% — Multi-Zone Thermal Network (PLANNED)
+Phase M2: [          ] 0% — Zone-Level HVAC Controls (PLANNED)
+Phase M3: [          ] 0% — ASHRAE 140 Multi-Zone Validation (PLANNED)
+Overall:  [          ] 0% (v1.0 Milestone Planned)
 ```
 
-### v0.8.0 Validation Results (36-01)
+### v1.0 Requirements (MZ-01 through MZ-10)
 
-- **Overall Pass Rate:** 25% (16 PASS, 11 WARN, 37 FAIL)
-- **Peak Load Pass Rate:** 25% (4/16 for 900-series)
-- **Free-Float Pass Rate:** 25% (2/8 for FF cases)
-- **⚠️ Both below >90% target - Phase 34/35 fixes needed**
-
-### Blockers
-
-1. **Phase 34/35 Not Complete:** Peak load and free-float pass rates at 25%, below >90% target
-   - Phase 34 (Peak Load Physics Fix) shows as PARTIAL in planning
-   - Phase 35 (Free-Floating Validation) not started
-   - Need to verify/complete Phase 34-35 before proceeding
-
----
-
-## v0.7.0 Validation Summary (2026-04-02)
-
-**Achievement:** 100% compliance for annual energy in high-mass (900-series) cases.
-
-**Key Results:**
-
-- ✅ **Case 900 Heating:** 1.60 MWh (Ref: 1.17-2.04) — **PASS**
-- ✅ **Case 900 Cooling:** 3.01 MWh (Ref: 2.13-3.67) — **PASS**
-- ✅ **900-Series Annual Energy:** All 6 cases (900-950) now PASS or WARN.
-- ✅ **Performance:** 1,237 configs/sec (exceeds 800 target).
-- ❌ **Peak Loads:** High-mass peak heating/cooling still ~100% too high.
-- ❌ **Free-Floating Temps:** Significant deviations remain.
+| Requirement | Description | Phase |
+|-------------|-------------|-------|
+| MZ-01 | N-Zone Thermal Network | M1 |
+| MZ-02 | Inter-Zone Heat Transfer | M1 |
+| MZ-03 | Zone-Specific HVAC Setpoints | M2 |
+| MZ-04 | Zone-Level HVAC Control | M2 |
+| MZ-05 | Energy Balance Verification | M1 |
+| MZ-06 | ASHRAE 140 Case 960 | M3 |
+| MZ-07 | ASHRAE 140 Case 970 | M3 |
+| MZ-08 | Performance Maintenance | M1 |
+| MZ-09 | Python API Multi-Zone | M2 |
+| MZ-10 | CLI Multi-Zone | M2 |
 
 ---
 
-## Accumulated Context
+## v0.8 Context (Active)
 
-### Key Decisions (v0.8.0)
+**Previous milestone:** v0.8 Peak Load & Free-Float Validation
+**Status:** Executing Phase 34
 
-| Decision | Rationale | Outcome |
-|----------|-----------|---------|
-| Missing Floor/Roof Mass | 5R1C network was missing ~60% of total thermal mass in Case 900 | 🔄 Root cause for peak failure identified |
-| Unify Envelope Conduction | h_tr_em/h_tr_ms and C_m must include all opaque surfaces (walls + roof + floor) | 🔄 Planned for Phase 34 |
+### v0.8 Recent Results
 
-### Technical Debt / Remaining Gaps
+- Phase 36-01 validation: 25% pass rate (below >90% target)
+- Phase 34 (Peak Load Physics Fix): PARTIAL
+- Phase 35 (Free-Floating Validation): NOT STARTED
 
-- **Peak Load Accuracy:** High-mass peaks overestimate by nearly 100% in some cases.
-- **Thermal Lag:** Free-floating cases show insufficient thermal damping in the 5R1C/CTF integration.
-- **Diagnostic Visibility:** Need better tools to compare hourly internal states against EnergyPlus.
+### v1.0 Research Findings
+
+- Existing dependencies (faer, ndarray, rayon) sufficient for multi-zone
+- N×5R1C architecture extends single-zone pattern
+- Critical: Inter-zone energy conservation (heat out = heat in)
+- Case 960 is primary validation case
+
+---
+
+## Technical Debt / Remaining Gaps
+
+### From v0.8 (to be resolved)
+
+- Peak Load Accuracy: High-mass peaks still overestimate
+- Free-Floating Temps: Deviations remain
+- These are resolved before v1.0 work begins
+
+### v1.0 Considerations
+
+- Zone coupling stability for >10 zones
+- Reference data for Case 960 validation
+- Cross-validation infrastructure with EnergyPlus
 
 ---
 
@@ -105,13 +109,13 @@ Overall:  [██        ] 30% (v0.8 Milestone Active)
 
 ### Last Session
 
-- **Phase 36-01 Executed**: ASHRAE validation suite run
-- **Validation Results**: 25% pass rate (below >90% target)
-- **Stopped At**: Awaiting human verification checkpoint (36-01)
+- Created v1.0 milestone (Multi-Zone Support)
+- Research complete: 5 research files in `.planning/research/`
+- Requirements defined: MZ-01 through MZ-10
+- Roadmap initialized: 3 phases planned
 
 ### Next Actions
 
-1. **Human Verification**: Review validation results in docs/ASHRAE140_RESULTS_v0.8.0.md
-2. **Phase 34 Verification**: Confirm Peak Load Physics Fix is fully applied
-3. **Phase 35 Execution**: Complete Free-Floating Validation
-4. **Continue Phase 36**: Execute 36-02 and 36-03 after Phase 34/35 are complete
+1. **v0.8 Completion**: Complete Phases 34/35 before starting v1.0
+2. **Phase M1 Planning**: Execute `/gsd:plan-phase M1` for multi-zone thermal network
+3. **Phase M1 Execution**: Begin multi-zone thermal network implementation
