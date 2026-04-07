@@ -139,6 +139,10 @@ path = "tools/fluxion_delta.rs"
 name = "export_csv"
 path = "src/bin/export_csv.rs"
 
+[[bin]]
+name = "run_multi_zone_validation"
+path = "src/bin/run_multi_zone_validation.rs"
+
 [profile.release]
 opt-level = 3
 lto = true
