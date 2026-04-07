@@ -38,8 +38,8 @@
 ### Current Milestone: v1.0 (In Progress)
 
 - [x] Phase M1: Multi-Zone Thermal Network Foundation (3/3 plans complete)
-- [ ] Phase M2: Zone-Level HVAC Controls (3/6 plans, gap closure added)
-- [ ] Phase M3: ASHRAE 140 Multi-Zone Validation (TBD plans)
+- [x] Phase M2: Zone-Level HVAC Controls (3/6 plans, gap closure added) (completed 2026-04-07)
+- [ ] Phase M3: ASHRAE 140 Multi-Zone Validation (3 plans)
 
 ## Phase M2: Zone-Level HVAC Controls
 
@@ -102,6 +102,31 @@
 
 ---
 
+## Phase M3: ASHRAE 140 Multi-Zone Validation
+
+**Goal:** Validate multi-zone implementation against ASHRAE 140 cases 960 and 970
+
+**Requirements:** [MZ-06, MZ-07]
+
+**Status:** Not started
+
+- [ ] M3-01: Multi-Zone Validation Framework - Extend validation infrastructure for multi-zone cases
+  - Implement Case960Validator and Case970Validator structs
+  - Extend ASHRAE140MultiZoneValidator with case-specific methods
+  - Create comprehensive validation tests
+
+- [ ] M3-02: Reference Data and Statistical Methods - Add reference data and statistical analysis
+  - Implement Case 960 reference data in benchmark.rs
+  - Extend reference_data.rs with multi-zone loading utilities
+  - Add statistical validation methods (RMSE, MBE, percentage difference)
+
+- [ ] M3-03: Validation Execution and Reporting - CLI tool and documentation
+  - Create run_multi_zone_validation CLI tool
+  - Enhance validation reporting with multi-zone support
+  - Generate comprehensive validation results documentation
+
+---
+
 ## Progress
 
 | Phase | Milestone | Plans Complete | Status | Completed |
@@ -112,7 +137,7 @@
 | 36. v0.8.0 Release | v0.8 | 4/4 | Complete | ✅ 2026-04-06 |
 | 37. Multi-Zone Thermal Network Foundation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
 | 38. Zone-Level HVAC Controls | v1.0 | 5/8 | In Progress | ⚠️ Gap Closure |
-| 39. ASHRAE 140 Multi-Zone Validation | v1.0 | 0/0 | Not started | - |
+| 39. ASHRAE 140 Multi-Zone Validation | v1.0 | 0/3 | Not started | - |
 
 **Overall Progress:** v0.8.0 milestone complete (100%), v1.0 in progress (40%)
 
