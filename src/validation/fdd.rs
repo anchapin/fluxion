@@ -147,7 +147,7 @@ impl FaultDetector {
         &mut self,
         zone_id: &str,
         temp: f64,
-        heat_sp: f64,
+        _heat_sp: f64,
         cool_sp: f64,
         mode: &str,
         hour: usize,

@@ -2205,8 +2205,8 @@ impl ASHRAE140Validator {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
+        let _peak_heating_watts: f64 = 0.0;
+        let _peak_cooling_watts: f64 = 0.0;
 
         // Set hvac_enabled per zone based on HVAC configuration
         let num_zones = model.num_zones;

@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
 
 use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};

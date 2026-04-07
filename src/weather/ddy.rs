@@ -117,7 +117,7 @@ pub fn generate_design_day_hours(spec: &DesignDaySpec) -> Vec<HourlyWeatherData>
         let humidity = 50.0; // 50%
 
         // Calculate hour of year (approximate based on month/day)
-        let days_in_month = days_in_month(spec.month);
+        let _days_in_month = days_in_month(spec.month);
         let day_of_year = cumulative_days_before_month(spec.month) + spec.day_of_month as usize - 1;
         let hour_of_year = day_of_year * 24 + hour;
 

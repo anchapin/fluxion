@@ -1,16 +1,10 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::constants::atmospheric::{
-    AIR_DENSITY_SEA_LEVEL, STANDARD_ATMOSPHERIC_PRESSURE,
-};
-use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
-use crate::physics::constants::thermal::ashrae_140::{
-    EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
-};
+use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
-use crate::physics::ctf_zone_coupling::{CtfZoneCouplingResult, CtfZoneCouplingSolver};
-use crate::sim::assembly::{AssemblyBuilder, BuildingAssembly, ConcreteMaterial, MaterialLayer};
+use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
+use crate::sim::assembly::{BuildingAssembly, MaterialLayer};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
@@ -25,7 +19,7 @@ use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_he
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::{BuildingType, OccupancyProfile};
 use crate::sim::profiles;
-use crate::sim::schedule::{DailySchedule, DayType};
+use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::sim::thermal_integration::{
@@ -36,7 +30,7 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{
     CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
 };
-use crate::validation::config::{validate_assembly, validate_constants, ConfigValidationResult};
+use crate::validation::config::{validate_assembly, validate_constants};
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
@@ -1006,7 +1000,7 @@ impl ThermalModel<VectorField> {
                 }
             }
             // else: cool_start == cool_end means all-day operation, keep constant
-        } else if let (Some(_), Some((start, end))) = (hvac.setback_setpoint, hvac.setback_hours) {
+        } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours) {
             // Partial setback info - use constant as fallback
             model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
 
@@ -1358,15 +1352,15 @@ impl ThermalModel<VectorField> {
             // 3. Mass classification is physics-driven based on layer stack properties
 
             // Calculate effective specific capacitances per area for each construction
-            let kappa_wall = spec
+            let _kappa_wall = spec
                 .construction
                 .wall
                 .iso_13790_effective_capacitance_per_area();
-            let kappa_roof = spec
+            let _kappa_roof = spec
                 .construction
                 .roof
                 .iso_13790_effective_capacitance_per_area();
-            let kappa_floor = spec
+            let _kappa_floor = spec
                 .construction
                 .floor
                 .iso_13790_effective_capacitance_per_area();
@@ -1382,7 +1376,7 @@ impl ThermalModel<VectorField> {
             );
 
             // Effective mass area (A_m) = factor × floor_area
-            let a_m = a_m_factor * zone_floor_area;
+            let _a_m = a_m_factor * zone_floor_area;
 
             // Mass-to-surface conductance (h_ms) - PHYSICS-BASED
             // FIX: Derive from thermal time constant, not k × A / d
@@ -1407,7 +1401,7 @@ impl ThermalModel<VectorField> {
                 .construction
                 .roof
                 .iso_13790_effective_capacitance_per_area();
-            let kappa_floor = spec
+            let _kappa_floor = spec
                 .construction
                 .floor
                 .iso_13790_effective_capacitance_per_area();
@@ -1439,7 +1433,7 @@ impl ThermalModel<VectorField> {
             // The ISO 13790 mass class is still calculated for reference and A_m factor,
             // but the actual target_tau is based on the ASHRAE 140 specification.
 
-            let mass_class = spec.construction.wall.iso_13790_mass_class();
+            let _mass_class = spec.construction.wall.iso_13790_mass_class();
 
             // Determine target_tau based on ASHRAE 140 case type, not kappa
             // 600-series: Low-mass construction (timber frame) - short time constant
@@ -1810,7 +1804,7 @@ impl ThermalModel<VectorField> {
 
         // Generate heating design day (extreme cold, no solar)
         let heating_design_temp = -15.0; // Typical heating design (Denver 99.6%)
-        let heating_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
+        let _heating_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
             .map(|hour| {
                 let hour_of_year = hour;
                 let hour_fraction = hour as f64 / 24.0;
@@ -1831,7 +1825,7 @@ impl ThermalModel<VectorField> {
 
         // Generate cooling design day (extreme hot, peak solar at midday)
         let cooling_design_temp = 34.4; // Typical cooling design (Denver 0.4%)
-        let cooling_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
+        let _cooling_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
             .map(|hour| {
                 let hour_of_year = hour;
                 let hour_fraction = hour as f64 / 24.0;
@@ -2240,7 +2234,7 @@ impl ThermalModel<VectorField> {
         // Create ThermalModel with validated assembly
         // Note: This creates a basic ThermalModel; for full assembly integration,
         // additional setup would be needed (similar to from_spec)
-        let mut model = ThermalModel::new(num_zones);
+        let model = ThermalModel::new(num_zones);
         // TODO: Apply assembly properties to model (wall_u_value, roof_u_value, etc.)
         Ok(model)
     }
@@ -2564,7 +2558,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn update_optimization_cache(&mut self) {
         // Calculate the series conductance of h_tr_is and h_tr_ms
         // This represents the thermal resistance from interior air through interior surface to mass
-        let h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone())
+        let _h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone())
             / (self.h_tr_is.clone() + self.h_tr_ms.clone());
 
         // h_ext = h_tr_em + h_tr_w + h_ve
@@ -3026,9 +3020,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_vec = t_i_free.as_ref();
         let sens_vec = sensitivity.as_ref();
 
+        let enabled_vec = self.hvac_enabled.as_ref();
+
         // Compute HVAC demand per zone
         let mut demand_vec = Vec::with_capacity(self.num_zones);
         for i in 0..self.num_zones {
+            let enabled = enabled_vec[i];
+
+            // ⚡ Bolt Optimization: Early return for disabled zones
+            // Skips expensive setpoint branching and arithmetic when HVAC is off.
+            // Also eliminates the need for a secondary iteration pass to multiply by the mask.
+            if enabled == 0.0 {
+                demand_vec.push(0.0);
+                continue;
+            }
+
             let t = t_vec[i];
 
             // Determine HVAC mode based on time-varying setpoints
@@ -3858,7 +3864,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use scalar setpoints instead of hourly schedules (Issue #???: HVAC schedule fix)
             // This ensures per-hour setpoint changes from validation loop are respected
             let heating_setpoint = self.heating_setpoint;
-            let cooling_setpoint = self.cooling_setpoint;
+            let _cooling_setpoint = self.cooling_setpoint;
 
             // Calculate free cooling if economizer is active
             use crate::sim::hvac::is_economizer_active;
@@ -3917,7 +3923,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 equipment.calculate_power(modulated_load, outdoor_temp, hvac_mode);
 
             // Apply cycling losses
-            let (efficiency_multiplier, startup_penalty) = self
+            let (efficiency_multiplier, _startup_penalty) = self
                 .cycling_tracker
                 .calculate_cycling_loss(electrical_power > 0.0, equipment.current_plr());
 
@@ -4827,7 +4833,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Internal loads are added to self.loads which will be used by step_physics
         let day_of_year = timestep / 24 + 1; // 1-indexed day of year
         let hour = timestep % 24;
-        let day_type = holiday::get_day_type(day_of_year);
+        let _day_type = holiday::get_day_type(day_of_year);
         let hour_of_week = (day_of_year - 1) % 7 * 24 + hour;
 
         let mut internal_convective = 0.0;
