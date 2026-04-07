@@ -3,13 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
 current_phase: M1-multi-zone
+current_plan: 1/3
 status: completed
-last_updated: "2026-04-07T04:56:55.031Z"
+stopped_at: Completed M2-01-PLAN.md
+last_updated: "2026-04-07T05:07:50.687Z"
 progress:
-  total_phases: 9
+  total_phases: 10
   completed_phases: 9
-  total_plans: 26
-  completed_plans: 27
+  total_plans: 29
+  completed_plans: 28
 ---
 
 # Fluxion Project State
@@ -32,8 +34,9 @@ See: .planning/PROJECT.md (updated 2026-04-07 after v0.8.0 milestone)
 
 ## Current Position
 
-Phase: M2-zone-hvac-controls (HVAC controls) — PLANNED
-Plan: Ready for execution
+Phase: M2-zone-hvac-controls (HVAC controls) — IN PROGRESS
+Current Plan: 1/3
+Plan: Zone-level HVAC controls implementation
 
 ### Progress Bar
 
@@ -51,8 +54,8 @@ Overall:  [████████████████████] 38% (v1
 |-------------|-------------|-------|--------|
 | MZ-01 | N-Zone Thermal Network | M1 | ✅ COMPLETE |
 | MZ-02 | Inter-Zone Heat Transfer | M1 | ✅ COMPLETE |
-| MZ-03 | Zone-Specific HVAC Setpoints | M2 | 📋 PLANNED |
-| MZ-04 | Zone-Level HVAC Control | M2 | 📋 PLANNED |
+| MZ-03 | Zone-Specific HVAC Setpoints | M2 | ✅ COMPLETE |
+| MZ-04 | Zone-Level HVAC Control | M2 | ✅ COMPLETE |
 | MZ-05 | Energy Balance Verification | M1 | ✅ COMPLETE |
 | MZ-06 | ASHRAE 140 Case 960 | M3 | ⏳ NOT PLANNED |
 | MZ-07 | ASHRAE 140 Case 970 | M3 | ⏳ NOT PLANNED |
@@ -96,7 +99,23 @@ Overall:  [████████████████████] 38% (v1
 - Reference data for Case 960 validation
 - Cross-validation infrastructure with EnergyPlus
 
+### Performance Metrics
+
+| Phase | Plan | Duration (s) | Tasks | Files | Status |
+|-------|------|--------------|-------|-------|--------|
+| M2-zone-hvac-controls | 01 | 1800 | 3 | 3 | ✅ COMPLETE |
+
 ---
+| Phase M2-zone-hvac-controls P01 | 1800 | 3 tasks | 3 files |
+
+## Decisions
+
+### Key Decisions Made
+
+- **Control Algorithm:** Used simple proportional control (1000W per °C difference) for initial HVAC energy calculation
+- **Deadband Implementation:** Symmetric deadband around setpoints (±deadband/2)
+- **Thread Safety:** Arc<ThermalModel> used for safe concurrent access
+- [Phase M2-zone-hvac-controls]: Used simple proportional control (1000W per °C difference) for initial HVAC energy calculation
 
 ## Session Continuity
 
@@ -106,10 +125,16 @@ Overall:  [████████████████████] 38% (v1
 - Research complete: 5 research files in `.planning/research/`
 - Requirements defined: MZ-01 through MZ-10
 - Roadmap initialized: 3 phases planned
+- **M2-01 Execution**: Completed zone-level HVAC controls foundation
 - **M1-01 Execution**: Completed multi-zone thermal network foundation
 
 ### Next Actions
 
-1. **M2 Execution**: Implement zone-level HVAC controls
-2. **Python API extension**: Complete multi-zone HVAC bindings
-3. **CLI integration**: Add HVAC command-line interface
+1. **M2-02 Execution**: Implement Python API multi-zone HVAC bindings
+2. **M2-03 Execution**: Add CLI multi-zone HVAC interface
+3. **M3 Planning**: Prepare ASHRAE 140 multi-zone validation
+
+### Session Info
+- **Last Session:** 2026-04-07T05:07:50.684Z
+- **Stopped At:** Completed M2-01-PLAN.md
+- **Status:** Ready for M2-02 execution
