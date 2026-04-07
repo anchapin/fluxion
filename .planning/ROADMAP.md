@@ -71,12 +71,13 @@
 3. No regression on annual energy (maintain ±15% tolerance)
 4. No regression on low-mass peak loads
 
-**Plans:** 3/3 plans complete
+**Plans:** 4/4 plans
 - 34-01: Thermal capacitance fix (Cm includes wall + roof + floor) - COMPLETE
 - 34-02: Conductance fix (h_tr_ms and h_tr_em include roof) - COMPLETE
-- 34-03: τ scaling fix (time constant adjustment for proper thermal damping) - PLANNED
+- 34-03: τ scaling fix (time constant adjustment) - COMPLETE
+- 34-04: Gap closure - Higher τ scaling factor (in progress)
 
-**Status:** PLANNED (3 plans)
+**Status:** 4 plans (gap closure plan 04 added)
 
 ---
 
