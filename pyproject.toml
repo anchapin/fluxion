@@ -4,13 +4,13 @@ build-backend = "maturin"
 
 [project]
 name = "fluxion"
-version = "0.8.0"
+version = "1.0.0"
 requires-python = ">=3.10"
 authors = [
     {name = "Fluxion Team", email = "team@fluxion.org"},
     {name = "Dr. Aris Thorne", email = "aris.thorne@fluxion.org"},
 ]
-description = "A differentiable, AI-accelerated Building Energy Modeling engine."
+description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
 readme = "README.md"
 license = {text = "MIT"}
 keywords = ["building-energy", "simulation", "thermal-modeling", "ASHRAE", "machine-learning", "surrogate-model"]

@@ -1,9 +1,9 @@
 [package]
 name = "fluxion"
-version = "0.8.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "A differentiable, AI-accelerated Building Energy Modeling engine."
+description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
@@ -39,6 +39,8 @@ python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
 cuda = []
 # Feature flag for wiring tracing in integration tests (Plan 21-10)
 wiring-tracing = []
+# Feature flag for multi-zone support
+multi-zone = []
 
 [dependencies]
 # Core Logic
