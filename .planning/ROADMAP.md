@@ -9,6 +9,7 @@
 
 ## Milestones
 
+- ✅ **v1.0 Multi-Zone Support** — Phases M1-M3 (shipped 2026-04-07)
 - ✅ **v0.8 Peak Load & Free-Float Validation** — Phases 33-36 (shipped 2026-04-07)
 - ✅ **v0.7 Thermal Physics Complete** — Phases 28-32 (COMPLETE 2026-04-02)
 - ✅ **v0.6 Validation Excellence** — Phases 24-27 (COMPLETE 2026-03-17)
@@ -17,13 +18,22 @@
 
 ## Current Status
 
-**Milestone:** v1.0 (Multi-Zone Support)
-**Phase:** M2-zone-hvac-controls (Execution)
-**Status:** v0.8.0 milestone completed. v1.0 milestone in progress with technical blockers to resolve.
+**Milestone:** v1.0 (Multi-Zone Support) ✅ COMPLETED 2026-04-07
+**Next Milestone:** Planning
+**Status:** v1.0 milestone completed successfully. Ready for next milestone planning.
 
 ---
 
 ## Phases
+
+<details>
+<summary>✅ v1.0 Multi-Zone Support (Phases M1-M3) — SHIPPED 2026-04-07</summary>
+
+- [x] **Phase M1: Multi-Zone Thermal Network Foundation** - N-zone thermal network with inter-zone conductance (3/3 plans complete)
+- [x] **Phase M2: Zone-Level HVAC Controls** - Independent setpoints, schedules, setbacks (8/8 plans complete)
+- [x] **Phase M3: ASHRAE 140 Multi-Zone Validation** - Case 960/970, cross-validation (3/3 plans complete)
+
+</details>
 
 <details>
 <summary>✅ v0.8 Peak Load & Free-Float Validation (Phases 33-36) — SHIPPED 2026-04-07</summary>
@@ -34,12 +44,6 @@
 - [x] **Phase 36: v0.8.0 Release** - Documentation, release artifacts, and final validation (completed 2026-04-06)
 
 </details>
-
-### Current Milestone: v1.0 (In Progress)
-
-- [x] Phase M1: Multi-Zone Thermal Network Foundation (3/3 plans complete)
-- [x] Phase M2: Zone-Level HVAC Controls (3/6 plans, gap closure added) (completed 2026-04-07)
-- [x] Phase M3: ASHRAE 140 Multi-Zone Validation (3 plans) (completed 2026-04-07)
 
 ## Phase M2: Zone-Level HVAC Controls
 

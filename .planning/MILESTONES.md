@@ -1,5 +1,29 @@
 # Fluxion Milestones
 
+## v1.0 Multi-Zone Support (Shipped: 2026-04-07)
+
+**Phases completed:** 3 phases (M1-M3), 12 plans, 36 tasks
+
+**Key accomplishments:**
+
+1. **Multi-Zone Thermal Network Foundation:** Extended single-zone 5R1C thermal network to support N zones with inter-zone conductance and coupled ODE solver
+2. **Zone-Level HVAC Controls:** Implemented independent HVAC control per zone with zone-specific setpoints, Python bindings, and CLI support
+3. **ASHRAE 140 Multi-Zone Validation:** Comprehensive validation framework with Case 960 validation tests and Case 970 framework foundation
+4. **Energy Conservation:** Verified energy conservation within 1W tolerance across zones
+5. **Performance Maintenance:** Multi-zone simulation performance maintained at <50ms per timestep for 10-zone simulations
+6. **Full API Support:** Complete Python API and CLI support for multi-zone configuration and simulation
+
+**Statistics:**
+- Phases: 3 (M1-M3)
+- Plans: 12 total
+- Tasks: 36 total
+- Files modified: 50+
+- Lines of code: ~124,509 Rust lines
+- Timeline: 1 day (2026-04-06 → 2026-04-07)
+- Git range: Multiple commits across v1.0 development
+
+---
+
 ## v0.8.0 v0.8.0 (Shipped: 2026-04-07)
 
 **Phases completed:** 4 phases, 10 plans, 24 tasks

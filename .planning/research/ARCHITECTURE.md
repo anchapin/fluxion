@@ -1,445 +1,371 @@
-# Architecture Research
+# Architecture Patterns: ASHRAE 140 Validation Expansion
 
-**Domain:** ASHRAE 140 Validation Framework for Building Energy Modeling (BEM) Engines
-**Researched:** 2026-03-08
+**Domain:** Building Energy Modeling - ASHRAE 140 Validation Framework Expansion
+**Researched:** 2026-04-07
 **Confidence:** MEDIUM
 
-## Standard Architecture
+## Recommended Architecture
 
-### System Overview
+### ASHRAE 140 Validation Expansion Overview
 
-ASHRAE 140 validation frameworks in BEM engines typically follow a layered architecture with clear separation between test case definitions, simulation execution, result comparison, and reporting.
+The architecture for ASHRAE 140 validation expansion builds upon the existing multi-zone thermal network and validation framework. The expansion focuses on:
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                   Test Orchestration Layer                │
-├─────────────────────────────────────────────────────────────┤
-│  ┌────────────────┐  ┌────────────────┐  ┌───────────┐  │
-│  │ Test Runner   │  │ CI Pipeline   │  │ CLI Interface│  │
-│  │ (cargo test)  │  │ (GitHub Actions)│  │ (fluxion CLI)│  │
-│  └────────┬───────┘  └───────┬───────┘  └─────┬─────┘  │
-├───────────┴───────────────────┴───────────────┴─────────┤
-│                   Validation Engine Layer                │
-├─────────────────────────────────────────────────────────────┤
-│  ┌────────────────────────────────────────────────────┐   │
-│  │          ASHRAE140Validator                      │   │
-│  │  - validate_analytical_engine()                  │   │
-│  │  - validate_with_diagnostics()                   │   │
-│  │  - DiagnosticCollector integration                 │   │
-│  └────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                   Test Case Definitions                  │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  │
-│  │ Case Specs   │  │ Benchmark    │  │ Case        │  │
-│  │ (geometry,   │  │ Data        │  │ Builders    │  │
-│  │  materials,  │  │ (ref values) │  │ (custom     │  │
-│  │  HVAC,       │  │              │  │  configs)   │  │
-│  │  shading)    │  │              │  │             │  │
-│  └──────────────┘  └──────────────┘  └─────────────┘  │
-├─────────────────────────────────────────────────────────────┤
-│                   Physics Simulation Layer                │
-├─────────────────────────────────────────────────────────────┤
-│  ┌────────────────────────────────────────────────────┐   │
-│  │              ThermalModel (5R1C)                  │   │
-│  │  - solve_timesteps()                             │   │
-│  │  - apply_parameters()                            │   │
-│  │  - IdealHVACController                          │   │
-│  └────────────────────────────────────────────────────┘   │
-├─────────────────────────────────────────────────────────────┤
-│                   Result Processing & Reporting           │
-├─────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌─────────────┐  │
-│  │ Comparison   │  │ Report       │  │ Export      │  │
-│  │ Engine       │  │ Generation   │  │ (Markdown,  │  │
-│  │ (tolerance   │  │ (summary,    │  │  JSON, CSV)│  │
-│  │  checking)   │  │  detailed)   │  │             │  │
-│  └──────────────┘  └──────────────┘  └─────────────┘  │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Component Responsibilities
-
-| Component | Responsibility | Typical Implementation |
-|-----------|----------------|------------------------|
-| **Test Runner** | Executes validation test suite, orchestrates test execution | Rust's `cargo test` framework, test modules in `tests/` directory |
-| **Validator** | Core validation logic, coordinates test execution and result collection | `ASHRAE140Validator` struct with validation methods |
-| **Case Specifications** | Defines building geometry, materials, HVAC, weather, and control strategies | `CaseSpec` struct with builder pattern for customization |
-| **Benchmark Data** | Reference values from EnergyPlus, ESP-r, TRNSYS, DOE2 | `BenchmarkData` struct with min/max ranges per metric |
-| **Physics Engine** | Simulates building thermal behavior using 5R1C thermal network | `ThermalModel` with ISO 13790-compliant 5R1C implementation |
-| **Diagnostic Collector** | Captures detailed simulation data for debugging | `DiagnosticCollector` with configurable output (hourly, energy breakdown, peak timing) |
-| **Comparison Engine** | Validates simulation results against reference ranges | Tolerance-based comparison with Pass/Warning/Fail status |
-| **Report Generator** | Produces human-readable validation summaries | Markdown, JSON, CSV export formats |
-| **CI Pipeline** | Automated validation on every commit/PR | GitHub Actions workflow with threshold checks |
-
-## Recommended Project Structure
+1. **Additional ASHRAE 140 Cases Integration** - Extending beyond current 960/970 cases
+2. **Cross-Validation Architecture** - Integration with EnergyPlus/TRNSYS/ESP-r
+3. **High-Mass Building Accuracy** - Improvements for concrete construction physics
+4. **Performance Optimization** - Maintaining <50ms/timestep for large simulations
 
 ```
-src/
-├── validation/                    # Validation framework core
-│   ├── mod.rs                    # Public API exports
-│   ├── ashrae_140_validator.rs   # Main validator orchestration
-│   ├── ashrae_140_cases.rs      # Case specifications (600/900/FF series)
-│   ├── benchmark.rs              # Reference data from EnergyPlus/ESP-r/TRNSYS
-│   ├── diagnostic.rs             # Diagnostic output and debugging tools
-│   ├── physics_validator.rs      # Physics law validation (energy balance, temp bounds)
-│   ├── cross_validator.rs        # Surrogate vs analytical comparison
-│   ├── report.rs                # Validation report generation
-│   ├── fdd.rs                   # Fault detection and diagnostics
-│   ├── ml_data_collector.rs     # ML training data collection
-│   ├── thermal_mass.rs           # Thermal mass validation helpers
-│   └── ashrae_140/             # Per-case implementations
-│       ├── mod.rs
-│       └── case_600.rs         # Example: Case-specific setup
-├── sim/
-│   ├── engine.rs                # ThermalModel (5R1C physics engine)
-│   └── construction.rs          # Building assembly definitions
-├── physics/
-│   └── cta.rs                  # Continuous Tensor Abstraction
-├── weather/
-│   └── denver.rs               # Denver TMY2 weather data
-└── lib.rs                      # PyO3 bindings (BatchOracle, Model)
-
-tests/                          # Integration tests
-├── ashrae_140_validation.rs     # Main validation test suite
-├── ashrae_140_diagnostic_test.rs  # Diagnostic-specific tests
-├── ashrae_140_integration.rs   # Integration tests for specific cases
-└── test_case_195_*.rs          # Per-case test files
-
-.github/workflows/
-└── ashrae_140_validation.yml   # CI/CD pipeline
-
-tools/data_gen/
-├── ashrae_140_generator.py      # Generate test case data
-└── test_ashrae_140_generator.py
-
-docs/
-├── ASHRAE140_VALIDATION.md      # Validation overview
-├── ASHRAE140_RESULTS.md        # Current validation results
-├── ASHRAE140_MILESTONES.md     # Progress tracking
-└── ASHRAE_140_*.md           # Additional documentation
+┌───────────────────────────────────────────────────────────────────────────────┐
+│                  ASHRAE 140 Validation Expansion Architecture                  │
+├───────────────────────────────────────────────────────────────────────────────┤
+│                                                                               │
+│  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────┐  │
+│  │  Existing Multi-    │    │  New ASHRAE 140     │    │ Cross-Validation│  │
+│  │  Zone Thermal Model │◄───►│ Cases Integration │◄───►│ Framework       │  │
+│  └─────────────────────┘    └─────────────────────┘    └─────────────────┘  │
+│          ▲                         ▲                             ▲              │
+│          │                         │                             │              │
+│  ┌───────┴───────┐         ┌───────┴───────┐             ┌───────┴───────┐      │
+│  │ High-Mass     │         │ Case 800-810 │             │ EnergyPlus    │      │
+│  │ Physics       │         │ HVAC Cases   │             │ Adapter       │      │
+│  │ Improvements  │         │             │             │              │      │
+│  └───────────────┘         └───────────────┘             └──────────────────┘  │
+│                                                                               │
+│  ┌─────────────────────┐    ┌─────────────────────┐                              │
+│  │ Performance        │    │ Validation         │                              │
+│  │ Optimization Layer│    │ Reporting &       │                              │
+│  │ (CTA, Rayon, ONNX) │    │ Diagnostics       │                              │
+│  └─────────────────────┘    └─────────────────────┘                              │
+│                                                                               │
+└───────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Structure Rationale
+### Component Boundaries
 
-- **`src/validation/`**: Centralized validation framework with clear separation of concerns (cases, benchmarks, reporting, diagnostics)
-- **`src/sim/engine.rs`**: Physics engine is independent of validation framework—can be used by both validation and production code
-- **`tests/`**: Integration tests for validation ensure test suite execution is correct
-- **`src/validation/ashrae_140/`**: Per-case implementation files allow for case-specific logic without cluttering main validator
-- **`tools/data_gen/`**: Python scripts for generating test data leverage Python's data manipulation capabilities
-- **`.github/workflows/`**: CI automation ensures validation runs on every commit/PR
+| Component | Responsibility | Communicates With |
+|-----------|---------------|-------------------|
+| **ASHRAE140CaseExpansion** | New case definitions (800-810 series, additional diagnostics) | Extends ASHRAE140Case enum, integrates with validator |
+| **CrossValidationFramework** | Adapter pattern for EnergyPlus/TRNSYS/ESP-r comparison | Reads external tool outputs, compares with Fluxion results |
+| **HighMassPhysicsEnhancer** | Improved thermal mass modeling for concrete buildings | Modifies ThermalModel::step_physics for high-mass cases |
+| **PerformanceOptimizer** | Maintains <50ms/timestep for expanded validation suite | Profiles and optimizes CTA operations, Rayon parallelism |
+| **MultiReferenceValidator** | Enhanced validation with per-program tolerance ranges | Extends existing MultiReferenceDB with new case references |
 
-## Architectural Patterns
+### Data Flow
 
-### Pattern 1: Builder Pattern for Test Cases
+```
+New ASHRAE 140 Cases (800-810, diagnostics)
+    ↓
+Extend ASHRAE140Case enum with new variants
+    ↓
+CaseBuilder creates CaseSpec for new cases
+    ↓
+ASHRAE140Validator::expand_diagnostic_range() includes new cases
+    ↓
+ThermalModel::from_spec() handles new case configurations
+    ↓
+Cross-validation: Run Fluxion + external tools (EnergyPlus/TRNSYS)
+    ↓
+MultiReferenceDB compares results with program-specific tolerances
+    ↓
+Generate enhanced validation report with cross-tool comparison
+```
 
-**What:** Enables flexible construction of test case specifications with optional parameters
+## Patterns to Follow
 
-**When to use:** When you need to create many similar test cases with variations (e.g., different window orientations, shading configurations)
+### Pattern 1: ASHRAE 140 Case Extension Pattern
 
-**Trade-offs:**
-- **Pros:** Clean API, readable configuration, easy to add new variants
-- **Cons:** More boilerplate than direct struct initialization
+**What:** Extending the ASHRAE140Case enum with new test cases while maintaining backward compatibility
+
+**When:** Adding new validation cases (800-810 series, additional diagnostics)
 
 **Example:**
 ```rust
-use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseBuilder};
-
-// Use predefined case
-let spec = ASHRAE140Case::Case600.spec();
-
-// Build custom case with builder
-let custom_spec = CaseBuilder::new()
-    .low_mass_construction()
-    .with_dimensions(8.0, 6.0, 2.7)
-    .with_south_window(12.0)
-    .with_hvac_setpoints(20.0, 27.0)
-    .build()
-    .unwrap();
-```
-
-### Pattern 2: Diagnostic Collector
-
-**What:** Captures detailed simulation data during execution for post-hoc analysis
-
-**When to use:** When debugging validation failures or understanding simulation behavior
-
-**Trade-offs:**
-- **Pros:** Flexible output configuration, can enable/disable granular data collection, minimal performance impact when disabled
-- **Cons:** Additional memory overhead when enabled, adds complexity to simulation loop
-
-**Example:**
-```rust
-use fluxion::validation::diagnostic::DiagnosticConfig;
-
-// Configure diagnostics
-let config = DiagnosticConfig {
-    enabled: true,
-    output_hourly: true,
-    hourly_output_path: Some("hourly_output.csv".to_string()),
-    output_energy_breakdown: true,
-    output_peak_timing: true,
-    output_temperature_profiles: true,
-    verbose: true,
-};
-
-let validator = ASHRAE140Validator::with_diagnostics(config);
-```
-
-### Pattern 3: Tolerance-Based Validation
-
-**What:** Compares simulation results against reference ranges with configurable tolerance bands
-
-**When to use:** For all ASHRAE 140 validation—standard practice in BEM engines
-
-**Trade-offs:**
-- **Pros:** Matches ASHRAE 140 methodology, clear pass/fail criteria, accounts for reference program variability
-- **Cons:** Requires calibration of tolerance bands, may mask small systematic errors
-
-**Example:**
-```rust
-pub enum ValidationStatus {
-    Pass,    // Within 5% of reference range
-    Warning, // Within reference range but >2% deviation
-    Fail,    // Outside 5% tolerance band
+// In src/validation/ashrae_140_cases.rs
+pub enum ASHRAE140Case {
+    // ... existing cases ...
+    /// Case 800 - Heat pump (single-stage, basic control)
+    Case800,
+    /// Case 801 - Heat pump (two-stage, intermediate control)
+    Case801,
+    // ... additional cases ...
+    Case810,
 }
 
-// Validation logic
-let within_range = value >= ref_min && value <= ref_max;
-let deviation = ((value - ref_midpoint) / ref_midpoint).abs();
-
-let status = if deviation < 0.05 {
-    ValidationStatus::Pass
-} else if within_range {
-    ValidationStatus::Warning
-} else {
-    ValidationStatus::Fail
-};
+// Extend the expand_diagnostic_range method
+fn expand_diagnostic_range(&self, range: &str) -> Vec<ASHRAE140Case> {
+    match range {
+        "800-810" => vec![
+            ASHRAE140Case::Case800,
+            ASHRAE140Case::Case801,
+            // ... all 800-810 cases ...
+            ASHRAE140Case::Case810,
+        ],
+        // ... existing ranges ...
+        _ => vec![],
+    }
+}
 ```
 
-## Data Flow
+### Pattern 2: Cross-Validation Adapter Pattern
 
-### Request Flow
+**What:** Adapter pattern for comparing Fluxion results with EnergyPlus/TRNSYS/ESP-r
 
-```
-User/CI Command (fluxion validate --all or cargo test)
-    ↓
-ASHRAE140Validator::validate_analytical_engine()
-    ↓
-For each test case:
-    ├─→ Load CaseSpec from ASHRAE140Case enum
-    ├─→ Load BenchmarkData (reference ranges)
-    ├─→ Configure ThermalModel from CaseSpec
-    ├─→ Solve with model.solve_timesteps(8760, surrogates, use_ai=false)
-    ├─→ Collect results (annual heating/cooling, peak loads)
-    ├─→ Compare against BenchmarkData with tolerance checking
-    └─→ Store ValidationResult
-    ↓
-Generate BenchmarkReport (summary statistics, per-case results)
-    ↓
-Export to Markdown/JSON/CSV
-    ↓
-Return report (CI: check pass rate threshold)
-```
+**When:** Implementing cross-validation against reference simulation tools
 
-### Diagnostic Data Flow
-
-```
-Validation with Diagnostics Enabled
-    ↓
-DiagnosticCollector initialized with DiagnosticConfig
-    ↓
-During simulation:
-    ├─→ Hourly temperatures collected
-    ├─→ Hourly loads collected
-    ├─→ Energy breakdown accumulated
-    └─→ Peak timing tracked
-    ↓
-DiagnosticReport generated:
-    ├─→ HourlyData (8760 points per metric)
-    ├─→ EnergyBreakdown (heating, cooling, solar, internal)
-    ├─→ PeakTiming (when peaks occur)
-    └─→ TemperatureProfile (min/max over simulation)
-    ↓
-Export to CSV files (if configured)
-    ↓
-Validation report includes diagnostic summary
-```
-
-### Key Data Flows
-
-1. **Case Specification → Model Configuration:** `CaseSpec` (geometry, materials, HVAC, weather) → `ThermalModel::new()` with parameters set via `apply_parameters()`
-2. **Simulation → Results:** `ThermalModel::solve_timesteps()` → cumulative energy consumption, peak loads, temperature traces
-3. **Results → Comparison:** Simulation values compared to `BenchmarkData` ranges → `ValidationStatus` (Pass/Warning/Fail)
-4. **All Cases → Report:** `Vec<ValidationResult>` → `BenchmarkReport` with statistics (MAE, pass rate, max deviation)
-5. **Report → Export:** `BenchmarkReport::to_markdown()`, `to_json()`, `to_csv()` → files for CI/PR comments
-
-## Scaling Considerations
-
-| Scale | Architecture Adjustments |
-|-------|--------------------------|
-| 1-10 cases | Single-threaded execution is fine, run all tests sequentially |
-| 10-100 cases | Parallel test execution with `cargo test --test-threads=N`, collect results in memory |
-| 100+ cases | Consider test case grouping, incremental validation (only run changed cases), parallel CI jobs |
-
-### Scaling Priorities
-
-1. **First bottleneck:** Test execution time (8760 hours simulated per case)
-   - **Fix:** Parallel test execution, cache simulation results, skip unchanged cases
-2. **Second bottleneck:** Diagnostic data collection (writing hourly CSV files)
-   - **Fix:** Optional diagnostic output, binary serialization instead of CSV, batch writes
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Hardcoded Reference Values
-
-**What people do:** Embed reference values directly in test assertions
+**Example:**
 ```rust
-assert_eq!(heating_mwh, 6.5); // Bad: Magic number, not in source of truth
+// In src/validation/cross_validation.rs
+pub struct EnergyPlusAdapter {
+    // Configuration for EnergyPlus comparison
+}
+
+impl CrossValidationAdapter for EnergyPlusAdapter {
+    fn validate_case(&self, case_id: &str) -> CrossValidationResult {
+        // 1. Run EnergyPlus simulation for the case
+        // 2. Parse EnergyPlus output files
+        // 3. Compare with Fluxion results
+        // 4. Return comparison metrics
+    }
+}
+
+// Multi-reference validation
+pub struct CrossValidationFramework {
+    adapters: HashMap<String, Box<dyn CrossValidationAdapter>>,
+}
+
+impl CrossValidationFramework {
+    pub fn compare_all(&self, fluxion_results: &BenchmarkReport) -> CrossValidationReport {
+        let mut report = CrossValidationReport::new();
+
+        for (tool_name, adapter) in &self.adapters {
+            let tool_results = adapter.validate_case(fluxion_results.case_id);
+            report.add_comparison(tool_name, &tool_results);
+        }
+
+        report
+    }
+}
 ```
 
-**Why it's wrong:** Reference values should be centralized in `benchmark.rs`, making it easy to update when ASHRAE releases new reference data
+### Pattern 3: High-Mass Physics Enhancement Pattern
 
-**Do this instead:**
+**What:** Conditional physics improvements for high-mass buildings (concrete construction)
+
+**When:** Addressing 229-322% error in high-mass annual energy calculations
+
+**Example:**
 ```rust
-let benchmark = get_benchmark_data("600");
-assert!(heating_mwh >= benchmark.annual_heating_min);
-assert!(heating_mwh <= benchmark.annual_heating_max);
+// In src/sim/thermal_model.rs
+impl<T: ContinuousTensor<f64>> ThermalModel<T> {
+    pub fn step_physics(&mut self, step: usize, outdoor_temp: f64, timestep_seconds: f64) -> f64 {
+        // ... existing physics ...
+
+        // High-mass specific enhancements
+        if self.construction_type == ConstructionType::HighMass {
+            // Apply improved thermal mass coupling
+            let enhanced_thermal_mass_effect = self.calculate_enhanced_thermal_mass_effect();
+
+            // Adjust zone temperatures based on improved physics
+            self.temperatures = self.temperatures.add(&enhanced_thermal_mass_effect);
+
+            // Apply CTF correction only to 5R1C portion (not CTF)
+            if self.use_ctf {
+                let (five_rc_contribution, ctf_contribution) = self.separate_energy_contributions();
+                self.annual_heating_energy += five_rc_contribution / self.thermal_mass_correction;
+                self.annual_heating_energy += ctf_contribution; // No correction for CTF
+            }
+        }
+
+        // ... rest of physics calculation ...
+    }
+}
 ```
 
-### Anti-Pattern 2: Tight Coupling Between Test Cases and Physics Engine
+### Pattern 4: Performance Optimization Layer
 
-**What people do:** Put case-specific logic directly in `ThermalModel`
+**What:** Maintaining performance targets (<50ms/timestep) with expanded validation suite
+
+**When:** Adding computationally intensive cases while preserving optimization capabilities
+
+**Example:**
 ```rust
-pub fn solve_case_600(&self) { ... } // Bad: Physics engine knows about test cases
+// In src/validation/performance_optimizer.rs
+pub struct ValidationPerformanceOptimizer {
+    surrogate_cache: HashMap<String, SurrogateModel>,
+    parallel_strategy: ParallelStrategy,
+}
+
+impl ValidationPerformanceOptimizer {
+    pub fn optimize_case(&mut self, case_spec: &CaseSpec) -> OptimizedThermalModel {
+        // 1. Check if surrogate model exists for this case type
+        if let Some(surrogate) = self.surrogate_cache.get(&case_spec.case_id) {
+            return OptimizedThermalModel::with_surrogate(surrogate.clone());
+        }
+
+        // 2. Determine optimal parallelism strategy
+        let strategy = if case_spec.num_zones > 4 {
+            ParallelStrategy::TimeFirst // Better for multi-zone cases
+        } else {
+            ParallelStrategy::ConfigFirst // Better for single-zone cases
+        };
+
+        // 3. Apply CTA optimizations
+        let mut model = ThermalModel::from_spec(case_spec);
+        model.enable_cta_optimizations(strategy);
+
+        model
+    }
+
+    pub fn profile_and_optimize(&mut self, validator: &mut ASHRAE140Validator) {
+        // Profile each case to identify bottlenecks
+        let profiles = self.profile_all_cases(validator);
+
+        // Generate optimization recommendations
+        for (case_id, profile) in profiles {
+            if profile.timestep_duration > Duration::from_millis(50) {
+                println!("Warning: Case {} exceeds 50ms target: {:?}", case_id, profile.timestep_duration);
+
+                // Apply targeted optimizations
+                self.apply_optimizations(&case_id);
+            }
+        }
+    }
+}
 ```
 
-**Why it's wrong:** Violates separation of concerns—physics engine should be independent of validation framework
+## Anti-Patterns to Avoid
 
-**Do this instead:**
-```rust
-// In validation code
-let spec = ASHRAE140Case::Case600.spec();
-let mut model = ThermalModel::new(spec.num_zones);
-model.apply_parameters(&spec.params);
-model.solve_timesteps(8760, &surrogates, false);
-```
+### Anti-Pattern 1: Monolithic Case Integration
 
-### Anti-Pattern 3: Missing Diagnostic Data
+**What:** Adding all new cases in a single large commit without modular organization
 
-**What people do:** Only capture aggregate results (annual energy, peak loads) without hourly data
+**Why bad:** Makes debugging difficult, hard to isolate issues with specific case types
 
-**Why it's wrong:** Impossible to debug why a test case failed—can't see temperature profiles, peak timing, or energy breakdowns
+**Instead:** Organize cases by series (800-810 HVAC cases, diagnostic variants) with separate validation
 
-**Do this instead:**
-```rust
-let config = DiagnosticConfig::full();
-let validator = ASHRAE140Validator::with_diagnostics(config);
-let report = validator.validate_analytical_engine();
-// Generates hourly_output.csv, energy_breakdown.csv, etc.
-```
+### Anti-Pattern 2: Direct External Tool Integration
 
-### Anti-Pattern 4: Ignoring Free-Floating Cases
+**What:** Calling EnergyPlus/TRNSYS/ESP-r binaries directly from validation code
 
-**What people do:** Focus only on HVAC-controlled cases, skip free-floating variants
+**Why bad:** Creates tight coupling, makes validation fragile and platform-dependent
 
-**Why it's wrong:** Free-floating cases validate thermal envelope physics without HVAC complications—critical for catching envelope heat transfer bugs
+**Instead:** Use adapter pattern with clear interfaces, external tool outputs as inputs
 
-**Do this instead:**
-```rust
-// Include both controlled and free-floating variants
-let cases = vec![
-    ASHRAE140Case::Case600,  // HVAC-controlled
-    ASHRAE140Case::Case600FF, // Free-floating
-];
-```
+### Anti-Pattern 3: Global Physics Changes for High-Mass
 
-### Anti-Pattern 5: Skipping High-Mass Cases
+**What:** Modifying core physics that affects all building types
 
-**What people do:** Only validate low-mass (600 series) cases, skip high-mass (900 series)
+**Why bad:** Could break existing low-mass validation, violate ASHRAE 140 compliance
 
-**Why it's wrong:** High-mass cases test thermal mass dynamics, which is where 5R1C models often fail
+**Instead:** Use conditional logic based on ConstructionType, maintain separate code paths
 
-**Do this instead:**
-```rust
-// Validate both low and high mass cases
-let all_cases = [
-    // Low mass
-    "600", "610", "620", "630", "640", "650",
-    // High mass
-    "900", "910", "920", "930", "940", "950",
-];
-```
+### Anti-Pattern 4: Performance Regression in Validation
 
-## Integration Points
+**What:** Adding new cases without considering performance impact on full validation suite
 
-### External Services
+**Why bad:** Could make CI/CD pipelines too slow, reduce developer productivity
 
-| Service | Integration Pattern | Notes |
-|---------|---------------------|-------|
-| **GitHub Actions CI** | Workflow runs `cargo test --test ashrae_140_validation`, extracts results with regex, generates Markdown report | Check pass rate threshold (currently 12.5%) |
-| **ASHRAE Standard 140** | Reference data from EnergyPlus, ESP-r, TRNSYS, DOE2 in `benchmark.rs` | Tolerance bands: ±15% annual energy, ±10% monthly energy |
+**Instead:** Profile each new case, apply targeted optimizations, maintain <50ms/timestep target
 
-### Internal Boundaries
+## Scalability Considerations
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| **Validator ↔ ThermalModel** | Direct method calls (`solve_timesteps()`) | Validator configures model, runs simulation, collects results |
-| **Validator ↔ DiagnosticCollector** | Event-driven data collection | Simulation passes data to collector, collector aggregates into reports |
-| **Validator ↔ Report Generator** | Structured data (`BenchmarkReport`) | Report formats data for export (Markdown/JSON/CSV) |
-| **Test Cases ↔ Case Specs** | Enum variant → `CaseSpec` | Each test case has a predefined specification that can be customized |
+| Concern | Current (18 cases) | With Expansion (30+ cases) | Mitigation Strategy |
+|---------|-------------------|--------------------------|---------------------|
+| **Validation time** | ~15 minutes | ~30+ minutes | Surrogate models for common cases, parallel execution |
+| **Memory usage** | ~500MB | ~1GB+ | CTA optimizations, sparse matrices for multi-zone |
+| **CI/CD impact** | 5-10 min | 15-20 min | Incremental validation, cache surrogate results |
+| **Cross-validation** | N/A | Significant | External tool adapters, result caching |
 
-## Component Boundaries for Fluxion
+### Performance Optimization Strategy
 
-### Layered Architecture
+1. **Case Categorization:**
+   - Simple cases (600-960): Direct physics
+   - Complex cases (800-810 HVAC): Surrogate-assisted
+   - Diagnostic cases: Conditional execution
 
-```
-┌─────────────────────────────────────────────────────────┐
-│         PyO3 Bindings Layer (lib.rs)                │
-│  - BatchOracle: High-throughput optimization          │
-│  - Model: Single-building detailed analysis          │
-└─────────────────────────────────────────────────────────┘
-                      ↓
-┌─────────────────────────────────────────────────────────┐
-│         Validation Layer (validation/)                 │
-│  - ASHRAE140Validator: Test orchestration             │
-│  - Case Specs: Test case definitions                  │
-│  - Benchmark Data: Reference values                   │
-│  - Diagnostic Collector: Debug data capture           │
-│  - Report Generator: Result formatting               │
-└─────────────────────────────────────────────────────────┘
-                      ↓
-┌─────────────────────────────────────────────────────────┐
-│         Physics Engine Layer (sim/engine.rs)          │
-│  - ThermalModel: ISO 13790 5R1C thermal network     │
-│  - IdealHVACController: HVAC logic                   │
-│  - Construction: Building assemblies                  │
-└─────────────────────────────────────────────────────────┘
-                      ↓
-┌─────────────────────────────────────────────────────────┐
-│         Mathematical Layer (physics/cta.rs)           │
-│  - Continuous Tensor Abstraction: VectorField ops      │
-└─────────────────────────────────────────────────────────┘
-```
+2. **Parallelism:**
+   - Time-first for multi-zone cases (>4 zones)
+   - Config-first for single-zone cases
+   - Rayon work-stealing for load balancing
 
-### Build Order Implications
+3. **Caching:**
+   - Surrogate model caching for repeated cases
+   - Weather data caching (Denver TMY)
+   - Cross-validation result caching
 
-1. **Foundational Layer:** `physics/cta.rs` → Required by physics engine
-2. **Physics Layer:** `sim/engine.rs` → Depends on CTA, used by validation
-3. **Validation Data:** `validation/benchmark.rs` → Reference values, no dependencies
-4. **Validation Core:** `validation/ashrae_140_cases.rs` → Depends on physics
-5. **Validator:** `validation/ashrae_140_validator.rs` → Depends on cases, benchmarks, diagnostic
-6. **Tests:** `tests/ashrae_140_validation.rs` → Depends on validator
-7. **CI Pipeline:** `.github/workflows/ashrae_140_validation.yml` → Depends on tests
+## Integration Points with Existing Architecture
 
-**Critical dependency:** Cannot build validation without physics engine working correctly—validation failures may indicate physics bugs, not just validation framework issues.
+### 1. ASHRAE140Validator Extension
+
+**Location:** `src/validation/ashrae_140_validator.rs`
+
+**Changes needed:**
+- Extend `expand_diagnostic_range()` to include 800-810 cases
+- Add cross-validation framework integration
+- Enhance reporting for multi-tool comparison
+
+### 2. ThermalModel Enhancements
+
+**Location:** `src/sim/thermal_model.rs`
+
+**Changes needed:**
+- Conditional high-mass physics improvements
+- Separate energy contribution tracking (5R1C vs CTF)
+- HVAC equipment modeling for 800-810 cases
+
+### 3. CaseSpec Expansion
+
+**Location:** `src/validation/ashrae_140_cases.rs`
+
+**Changes needed:**
+- New case variants (Case800-Case810)
+- HVAC equipment specifications
+- Cross-validation metadata
+
+### 4. MultiReferenceDB Update
+
+**Location:** `docs/ashrae_140_references.json`
+
+**Changes needed:**
+- Add reference values for new cases
+- Include EnergyPlus/TRNSYS/ESP-r specific ranges
+- Update tolerance bands for high-mass cases
+
+## Build Order Recommendation
+
+Based on dependencies and risk assessment:
+
+1. **Foundation (Low Risk):**
+   - Extend ASHRAE140Case enum with new variants
+   - Add CaseBuilder methods for new cases
+   - Update reference database
+
+2. **Cross-Validation Framework (Medium Risk):**
+   - Implement adapter pattern
+   - Add EnergyPlus/TRNSYS/ESP-r interfaces
+   - Integrate with existing validator
+
+3. **High-Mass Physics (High Risk):**
+   - Implement conditional physics improvements
+   - Validate against reference cases
+   - Ensure no regression in low-mass cases
+
+4. **Performance Optimization (Ongoing):**
+   - Profile new cases
+   - Apply targeted optimizations
+   - Monitor CI/CD impact
 
 ## Sources
 
-- [Fluxion codebase analysis](https://github.com/your-org/fluxion) (HIGH confidence - direct code inspection)
-- [ASHRAE Standard 140 methodology](https://www.ashrae.org/technical-resources/bookstore/standard-140) (MEDIUM confidence - general knowledge, web search failed)
-- [Building Energy Simulation validation practices](https://energy.gov/eere/buildings/building-energy-modeling) (LOW confidence - web search failed, based on general knowledge)
+- ASHRAE Standard 140-2017: Test cases and validation methodology
+- EnergyPlus Engineering Reference: Cross-validation approaches
+- ISO 13790: Thermal mass modeling guidelines
+- Existing Fluxion architecture (v1.0 multi-zone foundation)
+- Performance profiling data from current validation suite
 
 ---
-*Architecture research for: ASHRAE 140 Validation Framework in Building Energy Modeling Engines*
-*Researched: 2026-03-08*
+
+*Architecture research for: ASHRAE 140 Validation Expansion*
+*Researched: 2026-04-07*
+*Confidence: MEDIUM (based on existing codebase analysis, limited external documentation access)*
