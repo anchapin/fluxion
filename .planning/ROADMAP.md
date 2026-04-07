@@ -39,7 +39,7 @@
 
 - [x] Phase M1: Multi-Zone Thermal Network Foundation (3/3 plans complete)
 - [x] Phase M2: Zone-Level HVAC Controls (3/6 plans, gap closure added) (completed 2026-04-07)
-- [ ] Phase M3: ASHRAE 140 Multi-Zone Validation (3 plans)
+- [x] Phase M3: ASHRAE 140 Multi-Zone Validation (3 plans) (completed 2026-04-07)
 
 ## Phase M2: Zone-Level HVAC Controls
 
@@ -110,17 +110,17 @@
 
 **Status:** Not started
 
-- [ ] M3-01: Multi-Zone Validation Framework - Extend validation infrastructure for multi-zone cases
+- [x] M3-01: Multi-Zone Validation Framework - Extend validation infrastructure for multi-zone cases
   - Implement Case960Validator and Case970Validator structs
   - Extend ASHRAE140MultiZoneValidator with case-specific methods
   - Create comprehensive validation tests
 
-- [ ] M3-02: Reference Data and Statistical Methods - Add reference data and statistical analysis
+- [x] M3-02: Reference Data and Statistical Methods - Add reference data and statistical analysis
   - Implement Case 960 reference data in benchmark.rs
   - Extend reference_data.rs with multi-zone loading utilities
   - Add statistical validation methods (RMSE, MBE, percentage difference)
 
-- [ ] M3-03: Validation Execution and Reporting - CLI tool and documentation
+- [x] M3-03: Validation Execution and Reporting - CLI tool and documentation
   - Create run_multi_zone_validation CLI tool
   - Enhance validation reporting with multi-zone support
   - Generate comprehensive validation results documentation
