@@ -2,12 +2,12 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-current_phase: M2
+current_phase: M3-ashrae-140
 status: executing
 stopped_at: Completed M2-06-PLAN.md gap closure
-last_updated: "2026-04-07T16:06:58.072Z"
+last_updated: "2026-04-07T18:01:59.907Z"
 progress:
-  total_phases: 1
+  total_phases: 2
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -17,7 +17,7 @@ progress:
 
 **Milestone:** v1.0 (Next Milestone)
 **Last Updated:** 2026-04-07
-**Current Phase:** M2
+**Current Phase:** M3-ashrae-140
 **Decision:** v0.8.0 milestone completed successfully. Ready for v1.0 planning.
 
 ---
@@ -27,14 +27,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-07 after v0.8.0 milestone)
 
 **Core value:** Full ASHRAE 140 compliance for peak loads and free-floating temperature profiles
-**Current focus:** Phase M2 — zone-hvac-controls
+**Current focus:** Phase M3-ashrae-140 — validation
 
 ---
 
 ## Current Position
 
-Phase: M2 (zone-hvac-controls) — EXECUTING
-Plan: 3 of 8
+Phase: M3-ashrae-140 (validation) — EXECUTING
+Plan: 1 of 3  
 
 ### Progress Bar
 
@@ -43,8 +43,8 @@ v0.8.0 Milestone: [████████████████████]
 v1.0 Milestone: [████████████████████] 40% — IN PROGRESS
 Phase M1: [████████████████████] 100% — Multi-Zone Thermal Network Foundation (COMPLETE)
 Phase M2: [████████████████    ] 60% — Zone-Level HVAC Controls (PARTIAL - BLOCKED)
-Phase M3: [          ] 0% — ASHRAE 140 Multi-Zone Validation (NOT STARTED)
-Overall:  [████████████████████] 40% (v1.0 Milestone In Progress)
+Phase M3: [████████████████    ] 33% — ASHRAE 140 Multi-Zone Validation (STARTED)
+Overall:  [████████████████████] 43% (v1.0 Milestone In Progress)
 ```
 
 ### v1.0 Requirements (MZ-01 through MZ-10)
@@ -56,8 +56,8 @@ Overall:  [████████████████████] 40% (v1
 | MZ-03 | Zone-Specific HVAC Setpoints | M2 | ✅ COMPLETE |
 | MZ-04 | Zone-Level HVAC Control | M2 | ✅ COMPLETE |
 | MZ-05 | Energy Balance Verification | M1 | ✅ COMPLETE |
-| MZ-06 | ASHRAE 140 Case 960 | M3 | ⏳ NOT PLANNED |
-| MZ-07 | ASHRAE 140 Case 970 | M3 | ⏳ NOT PLANNED |
+| MZ-06 | ASHRAE 140 Case 960 | M3 | ✅ COMPLETE (M3-01) |
+| MZ-07 | ASHRAE 140 Case 970 | M3 | ✅ FRAMEWORK COMPLETE (M3-01) |
 | MZ-08 | Performance Maintenance | M1 | ✅ COMPLETE |
 | MZ-09 | Python API Multi-Zone | M2 | ✅ COMPLETE |
 | MZ-10 | CLI Multi-Zone | M2 | ⚠️ PARTIAL |
