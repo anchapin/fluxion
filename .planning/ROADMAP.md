@@ -75,7 +75,7 @@
   - Correct ThermalModel import path in zone_control.rs
   - Implement actual HVAC integration in CLI handlers
   
-- [ ] M2-06: Enable and Verify Python Bindings (Gap Closure)
+- [x] M2-06: Enable and Verify Python Bindings (Gap Closure)
   - Enable HVAC bindings module registration
   - Build and test Python bindings
   - Verify end-to-end Python HVAC functionality

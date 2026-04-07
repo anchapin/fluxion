@@ -35,6 +35,11 @@ impl PyMultiZoneThermalModel {
         self.inner.num_zones
     }
 
+    /// Get the number of zones from the inner ThermalModel
+    pub fn get_inner_num_zones(&self) -> usize {
+        self.inner.num_zones
+    }
+
     /// Get current zone temperatures
     pub fn get_zone_temperatures(&self) -> Vec<f64> {
         self.inner.get_temperatures()
@@ -221,7 +226,25 @@ pub fn multi_zone(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 /// Register HVAC module in main bindings
 #[cfg(feature = "python-bindings")]
 pub fn register_hvac_module(m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // TODO: Register HVAC bindings once the ThermalModel API is resolved
-    // m.add_wrapped(pyo3::wrap_pymodule!(crate::python::hvac_bindings::hvac))?;
+    // Register HVAC classes directly
+    m.add_class::<crate::python::hvac_bindings::PyZoneSetpoints>()?;
+    m.add_class::<crate::python::hvac_bindings::PyZoneControl>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        crate::python::hvac_bindings::create_zone_setpoints,
+        m
+    )?)?;
+    Ok(())
+}
+
+/// HVAC module initialization function
+#[cfg(feature = "python-bindings")]
+#[pymodule]
+pub fn hvac(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<crate::python::hvac_bindings::PyZoneSetpoints>()?;
+    m.add_class::<crate::python::hvac_bindings::PyZoneControl>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        crate::python::hvac_bindings::create_zone_setpoints,
+        m
+    )?)?;
     Ok(())
 }

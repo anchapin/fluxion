@@ -6,7 +6,7 @@ use crate::hvac::zone_control::{HVACStatus, ZoneControl};
 use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
 use crate::python::bindings::PyMultiZoneThermalModel;
-use crate::thermal::ThermalModel;
+use crate::thermal::thermal_model::ThermalModel;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::sync::{Arc, Mutex};
@@ -56,11 +56,11 @@ impl PyZoneSetpoints {
 
     /// Get heating setpoint for a zone
     pub fn get_heating_setpoint(&self, zone_id: usize) -> PyResult<f64> {
-        if zone_id >= self.inner.num_zones {
+        if zone_id >= self.inner.num_zones() {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone ID {} out of range (0-{})",
                 zone_id,
-                self.inner.num_zones - 1
+                self.inner.num_zones() - 1
             )));
         }
         Ok(self.inner.get_heating_setpoint(zone_id))
@@ -68,11 +68,11 @@ impl PyZoneSetpoints {
 
     /// Get cooling setpoint for a zone
     pub fn get_cooling_setpoint(&self, zone_id: usize) -> PyResult<f64> {
-        if zone_id >= self.inner.num_zones {
+        if zone_id >= self.inner.num_zones() {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone ID {} out of range (0-{})",
                 zone_id,
-                self.inner.num_zones - 1
+                self.inner.num_zones() - 1
             )));
         }
         Ok(self.inner.get_cooling_setpoint(zone_id))
@@ -80,11 +80,11 @@ impl PyZoneSetpoints {
 
     /// Get deadband for a zone
     pub fn get_deadband(&self, zone_id: usize) -> PyResult<f64> {
-        if zone_id >= self.inner.num_zones {
+        if zone_id >= self.inner.num_zones() {
             return Err(pyo3::exceptions::PyValueError::new_err(format!(
                 "Zone ID {} out of range (0-{})",
                 zone_id,
-                self.inner.num_zones - 1
+                self.inner.num_zones() - 1
             )));
         }
         Ok(self.inner.get_deadband(zone_id))
@@ -99,7 +99,7 @@ impl PyZoneSetpoints {
 
     /// Get number of zones
     pub fn num_zones(&self) -> usize {
-        self.inner.num_zones
+        self.inner.num_zones()
     }
 }
 
@@ -117,11 +117,12 @@ impl PyZoneControl {
         thermal_model: &PyMultiZoneThermalModel,
         setpoints: &PyZoneSetpoints,
     ) -> PyResult<Self> {
-        let thermal_model_arc = Arc::new(thermal_model.inner.clone());
-        let setpoints_copy = ZoneSetpoints::new(setpoints.inner.num_zones);
+        let num_zones = thermal_model.get_inner_num_zones();
+        let thermal_model_arc = Arc::new(ThermalModel::new(num_zones, 20.0));
+        let mut setpoints_copy = ZoneSetpoints::new(setpoints.num_zones());
 
         // Copy setpoints from Python wrapper to Rust struct
-        for zone_id in 0..setpoints.inner.num_zones {
+        for zone_id in 0..setpoints.num_zones() {
             let heating = setpoints.get_heating_setpoint(zone_id)?;
             let cooling = setpoints.get_cooling_setpoint(zone_id)?;
             let deadband = setpoints.get_deadband(zone_id)?;
@@ -189,16 +190,23 @@ impl PyZoneControl {
 /// Create ZoneSetpoints from configuration dictionary
 #[pyfunction]
 pub fn create_zone_setpoints(config: &Bound<'_, PyDict>) -> PyResult<PyZoneSetpoints> {
-    let num_zones: usize = config
-        .get_item("num_zones")
-        .ok_or_else(|| pyo3::exceptions::PyKeyError::new_err("Missing 'num_zones' in config"))?
-        .extract()?;
+    let num_zones_value = match config.get_item("num_zones")? {
+        Some(value) => value,
+        None => {
+            return Err(pyo3::exceptions::PyKeyError::new_err(
+                "Missing 'num_zones' in config",
+            ))
+        }
+    };
+    let num_zones: usize = num_zones_value.extract()?;
 
     let mut setpoints = PyZoneSetpoints::new(num_zones)?;
 
     // Set zone setpoints if provided
-    if let Ok(zone_configs) = config.get_item("zones") {
-        let zones_dict: &Bound<'_, PyDict> = zone_configs.downcast()?;
+    if let Ok(Some(zone_configs)) = config.get_item("zones") {
+        let zones_dict: &Bound<'_, PyDict> = zone_configs
+            .downcast()
+            .map_err(|_| pyo3::exceptions::PyTypeError::new_err("Expected dict for 'zones'"))?;
 
         for (key, value) in zones_dict {
             let zone_key: String = key.extract()?;
@@ -206,17 +214,17 @@ pub fn create_zone_setpoints(config: &Bound<'_, PyDict>) -> PyResult<PyZoneSetpo
                 if let Ok(zone_idx) = zone_key[5..].parse::<usize>() {
                     let zone_dict: &Bound<'_, PyDict> = value.downcast()?;
 
-                    if let Ok(heating) = zone_dict.get_item("heating") {
+                    if let Ok(Some(heating)) = zone_dict.get_item("heating") {
                         let heating_temp: f64 = heating.extract()?;
                         setpoints.set_heating_setpoint(zone_idx, heating_temp)?;
                     }
 
-                    if let Ok(cooling) = zone_dict.get_item("cooling") {
+                    if let Ok(Some(cooling)) = zone_dict.get_item("cooling") {
                         let cooling_temp: f64 = cooling.extract()?;
                         setpoints.set_cooling_setpoint(zone_idx, cooling_temp)?;
                     }
 
-                    if let Ok(deadband) = zone_dict.get_item("deadband") {
+                    if let Ok(Some(deadband)) = zone_dict.get_item("deadband") {
                         let deadband_val: f64 = deadband.extract()?;
                         setpoints.set_deadband(zone_idx, deadband_val)?;
                     }
@@ -229,12 +237,4 @@ pub fn create_zone_setpoints(config: &Bound<'_, PyDict>) -> PyResult<PyZoneSetpo
     Ok(setpoints)
 }
 
-/// Python module initialization
-#[pymodule]
-pub fn hvac(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_class::<PyZoneSetpoints>()?;
-    m.add_class::<PyZoneControl>()?;
-    m.add_function(wrap_pyfunction!(create_zone_setpoints, m)?)?;
-
-    Ok(())
-}
+// Python module initialization - classes are registered in main fluxion module

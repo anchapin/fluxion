@@ -183,6 +183,11 @@ impl ZoneSetpoints {
             Ok(())
         }
     }
+
+    /// Get the number of zones
+    pub fn num_zones(&self) -> usize {
+        self.num_zones
+    }
 }
 
 #[cfg(test)]

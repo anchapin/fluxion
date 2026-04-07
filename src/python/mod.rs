@@ -2,9 +2,11 @@
 // This module re-exports all Python bindings including multi-zone functionality
 
 pub mod bindings;
-// TODO: Enable HVAC bindings once ThermalModel API is resolved
-// #[cfg(feature = "python-bindings")]
-// pub mod hvac_bindings;
+#[cfg(feature = "python-bindings")]
+pub mod hvac_bindings;
+
+#[cfg(feature = "python-bindings")]
+pub use hvac_bindings::*;
 
 #[cfg(feature = "python-bindings")]
 pub use bindings::*;
@@ -21,6 +23,14 @@ pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 
     // Re-export multi-zone functionality
     m.add_wrapped(pyo3::wrap_pymodule!(bindings::multi_zone))?;
+
+    // Register HVAC classes directly
+    m.add_class::<hvac_bindings::PyZoneSetpoints>()?;
+    m.add_class::<hvac_bindings::PyZoneControl>()?;
+    m.add_function(pyo3::wrap_pyfunction!(
+        hvac_bindings::create_zone_setpoints,
+        m
+    )?)?;
 
     Ok(())
 }
