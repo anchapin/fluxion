@@ -5,150 +5,150 @@
 | Metric | Value |
 |--------|-------|
 | Total Results | 64 |
-| Pass Rate | 25.0% |
-| Passed | 16 |
-| Warnings | 11 |
-| Failed | 37 |
-| Mean Absolute Error | 46.26% |
-| Max Deviation | 290.93% |
+| Pass Rate | 4.7% |
+| Passed | 3 |
+| Warnings | 0 |
+| Failed | 61 |
+| Mean Absolute Error | 16.05% |
+| Max Deviation | 88.98% |
 
 ## Detailed Results
 
 | Case | Metric | Fluxion | Ref Min | Ref Max | Deviation | Status |
 |------|--------|---------|---------|---------|-----------|--------|
-| 600 | Annual Heating (MWh) | 9.24 | 5.50 | 7.50 | +42.13% | FAIL |
-| 600 | Annual Cooling (MWh) | 6.52 | 8.00 | 10.50 | -29.51% | FAIL |
-| 600 | Peak Heating (kW) | 6.61 | 2.80 | 3.80 | +100.43% | FAIL |
-| 600 | Peak Cooling (kW) | 5.63 | 4.80 | 6.20 | +2.41% | PASS |
-| 610 | Annual Heating (MWh) | 9.43 | 4.36 | 5.79 | +85.91% | FAIL |
-| 610 | Annual Cooling (MWh) | 4.72 | 3.92 | 6.14 | -6.13% | PASS |
-| 610 | Peak Heating (kW) | 6.62 | 4.30 | 5.70 | +32.32% | FAIL |
-| 610 | Peak Cooling (kW) | 4.77 | 2.20 | 2.90 | +87.14% | FAIL |
-| 620 | Annual Heating (MWh) | 8.72 | 4.50 | 6.50 | +58.47% | FAIL |
-| 620 | Annual Cooling (MWh) | 2.64 | 3.20 | 5.00 | -35.57% | FAIL |
-| 620 | Peak Heating (kW) | 6.59 | 2.80 | 3.80 | +99.68% | FAIL |
-| 620 | Peak Cooling (kW) | 3.45 | 2.50 | 3.50 | +14.86% | WARN |
-| 630 | Annual Heating (MWh) | 9.32 | 5.05 | 6.47 | +61.79% | FAIL |
-| 630 | Annual Cooling (MWh) | 1.60 | 2.13 | 3.70 | -45.09% | FAIL |
-| 630 | Peak Heating (kW) | 6.60 | 4.70 | 6.10 | +22.17% | FAIL |
-| 630 | Peak Cooling (kW) | 2.38 | 1.80 | 2.40 | +13.42% | WARN |
-| 640 | Annual Heating (MWh) | 6.71 | 2.75 | 3.80 | +104.97% | FAIL |
-| 640 | Annual Cooling (MWh) | 6.42 | 5.95 | 8.10 | -8.67% | PASS |
-| 640 | Peak Heating (kW) | 6.60 | 4.30 | 5.70 | +31.91% | FAIL |
-| 640 | Peak Cooling (kW) | 5.63 | 2.80 | 3.70 | +73.31% | FAIL |
-| 650 | Annual Heating (MWh) | 0.00 | 0.00 | 0.00 | +0.00% | PASS |
-| 650 | Annual Cooling (MWh) | 5.39 | 4.82 | 7.06 | -9.30% | PASS |
-| 650 | Peak Heating (kW) | 0.00 | 0.00 | 0.00 | +0.00% | PASS |
-| 650 | Peak Cooling (kW) | 5.58 | 1.90 | 2.50 | +153.69% | FAIL |
-| 600FF | Min Free-Float Temp (°C) | -10.42 | -18.80 | -15.60 | +39.44% | FAIL |
-| 600FF | Max Free-Float Temp (°C) | 51.79 | 64.90 | 75.10 | -26.02% | FAIL |
-| 650FF | Min Free-Float Temp (°C) | -11.78 | -23.00 | -21.00 | +46.46% | FAIL |
-| 650FF | Max Free-Float Temp (°C) | 51.71 | 63.20 | 73.50 | -24.35% | FAIL |
-| 900 | Annual Heating (MWh) | 1.88 | 1.17 | 2.04 | +16.91% | WARN |
-| 900 | Annual Cooling (MWh) | 2.86 | 2.13 | 3.67 | -1.46% | PASS |
-| 900 | Peak Heating (kW) | 4.20 | 1.80 | 2.40 | +100.04% | FAIL |
-| 900 | Peak Cooling (kW) | 3.26 | 1.60 | 2.10 | +76.02% | FAIL |
-| 910 | Annual Heating (MWh) | 2.21 | 1.51 | 2.28 | +16.85% | WARN |
-| 910 | Annual Cooling (MWh) | 1.45 | 0.82 | 1.88 | +7.53% | PASS |
-| 910 | Peak Heating (kW) | 4.21 | 1.90 | 2.50 | +91.50% | FAIL |
-| 910 | Peak Cooling (kW) | 2.68 | 1.20 | 1.60 | +91.72% | FAIL |
-| 920 | Annual Heating (MWh) | 2.43 | 3.26 | 4.30 | -35.67% | FAIL |
-| 920 | Annual Cooling (MWh) | 1.70 | 1.84 | 3.31 | -34.17% | FAIL |
-| 920 | Peak Heating (kW) | 3.99 | 2.10 | 2.80 | +63.01% | FAIL |
-| 920 | Peak Cooling (kW) | 1.85 | 1.40 | 1.90 | +12.02% | WARN |
-| 930 | Annual Heating (MWh) | 2.70 | 4.14 | 5.34 | -43.00% | FAIL |
-| 930 | Annual Cooling (MWh) | 0.83 | 1.04 | 2.24 | -49.55% | FAIL |
-| 930 | Peak Heating (kW) | 4.06 | 2.30 | 3.00 | +53.13% | FAIL |
-| 930 | Peak Cooling (kW) | 1.19 | 1.10 | 1.50 | -8.53% | PASS |
-| 940 | Annual Heating (MWh) | 1.43 | 0.79 | 1.41 | +30.37% | WARN |
-| 940 | Annual Cooling (MWh) | 2.85 | 2.08 | 3.55 | +1.38% | PASS |
-| 940 | Peak Heating (kW) | 4.56 | 1.90 | 2.50 | +107.28% | FAIL |
-| 940 | Peak Cooling (kW) | 3.26 | 1.70 | 2.30 | +62.82% | FAIL |
-| 950 | Annual Heating (MWh) | 0.00 | 0.00 | 0.00 | +0.00% | PASS |
-| 950 | Annual Cooling (MWh) | 0.75 | 0.39 | 0.92 | +14.48% | WARN |
-| 950 | Peak Heating (kW) | 0.00 | 0.00 | 0.00 | +0.00% | PASS |
-| 950 | Peak Cooling (kW) | 3.13 | 0.70 | 0.90 | +290.93% | FAIL |
-| 900FF | Min Free-Float Temp (°C) | -5.85 | -6.40 | -1.60 | -46.22% | WARN |
-| 900FF | Max Free-Float Temp (°C) | 43.20 | 41.80 | 46.40 | -2.04% | PASS |
-| 950FF | Min Free-Float Temp (°C) | -10.30 | -20.20 | -17.80 | +45.79% | FAIL |
-| 950FF | Max Free-Float Temp (°C) | 41.28 | 35.50 | 38.50 | +11.57% | FAIL |
-| 960 | Annual Heating (MWh) | 10.64 | 5.00 | 15.00 | +6.44% | PASS |
-| 960 | Annual Cooling (MWh) | 2.93 | 1.00 | 3.50 | +30.36% | WARN |
-| 960 | Peak Heating (kW) | 6.31 | 2.00 | 8.00 | +26.25% | WARN |
-| 960 | Peak Cooling (kW) | 3.40 | 0.00 | 4.00 | +69.87% | WARN |
-| 195 | Annual Heating (MWh) | 11.41 | 3.50 | 6.00 | +140.14% | FAIL |
-| 195 | Annual Cooling (MWh) | 0.00 | 0.00 | 0.00 | +0.00% | PASS |
-| 195 | Peak Heating (kW) | 3.93 | 1.40 | 2.20 | +118.42% | FAIL |
-| 195 | Peak Cooling (kW) | 0.00 | 0.00 | 0.00 | +0.00% | PASS |
+| 600 | Annual Heating (MWh) | 9.24 | 5.00 | 7.00 | +53.97% | FAIL |
+| 600 | Annual Cooling (MWh) | 6.52 | 8.00 | 10.00 | -27.56% | FAIL |
+| 600 | Peak Heating (kW) | 6.61 | 3.00 | 4.00 | +88.98% | FAIL |
+| 600 | Peak Cooling (kW) | 5.63 | 5.00 | 6.00 | +2.41% | PASS |
+| 610 | Annual Heating (MWh) | 9.43 | 0.00 | 0.00 | +0.00% | FAIL |
+| 610 | Annual Cooling (MWh) | 4.72 | 0.00 | 0.00 | +0.00% | FAIL |
+| 610 | Peak Heating (kW) | 6.62 | 0.00 | 0.00 | +0.00% | FAIL |
+| 610 | Peak Cooling (kW) | 4.77 | 0.00 | 0.00 | +0.00% | FAIL |
+| 620 | Annual Heating (MWh) | 8.72 | 0.00 | 0.00 | +0.00% | FAIL |
+| 620 | Annual Cooling (MWh) | 2.64 | 0.00 | 0.00 | +0.00% | FAIL |
+| 620 | Peak Heating (kW) | 6.59 | 0.00 | 0.00 | +0.00% | FAIL |
+| 620 | Peak Cooling (kW) | 3.45 | 0.00 | 0.00 | +0.00% | FAIL |
+| 630 | Annual Heating (MWh) | 9.32 | 0.00 | 0.00 | +0.00% | FAIL |
+| 630 | Annual Cooling (MWh) | 1.60 | 0.00 | 0.00 | +0.00% | FAIL |
+| 630 | Peak Heating (kW) | 6.60 | 0.00 | 0.00 | +0.00% | FAIL |
+| 630 | Peak Cooling (kW) | 2.38 | 0.00 | 0.00 | +0.00% | FAIL |
+| 640 | Annual Heating (MWh) | 6.71 | 0.00 | 0.00 | +0.00% | FAIL |
+| 640 | Annual Cooling (MWh) | 6.42 | 0.00 | 0.00 | +0.00% | FAIL |
+| 640 | Peak Heating (kW) | 6.60 | 0.00 | 0.00 | +0.00% | FAIL |
+| 640 | Peak Cooling (kW) | 5.63 | 0.00 | 0.00 | +0.00% | FAIL |
+| 650 | Annual Heating (MWh) | 0.00 | 0.00 | 0.00 | +0.00% | FAIL |
+| 650 | Annual Cooling (MWh) | 5.39 | 0.00 | 0.00 | +0.00% | FAIL |
+| 650 | Peak Heating (kW) | 0.00 | 0.00 | 0.00 | +0.00% | FAIL |
+| 650 | Peak Cooling (kW) | 5.58 | 0.00 | 0.00 | +0.00% | FAIL |
+| 600FF | Min Free-Float Temp (°C) | -11.31 | -18.80 | -15.60 | +34.22% | FAIL |
+| 600FF | Max Free-Float Temp (°C) | 53.45 | 64.90 | 75.10 | -23.64% | FAIL |
+| 650FF | Min Free-Float Temp (°C) | -11.91 | -23.00 | -21.00 | +45.84% | FAIL |
+| 650FF | Max Free-Float Temp (°C) | 53.45 | 63.20 | 73.50 | -21.80% | FAIL |
+| 900 | Annual Heating (MWh) | 1.35 | 1.17 | 2.04 | -16.16% | FAIL |
+| 900 | Annual Cooling (MWh) | 3.39 | 2.13 | 3.67 | +16.94% | FAIL |
+| 900 | Peak Heating (kW) | 1.65 | 1.10 | 2.10 | +3.26% | PASS |
+| 900 | Peak Cooling (kW) | 1.67 | 2.10 | 3.50 | -40.40% | FAIL |
+| 910 | Annual Heating (MWh) | 1.59 | 0.00 | 0.00 | +0.00% | FAIL |
+| 910 | Annual Cooling (MWh) | 1.71 | 0.00 | 0.00 | +0.00% | FAIL |
+| 910 | Peak Heating (kW) | 1.66 | 0.00 | 0.00 | +0.00% | FAIL |
+| 910 | Peak Cooling (kW) | 1.38 | 0.00 | 0.00 | +0.00% | FAIL |
+| 920 | Annual Heating (MWh) | 1.67 | 3.26 | 4.30 | -55.73% | FAIL |
+| 920 | Annual Cooling (MWh) | 2.17 | 3.26 | 4.30 | -42.67% | FAIL |
+| 920 | Peak Heating (kW) | 1.55 | 3.26 | 4.30 | -58.97% | FAIL |
+| 920 | Peak Cooling (kW) | 0.95 | 3.26 | 4.30 | -74.81% | FAIL |
+| 930 | Annual Heating (MWh) | 1.91 | 4.14 | 5.34 | -59.61% | FAIL |
+| 930 | Annual Cooling (MWh) | 1.11 | 4.14 | 5.34 | -76.67% | FAIL |
+| 930 | Peak Heating (kW) | 1.58 | 4.14 | 5.34 | -66.60% | FAIL |
+| 930 | Peak Cooling (kW) | 0.61 | 4.14 | 5.34 | -87.10% | FAIL |
+| 940 | Annual Heating (MWh) | 1.00 | 0.00 | 0.00 | +0.00% | FAIL |
+| 940 | Annual Cooling (MWh) | 3.37 | 0.00 | 0.00 | +0.00% | FAIL |
+| 940 | Peak Heating (kW) | 1.72 | 0.00 | 0.00 | +0.00% | FAIL |
+| 940 | Peak Cooling (kW) | 1.67 | 0.00 | 0.00 | +0.00% | FAIL |
+| 950 | Annual Heating (MWh) | 0.00 | 0.00 | 0.00 | +0.00% | FAIL |
+| 950 | Annual Cooling (MWh) | 0.85 | 0.00 | 0.00 | +0.00% | FAIL |
+| 950 | Peak Heating (kW) | 0.00 | 0.00 | 0.00 | +0.00% | FAIL |
+| 950 | Peak Cooling (kW) | 1.62 | 0.00 | 0.00 | +0.00% | FAIL |
+| 900FF | Min Free-Float Temp (°C) | -6.53 | -6.40 | -1.60 | -63.26% | FAIL |
+| 900FF | Max Free-Float Temp (°C) | 44.24 | 41.80 | 46.40 | +0.33% | PASS |
+| 950FF | Min Free-Float Temp (°C) | -10.84 | -20.20 | -17.80 | +42.95% | FAIL |
+| 950FF | Max Free-Float Temp (°C) | 45.61 | 35.50 | 38.50 | +23.26% | FAIL |
+| 960 | Annual Heating (MWh) | 7.56 | 0.00 | 0.00 | +0.00% | FAIL |
+| 960 | Annual Cooling (MWh) | 3.45 | 0.00 | 0.00 | +0.00% | FAIL |
+| 960 | Peak Heating (kW) | 2.38 | 0.00 | 0.00 | +0.00% | FAIL |
+| 960 | Peak Cooling (kW) | 1.63 | 0.00 | 0.00 | +0.00% | FAIL |
+| 195 | Annual Heating (MWh) | 11.41 | 0.00 | 0.00 | +0.00% | FAIL |
+| 195 | Annual Cooling (MWh) | 0.00 | 0.00 | 0.00 | +0.00% | FAIL |
+| 195 | Peak Heating (kW) | 3.93 | 0.00 | 0.00 | +0.00% | FAIL |
+| 195 | Peak Cooling (kW) | 0.00 | 0.00 | 0.00 | +0.00% | FAIL |
 
 ## Delta Analysis
 
-Baseline: 910
+Baseline: 640
 
 | Case - Metric | Delta from Baseline |
 |---------------|---------------------|
-| 640 - Annual Cooling (MWh) | +4.96 |
-| 195 - Peak Cooling (kW) | -2.68 |
-| 630 - Annual Heating (MWh) | +7.10 |
-| 630 - Peak Heating (kW) | +2.38 |
-| 950 - Annual Cooling (MWh) | -0.70 |
-| 600 - Peak Cooling (kW) | +2.95 |
-| 620 - Peak Heating (kW) | +2.38 |
-| 620 - Annual Heating (MWh) | +6.50 |
-| 900 - Peak Cooling (kW) | +0.57 |
-| 900 - Peak Heating (kW) | -0.01 |
-| 930 - Peak Heating (kW) | -0.15 |
-| 940 - Peak Cooling (kW) | +0.57 |
-| 940 - Annual Heating (MWh) | -0.78 |
-| 610 - Peak Heating (kW) | +2.40 |
-| 650 - Annual Heating (MWh) | -2.21 |
-| 950 - Annual Heating (MWh) | -2.21 |
-| 920 - Peak Heating (kW) | -0.22 |
-| 620 - Peak Cooling (kW) | +0.76 |
-| 960 - Annual Cooling (MWh) | +1.48 |
-| 620 - Annual Cooling (MWh) | +1.19 |
-| 610 - Annual Cooling (MWh) | +3.27 |
-| 640 - Peak Cooling (kW) | +2.95 |
-| 195 - Annual Heating (MWh) | +9.19 |
-| 600 - Annual Cooling (MWh) | +5.07 |
-| 640 - Peak Heating (kW) | +2.38 |
-| 630 - Annual Cooling (MWh) | +0.15 |
-| 630 - Peak Cooling (kW) | -0.30 |
-| 900 - Annual Cooling (MWh) | +1.41 |
-| 920 - Annual Heating (MWh) | +0.22 |
-| 600 - Annual Heating (MWh) | +7.02 |
-| 650 - Peak Heating (kW) | -4.21 |
-| 900 - Annual Heating (MWh) | -0.34 |
-| 930 - Annual Heating (MWh) | +0.49 |
-| 610 - Annual Heating (MWh) | +7.22 |
-| 940 - Annual Cooling (MWh) | +1.40 |
-| 930 - Annual Cooling (MWh) | -0.62 |
-| 940 - Peak Heating (kW) | +0.35 |
-| 960 - Peak Heating (kW) | +2.10 |
-| 600 - Peak Heating (kW) | +2.40 |
-| 650 - Annual Cooling (MWh) | +3.94 |
-| 950 - Peak Cooling (kW) | +0.44 |
-| 920 - Peak Cooling (kW) | -0.84 |
-| 930 - Peak Cooling (kW) | -1.50 |
-| 960 - Annual Heating (MWh) | +8.43 |
-| 195 - Annual Cooling (MWh) | -1.45 |
-| 195 - Peak Heating (kW) | -0.28 |
-| 960 - Peak Cooling (kW) | +0.71 |
-| 650 - Peak Cooling (kW) | +2.90 |
-| 640 - Annual Heating (MWh) | +4.50 |
-| 950 - Peak Heating (kW) | -4.21 |
-| 610 - Peak Cooling (kW) | +2.09 |
-| 920 - Annual Cooling (MWh) | +0.24 |
+| 910 - Annual Cooling (MWh) | -4.70 |
+| 950 - Annual Cooling (MWh) | -5.56 |
+| 930 - Peak Heating (kW) | -5.01 |
+| 950 - Peak Heating (kW) | -6.60 |
+| 960 - Peak Cooling (kW) | -4.00 |
+| 920 - Annual Heating (MWh) | -5.04 |
+| 610 - Peak Heating (kW) | +0.02 |
+| 910 - Peak Heating (kW) | -4.94 |
+| 960 - Annual Heating (MWh) | +0.85 |
+| 650 - Annual Heating (MWh) | -6.71 |
+| 650 - Annual Cooling (MWh) | -1.03 |
+| 600 - Peak Cooling (kW) | +0.00 |
+| 195 - Annual Cooling (MWh) | -6.42 |
+| 910 - Annual Heating (MWh) | -5.12 |
+| 900 - Peak Heating (kW) | -4.94 |
+| 630 - Peak Cooling (kW) | -3.25 |
+| 930 - Annual Cooling (MWh) | -5.31 |
+| 600 - Annual Heating (MWh) | +2.53 |
+| 600 - Annual Cooling (MWh) | +0.10 |
+| 630 - Annual Heating (MWh) | +2.61 |
+| 900 - Annual Cooling (MWh) | -3.02 |
+| 940 - Annual Cooling (MWh) | -3.04 |
+| 610 - Annual Cooling (MWh) | -1.69 |
+| 620 - Peak Heating (kW) | -0.01 |
+| 950 - Peak Cooling (kW) | -4.01 |
+| 960 - Peak Heating (kW) | -4.22 |
+| 920 - Peak Heating (kW) | -5.04 |
+| 920 - Peak Cooling (kW) | -4.68 |
+| 610 - Annual Heating (MWh) | +2.72 |
+| 910 - Peak Cooling (kW) | -4.25 |
+| 930 - Peak Cooling (kW) | -5.02 |
+| 650 - Peak Heating (kW) | -6.60 |
+| 600 - Peak Heating (kW) | +0.02 |
+| 610 - Peak Cooling (kW) | -0.86 |
+| 630 - Annual Cooling (MWh) | -4.82 |
+| 650 - Peak Cooling (kW) | -0.05 |
+| 930 - Annual Heating (MWh) | -4.80 |
+| 920 - Annual Cooling (MWh) | -4.25 |
+| 940 - Annual Heating (MWh) | -5.71 |
+| 940 - Peak Heating (kW) | -4.87 |
+| 195 - Annual Heating (MWh) | +4.69 |
+| 195 - Peak Heating (kW) | -2.66 |
+| 620 - Peak Cooling (kW) | -2.19 |
+| 630 - Peak Heating (kW) | +0.00 |
+| 195 - Peak Cooling (kW) | -5.63 |
+| 620 - Annual Cooling (MWh) | -3.77 |
+| 900 - Annual Heating (MWh) | -5.37 |
+| 900 - Peak Cooling (kW) | -3.96 |
+| 940 - Peak Cooling (kW) | -3.96 |
+| 620 - Annual Heating (MWh) | +2.00 |
+| 950 - Annual Heating (MWh) | -6.71 |
+| 960 - Annual Cooling (MWh) | -2.97 |
 
 ## Worst Performing Cases
 
 | Case | Metric | Deviation | Status |
 |------|--------|-----------|--------|
-| 950 | Peak Cooling (kW) | +290.93% | FAIL |
-| 650 | Peak Cooling (kW) | +153.69% | FAIL |
-| 195 | Annual Heating (MWh) | +140.14% | FAIL |
-| 195 | Peak Heating (kW) | +118.42% | FAIL |
-| 940 | Peak Heating (kW) | +107.28% | FAIL |
+| 600 | Peak Heating (kW) | +88.98% | FAIL |
+| 930 | Peak Cooling (kW) | -87.10% | FAIL |
+| 930 | Annual Cooling (MWh) | -76.67% | FAIL |
+| 920 | Peak Cooling (kW) | -74.81% | FAIL |
+| 930 | Peak Heating (kW) | -66.60% | FAIL |
 
 ## Legend
 

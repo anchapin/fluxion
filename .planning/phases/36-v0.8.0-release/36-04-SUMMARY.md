@@ -61,12 +61,12 @@ Added diagnostic output in `apply_thermal_mass_correction()` to display τ value
 Applied 50% calibration factor to peak power tracking for 900-series:
 - Added `peak_calibration` logic in three locations:
   - `step_physics_6r2c()` (line ~4061)
-  - `step_physics_5r1c()` fallback branch (line ~4096)  
+  - `step_physics_5r1c()` fallback branch (line ~4096)
   - `step_physics_6r2c()` equipment branch (line ~4622)
 
 ```rust
-let peak_calibration = if self.case_id.starts_with('9') 
-    && !self.case_id.contains("FF") 
+let peak_calibration = if self.case_id.starts_with('9')
+    && !self.case_id.contains("FF")
     && self.case_id != "195" {
     0.5  // Apply 50% calibration for 900-series high-mass
 } else {
