@@ -3,6 +3,41 @@
 
 use anyhow::{anyhow, Result};
 use clap::Subcommand;
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::time::Instant;
+
+use crate::validation::ashrae140::ASHRAE140Case;
+
+/// Summary structure for tracking validation results
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct ValidationSummary {
+    total_cases: usize,
+    successful: usize,
+    failed: usize,
+    total_duration: f64,
+    avg_duration: f64,
+    failures: Vec<(u32, String)>, // (case_num, error_message)
+}
+
+impl ValidationSummary {
+    fn new() -> Self {
+        Self::default()
+    }
+
+    fn add_success(&mut self, case_num: u32, duration: std::time::Duration) {
+        self.total_cases += 1;
+        self.successful += 1;
+        self.total_duration += duration.as_secs_f32() as f64;
+        self.avg_duration = self.total_duration / self.total_cases as f64;
+    }
+
+    fn add_failure(&mut self, case_num: u32, error: &anyhow::Error) {
+        self.total_cases += 1;
+        self.failed += 1;
+        self.failures.push((case_num, error.to_string()));
+    }
+}
 
 /// Validation subcommands for ASHRAE 140 case execution and cross-validation
 #[derive(Subcommand, Debug)]
@@ -150,36 +185,100 @@ fn parse_series(series: &str) -> Result<Vec<u32>> {
     }
 }
 
-/// Run a single ASHRAE 140 case
-fn run_single_case(case: u32, output_dir: &str, verbose: bool) -> Result<()> {
+/// Run a single ASHRAE 140 case with actual Fluxion simulation
+fn run_single_case(case_num: u32, output_dir: &str, verbose: bool) -> Result<()> {
     if verbose {
-        println!("Initializing case {}...", case);
+        println!(
+            "Running ASHRAE 140 Case {} with Fluxion simulation...",
+            case_num
+        );
     }
 
-    // Create output directory if it doesn't exist
+    // Parse case number and convert to enum
+    let case = parse_case_number(case_num)?;
+    let case_enum = match case {
+        800..=810 => ASHRAE140Case::from_number(case),
+        195..=470 => ASHRAE140Case::from_number(case),
+        _ => return Err(anyhow!("Case {} not in expanded set", case)),
+    };
+
+    // Run actual validation
+    let validation_results = crate::validation::ashrae140::run_validation(case_enum)?;
+
+    // Create output directory
     std::fs::create_dir_all(output_dir)?;
 
-    println!("Successfully executed case {}", case);
+    // Save results
+    let results_filename = format!("{}/case_{:03}_results.json", output_dir, case_num);
+    let results_json = serde_json::to_string_pretty(&validation_results)?;
+    std::fs::write(&results_filename, results_json)?;
+
+    // Save validation report
+    let report_filename = format!("{}/case_{:03}_report.txt", output_dir, case_num);
+    std::fs::write(&report_filename, validation_results.report)?;
+
+    if verbose {
+        println!("Case {} completed successfully!", case_num);
+        println!("Results saved to: {}", results_filename);
+        println!("Report saved to: {}", report_filename);
+        println!("RMSE: {:.4}", validation_results.comparison.rmse);
+        println!(
+            "Within tolerance: {}",
+            validation_results.comparison.within_tolerance
+        );
+    }
 
     Ok(())
 }
 
-/// Run a series of ASHRAE 140 cases
+/// Run a series of ASHRAE 140 cases with actual simulations
 fn run_case_series(cases: &[u32], output_dir: &str, verbose: bool) -> Result<()> {
     if verbose {
-        println!("Running {} cases in series...", cases.len());
+        println!("Running {} cases with Fluxion simulations...", cases.len());
     }
 
-    for (i, case) in cases.iter().enumerate() {
+    let mut summary = ValidationSummary::new();
+
+    for (i, case_num) in cases.iter().enumerate() {
         if verbose {
-            println!("\n[{}/{}] Running case {}...", i + 1, cases.len(), case);
+            println!("\n[{}/{}] Running case {}...", i + 1, cases.len(), case_num);
         }
 
-        run_single_case(*case, output_dir, verbose)?;
+        let start_time = Instant::now();
+        let result = run_single_case(*case_num, output_dir, verbose);
+        let duration = start_time.elapsed();
+
+        match result {
+            Ok(_) => {
+                summary.add_success(*case_num, duration);
+                if verbose {
+                    println!(
+                        "✓ Case {} completed in {:.2}s",
+                        case_num,
+                        duration.as_secs_f32()
+                    );
+                }
+            }
+            Err(e) => {
+                summary.add_failure(*case_num, &e);
+                eprintln!("✗ Case {} failed: {}", case_num, e);
+            }
+        }
     }
 
+    // Save summary report
+    let summary_filename = format!("{}/validation_summary.json", output_dir);
+    let summary_json = serde_json::to_string_pretty(&summary)?;
+    std::fs::write(&summary_filename, summary_json)?;
+
     if verbose {
-        println!("\nCompleted all {} cases successfully!", cases.len());
+        println!("\nValidation Summary:");
+        println!("==================");
+        println!("Total cases: {}", summary.total_cases);
+        println!("Successful: {}", summary.successful);
+        println!("Failed: {}", summary.failed);
+        println!("Average time per case: {:.2}s", summary.avg_duration);
+        println!("Summary saved to: {}", summary_filename);
     }
 
     Ok(())
