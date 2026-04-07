@@ -17,9 +17,9 @@
 
 ## Current Status
 
-**Milestone:** v1.0 (Next Milestone)
-**Phase:** Planning
-**Status:** v0.8.0 milestone completed. Ready for next milestone planning.
+**Milestone:** v1.0 (Multi-Zone Support)
+**Phase:** M2-zone-hvac-controls (Execution)
+**Status:** v0.8.0 milestone completed. v1.0 milestone in progress with technical blockers to resolve.
 
 ---
 
@@ -35,10 +35,10 @@
 
 </details>
 
-### Next Milestone: v1.0 (Planning)
+### Current Milestone: v1.0 (In Progress)
 
 - [x] Phase M1: Multi-Zone Thermal Network Foundation (3/3 plans complete)
-- [ ] Phase M2: Zone-Level HVAC Controls (3/3 plans planned)
+- [ ] Phase M2: Zone-Level HVAC Controls (3/4 plans, gap closure added)
 - [ ] Phase M3: ASHRAE 140 Multi-Zone Validation (TBD plans)
 
 ---
@@ -52,11 +52,11 @@
 | 35. Free-Floating Validation | v0.8 | 1/1 | Complete | ✅ 2026-04-06 |
 | 36. v0.8.0 Release | v0.8 | 4/4 | Complete | ✅ 2026-04-06 |
 | 37. Multi-Zone Thermal Network Foundation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
-| 38. Zone-Level HVAC Controls | v1.0 | 3/3 | Planned | - |
+| 38. Zone-Level HVAC Controls | v1.0 | 3/4 | In Progress | ⚠️ Gap Closure |
 | 39. ASHRAE 140 Multi-Zone Validation | v1.0 | 0/0 | Not started | - |
 
-**Overall Progress:** v0.8.0 milestone complete (100%), v1.0 started (38%)
+**Overall Progress:** v0.8.0 milestone complete (100%), v1.0 in progress (40%)
 
 ---
 
-*Roadmap updated: 2026-04-07 - M2 phase planned, zone-level HVAC controls ready for execution*
+*Roadmap updated: 2026-04-07 - M2 gap closure plan added to address technical blockers*
