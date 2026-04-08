@@ -39,6 +39,13 @@
   - [ ] 46-03: Occupancy pattern validation
   - [ ] 46-04: Comprehensive validation reporting
 - [ ] **Phase 47: Performance Validation & Optimization** - Performance validation and testing optimization (0/7 plans)
+  - [ ] 47-01: Performance benchmarking infrastructure and validation framework
+  - [ ] 47-02: Thermal solver and zone coupling optimization
+  - [ ] 47-03: CI/CD integration and CLI performance commands
+  - [ ] 47-04: Comparative and historical performance analysis
+  - [ ] 47-05: Integration with main validation suite
+  - [ ] 47-06: Finalization, examples, and user documentation
+  - [ ] 47-07: Phase completion validation and reporting
 
 **Note:** v1.2 milestone planning complete. All phases ready for execution.
 
