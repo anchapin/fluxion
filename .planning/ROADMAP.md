@@ -80,8 +80,8 @@
 | 46. Expanded Validation Coverage | v1.2 | 0/4 | Planning | 🚧 2026-04-08 |
 | 47. Performance Validation & Optimization | v1.2 | 0/7 | Planning | 🚧 2026-04-08 |
 | 40. Case Expansion Foundation | v1.1 | 9/9 | Complete | ✅ 2026-04-08 |
-| 32. CTF Thermal Mass Integration Fix | v0.7 | 3/3 | Complete | ✅ 2026-04-02 |
-| 33. Peak Load Diagnostics | v0.8 | 1/1 | Complete | ✅ 2026-04-03 |
+| 32. CTF Thermal Mass Integration Fix | v0.7 | 3/3 | Complete    | 2026-04-08 |
+| 33. Peak Load Diagnostics | v0.8 | 3/3 | Complete    | 2026-04-08 |
 | 34. Peak Load Physics Fix | v0.8 | 4/4 | Complete | ✅ 2026-04-03 |
 | 35. Free-Floating Validation | v0.8 | 1/1 | Complete | ✅ 2026-04-06 |
 | 36. v0.8.0 Release | v0.8 | 4/4 | Complete | ✅ 2026-04-06 |
