@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use fluxion::thermal::ThermalModel;
+use fluxion::validation::performance::metrics::collect_performance_metrics;
 
 pub fn benchmark_thermal_solver(c: &mut Criterion) {
     let config = ThermalModelConfig::standard();
@@ -13,6 +14,69 @@ pub fn benchmark_thermal_solver(c: &mut Criterion) {
 
     c.bench_function("thermal_solver_10_zones", |b| {
         let config = ThermalModelConfig::multi_zone(10);
+        let mut model = ThermalModel::new(config);
+        b.iter(|| {
+            model.step(black_box(1.0));
+        })
+    });
+
+    // Memory benchmark
+    c.bench_function("memory_benchmark_single_zone", |b| {
+        b.iter(|| {
+            let config = ThermalModelConfig::standard();
+            let model = ThermalModel::new(config);
+            let _metrics = collect_performance_metrics(&model);
+        })
+    });
+
+    // High-mass construction benchmark
+    c.bench_function("high_mass_benchmark_10_zones", |b| {
+        b.iter(|| {
+            let config = ThermalModelConfig::high_mass(10);
+            let mut model = ThermalModel::new(config);
+            model.step(black_box(1.0));
+        })
+    });
+
+    // Peak load scenario benchmark
+    c.bench_function("peak_load_benchmark_5_zones", |b| {
+        b.iter(|| {
+            let config = ThermalModelConfig::peak_load(5);
+            let mut model = ThermalModel::new(config);
+            model.step(black_box(1.0));
+        })
+    });
+
+    // Free-floating temperature scenario benchmark
+    c.bench_function("free_floating_benchmark_3_zones", |b| {
+        b.iter(|| {
+            let config = ThermalModelConfig::free_floating(3);
+            let mut model = ThermalModel::new(config);
+            model.step(black_box(1.0));
+        })
+    });
+
+    // Multi-zone scenarios
+    c.bench_function("multi_zone_20_zones", |b| {
+        let config = ThermalModelConfig::multi_zone(20);
+        let mut model = ThermalModel::new(config);
+        b.iter(|| {
+            model.step(black_box(1.0));
+        })
+    });
+
+    // Commercial building scenario (10 zones)
+    c.bench_function("commercial_building_10_zones", |b| {
+        let config = ThermalModelConfig::commercial(10);
+        let mut model = ThermalModel::new(config);
+        b.iter(|| {
+            model.step(black_box(1.0));
+        })
+    });
+
+    // Residential building scenario (3 zones)
+    c.bench_function("residential_building_3_zones", |b| {
+        let config = ThermalModelConfig::residential(3);
         let mut model = ThermalModel::new(config);
         b.iter(|| {
             model.step(black_box(1.0));

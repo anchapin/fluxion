@@ -1,3 +1,4 @@
+pub mod ci;
 pub mod comparative;
 pub mod completion;
 pub mod finalization;
@@ -9,6 +10,7 @@ pub mod reports;
 
 use crate::thermal::thermal_model::ThermalModel;
 
+pub use ci::{CiPerformanceReport, CiPerformanceValidator};
 pub use comparative::{
     ComparativeAnalysis, ComparativeAnalyzer, ConfigurationResult, PerformanceDelta,
 };

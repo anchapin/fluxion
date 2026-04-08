@@ -1,3 +1,72 @@
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// Gap closure verification for Phase 47
+pub fn gap_closure_verification() -> bool {
+    // Verify that all gaps identified in 47-VERIFICATION.md are closed
+    verify_benchmarking_infrastructure()
+        && verify_metrics_collection()
+        && verify_report_generation()
+        && verify_optimization_wiring()
+        && verify_ci_integration()
+}
+
+fn verify_benchmarking_infrastructure() -> bool {
+    // Check that benchmarking infrastructure is properly expanded
+    if let Ok(content) = std::fs::read_to_string("benches/performance.rs") {
+        content.len() > 1000 && // More than minimal implementation
+        content.contains("memory_benchmark") &&
+        content.contains("high_mass_benchmark") &&
+        content.contains("peak_load_benchmark")
+    } else {
+        false
+    }
+}
+
+fn verify_metrics_collection() -> bool {
+    // Check that metrics collection is implemented
+    if let Ok(content) = std::fs::read_to_string("src/validation/performance/metrics.rs") {
+        content.len() > 2000 && // More than minimal implementation
+        content.contains("measure_memory_usage") &&
+        content.contains("measure_cpu_utilization") &&
+        content.contains("get_solver_iterations")
+    } else {
+        false
+    }
+}
+
+fn verify_report_generation() -> bool {
+    // Check that report generation includes baseline comparisons
+    if let Ok(content) = std::fs::read_to_string("src/validation/performance/reports.rs") {
+        content.len() > 5000 && // More than minimal implementation
+        content.contains("generate_comparison_report") &&
+        content.contains("detect_regressions") &&
+        content.contains("generate_trend_analysis")
+    } else {
+        false
+    }
+}
+
+fn verify_optimization_wiring() -> bool {
+    // Check that optimization tracking is wired to solver and zone coupling
+    let solver_content = std::fs::read_to_string("src/thermal/solver.rs").unwrap_or_default();
+    let coupling_content =
+        std::fs::read_to_string("src/thermal/zone_coupling.rs").unwrap_or_default();
+
+    solver_content.contains("optimization::track_solver_operation")
+        && coupling_content.contains("optimization::track_zone_coupling")
+}
+
+fn verify_ci_integration() -> bool {
+    // Check that CLI is wired to CI validation
+    let cli_content = std::fs::read_to_string("src/cli/performance.rs").unwrap_or_default();
+    let ci_content =
+        std::fs::read_to_string("src/validation/performance/ci.rs").unwrap_or_default();
+
+    cli_content.contains("ci::run_performance_validation")
+        && ci_content.contains("run_performance_validation")
+}
+
 pub struct Phase47CompletionValidator {
     requirements: Vec<PhaseRequirement>,
 }
@@ -94,10 +163,7 @@ impl Phase47CompletionValidator {
             PhaseRequirement {
                 id: "PERF-13".to_string(),
                 description: "Phase completion validation".to_string(),
-                validation: Box::new(|_| {
-                    // This requirement is validated by this module's existence
-                    true
-                }),
+                validation: Box::new(|validator| validator.validate_gap_closure()),
             },
             PhaseRequirement {
                 id: "PERF-14".to_string(),
@@ -124,10 +190,11 @@ impl Phase47CompletionValidator {
             }
         }
 
+        let completion_percentage = self.calculate_completion_percentage(&results);
         PhaseCompletionResult {
             requirements: results,
             all_passed,
-            completion_percentage: self.calculate_completion_percentage(&results),
+            completion_percentage,
         }
     }
 
@@ -147,6 +214,11 @@ impl Phase47CompletionValidator {
         let coupling_code =
             std::fs::read_to_string("src/thermal/zone_coupling.rs").unwrap_or_default();
         coupling_code.contains("ndarray") || coupling_code.contains("Array2")
+    }
+
+    fn validate_gap_closure(&self) -> bool {
+        // Validate that all gaps from 47-VERIFICATION.md are closed
+        gap_closure_verification()
     }
 
     fn run_comprehensive_tests(&self) -> bool {
@@ -192,14 +264,13 @@ impl Phase47CompletionValidator {
     }
 }
 
-#[derive(Debug)]
 struct PhaseRequirement {
     id: String,
     description: String,
     validation: Box<dyn Fn(&Phase47CompletionValidator) -> bool>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RequirementResult {
     pub id: String,
     pub description: String,

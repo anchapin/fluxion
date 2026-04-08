@@ -1,3 +1,4 @@
+use crate::validation::performance::reports::PerformanceMetrics;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -14,7 +15,7 @@ pub struct ConfigurationResult {
     pub configuration: serde_json::Value,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct PerformanceDelta {
     pub config_a: String,
     pub config_b: String,

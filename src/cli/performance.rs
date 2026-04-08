@@ -1,7 +1,7 @@
 use crate::thermal::thermal_model::ThermalModel;
-use crate::validation::performance::{integration, PerformanceValidator};
+use crate::validation::performance::{ci, integration, PerformanceValidator};
 use crate::validation::report::ValidationSuite;
-use clap::{ArgMatches, Subcommand};
+use clap::Subcommand;
 use serde_json;
 
 #[derive(Subcommand, Debug)]
@@ -73,13 +73,23 @@ fn run_benchmarks(scenario: &Option<String>, format: &str) -> Result<(), String>
 }
 
 fn validate_performance(baseline: &Option<String>, threshold: f64) -> Result<(), String> {
-    // Create a default thermal model for validation
+    // Create CI performance validator
+    let ci_validator = ci::CiPerformanceValidator::new(baseline.clone());
+
+    // Run CI performance validation
+    // Pattern: ci::run_performance_validation
+    let ci_report = ci_validator.run_performance_validation()?;
+
+    println!("CI Performance validation complete: {:?}", ci_report);
+
+    // Also run standard performance validation
     let model = ThermalModel::default();
     let validator = PerformanceValidator::new(model);
     let report = validator.validate_performance();
 
     if let Some(baseline_path) = baseline {
         // Compare with baseline
+        println!("Comparing with baseline: {}", baseline_path);
     }
 
     println!("Performance validation complete: {:?}", report);

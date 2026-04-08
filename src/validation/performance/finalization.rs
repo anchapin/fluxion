@@ -30,16 +30,16 @@ impl PerformanceValidationFinalizer {
             self.generate_final_report(&standard_result, &performance_result, &comparative_result);
 
         FinalValidationResult {
-            standard: standard_result,
-            performance: performance_result,
-            comparative: comparative_result,
+            standard: standard_result.clone(),
+            performance: performance_result.clone(),
+            comparative: comparative_result.clone(),
             final_report,
             success: self.check_final_success(&standard_result, &performance_result),
         }
     }
 
     fn run_comparative_analysis(&self) -> ComparativeAnalysisResult {
-        let mut analyzer = ComparativeAnalyzer::new(self.create_baseline_config());
+        let analyzer = ComparativeAnalyzer::new(self.create_baseline_config());
         let current_config = self.create_current_config();
         let deltas = analyzer.compare_two(&self.create_baseline_config(), &current_config);
 
@@ -72,10 +72,10 @@ impl PerformanceValidationFinalizer {
             standard_validation: standard.clone(),
             performance_validation: performance.clone(),
             comparative_analysis: comparative.clone(),
-            overall_status: if standard.passed && performance_status == "PASS" {
-                "PASS"
+            overall_status: if standard.passed() && performance_status == "PASS" {
+                "PASS".to_string()
             } else {
-                "FAIL"
+                "FAIL".to_string()
             },
             recommendations: self.generate_recommendations(performance, comparative),
         }
@@ -116,7 +116,7 @@ impl PerformanceValidationFinalizer {
         standard: &ValidationResult,
         performance: &Result<PerformanceReport, String>,
     ) -> bool {
-        standard.passed && performance.is_ok()
+        standard.passed() && performance.is_ok()
     }
 
     fn create_baseline_config(&self) -> ConfigurationResult {
@@ -164,7 +164,7 @@ pub struct FinalPerformanceReport {
     pub recommendations: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ComparativeAnalysisResult {
     pub deltas: Vec<PerformanceDelta>,
     pub best_performer: String,
