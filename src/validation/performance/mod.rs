@@ -1,5 +1,6 @@
 pub mod comparative;
 pub mod historical;
+pub mod integration;
 pub mod metrics;
 pub mod optimization;
 pub mod reports;
@@ -12,6 +13,9 @@ pub use comparative::{
 pub use historical::{
     BenchmarkHistory, HistoricalPerformanceReport, HistoricalRecord, HistoricalTracker,
     PerformanceTrend, TrendDirection,
+};
+pub use integration::{
+    IntegratedPerformanceValidator, IntegratedReport, IntegratedValidationResult,
 };
 pub use metrics::PerformanceMetrics;
 pub use optimization::{
