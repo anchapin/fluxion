@@ -33,7 +33,11 @@
 
 - [x] **Phase 44: High-Mass Physics & Validation Completion** - Complete high-mass validation and thermal mass diagnostics (4/4 plans) (completed 2026-04-08)
 - [ ] **Phase 45: Advanced Cross-Validation & Automation** - ESP-r integration, automated testing infrastructure (6/6 plans)
-- [ ] **Phase 46: Expanded Validation Coverage** - Additional test cases and comprehensive reporting (0/4 plans)
+- [ ] **Phase 46: Expanded Validation Coverage** - Additional test cases and comprehensive reporting (1/4 plans)
+  - [x] 46-01: Extended ASHRAE 140 validation with 500-699 series cases (12 new cases)
+  - [ ] 46-02: Climate zone validation framework
+  - [ ] 46-03: Occupancy pattern validation
+  - [ ] 46-04: Comprehensive validation reporting
 - [ ] **Phase 47: Performance Validation & Optimization** - Performance validation and testing optimization (0/7 plans)
 
 **Note:** v1.2 milestone planning complete. All phases ready for execution.
