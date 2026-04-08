@@ -1,4 +1,5 @@
 pub mod comparative;
+pub mod historical;
 pub mod metrics;
 pub mod optimization;
 pub mod reports;
@@ -7,6 +8,10 @@ use crate::thermal::thermal_model::ThermalModel;
 
 pub use comparative::{
     ComparativeAnalysis, ComparativeAnalyzer, ConfigurationResult, PerformanceDelta,
+};
+pub use historical::{
+    BenchmarkHistory, HistoricalPerformanceReport, HistoricalRecord, HistoricalTracker,
+    PerformanceTrend, TrendDirection,
 };
 pub use metrics::PerformanceMetrics;
 pub use optimization::{
