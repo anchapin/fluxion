@@ -3,12 +3,15 @@
 
 use anyhow::{anyhow, Result};
 use clap::Subcommand;
+use num_cpus;
+use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::path::Path;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::validation::ashrae140::ASHRAE140Case;
+use crate::validation::case_195_calibration::CalibrationResult;
 
 /// Summary structure for tracking validation results
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -56,6 +59,23 @@ pub enum ValidationSubcommand {
         verbose: bool,
     },
 
+    /// Calibrate Case 195 thermal model parameters
+    #[clap(name = "calibrate-case-195")]
+    CalibrateCase195 {
+        /// Maximum number of iterations
+        #[clap(short, long, default_value = "50")]
+        max_iterations: usize,
+        /// Learning rate for parameter optimization
+        #[clap(short, long, default_value = "0.05")]
+        learning_rate: f64,
+        /// Tolerance for convergence
+        #[clap(short, long, default_value = "0.01")]
+        tolerance: f64,
+        /// Output directory for calibration results
+        #[clap(short, long, default_value = "./calibration")]
+        output: String,
+    },
+
     /// Run a series of ASHRAE 140 cases
     #[clap(name = "run-series")]
     RunSeries {
@@ -72,6 +92,51 @@ pub enum ValidationSubcommand {
     /// List available ASHRAE 140 cases
     #[clap(name = "list-cases")]
     ListCases,
+
+    /// Run validation cases in parallel
+    #[clap(name = "parallel")]
+    Parallel {
+        /// Number of threads to use
+        #[clap(short, long)]
+        threads: Option<usize>,
+        /// Chunk size for parallel processing
+        #[clap(short, long)]
+        chunk_size: Option<usize>,
+        /// Show progress during execution
+        #[clap(short, long)]
+        progress: bool,
+        /// Output directory for results
+        #[clap(short, long, default_value = "./results")]
+        output: String,
+    },
+
+    /// Run high-mass validation cases in parallel
+    #[clap(name = "parallel-high-mass")]
+    ParallelHighMass {
+        /// Number of threads to use
+        #[clap(short, long)]
+        threads: Option<usize>,
+        /// Show progress during execution
+        #[clap(short, long)]
+        progress: bool,
+        /// Output directory for results
+        #[clap(short, long, default_value = "./results")]
+        output: String,
+    },
+
+    /// Run performance validation with detailed timing
+    #[clap(name = "performance-test")]
+    PerformanceTest {
+        /// Number of iterations for accurate measurement
+        #[clap(short, long, default_value = "3")]
+        iterations: usize,
+        /// Show detailed timing breakdown
+        #[clap(short, long)]
+        detailed_timing: bool,
+        /// Output directory for performance reports
+        #[clap(short, long, default_value = "./performance")]
+        output: String,
+    },
 
     /// Compare Fluxion results against external tool references
     #[clap(name = "cross-validate")]
@@ -402,17 +467,20 @@ fn run_batch_cross_validation(
 
 /// Profile performance of a single case
 fn run_performance_profile(case_num: u32, iterations: usize, output_dir: String) -> Result<()> {
-    let case = parse_case_number(case_num)?;
+    let case_num_validated = parse_case_number(case_num)?;
+    let case = crate::validation::ASHRAE140Case::from_number(case_num_validated);
     let metrics = crate::validation::performance::profile_case(case, iterations);
     let report = crate::validation::performance::generate_performance_report(&[metrics]);
 
     // Save report
     std::fs::create_dir_all(&output_dir)?;
     let report_path = format!("{}/case_{:03}_performance.txt", output_dir, case_num);
+    let report_path_clone = report_path.clone();
+    let report_clone = report.clone();
     std::fs::write(report_path, report)?;
 
-    println!("Performance profile saved to: {}", report_path);
-    println!("{}", report);
+    println!("Performance profile saved to: {}", report_path_clone);
+    println!("{}", report_clone);
 
     Ok(())
 }
@@ -429,7 +497,10 @@ fn run_series_performance_profile(
     // Use Rayon for parallel profiling
     let metrics: Vec<_> = cases
         .par_iter()
-        .map(|case| crate::validation::performance::profile_case(*case, iterations))
+        .map(|case| {
+            let ashrae_case = crate::validation::ASHRAE140Case::from_number(*case);
+            crate::validation::performance::profile_case(ashrae_case, iterations)
+        })
         .collect();
 
     let report = crate::validation::performance::generate_performance_report(&metrics);
@@ -438,13 +509,14 @@ fn run_series_performance_profile(
     // Save comprehensive report
     std::fs::create_dir_all(&output_dir)?;
     let report_path = format!("{}/{}_performance_report.txt", output_dir, series);
+    let report_path_clone = report_path.clone();
     let mut full_report = report;
     full_report.push_str("\n\nBottleneck Analysis:\n");
     full_report.push_str(&analysis.join("\n"));
 
     std::fs::write(report_path, full_report)?;
 
-    println!("Series performance profile saved to: {}", report_path);
+    println!("Series performance profile saved to: {}", report_path_clone);
     println!("Bottlenecks found: {}", analysis.len());
 
     Ok(())
@@ -462,7 +534,8 @@ fn generate_comprehensive_performance_report(output_path: String, detailed: bool
     let metrics: Vec<_> = all_cases
         .iter()
         .map(|&case_num| {
-            let case = parse_case_number(case_num).unwrap();
+            let case_num_validated = parse_case_number(case_num).unwrap();
+            let case = crate::validation::ASHRAE140Case::from_number(case_num_validated);
             crate::validation::performance::profile_case(case, 1)
         })
         .collect();
@@ -488,7 +561,8 @@ fn run_validation_with_performance_monitoring(
     output_dir: String,
     show_metrics: bool,
 ) -> Result<()> {
-    let case = parse_case_number(case_num)?;
+    let case_num_validated = parse_case_number(case_num)?;
+    let case = crate::validation::ASHRAE140Case::from_number(case_num_validated);
 
     if show_metrics {
         println!("Profiling case {:?}...", case);
@@ -506,13 +580,201 @@ fn run_validation_with_performance_monitoring(
     // Save results (placeholder - in real implementation this would save actual results)
     std::fs::create_dir_all(&output_dir)?;
     let results_path = format!("{}/case_{:03}_results.json", output_dir, case_num);
+    let results_path_clone = results_path.clone();
     let results_content = format!("{:?}", case_def);
     std::fs::write(results_path, results_content)?;
 
     if show_metrics {
         println!("Case {:?} completed successfully", case);
-        println!("Results saved to: {}", results_path);
+        println!("Results saved to: {}", results_path_clone);
     }
+
+    Ok(())
+}
+
+/// Handle parallel validation command
+fn handle_validate_parallel(
+    threads: Option<usize>,
+    chunk_size: Option<usize>,
+    progress: bool,
+    output_dir: &str,
+) -> Result<()> {
+    println!(
+        "Running parallel validation with {} threads",
+        threads.unwrap_or_else(|| num_cpus::get())
+    );
+
+    // Create parallel executor with specified configuration
+    let mut executor = crate::validation::performance::ParallelValidationExecutor::new();
+    if let Some(t) = threads {
+        executor.max_threads = t;
+    }
+    if let Some(cs) = chunk_size {
+        executor.chunk_size = cs;
+    }
+    executor.progress_reporting = progress;
+
+    // Create high-mass validation cases
+    let high_mass_cases =
+        crate::validation::high_mass::test_cases::create_high_mass_validation_cases();
+
+    // Run parallel validation
+    let results = executor.run_parallel(high_mass_cases);
+
+    // Create output directory
+    std::fs::create_dir_all(output_dir)?;
+
+    // Save results
+    for result in &results {
+        let result_filename = format!("{}/case_{}_result.json", output_dir, result.case_id);
+        let result_json = serde_json::to_string_pretty(result)?;
+        std::fs::write(&result_filename, result_json)?;
+        println!("Saved: {}", result_filename);
+    }
+
+    // Generate performance summary
+    let summary = executor.monitor_performance(&results);
+    let summary_filename = format!("{}/parallel_summary.json", output_dir);
+    let summary_json = serde_json::to_string_pretty(&summary)?;
+    std::fs::write(&summary_filename, summary_json)?;
+
+    println!("Parallel validation completed!");
+    println!("Total cases: {}", summary.total_cases);
+    println!("Successful: {}", summary.successful_cases);
+    println!("Failed: {}", summary.failed_cases);
+    println!("Summary saved to: {}", summary_filename);
+
+    Ok(())
+}
+
+/// Handle parallel high-mass validation command
+fn handle_validate_parallel_high_mass(
+    threads: Option<usize>,
+    progress: bool,
+    output_dir: &str,
+) -> Result<()> {
+    println!(
+        "Running parallel high-mass validation with {} threads",
+        threads.unwrap_or_else(|| num_cpus::get())
+    );
+
+    // Create parallel executor with specified thread count
+    let mut executor = crate::validation::performance::ParallelValidationExecutor::new();
+    if let Some(t) = threads {
+        executor.max_threads = t;
+    }
+    executor.progress_reporting = progress;
+
+    // Run high-mass validation cases in parallel
+    let results = executor.run_high_mass_parallel();
+
+    // Create output directory
+    std::fs::create_dir_all(output_dir)?;
+
+    // Save results
+    for result in &results {
+        let result_filename = format!("{}/high_mass_{}_result.json", output_dir, result.case_id);
+        let result_json = serde_json::to_string_pretty(result)?;
+        std::fs::write(&result_filename, result_json)?;
+        println!("Saved: {}", result_filename);
+    }
+
+    // Generate performance summary
+    let summary = executor.monitor_performance(&results);
+    let summary_filename = format!("{}/high_mass_summary.json", output_dir);
+    let summary_json = serde_json::to_string_pretty(&summary)?;
+    std::fs::write(&summary_filename, summary_json)?;
+
+    println!("High-mass parallel validation completed!");
+    println!("Total cases: {}", summary.total_cases);
+    println!("Successful: {}", summary.successful_cases);
+    println!("Failed: {}", summary.failed_cases);
+    println!("Summary saved to: {}", summary_filename);
+
+    Ok(())
+}
+
+/// Handle performance test command
+fn handle_validate_performance_test(
+    iterations: usize,
+    detailed_timing: bool,
+    output_dir: &str,
+) -> Result<()> {
+    println!(
+        "Running performance validation test with {} iterations",
+        iterations
+    );
+
+    // Create parallel executor
+    let executor = crate::validation::performance::ParallelValidationExecutor::new();
+
+    // Create high-mass validation cases
+    let high_mass_cases =
+        crate::validation::high_mass::test_cases::create_high_mass_validation_cases();
+
+    // Run performance test multiple times
+    let mut all_results = Vec::new();
+    let mut total_duration = Duration::from_secs(0);
+
+    for i in 0..iterations {
+        println!("Iteration {}/{}", i + 1, iterations);
+
+        let start_time = Instant::now();
+        let results = executor.run_parallel(high_mass_cases.clone());
+        let iteration_duration = start_time.elapsed();
+        total_duration += iteration_duration;
+
+        all_results.extend(results);
+
+        println!("  Completed in {:.2}s", iteration_duration.as_secs_f64());
+    }
+
+    // Calculate statistics
+    let avg_duration = total_duration / iterations as u32;
+    let cases_per_second =
+        (high_mass_cases.len() as f64 * iterations as f64) / total_duration.as_secs_f64();
+
+    // Create output directory
+    std::fs::create_dir_all(output_dir)?;
+
+    // Save detailed results if requested
+    if detailed_timing {
+        let detailed_filename = format!("{}/performance_detailed.json", output_dir);
+        let detailed_json = serde_json::to_string_pretty(&all_results)?;
+        std::fs::write(&detailed_filename, detailed_json)?;
+        println!("Detailed results saved to: {}", detailed_filename);
+    }
+
+    // Generate performance report
+    let summary = executor.monitor_performance(&all_results);
+    let report = format!("Performance Test Report\n{}\n", "=".repeat(50));
+
+    let report_filename = format!("{}/performance_report.txt", output_dir);
+    let mut full_report = report;
+    full_report.push_str("Statistics:\n");
+    full_report.push_str(&format!(
+        "  Total duration: {:.2}s\n",
+        total_duration.as_secs_f64()
+    ));
+    full_report.push_str(&format!(
+        "  Average duration: {:.2}s\n",
+        avg_duration.as_secs_f64()
+    ));
+    full_report.push_str(&format!("  Cases per second: {:.2}\n", cases_per_second));
+    full_report.push_str(&format!("  Total cases: {}\n", summary.total_cases));
+    full_report.push_str(&format!("  Successful: {}\n", summary.successful_cases));
+    full_report.push_str(&format!("  Failed: {}\n", summary.failed_cases));
+    full_report.push_str(&format!("  Success rate: {:.1}%\n", summary.success_rate));
+
+    std::fs::write(&report_filename, full_report)?;
+
+    println!("Performance test completed!");
+    println!(
+        "Average duration: {:.2}s per iteration",
+        avg_duration.as_secs_f64()
+    );
+    println!("Throughput: {:.2} cases/second", cases_per_second);
+    println!("Report saved to: {}", report_filename);
 
     Ok(())
 }
@@ -528,6 +790,12 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             let case = parse_case_number(*case)?;
             run_single_case(case, output, *verbose)
         }
+        ValidationSubcommand::CalibrateCase195 {
+            max_iterations,
+            learning_rate,
+            tolerance,
+            output,
+        } => run_case_195_calibration(*max_iterations, *learning_rate, *tolerance, output),
         ValidationSubcommand::RunSeries {
             series,
             output,
@@ -537,13 +805,29 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             run_case_series(&cases, output, *verbose)
         }
         ValidationSubcommand::ListCases => list_available_cases(),
+        ValidationSubcommand::Parallel {
+            threads,
+            chunk_size,
+            progress,
+            output,
+        } => handle_validate_parallel(*threads, *chunk_size, *progress, output),
+        ValidationSubcommand::ParallelHighMass {
+            threads,
+            progress,
+            output,
+        } => handle_validate_parallel_high_mass(*threads, *progress, output),
+        ValidationSubcommand::PerformanceTest {
+            iterations,
+            detailed_timing,
+            output,
+        } => handle_validate_performance_test(*iterations, *detailed_timing, output),
         ValidationSubcommand::CrossValidate {
             case,
             tool,
             reference_file,
             output,
             tolerance,
-            _detailed,
+            detailed,
         } => run_cross_validation(
             *case,
             tool.clone(),
@@ -583,5 +867,54 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             output,
             show_metrics,
         } => run_validation_with_performance_monitoring(*case, output.to_string(), *show_metrics),
+        ValidationSubcommand::CalibrateCase195 {
+            max_iterations,
+            learning_rate,
+            tolerance,
+            output,
+        } => run_case_195_calibration(*max_iterations, *learning_rate, *tolerance, output),
     }
+}
+
+/// Run Case 195 calibration
+fn run_case_195_calibration(
+    max_iterations: usize,
+    learning_rate: f64,
+    tolerance: f64,
+    output_dir: &str,
+) -> Result<()> {
+    println!("Starting Case 195 calibration...");
+
+    // Create output directory
+    std::fs::create_dir_all(output_dir)?;
+
+    // Run calibration
+    let result = crate::validation::case_195_calibration::run_case_195_calibration()?;
+
+    // Save calibration results
+    let results_filename = format!("{}/case_195_calibration_results.json", output_dir);
+    let results_json = serde_json::to_string_pretty(&result)?;
+    std::fs::write(&results_filename, results_json)?;
+
+    println!("Calibration completed!");
+    println!("Results saved to: {}", results_filename);
+
+    if result.success {
+        println!("✅ Calibration successful!");
+        println!("Final error: {:.4}", result.final_error);
+        println!(
+            "Annual heating: {:.2} MWh (target: 3.50-6.00)",
+            result.annual_heating
+        );
+        println!(
+            "Peak heating: {:.2} kW (target: 1.40-2.20)",
+            result.peak_heating
+        );
+    } else {
+        println!("❌ Calibration did not converge within tolerance");
+        println!("Final error: {:.4}", result.final_error);
+        println!("Try increasing max_iterations or adjusting learning_rate");
+    }
+
+    Ok(())
 }
