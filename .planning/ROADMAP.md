@@ -206,7 +206,7 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|----------|----------------|--------|-----------|
-| 40. Case Expansion Foundation | v1.1 | 7/9 | In Progress|  |
+| 40. Case Expansion Foundation | v1.1 | 8/9 | In Progress|  |
 
 **v1.1 Progress:** 56% complete (5/9 plans)
 

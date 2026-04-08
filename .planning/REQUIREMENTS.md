@@ -9,8 +9,8 @@
 ## Validation Expansion Requirements
 
 ### Case Expansion (CASE)
-- [ ] **CASE-01**: User can run ASHRAE 140 Cases 800-810 (HVAC equipment validation)
-- [ ] **CASE-02**: User can run ASHRAE 140 Cases 195-470 (diagnostic validation)
+- [x] **CASE-01**: User can run ASHRAE 140 Cases 800-810 (HVAC equipment validation)
+- [x] **CASE-02**: User can run ASHRAE 140 Cases 195-470 (diagnostic validation)
 - [x] **CASE-03**: User can access extended reference database for new cases
 - [ ] **CASE-04**: User can generate validation reports for all supported cases
 
@@ -57,8 +57,8 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CASE-01 | Phase 40 | Pending |
-| CASE-02 | Phase 40 | Pending |
+| CASE-01 | Phase 40 | Complete |
+| CASE-02 | Phase 40 | Complete |
 | CASE-03 | Phase 40 | Complete |
 | CASE-04 | Phase 43 | Pending |
 | CROSS-01 | Phase 40 | Complete |
