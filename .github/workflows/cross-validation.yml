@@ -1,0 +1,51 @@
+name: Cross-Validation CI
+
+description: Automated cross-validation testing
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  RUST_VERSION: '1.70.0'
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cross-validation:
+    name: Cross-Validation Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build project
+        run: cargo build --release
+
+      - name: Run cross-validation tests
+        run: cargo test --release -- --test-threads=1
+
+      - name: Generate validation report
+        run: cargo run --release -- validate --format=markdown --output-file=validation_report.md
+
+      - name: Upload validation report
+        uses: actions/upload-artifact@v3
+        with:
+          name: validation-report
+          path: validation_report.md
