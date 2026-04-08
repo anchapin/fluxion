@@ -1,4 +1,5 @@
 pub mod comparative;
+pub mod completion;
 pub mod finalization;
 pub mod historical;
 pub mod integration;
@@ -10,6 +11,9 @@ use crate::thermal::thermal_model::ThermalModel;
 
 pub use comparative::{
     ComparativeAnalysis, ComparativeAnalyzer, ConfigurationResult, PerformanceDelta,
+};
+pub use completion::{
+    Phase47CompletionValidator, PhaseCompletionReport, PhaseCompletionResult, RequirementResult,
 };
 pub use finalization::{
     ComparativeAnalysisResult, FinalPerformanceReport, FinalValidationResult,
