@@ -24,6 +24,36 @@
 
 ---
 
+## v1.1 ASHRAE 140 Completion (Partial) (Shipped: 2026-04-08)
+
+**Phases completed:** 1 phase (Phase 40), 9 plans, 27 tasks
+
+**Key accomplishments:**
+
+1. **ASHRAE 140 Case Expansion:** Extended support for Cases 800-810 (HVAC equipment validation) and 195-470 (diagnostic validation)
+2. **Extended Reference Database:** Comprehensive reference data infrastructure with 96,361 + 2,417,761 data rows and complete hourly coverage
+3. **Cross-Validation Framework:** Implemented EnergyPlus and TRNSYS adapters with trait-based architecture for ASHRAE 140 compliance verification
+4. **CLI Integration:** Enhanced command-line interface with validation execution and cross-validation commands
+5. **Performance Optimization:** Real performance monitoring with high-resolution timing, parallel processing, and bottleneck analysis
+6. **Validation Infrastructure:** Complete validation framework with comprehensive reporting and analysis capabilities
+
+**Statistics:**
+- Phases: 1 (Phase 40 only)
+- Plans: 9 total
+- Tasks: 27 total  
+- Files modified: 50+
+- Lines of code: ~124,509 Rust lines
+- Timeline: 2 months (2026-02-16 → 2026-04-08)
+- Git range: Multiple commits across Phase 40 development
+- Requirements completion: 6/16 (37.5%) - Partial completion with Phases 41-43 deferred to v1.2
+
+**Notes:**
+- Partial milestone completion: Only Phase 40 (Case Expansion Foundation) completed
+- Deferred work: Phases 41-43 (High-Mass Physics, Advanced Cross-Validation, Validation Optimization) moved to v1.2
+- Requirements status: 6 requirements completed, 10 requirements deferred
+
+---
+
 ## v0.8.0 v0.8.0 (Shipped: 2026-04-07)
 
 **Phases completed:** 4 phases, 10 plans, 24 tasks
