@@ -15,6 +15,9 @@ pub struct ClimateZone {
     pub heating_degree_days: f64,
     pub cooling_degree_days: f64,
     pub solar_radiation_kwh_m2: f64,
+    pub wind_speed_m_s: f64,
+    pub precipitation_mm: f64,
+    pub typical_building_type: String,
 }
 
 impl ClimateZone {
@@ -30,6 +33,9 @@ impl ClimateZone {
         hdd: f64,
         cdd: f64,
         solar: f64,
+        wind_speed: f64,
+        precipitation: f64,
+        building_type: &str,
     ) -> Self {
         Self {
             zone_id: zone_id.to_string(),
@@ -40,6 +46,9 @@ impl ClimateZone {
             heating_degree_days: hdd,
             cooling_degree_days: cdd,
             solar_radiation_kwh_m2: solar,
+            wind_speed_m_s: wind_speed,
+            precipitation_mm: precipitation,
+            typical_building_type: building_type.to_string(),
         }
     }
 }
@@ -60,6 +69,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             0,    // No heating degree days
             3000, // High cooling degree days
             1800, // High solar radiation
+            2.5,  // Low wind speed
+            1500, // High precipitation
+            "residential",
         ),
     );
 
@@ -77,6 +89,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             500,
             2500,
             1700,
+            3.0,
+            1200,
+            "residential",
         ),
     );
 
@@ -94,6 +109,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             800,
             2800,
             2000,
+            4.5, // Higher wind speed in arid areas
+            200, // Low precipitation
+            "commercial",
         ),
     );
 
@@ -111,6 +129,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             1200,
             2000,
             1600,
+            3.2,
+            1100,
+            "residential",
         ),
     );
 
@@ -128,6 +149,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             1500,
             1800,
             1900,
+            3.8,
+            400,
+            "commercial",
         ),
     );
 
@@ -145,6 +169,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             1000,
             800,
             1400,
+            5.0, // Higher wind speed in marine areas
+            900,
+            "residential",
         ),
     );
 
@@ -162,6 +189,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             2500,
             1500,
             1500,
+            4.0,
+            1000,
+            "commercial",
         ),
     );
 
@@ -179,6 +209,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             3000,
             1200,
             1800,
+            4.2,
+            500,
+            "commercial",
         ),
     );
 
@@ -196,6 +229,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             2000,
             500,
             1300,
+            5.5,
+            800,
+            "residential",
         ),
     );
 
@@ -213,6 +249,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             4000,
             1000,
             1400,
+            3.5,
+            900,
+            "commercial",
         ),
     );
 
@@ -230,6 +269,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             4500,
             800,
             1700,
+            4.0,
+            400,
+            "commercial",
         ),
     );
 
@@ -247,6 +289,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             5500,
             500,
             1200,
+            3.0,
+            700,
+            "residential",
         ),
     );
 
@@ -264,6 +309,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             6000,
             300,
             1600,
+            3.5,
+            300,
+            "commercial",
         ),
     );
 
@@ -281,6 +329,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             7000,
             200,
             1100,
+            2.5,
+            400,
+            "residential",
         ),
     );
 
@@ -298,6 +349,9 @@ pub fn get_all_climate_zones() -> HashMap<String, ClimateZone> {
             8500,
             50,
             800,
+            4.0, // Higher wind speed in arctic areas
+            200, // Very low precipitation
+            "residential",
         ),
     );
 
