@@ -1,7 +1,7 @@
 # Fluxion Roadmap
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
-**Milestone:** Planning Next Milestone
+**Milestone:** v1.2 Validation & Testing Completion
 **Current Phase:** Planning
 **Last Updated:** 2026-04-08
 
@@ -9,6 +9,7 @@
 
 ## Milestones
 
+- 🚧 **v1.2 Validation & Testing Completion** — Phases 44-47 (planning)
 - ✅ **v1.1 ASHRAE 140 Completion (Partial)** — Phase 40 (shipped 2026-04-08)
 - ✅ **v1.0 Multi-Zone Support** — Phases M1-M3 (shipped 2026-04-07)
 - ✅ **v0.8 Peak Load & Free-Float Validation** — Phases 33-36 (shipped 2026-04-07)
@@ -19,23 +20,35 @@
 
 ## Current Status
 
-**Milestone:** v1.1 (ASHRAE 140 Completion - Partial) ✅ COMPLETED 2026-04-08
-**Next Milestone:** Planning
-**Status:** v1.1 milestone archived with Phase 40 complete. Phases 41-43 deferred for future development.
+**Milestone:** v1.2 (Validation & Testing Completion) 🚧 PLANNING
+**Previous Milestone:** v1.1 (ASHRAE 140 Completion - Partial) ✅ COMPLETED 2026-04-08
+**Status:** v1.2 milestone planning in progress. Phases 44-47 defined and ready for execution.
 
 ---
 
 ## Phases
 
 <details>
+<summary>🚧 v1.2 Validation & Testing Completion (Phases 44-47) — PLANNING</summary>
+
+- [ ] **Phase 44: High-Mass Physics & Validation Completion** - Complete high-mass validation and thermal mass diagnostics (0/4 plans)
+- [ ] **Phase 45: Advanced Cross-Validation & Automation** - ESP-r integration, automated testing infrastructure (0/6 plans)
+- [ ] **Phase 46: Expanded Validation Coverage** - Additional test cases and comprehensive reporting (0/4 plans)
+- [ ] **Phase 47: Performance Validation & Optimization** - Performance validation and testing optimization (0/7 plans)
+
+**Note:** v1.2 milestone planning complete. All phases ready for execution.
+
+</details>
+
+<details>
 <summary>✅ v1.1 ASHRAE 140 Completion (Phase 40) — SHIPPED 2026-04-08</summary>
 
 - [x] **Phase 40: Case Expansion Foundation** - ASHRAE 140 case expansion, reference database, cross-validation framework (9/9 plans complete)
-- [ ] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (0/3 plans - DEFERRED)
-- [ ] **Phase 42: Advanced Cross-Validation & Automation** - ESP-r integration, multi-reference reporting (0/3 plans - DEFERRED)
-- [ ] **Phase 43: Validation Optimization & Polish** - Performance optimization, CI/CD integration (0/3 plans - DEFERRED)
+- [ ] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (0/3 plans - DEFERRED to v1.2)
+- [ ] **Phase 42: Advanced Cross-Validation & Automation** - ESP-r integration, multi-reference reporting (0/3 plans - DEFERRED to v1.2)
+- [ ] **Phase 43: Validation Optimization & Polish** - Performance optimization, CI/CD integration (0/3 plans - DEFERRED to v1.2)
 
-**Note:** v1.1 represents partial completion with Phase 40 fully implemented. Phases 41-43 deferred for future development.
+**Note:** v1.1 represents partial completion with Phase 40 fully implemented. Remaining phases deferred to v1.2.
 
 </details>
 
@@ -62,7 +75,12 @@
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|----------|----------------|--------|-----------|
+| 44. High-Mass Physics & Validation Completion | v1.2 | 0/4 | Planning | 🚧 2026-04-08 |
+| 45. Advanced Cross-Validation & Automation | v1.2 | 0/6 | Planning | 🚧 2026-04-08 |
+| 46. Expanded Validation Coverage | v1.2 | 0/4 | Planning | 🚧 2026-04-08 |
+| 47. Performance Validation & Optimization | v1.2 | 0/7 | Planning | 🚧 2026-04-08 |
 | 40. Case Expansion Foundation | v1.1 | 9/9 | Complete | ✅ 2026-04-08 |
+| 32. CTF Thermal Mass Integration Fix | v0.7 | 3/3 | Complete | ✅ 2026-04-02 |
 | 33. Peak Load Diagnostics | v0.8 | 1/1 | Complete | ✅ 2026-04-03 |
 | 34. Peak Load Physics Fix | v0.8 | 4/4 | Complete | ✅ 2026-04-03 |
 | 35. Free-Floating Validation | v0.8 | 1/1 | Complete | ✅ 2026-04-06 |
@@ -71,8 +89,8 @@
 | M2. Zone-Level HVAC Controls | v1.0 | 8/8 | Complete | ✅ 2026-04-07 |
 | M3. ASHRAE 140 Multi-Zone Validation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
 
-**Overall Progress:** v1.1 partial (100% of Phase 40), v1.0 complete (100%), v0.8 complete (100%)
+**Overall Progress:** v1.2 planning (0%), v1.1 complete (100% of Phase 40), v1.0 complete (100%), v0.8 complete (100%), v0.7 complete (100%)
 
 ---
 
-*Roadmap updated: 2026-04-08 - v1.1 milestone archived with Phase 40 complete, Phases 41-43 deferred*
+*Roadmap updated: 2026-04-08 - v1.2 milestone created with Phases 44-47, incorporating deferred v1.1 work*
