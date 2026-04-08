@@ -1,0 +1,70 @@
+# Validation Configuration for High-Mass Physics
+# This file defines validation parameters for ASHRAE 140 high-mass validation
+
+# Tolerance bands for different construction types
+[tolerances]
+# High-mass tolerance (15% for annual energy)
+high_mass = 15.0
+# Standard tolerance for normal mass
+standard = 10.0
+# Low-mass tolerance (stricter for better accuracy)
+low_mass = 5.0
+
+# Construction type thermal properties
+# mass_per_area in kg/m², specific_heat in J/kg-K
+[construction_types.light]
+mass_per_area = 50.0
+specific_heat = 840.0
+
+[construction_types.medium]
+mass_per_area = 150.0
+specific_heat = 840.0
+
+[construction_types.heavy]
+mass_per_area = 300.0
+specific_heat = 840.0
+
+[construction_types.very_heavy]
+mass_per_area = 600.0
+specific_heat = 840.0
+
+# Test data paths
+[test_data]
+# Path to ASHRAE 140 high-mass reference data
+reference_path = "data/ashrae_140/high_mass"
+# Output format for validation reports
+output_format = "markdown"
+
+# Performance thresholds for PERF-01 requirement
+[performance]
+# Maximum timestep duration (must be <50ms)
+max_timestep_ms = 50.0
+# Minimum parallel speedup factor (should achieve 3x)
+parallel_speedup_factor = 3.0
+# Memory limit in MB
+memory_limit_mb = 1024.0
+
+# ASHRAE 140 high-mass test case definitions
+[[test_cases]]
+id = "Case900"
+construction = "heavy"
+description = "ASHRAE 140 Case 900 - High mass residential building"
+expected_tolerance = 15.0
+
+[[test_cases]]
+id = "Case910"
+construction = "heavy"
+description = "ASHRAE 140 Case 910 - Heavy mass with internal gains"
+expected_tolerance = 15.0
+
+[[test_cases]]
+id = "Case920"
+construction = "very_heavy"
+description = "ASHRAE 140 Case 920 - Very high mass commercial building"
+expected_tolerance = 15.0
+
+[[test_cases]]
+id = "Case930"
+construction = "medium"
+description = "ASHRAE 140 Case 930 - Medium mass office building"
+expected_tolerance = 10.0
