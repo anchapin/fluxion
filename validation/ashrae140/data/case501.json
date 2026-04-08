@@ -1,0 +1,13 @@
+{
+  "case501": {
+    "description": "Low mass with north windows",
+    "annual_heating_min": 13.1,
+    "annual_heating_max": 14.2,
+    "annual_cooling_min": 7.8,
+    "annual_cooling_max": 8.6,
+    "peak_heating_min": 6.0,
+    "peak_heating_max": 6.8,
+    "peak_cooling_min": 3.9,
+    "peak_cooling_max": 4.5
+  }
+}

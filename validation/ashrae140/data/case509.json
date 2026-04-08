@@ -1,0 +1,13 @@
+{
+  "case509": {
+    "description": "Low mass with increased window area",
+    "annual_heating_min": 13.5,
+    "annual_heating_max": 14.5,
+    "annual_cooling_min": 9.5,
+    "annual_cooling_max": 10.3,
+    "peak_heating_min": 6.2,
+    "peak_heating_max": 6.9,
+    "peak_cooling_min": 4.8,
+    "peak_cooling_max": 5.5
+  }
+}

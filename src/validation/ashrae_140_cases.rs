@@ -395,8 +395,69 @@ pub enum ASHRAE140Case {
     /// Tests all HVAC equipment together (chillers + boilers + heat pumps + VAV + economizer).
     /// Validates advanced predictive control with staging, economizer, and heat recovery.
     Case810,
-}
 
+    /// Case 500 - Low mass baseline with alternative construction
+    ///
+    /// Tests alternative construction materials and methods for low-mass buildings.
+    /// Validates different wall/floor/roof assemblies while maintaining similar thermal performance.
+    Case500,
+    /// Case 501 - Low mass with north windows
+    ///
+    /// Tests north-facing windows instead of south-facing.
+    /// Validates reduced solar gain and different heat transfer patterns.
+    Case501,
+    /// Case 502 - Low mass with double glazing
+    ///
+    /// Tests double-glazed windows with improved thermal performance.
+    /// Validates reduced U-value and different solar heat gain characteristics.
+    Case502,
+    /// Case 503 - Low mass with triple glazing
+    ///
+    /// Tests triple-glazed windows with superior thermal performance.
+    /// Validates lowest U-value and optimal solar heat gain balance.
+    Case503,
+    /// Case 504 - Low mass with reduced infiltration
+    ///
+    /// Tests reduced air infiltration rates (0.25 ACH vs standard 0.5 ACH).
+    /// Validates reduced heating/cooling loads due to tighter envelope.
+    Case504,
+    /// Case 505 - Low mass with increased infiltration
+    ///
+    /// Tests increased air infiltration rates (1.0 ACH vs standard 0.5 ACH).
+    /// Validates increased heating/cooling loads due to leakier envelope.
+    Case505,
+    /// Case 506 - Low mass with alternative roof construction
+    ///
+    /// Tests different roof construction (insulated vs uninsulated, different materials).
+    /// Validates roof heat transfer and thermal mass effects.
+    Case506,
+    /// Case 507 - Low mass with alternative floor construction
+    ///
+    /// Tests different floor construction (slab-on-grade vs suspended, insulated vs uninsulated).
+    /// Validates floor heat transfer and ground coupling effects.
+    Case507,
+    /// Case 508 - Low mass with reduced window area
+    ///
+    /// Tests reduced window area (3m² vs standard 6m²).
+    /// Validates reduced solar gain and envelope heat transfer.
+    Case508,
+    /// Case 509 - Low mass with increased window area
+    ///
+    /// Tests increased window area (9m² vs standard 6m²).
+    /// Validates increased solar gain and envelope heat transfer.
+    Case509,
+    /// Case 510 - Low mass with alternative orientation
+    ///
+    /// Tests different building orientation (east-west vs south-facing).
+    /// Validates solar gain distribution and heat transfer patterns.
+    Case510,
+    /// Case 699 - Low mass with comprehensive HVAC integration
+    ///
+    /// Tests comprehensive HVAC system integration with advanced controls.
+    /// Validates all HVAC components working together with optimal control strategies.
+    Case699,
+
+}
 impl ASHRAE140Case {
     /// Returns the case number as a string.
     ///
@@ -460,6 +521,19 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case808 => "808".to_string(),
             ASHRAE140Case::Case809 => "809".to_string(),
             ASHRAE140Case::Case810 => "810".to_string(),
+            // Expanded validation coverage (500-699 series)
+            ASHRAE140Case::Case500 => "500".to_string(),
+            ASHRAE140Case::Case501 => "501".to_string(),
+            ASHRAE140Case::Case502 => "502".to_string(),
+            ASHRAE140Case::Case503 => "503".to_string(),
+            ASHRAE140Case::Case504 => "504".to_string(),
+            ASHRAE140Case::Case505 => "505".to_string(),
+            ASHRAE140Case::Case506 => "506".to_string(),
+            ASHRAE140Case::Case507 => "507".to_string(),
+            ASHRAE140Case::Case508 => "508".to_string(),
+            ASHRAE140Case::Case509 => "509".to_string(),
+            ASHRAE140Case::Case510 => "510".to_string(),
+            ASHRAE140Case::Case699 => "699".to_string(),
         }
     }
 
@@ -533,6 +607,19 @@ impl ASHRAE140Case {
             "808" => Some(ASHRAE140Case::Case808),
             "809" => Some(ASHRAE140Case::Case809),
             "810" => Some(ASHRAE140Case::Case810),
+            // Expanded validation coverage (500-699 series)
+            "500" => Some(ASHRAE140Case::Case500),
+            "501" => Some(ASHRAE140Case::Case501),
+            "502" => Some(ASHRAE140Case::Case502),
+            "503" => Some(ASHRAE140Case::Case503),
+            "504" => Some(ASHRAE140Case::Case504),
+            "505" => Some(ASHRAE140Case::Case505),
+            "506" => Some(ASHRAE140Case::Case506),
+            "507" => Some(ASHRAE140Case::Case507),
+            "508" => Some(ASHRAE140Case::Case508),
+            "509" => Some(ASHRAE140Case::Case509),
+            "510" => Some(ASHRAE140Case::Case510),
+            "699" => Some(ASHRAE140Case::Case699),
             _ => None,
         }
     }
@@ -657,6 +744,19 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case810 => {
                 "Comprehensive HVAC equipment (chillers + boilers + heat pumps)".to_string()
             }
+            // Expanded validation coverage (500-699 series)
+            ASHRAE140Case::Case500 => "Low mass baseline with alternative construction".to_string(),
+            ASHRAE140Case::Case501 => "Low mass with north windows".to_string(),
+            ASHRAE140Case::Case502 => "Low mass with double glazing".to_string(),
+            ASHRAE140Case::Case503 => "Low mass with triple glazing".to_string(),
+            ASHRAE140Case::Case504 => "Low mass with reduced infiltration".to_string(),
+            ASHRAE140Case::Case505 => "Low mass with increased infiltration".to_string(),
+            ASHRAE140Case::Case506 => "Low mass with alternative roof construction".to_string(),
+            ASHRAE140Case::Case507 => "Low mass with alternative floor construction".to_string(),
+            ASHRAE140Case::Case508 => "Low mass with reduced window area".to_string(),
+            ASHRAE140Case::Case509 => "Low mass with increased window area".to_string(),
+            ASHRAE140Case::Case510 => "Low mass with alternative orientation".to_string(),
+            ASHRAE140Case::Case699 => "Low mass with comprehensive HVAC integration".to_string(),
         }
     }
 
@@ -699,7 +799,20 @@ impl ASHRAE140Case {
             | ASHRAE140Case::Case350
             | ASHRAE140Case::Case400
             | ASHRAE140Case::Office
-            | ASHRAE140Case::Retail => ConstructionType::LowMass,
+            | ASHRAE140Case::Retail
+            // Expanded validation coverage (500-699 series - all low mass)
+            | ASHRAE140Case::Case500
+            | ASHRAE140Case::Case501
+            | ASHRAE140Case::Case502
+            | ASHRAE140Case::Case503
+            | ASHRAE140Case::Case504
+            | ASHRAE140Case::Case505
+            | ASHRAE140Case::Case506
+            | ASHRAE140Case::Case507
+            | ASHRAE140Case::Case508
+            | ASHRAE140Case::Case509
+            | ASHRAE140Case::Case510
+            | ASHRAE140Case::Case699 => ConstructionType::LowMass,
             ASHRAE140Case::Case250 | ASHRAE140Case::Case470 | ASHRAE140Case::School => {
                 ConstructionType::HighMass
             }
