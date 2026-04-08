@@ -73,7 +73,7 @@
 
 | 44. High-Mass Physics & Validation Completion | 6/4 | Complete   | 2026-04-08 | 🚧 2026-04-08 |
 | 45. Advanced Cross-Validation & Automation | 2/6 | In Progress|  | 🚧 2026-04-08 |
-| 46. Expanded Validation Coverage | v1.2 | 0/4 | Planning | 🚧 2026-04-08 |
+| 46. Expanded Validation Coverage | v1.2 | 4/4 | Complete   | 2026-04-08 |
 | 47. Performance Validation & Optimization | v1.2 | 0/7 | Planning | 🚧 2026-04-08 |
 | 40. Case Expansion Foundation | v1.1 | 9/9 | Complete | ✅ 2026-04-08 |
 | 32. CTF Thermal Mass Integration Fix | v0.7 | 3/3 | Complete    | 2026-04-08 |
