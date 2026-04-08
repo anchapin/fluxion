@@ -50,10 +50,7 @@ pub use ep_oracle::{
     EPOracle, EPReference, FluxionResults, ValidationCriteria, ValidationDetails, ValidationReport,
     DEFAULT_MAX_ABS_ERROR, DEFAULT_MAX_RMSE,
 };
-pub use performance::{
-    analyze_bottlenecks, generate_performance_report, log_performance_metrics, profile_case,
-    PerformanceMetrics,
-};
+pub use performance::PerformanceMetrics;
 pub use statistical::{
     calculate_ci_cv_rmse, calculate_ci_nmbe, calculate_cohens_d, calculate_cv_rmse, calculate_nmbe,
     calculate_standard_error, validate_group_80_percent, validate_group_hybrid,
@@ -103,9 +100,55 @@ pub use reference_data::{
     within_tolerance, ReferenceData,
 };
 pub use report::{
-    BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
-    ValidationStatus, ValidationSuite,
+    BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ValidationResult,
+    ValidationStatus,
 };
+
+/// Validation configuration for different validation scenarios
+#[derive(Debug, Clone)]
+pub struct ValidationConfig {
+    /// Validation mode (standard, ashrae140, etc.)
+    pub mode: ValidationMode,
+    /// Performance thresholds
+    pub performance_thresholds: PerformanceThresholds,
+}
+
+#[derive(Debug, Clone)]
+pub enum ValidationMode {
+    Standard,
+    ASHRAE140(u32), // Case number for ASHRAE 140 validation
+    PerformanceOnly,
+}
+
+#[derive(Debug, Clone)]
+pub struct PerformanceThresholds {
+    pub max_timestep_duration_ms: f64,
+    pub max_memory_usage_bytes: usize,
+}
+
+impl ValidationConfig {
+    /// Create standard validation configuration
+    pub fn standard() -> Self {
+        Self {
+            mode: ValidationMode::Standard,
+            performance_thresholds: PerformanceThresholds {
+                max_timestep_duration_ms: 50.0,
+                max_memory_usage_bytes: 10_000_000,
+            },
+        }
+    }
+
+    /// Create ASHRAE 140 validation configuration
+    pub fn ashrae140(case_number: u32) -> Self {
+        Self {
+            mode: ValidationMode::ASHRAE140(case_number),
+            performance_thresholds: PerformanceThresholds {
+                max_timestep_duration_ms: 100.0, // More lenient for ASHRAE 140
+                max_memory_usage_bytes: 20_000_000,
+            },
+        }
+    }
+}
 
 use serde::{Deserialize, Serialize};
 
