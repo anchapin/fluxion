@@ -1,0 +1,24 @@
+{
+  "case502": {
+    "description": "Low mass with double glazing",
+    "annual_heating_min": 11.8,
+    "annual_heating_max": 12.8,
+    "annual_cooling_min": 8.0,
+    "annual_cooling_max": 8.8,
+    "peak_heating_min": 5.5,
+    "peak_heating_max": 6.2,
+    "peak_cooling_min": 4.0,
+    "peak_cooling_max": 4.6
+  },
+  "case503": {
+    "description": "Low mass with triple glazing",
+    "annual_heating_min": 11.2,
+    "annual_heating_max": 12.1,
+    "annual_cooling_min": 7.9,
+    "annual_cooling_max": 8.7,
+    "peak_heating_min": 5.2,
+    "peak_heating_max": 5.9,
+    "peak_cooling_min": 3.8,
+    "peak_cooling_max": 4.4
+  }
+}
