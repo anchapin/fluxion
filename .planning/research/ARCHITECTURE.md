@@ -1,42 +1,44 @@
-# Architecture Patterns: ASHRAE 140 Validation Expansion
+# Architecture Patterns: v1.2 Testing and Validation
 
-**Domain:** Building Energy Modeling - ASHRAE 140 Validation Framework Expansion
+**Domain:** Building Energy Modeling - Comprehensive Testing and Validation
+**Project:** Fluxion v1.2
 **Researched:** 2026-04-07
-**Confidence:** MEDIUM
 
 ## Recommended Architecture
 
-### ASHRAE 140 Validation Expansion Overview
+### v1.2 Testing and Validation Architecture Overview
 
-The architecture for ASHRAE 140 validation expansion builds upon the existing multi-zone thermal network and validation framework. The expansion focuses on:
-
-1. **Additional ASHRAE 140 Cases Integration** - Extending beyond current 960/970 cases
-2. **Cross-Validation Architecture** - Integration with EnergyPlus/TRNSYS/ESP-r
-3. **High-Mass Building Accuracy** - Improvements for concrete construction physics
-4. **Performance Optimization** - Maintaining <50ms/timestep for large simulations
+The v1.2 architecture builds upon the existing validation framework, focusing on completing deferred v1.1 work while expanding validation coverage and automation capabilities. The architecture emphasizes modular design, conditional physics improvements, and performance optimization.
 
 ```
 ┌───────────────────────────────────────────────────────────────────────────────┐
-│                  ASHRAE 140 Validation Expansion Architecture                  │
+│              Fluxion v1.2 Testing and Validation Architecture                 │
 ├───────────────────────────────────────────────────────────────────────────────┤
 │                                                                               │
 │  ┌─────────────────────┐    ┌─────────────────────┐    ┌─────────────────┐  │
-│  │  Existing Multi-    │    │  New ASHRAE 140     │    │ Cross-Validation│  │
-│  │  Zone Thermal Model │◄───►│ Cases Integration │◄───►│ Framework       │  │
+│  │  Existing ASHRAE    │    │  High-Mass Physics  │    │ Cross-Validation│  │
+│  │  140 Validator      │◄───►│  Enhancements      │◄───►│ Framework       │  │
 │  └─────────────────────┘    └─────────────────────┘    └─────────────────┘  │
 │          ▲                         ▲                             ▲              │
 │          │                         │                             │              │
 │  ┌───────┴───────┐         ┌───────┴───────┐             ┌───────┴───────┐      │
-│  │ High-Mass     │         │ Case 800-810 │             │ EnergyPlus    │      │
-│  │ Physics       │         │ HVAC Cases   │             │ Adapter       │      │
-│  │ Improvements  │         │             │             │              │      │
-│  └───────────────┘         └───────────────┘             └──────────────────┘  │
+│  │ Expanded ASHRAE │         │ Thermal Mass     │             │ ESP-r         │      │
+│  │ 140 Case Coverage│         │ Diagnostics      │             │ Adapter        │      │
+│  │ (500-699 series)│         │ & Visualization │             │              │      │
+│  └─────────────────┘         └───────────────────┘             └──────────────────┘  │
 │                                                                               │
 │  ┌─────────────────────┐    ┌─────────────────────┐                              │
-│  │ Performance        │    │ Validation         │                              │
-│  │ Optimization Layer│    │ Reporting &       │                              │
-│  │ (CTA, Rayon, ONNX) │    │ Diagnostics       │                              │
+│  │ CI/CD Automation   │    │ Performance        │                              │
+│  │ & Test Orchestration│    │ Validation &      │                              │
+│  │                     │    │ Optimization      │                              │
 │  └─────────────────────┘    └─────────────────────┘                              │
+│                                                                               │
+│  ┌─────────────────────────────────────────────────────────────────────────┐  │
+│  │                        Validation Reporting Layer                      │  │
+│  │  - Automated Markdown/PDF generation                                │  │
+│  │  - Cross-tool comparison visualizations                             │  │
+│  │  - Performance benchmark history                                   │  │
+│  └─────────────────────────────────────────────────────────────────────────┘  │
 │                                                                               │
 └───────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -45,131 +47,63 @@ The architecture for ASHRAE 140 validation expansion builds upon the existing mu
 
 | Component | Responsibility | Communicates With |
 |-----------|---------------|-------------------|
-| **ASHRAE140CaseExpansion** | New case definitions (800-810 series, additional diagnostics) | Extends ASHRAE140Case enum, integrates with validator |
-| **CrossValidationFramework** | Adapter pattern for EnergyPlus/TRNSYS/ESP-r comparison | Reads external tool outputs, compares with Fluxion results |
-| **HighMassPhysicsEnhancer** | Improved thermal mass modeling for concrete buildings | Modifies ThermalModel::step_physics for high-mass cases |
-| **PerformanceOptimizer** | Maintains <50ms/timestep for expanded validation suite | Profiles and optimizes CTA operations, Rayon parallelism |
-| **MultiReferenceValidator** | Enhanced validation with per-program tolerance ranges | Extends existing MultiReferenceDB with new case references |
+| **ASHRAE140Validator** | Core validation engine with expanded case support | ASHRAE140Case enum, ThermalModel, CrossValidationFramework |
+| **HighMassPhysicsEnhancer** | Conditional physics improvements for concrete buildings | ThermalModel::step_physics, ConstructionType enum |
+| **ThermalMassDiagnostics** | Energy contribution analysis and visualization | ThermalModel energy tracking, ValidationReport generation |
+| **CrossValidationFramework** | Multi-tool comparison (EnergyPlus, ESP-r, TRNSYS) | External tool adapters, MultiReferenceDB, ValidationReport |
+| **ESP-rAdapter** | File-based integration with ESP-r simulation tool | CrossValidationFramework, file system I/O |
+| **CI-CDOrchestrator** | Automated test execution and result aggregation | GitHub Actions, ValidationSuite, PerformanceBenchmark |
+| **PerformanceValidator** | Maintains <50ms/timestep target with expanded suite | Criterion benchmarks, Rayon parallelism, ONNX surrogates |
+| **ValidationReporter** | Automated report generation and documentation | ValidationSuite results, CrossValidationFramework, CI/CD hooks |
 
 ### Data Flow
 
 ```
-New ASHRAE 140 Cases (800-810, diagnostics)
+ASHRAE 140 Expanded Cases (500-699 series)
     ↓
 Extend ASHRAE140Case enum with new variants
     ↓
-CaseBuilder creates CaseSpec for new cases
+ASHRAE140Validator::validate_expanded_suite()
     ↓
-ASHRAE140Validator::expand_diagnostic_range() includes new cases
+ThermalModel::from_spec() with conditional high-mass physics
     ↓
-ThermalModel::from_spec() handles new case configurations
+Parallel execution via Rayon work-stealing
     ↓
-Cross-validation: Run Fluxion + external tools (EnergyPlus/TRNSYS)
+Cross-validation: Fluxion vs EnergyPlus vs ESP-r vs TRNSYS
     ↓
 MultiReferenceDB compares results with program-specific tolerances
     ↓
-Generate enhanced validation report with cross-tool comparison
+CI/CD automation: GitHub Actions triggers on commit
+    ↓
+Performance validation: Criterion benchmarks with regression detection
+    ↓
+Automated report generation: Markdown/PDF for compliance documentation
 ```
 
 ## Patterns to Follow
 
-### Pattern 1: ASHRAE 140 Case Extension Pattern
+### Pattern 1: Conditional High-Mass Physics Enhancement
 
-**What:** Extending the ASHRAE140Case enum with new test cases while maintaining backward compatibility
+**What:** Targeted physics improvements for high-mass buildings without affecting low-mass validation
 
-**When:** Adding new validation cases (800-810 series, additional diagnostics)
-
-**Example:**
-```rust
-// In src/validation/ashrae_140_cases.rs
-pub enum ASHRAE140Case {
-    // ... existing cases ...
-    /// Case 800 - Heat pump (single-stage, basic control)
-    Case800,
-    /// Case 801 - Heat pump (two-stage, intermediate control)
-    Case801,
-    // ... additional cases ...
-    Case810,
-}
-
-// Extend the expand_diagnostic_range method
-fn expand_diagnostic_range(&self, range: &str) -> Vec<ASHRAE140Case> {
-    match range {
-        "800-810" => vec![
-            ASHRAE140Case::Case800,
-            ASHRAE140Case::Case801,
-            // ... all 800-810 cases ...
-            ASHRAE140Case::Case810,
-        ],
-        // ... existing ranges ...
-        _ => vec![],
-    }
-}
-```
-
-### Pattern 2: Cross-Validation Adapter Pattern
-
-**What:** Adapter pattern for comparing Fluxion results with EnergyPlus/TRNSYS/ESP-r
-
-**When:** Implementing cross-validation against reference simulation tools
-
-**Example:**
-```rust
-// In src/validation/cross_validation.rs
-pub struct EnergyPlusAdapter {
-    // Configuration for EnergyPlus comparison
-}
-
-impl CrossValidationAdapter for EnergyPlusAdapter {
-    fn validate_case(&self, case_id: &str) -> CrossValidationResult {
-        // 1. Run EnergyPlus simulation for the case
-        // 2. Parse EnergyPlus output files
-        // 3. Compare with Fluxion results
-        // 4. Return comparison metrics
-    }
-}
-
-// Multi-reference validation
-pub struct CrossValidationFramework {
-    adapters: HashMap<String, Box<dyn CrossValidationAdapter>>,
-}
-
-impl CrossValidationFramework {
-    pub fn compare_all(&self, fluxion_results: &BenchmarkReport) -> CrossValidationReport {
-        let mut report = CrossValidationReport::new();
-
-        for (tool_name, adapter) in &self.adapters {
-            let tool_results = adapter.validate_case(fluxion_results.case_id);
-            report.add_comparison(tool_name, &tool_results);
-        }
-
-        report
-    }
-}
-```
-
-### Pattern 3: High-Mass Physics Enhancement Pattern
-
-**What:** Conditional physics improvements for high-mass buildings (concrete construction)
-
-**When:** Addressing 229-322% error in high-mass annual energy calculations
+**When:** Addressing 229-322% error in concrete construction annual energy calculations
 
 **Example:**
 ```rust
 // In src/sim/thermal_model.rs
 impl<T: ContinuousTensor<f64>> ThermalModel<T> {
     pub fn step_physics(&mut self, step: usize, outdoor_temp: f64, timestep_seconds: f64) -> f64 {
-        // ... existing physics ...
+        // ... existing low-mass physics ...
 
         // High-mass specific enhancements
         if self.construction_type == ConstructionType::HighMass {
-            // Apply improved thermal mass coupling
+            // Apply improved thermal mass coupling only to high-mass buildings
             let enhanced_thermal_mass_effect = self.calculate_enhanced_thermal_mass_effect();
 
             // Adjust zone temperatures based on improved physics
             self.temperatures = self.temperatures.add(&enhanced_thermal_mass_effect);
 
-            // Apply CTF correction only to 5R1C portion (not CTF)
+            // Separate energy contributions for diagnostic purposes
             if self.use_ctf {
                 let (five_rc_contribution, ctf_contribution) = self.separate_energy_contributions();
                 self.annual_heating_energy += five_rc_contribution / self.thermal_mass_correction;
@@ -182,117 +116,211 @@ impl<T: ContinuousTensor<f64>> ThermalModel<T> {
 }
 ```
 
-### Pattern 4: Performance Optimization Layer
+### Pattern 2: ESP-r Cross-Validation Adapter
 
-**What:** Maintaining performance targets (<50ms/timestep) with expanded validation suite
+**What:** File-based integration with ESP-r for cross-validation without direct FFI
 
-**When:** Adding computationally intensive cases while preserving optimization capabilities
+**When:** Implementing multi-tool comparison for comprehensive validation
 
 **Example:**
 ```rust
-// In src/validation/performance_optimizer.rs
-pub struct ValidationPerformanceOptimizer {
-    surrogate_cache: HashMap<String, SurrogateModel>,
-    parallel_strategy: ParallelStrategy,
+// In src/validation/cross_validation/esp_r_adapter.rs
+pub struct EspRAdapter {
+    /// Path to ESP-r installation
+    esp_r_path: PathBuf,
+    /// Working directory for simulation files
+    work_dir: PathBuf,
+    /// Template files for different case types
+    templates: HashMap<String, PathBuf>,
 }
 
-impl ValidationPerformanceOptimizer {
-    pub fn optimize_case(&mut self, case_spec: &CaseSpec) -> OptimizedThermalModel {
-        // 1. Check if surrogate model exists for this case type
-        if let Some(surrogate) = self.surrogate_cache.get(&case_spec.case_id) {
-            return OptimizedThermalModel::with_surrogate(surrogate.clone());
-        }
+impl CrossValidationAdapter for EspRAdapter {
+    fn validate_case(&self, case_id: &str, case_spec: &CaseSpec) -> CrossValidationResult {
+        // 1. Generate ESP-r input files from case specification
+        let input_files = self.generate_esp_r_input(case_id, case_spec);
 
-        // 2. Determine optimal parallelism strategy
-        let strategy = if case_spec.num_zones > 4 {
-            ParallelStrategy::TimeFirst // Better for multi-zone cases
-        } else {
-            ParallelStrategy::ConfigFirst // Better for single-zone cases
-        };
+        // 2. Execute ESP-r simulation (file-based, not direct FFI)
+        let output_files = self.run_esp_r_simulation(&input_files);
 
-        // 3. Apply CTA optimizations
-        let mut model = ThermalModel::from_spec(case_spec);
-        model.enable_cta_optimizations(strategy);
+        // 3. Parse ESP-r output files
+        let esp_r_results = self.parse_esp_r_output(&output_files);
 
-        model
-    }
+        // 4. Compare with Fluxion results
+        let comparison = self.compare_results(case_id, &esp_r_results);
 
-    pub fn profile_and_optimize(&mut self, validator: &mut ASHRAE140Validator) {
-        // Profile each case to identify bottlenecks
-        let profiles = self.profile_all_cases(validator);
-
-        // Generate optimization recommendations
-        for (case_id, profile) in profiles {
-            if profile.timestep_duration > Duration::from_millis(50) {
-                println!("Warning: Case {} exceeds 50ms target: {:?}", case_id, profile.timestep_duration);
-
-                // Apply targeted optimizations
-                self.apply_optimizations(&case_id);
-            }
+        CrossValidationResult {
+            tool_name: "ESP-r".to_string(),
+            metrics: comparison.metrics,
+            status: comparison.status,
+            raw_output: Some(esp_r_results),
         }
     }
 }
 ```
 
+### Pattern 3: CI/CD Automated Validation Pipeline
+
+**What:** GitHub Actions workflow for continuous validation testing
+
+**When:** Ensuring all commits maintain validation compliance
+
+**Example:**
+```yaml
+# In .github/workflows/validation.yml
+name: ASHRAE 140 Validation
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  validation:
+    name: ASHRAE 140 Validation Suite
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Run ASHRAE 140 validation
+      run: cargo test --test ashrae_140_validation -- --nocapture
+
+    - name: Run cross-validation (EnergyPlus)
+      run: cargo test --test cross_validation -- --nocapture
+
+    - name: Run performance benchmarks
+      run: cargo bench --bench validation_performance
+
+    - name: Generate validation report
+      run: cargo run --bin generate_validation_report > validation_report.md
+
+    - name: Upload validation artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: validation-results
+        path: |
+          validation_report.md
+          target/criterion/
+```
+
+### Pattern 4: Performance Validation with Criterion
+
+**What:** Continuous performance monitoring to maintain <50ms/timestep target
+
+**When:** Adding new validation cases and cross-validation overhead
+
+**Example:**
+```rust
+// In benches/validation_performance.rs
+use criterion::{criterion_group, criterion_main, Criterion};
+use fluxion::validation::ASHRAE140Validator;
+
+fn validation_suite_benchmark(c: &mut Criterion) {
+    let mut validator = ASHRAE140Validator::new();
+
+    // Benchmark individual case execution
+    let mut group = c.benchmark_group("ASHRAE 140 Cases");
+
+    for case_id in ["600", "900", "960", "970"] {
+        group.bench_function(format!("Case {}", case_id), |b| {
+            b.iter(|| validator.validate_case(case_id));
+        });
+    }
+
+    group.finish();
+
+    // Benchmark full suite execution
+    c.bench_function("Full Validation Suite", |b| {
+        b.iter(|| validator.validate_analytical_engine());
+    });
+}
+
+criterion_group!(benches, validation_suite_benchmark);
+criterion_main!(benches);
+```
+
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Monolithic Case Integration
+### Anti-Pattern 1: Monolithic Validation Suite Integration
 
-**What:** Adding all new cases in a single large commit without modular organization
+**What:** Adding all new cases and features in a single large implementation
 
-**Why bad:** Makes debugging difficult, hard to isolate issues with specific case types
+**Why bad:** Makes debugging difficult, hard to isolate performance regressions, increases CI/CD instability
 
-**Instead:** Organize cases by series (800-810 HVAC cases, diagnostic variants) with separate validation
+**Instead:** Implement cases incrementally by series (500-599, 600-699) with separate validation and feature flags
 
-### Anti-Pattern 2: Direct External Tool Integration
+### Anti-Pattern 2: Direct External Tool FFI
 
-**What:** Calling EnergyPlus/TRNSYS/ESP-r binaries directly from validation code
+**What:** Calling EnergyPlus/TRNSYS/ESP-r binaries directly through FFI
 
-**Why bad:** Creates tight coupling, makes validation fragile and platform-dependent
+**Why bad:** Creates complex build dependencies, platform limitations, licensing issues, and CI/CD challenges
 
-**Instead:** Use adapter pattern with clear interfaces, external tool outputs as inputs
+**Instead:** Use file-based exchange with clear input/output interfaces and mock adapters for testing
 
-### Anti-Pattern 3: Global Physics Changes for High-Mass
+### Anti-Pattern 3: Global Physics Modifications
 
-**What:** Modifying core physics that affects all building types
+**What:** Changing core physics that affects all building types
 
-**Why bad:** Could break existing low-mass validation, violate ASHRAE 140 compliance
+**Why bad:** Could break existing low-mass validation, violate ASHRAE 140 compliance, require complete re-validation
 
-**Instead:** Use conditional logic based on ConstructionType, maintain separate code paths
+**Instead:** Use conditional logic based on ConstructionType enum with separate code paths
 
-### Anti-Pattern 4: Performance Regression in Validation
+### Anti-Pattern 4: Performance Regression Ignorance
 
-**What:** Adding new cases without considering performance impact on full validation suite
+**What:** Adding new validation cases without performance monitoring
 
-**Why bad:** Could make CI/CD pipelines too slow, reduce developer productivity
+**Why bad:** Could make CI/CD pipelines too slow, reduce developer productivity, violate performance targets
 
-**Instead:** Profile each new case, apply targeted optimizations, maintain <50ms/timestep target
+**Instead:** Profile each new case individually, set performance budgets, monitor CI/CD impact continuously
+
+### Anti-Pattern 5: Manual Validation Execution
+
+**What:** Requiring manual intervention for validation testing
+
+**Why bad:** Inconsistent execution, error-prone, doesn't scale with expanded test coverage
+
+**Instead:** Automate all validation through CI/CD pipelines with GitHub Actions workflows
 
 ## Scalability Considerations
 
-| Concern | Current (18 cases) | With Expansion (30+ cases) | Mitigation Strategy |
-|---------|-------------------|--------------------------|---------------------|
-| **Validation time** | ~15 minutes | ~30+ minutes | Surrogate models for common cases, parallel execution |
-| **Memory usage** | ~500MB | ~1GB+ | CTA optimizations, sparse matrices for multi-zone |
-| **CI/CD impact** | 5-10 min | 15-20 min | Incremental validation, cache surrogate results |
-| **Cross-validation** | N/A | Significant | External tool adapters, result caching |
+| Concern | Current (v1.1) | Target (v1.2) | Mitigation Strategy |
+|---------|----------------|---------------|---------------------|
+| **Validation time** | ~15 minutes | ~30+ minutes | Parallel execution, surrogate models, incremental validation |
+| **Memory usage** | ~500MB | ~1GB+ | CTA optimizations, sparse matrices, memory profiling |
+| **CI/CD impact** | 5-10 min | 15-20 min | Performance budgets, caching, selective test execution |
+| **Cross-validation** | 1 tool | 3+ tools | File-based exchange, result caching, parallel comparison |
+| **Test coverage** | ~85% | >90% | Targeted test addition, coverage monitoring |
 
 ### Performance Optimization Strategy
 
 1. **Case Categorization:**
-   - Simple cases (600-960): Direct physics
-   - Complex cases (800-810 HVAC): Surrogate-assisted
-   - Diagnostic cases: Conditional execution
+   - Simple cases (600-960): Direct physics execution
+   - Complex cases (800-810 HVAC): Surrogate-assisted validation
+   - Diagnostic cases: Conditional execution based on flags
 
-2. **Parallelism:**
-   - Time-first for multi-zone cases (>4 zones)
-   - Config-first for single-zone cases
-   - Rayon work-stealing for load balancing
+2. **Parallelism Strategy:**
+   - Time-first parallelism for multi-zone cases (>4 zones)
+   - Config-first parallelism for single-zone cases
+   - Rayon work-stealing for dynamic load balancing
 
-3. **Caching:**
-   - Surrogate model caching for repeated cases
-   - Weather data caching (Denver TMY)
-   - Cross-validation result caching
+3. **Caching Strategy:**
+   - Surrogate model caching for repeated complex cases
+   - Weather data caching (Denver TMY, other climate zones)
+   - Cross-validation result caching with invalidation
+   - Benchmark history for performance regression detection
+
+4. **Optimization Techniques:**
+   - ONNX surrogate models for HVAC equipment cases
+   - CTA (Continuous Tensor Abstraction) optimizations
+   - Rayon parallelism for validation suite execution
+   - Memory profiling with dhat for allocation analysis
 
 ## Integration Points with Existing Architecture
 
@@ -301,8 +329,9 @@ impl ValidationPerformanceOptimizer {
 **Location:** `src/validation/ashrae_140_validator.rs`
 
 **Changes needed:**
-- Extend `expand_diagnostic_range()` to include 800-810 cases
-- Add cross-validation framework integration
+- Extend validation to include 500-699 series cases
+- Integrate high-mass physics conditional logic
+- Add cross-validation framework hooks
 - Enhance reporting for multi-tool comparison
 
 ### 2. ThermalModel Enhancements
@@ -312,49 +341,55 @@ impl ValidationPerformanceOptimizer {
 **Changes needed:**
 - Conditional high-mass physics improvements
 - Separate energy contribution tracking (5R1C vs CTF)
-- HVAC equipment modeling for 800-810 cases
+- HVAC equipment modeling for expanded cases
+- Thermal mass diagnostic data collection
 
-### 3. CaseSpec Expansion
+### 3. Cross-Validation Framework
 
-**Location:** `src/validation/ashrae_140_cases.rs`
-
-**Changes needed:**
-- New case variants (Case800-Case810)
-- HVAC equipment specifications
-- Cross-validation metadata
-
-### 4. MultiReferenceDB Update
-
-**Location:** `docs/ashrae_140_references.json`
+**Location:** `src/validation/cross_validation/`
 
 **Changes needed:**
-- Add reference values for new cases
-- Include EnergyPlus/TRNSYS/ESP-r specific ranges
-- Update tolerance bands for high-mass cases
+- ESP-r adapter implementation
+- Enhanced multi-reference comparison
+- File-based exchange interfaces
+- Mock adapters for testing
+
+### 4. CI/CD Automation
+
+**Location:** `.github/workflows/`
+
+**Changes needed:**
+- Expanded validation workflows
+- Performance benchmark monitoring
+- Automated report generation
+- Artifact uploading and retention
 
 ## Build Order Recommendation
 
 Based on dependencies and risk assessment:
 
 1. **Foundation (Low Risk):**
-   - Extend ASHRAE140Case enum with new variants
-   - Add CaseBuilder methods for new cases
-   - Update reference database
+   - Extend ASHRAE140Case enum with 500-699 series variants
+   - Add basic cross-validation framework structure
+   - Implement CI/CD automation skeleton
 
-2. **Cross-Validation Framework (Medium Risk):**
-   - Implement adapter pattern
-   - Add EnergyPlus/TRNSYS/ESP-r interfaces
-   - Integrate with existing validator
-
-3. **High-Mass Physics (High Risk):**
+2. **High-Mass Physics (High Risk):**
    - Implement conditional physics improvements
+   - Add thermal mass diagnostics
    - Validate against reference cases
    - Ensure no regression in low-mass cases
 
-4. **Performance Optimization (Ongoing):**
-   - Profile new cases
-   - Apply targeted optimizations
-   - Monitor CI/CD impact
+3. **Cross-Validation (Medium Risk):**
+   - Implement ESP-r adapter with file-based exchange
+   - Add multi-reference comparison capabilities
+   - Integrate with existing validator
+   - Test with mock adapters
+
+4. **Performance & Automation (Ongoing):**
+   - Profile new cases and cross-validation overhead
+   - Apply targeted optimizations (surrogates, parallelism)
+   - Complete CI/CD automation
+   - Implement performance monitoring
 
 ## Sources
 
@@ -363,9 +398,12 @@ Based on dependencies and risk assessment:
 - ISO 13790: Thermal mass modeling guidelines
 - Existing Fluxion architecture (v1.0 multi-zone foundation)
 - Performance profiling data from current validation suite
+- GitHub Actions CI/CD best practices
+- Criterion benchmarking documentation
+- Rayon parallelism patterns
 
 ---
 
-*Architecture research for: ASHRAE 140 Validation Expansion*
+*Architecture research for: Fluxion v1.2 Testing and Validation*
 *Researched: 2026-04-07*
-*Confidence: MEDIUM (based on existing codebase analysis, limited external documentation access)*
+*Confidence: HIGH (based on existing codebase analysis and validation patterns)*
