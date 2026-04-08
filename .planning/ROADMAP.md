@@ -39,8 +39,8 @@
   - [ ] 46-03: Occupancy pattern validation
   - [ ] 46-04: Comprehensive validation reporting
 - [ ] **Phase 47: Performance Validation & Optimization** - Performance validation and testing optimization (0/7 plans)
-  - [ ] 47-01: Performance benchmarking infrastructure and validation framework
-  - [ ] 47-02: Thermal solver and zone coupling optimization
+  - [x] 47-01: Performance benchmarking infrastructure and validation framework
+  - [x] 47-02: Thermal solver and zone coupling optimization
   - [ ] 47-03: CI/CD integration and CLI performance commands
   - [ ] 47-04: Comparative and historical performance analysis
   - [ ] 47-05: Integration with main validation suite
@@ -85,7 +85,7 @@
 | 44. High-Mass Physics & Validation Completion | 6/4 | Complete   | 2026-04-08 | 🚧 2026-04-08 |
 | 45. Advanced Cross-Validation & Automation | 2/6 | In Progress|  | 🚧 2026-04-08 |
 | 46. Expanded Validation Coverage | v1.2 | 4/4 | Complete    | 2026-04-08 |
-| 47. Performance Validation & Optimization | v1.2 | 0/7 | Planning | 🚧 2026-04-08 |
+| 47. Performance Validation & Optimization | v1.2 | 2/7 | In Progress|  |
 | 40. Case Expansion Foundation | v1.1 | 9/9 | Complete | ✅ 2026-04-08 |
 | 32. CTF Thermal Mass Integration Fix | v0.7 | 3/3 | Complete    | 2026-04-08 |
 | 33. Peak Load Diagnostics | v0.8 | 3/3 | Complete    | 2026-04-08 |
