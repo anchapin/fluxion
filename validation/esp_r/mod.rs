@@ -6,6 +6,12 @@ use std::error::Error;
 /// against ESP-r reference data using configurable tolerance bands.
 use std::path::PathBuf;
 
+/// ESP-r output parser module
+pub mod parser;
+
+/// Comparison logic module
+pub mod comparison;
+
 /// Main ESP-r validator struct
 #[derive(Debug)]
 pub struct EspRValidator {
@@ -36,11 +42,35 @@ impl EspRValidator {
 
     /// Validate Fluxion results against ESP-r reference data
     ///
+    /// # Arguments
+    /// * `fluxion_results` - Fluxion validation results to compare
+    ///
     /// # Returns
     /// Cross-validation report with comparison results
-    pub fn validate(&self) -> Result<(), Box<dyn Error>> {
-        // TODO: Implement validation logic
-        // This will parse ESP-r data and compare with Fluxion results
-        Ok(())
+    ///
+    /// # Example
+    /// ```
+    /// use fluxion::validation::ValidationResults;
+    /// let fluxion_results = ValidationResults::default();
+    /// let report = validator.validate(&fluxion_results)?;
+    /// ```
+    pub fn validate(
+        &self,
+        fluxion_results: &crate::validation::ValidationResults,
+    ) -> Result<crate::validation::reports::CrossValidationReport, Box<dyn Error>> {
+        // Parse ESP-r reference data
+        let esp_r_data = parser::parse_esp_r_output(&self.reference_path)?;
+
+        // Compare Fluxion results with ESP-r data
+        let comparison_results =
+            comparison::compare_results(fluxion_results, &esp_r_data, self.tolerance);
+
+        // Generate cross-validation report
+        let report = crate::validation::reports::cross_validation::generate_report(
+            comparison_results,
+            self.tolerance,
+        );
+
+        Ok(report)
     }
 }
