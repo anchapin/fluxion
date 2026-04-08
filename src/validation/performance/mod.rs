@@ -1,9 +1,17 @@
+pub mod comparative;
 pub mod metrics;
+pub mod optimization;
 pub mod reports;
 
 use crate::thermal::thermal_model::ThermalModel;
 
+pub use comparative::{
+    ComparativeAnalysis, ComparativeAnalyzer, ConfigurationResult, PerformanceDelta,
+};
 pub use metrics::PerformanceMetrics;
+pub use optimization::{
+    generate_optimization_report, SolverOptimization, ZoneCouplingOptimization,
+};
 pub use reports::PerformanceReport;
 
 pub struct PerformanceValidator {
