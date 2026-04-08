@@ -50,6 +50,7 @@ pub mod cli;
 pub mod physics;
 pub mod sim;
 pub mod hvac;
+pub mod performance;
 #[cfg(feature = "python-bindings")]
 pub mod python;
 pub mod testing;
