@@ -3,9 +3,11 @@
 
 pub mod hvac_commands;
 pub mod multi_zone;
+pub mod performance;
 pub mod validation;
 
 pub use multi_zone::*;
+pub use performance::PerformanceCommand;
 pub use validation::ValidationSubcommand;
 
 use clap::{Parser, Subcommand};
@@ -32,8 +34,10 @@ pub enum Commands {
     /// Building energy model validation commands
     #[command(subcommand)]
     Validation(ValidationSubcommand),
-    // Other commands would be added here
-    // Validate, Simulate, etc.
+
+    /// Performance testing and validation commands
+    #[command(subcommand)]
+    Performance(performance::PerformanceCommand),
 }
 
 /// Parse and execute CLI commands
@@ -50,6 +54,9 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
         Commands::Validation(cmd) => {
             validation::handle_validation_command(&cmd)?;
             Ok(())
+        }
+        Commands::Performance(cmd) => {
+            performance::handle_performance_command(cmd).map_err(|e| anyhow::anyhow!(e))?
         }
     }
 }
