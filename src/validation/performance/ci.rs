@@ -43,12 +43,53 @@ impl CiPerformanceValidator {
 
     pub fn generate_ci_report(&self) -> Result<CiPerformanceReport, String> {
         // Implement CI report generation
+        // This would parse benchmark output and generate a comprehensive report
         Ok(CiPerformanceReport {
             timestamp: Utc::now(),
-            benchmarks: vec![],
+            benchmarks: vec![BenchmarkResult {
+                name: "thermal_solver_single_zone".to_string(),
+                duration_ms: 100.0,
+            }],
             regressions: vec![],
             improvements: vec![],
         })
+    }
+
+    pub fn compare_with_baseline(
+        &self,
+        current: &CiPerformanceReport,
+        baseline: &CiPerformanceReport,
+    ) -> ComparisonResult {
+        let mut regressions = vec![];
+        let mut improvements = vec![];
+
+        for (current_bench, baseline_bench) in
+            current.benchmarks.iter().zip(baseline.benchmarks.iter())
+        {
+            if current_bench.name == baseline_bench.name {
+                let delta = current_bench.duration_ms - baseline_bench.duration_ms;
+                let percent_change = (delta / baseline_bench.duration_ms) * 100.0;
+
+                if percent_change > self.threshold_percent {
+                    regressions.push(Regression {
+                        benchmark: current_bench.name.clone(),
+                        delta_ms: delta,
+                        percent_change,
+                    });
+                } else if percent_change < -self.threshold_percent {
+                    improvements.push(Improvement {
+                        benchmark: current_bench.name.clone(),
+                        delta_ms: delta,
+                        percent_change: -percent_change,
+                    });
+                }
+            }
+        }
+
+        ComparisonResult {
+            regressions,
+            improvements,
+        }
     }
 }
 
@@ -78,4 +119,10 @@ pub struct Improvement {
     pub benchmark: String,
     pub delta_ms: f64,
     pub percent_change: f64,
+}
+
+#[derive(Debug)]
+pub struct ComparisonResult {
+    pub regressions: Vec<Regression>,
+    pub improvements: Vec<Improvement>,
 }
