@@ -18,15 +18,19 @@ pub mod fdd;
 pub mod guardrails;
 pub mod multi_reference;
 pub mod performance;
+pub mod reference;
 pub mod reference_data;
+pub mod tolerance;
 
 pub mod physics_validator;
 pub mod report;
 pub mod reporter;
 
 pub mod ashrae_140_multi_zone;
+pub mod case_195_calibration;
 pub mod case_960;
 pub mod energy_balance;
+pub mod high_mass;
 pub mod statistical;
 pub mod thermal_mass;
 pub mod thermal_mass_energy_accounting;
@@ -62,11 +66,14 @@ pub use ashrae140::ASHRAE140Case;
 pub use ashrae140::ASHRAE140CaseDefinition;
 pub use ashrae_140_cases::Orientation;
 pub use ashrae_140_cases::{
-    ASHRAE140Case, CaseBuilder, CaseSpec, ConstructionSpec, ConstructionType, GeometrySpec,
-    HvacSchedule, InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
+    CaseBuilder, CaseSpec, ConstructionSpec, ConstructionType, GeometrySpec, HvacSchedule,
+    InternalLoads, NightVentilation, ShadingDevice, ShadingType, WindowArea,
 };
 pub use ashrae_140_multi_zone::{ASHRAE140MultiZoneValidator, Case960Reference};
 pub use benchmark::{get_all_benchmark_data, get_all_case_ids, get_benchmark_data};
+pub use case_195_calibration::{
+    run_case_195_calibration, CalibrationParameters, CalibrationResult, Case195Calibrator,
+};
 pub use case_960::{
     run_complete_case_960_validation, Case960ReferenceImplementation, Case960Result,
 };
@@ -76,18 +83,51 @@ pub use diagnostic::{
     HourlyData, PeakTiming, TemperatureProfile,
 };
 pub use energy_balance::EnergyBalanceValidator;
+pub use high_mass::{
+    generate_combined_report, run_all_high_mass_cases, validate_construction_type,
+};
+pub use high_mass::{
+    CombinedHighMassReport, HighMassMetrics, HighMassSummary, HighMassValidationCase,
+    HighMassValidationReport,
+};
 pub use physics_validator::{
     generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,
+};
+pub use reference::{
+    load_reference_data, load_series_195_reference, load_series_800_reference, HourlyDataPoint,
+    ReferenceDataError, ReferenceDataset,
 };
 pub use reference_data::{
     calculate_mbe, calculate_percentage_difference, calculate_rmse, load_case_960_reference,
     load_case_970_reference, load_csv_reference, load_multi_zone_reference, parse_hourly_data,
-    within_tolerance, ReferenceData, ReferenceDataError,
+    within_tolerance, ReferenceData,
 };
 pub use report::{
     BenchmarkData, BenchmarkReport, MetricType, ReferenceProgram, ValidationResult,
     ValidationStatus, ValidationSuite,
 };
+
+use serde::{Deserialize, Serialize};
+
+/// Comparison metrics for validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ComparisonMetrics {
+    pub rmse: f64,
+    pub percentage_difference: f64,
+    pub max_deviation: f64,
+    pub within_tolerance: bool,
+}
+
+impl Default for ComparisonMetrics {
+    fn default() -> Self {
+        Self {
+            rmse: 0.0,
+            percentage_difference: 0.0,
+            max_deviation: 0.0,
+            within_tolerance: true,
+        }
+    }
+}
 pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerator};
 pub use thermal_mass_energy_accounting::{
     calculate_mass_energy, validate_energy_balance_over_year, EnergyBalanceReport,

@@ -16,7 +16,7 @@ use statrs::statistics::Statistics;
 /// High-mass validation metrics calculator.
 ///
 /// Implements ASHRAE 140 statistical methods for high-mass building validation.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct HighMassMetrics {
     /// Normalized Mean Bias Error for heating (%)
     pub nmbe_heating: f64,
