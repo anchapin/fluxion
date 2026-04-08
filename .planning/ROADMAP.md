@@ -32,6 +32,8 @@
 <summary>🚧 v1.2 Validation & Testing Completion (Phases 44-47) — PLANNING</summary>
 
 - [x] **Phase 44: High-Mass Physics & Validation Completion** - Complete high-mass validation and thermal mass diagnostics (4/4 plans) (completed 2026-04-08)
+- [x] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (1/3 plans) (EXECUTING)
+  - [x] 41-01: High-mass validation framework (COMPLETED)
 - [ ] **Phase 45: Advanced Cross-Validation & Automation** - ESP-r integration, automated testing infrastructure (6/6 plans)
 - [ ] **Phase 46: Expanded Validation Coverage** - Additional test cases and comprehensive reporting (1/4 plans)
   - [x] 46-01: Extended ASHRAE 140 validation with 500-699 series cases (12 new cases)
@@ -48,7 +50,7 @@
   - [x] 47-07: Phase completion validation and reporting
   - [x] 47-08: Gap closure - benchmark expansion, metrics implementation, and wiring completion
 
-**Note:** v1.2 milestone planning complete. All phases ready for execution.
+**Note:** v1.2 milestone planning in progress. Phase 41 planned (3/3 plans), Phases 42-43 still deferred from v1.1.
 
 </details>
 
@@ -56,7 +58,7 @@
 <summary>✅ v1.1 ASHRAE 140 Completion (Phase 40) — SHIPPED 2026-04-08</summary>
 
 - [x] **Phase 40: Case Expansion Foundation** - ASHRAE 140 case expansion, reference database, cross-validation framework (9/9 plans complete)
-- [ ] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (0/3 plans - DEFERRED to v1.2)
+- [ ] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (3/3 plans)
 - [ ] **Phase 42: Advanced Cross-Validation & Automation** - ESP-r integration, multi-reference reporting (0/3 plans - DEFERRED to v1.2)
 - [ ] **Phase 43: Validation Optimization & Polish** - Performance optimization, CI/CD integration (0/3 plans - DEFERRED to v1.2)
 
@@ -83,6 +85,7 @@
 
 </details>
 
+| 41. High-Mass Physics & Performance | v1.2 | 3/3 | Planned    |  | 🚧 2026-04-08 |
 | 44. High-Mass Physics & Validation Completion | 6/4 | Complete   | 2026-04-08 | 🚧 2026-04-08 |
 | 45. Advanced Cross-Validation & Automation | 2/6 | In Progress|  | 🚧 2026-04-08 |
 | 46. Expanded Validation Coverage | v1.2 | 4/4 | Complete    | 2026-04-08 |
@@ -97,7 +100,7 @@
 | M2. Zone-Level HVAC Controls | v1.0 | 8/8 | Complete | ✅ 2026-04-07 |
 | M3. ASHRAE 140 Multi-Zone Validation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
 
-**Overall Progress:** v1.2 planning (0%), v1.1 complete (100% of Phase 40), v1.0 complete (100%), v0.8 complete (100%), v0.7 complete (100%)
+**Overall Progress:** v1.2 planning (33% - Phase 41 planned), v1.1 complete (100% of Phase 40), v1.0 complete (100%), v0.8 complete (100%), v0.7 complete (100%)
 
 ---
 
