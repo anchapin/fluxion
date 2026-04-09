@@ -130,12 +130,18 @@ mod tests {
             timestep_duration: Duration::from_millis(100),
             memory_usage: 1000,
             iterations_per_timestep: 20,
+            cpu_utilization: 0.8,
+            throughput_tps: 100.0,
+            zone_coupling_time: Duration::from_millis(10),
         };
 
         let after = PerformanceMetrics {
             timestep_duration: Duration::from_millis(80),
             memory_usage: 900,
             iterations_per_timestep: 15,
+            cpu_utilization: 0.85,
+            throughput_tps: 125.0,
+            zone_coupling_time: Duration::from_millis(8),
         };
 
         let optimization = SolverOptimization::calculate_improvement(&before, &after);
@@ -149,12 +155,18 @@ mod tests {
             timestep_duration: Duration::from_millis(150),
             memory_usage: 1500,
             iterations_per_timestep: 25,
+            cpu_utilization: 0.7,
+            throughput_tps: 80.0,
+            zone_coupling_time: Duration::from_millis(15),
         };
 
         let after = PerformanceMetrics {
             timestep_duration: Duration::from_millis(120),
             memory_usage: 1200,
             iterations_per_timestep: 20,
+            cpu_utilization: 0.75,
+            throughput_tps: 100.0,
+            zone_coupling_time: Duration::from_millis(12),
         };
 
         let optimization = ZoneCouplingOptimization::calculate_improvement(&before, &after, 300);

@@ -617,7 +617,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -645,7 +645,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -676,7 +676,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -704,7 +704,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -746,7 +746,7 @@ mod tests {
     fn test_summary_calculations() {
         let weather = WeatherSummary::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
