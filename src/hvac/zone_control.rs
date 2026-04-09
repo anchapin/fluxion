@@ -20,7 +20,7 @@ pub enum HVACStatus {
 #[derive(Debug)]
 pub struct ZoneControl {
     /// Reference to the thermal model
-    thermal_model: Arc<ThermalModel>,
+    pub thermal_model: Arc<ThermalModel>,
 
     /// Zone setpoints configuration
     setpoints: crate::hvac::zone_setpoints::ZoneSetpoints,

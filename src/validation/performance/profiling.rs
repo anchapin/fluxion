@@ -16,26 +16,36 @@ pub fn profile_case(case: ASHRAE140Case, iterations: usize) -> PerformanceMetric
     let execution_time = start_time.elapsed();
 
     PerformanceMetrics {
-        case_id: case.to_string(),
-        execution_time_ms: execution_time.as_millis() as f64,
-        memory_usage_bytes: 0,
-        iterations,
-        ..Default::default()
+        timestep_duration: execution_time,
+        memory_usage: 0,
+        iterations_per_timestep: iterations as u32,
+        cpu_utilization: 0.0,
+        throughput_tps: 0.0,
+        zone_coupling_time: execution_time,
     }
 }
 
 /// Generate a performance report from metrics
 pub fn generate_performance_report(metrics: &[PerformanceMetrics]) -> serde_json::Value {
-    let total_time_ms: f64 = metrics.iter().map(|m| m.execution_time_ms).sum();
+    let total_time_ms: f64 = metrics
+        .iter()
+        .map(|m| m.timestep_duration.as_secs_f64() * 1000.0)
+        .sum();
     let avg_time_ms = total_time_ms / metrics.len() as f64;
-    let total_memory_bytes: usize = metrics.iter().map(|m| m.memory_usage_bytes).sum();
+    let total_memory_bytes: usize = metrics.iter().map(|m| m.memory_usage).sum();
 
     serde_json::json!({
         "total_cases": metrics.len(),
         "total_execution_time_ms": total_time_ms,
         "average_execution_time_ms": avg_time_ms,
         "total_memory_usage_bytes": total_memory_bytes,
-        "metrics": metrics
+        "average_memory_usage_bytes": total_memory_bytes as f64 / metrics.len() as f64,
+        "cases": metrics.iter().map(|metric| {
+            serde_json::json!({
+                "timestep_duration_ms": metric.timestep_duration.as_secs_f64() * 1000.0,
+                "memory_usage_bytes": metric.memory_usage
+            })
+        }).collect::<Vec<_>>()
     })
 }
 

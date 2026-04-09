@@ -24,7 +24,7 @@ impl Default for CalibrationParameters {
 }
 
 /// Calibration result containing optimized parameters
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct CalibrationResult {
     pub parameters: CalibrationParameters,
     pub rmse: f64,

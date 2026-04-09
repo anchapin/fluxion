@@ -81,11 +81,20 @@ impl ThermalModel {
         }
     }
 
-    /// Get current zone temperatures.
-    pub fn get_temperatures(&self) -> Vec<f64> {
-        self.temperatures.as_slice().to_vec()
+    /// Get the number of zones in the model.
+    pub fn num_zones(&self) -> usize {
+        self.num_zones
     }
+}
 
+impl Default for ThermalModel {
+    /// Create a default ThermalModel with 1 zone at 20°C.
+    fn default() -> Self {
+        ThermalModel::new(1, 20.0)
+    }
+}
+
+impl ThermalModel {
     /// Set zone temperatures.
     pub fn set_temperatures(&mut self, temperatures: Vec<f64>) {
         self.temperatures = VectorField::new(temperatures);

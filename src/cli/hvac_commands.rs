@@ -19,7 +19,7 @@ lazy_static! {
 }
 
 /// HVAC command-line interface
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum HvacCommand {
     /// Configure zone setpoints
     Setpoints {
@@ -40,7 +40,7 @@ pub enum HvacCommand {
 }
 
 /// Setpoint configuration actions
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum SetpointAction {
     /// Set heating setpoint for a zone
     SetHeating {

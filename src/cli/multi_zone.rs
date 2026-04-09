@@ -7,6 +7,14 @@ use std::path::PathBuf;
 
 use crate::cli::hvac_commands::{handle_command as handle_hvac_command, HvacCommand};
 
+/// Wrapper enum for HVAC subcommands
+#[derive(Debug, Subcommand)]
+pub enum HvacSubcommand {
+    /// HVAC commands
+    #[command(subcommand)]
+    Command(HvacCommand),
+}
+
 /// Multi-zone simulation command
 #[derive(Debug, Args)]
 pub struct SimulateCommand {
@@ -82,7 +90,8 @@ pub enum MultiZoneCommand {
     Simulate(SimulateCommand),
 
     /// HVAC control commands
-    Hvac(HvacCommand),
+    #[command(subcommand)]
+    Hvac(HvacSubcommand),
 
     /// Validate multi-zone functionality
     Validate(ValidateCommand),
@@ -126,8 +135,12 @@ impl Default for MultiZoneConfig {
 }
 
 /// Execute HVAC command
-pub fn execute_hvac_command(command: &HvacCommand) -> Result<(), anyhow::Error> {
-    handle_hvac_command(*command.clone()).map_err(|e| anyhow::anyhow!(e))
+pub fn execute_hvac_command(command: &HvacSubcommand) -> Result<(), anyhow::Error> {
+    match command {
+        HvacSubcommand::Command(cmd) => {
+            handle_hvac_command((*cmd).clone()).map_err(|e| anyhow::anyhow!(e))
+        }
+    }
 }
 
 /// Execute multi-zone simulation
@@ -164,7 +177,7 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
         for j in 0..model.num_zones {
             if i < config.inter_zone_conductance.len() && j < config.inter_zone_conductance[i].len()
             {
-                model.inter_zone_conductance[i][j] = config.inter_zone_conductance[i][j];
+                model.h_tr_iz.as_mut_slice()[i] = config.inter_zone_conductance[i][j];
             }
         }
     }
@@ -184,12 +197,13 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     let output = if command.detailed {
         // Detailed zone-by-zone output
         let zone_temps = model.get_temperatures();
-        let zone_energies = model.zone_energy_consumption.clone();
+        // TODO: zone_energy_consumption field doesn't exist, need to implement per-zone energy tracking
+        // let zone_energies = model.zone_energy_consumption.clone();
 
         serde_json::json!({
             "total_eui": result,
             "zones": zone_temps,
-            "zone_energies": zone_energies,
+            // "zone_energies": zone_energies,
             "inter_zone_conductance": config.inter_zone_conductance,
             "setpoints": config.zone_setpoints
         })
@@ -241,13 +255,13 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
 pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow::Error> {
     use crate::validation::energy_balance::EnergyBalanceValidator;
 
-    let mut validator = EnergyBalanceValidator::new();
+    let mut validator = EnergyBalanceValidator::new(0.1, 1.0);
 
     if command.energy_conservation {
         println!("Running energy conservation validation...");
         // TODO: Implement energy conservation validation
         // let energy_result = validator.validate_energy_conservation(&model);
-        let energy_result = Ok(()); // Placeholder for now
+        let energy_result: Result<(), anyhow::Error> = Ok(()); // Placeholder for now
 
         match command.format.as_str() {
             "json" => {

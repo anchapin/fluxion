@@ -898,6 +898,32 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case810 => CaseBuilder::case_810_comprehensive_hvac(),
         }
     }
+
+    /// Create an ASHRAE140Case from a case number.
+    /// Returns None if the case number is not recognized.
+    pub fn from_number(case: u32) -> Option<Self> {
+        match case {
+            600 => Some(ASHRAE140Case::Case600),
+            610 => Some(ASHRAE140Case::Case610),
+            620 => Some(ASHRAE140Case::Case620),
+            630 => Some(ASHRAE140Case::Case630),
+            640 => Some(ASHRAE140Case::Case640),
+            650 => Some(ASHRAE140Case::Case650),
+            601 => Some(ASHRAE140Case::Case600FF),
+            651 => Some(ASHRAE140Case::Case650FF),
+            900 => Some(ASHRAE140Case::Case900),
+            910 => Some(ASHRAE140Case::Case910),
+            920 => Some(ASHRAE140Case::Case920),
+            930 => Some(ASHRAE140Case::Case930),
+            940 => Some(ASHRAE140Case::Case940),
+            950 => Some(ASHRAE140Case::Case950),
+            901 => Some(ASHRAE140Case::Case900FF),
+            951 => Some(ASHRAE140Case::Case950FF),
+            960 => Some(ASHRAE140Case::Case960),
+            195 => Some(ASHRAE140Case::Case195),
+            _ => None,
+        }
+    }
 }
 
 /// Construction type for ASHRAE 140 test cases.
