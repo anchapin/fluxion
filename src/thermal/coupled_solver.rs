@@ -202,14 +202,14 @@ mod tests {
     #[test]
     fn test_solve_with_faer_simple() {
         // Test simple 2x2 system: [2 1; 1 3] * [x; y] = [5; 6]
-        // Solution: x=2, y=1
+        // Solution: x=1.8, y=1.4 (derived from: 2x+y=5, x+3y=6)
         let matrix = vec![vec![2.0, 1.0], vec![1.0, 3.0]];
         let rhs = vec![5.0, 6.0];
 
         let solution = solve_with_faer(matrix, rhs);
         assert_eq!(solution.len(), 2);
-        assert!((solution[0] - 2.0).abs() < 1e-10);
-        assert!((solution[1] - 1.0).abs() < 1e-10);
+        assert!((solution[0] - 1.8).abs() < 1e-10);
+        assert!((solution[1] - 1.4).abs() < 1e-10);
     }
 
     #[test]
@@ -217,16 +217,19 @@ mod tests {
         let h_tr_iz = [50.0, 50.0, 50.0];
         let temps = [25.0, 20.0, 30.0];
 
-        // Zone 0: should receive heat from zone 2, lose to zone 1
+        // Zone 0: receives from zone 2 (30°C), loses to zone 1 (20°C)
+        // Net = 50*(30-25) + 50*(20-25) = 250 - 250 = 0
         let contrib_0 = inter_zone_heat_contribution(0, &h_tr_iz, &temps);
 
-        // Zone 1: should receive heat from zone 2, lose to zone 0
+        // Zone 1: receives from zone 0 (25°C) and zone 2 (30°C), loses to nothing else
+        // Net = 50*(25-20) + 50*(30-20) = 250 + 500 = 750
         let contrib_1 = inter_zone_heat_contribution(1, &h_tr_iz, &temps);
 
-        // Zone 2: should lose heat to both zones 0 and 1
+        // Zone 2: loses to zone 0 and zone 1
+        // Net = 50*(20-30) + 50*(25-30) = -500 - 250 = -750
         let contrib_2 = inter_zone_heat_contribution(2, &h_tr_iz, &temps);
 
-        assert!(contrib_0 > 0.0); // Net heat gain
+        assert!(contrib_0 >= 0.0); // Net heat gain or neutral
         assert!(contrib_1 > 0.0); // Net heat gain
         assert!(contrib_2 < 0.0); // Net heat loss
     }

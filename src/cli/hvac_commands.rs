@@ -129,6 +129,12 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             Ok(())
         }
         SetpointAction::SetDeadband { zone_id, deadband } => {
+            if deadband <= 0.0 || deadband > 5.0 {
+                return Err(format!(
+                    "Deadband {}°C is out of valid range (0.0°C to 5.0°C)",
+                    deadband
+                ));
+            }
             println!("Set deadband for zone {} to {}°C", zone_id, deadband);
             Ok(())
         }
