@@ -113,6 +113,7 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             Ok(())
         }
     }
+}
 
 fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> {
     println!("Running HVAC simulation for {} steps", steps);
