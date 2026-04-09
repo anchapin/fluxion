@@ -1,16 +1,10 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::constants::atmospheric::{
-    AIR_DENSITY_SEA_LEVEL, STANDARD_ATMOSPHERIC_PRESSURE,
-};
-use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
-use crate::physics::constants::thermal::ashrae_140::{
-    EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
-};
+use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
-use crate::physics::ctf_zone_coupling::{CtfZoneCouplingResult, CtfZoneCouplingSolver};
-use crate::sim::assembly::{AssemblyBuilder, BuildingAssembly, ConcreteMaterial, MaterialLayer};
+use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
+use crate::sim::assembly::{BuildingAssembly, MaterialLayer};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
@@ -25,7 +19,7 @@ use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_he
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::{BuildingType, OccupancyProfile};
 use crate::sim::profiles;
-use crate::sim::schedule::{DailySchedule, DayType};
+use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::sim::thermal_integration::{
@@ -36,7 +30,7 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{
     CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
 };
-use crate::validation::config::{validate_assembly, validate_constants, ConfigValidationResult};
+use crate::validation::config::{validate_assembly, validate_constants};
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
 use crossbeam::channel::{Receiver, Sender};
@@ -2293,7 +2287,6 @@ impl ThermalModel<VectorField> {
     /// - Zone Area: 20 m²
     /// - Ceiling Height: 3.0 m
     /// - Window Ratio: 0.15
-
     /// Create a new ThermalModel with comprehensive validation of all inputs.
     ///
     /// This constructor validates all inputs before creating the ThermalModel,

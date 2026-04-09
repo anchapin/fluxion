@@ -41,6 +41,8 @@ cuda = []
 wiring-tracing = []
 # Feature flag for multi-zone support
 multi-zone = []
+# Feature flag for ASHRAE 140 v2021 support
+ashrae_140_v2021 = []
 
 [dependencies]
 # Core Logic

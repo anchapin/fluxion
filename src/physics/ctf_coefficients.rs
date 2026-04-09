@@ -44,7 +44,6 @@
 //! ```
 
 use num_complex::Complex64;
-use std::f64::consts::PI;
 
 /// Material layer with thermal properties.
 #[derive(Debug, Clone)]
@@ -1594,7 +1593,7 @@ mod tests {
         assert!(s.im > 0.0);
 
         // Should match expected frequency
-        let expected_omega = 2.0 * PI * 5.0 / (10.0 * 3600.0);
+        let expected_omega = 2.0 * std::f64::consts::PI * 5.0 / (10.0 * 3600.0);
         assert_relative_eq!(s.im, expected_omega, max_relative = 0.01);
     }
 

@@ -4,10 +4,11 @@
 //! using rayon for running thousands of building variants simultaneously.
 //! This is essential for high-throughput building energy analysis and optimization.
 
-use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+
+use crate::ThermalModelTrait;
 
 /// Result type for distributed inference operations
 pub type DistributedResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;

@@ -4,8 +4,6 @@
 //! the coupled system of ordinary differential equations that govern
 //! multi-zone thermal dynamics.
 
-use crate::physics::cta::VectorField;
-
 /// Solve the coupled multi-zone thermal system using backward Euler method.
 ///
 /// # Arguments
