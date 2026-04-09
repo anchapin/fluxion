@@ -543,6 +543,31 @@ impl Case960Validator {
         Case960Reference::load_case_960_reference_data()
     }
 
+    /// Get reference annual heating energy (MWh)
+    pub fn annual_heating(&self) -> f64 {
+        self.reference.annual_heating
+    }
+
+    /// Get reference annual cooling energy (MWh)
+    pub fn annual_cooling(&self) -> f64 {
+        self.reference.annual_cooling
+    }
+
+    /// Get reference peak heating load (kW)
+    pub fn peak_heating(&self) -> f64 {
+        self.reference.peak_heating
+    }
+
+    /// Get reference peak cooling load (kW)
+    pub fn peak_cooling(&self) -> f64 {
+        self.reference.peak_cooling
+    }
+
+    /// Get zone temperatures reference data
+    pub fn zone_temperatures(&self) -> &HashMap<usize, Vec<f64>> {
+        &self.reference.zone_temperatures
+    }
+
     /// Validate annual heating energy consumption
     ///
     /// Compares actual annual heating against reference values with tolerance.
@@ -816,6 +841,31 @@ impl Case970Validator {
             reference,
             statistics: Case970Statistics::default(),
         }
+    }
+
+    /// Get reference annual heating energy (MWh)
+    pub fn annual_heating(&self) -> f64 {
+        self.reference.annual_heating
+    }
+
+    /// Get reference annual cooling energy (MWh)
+    pub fn annual_cooling(&self) -> f64 {
+        self.reference.annual_cooling
+    }
+
+    /// Get reference peak heating load (kW)
+    pub fn peak_heating(&self) -> f64 {
+        self.reference.peak_heating
+    }
+
+    /// Get reference peak cooling load (kW)
+    pub fn peak_cooling(&self) -> f64 {
+        self.reference.peak_cooling
+    }
+
+    /// Get zone temperatures reference data
+    pub fn zone_temperatures(&self) -> &HashMap<usize, Vec<f64>> {
+        &self.reference.zone_temperatures
     }
 
     /// Load reference data for Case 970
