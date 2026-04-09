@@ -1,6 +1,6 @@
 use crate::BatchOracle;
 use anyhow::Result;
-use csv::{Reader, Writer};
+use csv::Writer;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -254,6 +254,7 @@ pub fn export_to_csv(report: &SensitivityReport, path: &Path) -> Result<()> {
 #[allow(unused_imports)]
 mod tests {
     use super::*;
+    use csv::Reader;
     use tempfile::NamedTempFile;
 
     #[test]

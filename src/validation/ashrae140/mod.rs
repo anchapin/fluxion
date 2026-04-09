@@ -10,7 +10,7 @@ pub use crate::validation::ashrae_140_cases::ASHRAE140Case;
 // Import necessary crates for validation execution
 use crate::sim::construction::ConstructionLayer;
 use crate::validation::report::MetricType;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
