@@ -11,8 +11,8 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use crate::physics::thermal_mass::construction::ConstructionType;
 use crate::physics::thermal_mass::diagnostics::ThermalMassDiagnostics;
+use crate::validation::ashrae140::ConstructionType;
 use crate::validation::high_mass::metrics::HighMassMetrics;
 use crate::validation::report::{MetricType, ValidationStatus};
 use crate::validation::tolerance::ValidationTolerance;

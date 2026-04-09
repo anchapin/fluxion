@@ -246,11 +246,12 @@ pub fn run_validation_series_parallel(
     crate::validation::PerformanceMetrics,
 )> {
     // Set Rayon thread pool size if specified
-    if let Some(threads) = max_threads {
-        if let Ok(pool) = rayon::ThreadPoolBuilder::new().num_threads(threads).build() {
-            rayon::set_global_thread_pool(pool).unwrap();
-        }
-    }
+    // Note: set_global_thread_pool was removed in newer Rayon versions
+    // if let Some(threads) = max_threads {
+    //     if let Ok(pool) = rayon::ThreadPoolBuilder::new().num_threads(threads).build() {
+    //         rayon::set_global_thread_pool(pool).unwrap();
+    //     }
+    // }
 
     use rayon::prelude::*;
 

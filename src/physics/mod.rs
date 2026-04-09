@@ -2,6 +2,7 @@ pub mod constants;
 pub mod continuous;
 
 pub mod cta;
+pub mod thermal_mass;
 pub mod ctf_coefficients;
 pub mod ctf_solver;
 pub mod ctf_solver_wrapper;

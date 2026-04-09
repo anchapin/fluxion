@@ -10,8 +10,8 @@ use serde_json;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::physics::thermal_mass::construction::ConstructionType;
 use crate::validation::ashrae140::ASHRAE140Case;
+use crate::validation::ashrae140::ConstructionType;
 use crate::validation::case_195_calibration::CalibrationResult;
 use crate::validation::high_mass::{
     generate_combined_report, run_all_high_mass_cases, validate_construction_type,

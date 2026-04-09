@@ -3,9 +3,9 @@
 //! This module provides comprehensive test case definitions and execution
 //! capabilities for ASHRAE 140 high-mass building validation.
 
-use crate::physics::thermal_mass::construction::ConstructionType;
 use crate::physics::thermal_mass::diagnostics::{ThermalMassDiagnostics, ThermalMassReport};
 use crate::sim::construction::ConstructionLayer;
+use crate::validation::ashrae140::ConstructionType;
 use crate::validation::ashrae140::WeatherData;
 use crate::validation::ashrae_140_validator::ASHRAE140Validator;
 use crate::validation::report::{MetricType, ValidationResult, ValidationStatus};

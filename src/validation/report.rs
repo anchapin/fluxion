@@ -14,6 +14,11 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use plotters::backend::BitMapBackend;
+use plotters::drawing::IntoDrawingArea;
+use plotters::prelude::*;
+use plotters::style::colors::WHITE;
+
 use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
 use crate::validation::statistical::{StatisticalMetrics, ValidationGroup};
 
@@ -465,16 +470,6 @@ impl ValidationResult {
     /// Returns true if this result failed validation.
     pub fn failed(&self) -> bool {
         self.status == ValidationStatus::Fail
-    }
-
-    /// Returns true if this validation result passed
-    pub fn passed(&self) -> bool {
-        matches!(self.status, ValidationStatus::Pass)
-    }
-
-    /// Returns true if this validation result has a warning
-    pub fn warning(&self) -> bool {
-        matches!(self.status, ValidationStatus::Warning)
     }
 }
 
@@ -1697,106 +1692,6 @@ impl BenchmarkReport {
         Ok(())
     }
 
-    /// Generates energy comparison chart (placeholder implementation)
-    pub fn generate_energy_comparison_chart(
-        &self,
-        path: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder implementation - in a real implementation, this would use plotters
-        // to generate actual energy comparison charts
-        let mut file = std::fs::File::create(path)?;
-        use std::io::Write;
-
-        // Extract energy data for the placeholder
-        let case_960_heating = self
-            .results
-            .iter()
-            .find(|r| r.case_id == "960" && matches!(r.metric, MetricType::AnnualHeating))
-            .map(|r| r.fluxion_value)
-            .unwrap_or(0.0);
-
-        let case_970_heating = self
-            .results
-            .iter()
-            .find(|r| r.case_id == "970" && matches!(r.metric, MetricType::AnnualHeating))
-            .map(|r| r.fluxion_value)
-            .unwrap_or(0.0);
-
-        file.write_all(format!("Energy comparison visualization placeholder\n").as_bytes())?;
-        file.write_all(format!("Case 960 Heating: {:.2} MWh\n", case_960_heating).as_bytes())?;
-        file.write_all(format!("Case 970 Heating: {:.2} MWh\n", case_970_heating).as_bytes())?;
-        file.write_all(b"Actual chart would be generated here in a full implementation\n")?;
-
-        Ok(())
-    }
-
-    /// Generates inter-zone heat transfer visualization (placeholder implementation)
-    pub fn generate_heat_transfer_visualization(
-        &self,
-        path: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder implementation - in a real implementation, this would use plotters
-        // to generate actual heat transfer visualization
-        let mut file = std::fs::File::create(path)?;
-        use std::io::Write;
-
-        file.write_all(b"Inter-zone heat transfer visualization would be generated here\n")?;
-        file.write_all(b"This represents the heat transfer analysis between zones\n")?;
-        file.write_all(b"Actual visualization would show heat flow patterns over time\n")?;
-
-        Ok(())
-    }
-
-    /// Generates energy comparison chart (placeholder implementation)
-    pub fn generate_energy_comparison_chart(
-        &self,
-        path: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder implementation - in a real implementation, this would use plotters
-        // to generate actual energy comparison charts
-        let mut file = std::fs::File::create(path)?;
-        use std::io::Write;
-
-        // Extract energy data for the placeholder
-        let case_960_heating = self
-            .results
-            .iter()
-            .find(|r| r.case_id == "960" && matches!(r.metric, MetricType::AnnualHeating))
-            .map(|r| r.fluxion_value)
-            .unwrap_or(0.0);
-
-        let case_970_heating = self
-            .results
-            .iter()
-            .find(|r| r.case_id == "970" && matches!(r.metric, MetricType::AnnualHeating))
-            .map(|r| r.fluxion_value)
-            .unwrap_or(0.0);
-
-        file.write_all(format!("Energy comparison visualization placeholder\n").as_bytes())?;
-        file.write_all(format!("Case 960 Heating: {:.2} MWh\n", case_960_heating).as_bytes())?;
-        file.write_all(format!("Case 970 Heating: {:.2} MWh\n", case_970_heating).as_bytes())?;
-        file.write_all(b"Actual chart would be generated here in a full implementation\n")?;
-
-        Ok(())
-    }
-
-    /// Generates inter-zone heat transfer visualization (placeholder implementation)
-    pub fn generate_heat_transfer_visualization(
-        &self,
-        path: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Placeholder implementation - in a real implementation, this would use plotters
-        // to generate actual heat transfer visualization
-        let mut file = std::fs::File::create(path)?;
-        use std::io::Write;
-
-        file.write_all(b"Inter-zone heat transfer visualization would be generated here\n")?;
-        file.write_all(b"This represents the heat transfer analysis between zones\n")?;
-        file.write_all(b"Actual visualization would show heat flow patterns over time\n")?;
-
-        Ok(())
-    }
-
     /// Generates energy comparison chart
     pub fn generate_energy_comparison_chart(
         &self,
@@ -2621,8 +2516,13 @@ impl ValidationSuite {
                 timestep_duration_ms: 25.0,    // Under 50ms threshold
                 memory_usage_bytes: 5_000_000, // Under 10MB threshold
                 iterations_per_timestep: 50,
+                cpu_utilization: 0.75,
+                throughput_tps: 1000.0,
+                zone_coupling_time_ms: 5.0,
             },
             baseline_comparison: None,
+            regression_warnings: None,
+            trend_analysis: None,
         })
     }
 }

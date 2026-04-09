@@ -7,7 +7,7 @@ pub mod metrics;
 pub mod reports;
 pub mod test_cases;
 
-use crate::physics::thermal_mass::construction::ConstructionType;
+use crate::validation::ashrae140::ConstructionType;
 
 pub use metrics::HighMassMetrics;
 pub use reports::{CombinedHighMassReport, HighMassSummary, HighMassValidationReport};

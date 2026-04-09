@@ -6,6 +6,8 @@ pub mod historical;
 pub mod integration;
 pub mod metrics;
 pub mod optimization;
+pub mod parallel_executor;
+pub mod profiling;
 pub mod reports;
 
 use crate::thermal::thermal_model::ThermalModel;
@@ -31,6 +33,11 @@ pub use integration::{
 pub use metrics::PerformanceMetrics;
 pub use optimization::{
     generate_optimization_report, SolverOptimization, ZoneCouplingOptimization,
+};
+pub use parallel_executor::ParallelValidationExecutor;
+pub use profiling::{
+    analyze_bottlenecks, generate_detailed_performance_report, generate_performance_report,
+    log_performance_metrics, profile_case,
 };
 pub use reports::PerformanceReport;
 
