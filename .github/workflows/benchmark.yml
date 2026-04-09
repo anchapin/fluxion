@@ -42,7 +42,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnuplot  # For Criterion plots
+          sudo apt-get install -y gnuplot libssl-dev pkg-config libfontconfig1-dev  # For Criterion plots
 
       - name: Build release version
         run: cargo build --release --bench performance_regression

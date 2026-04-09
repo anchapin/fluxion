@@ -21,6 +21,11 @@ jobs:
         rust: [stable]
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
