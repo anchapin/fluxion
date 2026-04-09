@@ -31,10 +31,7 @@ pub enum FluxionError {
     Simulation(String),
 }
 
-#[cfg(all(
-    feature = "python-bindings",
-    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
-))]
+#[cfg(feature = "python-bindings")]
 /// Base exception for all Fluxion-specific errors.
 ///
 /// Python users can catch this base type to handle all Fluxion errors uniformly,
@@ -42,10 +39,7 @@ pub enum FluxionError {
 #[allow(unused_doc_comments)]
 create_exception!(fluxion, PyFluxionError, PyException);
 
-#[cfg(all(
-    feature = "python-bindings",
-    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
-))]
+#[cfg(feature = "python-bindings")]
 /// Exception raised for parameter validation errors.
 ///
 /// This includes:
@@ -56,10 +50,7 @@ create_exception!(fluxion, PyFluxionError, PyException);
 #[allow(unused_doc_comments)]
 create_exception!(fluxion, ValidationError, PyFluxionError);
 
-#[cfg(all(
-    feature = "python-bindings",
-    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
-))]
+#[cfg(feature = "python-bindings")]
 /// Exception raised for surrogate model errors.
 ///
 /// This includes:
@@ -70,10 +61,7 @@ create_exception!(fluxion, ValidationError, PyFluxionError);
 #[allow(unused_doc_comments)]
 create_exception!(fluxion, SurrogateError, PyFluxionError);
 
-#[cfg(all(
-    feature = "python-bindings",
-    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
-))]
+#[cfg(feature = "python-bindings")]
 /// Exception raised for simulation errors.
 ///
 /// This includes:
