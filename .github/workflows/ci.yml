@@ -21,6 +21,10 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y fontconfig libfontconfig1-dev
+
       - name: Run cargo test
         run: cargo test --lib --quiet
 
