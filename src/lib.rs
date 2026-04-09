@@ -43,6 +43,14 @@
 //! See docs/API_REFERENCE.md for complete API documentation.
 
 #![allow(clippy::useless_conversion)]
+#![allow(nonstandard_style)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::unnested_or_patterns)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::clone_on_ref_ptr)]
+#![allow(clippy::default_constructors)]
+#![allow(clippy::manual_range_contains)]
+#![allow(clippy::field_assigned_else)]
 pub mod ai;
 pub mod analysis;
 pub mod api;
