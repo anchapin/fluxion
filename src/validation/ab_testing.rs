@@ -610,11 +610,11 @@ impl ABTestRunner {
         }
 
         // Check if improvement is substantial
-        let has_substantial_improvement = (heating_nmbe_improvement > 2.0
+        let has_substantial_improvement = heating_nmbe_improvement > 2.0
             || cooling_nmbe_improvement > 2.0
             || pass_rate_improvement > 15.0
             || heating_cv_rmse_improvement > 2.0
-            || cooling_cv_rmse_improvement > 2.0);
+            || cooling_cv_rmse_improvement > 2.0;
 
         if has_substantial_improvement {
             return (

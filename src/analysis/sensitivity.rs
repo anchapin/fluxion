@@ -251,6 +251,7 @@ pub fn export_to_csv(report: &SensitivityReport, path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
     use super::*;
     use tempfile::NamedTempFile;
