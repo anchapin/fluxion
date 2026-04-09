@@ -12,10 +12,8 @@ use std::time::{Duration, Instant};
 
 use crate::validation::ashrae140::ASHRAE140Case;
 use crate::validation::ashrae140::ConstructionType;
-use crate::validation::case_195_calibration::CalibrationResult;
-use crate::validation::high_mass::{
-    generate_combined_report, run_all_high_mass_cases, validate_construction_type,
-};
+
+use crate::validation::high_mass::{generate_combined_report, run_all_high_mass_cases};
 
 /// Summary structure for tracking validation results
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

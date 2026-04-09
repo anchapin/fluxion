@@ -1,6 +1,6 @@
 use crate::BatchOracle;
 use anyhow::Result;
-use csv::{Reader, Writer};
+use csv::Writer;
 use serde::Deserialize;
 use std::path::Path;
 

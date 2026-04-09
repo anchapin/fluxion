@@ -3,7 +3,7 @@
 //! This module provides command-line interface for zone-level HVAC control
 //! and simulation, integrating with the multi-zone CLI structure.
 
-use clap::{Args, Subcommand};
+use clap::Subcommand;
 use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};

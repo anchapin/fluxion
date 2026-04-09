@@ -593,11 +593,11 @@ impl ABTestRunner {
         cooling_cv_rmse_improvement: f64,
     ) -> (String, String) {
         // Check if test variant shows clear improvement
-        let has_improvement = (heating_nmbe_improvement > 0.5
+        let has_improvement = heating_nmbe_improvement > 0.5
             || cooling_nmbe_improvement > 0.5
             || pass_rate_improvement > 5.0
             || heating_cv_rmse_improvement > 0.5
-            || cooling_cv_rmse_improvement > 0.5);
+            || cooling_cv_rmse_improvement > 0.5;
 
         if !has_improvement {
             return (

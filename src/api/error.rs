@@ -31,14 +31,21 @@ pub enum FluxionError {
     Simulation(String),
 }
 
-#[cfg(feature = "python-bindings")]
+#[cfg(all(
+    feature = "python-bindings",
+    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
+))]
 /// Base exception for all Fluxion-specific errors.
 ///
 /// Python users can catch this base type to handle all Fluxion errors uniformly,
 /// or catch specific subclasses for fine-grained error handling.
+#[allow(unused_doc_comments)]
 create_exception!(fluxion, PyFluxionError, PyException);
 
-#[cfg(feature = "python-bindings")]
+#[cfg(all(
+    feature = "python-bindings",
+    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
+))]
 /// Exception raised for parameter validation errors.
 ///
 /// This includes:
@@ -46,9 +53,13 @@ create_exception!(fluxion, PyFluxionError, PyException);
 /// - NaN or Infinity values in parameters
 /// - Invalid parameter vector lengths
 /// - Heating/cooling setpoint conflicts
+#[allow(unused_doc_comments)]
 create_exception!(fluxion, ValidationError, PyFluxionError);
 
-#[cfg(feature = "python-bindings")]
+#[cfg(all(
+    feature = "python-bindings",
+    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
+))]
 /// Exception raised for surrogate model errors.
 ///
 /// This includes:
@@ -56,9 +67,13 @@ create_exception!(fluxion, ValidationError, PyFluxionError);
 /// - Model loading errors (file not found, invalid format)
 /// - Inference failures (e.g., GPU not available)
 /// - Session pool exhaustion
+#[allow(unused_doc_comments)]
 create_exception!(fluxion, SurrogateError, PyFluxionError);
 
-#[cfg(feature = "python-bindings")]
+#[cfg(all(
+    feature = "python-bindings",
+    not(any(target_os = "windows", target_os = "macos", target_os = "linux"))
+))]
 /// Exception raised for simulation errors.
 ///
 /// This includes:
@@ -66,6 +81,7 @@ create_exception!(fluxion, SurrogateError, PyFluxionError);
 /// - NaN/Infinity propagation during simulation
 /// - Integration errors
 /// - State corruption or invalid thermal network states
+#[allow(unused_doc_comments)]
 create_exception!(fluxion, SimulationError, PyFluxionError);
 
 #[cfg(feature = "python-bindings")]
