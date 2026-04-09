@@ -13,7 +13,7 @@ pub mod reports;
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 
-pub use ci::{CiPerformanceReport, CiPerformanceValidator};
+pub use ci::{BenchmarkResult, CiPerformanceReport, CiPerformanceValidator};
 pub use comparative::{
     ComparativeAnalysis, ComparativeAnalyzer, ConfigurationResult, PerformanceDelta,
 };

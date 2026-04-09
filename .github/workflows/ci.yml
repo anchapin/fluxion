@@ -73,9 +73,9 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run integration tests
         run: |
-          cargo test --test integration-wiring
-          cargo test --test integration-e2e-scenarios
-          cargo test --test integration-batch-oracle
+          cargo test --test integration-wiring --features wiring-tracing
+          cargo test --test integration-e2e-scenarios --features wiring-tracing
+          cargo test --test integration-batch-oracle --features wiring-tracing
           cargo test --test integration-cli
       - name: Upload test results
         if: always()

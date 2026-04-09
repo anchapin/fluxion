@@ -3371,9 +3371,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         equipment: Option<&[Box<dyn Equipment>]>,
         occupancy: Option<&OccupancyProfile>,
     ) -> f64 {
-        // Default to 1-hour timestep (3600 seconds)
+        #[cfg(feature = "wiring-tracing")]
+        if let Some(ref tracer) = self.tracer {
+            tracer.record_call("solve_timesteps");
+        }
         self.solve_timesteps_with_dt(
-            steps, surrogates, use_ai, lighting, equipment, occupancy, 3600.0, // dt_seconds
+            steps, surrogates, use_ai, lighting, equipment, occupancy, 3600.0,
         )
     }
 

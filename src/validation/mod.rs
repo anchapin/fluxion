@@ -51,7 +51,14 @@ pub use ep_oracle::{
     EPOracle, EPReference, FluxionResults, ValidationCriteria, ValidationDetails, ValidationReport,
     DEFAULT_MAX_ABS_ERROR, DEFAULT_MAX_RMSE,
 };
-pub use performance::PerformanceMetrics;
+pub use performance::{
+    CiPerformanceReport, CiPerformanceValidator, ComparativeAnalysis, ComparativeAnalyzer,
+    ConfigurationResult, PerformanceDelta, PerformanceMetrics, Phase47CompletionValidator,
+    PhaseCompletionReport, PhaseCompletionResult, RequirementResult,
+};
+pub use performance::{
+    IntegratedPerformanceValidator, IntegratedReport, IntegratedValidationResult,
+};
 pub use statistical::{
     calculate_ci_cv_rmse, calculate_ci_nmbe, calculate_cohens_d, calculate_cv_rmse, calculate_nmbe,
     calculate_standard_error, validate_group_80_percent, validate_group_hybrid,
@@ -102,7 +109,7 @@ pub use reference_data::{
 };
 pub use report::{
     BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ValidationResult,
-    ValidationStatus,
+    ValidationStatus, ValidationSuite,
 };
 
 /// Validation configuration for different validation scenarios
