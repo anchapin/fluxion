@@ -1094,6 +1094,10 @@ mod tests {
             ref_max: 7.0,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
+            actual: 6.0,
+            min: 5.5,
+            max: 7.0,
+            metric_type: MetricType::AnnualHeating,
             per_program: Some(
                 vec![
                     ("EnergyPlus".to_string(), ValidationStatus::Pass),

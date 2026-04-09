@@ -513,9 +513,10 @@ mod tests {
             ref_max: 7.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
-            actual: 6.5,                            // Add missing field
-            max: 7.5,                               // Add missing field
-            metric_type: MetricType::AnnualHeating, // Add missing field
+            actual: 6.5,
+            min: 5.5,
+            max: 7.5,
+            metric_type: MetricType::AnnualHeating,
             per_program: None,
         });
 

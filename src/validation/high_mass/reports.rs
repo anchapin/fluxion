@@ -696,7 +696,7 @@ mod tests {
         let report1 = HighMassValidationReport::generate_report(
             "600",
             "Case 600",
-            weather,
+            weather.clone(),
             metrics.clone(),
             diagnostics.clone(),
             construction.clone(),
@@ -743,7 +743,7 @@ mod tests {
             weather.clone(),
             passing_metrics.clone(),
             diagnostics.clone(),
-            construction,
+            construction.clone(),
             tolerance.clone(),
         );
 
@@ -753,7 +753,7 @@ mod tests {
             weather,
             passing_metrics,
             diagnostics,
-            construction.clone(),
+            construction,
             tolerance,
         );
 
