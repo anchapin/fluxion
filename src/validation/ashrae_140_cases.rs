@@ -896,6 +896,7 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case808 => CaseBuilder::case_808_vav_heat_recovery(),
             ASHRAE140Case::Case809 => CaseBuilder::case_809_cav_economizer(),
             ASHRAE140Case::Case810 => CaseBuilder::case_810_comprehensive_hvac(),
+            _ => return unimplemented!("Case {:?} not yet implemented in spec()", self),
         }
     }
 

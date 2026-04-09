@@ -126,6 +126,9 @@ impl PerformanceValidationFinalizer {
                 timestep_duration_ms: 45.0,
                 memory_usage_bytes: 8_000_000,
                 iterations_per_timestep: 15,
+                cpu_utilization: 0.75,
+                throughput_tps: 22.0,
+                zone_coupling_time_ms: 5.0,
             },
             configuration: serde_json::json!({ "solver": "standard" }),
         }
@@ -138,6 +141,9 @@ impl PerformanceValidationFinalizer {
                 timestep_duration_ms: 35.0,
                 memory_usage_bytes: 7_500_000,
                 iterations_per_timestep: 12,
+                cpu_utilization: 0.82,
+                throughput_tps: 28.0,
+                zone_coupling_time_ms: 4.0,
             },
             configuration: serde_json::json!({ "solver": "optimized" }),
         }

@@ -5,6 +5,7 @@ pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod assembly_library;
+pub mod automation;
 pub mod benchmark;
 pub mod commands;
 pub mod config;

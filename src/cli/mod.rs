@@ -56,7 +56,8 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
             Ok(())
         }
         Commands::Performance(cmd) => {
-            performance::handle_performance_command(cmd).map_err(|e| anyhow::anyhow!(e))?
+            performance::handle_performance_command(&cmd).map_err(|e| anyhow::anyhow!(e))?;
+            Ok(())
         }
     }
 }

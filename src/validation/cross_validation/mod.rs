@@ -275,13 +275,13 @@ pub fn perform_cross_validation(
     // Convert ASHRAE140ValidationResults to ValidationResults for compatibility
     let fluxion_results_compat = ValidationResults {
         case: fluxion_results.case,
-        hourly_temperatures: fluxion_results.hourly_temperatures,
-        hourly_heating: fluxion_results.hourly_heating,
-        hourly_cooling: fluxion_results.hourly_cooling,
-        annual_heating: fluxion_results.annual_heating,
-        annual_cooling: fluxion_results.annual_cooling,
-        peak_heating: fluxion_results.peak_heating,
-        peak_cooling: fluxion_results.peak_cooling,
+        hourly_temperatures: fluxion_results.hourly_temperatures.clone(),
+        hourly_heating: fluxion_results.hourly_heating.clone(),
+        hourly_cooling: fluxion_results.hourly_cooling.clone(),
+        annual_heating: fluxion_results.annual_heating.clone(),
+        annual_cooling: fluxion_results.annual_cooling.clone(),
+        peak_heating: fluxion_results.peak_heating.clone(),
+        peak_cooling: fluxion_results.peak_cooling.clone(),
     };
 
     // Compare Fluxion results against reference

@@ -8,6 +8,7 @@ pub mod cases;
 pub use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
 // Import necessary crates for validation execution
+use crate::sim::construction::ConstructionLayer;
 use crate::validation::report::MetricType;
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
@@ -161,7 +162,7 @@ impl Default for HVACSystem {
 }
 
 /// Weather Data
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WeatherData {
     pub ashrae_zone: AshraeZone,
     // Additional weather properties would go here
@@ -182,7 +183,7 @@ impl Default for WeatherData {
 }
 
 /// ASHRAE Climate Zone
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AshraeZone {
     Zone1A,
     Zone2A,
@@ -215,12 +216,78 @@ pub enum HVACType {
     Comprehensive,
 }
 
-/// Construction Type
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConstructionType {
     Lightweight,
     MediumWeight,
     HighMass,
+}
+
+impl ConstructionType {
+    pub fn typical_layers(&self) -> Vec<ConstructionLayer> {
+        match self {
+            ConstructionType::Lightweight => vec![
+                ConstructionLayer {
+                    name: "gypsum_board".to_string(),
+                    conductivity: 0.16,
+                    density: 800.0,
+                    specific_heat: 1090.0,
+                    thickness: 0.013,
+                    emissivity: 0.9,
+                    absorptance: 0.5,
+                },
+                ConstructionLayer {
+                    name: "insulation".to_string(),
+                    conductivity: 0.04,
+                    density: 30.0,
+                    specific_heat: 1400.0,
+                    thickness: 0.1,
+                    emissivity: 0.9,
+                    absorptance: 0.5,
+                },
+            ],
+            ConstructionType::MediumWeight => vec![
+                ConstructionLayer {
+                    name: "brick".to_string(),
+                    conductivity: 0.8,
+                    density: 1800.0,
+                    specific_heat: 840.0,
+                    thickness: 0.1,
+                    emissivity: 0.9,
+                    absorptance: 0.7,
+                },
+                ConstructionLayer {
+                    name: "insulation".to_string(),
+                    conductivity: 0.04,
+                    density: 30.0,
+                    specific_heat: 1400.0,
+                    thickness: 0.05,
+                    emissivity: 0.9,
+                    absorptance: 0.5,
+                },
+            ],
+            ConstructionType::HighMass => vec![
+                ConstructionLayer {
+                    name: "concrete".to_string(),
+                    conductivity: 1.4,
+                    density: 2400.0,
+                    specific_heat: 840.0,
+                    thickness: 0.2,
+                    emissivity: 0.9,
+                    absorptance: 0.6,
+                },
+                ConstructionLayer {
+                    name: "insulation".to_string(),
+                    conductivity: 0.04,
+                    density: 30.0,
+                    specific_heat: 1400.0,
+                    thickness: 0.05,
+                    emissivity: 0.9,
+                    absorptance: 0.5,
+                },
+            ],
+        }
+    }
 }
 
 /// Run validation for a single case with performance monitoring
@@ -232,7 +299,7 @@ pub fn run_validation_with_performance(
 ) {
     let metrics = crate::validation::performance::profile_case(case, 1);
     let case_def = crate::validation::ashrae140::cases::build_case(case);
-    crate::validation::performance::log_performance_metrics(&metrics);
+    crate::validation::performance::log_performance_metrics(&[metrics.clone()]);
     (case_def, metrics)
 }
 
@@ -260,7 +327,7 @@ pub fn run_validation_series_parallel(
         .map(|case| {
             let case_def = crate::validation::ashrae140::cases::build_case(*case);
             let metrics = crate::validation::performance::profile_case(*case, 1);
-            crate::validation::performance::log_performance_metrics(&metrics);
+            crate::validation::performance::log_performance_metrics(&[metrics.clone()]);
             (*case, case_def, metrics)
         })
         .collect()
@@ -413,7 +480,7 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
     for result in &benchmark_report.results {
         report.push_str(&format!(
             "{}: {:.2} (Ref: {:.2}-{:.2}) - Status: {:?}\n",
-            result.metric_type, result.actual, result.min, result.max, result.status
+            result.metric, result.fluxion_value, result.ref_min, result.ref_max, result.status
         ));
     }
 
@@ -421,15 +488,15 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
     let annual_heating = benchmark_report
         .results
         .iter()
-        .find(|r| matches!(r.metric_type, MetricType::AnnualHeating))
-        .map(|r| r.actual)
+        .find(|r| matches!(r.metric, MetricType::AnnualHeating))
+        .map(|r| r.fluxion_value)
         .unwrap_or(0.0);
 
     let annual_cooling = benchmark_report
         .results
         .iter()
-        .find(|r| matches!(r.metric_type, MetricType::AnnualCooling))
-        .map(|r| r.actual)
+        .find(|r| matches!(r.metric, MetricType::AnnualCooling))
+        .map(|r| r.fluxion_value)
         .unwrap_or(0.0);
 
     validation_results.annual_heating = annual_heating;

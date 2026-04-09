@@ -167,8 +167,8 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     // Configure zone setpoints
     for (zone_idx, (heating, cooling)) in config.zone_setpoints.iter().enumerate() {
         if zone_idx < model.num_zones {
-            model.heating_setpoints[zone_idx] = *heating;
-            model.cooling_setpoints[zone_idx] = *cooling;
+            model.heating_setpoints.as_mut_slice()[zone_idx] = *heating;
+            model.cooling_setpoints.as_mut_slice()[zone_idx] = *cooling;
         }
     }
 

@@ -153,10 +153,6 @@ path = "src/bin/export_csv.rs"
 name = "run_multi_zone_validation"
 path = "src/bin/run_multi_zone_validation.rs"
 
-[[bin]]
-name = "run_cross_validation"
-path = "src/bin/run_cross_validation.rs"
-
 [profile.release]
 opt-level = 3
 lto = true

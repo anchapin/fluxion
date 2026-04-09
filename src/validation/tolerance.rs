@@ -3,8 +3,10 @@
 //! This module provides functionality for defining and checking tolerances
 //! in validation results.
 
+use serde::{Deserialize, Serialize};
+
 /// Tolerance configuration for validation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToleranceConfig {
     pub absolute_tolerance: f64,
     pub relative_tolerance: f64,
@@ -36,7 +38,7 @@ pub fn ashrae140_tolerance() -> ToleranceConfig {
 }
 
 /// Validation tolerance for high-mass building validation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ValidationTolerance {
     pub nmbe_limit: f64,
     pub cv_rmse_limit: f64,

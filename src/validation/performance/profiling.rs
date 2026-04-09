@@ -69,10 +69,11 @@ pub fn analyze_bottlenecks(metrics: &[PerformanceMetrics]) -> serde_json::Value 
 pub fn log_performance_metrics(metrics: &[PerformanceMetrics]) {
     for metric in metrics {
         log::info!(
-            "Case {}: {:.2}ms, {} bytes",
-            metric.case_id,
-            metric.execution_time_ms,
-            metric.memory_usage_bytes
+            "Timestep: {:.2}ms, Memory: {} bytes, CPU: {:.1}%, Throughput: {:.1} tps",
+            metric.timestep_duration.as_secs_f64() * 1000.0,
+            metric.memory_usage,
+            metric.cpu_utilization * 100.0,
+            metric.throughput_tps
         );
     }
 }

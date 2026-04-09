@@ -1708,7 +1708,7 @@ impl BenchmarkReport {
             .margin(10)
             .x_label_area_size(30)
             .y_label_area_size(30)
-            .build_cartesian_2d(vec!["Case 960", "Case 970"], 0f64..20f64)?;
+            .build_cartesian_2d(0..2, 0f64..20f64)?;
 
         chart.configure_mesh().draw()?;
 
@@ -1727,10 +1727,11 @@ impl BenchmarkReport {
             .map(|r| r.fluxion_value)
             .unwrap_or(0.0);
 
-        chart.draw_series(Histogram::vertical(&chart).style(RED.filled()).data(vec![
-            ("Case 960", case_960_heating),
-            ("Case 970", case_970_heating),
-        ]))?;
+        chart.draw_series(
+            Histogram::vertical(&chart)
+                .style(RED.filled())
+                .data(vec![(0, case_960_heating), (1, case_970_heating)]),
+        )?;
 
         Ok(())
     }
@@ -2510,11 +2511,11 @@ impl ValidationSuite {
     ) -> Result<crate::validation::performance::PerformanceReport, String> {
         // For now, return a mock performance report
         // In a real implementation, this would run actual performance tests
-        Ok(crate::validation::performance::PerformanceReport {
+        Ok(crate::validation::performance::reports::PerformanceReport {
             timestamp: Utc::now(),
-            metrics: crate::validation::performance::PerformanceMetrics {
-                timestep_duration_ms: 25.0,    // Under 50ms threshold
-                memory_usage_bytes: 5_000_000, // Under 10MB threshold
+            metrics: crate::validation::performance::reports::PerformanceMetrics {
+                timestep_duration_ms: 25.0,
+                memory_usage_bytes: 5_000_000,
                 iterations_per_timestep: 50,
                 cpu_utilization: 0.75,
                 throughput_tps: 1000.0,

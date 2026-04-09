@@ -224,7 +224,7 @@ impl BenchmarkMetrics {
     /// Create metrics from validation run
     pub fn from_run(total_cases: usize, execution_time: f64) -> Self {
         let cases_per_second = calculate_throughput(total_cases, execution_time);
-        let avg_time_per_case_ms = if total_cases > 0.0 {
+        let avg_time_per_case_ms = if total_cases > 0 {
             (execution_time / total_cases as f64) * 1000.0
         } else {
             0.0

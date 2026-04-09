@@ -532,11 +532,11 @@ fn handle_automation_command(command: &AutomationSubcommand) -> Result<()> {
             let client = GitHubClient::new(token.clone());
 
             // Parse repository
-            let repo_parts: Vec<&str> = repository
+            let repo_ref = repository
                 .as_ref()
-                .unwrap_or(&"owner/repo".to_string())
-                .split('/')
-                .collect();
+                .map(|s| s.as_str())
+                .unwrap_or("owner/repo");
+            let repo_parts: Vec<&str> = repo_ref.split('/').collect();
 
             if repo_parts.len() != 2 {
                 return Err(anyhow::anyhow!("Repository must be in format 'owner/repo'"));

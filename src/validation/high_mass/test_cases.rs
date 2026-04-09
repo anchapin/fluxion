@@ -287,7 +287,7 @@ pub struct BuildingConfig {
 impl Default for BuildingConfig {
     fn default() -> Self {
         Self {
-            construction_type: ConstructionType::HeavyWeight,
+            construction_type: ConstructionType::HighMass,
             floor_area: 232.0, // ASHRAE 140 default
             u_value: 0.45,     // W/m²K
             window_wall_ratio: 0.2,
@@ -524,7 +524,7 @@ pub fn create_high_mass_validation_cases() -> Vec<HighMassValidationCase> {
 /// Create ASHRAE 140 Case 600 (Heavyweight residential).
 fn create_case_600() -> HighMassValidationCase {
     let building_config = BuildingConfig {
-        construction_type: ConstructionType::HeavyWeight,
+        construction_type: ConstructionType::HighMass,
         floor_area: 232.0,
         u_value: 0.35, // Lower U-value for heavy construction
         window_wall_ratio: 0.15,
@@ -593,7 +593,7 @@ fn create_case_650() -> HighMassValidationCase {
 /// Create ASHRAE 140 Case 900 (High-mass institutional).
 fn create_case_900() -> HighMassValidationCase {
     let building_config = BuildingConfig {
-        construction_type: ConstructionType::HeavyWeight,
+        construction_type: ConstructionType::HighMass,
         floor_area: 1000.0, // Large institutional building
         u_value: 0.30,      // Very tight construction
         window_wall_ratio: 0.20,
@@ -639,7 +639,7 @@ mod tests {
         );
         assert!(matches!(
             case.building_config.construction_type,
-            ConstructionType::HeavyWeight
+            ConstructionType::HighMass
         ));
     }
 
@@ -805,7 +805,7 @@ mod tests {
         assert_eq!(case.case_id, "600");
         assert!(matches!(
             case.building_config.construction_type,
-            ConstructionType::HeavyWeight
+            ConstructionType::HighMass
         ));
         assert_eq!(case.building_config.floor_area, 232.0);
         assert_eq!(case.reference_results.annual_heating, 7008.0);
@@ -829,7 +829,7 @@ mod tests {
         assert_eq!(case.case_id, "900");
         assert!(matches!(
             case.building_config.construction_type,
-            ConstructionType::HeavyWeight
+            ConstructionType::HighMass
         ));
         assert_eq!(case.building_config.floor_area, 1000.0);
         assert_eq!(case.reference_results.annual_heating, 13140.0);

@@ -1,5 +1,5 @@
+use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
-use crate::thermal::thermal_model::ThermalModel as SimpleThermalModel;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
@@ -15,12 +15,12 @@ pub struct PerformanceMetrics {
     pub zone_coupling_time: Duration,
 }
 
-pub fn collect_performance_metrics(model: &SimpleThermalModel) -> PerformanceMetrics {
+pub fn collect_performance_metrics(model: &mut ThermalModel<VectorField>) -> PerformanceMetrics {
     let start_time = Instant::now();
 
     // Track zone coupling time separately
     let coupling_start = Instant::now();
-    model.step_physics(0, 20.0, 3600.0); // Use step_physics instead of step
+    model.step_physics(0, 20.0, 3600.0);
     let coupling_duration = coupling_start.elapsed();
 
     let duration = start_time.elapsed();
@@ -106,15 +106,13 @@ fn get_process_cpu_time() -> f64 {
     0.0
 }
 
-fn get_solver_iterations(model: &SimpleThermalModel) -> u32 {
-    // In a real implementation, this would access the solver's iteration counter
-    // For now, return a realistic value based on model complexity
-    let zone_count = model.zones().len();
+fn get_solver_iterations(model: &ThermalModel<VectorField>) -> u32 {
+    let zone_count = model.num_zones;
     if zone_count <= 3 {
-        8 // Fewer iterations for simple models
+        8
     } else if zone_count <= 10 {
-        12 // More iterations for medium models
+        12
     } else {
-        15 // Even more for complex models
+        15
     }
 }

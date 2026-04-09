@@ -82,7 +82,7 @@ pub fn validate_construction_type(
 
     // Simple heuristic based on thickness and density
     if total_thickness > 0.3 && avg_density > 1500.0 {
-        ConstructionType::HeavyWeight
+        ConstructionType::HighMass
     } else if total_thickness > 0.2 || avg_density > 1000.0 {
         ConstructionType::MediumWeight
     } else {

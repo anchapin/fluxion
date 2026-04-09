@@ -10,7 +10,8 @@ pub mod parallel_executor;
 pub mod profiling;
 pub mod reports;
 
-use crate::thermal::thermal_model::ThermalModel;
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
 
 pub use ci::{CiPerformanceReport, CiPerformanceValidator};
 pub use comparative::{
@@ -42,16 +43,16 @@ pub use profiling::{
 pub use reports::PerformanceReport;
 
 pub struct PerformanceValidator {
-    model: ThermalModel,
+    model: ThermalModel<VectorField>,
 }
 
 impl PerformanceValidator {
-    pub fn new(model: ThermalModel) -> Self {
+    pub fn new(model: ThermalModel<VectorField>) -> Self {
         Self { model }
     }
 
-    pub fn validate_performance(&self) -> PerformanceReport {
-        let metrics = metrics::collect_performance_metrics(&self.model);
+    pub fn validate_performance(&mut self) -> PerformanceReport {
+        let metrics = metrics::collect_performance_metrics(&mut self.model);
         reports::generate_performance_report(metrics)
     }
 }

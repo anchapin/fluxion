@@ -112,6 +112,34 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             );
             Ok(())
         }
+        SetpointAction::SetCooling {
+            zone_id,
+            temperature,
+        } => {
+            if temperature < 10.0 || temperature > 40.0 {
+                return Err(format!(
+                    "Temperature {}°C is out of valid range (10.0°C to 40.0°C)",
+                    temperature
+                ));
+            }
+            println!(
+                "Set cooling setpoint for zone {} to {}°C",
+                zone_id, temperature
+            );
+            Ok(())
+        }
+        SetpointAction::SetDeadband { zone_id, deadband } => {
+            println!("Set deadband for zone {} to {}°C", zone_id, deadband);
+            Ok(())
+        }
+        SetpointAction::Show { zone_id } => {
+            if let Some(zid) = zone_id {
+                println!("Showing setpoints for zone {}", zid);
+            } else {
+                println!("Showing setpoints for all zones");
+            }
+            Ok(())
+        }
     }
 }
 
@@ -157,9 +185,10 @@ fn handle_simulate(steps: usize, output: Option<PathBuf>) -> Result<(), String> 
                     zone_id, step, temp, energy, status
                 ));
             }
-            std::fs::write(output_path, csv_content)
+            let output_display = output_path.display();
+            std::fs::write(&output_path, csv_content)
                 .map_err(|e| format!("Failed to write output file: {}", e))?;
-            println!("Output written to: {}", output_path.display());
+            println!("Output written to: {}", output_display);
         }
 
         println!("Simulation completed successfully with {} steps", steps);

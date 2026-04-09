@@ -3,8 +3,10 @@
 //! This module provides functionality for calibrating simulation parameters
 //! against ASHRAE 140 Case 195 reference data.
 
+use serde::{Deserialize, Serialize};
+
 /// Calibration parameters for Case 195
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalibrationParameters {
     pub thermal_conductivity: f64,
     pub specific_heat: f64,
