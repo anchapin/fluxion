@@ -456,7 +456,6 @@ pub enum ASHRAE140Case {
     /// Tests comprehensive HVAC system integration with advanced controls.
     /// Validates all HVAC components working together with optimal control strategies.
     Case699,
-
 }
 impl ASHRAE140Case {
     /// Returns the case number as a string.

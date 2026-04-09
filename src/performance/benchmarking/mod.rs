@@ -75,7 +75,7 @@ where
         // Use /proc/self/status for memory measurement
         // This is a simplified version - full implementation would parse the file
         let _ = operation();
-        
+
         // Read from /proc/self/status
         if let Ok(status) = std::fs::read_to_string("/proc/self/status") {
             for line in status.lines() {
@@ -92,7 +92,7 @@ where
         }
         0
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         let _ = operation();
@@ -121,10 +121,20 @@ pub struct BenchmarkResult {
 
 impl BenchmarkResult {
     /// Create a new BenchmarkResult
-    pub fn new(name: String, iterations: usize, total_time: f64, min_time: f64, max_time: f64) -> Self {
+    pub fn new(
+        name: String,
+        iterations: usize,
+        total_time: f64,
+        min_time: f64,
+        max_time: f64,
+    ) -> Self {
         let average_time = total_time / iterations as f64;
-        let ops_per_sec = if average_time > 0.0 { 1.0 / average_time } else { 0.0 };
-        
+        let ops_per_sec = if average_time > 0.0 {
+            1.0 / average_time
+        } else {
+            0.0
+        };
+
         BenchmarkResult {
             name,
             iterations,
@@ -135,7 +145,7 @@ impl BenchmarkResult {
             ops_per_sec,
         }
     }
-    
+
     /// Format the benchmark result as a string
     pub fn format(&self) -> String {
         format!(
@@ -165,17 +175,17 @@ where
     F: Fn() -> T,
 {
     let mut times: Vec<f64> = Vec::with_capacity(iterations);
-    
+
     for _ in 0..iterations {
         let start = Instant::now();
         let _ = operation();
         times.push(start.elapsed().as_secs_f64());
     }
-    
+
     let total_time: f64 = times.iter().sum();
     let min_time = times.iter().cloned().fold(f64::INFINITY, f64::min);
     let max_time = times.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-    
+
     BenchmarkResult::new(name, iterations, total_time, min_time, max_time)
 }
 
@@ -220,7 +230,7 @@ impl BenchmarkMetrics {
             0.0
         };
         let meets_perf_target = avg_time_per_case_ms < 50.0; // PERF-01 target
-        
+
         BenchmarkMetrics {
             total_cases,
             execution_time,
@@ -229,7 +239,7 @@ impl BenchmarkMetrics {
             meets_perf_target,
         }
     }
-    
+
     /// Format metrics as string
     pub fn format(&self) -> String {
         format!(
@@ -238,7 +248,11 @@ impl BenchmarkMetrics {
             self.execution_time,
             self.cases_per_second,
             self.avg_time_per_case_ms,
-            if self.meets_perf_target { "MET TARGET" } else { "BELOW TARGET" }
+            if self.meets_perf_target {
+                "MET TARGET"
+            } else {
+                "BELOW TARGET"
+            }
         )
     }
 }
@@ -265,7 +279,7 @@ mod tests {
     fn test_calculate_throughput() {
         let throughput = calculate_throughput(1000, 1.0);
         assert_eq!(throughput, 1000.0);
-        
+
         let throughput_zero = calculate_throughput(1000, 0.0);
         assert_eq!(throughput_zero, 0.0);
     }

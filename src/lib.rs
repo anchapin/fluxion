@@ -47,12 +47,12 @@ pub mod ai;
 pub mod analysis;
 pub mod api;
 pub mod cli;
-pub mod physics;
-pub mod sim;
 pub mod hvac;
 pub mod performance;
+pub mod physics;
 #[cfg(feature = "python-bindings")]
 pub mod python;
+pub mod sim;
 pub mod testing;
 pub mod thermal;
 pub mod validation;
@@ -1562,10 +1562,10 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PySurfaceType>()?;
     m.add_class::<PyWallSurface>()?;
     m.add_class::<PyGeometryTensor>()?;
-    
+
     // Register multi-zone module
     python::multi_zone(_py, m)?;
-    
+
     // Register HVAC classes directly in main module for now
     m.add_class::<python::hvac_bindings::PyZoneSetpoints>()?;
     m.add_class::<python::hvac_bindings::PyZoneControl>()?;
