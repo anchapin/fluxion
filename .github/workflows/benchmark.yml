@@ -16,10 +16,9 @@ jobs:
           fetch-depth: 0  # Fetch all history for baseline comparison
 
       - name: Install Rust toolchain
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: stable
-          override: true
           profile: minimal  # Minimal profile for faster CI builds
 
       - name: Cache Cargo registry
@@ -80,7 +79,7 @@ jobs:
 
       - name: Upload Criterion HTML report
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: criterion-report
           path: target/criterion/
@@ -88,7 +87,7 @@ jobs:
 
       - name: Upload benchmark summary
         if: always()
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: benchmark-summary
           path: benchmark_report.md
