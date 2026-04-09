@@ -13,6 +13,7 @@ pub mod cross_validator;
 pub mod diagnostic;
 pub mod diagnostics;
 pub mod ep_oracle;
+pub mod esp_r;
 pub mod export;
 pub mod fdd;
 pub mod guardrails;
@@ -20,6 +21,7 @@ pub mod multi_reference;
 pub mod performance;
 pub mod reference;
 pub mod reference_data;
+pub mod reporting;
 pub mod tolerance;
 
 pub mod physics_validator;
@@ -34,6 +36,36 @@ pub mod high_mass;
 pub mod statistical;
 pub mod thermal_mass;
 pub mod thermal_mass_energy_accounting;
+
+// Multi-zone validation results structure
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MultiZoneValidationResults {
+    pub zones: Vec<ZoneValidationResult>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneValidationResult {
+    pub id: String,
+    pub average_temp: f64,
+    pub total_heating: f64,
+    pub total_cooling: f64,
+}
+
+impl MultiZoneValidationResults {
+    /// Add a zone validation result
+    pub fn add_zone_result(&mut self, zone_id: String, temperatures: Vec<f64>) {
+        let average_temp = temperatures.iter().sum::<f64>() / temperatures.len() as f64;
+        let total_heating = 0.0; // Placeholder - would be calculated in real implementation
+        let total_cooling = 0.0; // Placeholder - would be calculated in real implementation
+
+        self.zones.push(ZoneValidationResult {
+            id: zone_id,
+            average_temp,
+            total_heating,
+            total_cooling,
+        });
+    }
+}
 
 // Re-export common types
 pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetworkVariant};

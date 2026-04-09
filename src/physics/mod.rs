@@ -22,4 +22,5 @@ pub mod nd_array;
 
 pub mod solver_manager;
 pub mod solver_trait;
+pub mod thermal_mass;
 // pub mod view_factor;

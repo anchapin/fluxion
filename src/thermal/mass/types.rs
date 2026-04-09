@@ -9,7 +9,7 @@ use std::fmt;
 /// Construction type classification based on thermal mass.
 ///
 /// Corresponds to ASHRAE 140-2017 Addendum B construction categories.
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq, Default, serde::Serialize, serde::Deserialize)]
 pub enum ConstructionType {
     /// Light construction: < 50 kg/m²
     Light,
@@ -20,15 +20,21 @@ pub enum ConstructionType {
     /// Very heavy construction: > 300 kg/m²
     #[default]
     VeryHeavy,
+    /// Alias for Light
+    Lightweight,
+    /// Alias for Medium
+    MediumWeight,
+    /// Alias for Heavy
+    HeavyWeight,
 }
 
 impl ConstructionType {
     /// Returns the typical mass per area for this construction type in kg/m².
     pub fn typical_mass_per_area(&self) -> f64 {
         match self {
-            ConstructionType::Light => 25.0,
-            ConstructionType::Medium => 100.0,
-            ConstructionType::Heavy => 225.0,
+            ConstructionType::Light | ConstructionType::Lightweight => 25.0,
+            ConstructionType::Medium | ConstructionType::MediumWeight => 100.0,
+            ConstructionType::Heavy | ConstructionType::HeavyWeight => 225.0,
             ConstructionType::VeryHeavy => 400.0,
         }
     }
@@ -36,10 +42,71 @@ impl ConstructionType {
     /// Returns the typical specific heat capacity in J/kg·K.
     pub fn typical_specific_heat(&self) -> f64 {
         match self {
-            ConstructionType::Light => 900.0,
-            ConstructionType::Medium => 840.0,
-            ConstructionType::Heavy => 840.0,
+            ConstructionType::Light | ConstructionType::Lightweight => 900.0,
+            ConstructionType::Medium | ConstructionType::MediumWeight => 840.0,
+            ConstructionType::Heavy | ConstructionType::HeavyWeight => 840.0,
             ConstructionType::VeryHeavy => 840.0,
+        }
+    }
+
+    /// Returns typical construction layers for this construction type
+    pub fn typical_layers(&self) -> Vec<crate::sim::construction::ConstructionLayer> {
+        use crate::sim::construction::ConstructionLayer;
+
+        match self {
+            ConstructionType::Light | ConstructionType::Lightweight => {
+                vec![
+                    ConstructionLayer::new("Gypsum board".to_string(), 0.16, 720.0, 840.0, 0.0127),
+                    ConstructionLayer::new("Insulation".to_string(), 0.04, 32.0, 840.0, 0.1),
+                    ConstructionLayer::new("Wood stud".to_string(), 0.11, 512.0, 1200.0, 0.0381),
+                    ConstructionLayer::new("Gypsum board".to_string(), 0.16, 720.0, 840.0, 0.0127),
+                ]
+            }
+            ConstructionType::Medium | ConstructionType::MediumWeight => {
+                vec![
+                    ConstructionLayer::new("Brick".to_string(), 0.65, 1700.0, 840.0, 0.1),
+                    ConstructionLayer::new("Insulation".to_string(), 0.04, 32.0, 840.0, 0.05),
+                    ConstructionLayer::new("Concrete block".to_string(), 0.51, 1400.0, 840.0, 0.1),
+                ]
+            }
+            ConstructionType::Heavy | ConstructionType::HeavyWeight => {
+                vec![
+                    ConstructionLayer::new("Concrete".to_string(), 1.1, 2200.0, 840.0, 0.2),
+                    ConstructionLayer::new("Insulation".to_string(), 0.04, 32.0, 840.0, 0.05),
+                ]
+            }
+            ConstructionType::VeryHeavy => {
+                vec![
+                    ConstructionLayer::new("Concrete".to_string(), 1.1, 2200.0, 840.0, 0.3),
+                    ConstructionLayer::new("Brick".to_string(), 0.65, 1700.0, 840.0, 0.1),
+                ]
+            }
+        }
+    }
+
+    /// Returns thermal mass properties for this construction type
+    pub fn thermal_mass_properties(&self) -> crate::physics::thermal_mass::ThermalMassProperties {
+        use crate::physics::thermal_mass::ThermalMassProperties;
+
+        let mass_per_area = self.typical_mass_per_area();
+        let specific_heat = self.typical_specific_heat();
+        let effective_capacitance = mass_per_area * specific_heat;
+
+        ThermalMassProperties {
+            effective_capacitance,
+            time_constant: 24.0, // Typical value in hours
+            damping_factor: 0.5, // Typical value
+            classification: self.classification(),
+        }
+    }
+
+    /// Returns classification string for this construction type
+    pub fn classification(&self) -> String {
+        match self {
+            ConstructionType::Light | ConstructionType::Lightweight => "Light".to_string(),
+            ConstructionType::Medium | ConstructionType::MediumWeight => "Medium".to_string(),
+            ConstructionType::Heavy | ConstructionType::HeavyWeight => "Heavy".to_string(),
+            ConstructionType::VeryHeavy => "VeryHeavy".to_string(),
         }
     }
 }
@@ -47,9 +114,9 @@ impl ConstructionType {
 impl fmt::Display for ConstructionType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ConstructionType::Light => write!(f, "Light"),
-            ConstructionType::Medium => write!(f, "Medium"),
-            ConstructionType::Heavy => write!(f, "Heavy"),
+            ConstructionType::Light | ConstructionType::Lightweight => write!(f, "Light"),
+            ConstructionType::Medium | ConstructionType::MediumWeight => write!(f, "Medium"),
+            ConstructionType::Heavy | ConstructionType::HeavyWeight => write!(f, "Heavy"),
             ConstructionType::VeryHeavy => write!(f, "VeryHeavy"),
         }
     }

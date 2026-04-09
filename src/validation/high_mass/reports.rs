@@ -11,8 +11,8 @@ use std::fmt;
 use std::fs;
 use std::path::Path;
 
-use crate::physics::thermal_mass::construction::ConstructionType;
 use crate::physics::thermal_mass::diagnostics::ThermalMassDiagnostics;
+use crate::thermal::mass::types::ConstructionType;
 use crate::validation::high_mass::metrics::HighMassMetrics;
 use crate::validation::report::{MetricType, ValidationStatus};
 use crate::validation::tolerance::ValidationTolerance;
@@ -696,10 +696,10 @@ mod tests {
         let report1 = HighMassValidationReport::generate_report(
             "600",
             "Case 600",
-            weather.clone(),
+            weather,
             metrics.clone(),
             diagnostics.clone(),
-            construction,
+            construction.clone(),
             tolerance.clone(),
         );
 
@@ -753,7 +753,7 @@ mod tests {
             weather,
             passing_metrics,
             diagnostics,
-            construction,
+            construction.clone(),
             tolerance,
         );
 

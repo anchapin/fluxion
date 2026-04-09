@@ -161,7 +161,7 @@ impl Default for HVACSystem {
 }
 
 /// Weather Data
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WeatherData {
     pub ashrae_zone: AshraeZone,
     // Additional weather properties would go here
@@ -182,7 +182,7 @@ impl Default for WeatherData {
 }
 
 /// ASHRAE Climate Zone
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum AshraeZone {
     Zone1A,
     Zone2A,
@@ -220,6 +220,7 @@ pub enum HVACType {
 pub enum ConstructionType {
     Lightweight,
     MediumWeight,
+    HeavyWeight,
     HighMass,
 }
 
@@ -230,7 +231,8 @@ pub fn run_validation_with_performance(
     crate::validation::ASHRAE140CaseDefinition,
     crate::validation::PerformanceMetrics,
 ) {
-    let metrics = crate::validation::performance::profile_case(case, 1);
+    let case_number = case.number().parse::<u32>().unwrap_or(600); // Default to 600 if parsing fails
+    let metrics = crate::validation::performance::profile_case(case_number, 1);
     let case_def = crate::validation::ashrae140::cases::build_case(case);
     crate::validation::performance::log_performance_metrics(&metrics);
     (case_def, metrics)
@@ -247,8 +249,14 @@ pub fn run_validation_series_parallel(
 )> {
     // Set Rayon thread pool size if specified
     if let Some(threads) = max_threads {
-        if let Ok(pool) = rayon::ThreadPoolBuilder::new().num_threads(threads).build() {
-            rayon::set_global_thread_pool(pool).unwrap();
+        // Note: Rayon uses a global thread pool that cannot be changed at runtime
+        // This setting would need to be configured at program startup
+        // For now, we just log a warning if a specific thread count is requested
+        if threads > 0 {
+            println!(
+                "Warning: Custom thread pool size ({}) requested but Rayon uses global pool",
+                threads
+            );
         }
     }
 
@@ -258,7 +266,8 @@ pub fn run_validation_series_parallel(
         .par_iter()
         .map(|case| {
             let case_def = crate::validation::ashrae140::cases::build_case(*case);
-            let metrics = crate::validation::performance::profile_case(*case, 1);
+            let case_number = case.number().parse::<u32>().unwrap_or(600); // Default to 600 if parsing fails
+            let metrics = crate::validation::performance::profile_case(case_number, 1);
             crate::validation::performance::log_performance_metrics(&metrics);
             (*case, case_def, metrics)
         })

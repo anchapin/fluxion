@@ -236,3 +236,93 @@ fn test_references_update_command() {
         "Expected version line in output"
     );
 }
+
+/// Test ESP-r CLI integration functionality
+#[test]
+fn test_esp_r_cli_integration() {
+    use fluxion::validation::esp_r::cli_integration::{EspRCliConfig, ReportFormat};
+    use std::path::PathBuf;
+
+    // Test CLI config creation
+    let config = EspRCliConfig {
+        esp_r_output: PathBuf::from("test_data/esp_r_output.csv"),
+        fluxion_config: PathBuf::from("test_data/fluxion_config.json"),
+        tolerance: 0.15,
+        output_format: ReportFormat::Markdown,
+        output_path: Some(PathBuf::from("output/report.md")),
+    };
+
+    assert_eq!(config.tolerance, 0.15);
+    assert!(matches!(config.output_format, ReportFormat::Markdown));
+
+    // Test report format serialization
+    assert_eq!(ReportFormat::JSON.to_string(), "json");
+    assert_eq!(ReportFormat::Markdown.to_string(), "markdown");
+
+    // Test report format parsing
+    assert!(matches!(
+        "json".parse::<ReportFormat>(),
+        Ok(ReportFormat::JSON)
+    ));
+    assert!(matches!(
+        "markdown".parse::<ReportFormat>(),
+        Ok(ReportFormat::Markdown)
+    ));
+
+    // Test CLI config serialization
+    let json = serde_json::to_string(&config).unwrap();
+    let deserialized: EspRCliConfig = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized.tolerance, 0.15);
+}
+
+/// Test cross-validation command structure
+#[test]
+fn test_cross_validation_commands() {
+    use fluxion::cli::commands::cross_validation::{
+        CrossValidationCommand, CrossValidationReportArgs, CrossValidationRunArgs,
+        CrossValidationValidateArgs,
+    };
+    use fluxion::validation::esp_r::cli_integration::ReportFormat;
+    use std::path::PathBuf;
+
+    // Test Run command structure
+    let run_args = CrossValidationRunArgs {
+        esp_r_output: PathBuf::from("test.csv"),
+        fluxion_config: PathBuf::from("config.json"),
+        tolerance: 0.1,
+        format: ReportFormat::Markdown,
+        output: None,
+        verbose: false,
+    };
+
+    let run_command = CrossValidationCommand::Run(run_args);
+    assert!(matches!(run_command, CrossValidationCommand::Run(_)));
+
+    // Test Report command structure
+    let report_args = CrossValidationReportArgs {
+        results_file: PathBuf::from("results.json"),
+        format: ReportFormat::JSON,
+        output: Some(PathBuf::from("report.json")),
+        detailed: true,
+    };
+
+    let report_command = CrossValidationCommand::Report(report_args);
+    assert!(matches!(report_command, CrossValidationCommand::Report(_)));
+
+    // Test Validate command structure
+    let validate_args = CrossValidationValidateArgs {
+        esp_r_output: PathBuf::from("test.csv"),
+        fluxion_config: PathBuf::from("config.json"),
+        tolerance: 0.2,
+        format: ReportFormat::Markdown,
+        output: Some(PathBuf::from("output.md")),
+        verbose: true,
+        detailed: true,
+    };
+
+    let validate_command = CrossValidationCommand::Validate(validate_args);
+    assert!(matches!(
+        validate_command,
+        CrossValidationCommand::Validate(_)
+    ));
+}

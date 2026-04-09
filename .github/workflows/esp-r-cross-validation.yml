@@ -1,0 +1,83 @@
+name: ESP-r Cross-Validation
+
+on:
+  # Run weekly on Sunday at 00:00 UTC
+  schedule:
+    - cron: '0 0 * * 0'
+
+  # Allow manual triggering
+  workflow_dispatch:
+
+  # Run on pushes to main branch
+  push:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  esp-r-cross-validation:
+    name: Run ESP-r Cross-Validation
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Install Rust toolchain
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+        components: rustfmt, clippy
+
+    - name: Cache cargo dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Build project
+      run: cargo build --release --verbose
+
+    - name: Run ESP-r cross-validation tests
+      run: cargo test --lib esp_r::test_automation -- --nocapture
+
+    - name: Upload test reports
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: esp-r-cross-validation-reports
+        path: |
+          **/test-reports/
+          **/*.json
+          **/*.md
+        retention-days: 30
+
+    - name: Slack notification on failure
+      if: failure()
+      uses: rtCamp/action-slack-notify@v2
+      env:
+        SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+        SLACK_COLOR: danger
+        SLACK_TITLE: "ESP-r Cross-Validation Failed"
+        SLACK_MESSAGE: "ESP-r cross-validation tests failed. Check the workflow run for details."
+
+    - name: Email summary report
+      if: always()
+      uses: dawidd6/action-send-mail@v3
+      with:
+        server_address: smtp.gmail.com
+        server_port: 465
+        username: ${{ secrets.EMAIL_USERNAME }}
+        password: ${{ secrets.EMAIL_PASSWORD }}
+        subject: "ESP-r Cross-Validation Results: ${{ job.status }}"
+        body: "ESP-r cross-validation completed with status: ${{ job.status }}. See attached artifacts for details."
+        to: team@fluxion.com
+        from: ci@fluxion.com
+        attachments: esp-r-cross-validation-reports.zip

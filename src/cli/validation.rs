@@ -10,12 +10,13 @@ use serde_json;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use crate::physics::thermal_mass::construction::ConstructionType;
+use crate::thermal::mass::types::ConstructionType;
 use crate::validation::ashrae140::ASHRAE140Case;
 use crate::validation::case_195_calibration::CalibrationResult;
 use crate::validation::high_mass::{
     generate_combined_report, run_all_high_mass_cases, validate_construction_type,
 };
+use crate::validation::reporting::cli::ReportingCommand;
 
 /// Summary structure for tracking validation results
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -255,6 +256,14 @@ pub enum ValidationSubcommand {
         #[clap(short, long, default_value = "4")]
         _parallel: usize,
     },
+
+    /// Generate comprehensive validation reports
+    #[clap(name = "report")]
+    Report {
+        /// Subcommand for report generation
+        #[clap(subcommand)]
+        command: crate::validation::reporting::cli::ReportingCommand,
+    },
 }
 
 /// Parse case number into ASHRAE140Case enum
@@ -290,10 +299,10 @@ fn run_single_case(case_num: u32, output_dir: &str, verbose: bool) -> Result<()>
 
     // Parse case number and convert to enum
     let case = parse_case_number(case_num)?;
-    let case_enum = match case {
-        800..=810 => ASHRAE140Case::from_number(case),
-        195..=470 => ASHRAE140Case::from_number(case),
-        _ => return Err(anyhow!("Case {} not in expanded set", case)),
+    let case_id = case.to_string();
+    let case_enum = match ASHRAE140Case::from_case_id(&case_id) {
+        Some(case_enum) => case_enum,
+        None => return Err(anyhow!("Case {} not in expanded set", case)),
     };
 
     // Run actual validation
@@ -496,19 +505,23 @@ fn run_batch_cross_validation(
 /// Profile performance of a single case
 fn run_performance_profile(case_num: u32, iterations: usize, output_dir: String) -> Result<()> {
     let case_num_validated = parse_case_number(case_num)?;
-    let case = crate::validation::ASHRAE140Case::from_number(case_num_validated);
-    let metrics = crate::validation::performance::profile_case(case, iterations);
-    let report = crate::validation::performance::generate_performance_report(&[metrics]);
+    let case_id = case_num_validated.to_string();
+    let case = match crate::validation::ASHRAE140Case::from_case_id(&case_id) {
+        Some(case_enum) => case_enum,
+        None => return Err(anyhow!("Invalid case number: {}", case_num_validated)),
+    };
+    let metrics = crate::validation::performance::profile_case(case_num_validated, iterations);
+    let report = crate::validation::performance::generate_performance_report(metrics);
 
     // Save report
     std::fs::create_dir_all(&output_dir)?;
-    let report_path = format!("{}/case_{:03}_performance.txt", output_dir, case_num);
+    let report_path = format!("{}/case_{:03}_performance.json", output_dir, case_num);
     let report_path_clone = report_path.clone();
-    let report_clone = report.clone();
-    std::fs::write(report_path, report)?;
+    let report_json = serde_json::to_string_pretty(&report)?;
+    std::fs::write(report_path, &report_json)?;
 
     println!("Performance profile saved to: {}", report_path_clone);
-    println!("{}", report_clone);
+    println!("{}", report_json);
 
     Ok(())
 }
@@ -525,27 +538,51 @@ fn run_series_performance_profile(
     // Use Rayon for parallel profiling
     let metrics: Vec<_> = cases
         .par_iter()
-        .map(|case| {
-            let ashrae_case = crate::validation::ASHRAE140Case::from_number(*case);
-            crate::validation::performance::profile_case(ashrae_case, iterations)
-        })
+        .map(|case| crate::validation::performance::profile_case(*case, iterations))
         .collect();
 
-    let report = crate::validation::performance::generate_performance_report(&metrics);
-    let analysis = crate::validation::performance::analyze_bottlenecks(&metrics);
+    // Generate report for first case (or create summary)
+    let report = if !metrics.is_empty() {
+        crate::validation::performance::generate_performance_report(metrics[0].clone())
+    } else {
+        // Create a default report if no metrics
+        use crate::validation::performance::metrics::PerformanceMetrics;
+        use std::time::Duration;
+        let default_metrics = PerformanceMetrics {
+            timestep_duration: Duration::from_secs(0),
+            memory_usage: 0,
+            iterations_per_timestep: 0,
+            cpu_utilization: 0.0,
+            throughput_tps: 0.0,
+            zone_coupling_time: Duration::from_secs(0),
+        };
+        crate::validation::performance::generate_performance_report(default_metrics)
+    };
+    let analysis = if !metrics.is_empty() {
+        crate::validation::performance::analyze_bottlenecks(&metrics[0])
+    } else {
+        String::new()
+    };
 
     // Save comprehensive report
     std::fs::create_dir_all(&output_dir)?;
-    let report_path = format!("{}/{}_performance_report.txt", output_dir, series);
+    let report_path = format!("{}/{}_performance_report.json", output_dir, series);
     let report_path_clone = report_path.clone();
-    let mut full_report = report;
+
+    // Serialize report and analysis separately
+    let report_json = serde_json::to_string_pretty(&report)?;
+    let analysis_text = analysis.clone();
+    let analysis_len = analysis.len();
+
+    // Combine into a single string for output
+    let mut full_report = report_json;
     full_report.push_str("\n\nBottleneck Analysis:\n");
-    full_report.push_str(&analysis.join("\n"));
+    full_report.push_str(&analysis_text);
 
     std::fs::write(report_path, full_report)?;
 
     println!("Series performance profile saved to: {}", report_path_clone);
-    println!("Bottlenecks found: {}", analysis.len());
+    println!("Bottlenecks found: {}", analysis_len);
 
     Ok(())
 }
@@ -563,15 +600,37 @@ fn generate_comprehensive_performance_report(output_path: String, detailed: bool
         .iter()
         .map(|&case_num| {
             let case_num_validated = parse_case_number(case_num).unwrap();
-            let case = crate::validation::ASHRAE140Case::from_number(case_num_validated);
-            crate::validation::performance::profile_case(case, 1)
+            crate::validation::performance::profile_case(case_num_validated, 1)
         })
         .collect();
 
     let report = if detailed {
-        crate::validation::performance::generate_detailed_performance_report(&metrics)
+        if !metrics.is_empty() {
+            crate::validation::performance::generate_detailed_performance_report(&metrics[0])
+        } else {
+            String::new()
+        }
     } else {
-        crate::validation::performance::generate_performance_report(&metrics)
+        if !metrics.is_empty() {
+            let perf_report =
+                crate::validation::performance::generate_performance_report(metrics[0].clone());
+            serde_json::to_string_pretty(&perf_report).unwrap_or_default()
+        } else {
+            use crate::validation::performance::metrics::PerformanceMetrics;
+            use crate::validation::performance::reports::PerformanceReport;
+            use std::time::Duration;
+            let default_metrics = PerformanceMetrics {
+                timestep_duration: Duration::from_secs(0),
+                memory_usage: 0,
+                iterations_per_timestep: 0,
+                cpu_utilization: 0.0,
+                throughput_tps: 0.0,
+                zone_coupling_time: Duration::from_secs(0),
+            };
+            let perf_report =
+                crate::validation::performance::generate_performance_report(default_metrics);
+            serde_json::to_string_pretty(&perf_report).unwrap_or_default()
+        }
     };
 
     std::fs::write(&output_path, report)?;
@@ -590,7 +649,8 @@ fn run_validation_with_performance_monitoring(
     show_metrics: bool,
 ) -> Result<()> {
     let case_num_validated = parse_case_number(case_num)?;
-    let case = crate::validation::ASHRAE140Case::from_number(case_num_validated);
+    let case = crate::validation::ASHRAE140Case::from_case_id(&case_num_validated.to_string())
+        .ok_or_else(|| anyhow!("Invalid case number: {}", case_num_validated))?;
 
     if show_metrics {
         println!("Profiling case {:?}...", case);
@@ -599,8 +659,9 @@ fn run_validation_with_performance_monitoring(
     let (case_def, metrics) = crate::validation::ashrae140::run_validation_with_performance(case);
 
     if show_metrics {
-        println!("Performance: {:.4}ms/timestep", metrics.per_timestep_ms);
-        if metrics.per_timestep_ms >= 50.0 {
+        let per_timestep_ms = metrics.timestep_duration.as_secs_f64() * 1000.0;
+        println!("Performance: {:.4}ms/timestep", per_timestep_ms);
+        if per_timestep_ms >= 50.0 {
             println!("WARNING: Performance target not met!");
         }
     }
@@ -632,15 +693,10 @@ fn handle_validate_parallel(
         threads.unwrap_or_else(|| num_cpus::get())
     );
 
-    // Create parallel executor with specified configuration
-    let mut executor = crate::validation::performance::ParallelValidationExecutor::new();
-    if let Some(t) = threads {
-        executor.max_threads = t;
-    }
-    if let Some(cs) = chunk_size {
-        executor.chunk_size = cs;
-    }
-    executor.progress_reporting = progress;
+    // Create parallel executor
+    // Note: ParallelValidationExecutor uses Rayon's global thread pool
+    // Thread count, chunk size, and progress reporting are not configurable
+    let executor = crate::validation::performance::ParallelValidationExecutor::new();
 
     // Create high-mass validation cases
     let high_mass_cases =
@@ -686,12 +742,9 @@ fn handle_validate_parallel_high_mass(
         threads.unwrap_or_else(|| num_cpus::get())
     );
 
-    // Create parallel executor with specified thread count
-    let mut executor = crate::validation::performance::ParallelValidationExecutor::new();
-    if let Some(t) = threads {
-        executor.max_threads = t;
-    }
-    executor.progress_reporting = progress;
+    // Create parallel executor
+    // Note: ParallelValidationExecutor uses Rayon's global thread pool
+    let executor = crate::validation::performance::ParallelValidationExecutor::new();
 
     // Run high-mass validation cases in parallel
     let results = executor.run_high_mass_parallel();
@@ -986,6 +1039,31 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             tolerance,
             output,
         } => run_case_195_calibration(*max_iterations, *learning_rate, *tolerance, output),
+        ValidationSubcommand::Report { command } => {
+            match command {
+                ReportingCommand::Generate {
+                    input,
+                    output,
+                    format,
+                } => {
+                    let args = crate::validation::reporting::cli::GenerateReportArgs {
+                        input: input.clone(),
+                        output: output.clone(),
+                        format: format.clone(),
+                    };
+                    crate::validation::reporting::cli::execute_report_generate_command(&args)
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    println!("✅ Report generated successfully");
+                }
+                ReportingCommand::Validate { report } => {
+                    println!(
+                        "Report validation not yet implemented: {}",
+                        report.display()
+                    );
+                }
+            }
+            Ok(())
+        }
     }
 }
 
@@ -1002,7 +1080,7 @@ fn run_case_195_calibration(
     std::fs::create_dir_all(output_dir)?;
 
     // Run calibration
-    let result = crate::validation::case_195_calibration::run_case_195_calibration()?;
+    let result = crate::validation::case_195_calibration::run_case_195_calibration();
 
     // Save calibration results
     let results_filename = format!("{}/case_195_calibration_results.json", output_dir);

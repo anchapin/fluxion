@@ -1,6 +1,7 @@
 pub mod ci;
 pub mod comparative;
 pub mod completion;
+pub mod executor;
 pub mod finalization;
 pub mod historical;
 pub mod integration;
@@ -17,6 +18,7 @@ pub use comparative::{
 pub use completion::{
     Phase47CompletionValidator, PhaseCompletionReport, PhaseCompletionResult, RequirementResult,
 };
+pub use executor::ParallelValidationExecutor;
 pub use finalization::{
     ComparativeAnalysisResult, FinalPerformanceReport, FinalValidationResult,
     PerformanceValidationFinalizer,
@@ -29,9 +31,14 @@ pub use integration::{
     IntegratedPerformanceValidator, IntegratedReport, IntegratedValidationResult,
 };
 pub use metrics::PerformanceMetrics;
+pub use metrics::{
+    analyze_bottlenecks, generate_detailed_performance_report, log_performance_metrics,
+    profile_case,
+};
 pub use optimization::{
     generate_optimization_report, SolverOptimization, ZoneCouplingOptimization,
 };
+pub use reports::generate_performance_report;
 pub use reports::PerformanceReport;
 
 pub struct PerformanceValidator {
@@ -43,8 +50,8 @@ impl PerformanceValidator {
         Self { model }
     }
 
-    pub fn validate_performance(&self) -> PerformanceReport {
-        let metrics = metrics::collect_performance_metrics(&self.model);
+    pub fn validate_performance(&mut self) -> PerformanceReport {
+        let metrics = metrics::collect_performance_metrics(&mut self.model);
         reports::generate_performance_report(metrics)
     }
 }

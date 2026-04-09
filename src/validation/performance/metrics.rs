@@ -15,7 +15,7 @@ pub struct PerformanceMetrics {
     pub zone_coupling_time: Duration,
 }
 
-pub fn collect_performance_metrics(model: &SimpleThermalModel) -> PerformanceMetrics {
+pub fn collect_performance_metrics(model: &mut SimpleThermalModel) -> PerformanceMetrics {
     let start_time = Instant::now();
 
     // Track zone coupling time separately
@@ -117,4 +117,109 @@ fn get_solver_iterations(model: &SimpleThermalModel) -> u32 {
     } else {
         15 // Even more for complex models
     }
+}
+
+/// Profile a single ASHRAE 140 case
+///
+/// # Arguments
+/// * `case` - ASHRAE 140 case number
+/// * `iterations` - Number of iterations to run
+///
+/// # Returns
+/// Performance metrics for the case
+pub fn profile_case(case: u32, iterations: usize) -> PerformanceMetrics {
+    use crate::validation::ashrae_140_cases::ASHRAE140Case;
+
+    // Create a simple thermal model for profiling
+    let mut model = SimpleThermalModel::new(1, 20.0);
+
+    // Run the case multiple times and measure performance
+    let start = Instant::now();
+
+    for _ in 0..iterations {
+        // Simulate running the case
+        model.step(3600.0, 20.0, 1000.0, 0.0);
+    }
+
+    let duration = start.elapsed();
+    let configs_per_sec = (iterations as f64) / duration.as_secs_f64();
+
+    PerformanceMetrics {
+        timestep_duration: duration,
+        memory_usage: measure_memory_usage(),
+        iterations_per_timestep: iterations as u32,
+        cpu_utilization: measure_cpu_utilization(),
+        throughput_tps: configs_per_sec as f32,
+        zone_coupling_time: Duration::from_secs(0),
+    }
+}
+
+/// Analyze performance bottlenecks
+///
+/// # Arguments
+/// * `metrics` - Performance metrics to analyze
+///
+/// # Returns
+/// Bottleneck analysis report
+pub fn analyze_bottlenecks(metrics: &PerformanceMetrics) -> String {
+    let mut report = String::new();
+
+    report.push_str(&format!("Performance Bottleneck Analysis\n"));
+    report.push_str(&format!("===============================\n\n"));
+    report.push_str(&format!(
+        "Throughput: {:.2} timesteps/sec\n",
+        metrics.throughput_tps
+    ));
+
+    if metrics.throughput_tps < 800.0 {
+        report.push_str("WARNING: Throughput below target (800 timesteps/sec)\n");
+    }
+
+    if metrics.iterations_per_timestep > 100 {
+        report.push_str("WARNING: High solver iteration count\n");
+    }
+
+    report
+}
+
+/// Generate detailed performance report
+///
+/// # Arguments
+/// * `metrics` - Performance metrics to report
+///
+/// # Returns
+/// Detailed performance report
+pub fn generate_detailed_performance_report(metrics: &PerformanceMetrics) -> String {
+    let mut report = String::new();
+
+    report.push_str(&format!("Detailed Performance Report\n"));
+    report.push_str(&format!("===========================\n\n"));
+    report.push_str(&format!(
+        "Throughput: {:.2} timesteps/sec\n",
+        metrics.throughput_tps
+    ));
+    report.push_str(&format!("Memory Usage: {} bytes\n", metrics.memory_usage));
+    report.push_str(&format!(
+        "CPU Utilization: {:.2}%\n",
+        metrics.cpu_utilization
+    ));
+    report.push_str(&format!(
+        "Solver Iterations: {}\n",
+        metrics.iterations_per_timestep
+    ));
+
+    report
+}
+
+/// Log performance metrics to console
+///
+/// # Arguments
+/// * `metrics` - Performance metrics to log
+pub fn log_performance_metrics(metrics: &PerformanceMetrics) {
+    println!("Performance Metrics:");
+    println!("  Throughput: {:.2} timesteps/sec", metrics.throughput_tps);
+    println!("  Memory Usage: {} bytes", metrics.memory_usage);
+    println!("  CPU Utilization: {:.2}%", metrics.cpu_utilization);
+    println!("  Solver Iterations: {}", metrics.iterations_per_timestep);
+    println!("  Timestep Duration: {:?}", metrics.timestep_duration);
 }

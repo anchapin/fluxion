@@ -17,3 +17,6 @@ pub mod occupancy;
 
 /// Comprehensive reporting module
 pub mod reporting;
+
+/// Framework integration module
+pub mod integration;

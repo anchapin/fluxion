@@ -1,6 +1,6 @@
 [package]
 name = "fluxion"
-version = "1.0.0"
+version = "1.2.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
@@ -156,6 +156,10 @@ path = "src/bin/run_multi_zone_validation.rs"
 [[bin]]
 name = "run_cross_validation"
 path = "src/bin/run_cross_validation.rs"
+
+[[example]]
+name = "cross_validation_example"
+path = "examples/cross_validation_example.rs"
 
 [profile.release]
 opt-level = 3

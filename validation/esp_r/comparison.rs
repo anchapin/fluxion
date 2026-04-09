@@ -23,14 +23,14 @@ pub struct ComparisonResult {
 /// Compare Fluxion results with ESP-r reference data
 ///
 /// # Arguments
-/// * `fluxion_results` - Fluxion validation results
+/// * `fluxion_results` - Fluxion multi-zone validation results
 /// * `esp_r_data` - Parsed ESP-r zone data
 /// * `tolerance` - Temperature tolerance in °C
 ///
 /// # Returns
 /// Vector of comparison results for each zone
 pub fn compare_results(
-    fluxion_results: &crate::validation::ValidationResults,
+    fluxion_results: &crate::validation::MultiZoneValidationResults,
     esp_r_data: &[crate::validation::esp_r::parser::EspRZoneData],
     tolerance: f64,
 ) -> Vec<ComparisonResult> {

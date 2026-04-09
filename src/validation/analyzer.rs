@@ -472,15 +472,21 @@ mod tests {
         ref_min: f64,
         ref_max: f64,
     ) -> ValidationResult {
+        let percent_error = 0.0; // Default value
+        let status = ValidationStatus::Pass; // Default value
         ValidationResult {
             case_id: case_id.to_string(),
             metric,
             fluxion_value,
             ref_min,
             ref_max,
-            percent_error: 0.0,             // computed internally
-            status: ValidationStatus::Pass, // will be determined
-            per_program: None,
+            percent_error,
+            status,
+            actual: fluxion_value, // Add missing field
+            max: ref_max,          // Add missing field
+            metric_type: metric,   // Add missing field
+            min: ref_min,          // Add missing field
+            per_program: None,     // Add missing field
         }
     }
 
@@ -507,6 +513,9 @@ mod tests {
             ref_max: 7.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
+            actual: 6.5,                            // Add missing field
+            max: 7.5,                               // Add missing field
+            metric_type: MetricType::AnnualHeating, // Add missing field
             per_program: None,
         });
 

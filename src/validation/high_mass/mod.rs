@@ -7,7 +7,7 @@ pub mod metrics;
 pub mod reports;
 pub mod test_cases;
 
-use crate::physics::thermal_mass::construction::ConstructionType;
+use crate::thermal::mass::types::ConstructionType;
 
 pub use metrics::HighMassMetrics;
 pub use reports::{CombinedHighMassReport, HighMassSummary, HighMassValidationReport};
@@ -35,6 +35,10 @@ pub fn run_all_high_mass_cases() -> Vec<crate::validation::report::ValidationRes
                     percent_error: 0.0,
                     status: crate::validation::report::ValidationStatus::Fail,
                     per_program: None,
+                    actual: 0.0,
+                    max: 0.0,
+                    min: 0.0,
+                    metric_type: crate::validation::report::MetricType::AnnualHeating,
                 });
             }
         }

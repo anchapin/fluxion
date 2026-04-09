@@ -125,11 +125,15 @@ mod tests {
         let result = ValidationResult {
             case_id: "600".to_string(),
             metric: MetricType::AnnualHeating,
-            fluxion_value: 6.0,
-            ref_min: 5.0,
-            ref_max: 7.0,
-            percent_error: 6.0,
-            status: ValidationStatus::Warning,
+            fluxion_value: 5.0,
+            ref_min: 4.5,
+            ref_max: 5.5,
+            percent_error: 0.0,
+            status: ValidationStatus::Pass,
+            actual: 5.0,
+            max: 5.5,
+            metric_type: MetricType::AnnualHeating,
+            min: 4.5,
             per_program: None,
         };
         report.results.push(result);

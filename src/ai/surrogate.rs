@@ -1,6 +1,7 @@
 //! Surrogate manager for fast thermal load predictions.
 
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
+use anyhow::Error as AnyhowError;
 use log::{debug, error, info, warn};
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
@@ -406,7 +407,7 @@ impl<'a> std::ops::DerefMut for SessionGuard<'a> {
 }
 
 impl SurrogateManager {
-    pub fn new() -> Result<Self, String> {
+    pub fn new() -> Result<Self, AnyhowError> {
         Ok(SurrogateManager {
             model_loaded: false,
             model_path: None,

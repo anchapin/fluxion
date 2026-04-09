@@ -128,6 +128,30 @@ impl ZoneControl {
         }
     }
 
+    /// Get a reference to the setpoints configuration.
+    ///
+    /// # Returns
+    /// Reference to ZoneSetpoints
+    pub fn setpoints(&self) -> &crate::hvac::zone_setpoints::ZoneSetpoints {
+        &self.setpoints
+    }
+
+    /// Get a mutable reference to the setpoints configuration.
+    ///
+    /// # Returns
+    /// Mutable reference to ZoneSetpoints
+    pub fn setpoints_mut(&mut self) -> &mut crate::hvac::zone_setpoints::ZoneSetpoints {
+        &mut self.setpoints
+    }
+
+    /// Get a reference to the thermal model.
+    ///
+    /// # Returns
+    /// Reference to ThermalModel
+    pub fn thermal_model(&self) -> &Arc<ThermalModel> {
+        &self.thermal_model
+    }
+
     /// Calculate energy input for a zone.
     ///
     /// # Arguments
