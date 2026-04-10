@@ -114,7 +114,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnuplot  # For Criterion plots
+           sudo apt-get install -y gnuplot libfontconfig1-dev  # For Criterion plots and fontconfig
       - name: Run benchmarks
         run: |
           cargo bench --bench performance_regression --no-fail-fast
