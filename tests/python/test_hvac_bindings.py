@@ -2,8 +2,8 @@
 Python tests for HVAC bindings
 """
 
-import pytest
 import fluxion
+import pytest
 
 # Use direct imports since hvac submodule is not working
 ZoneSetpoints = fluxion.ZoneSetpoints
@@ -76,19 +76,19 @@ def test_setpoint_validation():
 
 def test_zone_control_creation():
     """Test ZoneControl creation from thermal model and setpoints"""
-    from fluxion.multi_zone import MultiZoneThermalModel
+    MultiZoneThermalModel = fluxion.MultiZoneThermalModel
 
     # Create thermal model
     thermal_model = MultiZoneThermalModel(3)
 
     # Create setpoints
-    setpoints = fluxion.hvac.ZoneSetpoints(3)
+    setpoints = fluxion.ZoneSetpoints(3)
     setpoints.set_heating_setpoint(0, 22.0)
     setpoints.set_cooling_setpoint(0, 26.0)
     setpoints.set_deadband(0, 2.0)
 
     # Create zone control
-    zone_control = fluxion.hvac.ZoneControl(thermal_model, setpoints)
+    zone_control = fluxion.ZoneControl(thermal_model, setpoints)
 
     # Verify it was created successfully
     assert zone_control is not None
@@ -96,19 +96,19 @@ def test_zone_control_creation():
 
 def test_hvac_control_update():
     """Test HVAC control logic with various temperatures"""
-    from fluxion.multi_zone import MultiZoneThermalModel
+    MultiZoneThermalModel = fluxion.MultiZoneThermalModel
 
     # Create thermal model
     thermal_model = MultiZoneThermalModel(1)
 
     # Create setpoints
-    setpoints = fluxion.hvac.ZoneSetpoints(1)
+    setpoints = fluxion.ZoneSetpoints(1)
     setpoints.set_heating_setpoint(0, 22.0)
     setpoints.set_cooling_setpoint(0, 26.0)
     setpoints.set_deadband(0, 2.0)
 
     # Create zone control
-    zone_control = fluxion.hvac.ZoneControl(thermal_model, setpoints)
+    zone_control = fluxion.ZoneControl(thermal_model, setpoints)
 
     # Test heating (below heating threshold: 22 - 1 = 21°C)
     energy = zone_control.update_controls([20.0])
@@ -128,31 +128,33 @@ def test_hvac_control_update():
 
 def test_energy_calculation():
     """Test energy calculation accuracy"""
-    from fluxion.multi_zone import MultiZoneThermalModel
+    MultiZoneThermalModel = fluxion.MultiZoneThermalModel
 
     # Create thermal model
     thermal_model = MultiZoneThermalModel(1)
 
     # Create setpoints
-    setpoints = fluxion.hvac.ZoneSetpoints(1)
+    setpoints = fluxion.ZoneSetpoints(1)
     setpoints.set_heating_setpoint(0, 22.0)
     setpoints.set_cooling_setpoint(0, 26.0)
     setpoints.set_deadband(0, 2.0)
 
     # Create zone control
-    zone_control = fluxion.hvac.ZoneControl(thermal_model, setpoints)
+    zone_control = fluxion.ZoneControl(thermal_model, setpoints)
+
+    # Must call update_controls first to compute zone status
+    energy = zone_control.update_controls([20.0])
 
     # Test heating energy: 2°C difference * 1000W/°C = 2000W
-    energy = zone_control.get_energy_input(0, 20.0)
-    assert abs(energy - 2000.0) < 0.01
+    assert abs(energy[0] - 2000.0) < 0.01
 
-    # Test cooling energy: 2°C difference * 1000W/°C = 2000W
-    energy = zone_control.get_energy_input(0, 28.0)
-    assert abs(energy - 2000.0) < 0.01
+    # Test cooling energy: update with higher temperature
+    energy = zone_control.update_controls([28.0])
+    assert abs(energy[0] - 2000.0) < 0.01
 
     # Test no energy in deadband
-    energy = zone_control.get_energy_input(0, 23.0)
-    assert energy == 0.0
+    energy = zone_control.update_controls([23.0])
+    assert energy[0] == 0.0
 
 
 def test_create_zone_setpoints_from_config():
@@ -165,7 +167,7 @@ def test_create_zone_setpoints_from_config():
         },
     }
 
-    setpoints = fluxion.hvac.create_zone_setpoints(config)
+    setpoints = fluxion.create_zone_setpoints(config)
 
     # Verify configuration was applied
     assert setpoints.num_zones() == 2
@@ -179,13 +181,13 @@ def test_create_zone_setpoints_from_config():
 
 def test_independent_zone_control():
     """Test that zones operate independently"""
-    from fluxion.multi_zone import MultiZoneThermalModel
+    MultiZoneThermalModel = fluxion.MultiZoneThermalModel
 
     # Create thermal model with 3 zones
     thermal_model = MultiZoneThermalModel(3)
 
     # Create setpoints with different values for each zone
-    setpoints = fluxion.hvac.ZoneSetpoints(3)
+    setpoints = fluxion.ZoneSetpoints(3)
     setpoints.set_heating_setpoint(0, 22.0)  # Zone 0: heating
     setpoints.set_cooling_setpoint(0, 26.0)
     setpoints.set_deadband(0, 2.0)
@@ -199,7 +201,7 @@ def test_independent_zone_control():
     setpoints.set_deadband(2, 2.0)
 
     # Create zone control
-    zone_control = fluxion.hvac.ZoneControl(thermal_model, setpoints)
+    zone_control = fluxion.ZoneControl(thermal_model, setpoints)
 
     # Test with temperatures that trigger different states
     # Zone 0: 19°C (below heating setpoint) -> heating
