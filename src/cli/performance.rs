@@ -67,13 +67,13 @@ pub fn handle_performance_command(command: &PerformanceCommand) -> Result<(), St
     }
 }
 
-fn run_benchmarks(scenario: &Option<String>, format: &str) -> Result<(), String> {
+fn run_benchmarks(_scenario: &Option<String>, _format: &str) -> Result<(), String> {
     // Implement benchmark execution
     println!("Running performance benchmarks...");
     Ok(())
 }
 
-fn validate_performance(baseline: &Option<String>, threshold: f64) -> Result<(), String> {
+fn validate_performance(baseline: &Option<String>, _threshold: f64) -> Result<(), String> {
     // Create CI performance validator
     let ci_validator = ci::CiPerformanceValidator::new(baseline.clone());
 
@@ -167,7 +167,7 @@ fn run_ashrae140_performance_validation(
     let case_number = case.unwrap_or(900); // Default to Case 900
 
     // Load ASHRAE 140 case
-    let ashrae_case = load_ashrae140_case(case_number)
+    let _ashrae_case = load_ashrae140_case(case_number)
         .map_err(|e| format!("Failed to load ASHRAE 140 case {}: {}", case_number, e))?;
 
     // Create validation suite for this case

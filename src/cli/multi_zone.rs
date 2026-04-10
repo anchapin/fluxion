@@ -255,7 +255,7 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
 pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow::Error> {
     use crate::validation::energy_balance::EnergyBalanceValidator;
 
-    let validator = EnergyBalanceValidator::new(0.1, 1.0);
+    let _validator = EnergyBalanceValidator::new(0.1, 1.0);
 
     if command.energy_conservation {
         println!("Running energy conservation validation...");

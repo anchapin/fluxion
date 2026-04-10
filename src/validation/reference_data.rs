@@ -152,7 +152,7 @@ impl ReferenceData {
 
 /// Load Case 960 reference data from benchmark constants
 pub fn load_case_960_reference() -> Result<Case960Reference, ReferenceDataError> {
-    let benchmark = Case960Benchmark::new();
+    let benchmark = Case960Benchmark::default();
 
     let reference = Case960Reference {
         zone_temperatures: HashMap::from([

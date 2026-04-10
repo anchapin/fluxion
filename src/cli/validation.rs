@@ -31,7 +31,7 @@ impl ValidationSummary {
         Self::default()
     }
 
-    fn add_success(&mut self, case_num: u32, duration: std::time::Duration) {
+    fn add_success(&mut self, _case_num: u32, duration: std::time::Duration) {
         self.total_cases += 1;
         self.successful += 1;
         self.total_duration += duration.as_secs_f32() as f64;

@@ -299,7 +299,7 @@ pub fn run_validation_with_performance(
 ) {
     let metrics = crate::validation::performance::profile_case(case, 1);
     let case_def = crate::validation::ashrae140::cases::build_case(case);
-    crate::validation::performance::log_performance_metrics(&[metrics.clone()]);
+    crate::validation::performance::log_performance_metrics(std::slice::from_ref(&metrics));
     (case_def, metrics)
 }
 
@@ -327,7 +327,7 @@ pub fn run_validation_series_parallel(
         .map(|case| {
             let case_def = crate::validation::ashrae140::cases::build_case(*case);
             let metrics = crate::validation::performance::profile_case(*case, 1);
-            crate::validation::performance::log_performance_metrics(&[metrics.clone()]);
+            crate::validation::performance::log_performance_metrics(std::slice::from_ref(&metrics));
             (*case, case_def, metrics)
         })
         .collect()
@@ -456,8 +456,10 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
     let duration = start_time.elapsed();
 
     // Extract results from benchmark report
-    let mut validation_results = ASHRAE140ValidationResults::default();
-    validation_results.case = case;
+    let mut validation_results = ASHRAE140ValidationResults {
+        case,
+        ..Default::default()
+    };
 
     // Build report string
     let mut report = String::new();
@@ -466,10 +468,10 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
 ",
         case.number()
     ));
-    report.push_str(&format!(
-        "===========================================\
-\n"
-    ));
+    report.push_str(
+        "===========================================\n
+",
+    );
     report.push_str(&format!(
         "Execution Time: {:.2} seconds\n\n",
         duration.as_secs_f32()

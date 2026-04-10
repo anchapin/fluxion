@@ -1,12 +1,7 @@
 use anyhow::Result;
 
+#[derive(Default)]
 pub struct WorkflowGeneratorConfig {}
-
-impl Default for WorkflowGeneratorConfig {
-    fn default() -> Self {
-        Self {}
-    }
-}
 
 pub struct WorkflowGenerator {
     config: WorkflowGeneratorConfig,
