@@ -165,7 +165,7 @@ fn test_energy_balance_includes_solar() {
 /// type system, which is critical for future GPU acceleration.
 #[test]
 fn test_solar_gains_are_vector_field() {
-    let mut model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
+    let _model = ThermalModel::from_spec(&ASHRAE140Case::Case900.spec());
 
     // Create test solar gains as VectorField
     let solar_gains = VectorField::new(vec![100.0, 200.0, 300.0]);

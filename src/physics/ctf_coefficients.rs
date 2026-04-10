@@ -197,6 +197,7 @@ pub struct CTFCalculator<'a> {
     max_coeffs: usize,
 }
 
+#[allow(dead_code)]
 impl<'a> CTFCalculator<'a> {
     /// Multiply two 2x2 real matrices.
     ///
@@ -1043,9 +1044,9 @@ mod tests {
         let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
 
         // Create temperature histories with warmup
-        let mut t_ext_history = vec![0.0; 50];
-        let mut t_int_history = vec![20.0; 49];
-        let mut flux_history = vec![0.0; 49];
+        let t_ext_history = vec![0.0; 50];
+        let t_int_history = vec![20.0; 49];
+        let flux_history = vec![0.0; 49];
 
         // Calculate flux
         let q_flux =
@@ -1082,9 +1083,9 @@ mod tests {
         let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
 
         // Create temperature histories with warmup
-        let mut t_ext_history = vec![35.0; 50];
-        let mut t_int_history = vec![20.0; 49];
-        let mut flux_history = vec![0.0; 49];
+        let t_ext_history = vec![35.0; 50];
+        let t_int_history = vec![20.0; 49];
+        let flux_history = vec![0.0; 49];
 
         // Calculate flux
         let q_flux =

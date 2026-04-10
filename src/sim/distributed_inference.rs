@@ -658,7 +658,7 @@ mod tests {
         ];
 
         // We need a dummy model factory that satisfies the bounds
-        let results = run_async_inference(population, 2, |params| {
+        let results = run_async_inference(population, 2, |_params| {
             Box::new(PhysicsThermalModel::new(1))
         })
         .await;
@@ -674,7 +674,7 @@ mod tests {
         ];
 
         let results =
-            run_parallel_inference(population, |params| Box::new(PhysicsThermalModel::new(1)));
+            run_parallel_inference(population, |_params| Box::new(PhysicsThermalModel::new(1)));
 
         assert_eq!(results.len(), 2);
     }

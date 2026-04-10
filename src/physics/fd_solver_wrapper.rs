@@ -33,6 +33,7 @@ use crate::sim::assembly::BuildingAssembly;
 /// This wrapper adapts the ImplicitFDSolver to work with the unified solver interface,
 /// handling conversion from BuildingAssembly to wall discretization and managing
 /// boundary condition transformations.
+#[allow(dead_code)]
 pub struct FDSolverWrapper {
     /// Underlying FD solver
     solver: Option<ImplicitFDSolver>,

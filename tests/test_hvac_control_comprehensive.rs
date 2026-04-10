@@ -609,7 +609,7 @@ mod integration_scenarios {
         // Zone reaches setpoint
         zone_temp = 20.0;
         mass_temp = 19.0;
-        let (mode, modulation) = controller.calculate_modulation(zone_temp, mass_temp, 0.001);
+        let (mode, _modulation) = controller.calculate_modulation(zone_temp, mass_temp, 0.001);
         assert_eq!(mode, HVACMode::Off);
     }
 

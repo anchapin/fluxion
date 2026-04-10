@@ -612,9 +612,9 @@ fn test_energy_conservation_between_zones() {
     let weather = DenverTmyWeather::new();
 
     let mut total_heating_zone0 = 0.0;
-    let mut total_heating_zone1 = 0.0;
+    let total_heating_zone1 = 0.0;
     let mut total_cooling_zone0 = 0.0;
-    let mut total_cooling_zone1 = 0.0;
+    let total_cooling_zone1 = 0.0;
 
     // Simulate for a month to analyze energy conservation
     for step in 0..744 {

@@ -14,7 +14,7 @@
 
 use clap::{ArgAction, Parser, Subcommand};
 use fluxion::validation::ashrae_140_multi_zone::ASHRAE140MultiZoneValidator;
-use fluxion::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
+use fluxion::validation::report::{BenchmarkReport, ValidationStatus};
 use std::path::Path;
 use std::process;
 

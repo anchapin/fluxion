@@ -478,7 +478,7 @@ mod tests {
 
     #[test]
     fn test_case_960_validation() {
-        let mut validator = ASHRAE140MultiZoneValidator::new();
+        let validator = ASHRAE140MultiZoneValidator::new();
         let reference = Case960Reference::load_case_960_reference_data();
 
         // Create a thermal model for testing

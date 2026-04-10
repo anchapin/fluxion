@@ -382,7 +382,7 @@ mod tests {
             headers.iter().collect::<Vec<_>>(),
             expected_headers.as_ref()
         );
-        let mut records = rdr.records().collect::<Result<Vec<_>, _>>().unwrap();
+        let records = rdr.records().collect::<Result<Vec<_>, _>>().unwrap();
         // Should have 2 records
         assert_eq!(records.len(), 2);
         // First record should be the one with higher normalized_coeff (A:200)

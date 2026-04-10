@@ -426,7 +426,7 @@ mod tests {
 
     #[test]
     fn test_reference_data_validation() {
-        let mut valid_data = ReferenceData::default();
+        let valid_data = ReferenceData::default();
         assert!(valid_data.validate_reference_format().is_ok());
 
         let mut invalid_data = ReferenceData::default();

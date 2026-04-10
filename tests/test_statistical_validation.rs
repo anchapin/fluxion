@@ -342,7 +342,7 @@ fn test_cohens_d_calculation() {
     let predicted = vec![10.0, 11.0, 12.0];
     let reference = vec![10.0, 11.0, 12.0];
 
-    let (cohens_d, effect_direction) = calculate_cohens_d(&predicted, &reference);
+    let (cohens_d, _effect_direction) = calculate_cohens_d(&predicted, &reference);
     assert!(
         cohens_d.abs() < 1e-6,
         "Identical distributions should have Cohen's d ≈ 0"
@@ -352,7 +352,7 @@ fn test_cohens_d_calculation() {
     let predicted = vec![15.0, 16.0, 17.0];
     let reference = vec![10.0, 11.0, 12.0];
 
-    let (cohens_d, effect_direction) = calculate_cohens_d(&predicted, &reference);
+    let (cohens_d, _effect_direction) = calculate_cohens_d(&predicted, &reference);
     assert!(
         cohens_d > 0.8,
         "Large difference should have Cohen's d > 0.8"
@@ -367,7 +367,7 @@ fn test_ci_nmbe_calculation() {
 
     // CI formula: nmbe ± t_{alpha/2, n-1} * std_error
 
-    let results = vec![
+    let _results = vec![
         ValidationResult {
             case_id: "test1".to_string(),
             metric: MetricType::AnnualHeating,

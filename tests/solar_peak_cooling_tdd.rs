@@ -30,7 +30,7 @@ fn test_case_600_peak_cooling_red() {
     let mut model = ThermalModel::from_spec(&spec);
 
     // Load Denver TMY weather
-    let weather = DenverTmyWeather::new();
+    let _weather = DenverTmyWeather::new();
 
     // Run simulation for one year
     let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
@@ -63,7 +63,7 @@ fn test_case_600_peak_cooling_red() {
 fn test_solar_gain_distribution_analysis() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let _weather = DenverTmyWeather::new();
 
     // Run simulation for a single day to analyze solar distribution
     let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
@@ -108,7 +108,7 @@ fn test_case_900_peak_cooling_red() {
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::from_spec(&spec);
 
-    let weather = DenverTmyWeather::new();
+    let _weather = DenverTmyWeather::new();
     let surrogates = SurrogateManager::new().expect("Failed to create surrogate manager");
     let _eui = model.solve_timesteps(8760, &surrogates, false, None, None, None);
 

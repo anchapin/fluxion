@@ -6,7 +6,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
-use fluxion::sim::hvac::{AnyEquipment, Chiller, HVACMode, HeatPump, VariableCapacityEquipment};
+use fluxion::sim::hvac::{HVACMode, HeatPump, VariableCapacityEquipment};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// ASHRAE 140 Case 800: Simple heat pump system

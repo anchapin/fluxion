@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_solver_manager_get_solver() {
-        let manager = SolverManager::default();
+        let _manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.2)))
             .build()

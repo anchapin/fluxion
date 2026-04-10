@@ -10,12 +10,8 @@
 //!
 //! This framework establishes the structure for future Case 970 validation work.
 
-use fluxion::physics::cta::VectorField;
-use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::ashrae_140_multi_zone::{Case970Reference, Case970Validator};
-use fluxion::weather::denver::DenverTmyWeather;
-use fluxion::weather::WeatherSource;
 
 /// Reference data for Case 970 validation
 ///
@@ -210,7 +206,7 @@ fn test_annual_energy_validation() {
 /// This will be fully implemented in future work
 #[test]
 fn test_peak_load_validation() {
-    let mut validator = Case970Validator::new();
+    let validator = Case970Validator::new();
 
     // Placeholder test values - would come from actual simulation in full implementation
     let actual_peak_heating = 7.5; // kW
