@@ -61,6 +61,8 @@
 #![allow(clippy::use_self)]
 #![allow(clippy::implicit_hasher)]
 #![allow(clippy::match_like_matches_macro)]
+#![allow(clippy::derivable_impls)]
+#![allow(clippy::vec_init_then_push)]
 pub mod ai;
 pub mod analysis;
 pub mod api;
@@ -87,8 +89,6 @@ pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
-// Logging for verbosity control via RUST_LOG environment variable
-use log::{debug, info};
 
 use sim::engine::ThermalModel;
 
