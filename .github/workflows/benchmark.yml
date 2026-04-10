@@ -49,8 +49,10 @@ jobs:
 
       - name: Fetch main branch for baseline comparison
         run: |
-          git fetch origin main
-          git checkout origin/main -- benches/baseline/phase10/
+          if git ls-tree -r origin/main --name-only | grep -q "benches/baseline"; then
+            git fetch origin main
+            git checkout origin/main -- benches/baseline/phase10/ 2>/dev/null || true
+          fi
           git checkout -
 
       - name: Run benchmarks with baseline comparison
