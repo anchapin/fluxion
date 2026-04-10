@@ -497,7 +497,7 @@ impl CombinedHighMassReport {
             ));
         }
 
-        output.push_str("\n");
+        output.push('\n');
 
         // Detailed reports
         for report in &self.case_reports {

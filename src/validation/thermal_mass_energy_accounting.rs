@@ -386,9 +386,8 @@ pub fn validate_energy_balance_over_year(
         0.0
     } else {
         let sum_squares: f64 = hourly_errors.iter().map(|e| e * e).sum();
-        let result = (sum_squares / hourly_errors.len() as f64).sqrt();
         // If any hourly error is NaN, the RMS will be NaN - propagate this
-        result
+        (sum_squares / hourly_errors.len() as f64).sqrt()
     };
 
     println!("  DEBUG: rms_total_change = {:.6e}", rms_total_change);

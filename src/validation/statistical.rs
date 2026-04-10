@@ -447,7 +447,7 @@ fn calculate_p_value(result: &ValidationResult, reference_count: usize) -> f64 {
     let p = 2.0 * (1.0 - cumulative);
 
     // Clamp to [0, 1] to handle numerical issues
-    p.max(0.0).min(1.0)
+    p.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]

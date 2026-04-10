@@ -150,14 +150,20 @@ pub struct DesignDaySource {
     pub cooling_design: Option<DesignDaySpec>,
 }
 
-impl DesignDaySource {
-    /// Creates a new empty DesignDaySource.
-    pub fn new() -> Self {
+impl Default for DesignDaySource {
+    fn default() -> Self {
         Self {
             location: None,
             heating_design: None,
             cooling_design: None,
         }
+    }
+}
+
+impl DesignDaySource {
+    /// Creates a new empty DesignDaySource.
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Parses a DDY file and returns a DesignDaySource.
@@ -273,7 +279,7 @@ fn parse_design_day<R: BufRead>(lines: &mut std::io::Lines<R>) -> Option<DesignD
             }
 
             // Field 1: Name
-            if parts.len() > 0 && !parts[0].trim().is_empty() {
+            if !parts.is_empty() && !parts[0].trim().is_empty() {
                 name = parts[0].trim().to_string();
             }
 
