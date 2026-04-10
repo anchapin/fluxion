@@ -2252,7 +2252,7 @@ impl ValidationSuite {
         for result in &self.results {
             case_results
                 .entry(result.case_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(result);
         }
 
