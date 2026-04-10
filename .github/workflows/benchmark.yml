@@ -9,6 +9,9 @@ jobs:
   benchmark:
     name: Run Performance Benchmarks
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -49,11 +52,13 @@ jobs:
 
       - name: Fetch main branch for baseline comparison
         run: |
-          if git ls-tree -r origin/main --name-only | grep -q "benches/baseline"; then
-            git fetch origin main
-            git checkout origin/main -- benches/baseline/phase10/ 2>/dev/null || true
+          # Check if origin/main exists and has baseline files
+          if git fetch origin main --depth=1 2>/dev/null; then
+            if git ls-tree -r origin/main --name-only 2>/dev/null | grep -q "benches/baseline"; then
+              git checkout origin/main -- benches/baseline/phase10/ 2>/dev/null || true
+            fi
           fi
-          git checkout -
+          git checkout - 2>/dev/null || true
 
       - name: Run benchmarks with baseline comparison
         run: |
