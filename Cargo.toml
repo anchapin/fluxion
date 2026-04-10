@@ -154,9 +154,19 @@ path = "src/bin/run_multi_zone_validation.rs"
 
 [profile.release]
 opt-level = 3
+lto = "thin"
+codegen-units = 4
+split-debuginfo = "packed"
+strip = true
+
+# Optimize for CI: reduce memory usage during release builds
+# Use thin LTO and more codegen units to prevent OOM/SIGSEGV
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 3
 lto = true
 codegen-units = 1
-split-debuginfo = "packed"
 strip = true
 
 # Explicitly include Phase 6 performance optimization test targets
