@@ -18,7 +18,7 @@ use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_multi_zone::Case960Reference;
-use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
+use crate::validation::report::ValidationStatus;
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 use serde::{Deserialize, Serialize};

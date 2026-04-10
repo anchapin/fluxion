@@ -7,7 +7,6 @@ use crate::physics::thermal_mass::diagnostics::{ThermalMassDiagnostics, ThermalM
 use crate::sim::construction::ConstructionLayer;
 use crate::validation::ashrae140::ConstructionType;
 use crate::validation::ashrae140::WeatherData;
-use crate::validation::ashrae_140_validator::ASHRAE140Validator;
 use crate::validation::report::{MetricType, ValidationResult, ValidationStatus};
 use crate::validation::tolerance::ValidationTolerance;
 use anyhow::Result;
@@ -157,8 +156,6 @@ impl HighMassValidationCase {
         &self,
         simulation_results: &SimulationResults,
     ) -> Result<ValidationMetrics> {
-        use statrs::statistics::Statistics;
-
         // Calculate NMBE (Normalized Mean Bias Error)
         let nmbe_heating = calculate_nmbe(
             &simulation_results.hourly_heating,

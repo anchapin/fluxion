@@ -6,7 +6,6 @@
 use crate::validation::high_mass::test_cases::HighMassValidationCase;
 use crate::validation::high_mass::HighMassValidationReport;
 use rayon::prelude::*;
-use std::sync::Arc;
 
 /// Parallel validation executor configuration
 #[derive(Debug, Clone)]

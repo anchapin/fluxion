@@ -4,7 +4,7 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
-use crate::sim::assembly::{BuildingAssembly, MaterialLayer};
+use crate::sim::assembly::BuildingAssembly;
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
@@ -2442,7 +2442,7 @@ impl ThermalModel<VectorField> {
         // Create ThermalModel with validated assembly
         // Note: This creates a basic ThermalModel; for full assembly integration,
         // additional setup would be needed (similar to from_spec)
-        let mut model = ThermalModel::new(num_zones);
+        let model = ThermalModel::new(num_zones);
         // TODO: Apply assembly properties to model (wall_u_value, roof_u_value, etc.)
         Ok(model)
     }

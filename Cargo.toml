@@ -44,6 +44,9 @@ multi-zone = []
 # Feature flag for ASHRAE 140 v2021 support
 ashrae_140_v2021 = []
 
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
+
 [dependencies]
 # Core Logic
 serde = { version = "1.0", features = ["derive"] }

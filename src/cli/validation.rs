@@ -986,12 +986,6 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             output,
             show_metrics,
         } => run_validation_with_performance_monitoring(*case, output.to_string(), *show_metrics),
-        ValidationSubcommand::CalibrateCase195 {
-            max_iterations,
-            learning_rate,
-            tolerance,
-            output,
-        } => run_case_195_calibration(*max_iterations, *learning_rate, *tolerance, output),
     }
 }
 
