@@ -6716,15 +6716,22 @@ mod tests {
                 equipment: None,
                 occupancy: None,
             };
-            let energy_cooling =
-                model.solve_single_step(0, outdoor_temp_hot, step_params.clone(), 3600.0);
+            let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, step_params, 3600.0);
 
             // Test comfortable outdoor temp - should be in deadband
             model.temperatures = VectorField::from_scalar(23.5, 1);
             model.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let outdoor_temp_comfortable = 23.5;
+            let step_params_2 = StepParameters {
+                use_ai: false,
+                surrogates: surrogates.clone(),
+                use_analytical_gains: false,
+                lighting: None,
+                equipment: None,
+                occupancy: None,
+            };
             let energy_deadband =
-                model.solve_single_step(0, outdoor_temp_comfortable, step_params, 3600.0);
+                model.solve_single_step(0, outdoor_temp_comfortable, step_params_2, 3600.0);
 
             assert!(
                 energy_heating > 0.0,
