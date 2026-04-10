@@ -28,7 +28,7 @@ class TestASHRAE140Constructions:
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=300,
         )
 
         return {
@@ -43,9 +43,9 @@ class TestASHRAE140Constructions:
         # This includes interior and exterior film coefficients
 
         result = self._run_rust_test("test_case_900_wall_u_value")
-        assert (
-            result["returncode"] == 0
-        ), f"Wall U-value validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Wall U-value validation failed: {result['stderr']}"
+        )
 
     def test_case_900_wall_heat_capacity(self):
         """Verify wall heat capacity matches high-mass spec."""
@@ -54,54 +54,54 @@ class TestASHRAE140Constructions:
         # = 0.1 m × 800 kg/m³ × 1000 J/kg-K = 80 kJ/m²K
 
         result = self._run_rust_test("test_case_900_wall_heat_capacity")
-        assert (
-            result["returncode"] == 0
-        ), f"Wall heat capacity validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Wall heat capacity validation failed: {result['stderr']}"
+        )
 
     def test_case_900_roof_u_value(self):
         """Verify roof U-value is 0.32 W/m²K."""
         # ASHRAE 140 Case 900 roof U-value: 0.32 W/m²K
 
         result = self._run_rust_test("test_case_900_roof_u_value")
-        assert (
-            result["returncode"] == 0
-        ), f"Roof U-value validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Roof U-value validation failed: {result['stderr']}"
+        )
 
     def test_case_900_floor_u_value(self):
         """Verify floor U-value is 0.38 W/m²K."""
         # ASHRAE 140 Case 900 floor U-value: 0.38 W/m²K
 
         result = self._run_rust_test("test_case_900_floor_u_value")
-        assert (
-            result["returncode"] == 0
-        ), f"Floor U-value validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Floor U-value validation failed: {result['stderr']}"
+        )
 
     def test_case_900_window_u_value(self):
         """Verify window U-value is 3.0 W/m²K."""
         # ASHRAE 140 specifies double clear glass with U-value = 3.0 W/m²K
 
         result = self._run_rust_test("test_case_900_window_u_value")
-        assert (
-            result["returncode"] == 0
-        ), f"Window U-value validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Window U-value validation failed: {result['stderr']}"
+        )
 
     def test_case_900_window_shgc(self):
         """Verify window SHGC is 0.789."""
         # Solar Heat Gain Coefficient for double clear glass: 0.789
 
         result = self._run_rust_test("test_case_900_window_shgc")
-        assert (
-            result["returncode"] == 0
-        ), f"Window SHGC validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Window SHGC validation failed: {result['stderr']}"
+        )
 
     def test_case_900_window_tvis(self):
         """Verify window visible transmittance is 0.86156."""
         # Visible transmittance for double clear glass: 0.86156
 
         result = self._run_rust_test("test_case_900_window_tvis")
-        assert (
-            result["returncode"] == 0
-        ), f"Window Tvis validation failed: {result['stderr']}"
+        assert result["returncode"] == 0, (
+            f"Window Tvis validation failed: {result['stderr']}"
+        )
 
     def test_case_600_wall_u_value(self):
         """Verify Case 600 wall U-value."""

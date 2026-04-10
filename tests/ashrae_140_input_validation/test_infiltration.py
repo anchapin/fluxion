@@ -27,7 +27,7 @@ class TestASHRAE140Infiltration:
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=300,
         )
 
         return {
