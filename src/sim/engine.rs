@@ -4199,8 +4199,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let advanced_c_joules = self.ctf_annual_cooling_joules + self.fd_annual_cooling_joules;
 
             // 5R1C component is the remainder
-            let r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
-            let r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
+            let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
+            let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
 
             // Apply correction ONLY to 5R1C component
             // Advanced solver component remains uncorrected (corr = 1.0)
@@ -4531,15 +4531,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let n = num_zones as f64;
 
             // For diagnostic, capture q_iz for first two zones before adding
-            let (mut dbg_q0, mut dbg_q1) = (0.0, 0.0);
+            let (mut _dbg_q0, mut _dbg_q1) = (0.0, 0.0);
             let slice = phi_ia_with_iz.as_mut();
             for i in 0..num_zones {
                 let q_iz = total_h_iz * (sum_t - n * temps[i]);
                 if i == 0 {
-                    dbg_q0 = q_iz;
+                    _dbg_q0 = q_iz;
                 }
                 if i == 1 {
-                    dbg_q1 = q_iz;
+                    _dbg_q1 = q_iz;
                 }
                 slice[i] += q_iz;
             }
@@ -4704,8 +4704,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let advanced_c_joules = self.ctf_annual_cooling_joules + self.fd_annual_cooling_joules;
 
             // 5R1C component is the remainder
-            let r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
-            let r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
+            let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
+            let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
 
             // Apply correction ONLY to 5R1C component
             // Advanced solver component remains uncorrected (corr = 1.0)
@@ -5167,7 +5167,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Internal loads are added to self.loads which will be used by step_physics
         let day_of_year = timestep / 24 + 1; // 1-indexed day of year
         let hour = timestep % 24;
-        let day_type = holiday::get_day_type(day_of_year);
+        let _day_type = holiday::get_day_type(day_of_year);
         let hour_of_week = (day_of_year - 1) % 7 * 24 + hour;
 
         let mut internal_convective = 0.0;
