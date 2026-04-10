@@ -90,14 +90,8 @@ pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 
-use sim::engine::ThermalModel;
+use sim::engine::{StepParameters, ThermalModel};
 
-#[cfg(feature = "python-bindings")]
-use crate::api::{
-    BuildingParameters, FluxionErrorPy, SimulationError, SurrogateError, ValidationError,
-};
-
-#[cfg(feature = "python-bindings")]
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
 #[allow(unused_imports)]
@@ -1126,17 +1120,15 @@ impl BatchOracle {
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(
-                            t,
-                            outdoor_temp,
-                            false,
-                            &self.surrogates,
-                            true,
-                            None,
-                            None,
-                            None,
-                            3600.0, // dt_seconds
-                        );
+                        let step_params = StepParameters {
+                            use_ai: false,
+                            surrogates: self.surrogates.clone(),
+                            use_analytical_gains: true,
+                            lighting: None,
+                            equipment: None,
+                            occupancy: None,
+                        };
+                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
                     }
                 });
 
@@ -1395,17 +1387,15 @@ impl BatchOracle {
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(
-                            t,
-                            outdoor_temp,
-                            false,
-                            &self.surrogates,
-                            true,
-                            None,
-                            None,
-                            None,
-                            3600.0, // dt_seconds
-                        );
+                        let step_params = StepParameters {
+                            use_ai: false,
+                            surrogates: self.surrogates.clone(),
+                            use_analytical_gains: true,
+                            lighting: None,
+                            equipment: None,
+                            occupancy: None,
+                        };
+                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
                     }
                 });
 

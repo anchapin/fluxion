@@ -1,11 +1,5 @@
 use crate::ai::surrogate::SurrogateManager;
-use crate::physics::constants::atmospheric::{
-    AIR_DENSITY_SEA_LEVEL, STANDARD_ATMOSPHERIC_PRESSURE,
-};
-use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
-use crate::physics::constants::thermal::ashrae_140::{
-    EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
-};
+use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
@@ -3500,17 +3494,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let hour_of_day = t % 24;
                 let daily_cycle = cycle[hour_of_day];
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                self.solve_single_step(
-                    t,
-                    outdoor_temp,
+                let step_params = StepParameters {
                     use_ai,
-                    surrogates,
-                    true,
-                    lighting_ref,
-                    equipment_ref,
-                    occupancy_ref,
-                    dt_seconds,
-                )
+                    surrogates: surrogates.clone(),
+                    use_analytical_gains: true,
+                    lighting: lighting_ref.cloned(),
+                    equipment: None, // Can't clone dyn Equipment, so pass None
+                    occupancy: occupancy_ref.cloned(),
+                };
+                self.solve_single_step(t, outdoor_temp, step_params, dt_seconds)
             })
             .sum();
 
@@ -4780,8 +4772,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
         let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
         let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
-        for i in 0..self.num_zones {
-            let i_sol = solar_ref[i]; // Solar radiation intensity W/m²
+        for &i_sol in solar_ref.iter().take(self.num_zones) {
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
@@ -5097,19 +5088,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         energy
     }
+}
 
+/// Parameters for a single simulation step
+pub struct StepParameters {
+    pub use_ai: bool,
+    pub surrogates: SurrogateManager,
+    pub use_analytical_gains: bool,
+    pub lighting: Option<LightingSchedule>,
+    pub equipment: Option<Vec<Box<dyn Equipment>>>,
+    pub occupancy: Option<OccupancyProfile>,
+}
+
+impl StepParameters {
+    /// Create a new StepParameters with default values
+    pub fn new() -> Self {
+        Self {
+            use_ai: false,
+            surrogates: SurrogateManager::new().expect("Failed to create SurrogateManager"),
+            use_analytical_gains: false,
+            lighting: None,
+            equipment: None,
+            occupancy: None,
+        }
+    }
+}
+
+impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Solves a single timestep of the thermal simulation.
     ///
     /// # Arguments
     ///
     /// * `timestep` - Current timestep index (used for ground temperature)
     /// * `outdoor_temp` - Outdoor air temperature (°C)
-    /// * `use_ai` - Whether to use neural surrogates for load prediction
-    /// * `surrogates` - SurrogateManager for load predictions
-    /// * `use_analytical_gains` - Whether to calculate analytical internal gains
-    /// * `lighting` - Optional lighting schedule for internal heat gains (Plan 17-04)
-    /// * `equipment` - Optional equipment list for internal heat gains (Plan 17-04)
-    /// * `occupancy` - Optional occupancy profile for internal heat gains (Plan 17-04)
+    /// * `step_params` - Parameters for this simulation step
     /// * `dt_seconds` - Timestep duration in seconds (default: 3600.0 for 1-hour timestep)
     ///
     /// # Returns
@@ -5119,16 +5131,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         &mut self,
         timestep: usize,
         outdoor_temp: f64,
-        use_ai: bool,
-        surrogates: &SurrogateManager,
-        use_analytical_gains: bool,
-        lighting: Option<&LightingSchedule>,
-        equipment: Option<&[Box<dyn Equipment>]>,
-        occupancy: Option<&OccupancyProfile>,
+        step_params: StepParameters,
         dt_seconds: f64,
     ) -> f64 {
         // 1. Calculate External Loads
-        if use_ai {
+        if step_params.use_ai {
             // Record call for wiring validation (Plan 21-10)
             #[cfg(feature = "wiring-tracing")]
             if let Some(ref tracer) = self.tracer {
@@ -5136,7 +5143,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             // Try ONNX with fallback to analytical mode
-            match surrogates.predict_loads_with_fallback(self.temperatures.as_ref()) {
+            match step_params
+                .surrogates
+                .predict_loads_with_fallback(self.temperatures.as_ref())
+            {
                 Ok(pred) => {
                     self.loads = T::from(VectorField::new(pred));
                 }
@@ -5146,11 +5156,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         "Both ONNX and analytical fallback failed: {}. Using analytical mode.",
                         e
                     );
-                    self.calc_analytical_loads(timestep, use_analytical_gains);
+                    self.calc_analytical_loads(timestep, step_params.use_analytical_gains);
                 }
             }
         } else {
-            self.calc_analytical_loads(timestep, use_analytical_gains);
+            self.calc_analytical_loads(timestep, step_params.use_analytical_gains);
         }
 
         // 1.5. Add Internal Loads (lighting, equipment, occupancy) - Plan 17-04
@@ -5165,13 +5175,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut internal_radiative_to_mass = 0.0;
 
         // Lighting: fixed convective/radiative split (radiative goes to mass)
-        if let Some(lighting) = lighting {
+        if let Some(lighting) = &step_params.lighting {
             internal_convective += lighting.convective_heat_gains(hour);
             internal_radiative_to_mass += lighting.radiative_heat_gains(hour);
         }
 
         // Equipment: mass-coupled radiative heat split
-        if let Some(equipment_list) = equipment {
+        if let Some(equipment_list) = &step_params.equipment {
             for eq in equipment_list {
                 let equipment_rad = eq.radiative_gains(timestep);
                 internal_convective += eq.convective_gains(timestep);
@@ -5186,7 +5196,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Occupancy: fixed convective/radiative split (radiative goes to mass)
-        if let Some(occ) = occupancy {
+        if let Some(occ) = &step_params.occupancy {
             internal_convective += occ.convective_heat_gains(hour_of_week);
             internal_radiative_to_mass += occ.radiative_heat_gains(hour_of_week);
         }
@@ -5196,8 +5206,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if internal_convective > 0.0 || internal_radiative_to_air > 0.0 {
             // Convert Watts to W/m² by dividing by zone_area
             let loads_slice = self.loads.as_mut();
-            for i in 0..self.num_zones {
-                let zone_area = self.zone_area.as_ref()[i];
+            for (i, &zone_area) in self
+                .zone_area
+                .as_ref()
+                .iter()
+                .enumerate()
+                .take(self.num_zones)
+            {
                 if zone_area > 0.0 {
                     loads_slice[i] += (internal_convective + internal_radiative_to_air) / zone_area;
                 }
@@ -5271,7 +5286,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
 
             // Diagnostic: Check if surfaces have window areas
-            if timestep % 24 == 0 {
+            if timestep.is_multiple_of(24) {
                 let total_window_area: f64 = zone_surfaces.iter().map(|s| s.window_area).sum();
                 let total_surface_area: f64 = zone_surfaces.iter().map(|s| s.area).sum();
                 println!("DEBUG surfaces: timestep={}, zone_idx={}, num_surfaces={}, total_window_area={:.2}, total_surface_area={:.2}",
@@ -5613,7 +5628,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let solar_gain_watts =
                         self.calculate_zone_solar_gain(zone_idx, timestep, weather);
                     let floor_area = self.zone_area.as_ref()[zone_idx];
-                    if timestep == 12 || timestep % 24 == 0 {
+                    if timestep == 12 || timestep.is_multiple_of(24) {
                         eprintln!(
                             "DEBUG solar: timestep={}, zone_idx={}, solar_gain_watts={}, floor_area={}",
                             timestep, zone_idx, solar_gain_watts, floor_area
@@ -5631,7 +5646,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.solar_gains = T::from(VectorField::new(zone_solar_gains));
 
                 // Diagnostic: Check solar gains after calculation
-                if timestep % 24 == 0 {
+                if timestep.is_multiple_of(24) {
                     println!(
                         "DEBUG after solar_gains update: timestep={}, solar_gains[0]={:.2} W/m2",
                         timestep,
@@ -6090,8 +6105,15 @@ mod tests {
         model2.apply_parameters(&[1.5, 21.0]);
 
         // Using solve_single_step with use_ai=false (analytical loads)
-        let energy1 =
-            model1.solve_single_step(0, 20.0, false, &surrogates, true, None, None, None, 3600.0);
+        let step_params = StepParameters {
+            use_ai: false,
+            surrogates: surrogates.clone(),
+            use_analytical_gains: true,
+            lighting: None,
+            equipment: None,
+            occupancy: None,
+        };
+        let energy1 = model1.solve_single_step(0, 20.0, step_params, 3600.0);
 
         // Using set_loads + step_physics manually
         model2.calc_analytical_loads(0, true);
@@ -6540,17 +6562,16 @@ mod tests {
             let mut total_energy_kwh = 0.0;
 
             for step in 0..num_timesteps {
-                let energy_kwh = model.solve_single_step(
-                    step,
-                    outdoor_temp_heating,
-                    false,
-                    &surrogates,
-                    false,
-                    None,
-                    None,
-                    None,
-                    3600.0,
-                );
+                let step_params = StepParameters {
+                    use_ai: false,
+                    surrogates: surrogates.clone(),
+                    use_analytical_gains: false,
+                    lighting: None,
+                    equipment: None,
+                    occupancy: None,
+                };
+                let energy_kwh =
+                    model.solve_single_step(step, outdoor_temp_heating, step_params, 3600.0);
                 total_energy_kwh += energy_kwh;
             }
 
@@ -6591,17 +6612,16 @@ mod tests {
             let mut total_energy_kwh_cool = 0.0;
 
             for step in 0..num_timesteps {
-                let energy_kwh_cool = model.solve_single_step(
-                    step,
-                    outdoor_temp_cooling,
-                    false,
-                    &surrogates,
-                    false,
-                    None,
-                    None,
-                    None,
-                    3600.0,
-                );
+                let step_params = StepParameters {
+                    use_ai: false,
+                    surrogates: surrogates.clone(),
+                    use_analytical_gains: false,
+                    lighting: None,
+                    equipment: None,
+                    occupancy: None,
+                };
+                let energy_kwh_cool =
+                    model.solve_single_step(step, outdoor_temp_cooling, step_params, 3600.0);
                 total_energy_kwh_cool += energy_kwh_cool;
             }
 
@@ -6639,17 +6659,15 @@ mod tests {
             model.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
             // With temp in deadband (18 < 20 < 22), HVAC should be off
-            let energy_kwh = model.solve_single_step(
-                0,
-                outdoor_temp,
-                false,
-                &surrogates,
-                false,
-                None,
-                None,
-                None,
-                3600.0,
-            );
+            let step_params = StepParameters {
+                use_ai: false,
+                surrogates: surrogates.clone(),
+                use_analytical_gains: false,
+                lighting: None,
+                equipment: None,
+                occupancy: None,
+            };
+            let energy_kwh = model.solve_single_step(0, outdoor_temp, step_params, 3600.0);
 
             // Issue #272, #274, #275: With thermal mass energy accounting, net energy can be non-zero
             // even when HVAC is off due to thermal mass energy changes.
@@ -6676,49 +6694,37 @@ mod tests {
 
             // Test cold outdoor temp - should heat
             let outdoor_temp_cold = 10.0;
-            let energy_heating = model.solve_single_step(
-                0,
-                outdoor_temp_cold,
-                false,
-                &surrogates,
-                false,
-                None,
-                None,
-                None,
-                3600.0,
-            );
+            let step_params = StepParameters {
+                use_ai: false,
+                surrogates: surrogates.clone(),
+                use_analytical_gains: false,
+                lighting: None,
+                equipment: None,
+                occupancy: None,
+            };
+            let energy_heating = model.solve_single_step(0, outdoor_temp_cold, step_params, 3600.0);
 
             // Test hot outdoor temp - should cool
             model.temperatures = VectorField::from_scalar(27.0, 1);
             model.mass_temperatures = VectorField::from_scalar(27.0, 1);
             let outdoor_temp_hot = 35.0;
-            let energy_cooling = model.solve_single_step(
-                0,
-                outdoor_temp_hot,
-                false,
-                &surrogates,
-                false,
-                None,
-                None,
-                None,
-                3600.0,
-            );
+            let step_params = StepParameters {
+                use_ai: false,
+                surrogates: surrogates.clone(),
+                use_analytical_gains: false,
+                lighting: None,
+                equipment: None,
+                occupancy: None,
+            };
+            let energy_cooling =
+                model.solve_single_step(0, outdoor_temp_hot, step_params.clone(), 3600.0);
 
             // Test comfortable outdoor temp - should be in deadband
             model.temperatures = VectorField::from_scalar(23.5, 1);
             model.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let outdoor_temp_comfortable = 23.5;
-            let energy_deadband = model.solve_single_step(
-                0,
-                outdoor_temp_comfortable,
-                false,
-                &surrogates,
-                false,
-                None,
-                None,
-                None,
-                3600.0,
-            );
+            let energy_deadband =
+                model.solve_single_step(0, outdoor_temp_comfortable, step_params, 3600.0);
 
             assert!(
                 energy_heating > 0.0,
