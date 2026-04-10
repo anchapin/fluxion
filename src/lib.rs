@@ -1598,7 +1598,7 @@ mod tests {
     use crate::BatchOracle;
 
     // Import logging macros for tests
-    use log::info;
+    use log::{debug, info};
 
     #[cfg(feature = "python-bindings")]
     #[test]
