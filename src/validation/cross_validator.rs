@@ -1549,7 +1549,7 @@ mod tests {
     #[test]
     fn test_save_data_error_handling() {
         let validator = CrossValidator::with_default_config();
-        let result = validator.save_data("/dev/null/nonexistent/data.json");
+        let result = validator.save_data("/nonexistent:<>/data.json");
         assert!(result.is_err());
     }
 

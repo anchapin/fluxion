@@ -877,7 +877,7 @@ mod tests {
         let config = AnalyzerConfig {
             historical_data_path: None,
             generate_report: true,
-            output_path: Some(PathBuf::from("/dev/null/nonexistent/metrics.md")),
+            output_path: Some(PathBuf::from("/nonexistent:<>/metrics.md")),
         };
         let analyzer = Analyzer::new(config);
 
