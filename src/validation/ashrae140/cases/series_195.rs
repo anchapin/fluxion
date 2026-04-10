@@ -4,6 +4,8 @@
 //! diagnostic validation including thermal mass variations, window-to-wall
 //! ratio variations, and internal load variations.
 
+#![allow(clippy::needless_update)]
+
 use crate::validation::ashrae140::ASHRAE140CaseDefinition;
 use crate::validation::ashrae140::AshraeZone;
 use crate::validation::ashrae140::BuildingProperties;

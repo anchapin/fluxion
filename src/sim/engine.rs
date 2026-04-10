@@ -315,7 +315,7 @@ impl DoorGeometry {
 /// * `cooling_setpoint` - HVAC cooling setpoint temperature (°C) - cool when above this
 /// * `heating_setpoints` - Zone-specific heating setpoints (°C) for multi-zone HVAC
 /// * `cooling_setpoints` - Zone-specific cooling setpoints (°C) for multi-zone HVAC
-/// ISO 13790-compliant thermal network model.
+///   ISO 13790-compliant thermal network model.
 ///
 /// Implements a 5-Resistance, 1-Capacitance (5R1C) or 6-Resistance, 2-Capacitance (6R2C)
 /// thermal network using Continuous Tensor Abstraction (CTA). Supports single-zone and multi-zone
@@ -561,34 +561,35 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     pub cooling_sensitivity_correction: f64,
 
     /// Heating mode coupling factor (Plan 03-14)
-    /// Multiplier applied to h_tr_em when HVAC is in heating mode.
-    /// High-mass buildings use lower coupling in winter to reduce cold absorption.
-    ///   - Low-mass (600 series): 1.0 (use default coupling)
-    ///   - High-mass (900 series): 0.55 (reduce coupling to limit cold absorption)
-    /// Multiplier applied to h_tr_em when HVAC is in cooling mode.
-    /// High-mass buildings use higher coupling in summer to improve heat absorption.
-    ///   - Low-mass (600 series): 1.0 (use default coupling)
-    ///   - High-mass (900 series): 1.75 (increase coupling to improve heat rejection)
-    /// Heating mode mass-to-surface coupling factor
-    /// Multiplier applied to h_tr_ms when HVAC is in heating mode.
-    /// High-mass buildings use lower h_tr_ms to prevent heat loss from interior to mass.
-    ///   - Low-mass (600 series): 1.0 (use default coupling)
-    ///   - High-mass (900 series): 0.5 (reduce coupling to limit heat absorption by mass)
-    /// Cooling mode mass-to-surface coupling factor
-    /// Multiplier applied to h_tr_ms when HVAC is in cooling mode.
-    /// High-mass buildings use higher h_tr_ms to allow heat stored in mass to be released.
-    ///   - Low-mass (600 series): 1.0 (use default coupling)
-    ///   - High-mass (900 series): 5.0 (increase coupling to improve heat rejection)
-    /// Heating mode solar beam-to-mass fraction
-    /// Fraction of beam solar that goes directly to thermal mass during heating mode.
-    /// Lower values send more solar to air/surface for immediate heating benefit.
-    ///   - Low-mass (600 series): 0.3 (use default)
-    ///   - High-mass (900 series): 0.5 (reduce mass coupling for immediate benefit)
-    /// Cooling mode solar beam-to-mass fraction
-    /// Fraction of beam solar that goes directly to thermal mass during cooling mode.
-    /// Higher values send more solar to mass (delayed effect) to reduce immediate cooling load.
-    ///   - Low-mass (600 series): 0.3 (use default)
-    ///   - High-mass (900 series): 0.9 (increase mass coupling to delay heating effect)
+    ///   Multiplier applied to h_tr_em when HVAC is in heating mode.
+    ///   High-mass buildings use lower coupling in winter to reduce cold absorption.
+    ///     - Low-mass (600 series): 1.0 (use default coupling)
+    ///     - High-mass (900 series): 0.55 (reduce coupling to limit cold absorption)
+    ///   Multiplier applied to h_tr_em when HVAC is in cooling mode.
+    ///   High-mass buildings use higher coupling in summer to improve heat absorption.
+    ///     - Low-mass (600 series): 1.0 (use default coupling)
+    ///     - High-mass (900 series): 1.75 (increase coupling to improve heat rejection)
+    ///   Heating mode mass-to-surface coupling factor
+    ///   Multiplier applied to h_tr_ms when HVAC is in heating mode.
+    ///   High-mass buildings use lower h_tr_ms to prevent heat loss from interior to mass.
+    ///     - Low-mass (600 series): 1.0 (use default coupling)
+    ///     - High-mass (900 series): 0.5 (reduce coupling to limit heat absorption by mass)
+    ///   Cooling mode mass-to-surface coupling factor
+    ///   Multiplier applied to h_tr_ms when HVAC is in cooling mode.
+    ///   High-mass buildings use higher h_tr_ms to allow heat stored in mass to be released.
+    ///     - Low-mass (600 series): 1.0 (use default coupling)
+    ///     - High-mass (900 series): 5.0 (increase coupling to improve heat rejection)
+    ///   Heating mode solar beam-to-mass fraction
+    ///   Fraction of beam solar that goes directly to thermal mass during heating mode.
+    ///   Lower values send more solar to air/surface for immediate heating benefit.
+    ///     - Low-mass (600 series): 0.3 (use default)
+    ///     - High-mass (900 series): 0.5 (reduce mass coupling for immediate benefit)
+    ///   Cooling mode solar beam-to-mass fraction
+    ///   Fraction of beam solar that goes directly to thermal mass during cooling mode.
+    ///   Higher values send more solar to mass (delayed effect) to reduce immediate cooling load.
+    ///     - Low-mass (600 series): 0.3 (use default)
+    ///     - High-mass (900 series): 0.9 (increase mass coupling to delay heating effect)
+    ///
     // Energy tracking for thermal mass calibration (Issue #272, #274, #275, #432)
     /// Previous mass temperature for tracking thermal mass energy changes
     pub previous_mass_temperatures: T,
@@ -785,7 +786,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             previous_temperatures: self.previous_temperatures.clone(),
 
             // Variable capacity HVAC equipment (Plan 15-06)
-            hvac_equipment: self.hvac_equipment.as_ref().map(|e| e.clone()),
+            hvac_equipment: self.hvac_equipment.clone(),
 
             // Door geometry for temperature-dependent inter-zone air exchange
             door_geometry: self.door_geometry,
@@ -834,8 +835,7 @@ where
         let h_se = EXTERIOR_FILM_COEFF_DEFAULT;
 
         let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
-        for i in 0..self.num_zones {
-            let i_sol = solar_ref[i];
+        for i_sol in solar_ref.iter().take(self.num_zones) {
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
@@ -2288,7 +2288,7 @@ impl ThermalModel<VectorField> {
     /// - Zone Area: 20 m²
     /// - Ceiling Height: 3.0 m
     /// - Window Ratio: 0.15
-    /// Create a new ThermalModel with comprehensive validation of all inputs.
+    ///   Create a new ThermalModel with comprehensive validation of all inputs.
     ///
     /// This constructor validates all inputs before creating the ThermalModel,
     /// providing clear error messages for invalid configurations. It validates:
@@ -2327,6 +2327,7 @@ impl ThermalModel<VectorField> {
     /// );
     /// assert!(result.is_ok());
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_validation(
         num_zones: usize,
         window_u_value: f64,
@@ -3095,8 +3096,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///   - `params[2]`: Cooling setpoint (°C, range: 22-32)
     ///
     /// # Notes
-    /// - If heating_setpoint >= cooling_setpoint, the values will be swapped to maintain valid deadband.
-    /// Applies building design parameters to the thermal model.
+    ///   - If heating_setpoint >= cooling_setpoint, the values will be swapped to maintain valid deadband.
+    ///
+    ///   Applies building design parameters to the thermal model.
     ///
     /// This method validates all parameters for NaN/Inf values and physical constraints
     /// before applying them. Invalid parameters will cause a panic with a descriptive message.
@@ -3139,7 +3141,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         debug!("Applying parameters: {:?}", params);
 
         // Validate all parameters for NaN/Inf before applying
-        if let Some(&u_value) = params.get(0) {
+        if let Some(&u_value) = params.first() {
             if !u_value.is_finite() {
                 let error_type = if u_value.is_nan() { "NaN" } else { "infinite" };
                 panic!(
@@ -3404,6 +3406,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// // Run with 6-minute timestep for high-mass building
     /// let eui = model.solve_timesteps_with_dt(8760, &surrogates, false, None, None, None, 360.0);
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn solve_timesteps_with_dt(
         &mut self,
         steps: usize,
@@ -3483,10 +3486,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     })
                     .collect()
             });
-        let equipment_ref = equipment_converted
-            .as_ref()
-            .map(|e| e.as_slice())
-            .or(equipment);
+        let equipment_ref = equipment_converted.as_deref().or(equipment);
 
         let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
@@ -3727,7 +3727,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_ve_vent = air_cap_vent / 3600.0;
 
                 // Debug: Print night ventilation for Case 650/950
-                if (self.case_id == "650" || self.case_id == "950") && hour_of_day % 6 == 0 {
+                if (self.case_id == "650" || self.case_id == "950") && hour_of_day.is_multiple_of(6)
+                {
                     println!(
                         "DEBUG NIGHT VENT Case {} hour {}: night_vent ACTIVE, h_ve_vent={:.2} W/K",
                         self.case_id, hour_of_day, h_ve_vent
@@ -3744,7 +3745,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 modified_h_ext.as_ref().unwrap()
             } else {
                 // Debug: Print night ventilation inactive for Case 650/950
-                if (self.case_id == "650" || self.case_id == "950") && hour_of_day % 6 == 0 {
+                if (self.case_id == "650" || self.case_id == "950") && hour_of_day.is_multiple_of(6)
+                {
                     println!(
                         "DEBUG NIGHT VENT Case {} hour {}: night_vent INACTIVE",
                         self.case_id, hour_of_day
@@ -3960,7 +3962,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         {
             *n += h * outdoor_temp;
         }
-        num_rest_with_iz.mul_assign(&term_rest_1);
+        num_rest_with_iz.mul_assign(term_rest_1);
         // Fuse ground term addition: (derived_ground_coeff * t_g) added directly
         let ground_coeff = self.derived_ground_coeff.as_ref();
         for (n, g) in num_rest_with_iz
@@ -4777,8 +4779,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
         let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
         let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
-        for i in 0..self.num_zones {
-            let i_sol = solar_ref[i]; // Solar radiation intensity W/m²
+        for i_sol in solar_ref.iter().take(self.num_zones) {
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
@@ -5112,6 +5113,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Returns
     ///
     /// HVAC energy consumption for the timestep in kWh.
+    #[allow(clippy::too_many_arguments)]
     pub fn solve_single_step(
         &mut self,
         timestep: usize,
@@ -5193,10 +5195,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         if internal_convective > 0.0 || internal_radiative_to_air > 0.0 {
             // Convert Watts to W/m² by dividing by zone_area
             let loads_slice = self.loads.as_mut();
-            for i in 0..self.num_zones {
+            for (i, load) in loads_slice.iter_mut().enumerate().take(self.num_zones) {
                 let zone_area = self.zone_area.as_ref()[i];
                 if zone_area > 0.0 {
-                    loads_slice[i] += (internal_convective + internal_radiative_to_air) / zone_area;
+                    *load += (internal_convective + internal_radiative_to_air) / zone_area;
                 }
             }
         }
@@ -5268,7 +5270,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
 
             // Diagnostic: Check if surfaces have window areas
-            if timestep % 24 == 0 {
+            if timestep.is_multiple_of(24) {
                 let total_window_area: f64 = zone_surfaces.iter().map(|s| s.window_area).sum();
                 let total_surface_area: f64 = zone_surfaces.iter().map(|s| s.area).sum();
                 println!("DEBUG surfaces: timestep={}, zone_idx={}, num_surfaces={}, total_window_area={:.2}, total_surface_area={:.2}",
@@ -5610,7 +5612,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let solar_gain_watts =
                         self.calculate_zone_solar_gain(zone_idx, timestep, weather);
                     let floor_area = self.zone_area.as_ref()[zone_idx];
-                    if timestep == 12 || timestep % 24 == 0 {
+                    if timestep == 12 || timestep.is_multiple_of(24) {
                         eprintln!(
                             "DEBUG solar: timestep={}, zone_idx={}, solar_gain_watts={}, floor_area={}",
                             timestep, zone_idx, solar_gain_watts, floor_area
@@ -5628,7 +5630,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.solar_gains = T::from(VectorField::new(zone_solar_gains));
 
                 // Diagnostic: Check solar gains after calculation
-                if timestep % 24 == 0 {
+                if timestep.is_multiple_of(24) {
                     println!(
                         "DEBUG after solar_gains update: timestep={}, solar_gains[0]={:.2} W/m2",
                         timestep,

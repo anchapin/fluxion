@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 use crate::validation::performance::reports::PerformanceMetrics;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -41,7 +43,7 @@ impl HistoricalTracker {
     pub fn add_record(&mut self, benchmark_name: &str, record: HistoricalRecord) {
         self.records
             .entry(benchmark_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(record);
     }
 

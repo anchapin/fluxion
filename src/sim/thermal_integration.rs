@@ -106,6 +106,7 @@ pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
 ///     500.0,  // phi_m
 /// );
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn backward_euler_update(
     tm_old: f64,
     dt: f64,
@@ -180,6 +181,7 @@ pub fn backward_euler_update(
 ///     500.0,  // phi_m
 /// );
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_update(
     tm_old: f64,
     dt: f64,
@@ -260,6 +262,7 @@ pub fn crank_nicolson_update(
 ///     500.0,  // phi_m
 /// );
 /// ```
+#[allow(clippy::too_many_arguments)]
 pub fn explicit_euler_update(
     tm_old: f64,
     dt: f64,

@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 use chrono::{DateTime, Utc};
 use std::process::Command;
 

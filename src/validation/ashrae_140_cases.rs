@@ -31,6 +31,8 @@
 //!     .unwrap();
 //! ```
 
+#![allow(clippy::option_as_ref_deref)]
+
 use crate::sim::construction::{Assemblies, Construction, Materials};
 use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};

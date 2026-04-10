@@ -272,6 +272,7 @@ impl Analyzer {
     }
 
     /// Creates a new Analyzer with default configuration.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(AnalyzerConfig::default())
     }

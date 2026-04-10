@@ -124,6 +124,7 @@ pub fn solve_with_faer(mut matrix: Vec<Vec<f64>>, rhs: Vec<f64>) -> Vec<f64> {
         solution.swap(i, max_row);
 
         // Eliminate
+        #[allow(clippy::needless_range_loop)]
         for k in i + 1..n {
             let factor = matrix[k][i] / matrix[i][i];
             for j in i..n {

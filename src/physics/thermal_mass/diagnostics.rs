@@ -294,7 +294,6 @@ impl ThermalMassReport {
 
     /// Convert report to human-readable string format.
     ///
-
     /// Check if thermal mass is sufficient for high-mass validation.
     ///
     /// # Returns

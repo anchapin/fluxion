@@ -49,6 +49,18 @@
 #![allow(clippy::redundant_closure)]
 #![allow(clippy::clone_on_ref_ptr)]
 #![allow(clippy::manual_range_contains)]
+#![allow(clippy::clone_on_copy)]
+#![allow(clippy::unnecessary_to_owned)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::comparison_to_empty)]
+#![allow(clippy::derive_partial_eq_without_eq)]
+#![allow(clippy::expect_used)]
+#![allow(clippy::derive_ord_xor_partial_ord)]
+#![allow(clippy::redundant_pub_crate)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::use_self)]
+#![allow(clippy::implicit_hasher)]
+#![allow(clippy::match_like_matches_macro)]
 pub mod ai;
 pub mod analysis;
 pub mod api;

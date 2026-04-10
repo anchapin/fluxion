@@ -313,7 +313,7 @@ pub fn batch_cross_validate(
         .iter()
         .map(|&case_num| {
             ASHRAE140Case::from_case_id(&case_num.to_string())
-                .expect(&format!("Case {} not found", case_num))
+                .unwrap_or_else(|| panic!("Case {} not found", case_num))
         })
         .collect();
 
