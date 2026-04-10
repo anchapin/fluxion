@@ -1627,10 +1627,8 @@ mod tests {
         let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
 
         // Check decay pattern for X coefficients
-        let mut decays = true;
         for i in 1..coeffs.x.len().min(10) {
             if coeffs.x[i] > coeffs.x[i - 1] {
-                decays = false;
                 break;
             }
         }

@@ -1,6 +1,7 @@
-use fluxion::thermal::ThermalModelConfig;
+use fluxion::sim::ThermalModelBuilder;
 use fluxion::validation::performance::{PerformanceReport, PerformanceValidator};
 use fluxion::validation::ValidationSuite;
+use std::time::Duration;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("Fluxion Performance Validation Examples");
@@ -15,9 +16,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 3: Integrated validation
     example_integrated_validation()?;
 
-    // Example 4: Performance reporting
-    example_performance_reporting()?;
-
     Ok(())
 }
 
@@ -26,8 +24,7 @@ fn example_basic_performance_validation() -> Result<(), Box<dyn std::error::Erro
     println!("--------------------------------------");
 
     // Create a thermal model
-    let config = ThermalModelConfig::standard();
-    let model = fluxion::thermal::ThermalModel::new(config);
+    let model = ThermalModelBuilder::new(1).build()?;
 
     // Create performance validator
     let validator = PerformanceValidator::new(model);
@@ -38,19 +35,16 @@ fn example_basic_performance_validation() -> Result<(), Box<dyn std::error::Erro
     println!("Performance Report:");
     println!(
         "  Timestep Duration: {:.3} ms",
-        report.metrics.timestep_duration_ms
+        report.metrics.timestep_duration.as_secs_f64() * 1000.0
     );
-    println!(
-        "  Memory Usage: {} bytes",
-        report.metrics.memory_usage_bytes
-    );
+    println!("  Memory Usage: {} bytes", report.metrics.memory_usage);
     println!(
         "  Solver Iterations: {}",
         report.metrics.iterations_per_timestep
     );
     println!(
         "  Status: {}",
-        if report.metrics.timestep_duration_ms < 50.0 {
+        if report.metrics.timestep_duration.as_secs_f64() * 1000.0 < 50.0 {
             "PASS"
         } else {
             "WARN"
@@ -71,9 +65,12 @@ fn example_performance_comparison() -> Result<(), Box<dyn std::error::Error>> {
     let baseline = fluxion::validation::performance::comparative::ConfigurationResult {
         name: "baseline".to_string(),
         metrics: fluxion::validation::performance::PerformanceMetrics {
-            timestep_duration_ms: 45.2,
-            memory_usage_bytes: 8_500_000,
+            timestep_duration: Duration::from_secs_f64(45.2 / 1000.0),
+            memory_usage: 8_500_000,
             iterations_per_timestep: 15,
+            cpu_utilization: 0.0,
+            throughput_tps: 0.0,
+            zone_coupling_time: Duration::from_secs(0),
         },
         configuration: serde_json::json!({ "solver": "standard" }),
     };
@@ -82,9 +79,12 @@ fn example_performance_comparison() -> Result<(), Box<dyn std::error::Error>> {
     let optimized = fluxion::validation::performance::comparative::ConfigurationResult {
         name: "optimized".to_string(),
         metrics: fluxion::validation::performance::PerformanceMetrics {
-            timestep_duration_ms: 32.1,
-            memory_usage_bytes: 7_800_000,
+            timestep_duration: Duration::from_secs_f64(32.1 / 1000.0),
+            memory_usage: 7_800_000,
             iterations_per_timestep: 12,
+            cpu_utilization: 0.0,
+            throughput_tps: 0.0,
+            zone_coupling_time: Duration::from_secs(0),
         },
         configuration: serde_json::json!({ "solver": "optimized" }),
     };
@@ -124,7 +124,7 @@ fn example_integrated_validation() -> Result<(), Box<dyn std::error::Error>> {
     use fluxion::validation::performance::integration::IntegratedPerformanceValidator;
 
     // Create validation suite
-    let validation_suite = ValidationSuite::new(fluxion::validation::ValidationConfig::standard());
+    let validation_suite = ValidationSuite::new();
 
     // Create integrated validator
     let integrator = IntegratedPerformanceValidator::new(validation_suite);
@@ -134,7 +134,7 @@ fn example_integrated_validation() -> Result<(), Box<dyn std::error::Error>> {
 
     println!(
         "Standard Validation: {}",
-        if result.standard.passed {
+        if result.standard.passed() {
             "PASS"
         } else {
             "FAIL"
@@ -163,7 +163,7 @@ fn example_performance_reporting() -> Result<(), Box<dyn std::error::Error>> {
     use fluxion::validation::performance::finalization::PerformanceValidationFinalizer;
 
     // Create validation suite
-    let validation_suite = ValidationSuite::new(fluxion::validation::ValidationConfig::standard());
+    let validation_suite = ValidationSuite::new();
 
     // Create finalizer
     let finalizer = PerformanceValidationFinalizer::new(validation_suite);

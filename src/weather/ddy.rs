@@ -140,7 +140,7 @@ pub fn generate_design_day_hours(spec: &DesignDaySpec) -> Vec<HourlyWeatherData>
 /// Design day weather source parsed from DDY file.
 ///
 /// Provides heating and cooling design conditions for HVAC sizing.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DesignDaySource {
     /// Location name extracted from DDY file
     pub location: Option<String>,
@@ -148,16 +148,6 @@ pub struct DesignDaySource {
     pub heating_design: Option<DesignDaySpec>,
     /// Cooling design day specification
     pub cooling_design: Option<DesignDaySpec>,
-}
-
-impl Default for DesignDaySource {
-    fn default() -> Self {
-        Self {
-            location: None,
-            heating_design: None,
-            cooling_design: None,
-        }
-    }
 }
 
 impl DesignDaySource {

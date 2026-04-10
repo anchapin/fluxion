@@ -39,6 +39,12 @@ pub struct Case195Calibrator {
     // TODO: Add actual calibration state
 }
 
+impl Default for Case195Calibrator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Case195Calibrator {
     /// Create a new calibrator instance
     pub fn new() -> Self {

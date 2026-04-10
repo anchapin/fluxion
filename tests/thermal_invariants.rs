@@ -9,10 +9,6 @@ use proptest::prelude::*;
 
 const EPSILON: f64 = 1e-6;
 
-/// Property 1: Energy conservation across parameter changes
-///
-/// Verify that energy balance holds when applying random parameters.
-/// This is a simplified check that verifies energy changes are physically reasonable.
 proptest! {
     #[test]
     fn prop_energy_conservation(
@@ -56,8 +52,6 @@ proptest! {
 
 /// Property 2: Temperature bounds remain physical
 ///
-/// Verify that all temperatures stay within physically reasonable bounds
-/// after applying random loads and parameters
 proptest! {
     #[test]
     fn prop_temperature_bounds(
@@ -93,9 +87,6 @@ proptest! {
 }
 
 /// Property 3: Conductance consistency
-///
-/// Verify that conductances scale appropriately with U-values
-/// and maintain physical relationships
 proptest! {
     #[test]
     fn prop_conductance_consistency(
@@ -138,9 +129,6 @@ proptest! {
     }
 }
 
-/// Property 4: Vector field operations preserve size
-///
-/// Verify that VectorField arithmetic operations maintain correct dimensions
 proptest! {
     #[test]
     fn prop_vector_field_size_preservation(

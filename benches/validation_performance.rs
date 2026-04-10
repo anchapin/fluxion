@@ -89,7 +89,8 @@ fn bench_parallel_high_mass_validation(c: &mut Criterion) {
     group.bench_function("high_mass_parallel", |b| {
         b.iter(|| {
             let executor = fluxion::validation::performance::ParallelValidationExecutor::new();
-            executor.run_high_mass_parallel()
+            let cases = vec![]; // Add appropriate test cases here
+            executor.run_parallel(cases)
         });
     });
 
@@ -103,7 +104,8 @@ fn bench_parallel_high_mass_validation(c: &mut Criterion) {
                     let mut executor =
                         fluxion::validation::performance::ParallelValidationExecutor::new();
                     executor.chunk_size = cs;
-                    executor.run_high_mass_parallel()
+                    let cases = vec![]; // Add appropriate test cases here
+                    executor.run_parallel(cases)
                 });
             },
         );

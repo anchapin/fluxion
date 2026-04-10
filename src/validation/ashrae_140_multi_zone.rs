@@ -1060,14 +1060,14 @@ impl ASHRAE140MultiZoneValidator {
         ])?;
 
         // Case 960 data (placeholder - would be real data in full implementation)
-        writer.write_record(&["960", "Annual Heating", "12.5", "12.4", "0.1", "true"])?;
-        writer.write_record(&["960", "Annual Cooling", "8.5", "8.7", "-0.2", "true"])?;
-        writer.write_record(&["960", "Peak Heating", "5.1", "5.2", "-0.1", "true"])?;
-        writer.write_record(&["960", "Peak Cooling", "4.9", "4.8", "0.1", "true"])?;
+        writer.write_record(["960", "Annual Heating", "12.5", "12.4", "0.1", "true"])?;
+        writer.write_record(["960", "Annual Cooling", "8.5", "8.7", "-0.2", "true"])?;
+        writer.write_record(["960", "Peak Heating", "5.1", "5.2", "-0.1", "true"])?;
+        writer.write_record(["960", "Peak Cooling", "4.9", "4.8", "0.1", "true"])?;
 
         // Case 970 data (stub)
-        writer.write_record(&["970", "Annual Heating", "N/A", "N/A", "N/A", "N/A"])?;
-        writer.write_record(&["970", "Annual Cooling", "N/A", "N/A", "N/A", "N/A"])?;
+        writer.write_record(["970", "Annual Heating", "N/A", "N/A", "N/A", "N/A"])?;
+        writer.write_record(["970", "Annual Cooling", "N/A", "N/A", "N/A", "N/A"])?;
 
         writer.flush()?;
         Ok(())

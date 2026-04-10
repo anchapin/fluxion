@@ -794,11 +794,11 @@ fn test_cycling_losses_startup_penalty() {
     // (Note: May not have startup events in 100 timesteps depending on conditions)
     let startup_count = model.cycling_tracker.startup_count;
     // Allow for minimal cycling in short simulation
-    assert!(startup_count >= 0);
+    assert!(startup_count >= 0, "startup_count should be non-negative");
 
     // Verify cumulative runtime was tracked
     let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
-    assert!(runtime_hours >= 0.0);
+    assert!(runtime_hours >= 0.0, "runtime_hours should be non-negative");
 }
 
 /// Test minimum runtime constraint

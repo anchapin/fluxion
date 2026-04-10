@@ -77,6 +77,7 @@ use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 // Logging for verbosity control via RUST_LOG environment variable
 use log::{debug, info};
+
 use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]

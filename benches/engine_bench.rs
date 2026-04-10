@@ -42,7 +42,7 @@ fn bench_5r1c_single_config(c: &mut Criterion) {
 /// Benchmark 6R2C single configuration performance
 fn bench_6r2c_single_config(c: &mut Criterion) {
     let mut model = ThermalModel::<VectorField>::new(1);
-    model.configure_6r2c_model(0.75, 100.0);
+    model.configure_6r2c_model(0.75, 100.0, None);
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
     // Warm up
@@ -75,7 +75,7 @@ fn bench_6r2c_single_config_quick(c: &mut Criterion) {
     c.bench_function("6r2c_single_config_100steps", |b| {
         b.iter(|| {
             let mut model = ThermalModel::<VectorField>::new(1);
-            model.configure_6r2c_model(0.75, 100.0);
+            model.configure_6r2c_model(0.75, 100.0, None);
             let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
             // Use 100 timesteps for quick benchmarking
             model.solve_timesteps(100, &surrogates, false, None, None, None);
@@ -126,7 +126,7 @@ fn bench_6r2c_throughput(c: &mut Criterion) {
                 let mut total_energy = 0.0;
                 for params in population.iter() {
                     let mut model = ThermalModel::<VectorField>::new(1);
-                    model.configure_6r2c_model(0.75, 100.0);
+                    model.configure_6r2c_model(0.75, 100.0, None);
                     model.apply_parameters(params);
                     let surrogates =
                         SurrogateManager::new().expect("Failed to create SurrogateManager");
