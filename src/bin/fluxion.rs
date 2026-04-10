@@ -13,7 +13,6 @@ use fluxion::analysis::visualization::{
 use fluxion::cli::validation::ValidationSubcommand;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
-use fluxion::validation::automation::runner::run_test_automation;
 
 /// Automation subcommands for test workflows and CI/CD integration
 #[derive(Subcommand, Debug)]
@@ -529,7 +528,7 @@ fn handle_automation_command(command: &AutomationSubcommand) -> Result<()> {
             }
 
             // Create GitHub client
-            let client = GitHubClient::new(token.clone());
+            let _client = GitHubClient::new(token.clone());
 
             // Parse repository
             let repo_ref = repository

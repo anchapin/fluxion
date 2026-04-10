@@ -133,7 +133,7 @@ pub fn calculate_dew_point(dry_bulb: f64, relative_humidity: f64, _pressure: f64
             break;
         }
 
-        td = td - delta_p / derivative;
+        td -= delta_p / derivative;
     }
 
     // Physical constraint: dew point cannot exceed dry bulb temperature
@@ -289,7 +289,7 @@ pub fn calculate_wet_bulb(dry_bulb: f64, relative_humidity: f64, pressure: f64) 
             break;
         }
 
-        tw = tw - delta_h / derivative;
+        tw -= delta_h / derivative;
     }
 
     // Clamp to physical bounds

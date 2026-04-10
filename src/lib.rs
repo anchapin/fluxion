@@ -1188,11 +1188,7 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
-        Ok(Self::evaluate_population(
-            &self,
-            population,
-            use_surrogates,
-        )?)
+        Ok(Self::evaluate_population(self, population, use_surrogates)?)
     }
 
     /// Evaluate a population of building design configurations using BuildingParameters.
@@ -1238,7 +1234,7 @@ impl BatchOracle {
 
         // Call existing implementation
         Ok(Self::evaluate_population(
-            &self,
+            self,
             vec_population,
             use_surrogates,
         )?)

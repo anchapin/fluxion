@@ -1,5 +1,5 @@
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
-use fluxion::thermal::ThermalModel;
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use fluxion::thermal::thermal_model::ThermalModel;
 use fluxion::validation::performance::metrics::collect_performance_metrics;
 
 pub fn benchmark_thermal_solver(c: &mut Criterion) {
@@ -12,8 +12,7 @@ pub fn benchmark_thermal_solver(c: &mut Criterion) {
     });
 
     c.bench_function("thermal_solver_10_zones", |b| {
-        let config = ThermalModelConfig::multi_zone(10);
-        let mut model = ThermalModel::new(config);
+        let mut model = ThermalModel::new(10, 20.0);
         b.iter(|| {
             model.step(black_box(1.0));
         })

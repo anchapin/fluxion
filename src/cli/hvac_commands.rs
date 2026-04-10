@@ -300,7 +300,10 @@ mod tests {
         let result = handle_simulate(100, None);
         assert!(result.is_ok());
 
-        let result = handle_simulate(50, Some(PathBuf::from("/tmp/output.csv")));
+        // Use a temporary file for the test to avoid path issues on Windows
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_output.csv");
+        let result = handle_simulate(50, Some(output_path));
         assert!(result.is_ok());
     }
 }
