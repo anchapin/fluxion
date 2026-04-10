@@ -22,8 +22,8 @@ pub fn benchmark_thermal_solver(c: &mut Criterion) {
     // Memory benchmark
     c.bench_function("memory_benchmark_single_zone", |b| {
         b.iter(|| {
-            let model = ThermalModel::new(1);
-            let _metrics = collect_performance_metrics(&model);
+            let mut model = ThermalModel::new(1);
+            let _metrics = collect_performance_metrics(&mut model);
         })
     });
 
