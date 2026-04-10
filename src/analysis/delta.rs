@@ -549,7 +549,7 @@ fn generate_markdown_report(report: &DeltaReport, base: &SimulationResult) -> St
     // Add sweep statistics summary
     let sweep_summary = generate_sweep_statistics(&report);
     if !sweep_summary.is_empty() {
-        out.push_str("\n");
+        out.push('\n');
         out.push_str(&sweep_summary);
     }
 
@@ -611,7 +611,7 @@ fn generate_sweep_statistics(report: &DeltaReport) -> String {
             "| Peak Cooling (kW) | {:.3} | {:.3} |\n",
             mean_pc, std_pc
         ));
-        out.push_str("\n");
+        out.push('\n');
     }
 
     out

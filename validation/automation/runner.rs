@@ -282,7 +282,7 @@ impl TestRunner {
                             report,
                         ),
                     );
-                    combined_md.push_str("\n");
+                    combined_md.push('\n');
                 }
 
                 Ok(combined_md)

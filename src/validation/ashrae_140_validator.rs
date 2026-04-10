@@ -1519,7 +1519,7 @@ impl ASHRAE140Validator {
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let _hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
             // step_physics() returns kWh (energy for the timestep)
@@ -1598,8 +1598,8 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let mut _annual_heating_joules = 0.0;
+        let mut _annual_cooling_joules = 0.0;
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
@@ -1729,11 +1729,11 @@ impl ASHRAE140Validator {
             // step_physics() returns Watts (instantaneous power), not kWh
             // Convert Watts × 3600 seconds = Joules for hourly timesteps
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3600.0;
+                _annual_heating_joules += hvac_kwh * 3600.0;
                 let hvac_watts = hvac_kwh * 1000.0;
                 hourly_data.hvac_heating[0] = hvac_watts;
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3600.0;
+                _annual_cooling_joules += (-hvac_kwh) * 3600.0;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
                 hourly_data.hvac_cooling[0] = hvac_watts;
             }
@@ -2335,8 +2335,8 @@ pub fn validate_case_with_diagnostics(
     let weather = DenverTmyWeather::new();
 
     // Simulation state
-    let mut annual_heating_joules = 0.0;
-    let mut annual_cooling_joules = 0.0;
+    let mut _annual_heating_joules = 0.0;
+    let mut _annual_cooling_joules = 0.0;
     let mut peak_heating_watts: f64 = 0.0;
     let mut peak_cooling_watts: f64 = 0.0;
     let mut min_temp_celsius = f64::INFINITY;
@@ -2359,11 +2359,11 @@ pub fn validate_case_with_diagnostics(
 
         // Energy tracking: Convert kWh to Joules (1 kWh = 3.6e6 Joules)
         if hvac_kwh > 0.0 {
-            annual_heating_joules += hvac_kwh * 3.6e6;
+            _annual_heating_joules += hvac_kwh * 3.6e6;
             // Use model's built-in peak tracking (already in Watts)
             peak_heating_watts = peak_heating_watts.max(model.get_peak_heating_power_kw() * 1000.0);
         } else {
-            annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            _annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             // Use model's built-in peak tracking (already in Watts)
             peak_cooling_watts = peak_cooling_watts.max(model.get_peak_cooling_power_kw() * 1000.0);
         }
@@ -2378,8 +2378,8 @@ pub fn validate_case_with_diagnostics(
         }
     }
 
-    let annual_heating_mwh = annual_heating_joules / 3.6e9;
-    let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+    let annual_heating_mwh = _annual_heating_joules / 3.6e9;
+    let annual_cooling_mwh = _annual_cooling_joules / 3.6e9;
     let peak_heating_kw = peak_heating_watts / 1000.0;
     let peak_cooling_kw = peak_cooling_watts / 1000.0;
 

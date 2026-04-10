@@ -147,7 +147,7 @@ impl HighMassValidationReport {
             "- **Status:** {}\n",
             if self.passed { "PASS ✓" } else { "FAIL ✗" }
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Weather Summary
         output.push_str("## Weather Summary\n\n");
@@ -168,7 +168,7 @@ impl HighMassValidationReport {
             "- **Cooling Degree Days (18°C base):** {:.0}\n",
             self.weather_summary.cooling_degree_days
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Validation Metrics
         output.push_str("## Validation Metrics\n\n");
@@ -226,7 +226,7 @@ impl HighMassValidationReport {
             "| Max Error Cooling | {:.4} kWh | - | INFO |\n",
             self.metrics.max_error_cooling
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Thermal Mass Diagnostics
         output.push_str("## Thermal Mass Diagnostics\n\n");
@@ -246,7 +246,7 @@ impl HighMassValidationReport {
             "- **Classification:** {}\n",
             self.diagnostics.classify_thermal_mass()
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Construction Analysis
         output.push_str("## Construction Analysis\n\n");
@@ -274,7 +274,7 @@ impl HighMassValidationReport {
         }
         output
             .push_str("- **ISO 13790 Classification:** Heavy/Medium/Light based on thermal mass\n");
-        output.push_str("\n");
+        output.push('\n');
 
         // Overall Assessment
         output.push_str("## Overall Assessment\n\n");
@@ -293,7 +293,7 @@ impl HighMassValidationReport {
             output.push_str("Review the metrics above to identify areas where performance deviates from expectations.\n");
         }
 
-        output.push_str("\n");
+        output.push('\n');
 
         // Recommendations
         output.push_str("## Recommendations\n\n");
@@ -469,7 +469,7 @@ impl CombinedHighMassReport {
             "- **Mean CV(RMSE):** {:.2}%\n",
             self.summary.mean_cv_rmse
         ));
-        output.push_str("\n");
+        output.push('\n');
 
         // Individual case summaries
         output.push_str("## Case Results\n\n");
