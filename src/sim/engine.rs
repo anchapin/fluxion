@@ -5989,7 +5989,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::ThermalModel;
+    use super::{StepParameters, ThermalModel};
     use crate::ai::surrogate::SurrogateManager;
     use crate::physics::cta::VectorField;
     use crate::sim::schedule::DailySchedule;
