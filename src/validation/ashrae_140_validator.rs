@@ -1420,8 +1420,6 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
 
         // SESSION 32: Run simulation loop - model tracks energy internally
         for step in 0..STEPS {
@@ -1526,11 +1524,7 @@ impl ASHRAE140Validator {
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
             // step_physics() returns kWh (energy for the timestep)
             // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
+            // Note: These values are not used in final results - model tracks energy internally
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
@@ -1544,6 +1538,7 @@ impl ASHRAE140Validator {
 
         // SESSION 32: Use model's internally tracked (and corrected) annual energy
         // model tracks energy in kWh, convert to MWh for report
+        // Note: annual_heating_joules and annual_cooling_joules were accumulated but not used
         let annual_heating_mwh = model.annual_heating_energy / 1000.0;
         let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
 
@@ -2161,8 +2156,7 @@ impl ASHRAE140Validator {
 
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
-        let peak_heating_watts: f64 = 0.0;
-        let peak_cooling_watts: f64 = 0.0;
+        // Note: peak values come from model.peak_power_heating and model.peak_power_cooling
 
         // Set hvac_enabled per zone based on HVAC configuration
         let num_zones = model.num_zones;
