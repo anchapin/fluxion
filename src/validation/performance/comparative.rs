@@ -28,6 +28,7 @@ pub struct ComparativeAnalyzer {
     baseline_config: ConfigurationResult,
 }
 
+#[allow(dead_code)]
 impl ComparativeAnalyzer {
     pub fn new(baseline: ConfigurationResult) -> Self {
         Self {

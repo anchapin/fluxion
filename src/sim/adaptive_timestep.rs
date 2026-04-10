@@ -135,6 +135,7 @@ mod duration_serde {
 /// Calculates appropriate timestep sequence based on building thermal mass
 /// and time constant threshold.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct AdaptiveTimestepScheduler {
     /// Timestep mode configuration
     mode: TimestepMode,

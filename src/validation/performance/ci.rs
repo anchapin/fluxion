@@ -6,6 +6,7 @@ pub struct CiPerformanceValidator {
     threshold_percent: f64,
 }
 
+#[allow(dead_code)]
 impl CiPerformanceValidator {
     pub fn new(baseline_path: Option<String>) -> Self {
         Self {

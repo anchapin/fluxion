@@ -1295,6 +1295,7 @@ impl ASHRAE140Validator {
     }
 
     /// Convert ConstructionLayer to CTFMaterial for CTF solver.
+    #[allow(dead_code)]
     fn layer_to_ctf_material(layer: &crate::sim::construction::ConstructionLayer) -> CTFMaterial {
         CTFMaterial::new(
             &layer.name,

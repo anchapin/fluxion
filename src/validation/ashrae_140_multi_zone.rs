@@ -163,14 +163,12 @@ impl ASHRAE140MultiZoneValidator {
         let mut overall_status = ValidationStatus::Pass;
 
         // Validate zone temperatures at key timesteps
-        for (_timestep, expected_temps) in &reference.zone_temperatures {
+        for expected_temps in reference.zone_temperatures.values() {
             // In a real implementation, we would extract temperatures from the model
             // For now, we'll use placeholder values that should pass validation
             let actual_temps = vec![20.0, 18.5]; // Placeholder - would come from model
 
-            for (_zone_idx, (&expected_temp, &actual_temp)) in
-                expected_temps.iter().zip(actual_temps.iter()).enumerate()
-            {
+            for (&expected_temp, &actual_temp) in expected_temps.iter().zip(actual_temps.iter()) {
                 let error = (actual_temp - expected_temp).abs();
                 let _error_pct = (error / expected_temp) * 100.0;
 
@@ -518,6 +516,12 @@ mod tests {
     }
 }
 
+impl Default for Case960Validator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Case960Validator {
     /// Create a new Case 960 validator with default reference data
     pub fn new() -> Self {
@@ -826,6 +830,12 @@ impl Case960Validator {
     }
 }
 
+impl Default for Case970Validator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Case970Validator {
     /// Create a new Case 970 validator with default reference data
     pub fn new() -> Self {
@@ -961,7 +971,7 @@ impl ASHRAE140MultiZoneValidator {
 
         // Create placeholder temperature profiles
         let mut actual_temperatures = HashMap::new();
-        for (timestep, _) in &reference.zone_temperatures {
+        for timestep in reference.zone_temperatures.keys() {
             actual_temperatures.insert(*timestep, vec![20.0, 18.5]); // Placeholder values
         }
 
@@ -1036,7 +1046,7 @@ impl ASHRAE140MultiZoneValidator {
         let mut writer = Writer::from_path(file_path)?;
 
         // Write header
-        writer.write_record(&[
+        writer.write_record([
             "Case",
             "Metric",
             "Actual",

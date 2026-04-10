@@ -9,6 +9,7 @@ pub struct TestRunnerConfig {
     format: String,
 }
 
+#[allow(dead_code)]
 impl TestRunnerConfig {
     pub fn new(
         test_cases_dir: PathBuf,
@@ -31,6 +32,7 @@ pub struct TestRunner {
     config: TestRunnerConfig,
 }
 
+#[allow(dead_code)]
 impl TestRunner {
     pub fn new(config: TestRunnerConfig) -> Self {
         Self { config }
