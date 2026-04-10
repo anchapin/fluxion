@@ -69,7 +69,7 @@ impl CrossValidationAdapter for TRNSYSAdapter {
         reference: &ValidationResults,
     ) -> ComparisonReport {
         // TRNSYS may use slightly different tolerance guidelines
-        let tolerance = 0.12; // TRNSYS-specific tolerance
+        let _tolerance = 0.12; // TRNSYS-specific tolerance
         super::super::compare_results(fluxion, reference, self.tool_name())
     }
 

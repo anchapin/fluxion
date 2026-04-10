@@ -520,7 +520,7 @@ fn run_series_performance_profile(
     series: String,
     iterations: usize,
     output_dir: String,
-    parallel: usize,
+    _parallel: usize,
 ) -> Result<()> {
     let cases = parse_series(&series)?;
 
@@ -728,7 +728,7 @@ fn handle_validate_parallel_high_mass(
 }
 
 /// Handle high-mass report generation command
-fn handle_high_mass_report(output_dir: &str, json: bool, detailed: bool) -> Result<()> {
+fn handle_high_mass_report(output_dir: &str, json: bool, _detailed: bool) -> Result<()> {
     println!("Generating high-mass validation reports...");
 
     // Create output directory
@@ -946,7 +946,7 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             reference_file,
             output,
             tolerance,
-            detailed,
+            detailed: _,
         } => run_cross_validation(
             *case,
             tool.clone(),
@@ -991,9 +991,9 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
 
 /// Run Case 195 calibration
 fn run_case_195_calibration(
-    max_iterations: usize,
-    learning_rate: f64,
-    tolerance: f64,
+    _max_iterations: usize,
+    _learning_rate: f64,
+    _tolerance: f64,
     output_dir: &str,
 ) -> Result<()> {
     println!("Starting Case 195 calibration...");

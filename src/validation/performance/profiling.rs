@@ -8,7 +8,7 @@ use crate::validation::performance::metrics::PerformanceMetrics;
 use std::time::Instant;
 
 /// Profile a single validation case
-pub fn profile_case(case: ASHRAE140Case, iterations: usize) -> PerformanceMetrics {
+pub fn profile_case(_case: ASHRAE140Case, iterations: usize) -> PerformanceMetrics {
     let start_time = Instant::now();
 
     // TODO: Implement actual profiling logic
@@ -57,7 +57,7 @@ pub fn generate_detailed_performance_report(metrics: &[PerformanceMetrics]) -> s
 }
 
 /// Analyze performance bottlenecks
-pub fn analyze_bottlenecks(metrics: &[PerformanceMetrics]) -> serde_json::Value {
+pub fn analyze_bottlenecks(_metrics: &[PerformanceMetrics]) -> serde_json::Value {
     // TODO: Implement actual bottleneck analysis
     serde_json::json!({
         "bottlenecks": [],

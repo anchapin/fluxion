@@ -1898,7 +1898,6 @@ mod tests {
     #[test]
     fn test_batch_oracle_building_parameters_invalid() {
         use crate::api::parameters::BuildingParameters;
-        use pyo3::exceptions::PyRuntimeError;
 
         let oracle = BatchOracle::new().unwrap();
 

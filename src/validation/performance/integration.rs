@@ -5,7 +5,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Integration pattern verification
-pub fn validation_suite_integrate(suite: &ValidationSuite, report: &PerformanceReport) -> bool {
+pub fn validation_suite_integrate(suite: &ValidationSuite, _report: &PerformanceReport) -> bool {
     // Pattern: validation_suite::integrate
     // Verify that performance validation integrates properly with main validation suite
     suite.run_performance_validation().is_ok()

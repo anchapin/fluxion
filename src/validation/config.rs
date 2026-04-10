@@ -389,7 +389,9 @@ pub fn validate_constants(path: &str) -> ConfigValidationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
+    use crate::sim::assembly::{
+        AssemblyBuilder, ConcreteMaterial, InsulationMaterial, MaterialLayer,
+    };
 
     #[test]
     fn test_validation_result_passed() {

@@ -15,7 +15,7 @@ use fluxion::weather::denver::DenverTmyWeather;
 use serde_json;
 
 const EPSILON: f64 = 1e-10;
-const SQRT_2: f64 = 1.41421356237;
+const SQRT_2: f64 = std::f64::consts::SQRT_2;
 
 #[derive(Debug)]
 struct EnergyPlusReference {

@@ -305,7 +305,6 @@ impl ThermalMassReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::construction::ConstructionLayer;
 
     #[test]
     fn test_thermal_mass_properties_default() {

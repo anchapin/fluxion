@@ -306,7 +306,7 @@ pub fn run_validation_with_performance(
 /// Run multiple cases in parallel with performance monitoring
 pub fn run_validation_series_parallel(
     cases: &[ASHRAE140Case],
-    max_threads: Option<usize>,
+    _max_threads: Option<usize>,
 ) -> Vec<(
     ASHRAE140Case,
     crate::validation::ASHRAE140CaseDefinition,
@@ -450,7 +450,7 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
 
     // Create validator and run validation
     let mut validator = ASHRAE140Validator::new();
-    let (benchmark_report, diagnostic_report) =
+    let (benchmark_report, _diagnostic_report) =
         validator.validate_single_case_with_diagnostics(case);
 
     let duration = start_time.elapsed();

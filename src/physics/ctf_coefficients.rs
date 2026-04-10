@@ -332,7 +332,7 @@ impl<'a> CTFCalculator<'a> {
     /// Find a single pole using bisection on the real axis.
     ///
     /// Searches for s where |A(s)| is minimized (pole of 1/A(s)).
-    fn find_pole_bisection(&self, s_guess: f64, n: usize) -> f64 {
+    fn find_pole_bisection(&self, s_guess: f64, _n: usize) -> f64 {
         // Bracket the pole: search between s_guess/2 and s_guess*2
         let mut s_low = s_guess * 2.0;
         let mut s_high = s_guess / 2.0;
@@ -482,7 +482,7 @@ impl<'a> CTFCalculator<'a> {
         coeffs: &mut CTFCoefficients,
         poles: &[Complex64],
         residues: &[Complex64],
-        u_value: f64,
+        _u_value: f64,
     ) {
         let dt = self.timestep;
 
@@ -536,7 +536,7 @@ impl<'a> CTFCalculator<'a> {
         &self,
         coeffs: &mut CTFCoefficients,
         u_value: f64,
-        time_constant: f64,
+        _time_constant: f64,
     ) {
         // Calculate decay factor based on wall time constant
         // For multi-layer walls, use effective time constant

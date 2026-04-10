@@ -52,6 +52,13 @@ impl Default for Case960Benchmark {
 }
 
 impl Case960Benchmark {
+    /// Create a new Case960Benchmark with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+}
+
+impl Case960Benchmark {
     /// Check if a value is within tolerance
     /// Returns (within_tolerance, percentage_difference)
     pub fn within_tolerance(&self, actual: f64, reference: f64, tolerance: f64) -> (bool, f64) {

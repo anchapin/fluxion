@@ -116,7 +116,7 @@ impl Case960ReferenceImplementation {
         model.reset_peak_power();
 
         const STEPS: usize = 8760; // Annual simulation
-        let num_zones = model.num_zones;
+        let _num_zones = model.num_zones;
 
         // Initialize tracking variables
         let mut annual_heating_joules = 0.0;

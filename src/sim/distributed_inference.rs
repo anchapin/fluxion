@@ -491,7 +491,7 @@ impl Default for DistributedInferenceExecutor {
 pub async fn run_async_inference<F>(
     population: Vec<BuildingVariant>,
     max_concurrent: usize,
-    #[allow(unused_mut)] mut model_factory: F,
+    #[allow(unused_mut)] mut _model_factory: F,
 ) -> Vec<VariantResult>
 where
     F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync + 'static,

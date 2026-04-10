@@ -257,7 +257,7 @@ pub fn perform_cross_validation(
     case: ASHRAE140Case,
     tool: &str,
     reference_file: &Path,
-    tolerance: Option<f64>,
+    _tolerance: Option<f64>,
 ) -> Result<CrossValidationReport> {
     // Run Fluxion validation to get results
     let fluxion_results = crate::validation::ashrae140::run_validation(case)?;
@@ -306,7 +306,7 @@ pub fn batch_cross_validate(
     tool: &str,
     reference_dir: &str,
     output_dir: &str,
-    parallel: usize,
+    _parallel: usize,
 ) -> Result<BatchValidationSummary> {
     // Convert case numbers to ASHRAE140Case enum
     let case_enums: Vec<ASHRAE140Case> = cases

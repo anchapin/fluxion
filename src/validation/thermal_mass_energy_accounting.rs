@@ -274,7 +274,7 @@ pub fn validate_energy_balance_over_year(
     // Get initial energies
     let initial_mass_energy = calculate_mass_energy(model);
     let initial_zone_energy = calculate_zone_energy(model);
-    let initial_total_energy = initial_mass_energy + initial_zone_energy;
+    let _initial_total_energy = initial_mass_energy + initial_zone_energy;
 
     // Track previous energies for incremental change calculation
     let mut previous_mass_energy = initial_mass_energy;

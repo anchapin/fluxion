@@ -35,7 +35,7 @@ impl ComparativeAnalyzer {
         }
     }
 
-    pub fn add_configuration(&mut self, config: ConfigurationResult) {
+    pub fn add_configuration(&mut self, _config: ConfigurationResult) {
         // Store configuration for comparison
     }
 

@@ -92,7 +92,7 @@ impl ZoneControl {
     /// Determine HVAC status for a zone.
     fn determine_hvac_status(
         &self,
-        zone_id: usize,
+        _zone_id: usize,
         current_temp: f64,
         heating_setpoint: f64,
         cooling_setpoint: f64,

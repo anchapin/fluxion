@@ -823,7 +823,7 @@ where
     /// This is a shared helper for 5R1C and 6R2C models.
     fn prepare_solvers_and_sol_air(
         &mut self,
-        timestep: usize,
+        _timestep: usize,
         outdoor_temp: f64,
     ) -> (Vec<f64>, Option<Vec<f64>>, Option<Vec<f64>>) {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
@@ -1127,7 +1127,8 @@ impl ThermalModel<VectorField> {
                 }
             }
             // else: cool_start == cool_end means all-day operation, keep constant
-        } else if let (Some(_), Some((start, end))) = (hvac.setback_setpoint, hvac.setback_hours) {
+        } else if let (Some(_), Some((_start, _end))) = (hvac.setback_setpoint, hvac.setback_hours)
+        {
             // Partial setback info - use constant as fallback
             model.heating_schedule = DailySchedule::constant(hvac.heating_setpoint);
 
@@ -1662,7 +1663,7 @@ impl ThermalModel<VectorField> {
             // PHASE 34-02 FIX: Add floor contribution to h_tr_em
             // Floor construction also contributes to exterior-to-mass conductance
             let floor_construction = &spec.construction.floor;
-            let floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
+            let _floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
 
             // Calculate resistance from exterior to mass node for floor
             // For floor, exterior is typically ground, so we use a different approach
@@ -1804,14 +1805,14 @@ impl ThermalModel<VectorField> {
         model.night_ventilation = spec.night_ventilation;
 
         // Calculate total building floor area for HVAC capacity sizing
-        let mut total_floor_area = 0.0;
+        let mut _total_floor_area = 0.0;
         for zone_idx in 0..num_zones {
             let zone_floor_area = if zone_idx < spec.geometry.len() {
                 spec.geometry[zone_idx].floor_area()
             } else {
                 spec.geometry[0].floor_area()
             };
-            total_floor_area += zone_floor_area;
+            _total_floor_area += zone_floor_area;
         }
 
         // Solar gain distribution (ASHRAE 140 calibration)
@@ -1998,7 +1999,7 @@ impl ThermalModel<VectorField> {
 
         // Generate heating design day (extreme cold, no solar)
         let heating_design_temp = -15.0; // Typical heating design (Denver 99.6%)
-        let heating_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
+        let _heating_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
             .map(|hour| {
                 let hour_of_year = hour;
                 let hour_fraction = hour as f64 / 24.0;
@@ -2019,7 +2020,7 @@ impl ThermalModel<VectorField> {
 
         // Generate cooling design day (extreme hot, peak solar at midday)
         let cooling_design_temp = 34.4; // Typical cooling design (Denver 0.4%)
-        let cooling_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
+        let _cooling_design_hours: Vec<crate::weather::HourlyWeatherData> = (0..24)
             .map(|hour| {
                 let hour_of_year = hour;
                 let hour_fraction = hour as f64 / 24.0;
@@ -2775,7 +2776,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn update_optimization_cache(&mut self) {
         // Calculate the series conductance of h_tr_is and h_tr_ms
         // This represents the thermal resistance from interior air through interior surface to mass
-        let h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone())
+        let _h_tr_is_ms_series = (self.h_tr_is.clone() * self.h_tr_ms.clone())
             / (self.h_tr_is.clone() + self.h_tr_ms.clone());
 
         // h_ext = h_tr_em + h_tr_w + h_ve
@@ -4002,7 +4003,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use scalar setpoints instead of hourly schedules (Issue #???: HVAC schedule fix)
             // This ensures per-hour setpoint changes from validation loop are respected
             let heating_setpoint = self.heating_setpoint;
-            let cooling_setpoint = self.cooling_setpoint;
+            let _cooling_setpoint = self.cooling_setpoint;
 
             // Calculate free cooling if economizer is active
             use crate::sim::hvac::is_economizer_active;
@@ -4061,7 +4062,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 equipment.calculate_power(modulated_load, outdoor_temp, hvac_mode);
 
             // Apply cycling losses
-            let (efficiency_multiplier, startup_penalty) = self
+            let (efficiency_multiplier, _startup_penalty) = self
                 .cycling_tracker
                 .calculate_cycling_loss(electrical_power > 0.0, equipment.current_plr());
 
@@ -4203,8 +4204,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let advanced_c_joules = self.ctf_annual_cooling_joules + self.fd_annual_cooling_joules;
 
             // 5R1C component is the remainder
-            let r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
-            let r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
+            let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
+            let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
 
             // Apply correction ONLY to 5R1C component
             // Advanced solver component remains uncorrected (corr = 1.0)
@@ -4535,15 +4536,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let n = num_zones as f64;
 
             // For diagnostic, capture q_iz for first two zones before adding
-            let (mut dbg_q0, mut dbg_q1) = (0.0, 0.0);
+            let (mut _dbg_q0, mut _dbg_q1) = (0.0, 0.0);
             let slice = phi_ia_with_iz.as_mut();
             for i in 0..num_zones {
                 let q_iz = total_h_iz * (sum_t - n * temps[i]);
                 if i == 0 {
-                    dbg_q0 = q_iz;
+                    _dbg_q0 = q_iz;
                 }
                 if i == 1 {
-                    dbg_q1 = q_iz;
+                    _dbg_q1 = q_iz;
                 }
                 slice[i] += q_iz;
             }
@@ -4708,8 +4709,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let advanced_c_joules = self.ctf_annual_cooling_joules + self.fd_annual_cooling_joules;
 
             // 5R1C component is the remainder
-            let r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
-            let r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
+            let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
+            let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
 
             // Apply correction ONLY to 5R1C component
             // Advanced solver component remains uncorrected (corr = 1.0)
@@ -5153,7 +5154,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Internal loads are added to self.loads which will be used by step_physics
         let day_of_year = timestep / 24 + 1; // 1-indexed day of year
         let hour = timestep % 24;
-        let day_type = holiday::get_day_type(day_of_year);
+        let _day_type = holiday::get_day_type(day_of_year);
         let hour_of_week = (day_of_year - 1) % 7 * 24 + hour;
 
         let mut internal_convective = 0.0;

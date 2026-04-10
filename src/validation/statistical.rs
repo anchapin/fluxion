@@ -1452,8 +1452,7 @@ mod statistical_metrics_tests {
 
     #[test]
     fn test_statistical_metrics_aggregation() {
-        use crate::validation::report::{BenchmarkReport, ValidationStatus};
-        use std::collections::HashMap;
+        use crate::validation::report::ValidationStatus;
 
         // Create test report
         let mut report = BenchmarkReport::new();
@@ -1475,7 +1474,7 @@ mod statistical_metrics_tests {
 
     #[test]
     fn test_statistical_metrics_zero_exclusion() {
-        use crate::validation::report::{BenchmarkReport, ValidationStatus};
+        use crate::validation::report::ValidationStatus;
 
         // Create report with zero reference
         let mut report = BenchmarkReport::new();

@@ -90,7 +90,7 @@ impl HighMassValidationCase {
         let metrics = self.calculate_metrics(&simulation_results)?;
 
         // Run thermal mass diagnostics
-        let diagnostics = self.run_thermal_mass_diagnostics(&construction_layers)?;
+        let _diagnostics = self.run_thermal_mass_diagnostics(&construction_layers)?;
 
         // Determine pass/fail status
         let status = self.determine_status(&metrics);
@@ -623,7 +623,7 @@ fn create_case_900() -> HighMassValidationCase {
 
 #[cfg(test)]
 mod tests {
-    use super::ValidationTolerance;
+
     use super::*;
 
     #[test]
