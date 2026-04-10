@@ -50,6 +50,7 @@ pub struct Case960ReferenceImplementation {
     /// Reference data for validation
     reference: Case960Reference,
     /// Weather data for Denver
+    #[allow(dead_code)]
     weather: DenverTmyWeather,
 }
 

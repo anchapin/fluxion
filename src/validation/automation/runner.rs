@@ -2,10 +2,15 @@ use anyhow::Result;
 use std::path::PathBuf;
 
 pub struct TestRunnerConfig {
+    #[allow(dead_code)]
     test_cases_dir: PathBuf,
+    #[allow(dead_code)]
     output_dir: PathBuf,
+    #[allow(dead_code)]
     tolerance: f64,
+    #[allow(dead_code)]
     verbose: bool,
+    #[allow(dead_code)]
     format: String,
 }
 
@@ -29,6 +34,7 @@ impl TestRunnerConfig {
 }
 
 pub struct TestRunner {
+    #[allow(dead_code)]
     config: TestRunnerConfig,
 }
 

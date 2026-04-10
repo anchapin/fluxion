@@ -25,6 +25,7 @@ pub struct PerformanceDelta {
 }
 
 pub struct ComparativeAnalyzer {
+    #[allow(dead_code)]
     baseline_config: ConfigurationResult,
 }
 

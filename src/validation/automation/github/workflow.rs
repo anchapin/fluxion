@@ -4,6 +4,7 @@ use anyhow::Result;
 pub struct WorkflowGeneratorConfig {}
 
 pub struct WorkflowGenerator {
+    #[allow(dead_code)]
     config: WorkflowGeneratorConfig,
 }
 

@@ -1842,6 +1842,7 @@ pub struct ValidationSuite {
     /// Interpretation guidance for failed metrics
     interpretations: HashMap<String, Interpretation>,
     /// Validation configuration
+    #[allow(dead_code)]
     config: crate::validation::ValidationConfig,
 }
 

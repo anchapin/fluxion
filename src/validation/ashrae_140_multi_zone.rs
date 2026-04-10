@@ -27,12 +27,16 @@ use std::path::Path;
 /// like Case 960, 970, and 980.
 pub struct ASHRAE140MultiZoneValidator {
     /// Base ASHRAE 140 validator for single-zone cases
+    #[allow(dead_code)]
     base_validator: ASHRAE140Validator,
     /// Case 960 reference data
+    #[allow(dead_code)]
     case_960_reference: Option<Case960Reference>,
     /// Case 970 reference data (stub for future implementation)
+    #[allow(dead_code)]
     case_970_reference: Option<Case970Reference>,
     /// Case 980 reference data (stub for future implementation)
+    #[allow(dead_code)]
     case_980_reference: Option<Case960Reference>,
 }
 

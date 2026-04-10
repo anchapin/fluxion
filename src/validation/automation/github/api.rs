@@ -1,4 +1,5 @@
 pub struct GitHubClient {
+    #[allow(dead_code)]
     token: Option<String>,
 }
 

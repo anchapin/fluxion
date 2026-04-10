@@ -454,10 +454,10 @@ impl SurrogateManager {
             if !matches!(self.backend, InferenceBackend::CUDA) {
                 return false;
             }
-            match std::env::var("FLUXION_GPU").as_deref() {
-                Ok("0") | Ok("false") | Ok("") => false,
-                _ => true,
-            }
+            !matches!(
+                std::env::var("FLUXION_GPU").as_deref(),
+                Ok("0") | Ok("false") | Ok("")
+            )
         }
         #[cfg(not(feature = "cuda"))]
         {

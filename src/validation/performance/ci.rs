@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use std::process::Command;
 
 pub struct CiPerformanceValidator {
+    #[allow(dead_code)]
     baseline_path: Option<String>,
     threshold_percent: f64,
 }
