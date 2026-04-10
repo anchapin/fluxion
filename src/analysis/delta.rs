@@ -342,7 +342,9 @@ fn run_simulation(spec: &CaseSpec, collect_hourly: bool) -> Result<SimulationRes
             hourly.zone_temps = model.temperatures.as_slice().to_vec();
             hourly.mass_temps = model.mass_temperatures.as_slice().to_vec();
 
-            for zone_idx in 0..num_zones {
+            for (zone_idx, &internal_load_density) in
+                internal_loads_density.iter().enumerate().take(num_zones)
+            {
                 // Floor area
                 let floor_area = spec
                     .geometry
@@ -399,7 +401,7 @@ fn run_simulation(spec: &CaseSpec, collect_hourly: bool) -> Result<SimulationRes
                 hourly.solar_gains[zone_idx] = solar_wm2 * floor_area;
 
                 // Internal loads: convert from density back to total Watts
-                let internal_total = internal_loads_density[zone_idx] * floor_area;
+                let internal_total = internal_load_density * floor_area;
                 hourly.internal_loads[zone_idx] = internal_total;
             }
 
@@ -547,7 +549,7 @@ fn generate_markdown_report(report: &DeltaReport, base: &SimulationResult) -> St
     }
 
     // Add sweep statistics summary
-    let sweep_summary = generate_sweep_statistics(&report);
+    let sweep_summary = generate_sweep_statistics(report);
     if !sweep_summary.is_empty() {
         out.push('\n');
         out.push_str(&sweep_summary);
@@ -632,7 +634,7 @@ fn mean_std(values: &[f64]) -> (f64, f64) {
 /// Export hourly differences to a long-format CSV.
 fn export_hourly_deltas_csv(report: &DeltaReport, path: &Path) -> Result<()> {
     let mut wtr = WriterBuilder::new().has_headers(true).from_path(path)?;
-    wtr.write_record(&[
+    wtr.write_record([
         "Hour",
         "Zone",
         "Component",
@@ -644,7 +646,7 @@ fn export_hourly_deltas_csv(report: &DeltaReport, path: &Path) -> Result<()> {
     for variant in &report.variants {
         if let Some(ref deltas) = variant.hourly_differences {
             for d in deltas {
-                wtr.write_record(&[
+                wtr.write_record([
                     d.hour.to_string(),
                     d.zone.to_string(),
                     d.component.clone(),

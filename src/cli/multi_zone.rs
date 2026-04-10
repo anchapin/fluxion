@@ -152,7 +152,7 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     // Load or create configuration
     let config = if let Some(config_path) = &command.config {
         let config_content = std::fs::read_to_string(config_path)?;
-        if config_path.extension().map_or(false, |ext| ext == "json") {
+        if config_path.extension().is_some_and(|ext| ext == "json") {
             serde_json::from_str(&config_content)?
         } else {
             serde_yaml::from_str(&config_content)?
@@ -239,9 +239,16 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
                 print!("{}", csv_output);
             }
         }
-        "text" | _ => {
+        "text" => {
             println!("Multi-zone Simulation Results");
-            println!("================================");
+            println!("===============================");
+            println!("Number of zones: {}", command.zones);
+            println!("Total EUI: {:.2} kWh/m²/year", result);
+            println!("Surrogates used: {}", command.use_surrogates);
+        }
+        _ => {
+            println!("Multi-zone Simulation Results");
+            println!("===============================");
             println!("Number of zones: {}", command.zones);
             println!("Total EUI: {:.2} kWh/m²/year", result);
             println!("Surrogates used: {}", command.use_surrogates);
@@ -276,7 +283,7 @@ pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow:
                 });
                 println!("{}", serde_json::to_string_pretty(&output).unwrap());
             }
-            "text" | _ => {
+            _ => {
                 println!(
                     "Energy Conservation: {}",
                     if energy_result.is_ok() {

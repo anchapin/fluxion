@@ -167,7 +167,7 @@ fn run_ashrae140_performance_validation(
     let case_number = case.unwrap_or(900); // Default to Case 900
 
     // Load ASHRAE 140 case
-    let _ashrae_case = load_ashrae140_case(case_number)
+    load_ashrae140_case(case_number)
         .map_err(|e| format!("Failed to load ASHRAE 140 case {}: {}", case_number, e))?;
 
     // Create validation suite for this case

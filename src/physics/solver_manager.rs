@@ -191,8 +191,8 @@ impl SolverManager {
     /// # Returns
     ///
     /// Some(solver) if solver exists, None if not found
-    pub fn get_solver(&self, wall_index: usize) -> Option<&Box<dyn HeatConductionSolver>> {
-        self.solvers.get(&wall_index)
+    pub fn get_solver(&self, wall_index: usize) -> Option<&dyn HeatConductionSolver> {
+        self.solvers.get(&wall_index).map(|v| &**v)
     }
 
     /// Calculate heat flux through a wall.

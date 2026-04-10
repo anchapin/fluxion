@@ -54,7 +54,7 @@ pub fn export_swing_csv(
     path: &Path,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut wtr = Writer::from_path(path)?;
-    wtr.write_record(&[
+    wtr.write_record([
         "Case",
         "Min_Temp",
         "Max_Temp",
@@ -64,7 +64,7 @@ pub fn export_swing_csv(
         "Comfort_Percent",
     ])?;
     for m in metrics {
-        wtr.write_record(&[
+        wtr.write_record([
             &m.case_id,
             &format!("{:.2}", m.min_temp),
             &format!("{:.2}", m.max_temp),

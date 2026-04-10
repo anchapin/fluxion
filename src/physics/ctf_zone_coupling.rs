@@ -342,9 +342,7 @@ impl SimplifiedCtfCoupling {
         let t_si_est = t_zone + (q_ctf_initial - solar_interior) / effective_h;
 
         // Second pass with corrected T_si
-        let q_ctf_corrected = solver.step(t_si_est, t_sol_air);
-
-        q_ctf_corrected
+        solver.step(t_si_est, t_sol_air)
     }
 }
 

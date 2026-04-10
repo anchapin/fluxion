@@ -336,8 +336,7 @@ pub fn run_validation_series_parallel(
 /// Optimized version of validation using Arc for thread-safe data
 pub fn run_validation_optimized(case: ASHRAE140Case) -> crate::validation::ASHRAE140CaseDefinition {
     // Use Arc for thread-safe shared data where appropriate
-    let case_def = crate::validation::ashrae140::cases::build_case(case);
-    case_def
+    crate::validation::ashrae140::cases::build_case(case)
 }
 
 /// Select appropriate validation strategy based on case complexity

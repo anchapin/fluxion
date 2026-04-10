@@ -429,7 +429,7 @@ impl<'a> CTFCalculator<'a> {
             // Newton step: s_new = s - A(s)/A'(s)
             if da_ds.norm() > 1e-15 {
                 let delta = a_val / da_ds;
-                s = s - delta;
+                s -= delta;
 
                 // Check convergence
                 if delta.norm() < tol {
@@ -524,7 +524,7 @@ impl<'a> CTFCalculator<'a> {
         if let Some(&dominant_pole) = poles.first() {
             for j in 1..self.max_coeffs {
                 let exp_term = (dominant_pole * dt * (j as f64)).exp();
-                coeffs.phi[j] = exp_term.re.abs().min(1.0).max(0.0);
+                coeffs.phi[j] = exp_term.re.abs().clamp(0.0, 1.0);
             }
         }
     }
@@ -820,7 +820,7 @@ impl<'a> CTFCalculator<'a> {
         let y0 = coeffs.y[0].abs().max(1e-10);
         for j in 1..self.max_coeffs {
             // Φ coefficients decay based on thermal mass
-            coeffs.phi[j] = (coeffs.y[j] / y0).abs().min(1.0).max(0.0);
+            coeffs.phi[j] = (coeffs.y[j] / y0).abs().clamp(0.0, 1.0);
         }
 
         // Ensure Φ coefficients decay smoothly

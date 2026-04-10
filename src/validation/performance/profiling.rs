@@ -51,9 +51,8 @@ pub fn generate_performance_report(metrics: &[PerformanceMetrics]) -> serde_json
 
 /// Generate a detailed performance report from metrics
 pub fn generate_detailed_performance_report(metrics: &[PerformanceMetrics]) -> serde_json::Value {
-    let report = generate_performance_report(metrics);
     // Add detailed analysis
-    report
+    generate_performance_report(metrics)
 }
 
 /// Analyze performance bottlenecks

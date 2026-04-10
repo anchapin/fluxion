@@ -129,7 +129,7 @@ pub fn compute_metrics(design: &[Vec<f64>], outputs: &[f64]) -> SensitivityRepor
             metrics: Vec::new(),
         };
     }
-    let n_params = design.get(0).map(|row| row.len()).unwrap_or(0);
+    let n_params = design.first().map(|row| row.len()).unwrap_or(0);
     let mut param_metrics: Vec<(String, MetricSet)> = Vec::new();
 
     let y_mean = outputs.iter().copied().sum::<f64>() / n as f64;
@@ -213,7 +213,7 @@ pub fn compute_metrics(design: &[Vec<f64>], outputs: &[f64]) -> SensitivityRepor
 pub fn export_to_csv(report: &SensitivityReport, path: &Path) -> Result<()> {
     let mut wtr = Writer::from_path(path)?;
     // Write header
-    wtr.write_record(&[
+    wtr.write_record([
         "Rank",
         "Parameter",
         "NormalizedCoeff",

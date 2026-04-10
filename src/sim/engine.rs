@@ -1561,7 +1561,7 @@ impl ThermalModel<VectorField> {
                 && spec.case_id != "195"
             {
                 let tau_scaling = 4.0;
-                h_ms_total = h_ms_total / tau_scaling;
+                h_ms_total /= tau_scaling;
             }
 
             // Debug output for all contributions
@@ -1691,7 +1691,7 @@ impl ThermalModel<VectorField> {
                 && spec.case_id != "195"
             {
                 let tau_scaling = 1.5;
-                h_tr_em_total = h_tr_em_total / tau_scaling;
+                h_tr_em_total /= tau_scaling;
             }
 
             // Debug output for all contributions
