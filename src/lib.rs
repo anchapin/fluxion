@@ -76,10 +76,13 @@ pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 // Logging for verbosity control via RUST_LOG environment variable
+use log::{debug, info};
 use sim::engine::ThermalModel;
 
 #[cfg(feature = "python-bindings")]
-use crate::api::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
+use crate::api::{
+    BuildingParameters, FluxionErrorPy, SimulationError, SurrogateError, ValidationError,
+};
 
 #[cfg(feature = "python-bindings")]
 use crate::physics::cta::ContinuousTensor;
@@ -1228,7 +1231,10 @@ impl BatchOracle {
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
         // Convert BuildingParameters to Vec<Vec<f64>> for existing implementation
-        let vec_population: Vec<Vec<f64>> = population.iter().map(|p| p.to_vec()).collect();
+        let vec_population: Vec<Vec<f64>> = population
+            .iter()
+            .map(|p: &BuildingParameters| p.to_vec())
+            .collect();
 
         // Call existing implementation
         Ok(Self::evaluate_population(
