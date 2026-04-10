@@ -30,7 +30,7 @@ class TestASHRAE140Geometry:
             Dictionary with test results
         """
         project_root = Path(__file__).parent.parent.parent
-        cmd = ["cargo", "test", test_name, "--", "--nocapture", "--format", "json"]
+        cmd = ["cargo", "test", test_name, "--", "--nocapture"]
 
         result = subprocess.run(
             cmd,
