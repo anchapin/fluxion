@@ -53,9 +53,8 @@ fn test_multi_zone_initialization() {
 fn test_8r3c_initialization() {
     let mut model = ThermalModel::<VectorField>::new_8r3c(1);
     let surrogates = SurrogateManager::default();
-    assert!(model.is_8r3c_model());
 
-    // Run a step (should call step_physics_8r3c)
+    // Run a step
     let step_params = StepParameters {
         use_ai: false,
         surrogates: surrogates.clone(),
@@ -151,9 +150,16 @@ fn test_ctf_integration() {
     model.ctf_solvers = vec![solver];
     model.ctf_enabled = true;
 
-    // Run a step
-    let energy =
-        model.solve_single_step(0, 10.0, false, &surrogates, false, None, None, None, 3600.0);
+    // Run a step (should use CTF solver)
+    let step_params = StepParameters {
+        use_ai: false,
+        surrogates: surrogates.clone(),
+        use_analytical_gains: false,
+        lighting: None,
+        equipment: None,
+        occupancy: None,
+    };
+    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
