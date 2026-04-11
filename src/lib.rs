@@ -100,6 +100,7 @@ use crate::api::parameters::BuildingParameters;
 #[allow(unused_imports)]
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
+use log::{debug, info};
 #[cfg(feature = "python-bindings")]
 use ndarray::Array2;
 #[cfg(feature = "python-bindings")]
