@@ -2152,12 +2152,12 @@ impl ASHRAE140Validator {
                                                        // Update optimization cache after 6R2C configuration
         model.update_optimization_cache();
 
-        // Reset peak power tracking
+        // Reset energy and peak power tracking
         model.reset_peak_power();
+        model.reset_heating_cooling_energy();
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
         // Note: peak values come from model.peak_power_heating and model.peak_power_cooling
+        // energy values come from model.get_heating_energy_kwh() and model.get_cooling_energy_kwh()
 
         // Set hvac_enabled per zone based on HVAC configuration
         let num_zones = model.num_zones;
@@ -2173,15 +2173,7 @@ impl ASHRAE140Validator {
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
             model.set_weather(weather_data.clone());
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         }
 
         // Use model's internal peak tracking (more accurate than manual calculation)
@@ -2189,9 +2181,13 @@ impl ASHRAE140Validator {
         let peak_heating_kw = model.peak_power_heating / 1000.0;
         let peak_cooling_kw = model.peak_power_cooling / 1000.0;
 
-        let annual_heating_mwh = annual_heating_joules / 3.6e9;
-        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
-        // peak_heating_kw and peak_cooling_kw already set above from model's internal tracking
+        // Use model's internal energy tracking (applies proper calibration and correction factors)
+        let annual_heating_kwh = model.get_heating_energy_kwh();
+        let annual_cooling_kwh = model.get_cooling_energy_kwh();
+
+        let annual_heating_mwh = annual_heating_kwh / 1000.0; // Convert kWh to MWh
+        let annual_cooling_mwh = annual_cooling_kwh / 1000.0; // Convert kWh to MWh
+                                                              // peak_heating_kw and peak_cooling_kw already set above from model's internal tracking
 
         // Case 960: Convert thermal energy to electrical energy to match ASHRAE reference.
         // The reference values (EnergyPlus, ESP-r, TRNSYS) report HVAC electricity consumption.

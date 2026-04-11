@@ -65,12 +65,14 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
     // Verify multi-zone configuration
     assert_eq!(model.num_zones, 2, "Case 960 should have 2 zones");
 
-    let mut annual_heating_joules = 0.0;
-    let mut annual_cooling_joules = 0.0;
-    let mut peak_heating_watts: f64 = 0.0;
-    let mut peak_cooling_watts: f64 = 0.0;
+    // Reset energy tracking to ensure clean measurement
+    model.reset_heating_cooling_energy();
+    model.reset_peak_power();
 
     for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        // Set weather data for proper solar gain calculation
+        model.set_weather(weather_data.clone());
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Set weather data for proper solar gain calculation
         model.set_weather(weather_data.clone());
@@ -88,8 +90,8 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
     peak_cooling_watts = model.get_peak_cooling_power_kw() * 1000.0;
 
     (
-        annual_heating_joules / 3.6e9,
-        annual_cooling_joules / 3.6e9,
+        annual_heating_kwh / 1000.0, // Convert kWh to MWh
+        annual_cooling_kwh / 1000.0, // Convert kWh to MWh
         peak_heating_watts / 1000.0,
         peak_cooling_watts / 1000.0,
     )
