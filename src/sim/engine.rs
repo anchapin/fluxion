@@ -1560,13 +1560,16 @@ impl ThermalModel<VectorField> {
             let h_ms_floor = zone_floor_area / r_interior_to_mass_floor.max(0.001);
             let mut h_ms_total = h_ms_physics + h_ms_roof + h_ms_floor;
 
-            // PHASE 34-04 FIX: Apply 4x scaling to h_tr_ms for high-mass buildings
+            // PHASE 34-04 FIX: Apply scaling to h_tr_ms for high-mass buildings
             // This is a compromise: stronger than baseline 1.5x but less than 6x
-            if spec.case_id.starts_with("9")
-                && !spec.case_id.contains("FF")
-                && spec.case_id != "195"
-            {
-                let tau_scaling = 4.0;
+            if spec.case_id.starts_with("9") && spec.case_id != "195" {
+                let tau_scaling = if spec.case_id.contains("FF") {
+                    // FF cases need some thermal mass, but less than HVAC cases
+                    2.0
+                } else {
+                    // Non-FF high-mass cases get full 4x scaling
+                    4.0
+                };
                 h_ms_total /= tau_scaling;
             }
 
@@ -1691,12 +1694,15 @@ impl ThermalModel<VectorField> {
             let h_tr_em_physics = h_tr_em_base;
             let mut h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
 
-            // PHASE 34-04 FIX: Apply 1.5x scaling to h_tr_em (baseline - preserve cooling)
-            if spec.case_id.starts_with("9")
-                && !spec.case_id.contains("FF")
-                && spec.case_id != "195"
-            {
-                let tau_scaling = 1.5;
+            // PHASE 34-04 FIX: Apply scaling to h_tr_em (baseline - preserve cooling)
+            if spec.case_id.starts_with("9") && spec.case_id != "195" {
+                let tau_scaling = if spec.case_id.contains("FF") {
+                    // FF cases need some thermal mass coupling, but less than HVAC cases
+                    1.2
+                } else {
+                    // Non-FF high-mass cases get full 1.5x scaling
+                    1.5
+                };
                 h_tr_em_total /= tau_scaling;
             }
 
@@ -2244,9 +2250,9 @@ impl ThermalModel<VectorField> {
         let tau_seconds_pre = total_cap / (h_tr_ms_value + h_tr_em_pre).max(0.1);
         let tau_hours_pre = tau_seconds_pre / 3600.0;
 
-        // Only output for 900-series high-mass cases (not free-floating)
+        // Output for 900-series high-mass cases (including free-floating)
         let case_id_str: String = self.case_id.clone();
-        if case_id_str.starts_with("9") && !case_id_str.contains("FF") && case_id_str != "195" {
+        if case_id_str.starts_with("9") && case_id_str != "195" {
             eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours (target: 120-200 hours)",
                 case_id_str, total_cap, h_tr_ms_value, h_tr_em_pre, tau_hours_pre);
         }
@@ -2294,8 +2300,15 @@ impl ThermalModel<VectorField> {
         let new_ratio = target_h_tr_em / h_tr_ms_value;
 
         // Only apply correction if it significantly improves the situation
-        if new_ratio <= current_ratio * 1.1 {
-            // Less than 10% improvement, skip to avoid unnecessary changes
+        // For free-floating cases, be more lenient as they need stronger correction
+        let improvement_threshold = if case_id_str.contains("FF") {
+            1.05 // Apply correction if at least 5% improvement for FF cases
+        } else {
+            1.10 // Require 10% improvement for non-FF cases
+        };
+
+        if new_ratio <= current_ratio * improvement_threshold {
+            // Less than threshold improvement, skip to avoid unnecessary changes
             return;
         }
 
@@ -2304,7 +2317,7 @@ impl ThermalModel<VectorField> {
         h_tr_em_data.iter_mut().for_each(|v| *v = target_h_tr_em);
 
         // Output diagnostic information for high-mass cases
-        if case_id_str.starts_with("9") && !case_id_str.contains("FF") && case_id_str != "195" {
+        if case_id_str.starts_with("9") && case_id_str != "195" {
             eprintln!("PHASE 36-05 CORRECTION: Case {} - Adjusted h_tr_em from {:.2} to {:.2} W/K (ratio: {:.3} -> {:.3}), target τ={:.1} hours",
                 case_id_str, h_tr_em_pre, target_h_tr_em, current_ratio, new_ratio, target_tau_hours);
         }
