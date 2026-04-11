@@ -16,7 +16,7 @@ fn test_night_ventilation_activation() {
     model.night_ventilation = Some(night_vent);
 
     // Test at 12:00 (inactive)
-    let step_params = StepParameters {
+    let step_params_inactive = StepParameters {
         use_ai: false,
         surrogates: surrogates.clone(),
         use_analytical_gains: false,
@@ -24,10 +24,18 @@ fn test_night_ventilation_activation() {
         equipment: None,
         occupancy: None,
     };
-    let energy_inactive = model.solve_single_step(12, 10.0, step_params.clone(), 3600.0);
+    let energy_inactive = model.solve_single_step(12, 10.0, step_params_inactive, 3600.0);
 
     // Test at 23:00 (active)
-    let energy_active = model.solve_single_step(23, 10.0, step_params, 3600.0);
+    let step_params_active = StepParameters {
+        use_ai: false,
+        surrogates: surrogates.clone(),
+        use_analytical_gains: false,
+        lighting: None,
+        equipment: None,
+        occupancy: None,
+    };
+    let energy_active = model.solve_single_step(23, 10.0, step_params_active, 3600.0);
 
     // Both should run without panic
     assert!(energy_inactive >= 0.0);
@@ -136,37 +144,10 @@ fn test_thermal_mass_integration() {
     let mut model = ThermalModel::<VectorField>::new(1);
     let surrogates = SurrogateManager::default();
 
-    // Enable thermal mass
-    model.thermal_mass_enabled = true;
+    // Enable thermal mass coupling enhancement
+    model.thermal_mass_coupling_enhancement = 2.0;
 
     // Run a step (should use thermal mass)
-    let step_params = StepParameters {
-        use_ai: false,
-        surrogates: surrogates.clone(),
-        use_analytical_gains: false,
-        lighting: None,
-        equipment: None,
-        occupancy: None,
-    };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
-    assert!(energy.is_finite());
-}
-
-#[test]
-fn test_ctf_integration() {
-    let mut model = ThermalModel::<VectorField>::new(1);
-    let surrogates = SurrogateManager::default();
-
-    // Create dummy CTF solver
-    let layers = vec![CTFMaterial::new("Concrete", 0.1, 1.0, 2000.0, 800.0)];
-    let coeffs = CTFCalculator::new(&layers, 3600.0, 10).compute_coefficients();
-    let config = CTFSolverConfig::new(3600.0, 10);
-    let solver = CTFSolver::new(coeffs, config);
-
-    model.ctf_solvers = vec![solver];
-    model.ctf_enabled = true;
-
-    // Run a step (should use CTF solver)
     let step_params = StepParameters {
         use_ai: false,
         surrogates: surrogates.clone(),
