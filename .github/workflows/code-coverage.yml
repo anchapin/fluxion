@@ -21,21 +21,17 @@ jobs:
 
       - name: Generate coverage
         env:
-          # Keep the Nuclear Option for x86
           RUSTFLAGS: "-C target-cpu=x86-64"
         shell: bash
         run: |
-          # This ensures the step fails if tarpaulin fails, even with the pipe
           set -o pipefail
-
           cargo tarpaulin \
             --timeout 600 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
+            --features wiring-tracing \
             2>&1 | tee tarpaulin.log
-
-          # Verify coverage XML was generated
           ls -la cobertura.xml
       - name: Extract Physics Coverage
         if: success()

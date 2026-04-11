@@ -18,7 +18,7 @@ jobs:
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y libssl-dev pkg-config libfontconfig-dev
+        sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
