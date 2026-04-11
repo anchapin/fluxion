@@ -92,9 +92,9 @@ use ai::surrogate::SurrogateManager;
 
 use sim::engine::{StepParameters, ThermalModel};
 
+#[allow(unused_imports)]
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
-#[allow(unused_imports)]
 use log::{debug, info};
 #[cfg(feature = "python-bindings")]
 use ndarray::Array2;
