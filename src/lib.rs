@@ -92,6 +92,11 @@ use ai::surrogate::SurrogateManager;
 
 use sim::engine::{StepParameters, ThermalModel};
 
+#[cfg(feature = "python-bindings")]
+use crate::api::error::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
+#[cfg(feature = "python-bindings")]
+use crate::api::parameters::BuildingParameters;
+
 #[allow(unused_imports)]
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
