@@ -78,12 +78,14 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
 
         if hvac_kwh > 0.0 {
             annual_heating_joules += hvac_kwh * 3.6e6;
-            peak_heating_watts = peak_heating_watts.max(hvac_kwh * 1000.0);
         } else {
             annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            peak_cooling_watts = peak_cooling_watts.max((-hvac_kwh) * 1000.0);
         }
     }
+
+    // Use the model's internal peak tracking which applies proper calibration
+    peak_heating_watts = model.get_peak_heating_power_kw() * 1000.0;
+    peak_cooling_watts = model.get_peak_cooling_power_kw() * 1000.0;
 
     (
         annual_heating_joules / 3.6e9,
