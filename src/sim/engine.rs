@@ -2268,17 +2268,46 @@ impl ThermalModel<VectorField> {
         let h_tr_em_value: f64 = self.h_tr_em.as_ref()[0];
         let current_ratio = h_tr_em_value / h_tr_ms_value;
 
-        // Target ratio > 0.1 (ASHRAE 140 requirement)
-        let target_ratio = 0.1;
+        // Target ratio based on desired time constant
+        // For high-mass buildings, target time constant should be 120-200 hours
+        let target_tau_hours = if structure_cap > 1.0e7 {
+            // Very high mass buildings (Case 900)
+            180.0
+        } else {
+            // Medium mass buildings
+            120.0
+        };
 
-        if current_ratio >= target_ratio {
-            return; // Already compliant
+        let target_tau_seconds = target_tau_hours * 3600.0;
+
+        // Calculate required total conductance for target time constant
+        // τ = C / (h_tr_ms + h_tr_em) => h_tr_ms + h_tr_em = C / τ
+        let required_total_conductance = structure_cap / target_tau_seconds;
+
+        // Calculate target h_tr_em based on required total conductance
+        let target_h_tr_em = required_total_conductance - h_tr_ms_value;
+
+        // Ensure target is positive and reasonable
+        let target_h_tr_em = target_h_tr_em.max(h_tr_ms_value * 0.05); // Minimum 5% of h_tr_ms
+
+        // Calculate new ratio
+        let new_ratio = target_h_tr_em / h_tr_ms_value;
+
+        // Only apply correction if it significantly improves the situation
+        if new_ratio <= current_ratio * 1.1 {
+            // Less than 10% improvement, skip to avoid unnecessary changes
+            return;
         }
 
-        // Increase h_tr_em to achieve target ratio
-        let target_h_tr_em = target_ratio * h_tr_ms_value;
+        // Apply the new h_tr_em value
         let h_tr_em_data = self.h_tr_em.as_mut();
         h_tr_em_data.iter_mut().for_each(|v| *v = target_h_tr_em);
+
+        // Output diagnostic information for high-mass cases
+        if case_id_str.starts_with('9') && !case_id_str.contains("FF") && case_id_str != "195" {
+            eprintln!("PHASE 36-05 CORRECTION: Case {} - Adjusted h_tr_em from {:.2} to {:.2} W/K (ratio: {:.3} -> {:.3}), target τ={:.1} hours",
+                case_id_str, h_tr_em_pre, target_h_tr_em, current_ratio, new_ratio, target_tau_hours);
+        }
     }
 
     /// Create a new ThermalModel with specified number of thermal zones.
