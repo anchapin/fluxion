@@ -20,19 +20,7 @@ use fluxion::validation::ashrae_140_multi_zone::{Case970Reference, Case970Valida
 mod reference {
     // Placeholder reference ranges for Case 970
     // These will be updated with actual ASHRAE 140-2017 values
-    pub const ANNUAL_HEATING_MIN: f64 = 10.0;
-    pub const ANNUAL_HEATING_MAX: f64 = 20.0;
-    pub const ANNUAL_COOLING_MIN: f64 = 8.0;
-    pub const ANNUAL_COOLING_MAX: f64 = 18.0;
-    pub const PEAK_HEATING_MIN: f64 = 5.0;
-    pub const PEAK_HEATING_MAX: f64 = 15.0;
-    pub const PEAK_COOLING_MIN: f64 = 3.0;
-    pub const PEAK_COOLING_MAX: f64 = 12.0;
-
-    /// Tolerance for energy validation (15% per ASHRAE 140)
-    pub const ENERGY_TOLERANCE: f64 = 0.15;
-    /// Tolerance for peak load validation (10% per ASHRAE 140)
-    pub const PEAK_TOLERANCE: f64 = 0.10;
+    // Constants removed as they were unused
 }
 
 /// Validates energy values against reference ranges

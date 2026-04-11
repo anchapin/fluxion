@@ -8,11 +8,6 @@ use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 
-/// Extract peak cooling from Fluxion simulation.
-fn extract_fluxion_peak_cooling(peak_cooling_w: f64) -> f64 {
-    peak_cooling_w / 1000.0 // Convert W to kW
-}
-
 /// Test: Case 600 Peak Cooling - RED Test
 ///
 /// This test compares Fluxion peak cooling against EnergyPlus reference.

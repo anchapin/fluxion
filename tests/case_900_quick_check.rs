@@ -21,8 +21,7 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
     println!("Expected: 4.0 (symmetric thermal mass correction)");
 
     // Run 365 days (8760 hours)
-    let _heating_total_mwh = model.annual_heating_energy / 1000.0;
-    let _cooling_total_mwh = model.annual_cooling_energy / 1000.0;
+    // Removed unused variables
 
     for step in 0..8760 {
         if let Ok(weather_data) = weather.get_hourly_data(step) {

@@ -11,8 +11,6 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
-const EPSILON: f64 = 1e-10;
-
 #[cfg(test)]
 mod tests {
     use super::*;
