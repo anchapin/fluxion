@@ -44,8 +44,24 @@ fn test_multi_zone_initialization() {
     model.h_tr_iz = VectorField::new(vec![10.0, 10.0]);
 
     // Run a step
-    let energy =
-        model.solve_single_step(0, 10.0, false, &surrogates, false, None, None, None, 3600.0);
+    let step_params = StepParameters {
+        use_ai: false,
+        surrogates: surrogates.clone(),
+        use_analytical_gains: false,
+        lighting: None,
+        equipment: None,
+        occupancy: None,
+    };
+    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let step_params = StepParameters {
+        use_ai: false,
+        surrogates: surrogates.clone(),
+        use_analytical_gains: false,
+        lighting: None,
+        equipment: None,
+        occupancy: None,
+    };
+    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
@@ -173,8 +189,15 @@ fn test_hvac_equipment_integration() {
     model.hvac_equipment = Some(AnyEquipment::HeatPump(hp));
 
     // Run a step
-    let energy =
-        model.solve_single_step(0, 10.0, false, &surrogates, false, None, None, None, 3600.0);
+    let step_params = StepParameters {
+        use_ai: false,
+        surrogates: surrogates.clone(),
+        use_analytical_gains: false,
+        lighting: None,
+        equipment: None,
+        occupancy: None,
+    };
+    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
