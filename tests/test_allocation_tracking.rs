@@ -50,14 +50,15 @@ fn test_allocation_count_single_model() {
     println!("Completed single model allocation tracking test.");
 }
 
-/// Test: Measure allocation count for batch evaluation of 1000 configs.
+/// Test: Measure allocation count for batch evaluation of 100 configs.
 ///
-/// This uses BatchOracle to evaluate a population of 1000 configurations in parallel.
+/// This uses BatchOracle to evaluate a population of 100 configurations in parallel.
 /// It measures total allocations and computes average per config.
 ///
 /// Baseline target: Should scale linearly and not have pathological allocations.
+/// Reduced from 1000 to 100 to avoid timeout in CI coverage runs.
 #[test]
-fn test_allocation_count_batch_1000() {
+fn test_allocation_count_batch_100() {
     let _profiler = dhat::Profiler::new_heap();
 
     // Build BatchOracle
@@ -66,7 +67,7 @@ fn test_allocation_count_batch_1000() {
 
     // Generate synthetic population: [window_u_value, heating_setpoint, cooling_setpoint]
     let mut rng = StdRng::seed_from_u64(42);
-    let population: Vec<Vec<f64>> = (0..1000)
+    let population: Vec<Vec<f64>> = (0..100)
         .map(|_| {
             vec![
                 rng.gen_range(0.1..5.0),        // U-value
@@ -81,8 +82,8 @@ fn test_allocation_count_batch_1000() {
         .evaluate_population(population, false)
         .expect("Batch evaluation failed");
 
-    assert_eq!(results.len(), 1000);
+    assert_eq!(results.len(), 100);
 
     // dhat will automatically print allocation summary when _profiler drops.
-    println!("Completed batch allocation tracking test (1000 configs).");
+    println!("Completed batch allocation tracking test (100 configs).");
 }

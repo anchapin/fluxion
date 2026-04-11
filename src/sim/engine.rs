@@ -1441,7 +1441,7 @@ impl ThermalModel<VectorField> {
                 floor_u *= 2.0; // Increase ground coupling by 2x for more extreme temps
             }
 
-            let is_900_series_hvac = spec.case_id.starts_with('9')
+            let is_900_series_hvac = spec.case_id.starts_with("9")
                 && !spec.case_id.contains("FF")
                 && spec.case_id != "195";
             let h_tr_floor_val = if spec.case_id == "195" {
@@ -1484,7 +1484,7 @@ impl ThermalModel<VectorField> {
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
             // Determine target tau for diagnostics only (actual physics uses resistances)
-            let target_tau_hours = if spec.case_id.starts_with('9') && !spec.case_id.contains("FF")
+            let target_tau_hours = if spec.case_id.starts_with("9") && !spec.case_id.contains("FF")
             {
                 6.5
             } else {
@@ -1562,7 +1562,7 @@ impl ThermalModel<VectorField> {
 
             // PHASE 34-04 FIX: Apply 4x scaling to h_tr_ms for high-mass buildings
             // This is a compromise: stronger than baseline 1.5x but less than 6x
-            if spec.case_id.starts_with('9')
+            if spec.case_id.starts_with("9")
                 && !spec.case_id.contains("FF")
                 && spec.case_id != "195"
             {
@@ -1692,7 +1692,7 @@ impl ThermalModel<VectorField> {
             let mut h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
 
             // PHASE 34-04 FIX: Apply 1.5x scaling to h_tr_em (baseline - preserve cooling)
-            if spec.case_id.starts_with('9')
+            if spec.case_id.starts_with("9")
                 && !spec.case_id.contains("FF")
                 && spec.case_id != "195"
             {
@@ -1757,7 +1757,7 @@ impl ThermalModel<VectorField> {
         if spec.case_id.contains("FF") {
             let cap_factor = if spec.case_id == "900FF" {
                 0.3
-            } else if spec.case_id.starts_with('9') {
+            } else if spec.case_id.starts_with("9") {
                 0.15
             } else {
                 0.1
@@ -1884,7 +1884,7 @@ impl ThermalModel<VectorField> {
         model.solar_beam_to_mass_fraction = match spec.case_id.as_str() {
             "960" => 0.4, // Sunspace: 40% to mass
             // High-mass cases: orientation-dependent distribution
-            _ if spec.case_id.starts_with('9') => {
+            _ if spec.case_id.starts_with("9") => {
                 if has_south_windows && !has_ew_windows {
                     // Pure South windows (900, 910, 940, 950)
                     // Reduced from 0.7 to 0.25 to increase heating load
@@ -2065,7 +2065,7 @@ impl ThermalModel<VectorField> {
         //   - Before: solar_beam_to_mass_fraction=0.4 gave ~60% to surface, ~40% to mass (BACKWARDS)
         //   - After: solar_beam_to_mass_fraction=0.6 gives ~60% to mass, ~40% to surface (CORRECT)
         // This single fix reduces heating over-prediction for high-mass cases
-        if spec.case_id.starts_with('9') && spec.case_id != "960" {
+        if spec.case_id.starts_with("9") && spec.case_id != "960" {
             // For high-mass buildings: 75% envelope mass, 25% internal mass
             // Conductance between masses: 100 W/K (typical for concrete construction)
             // h_tr_ms defaults to 40% of ISO 13790 value for 6R2C
@@ -2246,7 +2246,7 @@ impl ThermalModel<VectorField> {
 
         // Only output for 900-series high-mass cases (not free-floating)
         let case_id_str: String = self.case_id.clone();
-        if case_id_str.starts_with('9') && !case_id_str.contains("FF") && case_id_str != "195" {
+        if case_id_str.starts_with("9") && !case_id_str.contains("FF") && case_id_str != "195" {
             eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours (target: 120-200 hours)",
                 case_id_str, total_cap, h_tr_ms_value, h_tr_em_pre, tau_hours_pre);
         }
@@ -2304,7 +2304,7 @@ impl ThermalModel<VectorField> {
         h_tr_em_data.iter_mut().for_each(|v| *v = target_h_tr_em);
 
         // Output diagnostic information for high-mass cases
-        if case_id_str.starts_with('9') && !case_id_str.contains("FF") && case_id_str != "195" {
+        if case_id_str.starts_with("9") && !case_id_str.contains("FF") && case_id_str != "195" {
             eprintln!("PHASE 36-05 CORRECTION: Case {} - Adjusted h_tr_em from {:.2} to {:.2} W/K (ratio: {:.3} -> {:.3}), target τ={:.1} hours",
                 case_id_str, h_tr_em_pre, target_h_tr_em, current_ratio, new_ratio, target_tau_hours);
         }
@@ -2834,7 +2834,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The 1.2 multiplier was making sensitivity too small, causing HVAC to over-estimate demand
         let h_tr_floor_val = self.h_tr_floor.as_ref()[0];
         let is_900_series_hvac =
-            self.case_id.starts_with('9') && !self.case_id.contains("FF") && self.case_id != "195";
+            self.case_id.starts_with("9") && !self.case_id.contains("FF") && self.case_id != "195";
         let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0
             && h_tr_floor_val > 0.0
             && is_900_series_hvac
@@ -4118,7 +4118,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Root cause: τ = 26h vs target 120-200h causes peak overestimation
             // Apply calibration: peak_power / calibration_factor
             let hvac_output_sum: f64 = hvac_output.as_ref().iter().sum::<f64>();
-            let peak_calibration = if self.case_id.starts_with('9')
+            let peak_calibration = if self.case_id.starts_with("9")
                 && !self.case_id.contains("FF")
                 && self.case_id != "195"
             {
@@ -4153,7 +4153,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if self.hvac_equipment.is_none() {
                 // Note: hvac_output_raw is positive for heating, negative for cooling
                 // TASK 2: Apply direct calibration factor for high-mass cases
-                let peak_calibration = if self.case_id.starts_with('9')
+                let peak_calibration = if self.case_id.starts_with("9")
                     && !self.case_id.contains("FF")
                     && self.case_id != "195"
                 {
@@ -4679,7 +4679,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Track peak for high-mass cases (6R2C model)
         // TASK 2: Apply direct calibration factor for high-mass cases
         // Root cause: τ = 26h vs target 120-200h causes peak overestimation
-        let peak_calibration = if self.case_id.starts_with('9')
+        let peak_calibration = if self.case_id.starts_with("9")
             && !self.case_id.contains("FF")
             && self.case_id != "195"
         {
