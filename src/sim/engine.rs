@@ -5101,6 +5101,20 @@ pub struct StepParameters {
 }
 
 impl StepParameters {
+    /// Clone the StepParameters, but set equipment to None since it can't be cloned
+    pub fn clone_for_test(&self) -> Self {
+        Self {
+            use_ai: self.use_ai,
+            surrogates: self.surrogates.clone(),
+            use_analytical_gains: self.use_analytical_gains,
+            lighting: self.lighting.clone(),
+            equipment: None, // Can't clone dyn Equipment
+            occupancy: self.occupancy.clone(),
+        }
+    }
+}
+
+impl StepParameters {
     /// Create a new StepParameters with default values
     pub fn new() -> Self {
         Self {
@@ -6847,28 +6861,16 @@ mod tests {
 
             // Run for a few steps
             for t in 0..24 {
-                model1.solve_single_step(
-                    t,
-                    outdoor_temp,
-                    false,
-                    &surrogates,
-                    false,
-                    None,
-                    None,
-                    None,
-                    3600.0,
-                );
-                model2.solve_single_step(
-                    t,
-                    outdoor_temp,
-                    false,
-                    &surrogates,
-                    false,
-                    None,
-                    None,
-                    None,
-                    3600.0,
-                );
+                let step_params = StepParameters {
+                    use_ai: false,
+                    surrogates: surrogates.clone(),
+                    use_analytical_gains: false,
+                    lighting: None,
+                    equipment: None,
+                    occupancy: None,
+                };
+                model1.solve_single_step(t, outdoor_temp, step_params.clone_for_test(), 3600.0);
+                model2.solve_single_step(t, outdoor_temp, step_params, 3600.0);
             }
 
             // Model with warm ground should have higher indoor temperature
@@ -6953,29 +6955,17 @@ mod tests {
 
             // Run for a few steps
             let outdoor_temp = 15.0;
+            let step_params = StepParameters {
+                use_ai: false,
+                surrogates: surrogates.clone(),
+                use_analytical_gains: false,
+                lighting: None,
+                equipment: None,
+                occupancy: None,
+            };
             for t in 0..24 {
-                model_cold.solve_single_step(
-                    t,
-                    outdoor_temp,
-                    false,
-                    &surrogates,
-                    false,
-                    None,
-                    None,
-                    None,
-                    3600.0,
-                );
-                model_warm.solve_single_step(
-                    t,
-                    outdoor_temp,
-                    false,
-                    &surrogates,
-                    false,
-                    None,
-                    None,
-                    None,
-                    3600.0,
-                );
+                model_cold.solve_single_step(t, outdoor_temp, step_params.clone_for_test(), 3600.0);
+                model_warm.solve_single_step(t, outdoor_temp, step_params.clone_for_test(), 3600.0);
             }
 
             // Models with different ground temperatures should have different indoor temps
