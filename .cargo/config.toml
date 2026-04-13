@@ -1,6 +1,12 @@
 # Increase stack size to prevent SIGSEGV during LTO compilation
-[build]
+[target.'cfg(target_os = "linux")']
 rustflags = ["-C", "link-arg=-Wl,-z,stack-size=16777216"]
+
+[target.'cfg(target_os = "macos")']
+rustflags = ["-C", "link-arg=-Wl,-stack_size,16777216"]
+
+[target.'cfg(target_os = "windows")']
+rustflags = ["-C", "link-args=/STACK:16777216"]
 
 # Also set RUST_MIN_STACK environment variable for the build process
 [env]
