@@ -69,6 +69,9 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
     model.reset_heating_cooling_energy();
     model.reset_peak_power();
 
+    let mut annual_heating_joules = 0.0;
+    let mut annual_cooling_joules = 0.0;
+
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         // Set weather data for proper solar gain calculation
@@ -85,9 +88,13 @@ fn simulate_case_960() -> (f64, f64, f64, f64) {
         }
     }
 
+    // Convert joules to kWh
+    let annual_heating_kwh = annual_heating_joules / 3.6e6;
+    let annual_cooling_kwh = annual_cooling_joules / 3.6e6;
+
     // Use the model's internal peak tracking which applies proper calibration
-    peak_heating_watts = model.get_peak_heating_power_kw() * 1000.0;
-    peak_cooling_watts = model.get_peak_cooling_power_kw() * 1000.0;
+    let peak_heating_watts = model.get_peak_heating_power_kw() * 1000.0;
+    let peak_cooling_watts = model.get_peak_cooling_power_kw() * 1000.0;
 
     (
         annual_heating_kwh / 1000.0, // Convert kWh to MWh
