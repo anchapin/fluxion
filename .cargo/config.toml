@@ -2,9 +2,6 @@
 [target.'cfg(target_os = "linux")']
 rustflags = ["-C", "link-arg=-Wl,-z,stack-size=16777216"]
 
-[target.'cfg(target_os = "macos")']
-rustflags = ["-C", "link-arg=-Wl,-stack_size,67108864"]
-
 [target.'cfg(target_os = "windows")']
 rustflags = ["-C", "link-args=/STACK:16777216"]
 
