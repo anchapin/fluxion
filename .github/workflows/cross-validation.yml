@@ -46,13 +46,13 @@ jobs:
 
       - name: Build project
         run: |
-          # Temporarily use debug mode due to Rust compiler issues with release builds
-          cargo build
+          # Build with wiring-tracing feature for integration tests
+          cargo build --features wiring-tracing
 
       - name: Run cross-validation tests
         run: |
-          # Temporarily use debug mode due to Rust compiler issues with release builds
-          cargo test -- --test-threads=1
+          # Run with wiring-tracing feature for integration tests
+          cargo test --features wiring-tracing -- --test-threads=1
 
       - name: Generate validation report
         run: cargo run --bin fluxion -- validate --format=markdown --output-file=validation_report.md
