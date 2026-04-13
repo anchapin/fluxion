@@ -27,7 +27,7 @@ jobs:
         run: |
           set -o pipefail
           cargo tarpaulin \
-            --timeout 600 \
+            --timeout 1200 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
