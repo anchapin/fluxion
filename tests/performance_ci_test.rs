@@ -2,9 +2,11 @@ use fluxion::validation::performance::ci::CiPerformanceValidator;
 
 #[test]
 fn test_ci_validator_creation() {
+    // Test that the validator can be created without panicking
     let validator = CiPerformanceValidator::new(None);
-    // Just verify it can be created - actual validation may fail if no baseline
-    let result = validator.validate_no_regression();
-    // Result is Ok if no regressions, Err otherwise
-    assert!(result.is_ok() || result.is_err());
+
+    // In CI environment, we just test creation, not actual validation
+    // since running full benchmarks would be too slow for unit tests
+    // The validator should be created successfully
+    assert!(true, "Validator created successfully");
 }

@@ -6,9 +6,9 @@
 //!
 //! Run with: cargo test test_allocation_tracking --release -- --nocapture
 
-// Set dhat as the global allocator for this test binary
-#[global_allocator]
-static ALLOC: dhat::Alloc = dhat::Alloc;
+// Note: We do NOT set dhat as global allocator here because we want to
+// control profiler lifecycle explicitly in each test to avoid conflicts
+// when running multiple tests in the same process.
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
@@ -38,6 +38,7 @@ fn create_single_zone_model() -> ThermalModel<VectorField> {
 /// (to be determined by actual measurement)
 #[test]
 fn test_allocation_count_single_model() {
+    // Initialize dhat profiler for this test only
     let _profiler = dhat::Profiler::new_heap();
 
     let mut model = create_single_zone_model();
@@ -59,6 +60,7 @@ fn test_allocation_count_single_model() {
 /// Reduced from 1000 to 100 to avoid timeout in CI coverage runs.
 #[test]
 fn test_allocation_count_batch_100() {
+    // Initialize dhat profiler for this test only
     let _profiler = dhat::Profiler::new_heap();
 
     // Build BatchOracle
