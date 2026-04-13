@@ -1422,7 +1422,12 @@ impl ASHRAE140Validator {
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
 
-        // SESSION 32: Run simulation loop - model tracks energy internally
+        // SESSION 32: Run simulation loop and accumulate energy manually
+        // Reset model's internal energy tracking to avoid interference with raw accumulation
+        model.reset_heating_cooling_energy();
+        let mut annual_heating_joules = 0.0;
+        let mut annual_cooling_joules = 0.0;
+
         for step in 0..STEPS {
             let hour_of_day = step % 24;
             let day_of_year = step / 24 + 1;
@@ -1520,12 +1525,31 @@ impl ASHRAE140Validator {
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
-            let _hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
             // step_physics() returns kWh (energy for the timestep)
             // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            // Note: These values are not used in final results - model tracks energy internally
+            // Use raw values to avoid double-correction from internal model tracking
+            if hvac_kwh > 0.0 {
+                annual_heating_joules += hvac_kwh * 3.6e6;
+            } else {
+                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            }
+
+            // Debug: Print energy values for Case 600
+            if spec.case_id == "600" && step == 8759 {
+                // Last step
+                println!(
+                    "DEBUG Case 600: raw_heating_joules={}, raw_cooling_joules={}",
+                    annual_heating_joules, annual_cooling_joules
+                );
+                println!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
+                println!(
+                    "DEBUG Case 600: correction_factor={}",
+                    model.time_constant_sensitivity_correction
+                );
+            }
 
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
