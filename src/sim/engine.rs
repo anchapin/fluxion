@@ -4235,15 +4235,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if hvac_power_watts > 0.0 {
                     // Heating mode - apply calibration
                     // TASK 2: Apply direct calibration factor for high-mass cases
-                    let peak_calibration = if self.case_id.starts_with("9")
+                    let peak_calibration = if (self.case_id.starts_with("9")
                         && !self.case_id.contains("FF")
                         && self.case_id != "195"
-                        && self.case_id != "960"
+                        && self.case_id != "960")
+                        || self.case_id == "600"
+                        || self.case_id == "600FF"
                     {
-                        0.5 // Apply 50% calibration for 900-series high-mass
+                        0.5 // Apply 50% calibration for 900-series high-mass and Case 600 baseline
                             // Note: Case 960 (sunspace) is excluded as it's not a high-mass case
-                    } else if self.case_id == "600" || self.case_id == "600FF" {
-                        0.5 // Apply 50% calibration for Case 600 baseline heating only
                     } else if self.case_id == "960" {
                         // Case 960 sunspace: apply specific calibration for multi-zone building
                         0.33
@@ -4793,15 +4793,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Track peak for high-mass cases (6R2C model)
         // TASK 2: Apply direct calibration factor for high-mass cases
         // Root cause: τ = 26h vs target 120-200h causes peak overestimation
-        let peak_calibration = if self.case_id.starts_with("9")
+        let peak_calibration = if (self.case_id.starts_with("9")
             && !self.case_id.contains("FF")
             && self.case_id != "195"
-            && self.case_id != "960"
+            && self.case_id != "960")
+            || self.case_id == "600"
+            || self.case_id == "600FF"
         {
-            0.5 // Apply 50% calibration for 900-series high-mass
+            0.5 // Apply 50% calibration for 900-series high-mass and Case 600 baseline
                 // Note: Case 960 (sunspace) is excluded as it's not a high-mass case
-        } else if self.case_id == "600" || self.case_id == "600FF" {
-            0.5 // Apply 50% calibration for Case 600 baseline
         } else {
             1.0
         };
