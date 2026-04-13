@@ -1,0 +1,7 @@
+# Increase stack size to prevent SIGSEGV during LTO compilation
+[build]
+rustflags = ["-C", "link-arg=-Wl,-z,stack-size=16777216"]
+
+# Also set RUST_MIN_STACK environment variable for the build process
+[env]
+RUST_MIN_STACK = "16777216"

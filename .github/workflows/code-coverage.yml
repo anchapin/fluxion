@@ -22,6 +22,7 @@ jobs:
       - name: Generate coverage
         env:
           RUSTFLAGS: "-C target-cpu=x86-64"
+          RUST_MIN_STACK: 16777216
         shell: bash
         run: |
           set -o pipefail
