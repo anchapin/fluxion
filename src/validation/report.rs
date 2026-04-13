@@ -2841,7 +2841,7 @@ mod tests {
     fn test_metric_type_display() {
         assert_eq!(
             MetricType::AnnualHeating.display_name(),
-            "Annual Heating (MWh)"
+            "Annual Heating Energy (MWh)"
         );
         assert_eq!(MetricType::AnnualCooling.units(), "MWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
@@ -3530,8 +3530,8 @@ mod tests {
 
         let deltas = report.delta_analysis("600");
         assert!(!deltas.is_empty());
-        assert!(deltas.contains_key("610 - Annual Heating (MWh)"));
-        assert!((deltas["610 - Annual Heating (MWh)"] - 0.5).abs() < 0.01);
+        assert!(deltas.contains_key("610 - Annual Heating Energy (MWh)"));
+        assert!((deltas["610 - Annual Heating Energy (MWh)"] - 0.5).abs() < 0.01);
     }
 
     #[test]
