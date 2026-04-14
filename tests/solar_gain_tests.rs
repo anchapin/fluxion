@@ -15,7 +15,6 @@
 // The tests rely on benchmarks/outputs/bestest_gsr/case_900/run/reference_data.json
 // which doesn't match the expected assertions
 
-#[ignore] // Temporarily ignored due to reference data mismatch
 use fluxion::weather::denver::DenverTmyWeather;
 use serde_json;
 

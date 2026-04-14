@@ -7,10 +7,10 @@
 "tu": "µs",
 "Mtu": "s",
 "tuth": 10,
-"cmd": "/var/tmp/vibe-kanban/worktrees/260c-fluxion-test-fai/fluxion/target/debug/deps/test_allocation_tracking-b1f78037c07e7a6c test_allocation_count_batch_100 --nocapture",
-"pid": 1706522,
+"cmd": "/var/tmp/vibe-kanban/worktrees/260c-fluxion-test-fai/fluxion/target/debug/deps/test_allocation_tracking-2009fcc5804bb957 --test-threads=1",
+"pid": 840972,
 "tg": 0,
-"te": 637476,
+"te": 34875,
 "pps": [],
 "ftbl": [
 "[root]"
