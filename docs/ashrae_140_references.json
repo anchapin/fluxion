@@ -1,4 +1,6 @@
 {
+  "version": "1.0.0",
+  "source": "ASHRAE 140 Reference Data",
   "cases": {
     "600": {
       "annual_cooling": {
