@@ -4,4 +4,9 @@
 # Make unmaintained warnings informational (non-blocking)
 informational_warnings = ["unmaintained"]
 # Ignore PyO3 0.22.6 buffer overflow (affects pyo3_0.22.6 which is pinned dependency)
-ignore = ["RUSTSEC-2025-0020"]
+ignore = [
+    "RUSTSEC-2025-0020",
+    # Transitive dependency through reqwest - update reqwest to fix
+    "RUSTSEC-2026-0098",
+    "RUSTSEC-2026-0099",
+]
