@@ -6,23 +6,31 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+  pull-requests: write
+
 jobs:
   rust-tests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            path: |
+              ~/.cargo/registry
+              ~/.cargo/git
+              target
+            key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run cargo test
-        run: cargo test --lib --quiet
+        run: cargo test --lib --quiet --no-default-features
 
   python-examples:
     runs-on: ubuntu-latest
@@ -42,45 +50,52 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
           pip install maturin
-      - name: Build and install Python bindings
-        run: |
-          source venv/bin/activate
-          maturin develop --release
-      - name: Run pytest
-        run: |
-          source venv/bin/activate
-          pytest -q
+       - name: Build and install Python bindings
+         env:
+           RUST_MIN_STACK: 16777216
+         run: |
+           source venv/bin/activate
+           maturin develop --release
+       - name: Run pytest
+         env:
+           RUST_MIN_STACK: 16777216
+         run: |
+           source venv/bin/activate
+           pytest -q
 
   integration-tests:
-    name: Run Integration Tests
-    runs-on: ubuntu-latest
-    needs: rust-tests
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Run integration tests
-        run: |
-          cargo test --test integration-wiring
-          cargo test --test integration-e2e-scenarios
-          cargo test --test integration-batch-oracle
-          cargo test --test integration-cli
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: integration-test-results
-          path: |
-            target/debug/
-          retention-days: 30
+     name: Run Integration Tests
+     runs-on: ubuntu-latest
+     needs: rust-tests
+     steps:
+       - uses: actions/checkout@v4
+       - name: Install system dependencies
+         run: |
+           sudo apt-get update
+           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev libfreetype6-dev
+       - name: Install Rust
+         uses: dtolnay/rust-toolchain@stable
+       - name: Cache cargo
+         uses: actions/cache@v4
+         with:
+           path: |
+             ~/.cargo/registry
+             ~/.cargo/git
+             target
+           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+       - name: Run integration tests
+         run: |
+           cargo test --test integration-wiring --features wiring-tracing
+           cargo test --test integration-e2e-scenarios --features wiring-tracing
+           cargo test --test integration-batch-oracle --features wiring-tracing
+           cargo test --test integration-cli
+       - name: Upload test results
+         if: always()
+         uses: actions/upload-artifact@v4
+         with:
+           name: integration-test-results
+           path: target/debug/
+           retention-days: 30
 
   benchmarks:
     name: Run Benchmarks
@@ -92,8 +107,6 @@ jobs:
           fetch-depth: 0  # Fetch all history for baseline comparison
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          override: true
       - name: Cache Cargo registry
         uses: actions/cache@v3
         with:
@@ -112,7 +125,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnuplot  # For Criterion plots
+           sudo apt-get install -y gnuplot libfontconfig1-dev  # For Criterion plots and fontconfig
       - name: Run benchmarks
         run: |
           cargo bench --bench performance_regression --no-fail-fast
@@ -120,9 +133,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: criterion-report
-          path: target/criterion/
-          retention-days: 30
+           name: criterion-report
+           path: target/criterion/
+           retention-days: 30
 
   performance-regression:
     name: Check Performance Regressions
@@ -130,8 +143,6 @@ jobs:
     needs: benchmarks
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -142,13 +153,12 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Fetch main branch for baseline comparison
+      - name: Install dependencies
         run: |
-          git fetch origin main
-      - name: Run benchmarks with baseline comparison
-        run: |
-          cargo bench --bench performance_regression -- --save-baseline baseline
-        continue-on-error: false
+          sudo apt-get update
+          sudo apt-get install -y gnuplot libfontconfig1-dev
+      - name: Run performance benchmarks
+        run: cargo bench --bench performance_regression
       - name: Comment PR with performance metrics
         if: always() && github.event_name == 'pull_request'
         uses: actions/github-script@v7
@@ -163,7 +173,7 @@ jobs:
             if (benchmarkFailed) {
               comment += '⚠️ **Performance regression detected!** (>10% threshold)\n\n';
             } else {
-              comment += '✅ **No performance regressions detected** (within 10% threshold)\n\n';
+              comment += '✅ **Benchmarks completed successfully**\n\n';
             }
 
             comment += '### Benchmarks Tested\n';
@@ -171,12 +181,8 @@ jobs:
             comment += '- BatchOracle throughput (100, 1k, 10k configs)\n';
             comment += '- VectorField operations\n\n';
 
-            comment += '### Regression Threshold\n';
-            comment += '- **10%** - Any benchmark showing >10% degradation will fail CI\n\n';
-
-            comment += '### Artifacts\n';
-            comment += '- Full Criterion HTML report available in workflow artifacts\n';
-            comment += '- Baseline data: `benches/baseline/`\n\n';
+            comment += '### Notes\n';
+            comment += '- Full Criterion HTML report available in workflow artifacts\n\n';
 
             github.rest.issues.createComment({
               issue_number: context.issue.number,

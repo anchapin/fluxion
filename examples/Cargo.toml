@@ -1,0 +1,8 @@
+[package]
+name = "fluxion-examples"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fluxion = { path = ".." }
+serde_json = "1.0"

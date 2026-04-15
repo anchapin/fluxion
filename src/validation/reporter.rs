@@ -715,7 +715,7 @@ impl ValidationReportGenerator {
                 false
             };
 
-            let cohens_d = if let Some(ref metrics) = report.statistical_metrics {
+            let _cohens_d = if let Some(ref metrics) = report.statistical_metrics {
                 metrics.cohens_d
             } else {
                 f64::NAN
@@ -1120,7 +1120,7 @@ mod tests {
         assert!(markdown.contains("## Multi-Reference Comparison"));
         assert!(markdown.contains("| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |"));
         assert!(markdown.contains(
-            "| 600 | Annual Heating (MWh) | PASS (6.00) | PASS (6.00) | WARN (6.00) | PASS |"
+            "| 600 | Annual Heating Energy (MWh) | PASS (6.00) | PASS (6.00) | WARN (6.00) | PASS |"
         ));
 
         // Extract the Multi-Reference Comparison section to verify 900FF not included
@@ -1323,11 +1323,11 @@ mod tests {
             .contains("**Note:** Applied separately within each validation group (α = 0.05)"));
 
         // Test 2: Verify metric names are displayed
-        assert!(formatted.contains("Annual Heating (MWh)"));
-        assert!(formatted.contains("Annual Cooling (MWh)"));
-        assert!(formatted.contains("Peak Heating (kW)"));
-        assert!(formatted.contains("Peak Cooling (kW)"));
-        assert!(formatted.contains("Min Free-Float Temp (°C)"));
+        assert!(formatted.contains("Annual Heating Energy (MWh)"));
+        assert!(formatted.contains("Annual Cooling Energy (MWh)"));
+        assert!(formatted.contains("Peak Heating Load (kW)"));
+        assert!(formatted.contains("Peak Cooling Load (kW)"));
+        assert!(formatted.contains("Minimum Free-Floating Temperature (°C)"));
 
         // Test 3: All corrected
         let all_corrected_p = vec![0.01, 0.02, 0.03];
@@ -1397,16 +1397,16 @@ mod tests {
             ValidationReportGenerator::format_bh_correction(&p_values, &corrected, &metric_types);
 
         // Verify all metrics appear
-        assert!(formatted.contains("Annual Heating (MWh)"));
-        assert!(formatted.contains("Peak Heating (kW)"));
-        assert!(formatted.contains("Annual Cooling (MWh)"));
-        assert!(formatted.contains("Peak Cooling (kW)"));
+        assert!(formatted.contains("Annual Heating Energy (MWh)"));
+        assert!(formatted.contains("Peak Heating Load (kW)"));
+        assert!(formatted.contains("Annual Cooling Energy (MWh)"));
+        assert!(formatted.contains("Peak Cooling Load (kW)"));
 
         // Verify ordering matches input
-        let annual_heating_pos = formatted.find("Annual Heating (MWh)").unwrap();
-        let peak_heating_pos = formatted.find("Peak Heating (kW)").unwrap();
-        let annual_cooling_pos = formatted.find("Annual Cooling (MWh)").unwrap();
-        let peak_cooling_pos = formatted.find("Peak Cooling (kW)").unwrap();
+        let annual_heating_pos = formatted.find("Annual Heating Energy (MWh)").unwrap();
+        let peak_heating_pos = formatted.find("Peak Heating Load (kW)").unwrap();
+        let annual_cooling_pos = formatted.find("Annual Cooling Energy (MWh)").unwrap();
+        let peak_cooling_pos = formatted.find("Peak Cooling Load (kW)").unwrap();
 
         assert!(annual_heating_pos < peak_heating_pos);
         assert!(peak_heating_pos < annual_cooling_pos);
@@ -2000,7 +2000,7 @@ mod tests {
         let metric_types = vec![MetricType::AnnualHeating];
         let output =
             ValidationReportGenerator::format_bh_correction(&p_values, &corrected, &metric_types);
-        assert!(output.contains("Annual Heating (MWh)"));
+        assert!(output.contains("Annual Heating Energy (MWh)"));
         assert!(output.contains("Metric 2"));
     }
 

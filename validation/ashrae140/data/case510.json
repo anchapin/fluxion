@@ -1,0 +1,13 @@
+{
+  "case510": {
+    "description": "Low mass with alternative orientation",
+    "annual_heating_min": 12.9,
+    "annual_heating_max": 13.9,
+    "annual_cooling_min": 8.4,
+    "annual_cooling_max": 9.2,
+    "peak_heating_min": 5.9,
+    "peak_heating_max": 6.6,
+    "peak_cooling_min": 4.3,
+    "peak_cooling_max": 5.0
+  }
+}

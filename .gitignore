@@ -126,6 +126,7 @@ src/validation/solar_diagnostics.rs
 tests/ashrae_140_*.rs
 !tests/ashrae_140_validation.rs
 !tests/ashrae_140_coverage.rs
+!tests/ashrae_140_case_970_validation.rs
 tests/ashrae_140_*/      # Test subdirectories
 tests/extract_hourly_*.rs
 tests/test_multi_*.rs
@@ -179,3 +180,4 @@ tools/energyplus_*.csv
 .planning/phases/
 .planning/debug/
 .planning/V07_RELEASE_DECISION.md
+case_900ff_profile_hourly.csv

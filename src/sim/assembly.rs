@@ -17,7 +17,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
 use std::fs;
-use std::path::Path;
 
 /// Material properties loaded from YAML
 #[derive(Debug, Deserialize)]

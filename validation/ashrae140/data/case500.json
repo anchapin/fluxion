@@ -1,0 +1,35 @@
+{
+  "case500": {
+    "description": "Low mass baseline with alternative construction",
+    "annual_heating_min": 12.5,
+    "annual_heating_max": 13.5,
+    "annual_cooling_min": 8.2,
+    "annual_cooling_max": 9.0,
+    "peak_heating_min": 5.8,
+    "peak_heating_max": 6.5,
+    "peak_cooling_min": 4.1,
+    "peak_cooling_max": 4.8
+  },
+  "case501": {
+    "description": "Low mass with north windows",
+    "annual_heating_min": 13.1,
+    "annual_heating_max": 14.2,
+    "annual_cooling_min": 7.8,
+    "annual_cooling_max": 8.6,
+    "peak_heating_min": 6.0,
+    "peak_heating_max": 6.8,
+    "peak_cooling_min": 3.9,
+    "peak_cooling_max": 4.5
+  },
+  "case699": {
+    "description": "Low mass with comprehensive HVAC integration",
+    "annual_heating_min": 10.2,
+    "annual_heating_max": 11.0,
+    "annual_cooling_min": 9.5,
+    "annual_cooling_max": 10.5,
+    "peak_heating_min": 4.8,
+    "peak_heating_max": 5.3,
+    "peak_cooling_min": 5.2,
+    "peak_cooling_max": 6.0
+  }
+}

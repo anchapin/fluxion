@@ -1,11 +1,31 @@
 [package]
 name = "fluxion"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
-description = "A differentiable, AI-accelerated Building Energy Modeling engine."
+description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
 repository = "https://github.com/anchapin/fluxion"
-license = "OTHER"
+license = "Apache-2.0"
+
+# Exclude large files/dirs from crate distribution - only src/ is needed
+# This reduces package from 79MB to ~4MB (well under 10MB crates.io limit)
+exclude = [
+    "refdata/",
+    "assets/",
+    "tests/",
+    "docs/",
+    ".github/",
+    ".githooks/",
+    ".planning/",
+    "tools/",
+    "benches/",
+    "examples/",
+    "Dockerfile",
+    "docker-compose.yml",
+    "delta_config.yaml",
+    "*.md",
+    "Cargo.lock",
+]
 
 [lib]
 name = "fluxion"
@@ -19,6 +39,13 @@ python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
 cuda = []
 # Feature flag for wiring tracing in integration tests (Plan 21-10)
 wiring-tracing = []
+# Feature flag for multi-zone support
+multi-zone = []
+# Feature flag for ASHRAE 140 v2021 support
+ashrae_140_v2021 = []
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
 
 [dependencies]
 # Core Logic
@@ -53,6 +80,11 @@ clap = { version = "4.5", features = ["derive"] }
 rayon = "1.10"
 tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time", "macros"] }
 parking_lot = "0.12"
+lazy_static = "1.4.0"
+num_cpus = "1.16"
+
+# Plotting for validation reports
+plotters = "0.3.5"
 
 # Random number generation for uncertainty quantification
 rand = "0.8"
@@ -116,11 +148,25 @@ path = "tools/fluxion_delta.rs"
 name = "export_csv"
 path = "src/bin/export_csv.rs"
 
+[[bin]]
+name = "run_multi_zone_validation"
+path = "src/bin/run_multi_zone_validation.rs"
+
 [profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 4
+split-debuginfo = "packed"
+strip = true
+
+# Optimize for CI: reduce memory usage during release builds
+# Use thin LTO and more codegen units to prevent OOM/SIGSEGV
+
+[profile.release-fast]
+inherits = "release"
 opt-level = 3
 lto = true
 codegen-units = 1
-split-debuginfo = "packed"
 strip = true
 
 # Explicitly include Phase 6 performance optimization test targets

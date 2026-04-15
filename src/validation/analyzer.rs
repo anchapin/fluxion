@@ -272,6 +272,7 @@ impl Analyzer {
     }
 
     /// Creates a new Analyzer with default configuration.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(AnalyzerConfig::default())
     }
@@ -464,25 +465,6 @@ mod tests {
     use super::*;
     use crate::validation::get_all_benchmark_data;
     use crate::validation::report::{BenchmarkReport, ValidationResult};
-
-    fn make_dummy_result(
-        case_id: &str,
-        metric: MetricType,
-        fluxion_value: f64,
-        ref_min: f64,
-        ref_max: f64,
-    ) -> ValidationResult {
-        ValidationResult {
-            case_id: case_id.to_string(),
-            metric,
-            fluxion_value,
-            ref_min,
-            ref_max,
-            percent_error: 0.0,             // computed internally
-            status: ValidationStatus::Pass, // will be determined
-            per_program: None,
-        }
-    }
 
     #[test]
     fn test_quality_metrics_basic() {
@@ -877,7 +859,7 @@ mod tests {
         let config = AnalyzerConfig {
             historical_data_path: None,
             generate_report: true,
-            output_path: Some(PathBuf::from("/nonexistent/path/metrics.md")),
+            output_path: Some(PathBuf::from("/nonexistent:<>/metrics.md")),
         };
         let analyzer = Analyzer::new(config);
 

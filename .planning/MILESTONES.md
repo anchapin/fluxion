@@ -1,10 +1,82 @@
 # Fluxion Milestones
 
+## v1.0 Multi-Zone Support (Shipped: 2026-04-07)
+
+**Phases completed:** 3 phases (M1-M3), 12 plans, 36 tasks
+
+**Key accomplishments:**
+
+1. **Multi-Zone Thermal Network Foundation:** Extended single-zone 5R1C thermal network to support N zones with inter-zone conductance and coupled ODE solver
+2. **Zone-Level HVAC Controls:** Implemented independent HVAC control per zone with zone-specific setpoints, Python bindings, and CLI support
+3. **ASHRAE 140 Multi-Zone Validation:** Comprehensive validation framework with Case 960 validation tests and Case 970 framework foundation
+4. **Energy Conservation:** Verified energy conservation within 1W tolerance across zones
+5. **Performance Maintenance:** Multi-zone simulation performance maintained at <50ms per timestep for 10-zone simulations
+6. **Full API Support:** Complete Python API and CLI support for multi-zone configuration and simulation
+
+**Statistics:**
+- Phases: 3 (M1-M3)
+- Plans: 12 total
+- Tasks: 36 total
+- Files modified: 50+
+- Lines of code: ~124,509 Rust lines
+- Timeline: 1 day (2026-04-06 → 2026-04-07)
+- Git range: Multiple commits across v1.0 development
+
+---
+
+## v1.1 ASHRAE 140 Completion (Partial) (Shipped: 2026-04-08)
+
+**Phases completed:** 1 phase (Phase 40), 9 plans, 27 tasks
+
+**Key accomplishments:**
+
+1. **ASHRAE 140 Case Expansion:** Extended support for Cases 800-810 (HVAC equipment validation) and 195-470 (diagnostic validation)
+2. **Extended Reference Database:** Comprehensive reference data infrastructure with 96,361 + 2,417,761 data rows and complete hourly coverage
+3. **Cross-Validation Framework:** Implemented EnergyPlus and TRNSYS adapters with trait-based architecture for ASHRAE 140 compliance verification
+4. **CLI Integration:** Enhanced command-line interface with validation execution and cross-validation commands
+5. **Performance Optimization:** Real performance monitoring with high-resolution timing, parallel processing, and bottleneck analysis
+6. **Validation Infrastructure:** Complete validation framework with comprehensive reporting and analysis capabilities
+
+**Statistics:**
+- Phases: 1 (Phase 40 only)
+- Plans: 9 total
+- Tasks: 27 total  
+- Files modified: 50+
+- Lines of code: ~124,509 Rust lines
+- Timeline: 2 months (2026-02-16 → 2026-04-08)
+- Git range: Multiple commits across Phase 40 development
+- Requirements completion: 6/16 (37.5%) - Partial completion with Phases 41-43 deferred to v1.2
+
+**Notes:**
+- Partial milestone completion: Only Phase 40 (Case Expansion Foundation) completed
+- Deferred work: Phases 41-43 (High-Mass Physics, Advanced Cross-Validation, Validation Optimization) moved to v1.2
+- Requirements status: 6 requirements completed, 10 requirements deferred
+
+---
+
+## v0.8.0 v0.8.0 (Shipped: 2026-04-07)
+
+**Phases completed:** 4 phases, 10 plans, 24 tasks
+
+**Key accomplishments:**
+
+- Issue
+- 1. [Scaling Calibration] Adjusted τ scaling factor
+- Phase 34 Status:
+- Adjusted thermal time constant τ and free-float capacitance for ASHRAE 140 peak loads and free-floating temperatures
+- ASHRAE 140 validation executed with 25% pass rate - Phase 34/35 fixes appear not fully integrated
+- Comprehensive documentation update for v0.8.0 release with peak load and free-float validation improvements
+- v0.8.0 release script created and verified with comprehensive publication automation
+- Gap Closure Status:
+
+---
+
 ## v0.4 ASHRAE 140 Compliance (Shipped: 2026-03-15)
 
 **Phases completed:** 20 phases, 138 plans, 187 tasks
 
 **Key accomplishments:**
+
 - Comprehensive test-driven test suite for all 5R1C thermal network conductances with placeholder implementations
 - ISO 13790-compliant 5R1C conductance calculations with TDD validation and all Plan 01 tests passing
 - Test infrastructure for directional conductance, Stefan-Boltzmann radiation, and stack effect ACH calculations
@@ -61,6 +133,7 @@ All requirements mapped to phases and validated through automated tests. **Howev
 **Status:** ❌ **NOT FIXED** — Fundamental 5R1C model limitation
 
 **Evidence (Case 900):**
+
 - Annual heating: **5.35 MWh** vs [1.17, 2.04] MWh reference (**262-322% above**)
 - Annual cooling: **4.75 MWh** vs [2.13, 3.67] MWh reference (**229-259% above**)
 - Peak heating: 2.10 kW ✅ (within [1.10, 2.10] kW)
@@ -115,6 +188,7 @@ All requirements mapped to phases and validated through automated tests. **Howev
 ### Next Steps
 
 **To reach v1.0, address:**
+
 1. Investigate 6R2C or 8R3C thermal network for high-mass buildings
 2. Fix Case 960 annual cooling failure (#273)
 3. Consider alternative integration methods or time step strategies

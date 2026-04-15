@@ -1,0 +1,13 @@
+{
+  "case504": {
+    "description": "Low mass with reduced infiltration",
+    "annual_heating_min": 11.5,
+    "annual_heating_max": 12.5,
+    "annual_cooling_min": 8.1,
+    "annual_cooling_max": 8.9,
+    "peak_heating_min": 5.4,
+    "peak_heating_max": 6.1,
+    "peak_cooling_min": 4.0,
+    "peak_cooling_max": 4.7
+  }
+}

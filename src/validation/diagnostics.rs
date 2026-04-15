@@ -42,6 +42,10 @@ pub struct SimulationDiagnostics {
     pub mass_temps: Vec<Vec<f64>>,
     /// Surface temperatures (°C) - interior surfaces (estimated)
     pub surface_temps: Vec<Vec<f64>>,
+    /// Outdoor temperatures (°C)
+    pub outdoor_temps: Vec<f64>,
+    /// Ground temperatures (°C)
+    pub ground_temps: Vec<f64>,
     /// Load breakdown per timestep (Watts)
     pub loads: LoadBreakdown,
     /// Cumulative energy accumulation (kWh)
@@ -86,6 +90,8 @@ impl SimulationDiagnostics {
             zone_temps: Vec::with_capacity(num_timesteps),
             mass_temps: Vec::with_capacity(num_timesteps),
             surface_temps: Vec::with_capacity(num_timesteps),
+            outdoor_temps: Vec::with_capacity(num_timesteps),
+            ground_temps: Vec::with_capacity(num_timesteps),
             loads: LoadBreakdown {
                 solar: Vec::with_capacity(num_timesteps),
                 internal: Vec::with_capacity(num_timesteps),
@@ -114,12 +120,14 @@ impl SimulationDiagnostics {
         // Header
         writeln!(
             writer,
-            "Hour,Zone_Temps,Mass_Temps,Surface_Temps,Solar_Watts,Internal_Watts,HVAC_Watts,InterZone_Watts,Infiltration_Watts"
+            "Hour,Outdoor_Temp,Ground_Temp,Zone_Temps,Mass_Temps,Surface_Temps,Solar_Watts,Internal_Watts,HVAC_Watts,InterZone_Watts,Infiltration_Watts"
         )?;
 
         // Data rows
         for i in 0..self.hours.len() {
             let hour = self.hours[i];
+            let outdoor_temp = self.outdoor_temps.get(i).copied().unwrap_or(0.0);
+            let ground_temp = self.ground_temps.get(i).copied().unwrap_or(0.0);
             let zone_temps_str = self
                 .zone_temps
                 .get(i)
@@ -208,8 +216,10 @@ impl SimulationDiagnostics {
 
             writeln!(
                 writer,
-                "{},{},{},{},{},{},{},{},{}",
+                "{},{:.2},{:.2},{},{},{},{},{},{},{},{}",
                 hour,
+                outdoor_temp,
+                ground_temp,
                 zone_temps_str,
                 mass_temps_str,
                 surface_temps_str,
@@ -269,10 +279,16 @@ impl SimulationDiagnostics {
         &mut self,
         hour: usize,
         model: &ThermalModel<T>,
+        outdoor_temp: f64,
+        ground_temp: f64,
     ) {
         trace!("Recording diagnostics for hour {}", hour);
         let num_zones = model.num_zones;
         self.hours.push(hour);
+
+        // Outdoor and Ground temperatures
+        self.outdoor_temps.push(outdoor_temp);
+        self.ground_temps.push(ground_temp);
 
         // Zone temperatures
         let zone_temps: Vec<f64> = model.temperatures.as_ref().to_vec();
@@ -661,9 +677,11 @@ mod tests {
         model.ceiling_height = VectorField::new(vec![2.5]);
 
         let mut diag = SimulationDiagnostics::new(1, 10);
-        diag.record_timestep(0, &model);
+        diag.record_timestep(0, &model, -5.0, 10.0);
 
         assert_eq!(diag.hours.len(), 1);
+        assert_eq!(diag.outdoor_temps[0], -5.0);
+        assert_eq!(diag.ground_temps[0], 10.0);
         assert_eq!(diag.zone_temps[0][0], 22.0);
         assert_eq!(diag.mass_temps[0][0], 21.0);
         assert_eq!(diag.loads.solar[0][0], 500.0); // 10.0 * 50.0

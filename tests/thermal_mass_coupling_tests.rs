@@ -9,9 +9,7 @@
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
-use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, ConstructionType};
-
-const EPSILON: f64 = 1e-10;
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 #[cfg(test)]
 mod tests {
@@ -64,7 +62,7 @@ mod tests {
     fn test_tau_calculation() {
         // For Case 900 (High-mass), τ = R_total * C_total should be roughly 70-80 hours
         let high_spec = ASHRAE140Case::Case900.spec();
-        let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
+        let _high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
         let total_r: f64 = high_spec
             .construction

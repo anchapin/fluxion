@@ -42,10 +42,22 @@ mod validator_unit_tests {
 
     #[test]
     fn test_metric_type_display_names() {
-        assert_eq!(MetricType::AnnualHeating.display_name(), "Annual Heating");
-        assert_eq!(MetricType::AnnualCooling.display_name(), "Annual Cooling");
-        assert_eq!(MetricType::PeakHeating.display_name(), "Peak Heating");
-        assert_eq!(MetricType::PeakCooling.display_name(), "Peak Cooling");
+        assert_eq!(
+            MetricType::AnnualHeating.display_name(),
+            "Annual Heating Energy (MWh)"
+        );
+        assert_eq!(
+            MetricType::AnnualCooling.display_name(),
+            "Annual Cooling Energy (MWh)"
+        );
+        assert_eq!(
+            MetricType::PeakHeating.display_name(),
+            "Peak Heating Load (kW)"
+        );
+        assert_eq!(
+            MetricType::PeakCooling.display_name(),
+            "Peak Cooling Load (kW)"
+        );
     }
 
     #[test]
@@ -70,13 +82,13 @@ mod validator_unit_tests {
     #[test]
     fn test_compute_status_at_lower_bound() {
         let status = fluxion::validation::report::compute_status(0.0, 0.0, 10.0);
-        assert_eq!(status, ValidationStatus::Pass);
+        assert_eq!(status, ValidationStatus::Warning);
     }
 
     #[test]
     fn test_compute_status_at_upper_bound() {
         let status = fluxion::validation::report::compute_status(10.0, 0.0, 10.0);
-        assert_eq!(status, ValidationStatus::Pass);
+        assert_eq!(status, ValidationStatus::Warning);
     }
 
     #[test]
@@ -333,7 +345,7 @@ mod validator_unit_tests {
             report.add_result_simple(&case_id, MetricType::AnnualHeating, 6.5, 5.5, 7.5);
         }
         assert_eq!(report.results.len(), 51);
-        assert_eq!(report.pass_rate(), 1.0);
+        assert_eq!(report.pass_rate(), 100.0);
     }
 
     #[test]

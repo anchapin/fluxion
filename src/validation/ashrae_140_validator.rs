@@ -1042,45 +1042,12 @@ impl ASHRAE140Validator {
                 // Target: Gradually reduce factors to 1.0 as physics improvements land.
 
                 // Session 78/79: Heating overprediction correction
-                // Root cause: Thermal mass coupling too weak, solar gains not properly
-                // distributed to mass surfaces, causing excessive HVAC heating demand.
-                // Target: Fix h_tr_em coupling factors, improve solar distribution.
-                let heating_correction = match partial.case_id.as_str() {
-                    // 900-series (high-mass, South windows): Severe overprediction
-                    "900" | "900FF" => 26.8, // 8.32/1.66 = 5.0x base + coupling factor
-                    "910" => 23.6,           // 8.61/1.90 = 4.5x base + coupling factor
-                    "940" | "940FF" => 31.5, // 6.56/1.10 = 6.0x base + setback coupling
-                    // 600-series (low-mass): Moderate overprediction
-                    "600" | "600FF" => 1.15, // 8.10/6.50 ≈ 1.25x
-                    "610" => 1.50,           // 8.23/5.00 ≈ 1.65x
-                    "620" | "630" => 1.25,   // ~7.5/5.5 ≈ 1.36x
-                    "640" => 1.60,           // 5.78/3.30 ≈ 1.75x
-                    // 900-series E/W windows
-                    "920" | "920FF" => 2.00, // 8.43/3.80 ≈ 2.2x
-                    "930" | "930FF" => 1.70, // 8.91/4.70 ≈ 1.9x
-                    _ => 1.0,
-                };
+                // Reset to 1.0 to measure Phase 30 physics fix performance
+                let heating_correction = 1.0;
 
                 // Session 78/79: Cooling underprediction correction
-                // Root cause: Solar gain distribution to zone air too low,
-                // CTF solver not fully coupled to zone air heat balance.
-                let cooling_correction = match partial.case_id.as_str() {
-                    // 900-series (high-mass, South windows): Severe underprediction
-                    "900" | "900FF" => 1.717, // 2.49/1.10 = 2.26x
-                    "910" => 1.50,            // 1.35/0.77 ≈ 1.75x
-                    "940" | "940FF" => 2.00,  // 2.82/1.10 ≈ 2.56x
-                    // 600-series (low-mass): Mild underprediction
-                    "600" | "600FF" => 1.30, // 8.00/5.43 ≈ 1.47x
-                    "610" => 1.0,            // Already in range
-                    "620" | "630" => 1.50,   // 3.00/2.00 ≈ 1.5x
-                    "640" => 1.20,           // 6.50/5.39 ≈ 1.2x
-                    // 900-series E/W windows: Severe underprediction
-                    "920" | "920FF" => 4.00, // 2.50/0.40 = 6.25x
-                    "930" | "930FF" => 5.00, // 1.50/0.22 = 6.8x
-                    // Night ventilation case
-                    "950" | "950FF" => 0.35, // Reduce cooling (night vent overactive)
-                    _ => 1.0,
-                };
+                // Reset to 1.0 to measure Phase 30 physics fix performance
+                let cooling_correction = 1.0;
 
                 // Apply corrections
                 if heating_correction != 1.0 && results.annual_heating_mwh > 0.0 {
@@ -1091,20 +1058,10 @@ impl ASHRAE140Validator {
                 }
 
                 // Session 69: Peak load corrections
-                // Root cause: Peak tracking uses instantaneous demand which doesn't
-                // account for thermal lag and mass buffering effects.
-                let peak_cooling_correction = match partial.case_id.as_str() {
-                    "920" | "920FF" => 0.65,
-                    "930" | "930FF" => 0.65,
-                    "940" | "940FF" => 0.70,
-                    "950" | "950FF" => 0.40,
-                    _ => 1.0,
-                };
+                // Reset to 1.0 to measure Phase 30 physics fix performance
+                let peak_cooling_correction = 1.0;
 
-                let peak_heating_correction = match partial.case_id.as_str() {
-                    "930" | "930FF" => 1.10,
-                    _ => 1.0,
-                };
+                let peak_heating_correction = 1.0;
 
                 if peak_cooling_correction != 1.0 {
                     results.peak_cooling_kw *= peak_cooling_correction;
@@ -1114,12 +1071,10 @@ impl ASHRAE140Validator {
                 }
 
                 // Session 70: Case 960 sunspace COP correction
-                // Root cause: Sunspace thermal buffering not fully captured by 6R2C model.
-                // The sunspace acts as a heat sink in winter (loses heat through 3 exterior walls)
-                // and provides buffering in summer. Effective COP differs from standard cases.
+                // Reset to 1.0 to measure Phase 30 physics fix performance
                 if partial.case_id == "960" {
-                    let cooling_cop = 2.2; // Session 70: 2.0→2.2 for sunspace buffering
-                    let heating_efficiency = 0.95;
+                    let cooling_cop = 1.0;
+                    let heating_efficiency = 1.0;
                     results.annual_heating_mwh /= heating_efficiency;
                     results.annual_cooling_mwh /= cooling_cop;
                 }
@@ -1340,6 +1295,7 @@ impl ASHRAE140Validator {
     }
 
     /// Convert ConstructionLayer to CTFMaterial for CTF solver.
+    #[allow(dead_code)]
     fn layer_to_ctf_material(layer: &crate::sim::construction::ConstructionLayer) -> CTFMaterial {
         CTFMaterial::new(
             &layer.name,
@@ -1465,10 +1421,13 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+
+        // SESSION 32: Run simulation loop and accumulate energy manually
+        // Reset model's internal energy tracking to avoid interference with raw accumulation
+        model.reset_heating_cooling_energy();
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
-        // SESSION 32: Run simulation loop - model tracks energy internally
         for step in 0..STEPS {
             let hour_of_day = step % 24;
             let day_of_year = step / 24 + 1;
@@ -1571,10 +1530,25 @@ impl ASHRAE140Validator {
             // SESSION 32: Accumulate HVAC energy from raw hvac_kwh
             // step_physics() returns kWh (energy for the timestep)
             // Convert kWh to Joules: kWh × 3.6e6 = Joules
+            // Use raw values to avoid double-correction from internal model tracking
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            }
+
+            // Debug: Print energy values for Case 600
+            if spec.case_id == "600" && step == 8759 {
+                // Last step
+                println!(
+                    "DEBUG Case 600: raw_heating_joules={}, raw_cooling_joules={}",
+                    annual_heating_joules, annual_cooling_joules
+                );
+                println!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
+                println!(
+                    "DEBUG Case 600: correction_factor={}",
+                    model.time_constant_sensitivity_correction
+                );
             }
 
             // Track min/max temperatures for free-floating cases
@@ -1587,13 +1561,15 @@ impl ASHRAE140Validator {
             }
         }
 
-        // Calculate energy from raw hvac_kwh (like validate_case_960 does)
-        let annual_heating_mwh = annual_heating_joules / 3.6e9;
-        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+        // SESSION 32: Use model's internally tracked (and corrected) annual energy
+        // model tracks energy in kWh, convert to MWh for report
+        // Note: annual_heating_joules and annual_cooling_joules were accumulated but not used
+        let annual_heating_mwh = model.annual_heating_energy / 1000.0;
+        let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
 
         CaseResults {
-            annual_heating_mwh, // Direct from hvac_kwh accumulation
-            annual_cooling_mwh, // Direct from hvac_kwh accumulation
+            annual_heating_mwh, // Now uses model's corrected value
+            annual_cooling_mwh, // Now uses model's corrected value
             // Issue #272: Use model's tracked peak power (in watts)
             peak_heating_kw: model.get_peak_heating_power_kw(),
             peak_cooling_kw: model.get_peak_cooling_power_kw(),
@@ -1647,8 +1623,8 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let mut _annual_heating_joules = 0.0;
+        let mut _annual_cooling_joules = 0.0;
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
@@ -1778,11 +1754,11 @@ impl ASHRAE140Validator {
             // step_physics() returns Watts (instantaneous power), not kWh
             // Convert Watts × 3600 seconds = Joules for hourly timesteps
             if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3600.0;
+                _annual_heating_joules += hvac_kwh * 3600.0;
                 let hvac_watts = hvac_kwh * 1000.0;
                 hourly_data.hvac_heating[0] = hvac_watts;
             } else {
-                annual_cooling_joules += (-hvac_kwh) * 3600.0;
+                _annual_cooling_joules += (-hvac_kwh) * 3600.0;
                 let hvac_watts = (-hvac_kwh) * 1000.0;
                 hourly_data.hvac_cooling[0] = hvac_watts;
             }
@@ -2200,13 +2176,12 @@ impl ASHRAE140Validator {
                                                        // Update optimization cache after 6R2C configuration
         model.update_optimization_cache();
 
-        // Reset peak power tracking
+        // Reset energy and peak power tracking
         model.reset_peak_power();
+        model.reset_heating_cooling_energy();
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
-        let mut peak_heating_watts: f64 = 0.0;
-        let mut peak_cooling_watts: f64 = 0.0;
+        // Note: peak values come from model.peak_power_heating and model.peak_power_cooling
+        // energy values come from model.get_heating_energy_kwh() and model.get_cooling_energy_kwh()
 
         // Set hvac_enabled per zone based on HVAC configuration
         let num_zones = model.num_zones;
@@ -2222,15 +2197,7 @@ impl ASHRAE140Validator {
         for step in 0..8760 {
             let weather_data = weather.get_hourly_data(step).unwrap();
             model.set_weather(weather_data.clone());
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-
-            // step_physics() returns kWh (energy for the timestep)
-            // Convert kWh to Joules: kWh × 3.6e6 = Joules
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         }
 
         // Use model's internal peak tracking (more accurate than manual calculation)
@@ -2238,9 +2205,13 @@ impl ASHRAE140Validator {
         let peak_heating_kw = model.peak_power_heating / 1000.0;
         let peak_cooling_kw = model.peak_power_cooling / 1000.0;
 
-        let annual_heating_mwh = annual_heating_joules / 3.6e9;
-        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
-        // peak_heating_kw and peak_cooling_kw already set above from model's internal tracking
+        // Use model's internal energy tracking (applies proper calibration and correction factors)
+        let annual_heating_kwh = model.get_heating_energy_kwh();
+        let annual_cooling_kwh = model.get_cooling_energy_kwh();
+
+        let annual_heating_mwh = annual_heating_kwh / 1000.0; // Convert kWh to MWh
+        let annual_cooling_mwh = annual_cooling_kwh / 1000.0; // Convert kWh to MWh
+                                                              // peak_heating_kw and peak_cooling_kw already set above from model's internal tracking
 
         // Case 960: Convert thermal energy to electrical energy to match ASHRAE reference.
         // The reference values (EnergyPlus, ESP-r, TRNSYS) report HVAC electricity consumption.
@@ -2385,8 +2356,8 @@ pub fn validate_case_with_diagnostics(
     let weather = DenverTmyWeather::new();
 
     // Simulation state
-    let mut annual_heating_joules = 0.0;
-    let mut annual_cooling_joules = 0.0;
+    let mut _annual_heating_joules = 0.0;
+    let mut _annual_cooling_joules = 0.0;
     let mut peak_heating_watts: f64 = 0.0;
     let mut peak_cooling_watts: f64 = 0.0;
     let mut min_temp_celsius = f64::INFINITY;
@@ -2409,11 +2380,11 @@ pub fn validate_case_with_diagnostics(
 
         // Energy tracking: Convert kWh to Joules (1 kWh = 3.6e6 Joules)
         if hvac_kwh > 0.0 {
-            annual_heating_joules += hvac_kwh * 3.6e6;
+            _annual_heating_joules += hvac_kwh * 3.6e6;
             // Use model's built-in peak tracking (already in Watts)
             peak_heating_watts = peak_heating_watts.max(model.get_peak_heating_power_kw() * 1000.0);
         } else {
-            annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+            _annual_cooling_joules += (-hvac_kwh) * 3.6e6;
             // Use model's built-in peak tracking (already in Watts)
             peak_cooling_watts = peak_cooling_watts.max(model.get_peak_cooling_power_kw() * 1000.0);
         }
@@ -2428,8 +2399,8 @@ pub fn validate_case_with_diagnostics(
         }
     }
 
-    let annual_heating_mwh = annual_heating_joules / 3.6e9;
-    let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+    let annual_heating_mwh = _annual_heating_joules / 3.6e9;
+    let annual_cooling_mwh = _annual_cooling_joules / 3.6e9;
     let peak_heating_kw = peak_heating_watts / 1000.0;
     let peak_cooling_kw = peak_cooling_watts / 1000.0;
 
@@ -2531,7 +2502,7 @@ pub fn validate_case_with_diagnostics(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
+    use crate::validation::report::{MetricType, ValidationStatus};
 
     #[test]
     fn test_validator_creation() {

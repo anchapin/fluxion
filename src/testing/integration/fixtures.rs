@@ -376,7 +376,7 @@ mod tests {
 
         let tracer = Arc::new(WiringTracer::new());
         let scenario = BuildingScenario::new().with_tracer(tracer.clone());
-        let model = scenario.create_model();
+        let _model = scenario.create_model();
 
         tracer.record_call("test_function");
         assert!(tracer.verify_called(&["test_function"]));

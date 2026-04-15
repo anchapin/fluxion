@@ -119,7 +119,7 @@ class TestASHRAE140PeakLoads:
                 return {
                     "peak_heating_w": 2200,  # Slightly higher than reference
                     "peak_cooling_w": 1750,  # Slightly lower than reference
-                    "peak_heating_hour": 5000,  # Winter hour
+                    "peak_heating_hour": 8016,  # Winter hour (December 1st)
                     "peak_cooling_hour": 4500,  # Summer hour
                 }
             else:
