@@ -212,6 +212,7 @@ fn save_report(
 }
 
 /// Generate Markdown formatted report
+#[allow(deprecated)]
 pub fn generate_markdown_report(result: &EspRCliResult) -> Result<String, Box<dyn Error>> {
     let timestamp = chrono::NaiveDateTime::from_timestamp_opt(result.timestamp as i64, 0)
         .unwrap()

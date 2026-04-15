@@ -149,6 +149,7 @@ pub fn generate_test_report(
 }
 
 /// Generate Markdown formatted test report
+#[allow(deprecated)]
 fn generate_markdown_test_report(test_result: &EspRTestResult) -> Result<String, Box<dyn Error>> {
     let timestamp = chrono::NaiveDateTime::from_timestamp_opt(test_result.timestamp as i64, 0)
         .unwrap()
