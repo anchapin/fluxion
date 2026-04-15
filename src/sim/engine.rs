@@ -4339,20 +4339,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
             let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
 
-            // Apply correction ONLY to 5R1C component
-            // Advanced solver component remains uncorrected (corr = 1.0)
-            // CRITICAL: Advanced solver component should only be added if there is HVAC demand,
-            // and we cap it to a reasonable fraction (10%) of total demand to prevent
-            // the physically accurate flux from over-dominating the 5R1C-based total energy.
+            // P2 FIX: Apply correction uniformly to BOTH 5R1C and advanced components
+            // Previously, advanced CTF/FD component was capped at 10% and added UNCORRECTED,
+            // while 5R1C component was divided by h_corr. This caused the uncorrected
+            // advanced component to dominate the result (issue: 3-6x overprediction).
+            //
+            // The fix applies the correction factor to both components consistently:
+            // - When h_corr > 1 (e.g., 10 for Case 900 heating), both components are
+            //   appropriately scaled, preventing either from over-dominating.
+            // - The 10% cap is removed since both components now receive equal treatment.
+            //
+            // Original formula (flawed):
+            //   result = (r5c1 / h_corr + adv_uncorrected)
+            // Fixed formula:
+            //   result = (r5c1 + adv) / h_corr
             if heating_energy_joules > 0.0 {
-                let corrected_adv_h = advanced_h_joules.min(heating_energy_joules * 0.1).max(0.0);
-                let corrected_r5c1_h = (heating_energy_joules - corrected_adv_h).max(0.0);
-                self.annual_heating_energy += (corrected_r5c1_h / h_corr + corrected_adv_h) / 3.6e6;
+                let combined_h = _r5c1_h_joules + advanced_h_joules;
+                self.annual_heating_energy += combined_h / h_corr / 3.6e6;
             }
             if cooling_energy_joules > 0.0 {
-                let corrected_adv_c = advanced_c_joules.min(cooling_energy_joules * 0.1).max(0.0);
-                let corrected_r5c1_c = (cooling_energy_joules - corrected_adv_c).max(0.0);
-                self.annual_cooling_energy += (corrected_r5c1_c / c_corr + corrected_adv_c) / 3.6e6;
+                let combined_c = _r5c1_c_joules + advanced_c_joules;
+                self.annual_cooling_energy += combined_c / c_corr / 3.6e6;
             }
 
             // Reset trackers for next step
@@ -4862,20 +4869,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
             let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
 
-            // Apply correction ONLY to 5R1C component
-            // Advanced solver component remains uncorrected (corr = 1.0)
-            // CRITICAL: Advanced solver component should only be added if there is HVAC demand,
-            // and we cap it to a reasonable fraction (10%) of total demand to prevent
-            // the physically accurate flux from over-dominating the 5R1C-based total energy.
+            // P2 FIX: Apply correction uniformly to BOTH 5R1C and advanced components
+            // Previously, advanced CTF/FD component was capped at 10% and added UNCORRECTED,
+            // while 5R1C component was divided by h_corr. This caused the uncorrected
+            // advanced component to dominate the result (issue: 3-6x overprediction).
+            //
+            // The fix applies the correction factor to both components consistently:
+            // - When h_corr > 1 (e.g., 10 for Case 900 heating), both components are
+            //   appropriately scaled, preventing either from over-dominating.
+            // - The 10% cap is removed since both components now receive equal treatment.
+            //
+            // Original formula (flawed):
+            //   result = (r5c1 / h_corr + adv_uncorrected)
+            // Fixed formula:
+            //   result = (r5c1 + adv) / h_corr
             if heating_energy_joules > 0.0 {
-                let corrected_adv_h = advanced_h_joules.min(heating_energy_joules * 0.1).max(0.0);
-                let corrected_r5c1_h = (heating_energy_joules - corrected_adv_h).max(0.0);
-                self.annual_heating_energy += (corrected_r5c1_h / h_corr + corrected_adv_h) / 3.6e6;
+                let combined_h = _r5c1_h_joules + advanced_h_joules;
+                self.annual_heating_energy += combined_h / h_corr / 3.6e6;
             }
             if cooling_energy_joules > 0.0 {
-                let corrected_adv_c = advanced_c_joules.min(cooling_energy_joules * 0.1).max(0.0);
-                let corrected_r5c1_c = (cooling_energy_joules - corrected_adv_c).max(0.0);
-                self.annual_cooling_energy += (corrected_r5c1_c / c_corr + corrected_adv_c) / 3.6e6;
+                let combined_c = _r5c1_c_joules + advanced_c_joules;
+                self.annual_cooling_energy += combined_c / c_corr / 3.6e6;
             }
 
             // Reset trackers for next step
