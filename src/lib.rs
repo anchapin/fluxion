@@ -1,3 +1,10 @@
+#![allow(
+    unused_imports,
+    dead_code,
+    clippy::empty_line_after_doc_comments,
+    clippy::needless_update,
+    clippy::format_in_format_args
+)]
 //! Fluxion: Rust-based Building Energy Modeling (BEM) engine
 //!
 //! Neuro-Symbolic hybrid architecture combining physics-based thermal networks with AI surrogates.
@@ -99,7 +106,6 @@ use crate::api::parameters::BuildingParameters;
 
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
-use log::{debug, info};
 #[cfg(feature = "python-bindings")]
 use ndarray::Array2;
 #[cfg(feature = "python-bindings")]
