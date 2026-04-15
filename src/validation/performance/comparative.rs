@@ -25,9 +25,11 @@ pub struct PerformanceDelta {
 }
 
 pub struct ComparativeAnalyzer {
+    #[allow(dead_code)]
     baseline_config: ConfigurationResult,
 }
 
+#[allow(dead_code)]
 impl ComparativeAnalyzer {
     pub fn new(baseline: ConfigurationResult) -> Self {
         Self {

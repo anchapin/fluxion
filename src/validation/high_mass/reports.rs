@@ -12,7 +12,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::physics::thermal_mass::diagnostics::ThermalMassDiagnostics;
-use crate::thermal::mass::types::ConstructionType;
+use crate::validation::ashrae140::ConstructionType;
 use crate::validation::high_mass::metrics::HighMassMetrics;
 use crate::validation::tolerance::ValidationTolerance;
 
@@ -64,6 +64,22 @@ pub struct HighMassValidationReport {
     pub passed: bool,
     /// Validation tolerance used
     pub tolerance: ValidationTolerance,
+}
+
+impl Default for HighMassValidationReport {
+    fn default() -> Self {
+        Self {
+            case_id: "default".to_string(),
+            building_description: "Default building".to_string(),
+            weather_summary: WeatherSummary::default(),
+            metrics: HighMassMetrics::default(),
+            diagnostics: ThermalMassDiagnostics::default(),
+            construction_type: ConstructionType::MediumWeight,
+            timestamp: Utc::now(),
+            passed: false,
+            tolerance: ValidationTolerance::default(),
+        }
+    }
 }
 
 impl HighMassValidationReport {
@@ -239,23 +255,25 @@ impl HighMassValidationReport {
             self.construction_type
         ));
 
-        let props = self.construction_type.thermal_mass_properties();
-        output.push_str(&format!(
-            "- **Typical Capacitance:** {:.1} kJ/m²K\n",
-            props.effective_capacitance
-        ));
-        output.push_str(&format!(
-            "- **Typical Time Constant:** {:.1} hours\n",
-            props.time_constant
-        ));
-        output.push_str(&format!(
-            "- **Typical Damping Factor:** {:.3}\n",
-            props.damping_factor
-        ));
-        output.push_str(&format!(
-            "- **ISO 13790 Classification:** {}\n",
-            self.construction_type.classification()
-        ));
+        match self.construction_type {
+            ConstructionType::Lightweight => {
+                output.push_str("- **Typical Capacitance:** 30-50 kJ/m²K\n");
+                output.push_str("- **Typical Time Constant:** 1-3 hours\n");
+                output.push_str("- **Typical Damping Factor:** 0.2-0.3\n");
+            }
+            ConstructionType::MediumWeight => {
+                output.push_str("- **Typical Capacitance:** 50-120 kJ/m²K\n");
+                output.push_str("- **Typical Time Constant:** 3-8 hours\n");
+                output.push_str("- **Typical Damping Factor:** 0.3-0.5\n");
+            }
+            ConstructionType::HighMass => {
+                output.push_str("- **Typical Capacitance:** 120-300 kJ/m²K\n");
+                output.push_str("- **Typical Time Constant:** 8-24 hours\n");
+                output.push_str("- **Typical Damping Factor:** 0.5-0.7\n");
+            }
+        }
+        output
+            .push_str("- **ISO 13790 Classification:** Heavy/Medium/Light based on thermal mass\n");
         output.push('\n');
 
         // Overall Assessment
@@ -598,7 +616,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -626,7 +644,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -657,7 +675,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -685,7 +703,7 @@ mod tests {
         let weather = WeatherSummary::default();
         let metrics = HighMassMetrics::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -698,7 +716,7 @@ mod tests {
             weather.clone(),
             metrics.clone(),
             diagnostics.clone(),
-            construction.clone(),
+            construction,
             tolerance.clone(),
         );
 
@@ -727,7 +745,7 @@ mod tests {
     fn test_summary_calculations() {
         let weather = WeatherSummary::default();
         let diagnostics = ThermalMassDiagnostics::new(3600, 10.0);
-        let construction = ConstructionType::HeavyWeight;
+        let construction = ConstructionType::HighMass;
         let tolerance = ValidationTolerance {
             nmbe_limit: 5.0,
             cv_rmse_limit: 10.0,
@@ -742,7 +760,7 @@ mod tests {
             weather.clone(),
             passing_metrics.clone(),
             diagnostics.clone(),
-            construction.clone(),
+            construction,
             tolerance.clone(),
         );
 

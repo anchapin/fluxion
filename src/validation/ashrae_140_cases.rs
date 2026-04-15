@@ -899,12 +899,33 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case808 => CaseBuilder::case_808_vav_heat_recovery(),
             ASHRAE140Case::Case809 => CaseBuilder::case_809_cav_economizer(),
             ASHRAE140Case::Case810 => CaseBuilder::case_810_comprehensive_hvac(),
-            // Add missing cases with default implementation
-            ASHRAE140Case::Case500 => CaseBuilder::case_600_baseline(), // Use baseline as default
-            ASHRAE140Case::Case501 => CaseBuilder::case_600_baseline(),
-            ASHRAE140Case::Case502 => CaseBuilder::case_600_baseline(),
-            // Add other missing cases if needed
-            _ => CaseBuilder::case_600_baseline(), // Default case for any other missing variants
+            _ => unimplemented!("Case {:?} not yet implemented in spec()", self),
+        }
+    }
+
+    /// Create an ASHRAE140Case from a case number.
+    /// Returns None if the case number is not recognized.
+    pub fn from_number(case: u32) -> Option<Self> {
+        match case {
+            600 => Some(ASHRAE140Case::Case600),
+            610 => Some(ASHRAE140Case::Case610),
+            620 => Some(ASHRAE140Case::Case620),
+            630 => Some(ASHRAE140Case::Case630),
+            640 => Some(ASHRAE140Case::Case640),
+            650 => Some(ASHRAE140Case::Case650),
+            601 => Some(ASHRAE140Case::Case600FF),
+            651 => Some(ASHRAE140Case::Case650FF),
+            900 => Some(ASHRAE140Case::Case900),
+            910 => Some(ASHRAE140Case::Case910),
+            920 => Some(ASHRAE140Case::Case920),
+            930 => Some(ASHRAE140Case::Case930),
+            940 => Some(ASHRAE140Case::Case940),
+            950 => Some(ASHRAE140Case::Case950),
+            901 => Some(ASHRAE140Case::Case900FF),
+            951 => Some(ASHRAE140Case::Case950FF),
+            960 => Some(ASHRAE140Case::Case960),
+            195 => Some(ASHRAE140Case::Case195),
+            _ => None,
         }
     }
 }

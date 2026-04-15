@@ -1,4 +1,5 @@
-use crate::thermal::thermal_model::ThermalModel;
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
 use crate::validation::performance::{ci, integration, PerformanceValidator};
 use crate::validation::report::ValidationSuite;
 use clap::Subcommand;
@@ -83,7 +84,7 @@ fn validate_performance(baseline: &Option<String>, _threshold: f64) -> Result<()
     println!("CI Performance validation complete: {:?}", ci_report);
 
     // Also run standard performance validation
-    let model = ThermalModel::new(1, 20.0); // 1 zone, 20°C initial temperature
+    let model = ThermalModel::<VectorField>::new(1);
     let mut validator = PerformanceValidator::new(model);
     let report = validator.validate_performance();
 
@@ -98,7 +99,7 @@ fn validate_performance(baseline: &Option<String>, _threshold: f64) -> Result<()
 
 fn generate_report(output: &Option<String>, detailed: bool) -> Result<(), String> {
     // Create a default thermal model for validation
-    let model = ThermalModel::new(1, 20.0); // 1 zone, 20°C initial temperature
+    let model = ThermalModel::<VectorField>::new(1);
     let mut validator = PerformanceValidator::new(model);
     let report = validator.validate_performance();
 

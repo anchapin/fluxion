@@ -11,7 +11,6 @@ use crate::physics::constants::thermal::iso_13790::annex_c::{
 use crate::sim::construction::ConstructionLayer;
 use log::debug;
 use serde::{Deserialize, Serialize};
-use std::fmt::{Display, Formatter};
 
 /// Thermal mass properties calculated from building construction.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -248,9 +247,23 @@ impl Default for ThermalMassReport {
         Self {
             effective_capacitance: 150.0,
             time_constant: 6.0,
-            damping_factor: 0.5,
+            damping_factor: 0.8,
             classification: "Medium".to_string(),
         }
+    }
+}
+
+impl std::fmt::Display for ThermalMassReport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Thermal Mass Analysis Report\n{}\nEffective Capacitance: {:.1} kJ/m²K\nTime Constant: {:.1} hours\nDamping Factor: {:.3}\nClassification: {}",
+            "=".repeat(30),
+            self.effective_capacitance,
+            self.time_constant,
+            self.damping_factor,
+            self.classification
+        )
     }
 }
 
@@ -278,23 +291,9 @@ impl ThermalMassReport {
             classification,
         }
     }
-}
 
-impl Display for ThermalMassReport {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Thermal Mass Analysis Report\n{}\nEffective Capacitance: {:.1} kJ/m²K\nTime Constant: {:.1} hours\nDamping Factor: {:.3}\nClassification: {}",
-            "=".repeat(30),
-            self.effective_capacitance,
-            self.time_constant,
-            self.damping_factor,
-            self.classification
-        )
-    }
-}
-
-impl ThermalMassReport {
+    /// Convert report to human-readable string format.
+    ///
     /// Check if thermal mass is sufficient for high-mass validation.
     ///
     /// # Returns
@@ -307,7 +306,6 @@ impl ThermalMassReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::construction::ConstructionLayer;
 
     #[test]
     fn test_thermal_mass_properties_default() {

@@ -1,24 +1,25 @@
 pub mod ci;
 pub mod comparative;
 pub mod completion;
-pub mod executor;
 pub mod finalization;
 pub mod historical;
 pub mod integration;
 pub mod metrics;
 pub mod optimization;
+pub mod parallel_executor;
+pub mod profiling;
 pub mod reports;
 
-use crate::thermal::thermal_model::ThermalModel;
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
 
-pub use ci::{CiPerformanceReport, CiPerformanceValidator};
+pub use ci::{BenchmarkResult, CiPerformanceReport, CiPerformanceValidator};
 pub use comparative::{
     ComparativeAnalysis, ComparativeAnalyzer, ConfigurationResult, PerformanceDelta,
 };
 pub use completion::{
     Phase47CompletionValidator, PhaseCompletionReport, PhaseCompletionResult, RequirementResult,
 };
-pub use executor::ParallelValidationExecutor;
 pub use finalization::{
     ComparativeAnalysisResult, FinalPerformanceReport, FinalValidationResult,
     PerformanceValidationFinalizer,
@@ -31,22 +32,22 @@ pub use integration::{
     IntegratedPerformanceValidator, IntegratedReport, IntegratedValidationResult,
 };
 pub use metrics::PerformanceMetrics;
-pub use metrics::{
-    analyze_bottlenecks, generate_detailed_performance_report, log_performance_metrics,
-    profile_case,
-};
 pub use optimization::{
     generate_optimization_report, SolverOptimization, ZoneCouplingOptimization,
 };
-pub use reports::generate_performance_report;
+pub use parallel_executor::ParallelValidationExecutor;
+pub use profiling::{
+    analyze_bottlenecks, generate_detailed_performance_report, generate_performance_report,
+    log_performance_metrics, profile_case,
+};
 pub use reports::PerformanceReport;
 
 pub struct PerformanceValidator {
-    model: ThermalModel,
+    model: ThermalModel<VectorField>,
 }
 
 impl PerformanceValidator {
-    pub fn new(model: ThermalModel) -> Self {
+    pub fn new(model: ThermalModel<VectorField>) -> Self {
         Self { model }
     }
 

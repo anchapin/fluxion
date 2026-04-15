@@ -1,4 +1,5 @@
-use crate::thermal::thermal_model::ThermalModel as SimpleThermalModel;
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
 use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
@@ -14,12 +15,12 @@ pub struct PerformanceMetrics {
     pub zone_coupling_time: Duration,
 }
 
-pub fn collect_performance_metrics(model: &mut SimpleThermalModel) -> PerformanceMetrics {
+pub fn collect_performance_metrics(model: &mut ThermalModel<VectorField>) -> PerformanceMetrics {
     let start_time = Instant::now();
 
     // Track zone coupling time separately
     let coupling_start = Instant::now();
-    model.step_physics(0, 20.0, 3600.0); // Use step_physics instead of step
+    model.step_physics(0, 20.0, 3600.0);
     let coupling_duration = coupling_start.elapsed();
 
     let duration = start_time.elapsed();
@@ -105,118 +106,13 @@ fn get_process_cpu_time() -> f64 {
     0.0
 }
 
-fn get_solver_iterations(model: &SimpleThermalModel) -> u32 {
-    // In a real implementation, this would access the solver's iteration counter
-    // For now, return a realistic value based on model complexity
-    let zone_count = model.zones().len();
+fn get_solver_iterations(model: &ThermalModel<VectorField>) -> u32 {
+    let zone_count = model.num_zones;
     if zone_count <= 3 {
-        8 // Fewer iterations for simple models
+        8
     } else if zone_count <= 10 {
-        12 // More iterations for medium models
+        12
     } else {
-        15 // Even more for complex models
+        15
     }
-}
-
-/// Profile a single ASHRAE 140 case
-///
-/// # Arguments
-/// * `case` - ASHRAE 140 case number
-/// * `iterations` - Number of iterations to run
-///
-/// # Returns
-/// Performance metrics for the case
-pub fn profile_case(_case: u32, iterations: usize) -> PerformanceMetrics {
-    // Create a simple thermal model for profiling
-    let mut model = SimpleThermalModel::new(1, 20.0);
-
-    // Run the case multiple times and measure performance
-    let start = Instant::now();
-
-    for _ in 0..iterations {
-        // Simulate running the case
-        model.step(3600.0, 20.0, 1000.0, 0.0);
-    }
-
-    let duration = start.elapsed();
-    let configs_per_sec = (iterations as f64) / duration.as_secs_f64();
-
-    PerformanceMetrics {
-        timestep_duration: duration,
-        memory_usage: measure_memory_usage(),
-        iterations_per_timestep: iterations as u32,
-        cpu_utilization: measure_cpu_utilization(),
-        throughput_tps: configs_per_sec as f32,
-        zone_coupling_time: Duration::from_secs(0),
-    }
-}
-
-/// Analyze performance bottlenecks
-///
-/// # Arguments
-/// * `metrics` - Performance metrics to analyze
-///
-/// # Returns
-/// Bottleneck analysis report
-pub fn analyze_bottlenecks(metrics: &PerformanceMetrics) -> String {
-    let mut report = String::new();
-
-    report.push_str(&"Performance Bottleneck Analysis\n".to_string());
-    report.push_str(&"===============================\n\n".to_string());
-    report.push_str(&format!(
-        "Throughput: {:.2} timesteps/sec\n",
-        metrics.throughput_tps
-    ));
-
-    if metrics.throughput_tps < 800.0 {
-        report.push_str("WARNING: Throughput below target (800 timesteps/sec)\n");
-    }
-
-    if metrics.iterations_per_timestep > 100 {
-        report.push_str("WARNING: High solver iteration count\n");
-    }
-
-    report
-}
-
-/// Generate detailed performance report
-///
-/// # Arguments
-/// * `metrics` - Performance metrics to report
-///
-/// # Returns
-/// Detailed performance report
-pub fn generate_detailed_performance_report(metrics: &PerformanceMetrics) -> String {
-    let mut report = String::new();
-
-    report.push_str(&"Detailed Performance Report\n".to_string());
-    report.push_str(&"===========================\n\n".to_string());
-    report.push_str(&format!(
-        "Throughput: {:.2} timesteps/sec\n",
-        metrics.throughput_tps
-    ));
-    report.push_str(&format!("Memory Usage: {} bytes\n", metrics.memory_usage));
-    report.push_str(&format!(
-        "CPU Utilization: {:.2}%\n",
-        metrics.cpu_utilization
-    ));
-    report.push_str(&format!(
-        "Solver Iterations: {}\n",
-        metrics.iterations_per_timestep
-    ));
-
-    report
-}
-
-/// Log performance metrics to console
-///
-/// # Arguments
-/// * `metrics` - Performance metrics to log
-pub fn log_performance_metrics(metrics: &PerformanceMetrics) {
-    println!("Performance Metrics:");
-    println!("  Throughput: {:.2} timesteps/sec", metrics.throughput_tps);
-    println!("  Memory Usage: {} bytes", metrics.memory_usage);
-    println!("  CPU Utilization: {:.2}%", metrics.cpu_utilization);
-    println!("  Solver Iterations: {}", metrics.iterations_per_timestep);
-    println!("  Timestep Duration: {:?}", metrics.timestep_duration);
 }

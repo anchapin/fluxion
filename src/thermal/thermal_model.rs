@@ -124,23 +124,6 @@ impl ThermalModel {
     pub fn set_inter_zone_conductance(&mut self, h_tr_iz: Vec<f64>) {
         self.h_tr_iz = VectorField::new(h_tr_iz);
     }
-
-    /// Get zones as a vector (for compatibility with performance metrics)
-    pub fn zones(&self) -> Vec<usize> {
-        (0..self.num_zones).collect()
-    }
-
-    /// Step the thermal model physics (placeholder implementation)
-    pub fn step_physics(&mut self, _zone_index: usize, _outdoor_temp: f64, _timestep: f64) {
-        // Placeholder: In a real implementation, this would update the thermal state
-        // For now, we'll just leave temperatures unchanged
-    }
-
-    /// Step the thermal model (placeholder implementation)
-    pub fn step(&mut self, _timestep: f64, _outdoor_temp: f64, _heating: f64, _cooling: f64) {
-        // Placeholder: In a real implementation, this would update the thermal state
-        // For now, we'll just leave temperatures unchanged
-    }
 }
 
 #[cfg(test)]

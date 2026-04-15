@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -69,12 +71,6 @@ fn verify_ci_integration() -> bool {
 
 pub struct Phase47CompletionValidator {
     requirements: Vec<PhaseRequirement>,
-}
-
-impl Default for Phase47CompletionValidator {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl Phase47CompletionValidator {

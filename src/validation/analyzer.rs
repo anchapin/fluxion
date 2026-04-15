@@ -466,31 +466,6 @@ mod tests {
     use crate::validation::get_all_benchmark_data;
     use crate::validation::report::{BenchmarkReport, ValidationResult};
 
-    fn make_dummy_result(
-        case_id: &str,
-        metric: MetricType,
-        fluxion_value: f64,
-        ref_min: f64,
-        ref_max: f64,
-    ) -> ValidationResult {
-        let percent_error = 0.0; // Default value
-        let status = ValidationStatus::Pass; // Default value
-        ValidationResult {
-            case_id: case_id.to_string(),
-            metric,
-            fluxion_value,
-            ref_min,
-            ref_max,
-            percent_error,
-            status,
-            actual: fluxion_value, // Add missing field
-            max: ref_max,          // Add missing field
-            metric_type: metric,   // Add missing field
-            min: ref_min,          // Add missing field
-            per_program: None,     // Add missing field
-        }
-    }
-
     #[test]
     fn test_quality_metrics_basic() {
         let mut report = BenchmarkReport {
@@ -514,10 +489,6 @@ mod tests {
             ref_max: 7.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
-            actual: 6.5,
-            min: 5.5,
-            max: 7.5,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         });
 

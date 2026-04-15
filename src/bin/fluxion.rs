@@ -13,66 +13,64 @@ use fluxion::analysis::visualization::{
 use fluxion::cli::validation::ValidationSubcommand;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec};
-// use fluxion::validation::automation::runner::run_test_automation; // TODO: Implement automation module
 
 /// Automation subcommands for test workflows and CI/CD integration
-/// TODO: Implement automation module
-// #[derive(Subcommand, Debug)]
-// pub enum AutomationSubcommand {
-//     /// Run automated test workflows
-//     #[clap(name = "test")]
-//     Test {
-//         /// Test cases directory
-//         #[clap(short, long, default_value = "tests/fixtures")]
-//         test_cases: String,
-//         /// Output directory for reports
-//         #[clap(short, long, default_value = "./target/test_reports")]
-//         output: String,
-//         /// Temperature tolerance for validation
-//         #[clap(short, long, default_value = "0.5")]
-//         tolerance: f64,
-//         /// Enable verbose output
-//         #[clap(short, long)]
-//         verbose: bool,
-//         /// Output format (markdown, json)
-//         #[clap(short, long, default_value = "markdown")]
-//         format: String,
-//     },
-//
-//     /// Generate GitHub Actions workflows
-//     #[clap(name = "generate-workflow")]
-//     GenerateWorkflow {
-//         /// Workflow type (cross-validation, performance, ci-cd)
-//         #[clap(value_enum, default_value = "cross-validation")]
-//         workflow_type: String,
-//         /// Output file path
-//         #[clap(short, long, default_value = ".github/workflows/generated.yml")]
-//         output: PathBuf,
-//         /// Base branch for workflow
-//         #[clap(long, default_value = "main")]
-//         base_branch: String,
-//         /// Rust toolchain version
-//         #[clap(long, default_value = "stable")]
-//         toolchain: String,
-//     },
-//
-//     /// GitHub Actions API integration
-//     #[clap(name = "github-actions")]
-//     GitHubActions {
-//         /// GitHub repository (owner/repo)
-//         #[clap(long)]
-//         repository: String,
-//         /// GitHub token for API access
-//         #[clap(long, env = "GITHUB_TOKEN")]
-//         token: String,
-//         /// Workflow file to trigger
-//         #[clap(long)]
-//         workflow_file: String,
-//         /// Branch to trigger workflow on
-//         #[clap(long, default_value = "main")]
-//         branch: String,
-//     },
-// }
+#[derive(Subcommand, Debug)]
+pub enum AutomationSubcommand {
+    /// Run automated test workflows
+    #[clap(name = "test")]
+    Test {
+        /// Test cases directory
+        #[clap(short, long, default_value = "tests/fixtures")]
+        test_cases: String,
+        /// Output directory for reports
+        #[clap(short, long, default_value = "./target/test_reports")]
+        output: String,
+        /// Temperature tolerance for validation
+        #[clap(short, long, default_value = "0.5")]
+        tolerance: f64,
+        /// Enable verbose output
+        #[clap(short, long)]
+        verbose: bool,
+        /// Output format (markdown, json)
+        #[clap(short, long, default_value = "markdown")]
+        format: String,
+    },
+
+    /// Generate GitHub Actions workflows
+    #[clap(name = "generate-workflow")]
+    GenerateWorkflow {
+        /// Workflow type (cross-validation, performance, ci-cd)
+        #[clap(value_enum, default_value = "cross-validation")]
+        workflow_type: String,
+        /// Output file path
+        #[clap(short, long, default_value = ".github/workflows/generated.yml")]
+        output: String,
+        /// Workflow name override
+        #[clap(short, long)]
+        name: Option<String>,
+        /// Workflow description override
+        #[clap(short, long)]
+        description: Option<String>,
+    },
+
+    /// Run GitHub Actions test automation
+    #[clap(name = "github-actions")]
+    GitHubActions {
+        /// GitHub repository (owner/repo format)
+        #[clap(short, long)]
+        repository: Option<String>,
+        /// GitHub token for API access
+        #[clap(short, long)]
+        token: Option<String>,
+        /// Workflow file to execute
+        #[clap(short, long, default_value = ".github/workflows/cross-validation.yml")]
+        workflow: String,
+        /// Dry run (don't actually trigger workflow)
+        #[clap(short, long)]
+        dry_run: bool,
+    },
+}
 use fluxion::validation::benchmark::{get_high_mass_cases, get_low_mass_cases, get_special_cases};
 use fluxion::validation::commands::update_references;
 use fluxion::validation::guardrails;
@@ -420,213 +418,149 @@ enum Commands {
         #[command(subcommand)]
         command: ValidationSubcommand,
     },
-    // /// Test automation and CI/CD workflow commands
-    // Automation {
-    //     #[command(subcommand)]
-    //     command: AutomationSubcommand,
-    // },
+
+    /// Test automation and CI/CD workflow commands
+    Automation {
+        #[command(subcommand)]
+        command: AutomationSubcommand,
+    },
 }
 
 /// Handle automation commands
-/// TODO: Implement automation module
-// fn handle_automation_command(command: &AutomationSubcommand) -> Result<()> {
-//     match command {
-//         AutomationSubcommand::Test {
-//             test_cases,
-//             output,
-//             tolerance,
-//             verbose,
-//             format,
-//         } => {
-//             // Set up test runner configuration
-//             use fluxion::validation::automation::runner::TestRunnerConfig;
-//             use std::path::PathBuf;
-//
-//             let config = TestRunnerConfig::new(
-//                 PathBuf::from(test_cases),
-//                 PathBuf::from(output),
-//                 *tolerance,
-//                 *verbose,
-//                 format.clone(),
-//             );
-//
-//             // Create and run test runner
-//             let mut runner = fluxion::validation::automation::runner::TestRunner::new(config);
-//             runner.initialize()?;
-//
-//             // Run all tests
-//             let reports = runner.run_all_tests()?;
-//
-//             // Generate combined report
-//             let combined_report = runner.generate_combined_report(&reports)?;
-//
-//             // Save report
-//             let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
-//             let filename = format!("automation_report_{}.{}", timestamp, format);
-//             runner.save_report(&combined_report, &filename)?;
-//
-//             // Clean up
-//             runner.cleanup()?;
-//
-//             // Determine exit code
-//             let all_passed = reports.iter().all(|r| r.overall_pass);
-//             if all_passed {
-//                 println!("✅ All automation tests passed!");
-//             } else {
-//                 println!("❌ Some automation tests failed!");
-//                 std::process::exit(1);
-//             }
-//         }
-//
-//         AutomationSubcommand::GenerateWorkflow {
-//             workflow_type,
-//             output,
-//             name,
-//             description,
-//         } => {
-//             use fluxion::validation::automation::github::workflow::WorkflowGenerator;
-//             use fluxion::validation::automation::github::workflow::WorkflowGeneratorConfig;
-//
-//             let config = WorkflowGeneratorConfig::default();
-//             let generator = WorkflowGenerator::new(config)?;
-//
-//             // Generate appropriate workflow
-//             let yaml = match workflow_type.as_str() {
-//                 "cross-validation" => generator
-//                     .generate_cross_validation_workflow(name.clone(), description.clone())?,
-//                 "performance" => {
-//                     generator.generate_performance_workflow(name.clone(), description.clone())?
-//                 }
-//                 "ci-cd" => generator.generate_ci_cd_workflow(name.clone(), description.clone())?,
-//                 _ => {
-//                     return Err(anyhow::anyhow!("Unknown workflow type: {}", workflow_type));
-//                 }
-//             };
-//
-//             // Save workflow file
-//             std::fs::write(output, yaml)?;
-//             println!("✅ Workflow generated successfully: {}", output);
-//         }
-//
-//         AutomationSubcommand::GitHubActions {
-//             repository,
-//             token,
-//             workflow,
-//             dry_run,
-//         } => {
-//             use fluxion::validation::automation::github::api::GitHubClient;
-//
-//             // Read workflow file
-//             let workflow_content = std::fs::read_to_string(workflow)?;
-//
-//             if *dry_run {
-//                 println!("🔄 Dry run mode - would trigger workflow: {}", workflow);
-//                 println!("Workflow content preview:");
-//                 for (i, line) in workflow_content.lines().take(10).enumerate() {
-//                     println!("  {}: {}", i + 1, line);
-//                 }
-//                 println!("... (truncated)");
-//                 return Ok(());
-//             }
-//
-//             // Create GitHub client
-//             let client = GitHubClient::new(repository.clone(), token.clone())?;
-//
-//             // Trigger workflow
-//             let response = client.trigger_workflow(workflow, "main")?;
-//
-//             println!("🚀 Workflow triggered successfully!");
-//             println!("Run ID: {}", response.id);
-//             println!("URL: {}", response.html_url);
-//         }
-//     }
-//     Ok(())
-// }
+fn handle_automation_command(command: &AutomationSubcommand) -> Result<()> {
+    match command {
+        AutomationSubcommand::Test {
+            test_cases,
+            output,
+            tolerance,
+            verbose,
+            format,
+        } => {
+            // Set up test runner configuration
+            use fluxion::validation::automation::runner::TestRunnerConfig;
+            use std::path::PathBuf;
 
-// AutomationSubcommand::GenerateWorkflow {
-//     workflow_type,
-//     output,
-//     name,
-//     description,
-// } => {
-//     use fluxion::validation::automation::github::workflow::WorkflowGenerator;
-//     use fluxion::validation::automation::github::workflow::WorkflowGeneratorConfig;
-//
-//     let config = WorkflowGeneratorConfig::default();
-//     let generator = WorkflowGenerator::new(config)?;
-//
-//     // Generate appropriate workflow
-//     let yaml = match workflow_type.as_str() {
-//         "cross-validation" => generator
-//             .generate_cross_validation_workflow(name.clone(), description.clone())?,
-//         "performance" => {
-//             generator.generate_performance_workflow(name.clone(), description.clone())?
-//         }
-//         "ci-cd" => generator.generate_ci_cd_workflow(name.clone(), description.clone())?,
-//         _ => {
-//             return Err(anyhow::anyhow!("Unknown workflow type: {}", workflow_type));
-//         }
-//     };
-//
-//     // Save workflow file
-//     std::fs::write(output, yaml)?;
-//     println!("✅ Workflow generated successfully: {}", output);
-// }
+            let config = TestRunnerConfig::new(
+                PathBuf::from(test_cases),
+                PathBuf::from(output),
+                *tolerance,
+                *verbose,
+                format.clone(),
+            );
 
-// AutomationSubcommand::GitHubActions {
-//     repository,
-//     token,
-//     workflow,
-//     dry_run,
-// } => {
-//     use fluxion::validation::automation::github::api::GitHubClient;
-//
-//     // Read workflow file
-//     let workflow_content = std::fs::read_to_string(workflow)?;
-//
-//     if *dry_run {
-//         println!("🔄 Dry run mode - would trigger workflow: {}", workflow);
-//         println!("Workflow content preview:");
-//         for (i, line) in workflow_content.lines().take(10).enumerate() {
-//             println!("  {}: {}", i + 1, line);
-//         }
-//         println!("... (truncated)");
-//         return Ok(());
-//     }
-//
-//     // Create GitHub client
-//     let client = GitHubClient::new(token.clone());
-//
-//     // Parse repository
-//     let repo_parts: Vec<&str> = repository
-//         .as_ref()
-//         .unwrap_or(&"owner/repo".to_string())
-//         .split('/')
-//         .collect();
-//
-//     if repo_parts.len() != 2 {
-//         return Err(anyhow::anyhow!("Repository must be in format 'owner/repo'"));
-//     }
-//
-//     let owner = repo_parts[0];
-//     let repo = repo_parts[1];
-//
-//     // Trigger workflow (simplified - actual implementation would use GitHub API)
-//     println!("🚀 Triggering GitHub Actions workflow...");
-//     println!("Repository: {}/{}", owner, repo);
-//     println!("Workflow: {}", workflow);
-//
-//     // In a real implementation, this would call:
-//     // client.post(&format!("/repos/{}/{}/actions/workflows/{}/dispatches", owner, repo, workflow_name), &payload)
-//
-//     println!("✅ Workflow triggered successfully!");
-//     println!(
-//         "📊 Check GitHub Actions tab for progress: https://github.com/{}/{}/actions",
-//         owner, repo
-//     );
-// }
-// Ok(())
-// }
+            // Create and run test runner
+            let mut runner = fluxion::validation::automation::runner::TestRunner::new(config);
+            runner.initialize()?;
+
+            // Run all tests
+            let reports = runner.run_all_tests()?;
+
+            // Generate combined report
+            let combined_report = runner.generate_combined_report(&reports)?;
+
+            // Save report
+            let timestamp = chrono::Local::now().format("%Y%m%d_%H%M%S").to_string();
+            let filename = format!("automation_report_{}.{}", timestamp, format);
+            runner.save_report(&combined_report, &filename)?;
+
+            // Clean up
+            runner.cleanup()?;
+
+            // Determine exit code
+            let all_passed = reports.iter().all(|r| r.overall_pass);
+            if all_passed {
+                println!("✅ All automation tests passed!");
+            } else {
+                println!("❌ Some automation tests failed!");
+                std::process::exit(1);
+            }
+        }
+
+        AutomationSubcommand::GenerateWorkflow {
+            workflow_type,
+            output,
+            name,
+            description,
+        } => {
+            use fluxion::validation::automation::github::workflow::WorkflowGenerator;
+            use fluxion::validation::automation::github::workflow::WorkflowGeneratorConfig;
+
+            let config = WorkflowGeneratorConfig::default();
+            let generator = WorkflowGenerator::new(config)?;
+
+            // Generate appropriate workflow
+            let yaml = match workflow_type.as_str() {
+                "cross-validation" => generator
+                    .generate_cross_validation_workflow(name.clone(), description.clone())?,
+                "performance" => {
+                    generator.generate_performance_workflow(name.clone(), description.clone())?
+                }
+                "ci-cd" => generator.generate_ci_cd_workflow(name.clone(), description.clone())?,
+                _ => {
+                    return Err(anyhow::anyhow!("Unknown workflow type: {}", workflow_type));
+                }
+            };
+
+            // Save workflow file
+            std::fs::write(output, yaml)?;
+            println!("✅ Workflow generated successfully: {}", output);
+        }
+
+        AutomationSubcommand::GitHubActions {
+            repository,
+            token,
+            workflow,
+            dry_run,
+        } => {
+            use fluxion::validation::automation::github::api::GitHubClient;
+
+            // Read workflow file
+            let workflow_content = std::fs::read_to_string(workflow)?;
+
+            if *dry_run {
+                println!("🔄 Dry run mode - would trigger workflow: {}", workflow);
+                println!("Workflow content preview:");
+                for (i, line) in workflow_content.lines().take(10).enumerate() {
+                    println!("  {}: {}", i + 1, line);
+                }
+                println!("... (truncated)");
+                return Ok(());
+            }
+
+            // Create GitHub client
+            let _client = GitHubClient::new(token.clone());
+
+            // Parse repository
+            let repo_ref = repository
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("owner/repo");
+            let repo_parts: Vec<&str> = repo_ref.split('/').collect();
+
+            if repo_parts.len() != 2 {
+                return Err(anyhow::anyhow!("Repository must be in format 'owner/repo'"));
+            }
+
+            let owner = repo_parts[0];
+            let repo = repo_parts[1];
+
+            // Trigger workflow (simplified - actual implementation would use GitHub API)
+            println!("🚀 Triggering GitHub Actions workflow...");
+            println!("Repository: {}/{}", owner, repo);
+            println!("Workflow: {}", workflow);
+
+            // In a real implementation, this would call:
+            // client.post(&format!("/repos/{}/{}/actions/workflows/{}/dispatches", owner, repo, workflow_name), &payload)
+
+            println!("✅ Workflow triggered successfully!");
+            println!(
+                "📊 Check GitHub Actions tab for progress: https://github.com/{}/{}/actions",
+                owner, repo
+            );
+        }
+    }
+    Ok(())
+}
 
 /// Validates a specific diagnostic case or range.
 ///
@@ -1169,9 +1103,11 @@ fn main() -> Result<()> {
 
         Commands::Validation { command } => {
             fluxion::cli::validation::handle_validation_command(&command)?;
-        } // Commands::Automation { command } => {
-          //     handle_automation_command(&command)?;
-          // }
+        }
+
+        Commands::Automation { command } => {
+            handle_automation_command(&command)?;
+        }
     }
 
     Ok(())

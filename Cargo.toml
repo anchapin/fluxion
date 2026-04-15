@@ -1,6 +1,6 @@
 [package]
 name = "fluxion"
-version = "1.2.0"
+version = "1.0.0"
 edition = "2021"
 authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
 description = "A differentiable, AI-accelerated Building Energy Modeling engine with multi-zone support."
@@ -55,13 +55,6 @@ serde_yaml = "0.9"
 anyhow = "1.0"
 thiserror = "1.0"
 csv = "1.3"
-once_cell = "1.19"
-
-# Plotting for validation reports
-plotters = "0.3.5"
-
-        # GitHub Automation
-        octocrab = "0.30"
 
 # Logging
 log = "0.4"
@@ -90,6 +83,9 @@ parking_lot = "0.12"
 lazy_static = "1.4.0"
 num_cpus = "1.16"
 
+# Plotting for validation reports
+plotters = "0.3.5"
+
 # Random number generation for uncertainty quantification
 rand = "0.8"
 rand_distr = "0.4"
@@ -115,6 +111,7 @@ pyo3-build-config = { version = "0.22", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"
+tempfile = "3.10"
 approx = "0.5"
 rstest = "0.25"
 dhat = "0.3"
@@ -122,9 +119,6 @@ proptest = "1.5"
 
 # Mock HTTP server for tests
 mockito = "1.7"
-
-[dependencies.tempfile]
-version = "3.10"
 
 [[bench]]
 name = "cta_bench"
@@ -157,10 +151,6 @@ path = "src/bin/export_csv.rs"
 [[bin]]
 name = "run_multi_zone_validation"
 path = "src/bin/run_multi_zone_validation.rs"
-
-[[example]]
-name = "cross_validation_example"
-path = "examples/cross_validation_example.rs"
 
 [profile.release]
 opt-level = 3

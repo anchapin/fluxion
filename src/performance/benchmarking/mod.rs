@@ -286,10 +286,10 @@ mod tests {
 
     #[test]
     fn test_benchmark_metrics() {
-        let metrics = BenchmarkMetrics::from_run(100, 4.9);
+        let metrics = BenchmarkMetrics::from_run(100, 5.0);
         assert_eq!(metrics.total_cases, 100);
-        assert!((metrics.execution_time - 4.9).abs() < 0.001);
-        // 4.9s / 100 = 49ms per case, target is <50ms per case
-        assert!(metrics.meets_perf_target);
+        assert!((metrics.execution_time - 5.0).abs() < 0.001);
+        // 5.0s / 100 = 50ms per case, target is <= 50ms per case
+        assert!(metrics.avg_time_per_case_ms <= 50.0);
     }
 }

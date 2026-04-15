@@ -550,10 +550,6 @@ mod group_validation_tests {
             ref_max: 5.5,
             percent_error: 3.6,
             status: ValidationStatus::Pass,
-            actual: 5.2,
-            min: 5.0,
-            max: 5.5,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
 
@@ -571,10 +567,6 @@ mod group_validation_tests {
             ref_max: 0.0, // Zero range -> zero std
             percent_error: 200.0,
             status: ValidationStatus::Fail,
-            actual: 0.01,
-            min: 0.0,
-            max: 0.0,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
 
@@ -1628,10 +1620,6 @@ mod statistical_metrics_tests {
             ref_max: 5.5,
             percent_error: 3.6,
             status: ValidationStatus::Pass,
-            actual: 5.2,
-            min: 5.0,
-            max: 5.5,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         let p_value = calculate_p_value(&result, 1);

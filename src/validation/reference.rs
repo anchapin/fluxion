@@ -1,84 +1,66 @@
-// Validation reference module
-// This module provides reference data and validation references
+//! Reference data module for validation
+//!
+//! This module provides functionality for loading and managing reference data
+//! for ASHRAE 140 validation cases.
 
-pub struct HourlyDataPoint {
-    pub hour: u8,
-    pub temperature: f64,
-    pub humidity: f64,
+use std::error::Error;
+use std::fmt;
+
+/// Error type for reference data operations
+#[derive(Debug)]
+pub enum ReferenceDataError {
+    /// File not found
+    FileNotFound(String),
+    /// Invalid file format
+    InvalidFormat(String),
+    /// Missing required field
+    MissingField(String),
+    /// Invalid data value
+    InvalidValue(String),
 }
 
+impl fmt::Display for ReferenceDataError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ReferenceDataError::FileNotFound(path) => write!(f, "File not found: {}", path),
+            ReferenceDataError::InvalidFormat(msg) => write!(f, "Invalid format: {}", msg),
+            ReferenceDataError::MissingField(field) => write!(f, "Missing field: {}", field),
+            ReferenceDataError::InvalidValue(msg) => write!(f, "Invalid value: {}", msg),
+        }
+    }
+}
+
+impl Error for ReferenceDataError {}
+
+/// A single hourly data point from reference data
+#[derive(Debug, Clone)]
+pub struct HourlyDataPoint {
+    pub timestamp: String,
+    pub value: f64,
+}
+
+/// Reference dataset containing hourly data
+#[derive(Debug, Clone)]
 pub struct ReferenceDataset {
-    pub name: String,
+    pub case_id: String,
     pub hourly_data: Vec<HourlyDataPoint>,
 }
 
-#[derive(Debug)]
-pub enum ReferenceDataError {
-    NotFound,
-    InvalidFormat,
-    IOError(std::io::Error),
+/// Load reference data for a specific case
+pub fn load_reference_data(case_id: &str) -> Result<ReferenceDataset, ReferenceDataError> {
+    // TODO: Implement actual loading logic
+    Ok(ReferenceDataset {
+        case_id: case_id.to_string(),
+        hourly_data: vec![],
+    })
 }
 
-pub struct ValidationReference {
-    // Reference data structure
-}
-
-impl Default for ValidationReference {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ValidationReference {
-    pub fn new() -> Self {
-        Self {
-            // Initialize reference
-        }
-    }
-
-    pub fn load_reference_data() -> Result<ReferenceDataset, ReferenceDataError> {
-        Ok(ReferenceDataset {
-            name: "Default".to_string(),
-            hourly_data: vec![HourlyDataPoint {
-                hour: 0,
-                temperature: 20.0,
-                humidity: 50.0,
-            }],
-        })
-    }
-
-    pub fn load_series_195_reference() -> Result<ReferenceDataset, ReferenceDataError> {
-        Ok(ReferenceDataset {
-            name: "Series 195".to_string(),
-            hourly_data: vec![HourlyDataPoint {
-                hour: 0,
-                temperature: 20.0,
-                humidity: 50.0,
-            }],
-        })
-    }
-
-    pub fn load_series_800_reference() -> Result<ReferenceDataset, ReferenceDataError> {
-        Ok(ReferenceDataset {
-            name: "Series 800".to_string(),
-            hourly_data: vec![HourlyDataPoint {
-                hour: 0,
-                temperature: 20.0,
-                humidity: 50.0,
-            }],
-        })
-    }
-}
-
-// Module-level functions
-pub fn load_reference_data() -> Result<ReferenceDataset, ReferenceDataError> {
-    ValidationReference::load_reference_data()
-}
-
+/// Load series 195 reference data
 pub fn load_series_195_reference() -> Result<ReferenceDataset, ReferenceDataError> {
-    ValidationReference::load_series_195_reference()
+    load_reference_data("series_195")
 }
 
+/// Load series 800 reference data
 pub fn load_series_800_reference() -> Result<ReferenceDataset, ReferenceDataError> {
-    ValidationReference::load_series_800_reference()
+    load_reference_data("series_800")
 }

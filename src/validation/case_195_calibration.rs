@@ -1,22 +1,42 @@
-// Case 195 calibration module
-// This module provides calibration functionality for ASHRAE 140 Case 195
+//! ASHRAE 140 Case 195 calibration module
+//!
+//! This module provides functionality for calibrating simulation parameters
+//! against ASHRAE 140 Case 195 reference data.
 
+use serde::{Deserialize, Serialize};
+
+/// Calibration parameters for Case 195
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CalibrationParameters {
-    pub parameters: Vec<f64>,
+    pub thermal_conductivity: f64,
+    pub specific_heat: f64,
+    pub density: f64,
+    pub infiltration_rate: f64,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+impl Default for CalibrationParameters {
+    fn default() -> Self {
+        Self {
+            thermal_conductivity: 0.16,
+            specific_heat: 840.0,
+            density: 2400.0,
+            infiltration_rate: 0.5,
+        }
+    }
+}
+
+/// Calibration result containing optimized parameters
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct CalibrationResult {
-    pub success: bool,
-    pub error_metrics: Vec<f64>,
-    pub calibration_parameters: Vec<f64>,
-    pub final_error: f64,
-    pub annual_heating: f64,
-    pub peak_heating: f64,
+    pub parameters: CalibrationParameters,
+    pub rmse: f64,
+    pub iterations: usize,
+    pub converged: bool,
 }
 
+/// Case 195 calibrator
 pub struct Case195Calibrator {
-    // Calibration data and methods
+    // TODO: Add actual calibration state
 }
 
 impl Default for Case195Calibrator {
@@ -26,24 +46,28 @@ impl Default for Case195Calibrator {
 }
 
 impl Case195Calibrator {
+    /// Create a new calibrator instance
     pub fn new() -> Self {
         Self {
-            // Initialize calibration
+            // TODO: Initialize calibration state
         }
     }
 
-    pub fn run_case_195_calibration(&self) -> CalibrationResult {
+    /// Run calibration process
+    pub fn run_calibration(&mut self, initial_params: CalibrationParameters) -> CalibrationResult {
+        // TODO: Implement actual calibration algorithm
         CalibrationResult {
-            success: true,
-            error_metrics: vec![0.1, 0.2, 0.3],
-            calibration_parameters: vec![1.0, 2.0, 3.0],
-            final_error: 0.1,
-            annual_heating: 5000.0,
-            peak_heating: 1000.0,
+            parameters: initial_params,
+            rmse: 0.0,
+            iterations: 0,
+            converged: false,
         }
     }
 }
 
+/// Run Case 195 calibration with default parameters
 pub fn run_case_195_calibration() -> CalibrationResult {
-    Case195Calibrator::new().run_case_195_calibration()
+    let mut calibrator = Case195Calibrator::new();
+    let initial_params = CalibrationParameters::default();
+    calibrator.run_calibration(initial_params)
 }

@@ -1,3 +1,5 @@
+#![allow(clippy::new_without_default)]
+
 use crate::validation::performance::reports::PerformanceMetrics;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -29,12 +31,6 @@ pub enum TrendDirection {
 
 pub struct HistoricalTracker {
     records: HashMap<String, Vec<HistoricalRecord>>, // Keyed by benchmark name
-}
-
-impl Default for HistoricalTracker {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 impl HistoricalTracker {

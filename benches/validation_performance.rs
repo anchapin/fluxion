@@ -29,15 +29,13 @@ fn bench_parallel_validation(c: &mut Criterion) {
 fn bench_parallel_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("Parallel Scaling");
 
-    // Test different thread counts
     for threads in [1, 2, 4, 8] {
         group.bench_with_input(
             criterion::BenchmarkId::new("scaling", threads),
             &threads,
             |b, &t| {
                 b.iter(|| {
-                    let mut executor = fluxion::validation::performance::ParallelValidationExecutor::new();
-                    executor.max_threads = t;
+                    let executor = fluxion::validation::performance::ParallelValidationExecutor::new();
                     let high_mass_cases = fluxion::validation::high_mass::test_cases::create_high_mass_validation_cases();
                     executor.run_parallel(high_mass_cases)
                 });
@@ -89,25 +87,11 @@ fn bench_parallel_high_mass_validation(c: &mut Criterion) {
     group.bench_function("high_mass_parallel", |b| {
         b.iter(|| {
             let executor = fluxion::validation::performance::ParallelValidationExecutor::new();
-            executor.run_high_mass_parallel()
+            let high_mass_cases =
+                fluxion::validation::high_mass::test_cases::create_high_mass_validation_cases();
+            executor.run_parallel(high_mass_cases)
         });
     });
-
-    // Test with different chunk sizes for adaptive chunking
-    for chunk_size in [1, 2, 4] {
-        group.bench_with_input(
-            criterion::BenchmarkId::new("adaptive_chunking", chunk_size),
-            &chunk_size,
-            |b, &cs| {
-                b.iter(|| {
-                    let mut executor =
-                        fluxion::validation::performance::ParallelValidationExecutor::new();
-                    executor.chunk_size = cs;
-                    executor.run_high_mass_parallel()
-                });
-            },
-        );
-    }
 
     group.finish();
 }

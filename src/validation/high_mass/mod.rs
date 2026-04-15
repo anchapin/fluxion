@@ -7,7 +7,7 @@ pub mod metrics;
 pub mod reports;
 pub mod test_cases;
 
-use crate::thermal::mass::types::ConstructionType;
+use crate::validation::ashrae140::ConstructionType;
 
 pub use metrics::HighMassMetrics;
 pub use reports::{CombinedHighMassReport, HighMassSummary, HighMassValidationReport};
@@ -35,10 +35,6 @@ pub fn run_all_high_mass_cases() -> Vec<crate::validation::report::ValidationRes
                     percent_error: 0.0,
                     status: crate::validation::report::ValidationStatus::Fail,
                     per_program: None,
-                    actual: 0.0,
-                    max: 0.0,
-                    min: 0.0,
-                    metric_type: crate::validation::report::MetricType::AnnualHeating,
                 });
             }
         }
@@ -86,7 +82,7 @@ pub fn validate_construction_type(
 
     // Simple heuristic based on thickness and density
     if total_thickness > 0.3 && avg_density > 1500.0 {
-        ConstructionType::HeavyWeight
+        ConstructionType::HighMass
     } else if total_thickness > 0.2 || avg_density > 1000.0 {
         ConstructionType::MediumWeight
     } else {

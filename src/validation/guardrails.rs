@@ -103,10 +103,6 @@ mod tests {
             ref_max: 5.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
-            actual: 5.0,
-            min: 4.5,
-            max: 5.5,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         report.results.push(result);
@@ -134,10 +130,6 @@ mod tests {
             ref_max: 7.0,
             percent_error: 6.0,
             status: ValidationStatus::Warning,
-            actual: 6.0,
-            min: 5.0,
-            max: 7.0,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         report.results.push(result);
@@ -165,10 +157,6 @@ mod tests {
             ref_max: 14.0,
             percent_error: 12.0,
             status: ValidationStatus::Warning,
-            actual: 12.0,
-            min: 10.0,
-            max: 14.0,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         report.results.push(result);
@@ -196,10 +184,6 @@ mod tests {
             ref_max: 5.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
-            actual: 5.0,
-            min: 4.5,
-            max: 5.5,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         let fail_result = ValidationResult {
@@ -210,10 +194,6 @@ mod tests {
             ref_max: 5.5,
             percent_error: 50.0,
             status: ValidationStatus::Fail,
-            actual: 10.0,
-            min: 4.5,
-            max: 5.5,
-            metric_type: MetricType::AnnualCooling,
             per_program: None,
         };
         report.results.push(pass_result);
@@ -242,10 +222,6 @@ mod tests {
             ref_max: 5.5,
             percent_error: 0.0,
             status: ValidationStatus::Pass,
-            actual: 5.0,
-            min: 4.5,
-            max: 5.5,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         report.results.push(result);
@@ -330,10 +306,6 @@ mod tests {
             ref_max: 20.0,
             percent_error: 15.0,
             status: ValidationStatus::Warning,
-            actual: 15.0,
-            min: 10.0,
-            max: 20.0,
-            metric_type: MetricType::AnnualHeating,
             per_program: None,
         };
         report.results.push(result);

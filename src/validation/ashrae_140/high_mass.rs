@@ -12,7 +12,7 @@ use crate::thermal::mass::validator::ThermalMassValidator;
 /// Returns a vector of HighMassCase instances representing the
 /// standard ASHRAE 140 high-mass validation test cases.
 pub fn load_high_mass_cases() -> Vec<HighMassCase> {
-    let mut cases = Vec::new();
+    let mut cases = Vec::with_capacity(8);
 
     // Case 301: Light mass - January
     cases.push(HighMassCase::new(

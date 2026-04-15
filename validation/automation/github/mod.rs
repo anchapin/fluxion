@@ -3,7 +3,6 @@
 ///
 /// This module provides GitHub Actions integration and workflow automation
 /// for cross-validation testing and CI/CD pipelines.
-
 pub mod workflow;
 
 /// GitHub workflow configuration
@@ -213,18 +212,23 @@ pub type GitHubResult<T> = Result<T, GitHubError>;
 /// Validate workflow configuration
 pub fn validate_workflow(workflow: &GitHubWorkflow) -> GitHubResult<()> {
     if workflow.name.is_empty() {
-        return Err(GitHubError::ValidationError("Workflow name cannot be empty".to_string()));
+        return Err(GitHubError::ValidationError(
+            "Workflow name cannot be empty".to_string(),
+        ));
     }
 
     if workflow.jobs.is_empty() {
-        return Err(GitHubError::ValidationError("Workflow must have at least one job".to_string()));
+        return Err(GitHubError::ValidationError(
+            "Workflow must have at least one job".to_string(),
+        ));
     }
 
     for (job_name, job) in &workflow.jobs {
         if job.steps.is_empty() {
-            return Err(GitHubError::ValidationError(
-                format!("Job '{}' must have at least one step", job_name),
-            ));
+            return Err(GitHubError::ValidationError(format!(
+                "Job '{}' must have at least one step",
+                job_name
+            )));
         }
     }
 
@@ -270,7 +274,7 @@ pub fn generate_workflow_yaml(workflow: &GitHubWorkflow) -> GitHubResult<String>
         for step in &job.steps {
             yaml.push_str("      - name: ");
             yaml.push_str(&step.name);
-            yaml.push_str("\n");
+            yaml.push('\n');
 
             if let Some(uses) = &step.uses {
                 yaml.push_str(&format!("        uses: {}\n", uses));
@@ -307,13 +311,19 @@ mod tests {
         assert!(workflow.triggers.contains(&"push".to_string()));
         assert!(workflow.triggers.contains(&"pull_request".to_string()));
         assert!(workflow.triggers.contains(&"schedule".to_string()));
-        assert_eq!(workflow.env_vars.get("RUST_VERSION"), Some(&"1.70.0".to_string()));
+        assert_eq!(
+            workflow.env_vars.get("RUST_VERSION"),
+            Some(&"1.70.0".to_string())
+        );
     }
 
     #[test]
     fn test_job_creation() {
         let mut job = GitHubJob::new("Test Job", "ubuntu-latest");
-        job.add_step(GitHubStep::with_command("Install dependencies", "cargo install --path ."));
+        job.add_step(GitHubStep::with_command(
+            "Install dependencies",
+            "cargo install --path .",
+        ));
         job.add_step(GitHubStep::with_action("Checkout", "actions/checkout@v4"));
 
         assert_eq!(job.name, "Test Job");

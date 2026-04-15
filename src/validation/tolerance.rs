@@ -1,22 +1,56 @@
-// Validation tolerance module
-// This module provides tolerance definitions and validation
+//! Tolerance module for validation
+//!
+//! This module provides functionality for defining and checking tolerances
+//! in validation results.
 
-#[derive(Default, Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub struct ValidationTolerance {
-    /// NMBE (Normalized Mean Bias Error) limit
-    pub nmbe_limit: f64,
-    /// MAE (Mean Absolute Error) limit
-    pub mae_limit: f64,
-    /// CV(RMSE) (Coefficient of Variation of RMSE) limit
-    pub cv_rmse_limit: f64,
+use serde::{Deserialize, Serialize};
+
+/// Tolerance configuration for validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToleranceConfig {
+    pub absolute_tolerance: f64,
+    pub relative_tolerance: f64,
 }
 
-impl ValidationTolerance {
-    pub fn new() -> Self {
+impl Default for ToleranceConfig {
+    fn default() -> Self {
+        Self {
+            absolute_tolerance: 0.1,
+            relative_tolerance: 0.05,
+        }
+    }
+}
+
+/// Check if a value is within tolerance
+pub fn within_tolerance(value: f64, reference: f64, config: &ToleranceConfig) -> bool {
+    let absolute_diff = (value - reference).abs();
+    let relative_diff = absolute_diff / reference.abs();
+
+    absolute_diff <= config.absolute_tolerance || relative_diff <= config.relative_tolerance
+}
+
+/// Default tolerance configuration for ASHRAE 140 validation
+pub fn ashrae140_tolerance() -> ToleranceConfig {
+    ToleranceConfig {
+        absolute_tolerance: 0.15,
+        relative_tolerance: 0.10,
+    }
+}
+
+/// Validation tolerance for high-mass building validation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ValidationTolerance {
+    pub nmbe_limit: f64,
+    pub cv_rmse_limit: f64,
+    pub mae_limit: f64,
+}
+
+impl Default for ValidationTolerance {
+    fn default() -> Self {
         Self {
             nmbe_limit: 5.0,
-            mae_limit: 0.1,
             cv_rmse_limit: 10.0,
+            mae_limit: 0.1,
         }
     }
 }

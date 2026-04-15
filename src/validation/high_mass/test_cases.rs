@@ -5,7 +5,7 @@
 
 use crate::physics::thermal_mass::diagnostics::{ThermalMassDiagnostics, ThermalMassReport};
 use crate::sim::construction::ConstructionLayer;
-use crate::thermal::mass::types::ConstructionType;
+use crate::validation::ashrae140::ConstructionType;
 use crate::validation::ashrae140::WeatherData;
 use crate::validation::report::{MetricType, ValidationResult, ValidationStatus};
 use crate::validation::tolerance::ValidationTolerance;
@@ -105,10 +105,6 @@ impl HighMassValidationCase {
             percent_error: 0.0,
             status,
             per_program: None,
-            actual: metrics.mae_heating,
-            max: 0.1,
-            min: 0.0,
-            metric_type: MetricType::AnnualHeating,
         };
 
         Ok(result)
@@ -288,7 +284,7 @@ pub struct BuildingConfig {
 impl Default for BuildingConfig {
     fn default() -> Self {
         Self {
-            construction_type: ConstructionType::HeavyWeight,
+            construction_type: ConstructionType::HighMass,
             floor_area: 232.0, // ASHRAE 140 default
             u_value: 0.45,     // W/m²K
             window_wall_ratio: 0.2,
@@ -525,7 +521,7 @@ pub fn create_high_mass_validation_cases() -> Vec<HighMassValidationCase> {
 /// Create ASHRAE 140 Case 600 (Heavyweight residential).
 fn create_case_600() -> HighMassValidationCase {
     let building_config = BuildingConfig {
-        construction_type: ConstructionType::HeavyWeight,
+        construction_type: ConstructionType::HighMass,
         floor_area: 232.0,
         u_value: 0.35, // Lower U-value for heavy construction
         window_wall_ratio: 0.15,
@@ -594,7 +590,7 @@ fn create_case_650() -> HighMassValidationCase {
 /// Create ASHRAE 140 Case 900 (High-mass institutional).
 fn create_case_900() -> HighMassValidationCase {
     let building_config = BuildingConfig {
-        construction_type: ConstructionType::HeavyWeight,
+        construction_type: ConstructionType::HighMass,
         floor_area: 1000.0, // Large institutional building
         u_value: 0.30,      // Very tight construction
         window_wall_ratio: 0.20,
@@ -627,7 +623,7 @@ fn create_case_900() -> HighMassValidationCase {
 
 #[cfg(test)]
 mod tests {
-    use super::ValidationTolerance;
+
     use super::*;
 
     #[test]
@@ -640,7 +636,7 @@ mod tests {
         );
         assert!(matches!(
             case.building_config.construction_type,
-            ConstructionType::HeavyWeight
+            ConstructionType::HighMass
         ));
     }
 
@@ -807,7 +803,7 @@ mod tests {
         assert_eq!(case.case_id, "600");
         assert!(matches!(
             case.building_config.construction_type,
-            ConstructionType::HeavyWeight
+            ConstructionType::HighMass
         ));
         assert_eq!(case.building_config.floor_area, 232.0);
         assert_eq!(case.reference_results.annual_heating, 7008.0);
@@ -831,7 +827,7 @@ mod tests {
         assert_eq!(case.case_id, "900");
         assert!(matches!(
             case.building_config.construction_type,
-            ConstructionType::HeavyWeight
+            ConstructionType::HighMass
         ));
         assert_eq!(case.building_config.floor_area, 1000.0);
         assert_eq!(case.reference_results.annual_heating, 13140.0);
