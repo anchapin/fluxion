@@ -46,7 +46,14 @@ fn bench_thermal_model_solve(c: &mut Criterion) {
         group.bench_function(&name, |b| {
             b.iter(|| {
                 let mut model = ThermalModel::<VectorField>::new(num_zones);
-                model.solve_timesteps(black_box(8760), black_box(&surrogates), black_box(false), None, None, None);
+                model.solve_timesteps(
+                    black_box(8760),
+                    black_box(&surrogates),
+                    black_box(false),
+                    None,
+                    None,
+                    None,
+                );
             })
         });
         group.finish();

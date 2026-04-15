@@ -1,6 +1,6 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-04-02 11:26 UTC*
+*Generated: 2026-04-15 17:48 UTC*
 
 ## Summary
 
@@ -18,8 +18,8 @@
 
 | Metric | Value |
 |--------|-------|
-| Total Validation Duration | 0.72 seconds |
-| Throughput | 25.15 cases/sec |
+| Total Validation Duration | 0.65 seconds |
+| Throughput | 27.77 cases/sec |
 | Total Cases | 18 |
 
 ## Detailed Results
@@ -77,27 +77,27 @@ The following recurring issues are affecting validation results:
 
 ### Solar Gain Calculations
 
-**Affected metrics:** 630 - Peak Cooling (kW), 620 - Peak Cooling (kW), 640 - Peak Cooling (kW), 650 - Peak Cooling (kW), 610 - Peak Cooling (kW) |
+**Affected metrics:** 640 - Peak Cooling (kW), 630 - Peak Cooling (kW), 650 - Peak Cooling (kW), 610 - Peak Cooling (kW), 620 - Peak Cooling (kW) |
 **Count:** 5 metrics
+
+### 5R1C Model Limitation (Accepted)
+
+**Affected metrics:** 940 - Annual Cooling (MWh), 900 - Annual Cooling (MWh), 930 - Annual Cooling (MWh), 920 - Annual Heating (MWh), 900 - Annual Heating (MWh), 940 - Annual Heating (MWh), 950 - Annual Heating (MWh), 950 - Annual Cooling (MWh), 920 - Annual Cooling (MWh), 930 - Annual Heating (MWh), 910 - Annual Cooling (MWh), 910 - Annual Heating (MWh) |
+**Count:** 12 metrics
+
+### Thermal Mass Dynamics
+
+**Affected metrics:** 950FF - Min Free-Float Temp (°C), 900FF - Max Free-Float Temp (°C) |
+**Count:** 2 metrics
 
 ### Inter-Zone Heat Transfer
 
 **Affected metrics:** 960 - Annual Cooling (MWh) |
 **Count:** 1 metrics
 
-### Thermal Mass Dynamics
-
-**Affected metrics:** 900FF - Max Free-Float Temp (°C), 950FF - Min Free-Float Temp (°C) |
-**Count:** 2 metrics
-
-### 5R1C Model Limitation (Accepted)
-
-**Affected metrics:** 940 - Annual Cooling (MWh), 920 - Annual Cooling (MWh), 900 - Annual Heating (MWh), 940 - Annual Heating (MWh), 910 - Annual Heating (MWh), 910 - Annual Cooling (MWh), 920 - Annual Heating (MWh), 900 - Annual Cooling (MWh), 950 - Annual Cooling (MWh), 930 - Annual Cooling (MWh), 950 - Annual Heating (MWh), 930 - Annual Heating (MWh) |
-**Count:** 12 metrics
-
 ### Unknown/Unclassified
 
-**Affected metrics:** 610 - Peak Heating (kW), 630 - Peak Heating (kW), 960 - Peak Cooling (kW), 930 - Peak Heating (kW), 640 - Peak Heating (kW), 620 - Annual Cooling (MWh), 900 - Peak Cooling (kW), 920 - Peak Heating (kW), 650 - Annual Cooling (MWh), 620 - Peak Heating (kW), 960 - Peak Heating (kW), 610 - Annual Cooling (MWh), 650 - Peak Heating (kW), 600 - Annual Heating (MWh), 630 - Annual Cooling (MWh), 650FF - Max Free-Float Temp (°C), 940 - Peak Heating (kW), 930 - Peak Cooling (kW), 195 - Peak Cooling (kW), 640 - Annual Heating (MWh), 900 - Peak Heating (kW), 195 - Annual Cooling (MWh), 910 - Peak Cooling (kW), 600FF - Min Free-Float Temp (°C), 960 - Annual Heating (MWh), 650FF - Min Free-Float Temp (°C), 610 - Annual Heating (MWh), 650 - Annual Heating (MWh), 195 - Annual Heating (MWh), 195 - Peak Heating (kW), 600FF - Max Free-Float Temp (°C), 910 - Peak Heating (kW), 920 - Peak Cooling (kW), 940 - Peak Cooling (kW), 640 - Annual Cooling (MWh), 950 - Peak Cooling (kW), 950 - Peak Heating (kW), 600 - Peak Heating (kW), 620 - Annual Heating (MWh), 630 - Annual Heating (MWh) |
+**Affected metrics:** 650 - Peak Heating (kW), 195 - Peak Cooling (kW), 920 - Peak Cooling (kW), 640 - Annual Heating (MWh), 195 - Annual Cooling (MWh), 650 - Annual Heating (MWh), 960 - Peak Cooling (kW), 195 - Annual Heating (MWh), 930 - Peak Cooling (kW), 640 - Peak Heating (kW), 195 - Peak Heating (kW), 600 - Peak Heating (kW), 620 - Annual Heating (MWh), 600FF - Max Free-Float Temp (°C), 650FF - Max Free-Float Temp (°C), 930 - Peak Heating (kW), 960 - Annual Heating (MWh), 960 - Peak Heating (kW), 600FF - Min Free-Float Temp (°C), 940 - Peak Cooling (kW), 600 - Annual Heating (MWh), 610 - Annual Cooling (MWh), 630 - Annual Heating (MWh), 630 - Peak Heating (kW), 650FF - Min Free-Float Temp (°C), 900 - Peak Cooling (kW), 920 - Peak Heating (kW), 910 - Peak Cooling (kW), 950 - Peak Heating (kW), 620 - Peak Heating (kW), 630 - Annual Cooling (MWh), 950 - Peak Cooling (kW), 620 - Annual Cooling (MWh), 640 - Annual Cooling (MWh), 910 - Peak Heating (kW), 940 - Peak Heating (kW), 610 - Annual Heating (MWh), 900 - Peak Heating (kW), 650 - Annual Cooling (MWh), 610 - Peak Heating (kW) |
 **Count:** 40 metrics
 
 ## References
