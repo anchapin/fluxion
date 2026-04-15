@@ -2,7 +2,6 @@
 //!
 //! Tests validate CLI commands work correctly using std::process::Command.
 
-use std::path::PathBuf;
 use std::process::Command;
 use tempfile::tempdir;
 

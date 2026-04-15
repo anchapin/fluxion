@@ -7,6 +7,14 @@ use std::path::PathBuf;
 
 use crate::cli::hvac_commands::{handle_command as handle_hvac_command, HvacCommand};
 
+/// Wrapper enum for HVAC subcommands
+#[derive(Debug, Subcommand)]
+pub enum HvacSubcommand {
+    /// HVAC commands
+    #[command(subcommand)]
+    Command(HvacCommand),
+}
+
 /// Multi-zone simulation command
 #[derive(Debug, Args)]
 pub struct SimulateCommand {
@@ -140,7 +148,7 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     // Load or create configuration
     let config = if let Some(config_path) = &command.config {
         let config_content = std::fs::read_to_string(config_path)?;
-        if config_path.extension().map_or(false, |ext| ext == "json") {
+        if config_path.extension().is_some_and(|ext| ext == "json") {
             serde_json::from_str(&config_content)?
         } else {
             serde_yaml::from_str(&config_content)?
@@ -174,7 +182,10 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     }
 
     // Create surrogate manager
-    let surrogates = SurrogateManager::new()?;
+    let surrogates = match SurrogateManager::new() {
+        Ok(s) => s,
+        Err(e) => return Err(anyhow::anyhow!("Failed to create surrogate manager: {}", e)),
+    };
 
     // Run simulation (1 year = 8760 timesteps)
     let steps = 8760;
@@ -227,9 +238,16 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
                 print!("{}", csv_output);
             }
         }
-        "text" | _ => {
+        "text" => {
             println!("Multi-zone Simulation Results");
-            println!("================================");
+            println!("===============================");
+            println!("Number of zones: {}", command.zones);
+            println!("Total EUI: {:.2} kWh/m²/year", result);
+            println!("Surrogates used: {}", command.use_surrogates);
+        }
+        _ => {
+            println!("Multi-zone Simulation Results");
+            println!("===============================");
             println!("Number of zones: {}", command.zones);
             println!("Total EUI: {:.2} kWh/m²/year", result);
             println!("Surrogates used: {}", command.use_surrogates);
@@ -247,22 +265,33 @@ pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow:
 
     if command.energy_conservation {
         println!("Running energy conservation validation...");
-        // Create a simple thermal model for validation
         use crate::physics::cta::VectorField;
         use crate::sim::engine::ThermalModel;
         let mut model = ThermalModel::<VectorField>::new(1);
-        validator.validate_energy_conservation(&model)?;
+        let energy_result = validator.validate_energy_conservation(&model);
 
         match command.format.as_str() {
             "json" => {
+                let status = if energy_result.is_ok() {
+                    "PASS"
+                } else {
+                    "FAIL"
+                };
                 let output = serde_json::json!({
-                    "energy_conservation": "PASS",
-                    "status": "PASS"
+                    "energy_conservation": status,
+                    "status": status
                 });
-                println!("{}", serde_json::to_string_pretty(&output)?);
+                println!("{}", serde_json::to_string_pretty(&output).unwrap());
             }
             "text" | _ => {
-                println!("Energy Conservation: PASS");
+                println!(
+                    "Energy Conservation: {}",
+                    if energy_result.is_ok() {
+                        "PASS"
+                    } else {
+                        "FAIL"
+                    }
+                );
             }
         }
     }
@@ -313,7 +342,10 @@ pub fn execute_performance_command(command: &PerformanceCommand) -> Result<(), a
 
             // Create model
             let mut model = ThermalModel::<VectorField>::new(num_zones);
-            let surrogates = SurrogateManager::new()?;
+            let surrogates = match SurrogateManager::new() {
+                Ok(s) => s,
+                Err(e) => return Err(anyhow::anyhow!("Failed to create surrogate manager: {}", e)),
+            };
 
             // Time the simulation
             let start = Instant::now();
@@ -375,7 +407,6 @@ pub fn execute_performance_command(command: &PerformanceCommand) -> Result<(), a
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
 
     #[test]
     fn test_default_config() {

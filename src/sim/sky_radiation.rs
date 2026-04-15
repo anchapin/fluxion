@@ -601,7 +601,7 @@ pub fn calculate_clearness_index(ghi: f64, zenith_angle: f64, solar_constant: f6
     let kt = ghi / ghi_clear;
 
     // Clamp to [0, 1] (physical bounds)
-    kt.max(0.0).min(1.0)
+    kt.clamp(0.0, 1.0)
 }
 
 /// Calculate clear-sky GHI for clearness index normalization.

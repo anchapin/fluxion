@@ -12,7 +12,7 @@
 
 use crate::physics::constants::thermal::ashrae_140 as ashrae_140_thermal;
 use crate::physics::constants::thermal::iso_13790;
-use crate::sim::assembly::{BuildingAssembly, ConcreteMaterial, InsulationMaterial, MaterialLayer};
+use crate::sim::assembly::BuildingAssembly;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -389,7 +389,9 @@ pub fn validate_constants(path: &str) -> ConfigValidationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
+    use crate::sim::assembly::{
+        AssemblyBuilder, ConcreteMaterial, InsulationMaterial, MaterialLayer,
+    };
 
     #[test]
     fn test_validation_result_passed() {

@@ -33,6 +33,7 @@ use crate::sim::assembly::BuildingAssembly;
 /// This wrapper adapts the ImplicitFDSolver to work with the unified solver interface,
 /// handling conversion from BuildingAssembly to wall discretization and managing
 /// boundary condition transformations.
+#[allow(dead_code)]
 pub struct FDSolverWrapper {
     /// Underlying FD solver
     solver: Option<ImplicitFDSolver>,
@@ -103,7 +104,7 @@ impl FDSolverWrapper {
 
     /// Calculate surface heat flux from temperature profile.
     fn calculate_surface_flux(
-        solver: &ImplicitFDSolver,
+        _solver: &ImplicitFDSolver,
         _discretization: &WallDiscretization,
         T_interior: f64,
         h_interior: f64,

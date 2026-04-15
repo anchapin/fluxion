@@ -4,10 +4,11 @@
 //! using rayon for running thousands of building variants simultaneously.
 //! This is essential for high-throughput building energy analysis and optimization.
 
-use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
 use rayon::prelude::*;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
+
+use crate::ThermalModelTrait;
 
 /// Result type for distributed inference operations
 pub type DistributedResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
@@ -101,7 +102,7 @@ impl ParallelThermalEvaluator {
     pub fn evaluate_population<F>(
         &self,
         population: Vec<BuildingVariant>,
-        mut model_factory: F,
+        #[allow(unused_mut)] mut model_factory: F,
     ) -> Vec<VariantResult>
     where
         F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync,
@@ -490,7 +491,7 @@ impl Default for DistributedInferenceExecutor {
 pub async fn run_async_inference<F>(
     population: Vec<BuildingVariant>,
     max_concurrent: usize,
-    mut model_factory: F,
+    #[allow(unused_mut)] mut _model_factory: F,
 ) -> Vec<VariantResult>
 where
     F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync + 'static,
@@ -513,7 +514,7 @@ where
 /// This is a convenience function to run parallel inference using rayon.
 pub fn run_parallel_inference<F>(
     population: Vec<BuildingVariant>,
-    mut model_factory: F,
+    #[allow(unused_mut)] mut model_factory: F,
 ) -> Vec<VariantResult>
 where
     F: FnMut(&[f64]) -> Box<dyn ThermalModelTrait> + Send + Sync,
@@ -657,7 +658,7 @@ mod tests {
         ];
 
         // We need a dummy model factory that satisfies the bounds
-        let results = run_async_inference(population, 2, |params| {
+        let results = run_async_inference(population, 2, |_params| {
             Box::new(PhysicsThermalModel::new(1))
         })
         .await;
@@ -673,7 +674,7 @@ mod tests {
         ];
 
         let results =
-            run_parallel_inference(population, |params| Box::new(PhysicsThermalModel::new(1)));
+            run_parallel_inference(population, |_params| Box::new(PhysicsThermalModel::new(1)));
 
         assert_eq!(results.len(), 2);
     }

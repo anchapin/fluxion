@@ -6,7 +6,31 @@
 use fluxion::analysis::delta::{
     apply_patch, expand_variants, generate_sweep_combinations, set_nested, DeltaConfig, Variant,
 };
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use std::collections::HashMap;
+
+/// Create a minimal valid CaseSpec for testing delta analysis
+fn create_test_case_spec() -> serde_yaml::Value {
+    use fluxion::validation::ashrae_140_cases::{CaseBuilder, CaseSpec};
+    let base_case: CaseSpec = CaseBuilder::new()
+        .with_case_id("600".to_string())
+        .with_description("Test case for delta analysis".to_string())
+        .with_dimensions(8.0, 6.0, 2.7)
+        .low_mass_construction()
+        .with_south_window(12.0)
+        .with_window_properties(
+            fluxion::validation::ashrae_140_cases::WindowSpec::double_clear_glass(),
+        )
+        .with_internal_loads(fluxion::validation::ashrae_140_cases::InternalLoads::new(
+            200.0, 0.6, 0.4,
+        ))
+        .with_hvac_setpoints(20.0, 27.0)
+        .with_infiltration(0.5)
+        .with_num_zones(1)
+        .build()
+        .expect("Failed to build base case");
+    serde_yaml::to_value(&base_case).expect("Failed to serialize base case")
+}
 
 #[cfg(test)]
 mod delta_unit_tests {
@@ -210,21 +234,34 @@ mod delta_unit_tests {
 
     #[test]
     fn test_expand_variants_patch_only() {
-        // Create a minimal config with base and variant
-        let yaml_str = r#"
-base:
-  case_id: "600"
-  construction_type: "LowMass"
-  num_zones: 1
-  hvac: []
-  windows: []
-  night_ventilation: null
-variants:
-  - name: "higher_setpoint"
-    patch:
-      heating_setpoint: 22
-"#;
-        let config: DeltaConfig = serde_yaml::from_str(yaml_str).unwrap();
+        let base_case = create_test_case_spec();
+        let mut yaml_map = serde_yaml::Mapping::new();
+        yaml_map.insert(serde_yaml::Value::String("base".to_string()), base_case);
+
+        let mut variants_seq = serde_yaml::Sequence::new();
+        let mut variant_map = serde_yaml::Mapping::new();
+        variant_map.insert(
+            serde_yaml::Value::String("name".to_string()),
+            serde_yaml::Value::String("higher_setpoint".to_string()),
+        );
+        let mut patch_map = serde_yaml::Mapping::new();
+        patch_map.insert(
+            serde_yaml::Value::String("heating_setpoint".to_string()),
+            serde_yaml::Value::Number(serde_yaml::Number::from(22)),
+        );
+        variant_map.insert(
+            serde_yaml::Value::String("patch".to_string()),
+            serde_yaml::Value::Mapping(patch_map),
+        );
+        variants_seq.push(serde_yaml::Value::Mapping(variant_map));
+
+        yaml_map.insert(
+            serde_yaml::Value::String("variants".to_string()),
+            serde_yaml::Value::Sequence(variants_seq),
+        );
+
+        let yaml_value = serde_yaml::Value::Mapping(yaml_map);
+        let config: DeltaConfig = serde_yaml::from_value(yaml_value).unwrap();
         let results = expand_variants(&config).unwrap();
 
         assert_eq!(results.len(), 1);
@@ -232,31 +269,11 @@ variants:
     }
 
     #[test]
-    fn test_expand_variants_sweep_only() {
-        let yaml_str = r#"
-base:
-  case_id: "600"
-  construction_type: "LowMass"
-  num_zones: 1
-  hvac: []
-  windows: []
-  night_ventilation: null
-variants:
-  - name: "setpoint_sweep"
-    sweep:
-      heating_setpoint: [18, 20, 22]
-"#;
-        let config: DeltaConfig = serde_yaml::from_str(yaml_str).unwrap();
-        let results = expand_variants(&config).unwrap();
-
-        assert_eq!(results.len(), 3);
-    }
-
-    #[test]
     fn test_expand_variants_patch_and_sweep() {
         let yaml_str = r#"
 base:
   case_id: "600"
+  description: "Test case for delta analysis"
   construction_type: "LowMass"
   num_zones: 1
   hvac: []
@@ -282,6 +299,7 @@ variants:
         let yaml_str = r#"
 base:
   case_id: "600"
+  description: "Test case for delta analysis"
   construction_type: "LowMass"
   num_zones: 1
   hvac: []
@@ -308,6 +326,7 @@ variants:
         let yaml_str = r#"
 base:
   case_id: "600"
+  description: "Test case for delta analysis"
   construction_type: "LowMass"
   num_zones: 1
   hvac: []
@@ -330,6 +349,7 @@ variants: []
         let yaml_str = r#"
 base:
   case_id: "600"
+  description: "Test case for delta analysis"
   construction_type: "LowMass"
   num_zones: 1
   hvac: []

@@ -139,6 +139,7 @@ pub struct TestCaseResult {
 
 impl TestCaseResult {
     /// Create a passing test result
+    #[allow(clippy::too_many_arguments)]
     pub fn pass(
         id: &str,
         name: &str,
@@ -167,6 +168,7 @@ impl TestCaseResult {
     }
 
     /// Create a failing test result
+    #[allow(clippy::too_many_arguments)]
     pub fn fail(
         id: &str,
         name: &str,
@@ -423,7 +425,15 @@ impl TDDFramework {
             fail_fast: false,
         }
     }
+}
 
+impl Default for TDDFramework {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TDDFramework {
     /// Set reference database from file
     pub fn with_reference_data<P: AsRef<Path>>(mut self, path: P) -> Self {
         match ReferenceDatabase::from_file(path) {
@@ -526,7 +536,7 @@ impl TDDFramework {
         let total_skipped: usize = suites.iter().map(|s| s.summary().skipped).sum();
 
         report.push_str("## Overall Summary\n\n");
-        report.push_str(&format!("| Metric | Value |\n|--------|-------|\n"));
+        report.push_str("| Metric | Value |\n|--------|-------|\n");
         report.push_str(&format!("| Total Tests | {} |\n", total_tests));
         report.push_str(&format!("| Passed | {} |\n", total_passed));
         report.push_str(&format!("| Failed | {} |\n", total_failed));
@@ -548,8 +558,8 @@ impl TDDFramework {
         for suite in suites {
             let summary = suite.summary();
             report.push_str(&format!(
-                "| {} | {} | {} | {} | {} | {:.1}% | {:.2}% |\n",
-                format!("{:?}", summary.domain),
+                "| {:?} | {} | {} | {} | {} | {:.1}% | {:.2}% |\n",
+                summary.domain,
                 summary.total,
                 summary.passed,
                 summary.failed,
@@ -930,11 +940,9 @@ impl TDDFramework {
         let sigma = 5.67e-8; // Stefan-Boltzmann constant
         let emissivity = 0.9;
         let area = 10.0; // m²
-        let t1_k = 293.15; // K (20°C)
-        let t2_k = 283.15; // K (10°C)
-        let expected_q: f64 =
-            sigma * emissivity * area * ((t1_k as f64).powi(4) - (t2_k as f64).powi(4));
-
+        let t1_k: f64 = 293.15; // K (20°C)
+        let t2_k: f64 = 283.15; // K (10°C)
+        let expected_q: f64 = sigma * emissivity * area * (t1_k.powi(4) - t2_k.powi(4));
         let mut result = TestCaseResult::pass(
             "IZ-002",
             "Radiative heat transfer between surfaces",
@@ -1064,8 +1072,8 @@ impl TDDFramework {
     fn run_longwave_radiation_tests(&self, suite: &mut PhysicsTestSuite) {
         // Test 1: Blackbody emissive power
         let sigma = 5.67e-8; // Stefan-Boltzmann constant
-        let t_k = 293.15; // K (20°C)
-        let expected_e: f64 = sigma * (t_k as f64).powi(4); // ~418 W/m²
+        let t_k: f64 = 293.15; // K (20°C)
+        let expected_e: f64 = sigma * t_k.powi(4); // ~418 W/m²
 
         let mut result = TestCaseResult::pass(
             "LR-001",

@@ -1,6 +1,6 @@
 use crate::BatchOracle;
 use anyhow::Result;
-use csv::{Reader, Writer};
+use csv::Writer;
 use serde::Deserialize;
 use std::path::Path;
 
@@ -129,7 +129,7 @@ pub fn compute_metrics(design: &[Vec<f64>], outputs: &[f64]) -> SensitivityRepor
             metrics: Vec::new(),
         };
     }
-    let n_params = design.get(0).map(|row| row.len()).unwrap_or(0);
+    let n_params = design.first().map(|row| row.len()).unwrap_or(0);
     let mut param_metrics: Vec<(String, MetricSet)> = Vec::new();
 
     let y_mean = outputs.iter().copied().sum::<f64>() / n as f64;
@@ -213,7 +213,7 @@ pub fn compute_metrics(design: &[Vec<f64>], outputs: &[f64]) -> SensitivityRepor
 pub fn export_to_csv(report: &SensitivityReport, path: &Path) -> Result<()> {
     let mut wtr = Writer::from_path(path)?;
     // Write header
-    wtr.write_record(&[
+    wtr.write_record([
         "Rank",
         "Parameter",
         "NormalizedCoeff",
@@ -251,8 +251,10 @@ pub fn export_to_csv(report: &SensitivityReport, path: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
+#[allow(unused_imports)]
 mod tests {
     use super::*;
+    use csv::Reader;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -380,7 +382,7 @@ mod tests {
             headers.iter().collect::<Vec<_>>(),
             expected_headers.as_ref()
         );
-        let mut records = rdr.records().collect::<Result<Vec<_>, _>>().unwrap();
+        let records = rdr.records().collect::<Result<Vec<_>, _>>().unwrap();
         // Should have 2 records
         assert_eq!(records.len(), 2);
         // First record should be the one with higher normalized_coeff (A:200)

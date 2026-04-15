@@ -3,10 +3,7 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::tempdir;
 
-use fluxion::analysis::delta::{DeltaConfig, Variant};
-use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use serde_yaml;
-use std::collections::HashMap;
 
 fn fluxion_bin() -> PathBuf {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());

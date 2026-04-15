@@ -272,6 +272,7 @@ impl Analyzer {
     }
 
     /// Creates a new Analyzer with default configuration.
+    #[allow(clippy::should_implement_trait)]
     pub fn default() -> Self {
         Self::new(AnalyzerConfig::default())
     }
@@ -887,7 +888,7 @@ mod tests {
         let config = AnalyzerConfig {
             historical_data_path: None,
             generate_report: true,
-            output_path: Some(PathBuf::from("/nonexistent/path/metrics.md")),
+            output_path: Some(PathBuf::from("/nonexistent:<>/metrics.md")),
         };
         let analyzer = Analyzer::new(config);
 

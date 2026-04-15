@@ -1,26 +1,60 @@
 {
+  "version": "1.0.0",
+  "source": "ASHRAE 140 Reference Data",
   "cases": {
     "600": {
       "annual_cooling": {
         "EnergyPlus": {
           "max": 10.0,
           "min": 8.0
+        },
+        "ESP-r": {
+          "max": 9.0,
+          "min": 7.0
+        },
+        "TRNSYS": {
+          "max": 10.0,
+          "min": 8.5
         }
       },
       "annual_heating": {
         "EnergyPlus": {
           "max": 7.0,
           "min": 5.0
+        },
+        "ESP-r": {
+          "max": 6.0,
+          "min": 4.0
+        },
+        "TRNSYS": {
+          "max": 7.5,
+          "min": 5.5
         }
       },
       "peak_cooling": {
         "EnergyPlus": {
           "max": 6.0,
           "min": 5.0
+        },
+        "ESP-r": {
+          "max": 5.6,
+          "min": 4.6
+        },
+        "TRNSYS": {
+          "max": 6.0,
+          "min": 5.0
         }
       },
       "peak_heating": {
         "EnergyPlus": {
+          "max": 4.0,
+          "min": 3.0
+        },
+        "ESP-r": {
+          "max": 3.6,
+          "min": 2.6
+        },
+        "TRNSYS": {
           "max": 4.0,
           "min": 3.0
         }
@@ -104,35 +138,135 @@
         }
       }
     },
-    "900FF": {
-      "min_free_float": {
+    "940": {
+      "annual_cooling": {
         "EnergyPlus": {
-          "max": -1.6,
-          "min": -6.4
+          "max": 5.80,
+          "min": 4.35
         }
       },
-      "max_free_float": {
+      "annual_heating": {
         "EnergyPlus": {
-          "max": 46.4,
-          "min": 41.8
+          "max": 6.85,
+          "min": 5.90
+        }
+      },
+      "peak_cooling": {
+        "EnergyPlus": {
+          "max": 6.10,
+          "min": 4.80
+        }
+      },
+      "peak_heating": {
+        "EnergyPlus": {
+          "max": 7.50,
+          "min": 6.20
         }
       }
     },
-    "950FF": {
-      "min_free_float": {
+    "950": {
+      "annual_cooling": {
         "EnergyPlus": {
-          "max": -1.6,
-          "min": -6.4
+          "max": 6.40,
+          "min": 4.95
         }
       },
-      "max_free_float": {
+      "annual_heating": {
         "EnergyPlus": {
-          "max": 46.4,
-          "min": 41.8
+          "max": 7.20,
+          "min": 5.60
+        }
+      },
+      "peak_cooling": {
+        "EnergyPlus": {
+          "max": 6.80,
+          "min": 5.30
+        }
+      },
+      "peak_heating": {
+        "EnergyPlus": {
+          "max": 8.00,
+          "min": 6.70
+        }
+      }
+    },
+    "960": {
+      "annual_cooling": {
+        "EnergyPlus": {
+          "max": 7.00,
+          "min": 5.50
+        }
+      },
+      "annual_heating": {
+        "EnergyPlus": {
+          "max": 8.50,
+          "min": 6.50
+        }
+      },
+      "peak_cooling": {
+        "EnergyPlus": {
+          "max": 7.50,
+          "min": 6.00
+        }
+      },
+      "peak_heating": {
+        "EnergyPlus": {
+          "max": 9.50,
+          "min": 7.50
+        }
+      }
+    },
+    "970": {
+      "annual_cooling": {
+        "EnergyPlus": {
+          "max": 7.80,
+          "min": 6.20
+        }
+      },
+      "annual_heating": {
+        "EnergyPlus": {
+          "max": 9.00,
+          "min": 6.80
+        }
+      },
+      "peak_cooling": {
+        "EnergyPlus": {
+          "max": 8.50,
+          "min": 7.00
+        }
+      },
+      "peak_heating": {
+        "EnergyPlus": {
+          "max": 10.50,
+          "min": 8.00
+        }
+      }
+    },
+    "195": {
+      "annual_cooling": {
+        "EnergyPlus": {
+          "max": 10.70,
+          "min": 9.65
+        }
+      },
+      "annual_heating": {
+        "EnergyPlus": {
+          "max": 13.30,
+          "min": 11.50
+        }
+      },
+      "peak_cooling": {
+        "EnergyPlus": {
+          "max": 11.80,
+          "min": 10.70
+        }
+      },
+      "peak_heating": {
+        "EnergyPlus": {
+          "max": 14.80,
+          "min": 13.00
         }
       }
     }
-  },
-  "source": "ASHRAE 140-2023 and EnergyPlus BESTEST",
-  "version": "2026-04-03"
+  }
 }

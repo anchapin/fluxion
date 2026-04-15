@@ -12,7 +12,7 @@ fn test_parallel_validation_execution() {
     //
     // BATCH-01 Requirement: All 18+ ASHRAE 140 cases executed in parallel with rayon
 
-    let mut validator = ASHRAE140Validator::new();
+    let validator = ASHRAE140Validator::new();
 
     // Record start time
     let start = Instant::now();
@@ -91,7 +91,7 @@ fn test_parallel_validation_execution() {
 #[test]
 fn test_result_aggregation_basics() {
     // Sanity check that the report aggregation functions work correctly
-    let mut validator = ASHRAE140Validator::new();
+    let validator = ASHRAE140Validator::new();
     let report = validator.validate_analytical_engine();
 
     // All aggregation methods should return valid numbers

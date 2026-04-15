@@ -668,7 +668,7 @@ mod tests {
             DRSignalSource::TimeOfUse,
         ];
 
-        for source in &sources {
+        for _source in &sources {
             let event = DREvent::new("test".to_string(), DREventType::Emergency, 10, 2, 50.0);
             // Default source is Manual
             assert_eq!(event.source, DRSignalSource::Manual);

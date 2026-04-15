@@ -323,12 +323,13 @@ mod tests {
 
     #[test]
     fn test_load_ahri_coefficients_valid_file() {
-        let temp_path = "/tmp/test_ahri_coefficients.json";
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_ahri_coefficients.json");
         let config = default_ahri_coefficients();
         let json = serde_json::to_string(&config).unwrap();
-        std::fs::write(temp_path, &json).unwrap();
+        std::fs::write(&temp_path, &json).unwrap();
 
-        let result = load_ahri_coefficients(temp_path);
+        let result = load_ahri_coefficients(temp_path.to_str().unwrap());
         assert!(result.is_ok());
         let loaded = result.unwrap();
         assert_eq!(loaded.heatpump_heating.plr.len(), 4);
@@ -339,10 +340,11 @@ mod tests {
 
     #[test]
     fn test_load_ahri_coefficients_invalid_json() {
-        let temp_path = "/tmp/test_ahri_invalid.json";
-        std::fs::write(temp_path, "not valid json").unwrap();
+        let temp_dir = std::env::temp_dir();
+        let temp_path = temp_dir.join("test_ahri_invalid.json");
+        std::fs::write(&temp_path, "not valid json").unwrap();
 
-        let result = load_ahri_coefficients(temp_path);
+        let result = load_ahri_coefficients(temp_path.to_str().unwrap());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to parse"));
 

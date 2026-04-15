@@ -6,7 +6,7 @@
 //! back to requesters via oneshot channels.
 
 use crate::ai::surrogate::SurrogateManager;
-use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender, TrySendError};
+use crossbeam::channel::{self, Receiver, RecvTimeoutError, Sender};
 use std::sync::Arc;
 use std::thread;
 use std::thread::JoinHandle;
@@ -152,8 +152,6 @@ impl Drop for Inner {
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    use std::sync::Arc;
 
     /// Helper function to create a SurrogateManager with dummy model loaded.
     /// Returns None if the dummy model file is not available (e.g., in CI).

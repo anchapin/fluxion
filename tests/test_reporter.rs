@@ -3,9 +3,7 @@
 //! Tests report generation, systematic issue detection,
 //! baseline comparison, and edge cases.
 
-use fluxion::validation::report::{
-    BenchmarkData, BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
-};
+use fluxion::validation::report::{BenchmarkReport, MetricType};
 use fluxion::validation::reporter::{BaselineMetrics, SystematicIssue, ValidationReportGenerator};
 use std::path::PathBuf;
 
@@ -44,7 +42,7 @@ mod reporter_unit_tests {
 
     #[test]
     fn test_render_markdown_summary_values() {
-        let generator = ValidationReportGenerator::new(PathBuf::from("/tmp/test.md"));
+        let _generator = ValidationReportGenerator::new(PathBuf::from("/tmp/test.md"));
         let mut report = BenchmarkReport::new();
 
         // Add passing results

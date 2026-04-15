@@ -41,6 +41,11 @@ cuda = []
 wiring-tracing = []
 # Feature flag for multi-zone support
 multi-zone = []
+# Feature flag for ASHRAE 140 v2021 support
+ashrae_140_v2021 = []
+
+[lints.rust]
+unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
 
 [dependencies]
 # Core Logic
@@ -153,19 +158,25 @@ path = "src/bin/export_csv.rs"
 name = "run_multi_zone_validation"
 path = "src/bin/run_multi_zone_validation.rs"
 
-[[bin]]
-name = "run_cross_validation"
-path = "src/bin/run_cross_validation.rs"
-
 [[example]]
 name = "cross_validation_example"
 path = "examples/cross_validation_example.rs"
 
 [profile.release]
 opt-level = 3
+lto = "thin"
+codegen-units = 4
+split-debuginfo = "packed"
+strip = true
+
+# Optimize for CI: reduce memory usage during release builds
+# Use thin LTO and more codegen units to prevent OOM/SIGSEGV
+
+[profile.release-fast]
+inherits = "release"
+opt-level = 3
 lto = true
 codegen-units = 1
-split-debuginfo = "packed"
 strip = true
 
 # Explicitly include Phase 6 performance optimization test targets

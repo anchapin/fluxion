@@ -37,7 +37,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Weather location metadata.
 ///
@@ -365,7 +365,7 @@ mod tests {
         let result = Tmy3Cache::with_cache_dir(temp_dir.clone());
         assert!(result.is_ok());
 
-        let cache = result.unwrap();
+        let _cache = result.unwrap();
         assert!(temp_dir.exists());
 
         std::fs::remove_dir_all(&temp_dir).ok();

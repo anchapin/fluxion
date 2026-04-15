@@ -447,7 +447,7 @@ fn calculate_p_value(result: &ValidationResult, reference_count: usize) -> f64 {
     let p = 2.0 * (1.0 - cumulative);
 
     // Clamp to [0, 1] to handle numerical issues
-    p.max(0.0).min(1.0)
+    p.clamp(0.0, 1.0)
 }
 
 #[cfg(test)]
@@ -1460,9 +1460,6 @@ mod statistical_metrics_tests {
 
     #[test]
     fn test_statistical_metrics_aggregation() {
-        use crate::validation::report::{BenchmarkReport, ValidationStatus};
-        use std::collections::HashMap;
-
         // Create test report
         let mut report = BenchmarkReport::new();
         report.add_result_simple("600", MetricType::AnnualHeating, 5.2, 5.0, 5.5);
@@ -1483,8 +1480,6 @@ mod statistical_metrics_tests {
 
     #[test]
     fn test_statistical_metrics_zero_exclusion() {
-        use crate::validation::report::{BenchmarkReport, ValidationStatus};
-
         // Create report with zero reference
         let mut report = BenchmarkReport::new();
         report.add_result_simple("600", MetricType::AnnualHeating, 5.2, 5.0, 5.5);

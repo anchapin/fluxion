@@ -852,8 +852,6 @@ fn test_surrogate_inference_single_temperature() {
 fn test_surrogate_manager_backend_configuration() {
     println!("\n=== Test 47: Surrogate Manager Backend Configuration ===");
 
-    use fluxion::ai::surrogate::InferenceBackend;
-
     let manager = SurrogateManager::new().unwrap();
 
     // Verify backend configuration

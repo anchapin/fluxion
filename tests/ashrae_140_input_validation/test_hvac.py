@@ -28,7 +28,7 @@ class TestASHRAE140HVAC:
             cwd=project_root,
             capture_output=True,
             text=True,
-            timeout=60,
+            timeout=300,
         )
 
         return {

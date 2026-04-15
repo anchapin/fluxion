@@ -255,7 +255,7 @@ mod tests {
 
     #[test]
     fn test_html_generation() {
-        let mut data = TimeSeriesData {
+        let data = TimeSeriesData {
             timestamps: (0..8760).step_by(10).collect(),
             datasets: vec![
                 Dataset {

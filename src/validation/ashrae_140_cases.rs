@@ -31,6 +31,8 @@
 //!     .unwrap();
 //! ```
 
+#![allow(clippy::option_as_ref_deref)]
+
 use crate::sim::construction::{Assemblies, Construction, Materials};
 use crate::weather::{HourlyWeatherData, WeatherSource};
 use serde::{Deserialize, Serialize};
@@ -842,6 +844,7 @@ impl ASHRAE140Case {
     }
 
     /// Returns the case specification for this test case.
+    #[allow(unreachable_code)]
     pub fn spec(&self) -> CaseSpec {
         // Get the appropriate preset from CaseBuilder
         match self {

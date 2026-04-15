@@ -14,6 +14,15 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      env:
+        DEBIAN_FRONTEND: noninteractive
+
     - name: Install Rust (${{ inputs.toolchain }})
       uses: dtolnay/rust-toolchain@stable
       with:

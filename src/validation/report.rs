@@ -12,8 +12,13 @@ use std::collections::HashMap;
 use std::env;
 use std::fmt;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::Instant;
+
+use plotters::backend::BitMapBackend;
+use plotters::drawing::IntoDrawingArea;
+use plotters::prelude::*;
+use plotters::style::colors::WHITE;
 
 use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
 use crate::validation::statistical::{StatisticalMetrics, ValidationGroup};
@@ -36,15 +41,15 @@ pub enum MetricType {
 }
 
 impl MetricType {
-    /// Returns the display name for this metric type.
+    /// Returns the display name for this metric type (ASHRAE 140 compliant).
     pub fn display_name(&self) -> &str {
         match self {
-            MetricType::AnnualHeating => "Annual Heating (MWh)",
-            MetricType::AnnualCooling => "Annual Cooling (MWh)",
-            MetricType::PeakHeating => "Peak Heating (kW)",
-            MetricType::PeakCooling => "Peak Cooling (kW)",
-            MetricType::MinFreeFloat => "Min Free-Float Temp (°C)",
-            MetricType::MaxFreeFloat => "Max Free-Float Temp (°C)",
+            MetricType::AnnualHeating => "Annual Heating Energy (MWh)",
+            MetricType::AnnualCooling => "Annual Cooling Energy (MWh)",
+            MetricType::PeakHeating => "Peak Heating Load (kW)",
+            MetricType::PeakCooling => "Peak Cooling Load (kW)",
+            MetricType::MinFreeFloat => "Minimum Free-Floating Temperature (°C)",
+            MetricType::MaxFreeFloat => "Maximum Free-Floating Temperature (°C)",
         }
     }
 
@@ -116,9 +121,9 @@ impl ValidationStatus {
 
 /// Computes validation status for a given value against a reference range.
 ///
-/// Status determination:
-/// - Pass: value within [min, max] with <10% deviation from midpoint
-/// - Warning: within [min, max] but >=10% deviation, OR within tolerance band [min*0.95, max*1.05]
+/// Status determination according to ASHRAE 140-2017:
+/// - Pass: value within [min, max] with <5% deviation from midpoint
+/// - Warning: within [min, max] but >=5% deviation, OR within tolerance band [min*0.95, max*1.05]
 /// - Fail: outside tolerance band
 pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatus {
     let ref_mid = (ref_min + ref_max) / 2.0;
@@ -132,7 +137,7 @@ pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatu
     let tolerance_max = ref_max * 1.05;
 
     if value >= ref_min && value <= ref_max {
-        if percent_error.abs() >= 10.0 {
+        if percent_error.abs() >= 5.0 {
             ValidationStatus::Warning
         } else {
             ValidationStatus::Pass
@@ -2263,7 +2268,7 @@ impl ValidationSuite {
         for result in &self.results {
             case_results
                 .entry(result.case_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(result);
         }
 
@@ -2822,6 +2827,7 @@ impl DeltaReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn test_validation_result_new_methods() {
@@ -2855,7 +2861,7 @@ mod tests {
     fn test_metric_type_display() {
         assert_eq!(
             MetricType::AnnualHeating.display_name(),
-            "Annual Heating (MWh)"
+            "Annual Heating Energy (MWh)"
         );
         assert_eq!(MetricType::AnnualCooling.units(), "MWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
@@ -3544,8 +3550,8 @@ mod tests {
 
         let deltas = report.delta_analysis("600");
         assert!(!deltas.is_empty());
-        assert!(deltas.contains_key("610 - Annual Heating (MWh)"));
-        assert!((deltas["610 - Annual Heating (MWh)"] - 0.5).abs() < 0.01);
+        assert!(deltas.contains_key("610 - Annual Heating Energy (MWh)"));
+        assert!((deltas["610 - Annual Heating Energy (MWh)"] - 0.5).abs() < 0.01);
     }
 
     #[test]

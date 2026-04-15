@@ -33,6 +33,7 @@ use crate::sim::assembly::BuildingAssembly;
 /// This wrapper adapts the CTFSolver to work with the unified solver interface,
 /// handling conversion from BuildingAssembly to CTF coefficients and managing
 /// boundary condition transformations.
+#[allow(dead_code)]
 pub struct CTFSolverWrapper {
     /// Underlying CTF solver
     solver: Option<CTFSolver>,

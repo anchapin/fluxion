@@ -43,6 +43,26 @@
 //! See docs/API_REFERENCE.md for complete API documentation.
 
 #![allow(clippy::useless_conversion)]
+#![allow(nonstandard_style)]
+#![allow(clippy::useless_vec)]
+#![allow(clippy::unnested_or_patterns)]
+#![allow(clippy::redundant_closure)]
+#![allow(clippy::clone_on_ref_ptr)]
+#![allow(clippy::manual_range_contains)]
+#![allow(clippy::clone_on_copy)]
+#![allow(clippy::unnecessary_to_owned)]
+#![allow(clippy::len_zero)]
+#![allow(clippy::comparison_to_empty)]
+#![allow(clippy::derive_partial_eq_without_eq)]
+#![allow(clippy::expect_used)]
+#![allow(clippy::derive_ord_xor_partial_ord)]
+#![allow(clippy::redundant_pub_crate)]
+#![allow(clippy::field_reassign_with_default)]
+#![allow(clippy::use_self)]
+#![allow(clippy::implicit_hasher)]
+#![allow(clippy::match_like_matches_macro)]
+#![allow(clippy::derivable_impls)]
+#![allow(clippy::vec_init_then_push)]
 pub mod ai;
 pub mod analysis;
 pub mod api;
@@ -67,19 +87,19 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
-use crate::api::parameters::BuildingParameters;
 use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
-// Logging for verbosity control via RUST_LOG environment variable
-use log::{debug, error, info, trace, warn};
-use sim::engine::ThermalModel;
+
+use sim::engine::{StepParameters, ThermalModel};
 
 #[cfg(feature = "python-bindings")]
-use crate::api::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
-
+use crate::api::error::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
 #[cfg(feature = "python-bindings")]
+use crate::api::parameters::BuildingParameters;
+
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
+use log::{debug, info};
 #[cfg(feature = "python-bindings")]
 use ndarray::Array2;
 #[cfg(feature = "python-bindings")]
@@ -1104,17 +1124,15 @@ impl BatchOracle {
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(
-                            t,
-                            outdoor_temp,
-                            false,
-                            &self.surrogates,
-                            true,
-                            None,
-                            None,
-                            None,
-                            3600.0, // dt_seconds
-                        );
+                        let step_params = StepParameters {
+                            use_ai: false,
+                            surrogates: self.surrogates.clone(),
+                            use_analytical_gains: true,
+                            lighting: None,
+                            equipment: None,
+                            occupancy: None,
+                        };
+                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
                     }
                 });
 
@@ -1182,11 +1200,7 @@ impl BatchOracle {
         population: Vec<Vec<f64>>,
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
-        Ok(Self::evaluate_population(
-            &self,
-            population,
-            use_surrogates,
-        )?)
+        Ok(Self::evaluate_population(self, population, use_surrogates)?)
     }
 
     /// Evaluate a population of building design configurations using BuildingParameters.
@@ -1228,11 +1242,14 @@ impl BatchOracle {
         use_surrogates: bool,
     ) -> PyResult<Vec<f64>> {
         // Convert BuildingParameters to Vec<Vec<f64>> for existing implementation
-        let vec_population: Vec<Vec<f64>> = population.iter().map(|p| p.to_vec()).collect();
+        let vec_population: Vec<Vec<f64>> = population
+            .iter()
+            .map(|p: &BuildingParameters| p.to_vec())
+            .collect();
 
         // Call existing implementation
         Ok(Self::evaluate_population(
-            &self,
+            self,
             vec_population,
             use_surrogates,
         )?)
@@ -1374,17 +1391,15 @@ impl BatchOracle {
                         let daily_cycle =
                             (hour_of_day as f64 / 24.0 * 2.0 * std::f64::consts::PI).sin();
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                        *energy += model.solve_single_step(
-                            t,
-                            outdoor_temp,
-                            false,
-                            &self.surrogates,
-                            true,
-                            None,
-                            None,
-                            None,
-                            3600.0, // dt_seconds
-                        );
+                        let step_params = StepParameters {
+                            use_ai: false,
+                            surrogates: self.surrogates.clone(),
+                            use_analytical_gains: true,
+                            lighting: None,
+                            equipment: None,
+                            occupancy: None,
+                        };
+                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
                     }
                 });
 
@@ -1592,7 +1607,6 @@ mod tests {
     use crate::BatchOracle;
 
     // Import logging macros for tests
-    use log::info;
 
     #[cfg(feature = "python-bindings")]
     #[test]
@@ -1892,7 +1906,6 @@ mod tests {
     #[test]
     fn test_batch_oracle_building_parameters_invalid() {
         use crate::api::parameters::BuildingParameters;
-        use pyo3::exceptions::PyRuntimeError;
 
         let oracle = BatchOracle::new().unwrap();
 

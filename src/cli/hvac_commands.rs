@@ -3,7 +3,7 @@
 //! This module provides command-line interface for zone-level HVAC control
 //! and simulation, integrating with the multi-zone CLI structure.
 
-use clap::{Args, Subcommand};
+use clap::Subcommand;
 use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
@@ -19,7 +19,7 @@ lazy_static! {
 }
 
 /// HVAC command-line interface
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum HvacCommand {
     /// Configure zone setpoints
     Setpoints {
@@ -40,7 +40,7 @@ pub enum HvacCommand {
 }
 
 /// Setpoint configuration actions
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum SetpointAction {
     /// Set heating setpoint for a zone
     SetHeating {
@@ -118,7 +118,6 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             zone_id,
             temperature,
         } => {
-            // Validate temperature range
             if temperature < 10.0 || temperature > 40.0 {
                 return Err(format!(
                     "Temperature {}°C is out of valid range (10.0°C to 40.0°C)",
@@ -147,7 +146,6 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             Ok(())
         }
         SetpointAction::SetDeadband { zone_id, deadband } => {
-            // Validate deadband range
             if deadband <= 0.0 || deadband > 5.0 {
                 return Err(format!(
                     "Deadband {}°C is out of valid range (0.0°C to 5.0°C)",
@@ -364,7 +362,10 @@ mod tests {
         let result = handle_simulate(100, None);
         assert!(result.is_ok());
 
-        let result = handle_simulate(50, Some(PathBuf::from("/tmp/output.csv")));
+        // Use a temporary file for the test to avoid path issues on Windows
+        let temp_dir = std::env::temp_dir();
+        let output_path = temp_dir.join("test_output.csv");
+        let result = handle_simulate(50, Some(output_path));
         assert!(result.is_ok());
     }
 }
