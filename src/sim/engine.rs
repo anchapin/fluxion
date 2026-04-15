@@ -3728,7 +3728,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
-        let (t_sol_air_data, ctf_flux_w, fd_flux_w) =
+        let (_t_sol_air_data, ctf_flux_w, fd_flux_w) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
 
         // Get ground temperature at this timestep
@@ -3786,8 +3786,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
         let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
         let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
-        for i in 0..self.num_zones {
-            let i_sol = solar_ref[i]; // Solar radiation intensity W/m²
+        for i_sol in solar_ref.iter().take(self.num_zones) {
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
