@@ -43,9 +43,11 @@ jobs:
           echo "===================="
 
           # Run tarpaulin with verbose output
-          # --timeout is test response timeout (default 60s), increase to 600s to handle slow tests
+          # --timeout is test response timeout (default 60s), increase to 3600s for full coverage run
+          # Performance tests are excluded via RUSTFLAGS cfg detection (handled in test code)
+          # Note: ASHRAE 140 tests are slow under coverage but we need their coverage
           cargo tarpaulin \
-            --timeout 600 \
+            --timeout 3600 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
