@@ -1,7 +1,7 @@
 // validation/reporting/mod.rs
 /// Validation reporting module
 ///
-/// This module provides reporting capabilities for validation results,
+/// This module provides reporting capabilities for validation results
 /// including CLI commands, report generation, and examples.
 
 /// CLI commands for reporting

@@ -45,7 +45,7 @@ jobs:
         run: cargo run --release -- validate --format=markdown --output-file=validation_report.md
 
       - name: Upload validation report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: validation-report
           path: validation_report.md
