@@ -309,7 +309,7 @@ fn test_hourly_solar_full_day() {
 
     // Should have gain for ~12-16 hours in summer at 39.7°N latitude
     assert!(
-        hours_with_gain >= 12 && hours_with_gain <= 16,
+        (12..=16).contains(&hours_with_gain),
         "Should have gain for 12-16 hours in summer, got {}",
         hours_with_gain
     );

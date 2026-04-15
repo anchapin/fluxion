@@ -3321,50 +3321,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
-    fn hvac_power_demand(&self, hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        // Use direct setpoints for HVAC control (updated by validation loop each hour)
-        // This ensures per-hour setpoint changes from validation loop are respected
+    fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
         let heating_setpoint = self.heating_setpoint;
         let cooling_setpoint = self.cooling_setpoint;
 
-        // Convert to VectorField for element-wise operations
         let t_vec = t_i_free.as_ref();
         let sens_vec = sensitivity.as_ref();
+        let enabled_vec = self.hvac_enabled.as_ref();
 
-        // Compute HVAC demand per zone
         let mut demand_vec = Vec::with_capacity(self.num_zones);
         for i in 0..self.num_zones {
-            let t = t_vec[i];
+            let enabled = enabled_vec[i];
 
-            // Determine HVAC mode based on time-varying setpoints
+            if enabled == 0.0 {
+                demand_vec.push(0.0);
+                continue;
+            }
+
+            let t = t_vec[i];
             let power = if t < heating_setpoint {
-                // Heating mode
-                // Use the full HVAC capacity for heating (no artificial limit)
                 ((heating_setpoint - t) / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
+                    * enabled
             } else if t >= cooling_setpoint {
-                // Cooling mode (provide cooling when at or above setpoint)
                 ((cooling_setpoint - t) / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
+                    * enabled
             } else {
-                // Off/deadband
                 0.0
             };
             demand_vec.push(power);
-        }
-
-        // Convert back to T and apply per-zone HVAC enable flag
-        // Multiply in place to avoid an extra VectorField allocation
-        let enabled_vec = self.hvac_enabled.as_ref();
-        for (power, &enabled) in demand_vec.iter_mut().zip(enabled_vec.iter()) {
-            *power *= enabled;
-        }
-
-        // Debug: Print HVAC demand for Case 600
-        if self.case_id == "600" && hour == 12 {
-            let temp_diff = cooling_setpoint - t_vec[0];
-            let raw_power = temp_diff / sens_vec[0];
-            let clamped_power = raw_power.clamp(-self.hvac_cooling_capacity, 0.0);
-            println!("DEBUG HVAC Case 600 hour {}: t={:.2}°C, cooling_sp={:.1}°C, sens={:.6} K/W, cap={:.2}W, diff={:.2}K, raw={:.2}W, clamped={:.2}W, enabled={}, final={:.2}W",
-                hour, t_vec[0], cooling_setpoint, sens_vec[0], self.hvac_cooling_capacity, temp_diff, raw_power, clamped_power, enabled_vec[0], demand_vec[0]);
         }
 
         T::from(VectorField::new(demand_vec))
@@ -3744,7 +3728,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
-        let (t_sol_air_data, ctf_flux_w, fd_flux_w) =
+        let (_t_sol_air_data, ctf_flux_w, fd_flux_w) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
 
         // Get ground temperature at this timestep
@@ -3792,7 +3776,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_st = T::from(VectorField::new(phi_st_data));
         let phi_m = T::from(VectorField::new(phi_m_data));
 
-        // Use sol-air temperature from early calculation
+        // === FIX D1: Calculate sol-air temperature for exterior surface ===
+        // Per ISO 13790, exterior surface temperature is affected by solar radiation
+        // T_sol-air = T_outdoor + (α × I_sol / h_se)
+        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
+        use crate::physics::constants::thermal::ashrae_140::v2023::{
+            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
+        };
+        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
+        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
+        let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
+        for i_sol in solar_ref.iter().take(self.num_zones) {
+            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
+            t_sol_air_data.push(t_sol_air_zone);
+        }
         let t_sol_air = VectorField::new(t_sol_air_data.clone());
 
         // Simplified 5R1C calculation using CTA

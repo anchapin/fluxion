@@ -122,11 +122,11 @@ mod modulation_tests {
         let (_, mod_cooling) = controller.calculate_modulation(50.0, 45.0, 0.1);
 
         assert!(
-            mod_heating >= 0.0 && mod_heating <= 1.0,
+            (0.0..=1.0).contains(&mod_heating),
             "Heating modulation should be bounded [0, 1]"
         );
         assert!(
-            mod_cooling >= 0.0 && mod_cooling <= 1.0,
+            (0.0..=1.0).contains(&mod_cooling),
             "Cooling modulation should be bounded [0, 1]"
         );
     }
