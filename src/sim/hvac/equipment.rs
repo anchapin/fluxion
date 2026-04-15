@@ -307,6 +307,7 @@ impl VariableCapacityEquipment for Chiller {
 /// - Heating-only equipment (no cooling mode)
 /// - Capacity less sensitive to outdoor temperature than heat pumps
 /// - Typical efficiency: 80-95% (AFUE - Annual Fuel Utilization Efficiency)
+/// - Electrical power is for fans, pumps, and controls (not fuel)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Boiler {
     /// Equipment identifier
@@ -323,12 +324,17 @@ pub struct Boiler {
     pub design_temp: f64,
     /// Polynomial efficiency curve for heating mode
     pub efficiency_curve_heating: crate::sim::hvac::efficiency_curves::EfficiencyCurve,
+    /// Standby power consumption for controls and ignition (W)
+    /// Typical gas boiler standby power: 5-50W
+    pub standby_power: f64,
+    /// Electrical power consumption factor when firing (W per W of thermal output)
+    /// For gas boilers, fans and pumps consume ~0.5-2% of heating capacity
+    pub electrical_power_factor: f64,
 }
 
 impl Boiler {
     /// Create a new boiler with default parameters
     pub fn new(id: String, heating_capacity: f64, efficiency: f64, design_temp: f64) -> Self {
-        // Use default AHRI coefficients for now
         let default_coeffs = crate::sim::hvac::efficiency_curves::default_ahri_coefficients();
 
         Self {
@@ -336,9 +342,11 @@ impl Boiler {
             heating_capacity,
             efficiency,
             current_plr: 0.0,
-            min_outdoor_temp: -20.0, // Minimum -20°C for boiler operation
+            min_outdoor_temp: -20.0,
             design_temp,
             efficiency_curve_heating: (&default_coeffs.boiler).into(),
+            standby_power: 5.0,
+            electrical_power_factor: 0.01,
         }
     }
 
@@ -371,17 +379,34 @@ impl VariableCapacityEquipment for Boiler {
                 // Replace linear degradation with polynomial curve
                 self.efficiency_curve_heating.cop_at(plr, outdoor_temp)
             }
-            HVACMode::Cooling | HVACMode::Off => 0.0, // Boilers don't cool
+            HVACMode::Cooling | HVACMode::Off => 0.0,
         }
     }
 
     fn calculate_power(&self, load: f64, outdoor_temp: f64, mode: HVACMode) -> f64 {
-        let efficiency =
-            self.calculate_efficiency(load / self.rated_capacity(), outdoor_temp, mode);
-        if efficiency > 0.0 {
-            load / efficiency
-        } else {
-            0.0
+        match mode {
+            HVACMode::Heating => {
+                if load > 0.0 {
+                    let plr = if self.current_plr > 0.0 {
+                        self.current_plr
+                    } else {
+                        let capacity = self.capacity_at_temperature(outdoor_temp);
+                        if capacity > 0.0 {
+                            (load / capacity).clamp(0.0, 1.0)
+                        } else {
+                            0.0
+                        }
+                    };
+                    if plr > 0.0 {
+                        load * self.electrical_power_factor + self.standby_power
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                }
+            }
+            HVACMode::Cooling | HVACMode::Off => 0.0,
         }
     }
 
@@ -691,10 +716,11 @@ mod tests {
         assert!(eff_cold < eff_design); // Slight degradation at cold temp
 
         // Test power calculation
-        // Power = load / efficiency_at_PLR (efficiency curve returns AFUE-like value)
-        // At PLR=0.5, efficiency is close to rated 0.85
+        // For a gas boiler, electrical power = thermal_output * electrical_power_factor + standby
+        // At PLR=0.5 (50kW load / 100kW capacity), electrical power should be ~500W
+        // This represents fans, pumps, and controls - NOT fuel input
         let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
-        assert!(power > 50000.0 && power < 70000.0); // Reasonable range for 50kW load
+        assert!(power > 400.0 && power < 700.0); // ~500W for 50kW thermal output
 
         // Test PLR tracking
         let mut boiler_mut = boiler.clone();

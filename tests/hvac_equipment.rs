@@ -118,11 +118,13 @@ fn test_boiler_variable_capacity() {
     );
 
     // Test power calculation
-    // Relaxed tolerance to match efficiency tolerance
+    // For a gas boiler, electrical power is much lower than fuel power.
+    // Electrical power = thermal_output * electrical_power_factor + standby
+    // = 50000 * 0.01 + 5 = 505W (approximately)
     let power = boiler.calculate_power(50000.0, -5.0, HVACMode::Heating);
     assert!(
-        (power - 58823.53).abs() < 6000.0, // ~10% of expected value
-        "Boiler power should be ~58823W, got {:.0}W",
+        power > 400.0 && power < 700.0,
+        "Boiler electrical power should be ~500W, got {:.0}W",
         power
     );
 
