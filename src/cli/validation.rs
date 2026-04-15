@@ -12,10 +12,7 @@ use std::time::{Duration, Instant};
 
 use crate::thermal::mass::types::ConstructionType;
 use crate::validation::ashrae140::ASHRAE140Case;
-use crate::validation::case_195_calibration::CalibrationResult;
-use crate::validation::high_mass::{
-    generate_combined_report, run_all_high_mass_cases, validate_construction_type,
-};
+use crate::validation::high_mass::{generate_combined_report, run_all_high_mass_cases};
 use crate::validation::reporting::cli::ReportingCommand;
 
 /// Summary structure for tracking validation results
@@ -34,7 +31,7 @@ impl ValidationSummary {
         Self::default()
     }
 
-    fn add_success(&mut self, case_num: u32, duration: std::time::Duration) {
+    fn add_success(&mut self, _case_num: u32, duration: std::time::Duration) {
         self.total_cases += 1;
         self.successful += 1;
         self.total_duration += duration.as_secs_f32() as f64;
@@ -506,7 +503,7 @@ fn run_batch_cross_validation(
 fn run_performance_profile(case_num: u32, iterations: usize, output_dir: String) -> Result<()> {
     let case_num_validated = parse_case_number(case_num)?;
     let case_id = case_num_validated.to_string();
-    let case = match crate::validation::ASHRAE140Case::from_case_id(&case_id) {
+    let _case = match crate::validation::ASHRAE140Case::from_case_id(&case_id) {
         Some(case_enum) => case_enum,
         None => return Err(anyhow!("Invalid case number: {}", case_num_validated)),
     };
@@ -531,7 +528,7 @@ fn run_series_performance_profile(
     series: String,
     iterations: usize,
     output_dir: String,
-    parallel: usize,
+    _parallel: usize,
 ) -> Result<()> {
     let cases = parse_series(&series)?;
 
@@ -617,7 +614,7 @@ fn generate_comprehensive_performance_report(output_path: String, detailed: bool
             serde_json::to_string_pretty(&perf_report).unwrap_or_default()
         } else {
             use crate::validation::performance::metrics::PerformanceMetrics;
-            use crate::validation::performance::reports::PerformanceReport;
+
             use std::time::Duration;
             let default_metrics = PerformanceMetrics {
                 timestep_duration: Duration::from_secs(0),
@@ -684,8 +681,8 @@ fn run_validation_with_performance_monitoring(
 /// Handle parallel validation command
 fn handle_validate_parallel(
     threads: Option<usize>,
-    chunk_size: Option<usize>,
-    progress: bool,
+    _chunk_size: Option<usize>,
+    _progress: bool,
     output_dir: &str,
 ) -> Result<()> {
     println!(
@@ -734,7 +731,7 @@ fn handle_validate_parallel(
 /// Handle parallel high-mass validation command
 fn handle_validate_parallel_high_mass(
     threads: Option<usize>,
-    progress: bool,
+    _progress: bool,
     output_dir: &str,
 ) -> Result<()> {
     println!(
@@ -776,7 +773,7 @@ fn handle_validate_parallel_high_mass(
 }
 
 /// Handle high-mass report generation command
-fn handle_high_mass_report(output_dir: &str, json: bool, detailed: bool) -> Result<()> {
+fn handle_high_mass_report(output_dir: &str, json: bool, _detailed: bool) -> Result<()> {
     println!("Generating high-mass validation reports...");
 
     // Create output directory
@@ -993,7 +990,7 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
             reference_file,
             output,
             tolerance,
-            detailed,
+            detailed: _,
         } => run_cross_validation(
             *case,
             tool.clone(),
@@ -1069,9 +1066,9 @@ pub fn handle_validation_command(command: &ValidationSubcommand) -> Result<()> {
 
 /// Run Case 195 calibration
 fn run_case_195_calibration(
-    max_iterations: usize,
-    learning_rate: f64,
-    tolerance: f64,
+    _max_iterations: usize,
+    _learning_rate: f64,
+    _tolerance: f64,
     output_dir: &str,
 ) -> Result<()> {
     println!("Starting Case 195 calibration...");

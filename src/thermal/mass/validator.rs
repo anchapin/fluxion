@@ -4,7 +4,6 @@
 //! ASHRAE 140-2017 Addendum B acceptance criteria metrics.
 
 use crate::thermal::mass::types::ValidationResult;
-use std::f64::consts::PI;
 
 /// Tolerance bands for ASHRAE 140 validation.
 #[derive(Debug, Clone)]

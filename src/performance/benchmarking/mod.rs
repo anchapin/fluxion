@@ -1,6 +1,6 @@
 //! Performance benchmarking and measurement utilities
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 /// Measure the execution time of an operation in seconds
 ///

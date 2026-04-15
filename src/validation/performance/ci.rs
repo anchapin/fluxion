@@ -1,5 +1,4 @@
 use chrono::{DateTime, Utc};
-use serde_json;
 use std::process::Command;
 
 pub struct CiPerformanceValidator {

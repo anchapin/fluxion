@@ -16,7 +16,7 @@ fn parse_fluxion_config(config_path: &PathBuf) -> Result<serde_json::Value, Box<
 
 /// Run Fluxion simulation and return results
 fn run_fluxion_simulation(
-    config: &serde_json::Value,
+    _config: &serde_json::Value,
 ) -> Result<crate::validation::MultiZoneValidationResults, Box<dyn Error>> {
     // In a real implementation, this would run the actual simulation
     // For now, return a mock result
@@ -157,12 +157,12 @@ pub fn run_cli_validation(config: &EspRCliConfig) -> Result<EspRCliResult, Box<d
     let passed = pass_rate >= 0.95; // 95% pass rate required
 
     // Print summary to console
-    print_summary(&config, passed, pass_rate);
+    print_summary(config, passed, pass_rate);
 
     // Save report if output path specified
     let result = EspRCliResult::new(passed, pass_rate, report.clone(), None);
     if let Some(output_path) = &config.output_path {
-        save_report(&config, &result, output_path)?;
+        save_report(config, &result, output_path)?;
     }
 
     Ok(result)
@@ -221,11 +221,11 @@ pub fn generate_markdown_report(result: &EspRCliResult) -> Result<String, Box<dy
     let mut report = String::new();
 
     // Header
-    report.push_str(&format!("# ESP-r Cross-Validation CLI Report\n\n"));
+    report.push_str(&"# ESP-r Cross-Validation CLI Report\n\n".to_string());
     report.push_str(&format!("**Timestamp:** {}\n\n", timestamp));
 
     // Test result summary
-    report.push_str(&format!("## Test Results\n\n"));
+    report.push_str(&"## Test Results\n\n".to_string());
     report.push_str(&format!(
         "**Overall Status:** {}\n\n",
         if result.passed {
@@ -240,9 +240,9 @@ pub fn generate_markdown_report(result: &EspRCliResult) -> Result<String, Box<dy
     ));
 
     // Zone results table
-    report.push_str(&format!("## Zone Results\n\n"));
-    report.push_str(&format!("| Zone ID | Temp Within Tolerance | Heating Within Tolerance | Temp Difference | Heating Difference |\n"));
-    report.push_str(&format!("|----------|------------------------|----------------------------|------------------|---------------------|\n"));
+    report.push_str(&"## Zone Results\n\n".to_string());
+    report.push_str(&"| Zone ID | Temp Within Tolerance | Heating Within Tolerance | Temp Difference | Heating Difference |\n".to_string());
+    report.push_str(&"|----------|------------------------|----------------------------|------------------|---------------------|\n".to_string());
 
     for zone_result in &result.report.zone_results {
         report.push_str(&format!(
@@ -264,7 +264,7 @@ pub fn generate_markdown_report(result: &EspRCliResult) -> Result<String, Box<dy
     }
 
     // Statistics
-    report.push_str(&format!("\n## Statistics\n\n"));
+    report.push_str(&"\n## Statistics\n\n".to_string());
     report.push_str(&format!(
         "- **Mean Temperature Difference:** {:.2}°C\n\n",
         result.report.statistics.mean_temp_difference

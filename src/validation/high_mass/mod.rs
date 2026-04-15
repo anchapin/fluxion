@@ -49,7 +49,7 @@ pub fn run_all_high_mass_cases() -> Vec<crate::validation::report::ValidationRes
 
 /// Generate a combined validation report from results
 pub fn generate_combined_report(
-    results: &[crate::validation::report::ValidationResult],
+    _results: &[crate::validation::report::ValidationResult],
 ) -> CombinedHighMassReport {
     // This is a simplified version - in a real implementation, we would
     // convert ValidationResult to HighMassValidationReport with full metrics

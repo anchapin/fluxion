@@ -158,9 +158,9 @@ fn generate_markdown_test_report(test_result: &EspRTestResult) -> Result<String,
     let mut report = String::new();
 
     // Header
-    report.push_str(&format!("# ESP-r Cross-Validation Test Report\n\n"));
+    report.push_str(&"# ESP-r Cross-Validation Test Report\n\n".to_string());
     report.push_str(&format!("**Timestamp:** {}\n\n", timestamp));
-    report.push_str(&format!("**Test Configuration:**\n\n"));
+    report.push_str(&"**Test Configuration:**\n\n".to_string());
     report.push_str(&format!(
         "- ESP-r Output: {}\n\n",
         test_result.config.esp_r_output_path.display()
@@ -175,7 +175,7 @@ fn generate_markdown_test_report(test_result: &EspRTestResult) -> Result<String,
     ));
 
     // Test result summary
-    report.push_str(&format!("## Test Results\n\n"));
+    report.push_str(&"## Test Results\n\n".to_string());
     report.push_str(&format!(
         "**Overall Status:** {}\n\n",
         if test_result.passed {
@@ -190,9 +190,9 @@ fn generate_markdown_test_report(test_result: &EspRTestResult) -> Result<String,
     ));
 
     // Zone results table
-    report.push_str(&format!("## Zone Results\n\n"));
-    report.push_str(&format!("| Zone ID | Temp Within Tolerance | Heating Within Tolerance | Temp Difference | Heating Difference |\n"));
-    report.push_str(&format!("|----------|------------------------|----------------------------|------------------|---------------------|\n"));
+    report.push_str(&"## Zone Results\n\n".to_string());
+    report.push_str(&"| Zone ID | Temp Within Tolerance | Heating Within Tolerance | Temp Difference | Heating Difference |\n".to_string());
+    report.push_str(&"|----------|------------------------|----------------------------|------------------|---------------------|\n".to_string());
 
     for zone_result in &test_result.report.zone_results {
         report.push_str(&format!(
@@ -214,7 +214,7 @@ fn generate_markdown_test_report(test_result: &EspRTestResult) -> Result<String,
     }
 
     // Statistics
-    report.push_str(&format!("\n## Statistics\n\n"));
+    report.push_str(&"\n## Statistics\n\n".to_string());
     report.push_str(&format!(
         "- **Mean Temperature Difference:** {:.2}°C\n\n",
         test_result.report.statistics.mean_temp_difference

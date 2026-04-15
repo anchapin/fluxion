@@ -16,7 +16,6 @@ pub use performance::PerformanceCommand;
 pub use validation::ValidationSubcommand;
 
 use clap::{Parser, Subcommand};
-use std::path::PathBuf;
 
 /// Main CLI structure
 #[derive(Parser)]

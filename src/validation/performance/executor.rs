@@ -2,10 +2,6 @@
 use crate::validation::high_mass::test_cases::HighMassValidationCase;
 use crate::validation::report::ValidationResult;
 use serde::{Deserialize, Serialize};
-/// Parallel validation executor
-///
-/// This module provides parallel execution capabilities for validation workflows
-use std::sync::Arc;
 
 /// Parallel validation executor
 ///

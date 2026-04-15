@@ -71,6 +71,12 @@ pub struct Phase47CompletionValidator {
     requirements: Vec<PhaseRequirement>,
 }
 
+impl Default for Phase47CompletionValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Phase47CompletionValidator {
     pub fn new() -> Self {
         Self {

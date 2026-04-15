@@ -2,7 +2,7 @@
 
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use anyhow::Error as AnyhowError;
-use log::{debug, error, info, warn};
+use log::{info, warn};
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,

@@ -23,6 +23,12 @@ pub struct ValidationReference {
     // Reference data structure
 }
 
+impl Default for ValidationReference {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidationReference {
     pub fn new() -> Self {
         Self {

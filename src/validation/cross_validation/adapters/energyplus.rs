@@ -65,7 +65,7 @@ impl CrossValidationAdapter for EnergyPlusAdapter {
         reference: &ValidationResults,
     ) -> ComparisonReport {
         // Use the core comparison function with EnergyPlus-specific tolerance
-        let tolerance = self.default_tolerance();
+        let _tolerance = self.default_tolerance();
         super::super::compare_results(fluxion, reference, self.tool_name())
     }
 

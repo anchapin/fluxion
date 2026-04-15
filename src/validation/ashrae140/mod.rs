@@ -9,7 +9,7 @@ pub use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
 // Import necessary crates for validation execution
 use crate::validation::report::MetricType;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -277,8 +277,8 @@ pub fn run_validation_series_parallel(
 /// Optimized version of validation using Arc for thread-safe data
 pub fn run_validation_optimized(case: ASHRAE140Case) -> crate::validation::ASHRAE140CaseDefinition {
     // Use Arc for thread-safe shared data where appropriate
-    let case_def = crate::validation::ashrae140::cases::build_case(case);
-    case_def
+
+    crate::validation::ashrae140::cases::build_case(case)
 }
 
 /// Select appropriate validation strategy based on case complexity
@@ -392,7 +392,7 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
 
     // Create validator and run validation
     let mut validator = ASHRAE140Validator::new();
-    let (benchmark_report, diagnostic_report) =
+    let (benchmark_report, _diagnostic_report) =
         validator.validate_single_case_with_diagnostics(case);
 
     let duration = start_time.elapsed();
@@ -408,10 +408,11 @@ pub fn run_validation(case: ASHRAE140Case) -> Result<ASHRAE140ValidationResults>
 ",
         case.number()
     ));
-    report.push_str(&format!(
-        "===========================================\
+    report.push_str(
+        &"===========================================\
 \n"
-    ));
+        .to_string(),
+    );
     report.push_str(&format!(
         "Execution Time: {:.2} seconds\n\n",
         duration.as_secs_f32()

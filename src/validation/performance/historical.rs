@@ -31,6 +31,12 @@ pub struct HistoricalTracker {
     records: HashMap<String, Vec<HistoricalRecord>>, // Keyed by benchmark name
 }
 
+impl Default for HistoricalTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HistoricalTracker {
     pub fn new() -> Self {
         Self {
@@ -41,7 +47,7 @@ impl HistoricalTracker {
     pub fn add_record(&mut self, benchmark_name: &str, record: HistoricalRecord) {
         self.records
             .entry(benchmark_name.to_string())
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(record);
     }
 

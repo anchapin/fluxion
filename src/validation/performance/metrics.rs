@@ -1,4 +1,3 @@
-use crate::sim::engine::ThermalModel;
 use crate::thermal::thermal_model::ThermalModel as SimpleThermalModel;
 use std::time::{Duration, Instant};
 
@@ -127,9 +126,7 @@ fn get_solver_iterations(model: &SimpleThermalModel) -> u32 {
 ///
 /// # Returns
 /// Performance metrics for the case
-pub fn profile_case(case: u32, iterations: usize) -> PerformanceMetrics {
-    use crate::validation::ashrae_140_cases::ASHRAE140Case;
-
+pub fn profile_case(_case: u32, iterations: usize) -> PerformanceMetrics {
     // Create a simple thermal model for profiling
     let mut model = SimpleThermalModel::new(1, 20.0);
 
@@ -164,8 +161,8 @@ pub fn profile_case(case: u32, iterations: usize) -> PerformanceMetrics {
 pub fn analyze_bottlenecks(metrics: &PerformanceMetrics) -> String {
     let mut report = String::new();
 
-    report.push_str(&format!("Performance Bottleneck Analysis\n"));
-    report.push_str(&format!("===============================\n\n"));
+    report.push_str(&"Performance Bottleneck Analysis\n".to_string());
+    report.push_str(&"===============================\n\n".to_string());
     report.push_str(&format!(
         "Throughput: {:.2} timesteps/sec\n",
         metrics.throughput_tps
@@ -192,8 +189,8 @@ pub fn analyze_bottlenecks(metrics: &PerformanceMetrics) -> String {
 pub fn generate_detailed_performance_report(metrics: &PerformanceMetrics) -> String {
     let mut report = String::new();
 
-    report.push_str(&format!("Detailed Performance Report\n"));
-    report.push_str(&format!("===========================\n\n"));
+    report.push_str(&"Detailed Performance Report\n".to_string());
+    report.push_str(&"===========================\n\n".to_string());
     report.push_str(&format!(
         "Throughput: {:.2} timesteps/sec\n",
         metrics.throughput_tps

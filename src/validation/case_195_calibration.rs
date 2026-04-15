@@ -19,6 +19,12 @@ pub struct Case195Calibrator {
     // Calibration data and methods
 }
 
+impl Default for Case195Calibrator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Case195Calibrator {
     pub fn new() -> Self {
         Self {

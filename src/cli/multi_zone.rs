@@ -261,13 +261,13 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
 pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow::Error> {
     use crate::validation::energy_balance::EnergyBalanceValidator;
 
-    let mut validator = EnergyBalanceValidator::new(0.1, 1.0); // Default tolerances
+    let validator = EnergyBalanceValidator::new(0.1, 1.0); // Default tolerances
 
     if command.energy_conservation {
         println!("Running energy conservation validation...");
         use crate::physics::cta::VectorField;
         use crate::sim::engine::ThermalModel;
-        let mut model = ThermalModel::<VectorField>::new(1);
+        let model = ThermalModel::<VectorField>::new(1);
         let energy_result = validator.validate_energy_conservation(&model);
 
         match command.format.as_str() {

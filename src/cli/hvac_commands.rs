@@ -95,7 +95,7 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             }
 
             // Integrate with actual HVAC system
-            let mut system = HVAC_SYSTEM.lock().unwrap();
+            let system = HVAC_SYSTEM.lock().unwrap();
             if let Some(hvac) = system.as_ref() {
                 let mut hvac_guard = hvac.lock().unwrap();
                 hvac_guard
@@ -126,7 +126,7 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             }
 
             // Integrate with actual HVAC system
-            let mut system = HVAC_SYSTEM.lock().unwrap();
+            let system = HVAC_SYSTEM.lock().unwrap();
             if let Some(hvac) = system.as_ref() {
                 let mut hvac_guard = hvac.lock().unwrap();
                 hvac_guard
@@ -154,7 +154,7 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
             }
 
             // Integrate with actual HVAC system
-            let mut system = HVAC_SYSTEM.lock().unwrap();
+            let system = HVAC_SYSTEM.lock().unwrap();
             if let Some(hvac) = system.as_ref() {
                 let mut hvac_guard = hvac.lock().unwrap();
                 hvac_guard

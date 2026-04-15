@@ -1,6 +1,5 @@
 // validation/esp_r/examples.rs
-use crate::validation::cross_validation::CrossValidationReport;
-use crate::validation::esp_r::{EspRTestConfig, EspRValidator, ReportFormat};
+use crate::validation::esp_r::EspRValidator;
 use crate::validation::MultiZoneValidationResults;
 use std::error::Error;
 /// ESP-r Cross-Validation Examples
