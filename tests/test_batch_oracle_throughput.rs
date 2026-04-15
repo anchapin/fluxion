@@ -37,9 +37,13 @@ fn generate_population(size: usize) -> Vec<Vec<f64>> {
         .collect()
 }
 
-/// Test: Analytical path throughput >= 100 configs/sec.
+/// Test: Analytical path throughput >= threshold.
 ///
-/// Reduced from 1000 to 100 configs to avoid timeout in CI coverage runs.
+/// The threshold varies by build mode:
+/// - Release: >= 100 configs/sec
+/// - Debug: >= 20 configs/sec
+/// - Tarpaulin (coverage): >= 5 configs/sec
+///
 /// For full performance testing, run with: cargo test --release -- --nocapture
 #[test]
 fn test_throughput_analytical_1000_configs_sec() {
@@ -59,16 +63,21 @@ fn test_throughput_analytical_1000_configs_sec() {
         elapsed.as_secs_f64() * 1000.0 / 100.0
     );
 
+    #[cfg(tarpaulin)]
+    let min_throughput = 5.0;
+    #[cfg(not(tarpaulin))]
+    let min_throughput = if cfg!(debug_assertions) { 20.0 } else { 100.0 };
+
     assert!(
-        throughput >= 100.0,
-        "Throughput {:.1} configs/sec is below required 100 configs/sec",
-        throughput
+        throughput >= min_throughput,
+        "Throughput {:.1} configs/sec is below required {} configs/sec",
+        throughput,
+        min_throughput
     );
 }
 
-/// Test: Surrogate path throughput >= 10 configs/sec (if surrogates available).
+/// Test: Surrogate path throughput (if surrogates available).
 ///
-/// Reduced from 1000 to 2 configs to avoid timeout in CI coverage runs.
 /// Note: Surrogate throughput may be lower if no GPU or model loaded. This test
 /// will skip if surrogates are not properly initialized, as the requirement
 /// primarily focuses on the analytical path.
@@ -90,14 +99,19 @@ fn test_throughput_surrogates_1000_configs_sec() {
                 elapsed.as_secs_f64() * 1000.0 / 2.0
             );
 
+            #[cfg(tarpaulin)]
+            let min_throughput = 0.5;
+            #[cfg(not(tarpaulin))]
+            let min_throughput = if cfg!(debug_assertions) { 1.0 } else { 2.0 };
+
             assert!(
-                throughput >= 2.0,
-                "Surrogate throughput {:.1} configs/sec is below 2 configs/sec",
-                throughput
+                throughput >= min_throughput,
+                "Surrogate throughput {:.1} configs/sec is below {} configs/sec",
+                throughput,
+                min_throughput
             );
         }
         Err(e) => {
-            // If surrogates not available (e.g., no model loaded), skip test
             println!("Surrogate evaluation not available: {} (skipping)", e);
         }
     }
