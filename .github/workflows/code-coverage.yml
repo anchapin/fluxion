@@ -45,14 +45,14 @@ jobs:
           # Run tarpaulin with verbose output
           # ASHRAE 140 tests are excluded - they are already validated in dedicated CI job
           # Performance tests use cfg!(tarpaulin) guards for lenient thresholds
-          # Note: We only run lib and specific unit test targets for coverage
+          # Run physics unit tests that exercise thermal calculation code
           cargo tarpaulin \
             --timeout 600 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
             --features wiring-tracing \
-            --lib \
+            --test step_physics_unit_tests \
             2>&1 | tee tarpaulin.log
           TARPAULIN_EXIT=${PIPESTATUS[0]}
 
