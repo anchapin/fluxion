@@ -283,7 +283,7 @@ pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow:
                 });
                 println!("{}", serde_json::to_string_pretty(&output).unwrap());
             }
-            "text" | _ => {
+            _ => {
                 println!(
                     "Energy Conservation: {}",
                     if energy_result.is_ok() {

@@ -310,7 +310,6 @@ pub fn run_validation_strategy(case: ASHRAE140Case) -> crate::validation::ASHRAE
         | ASHRAE140Case::Case195Albedo05
         | ASHRAE140Case::Case195Albedo09
         | ASHRAE140Case::Case196
-        | ASHRAE140Case::Case195ThermalBridge
         | ASHRAE140Case::Case197
         | ASHRAE140Case::Case198
         | ASHRAE140Case::Case200

@@ -107,6 +107,8 @@ use crate::api::parameters::BuildingParameters;
 use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
 #[cfg(feature = "python-bindings")]
+use log::{debug, info};
+#[cfg(feature = "python-bindings")]
 use ndarray::Array2;
 #[cfg(feature = "python-bindings")]
 use numpy::PyArrayMethods;

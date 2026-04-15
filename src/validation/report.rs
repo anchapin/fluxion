@@ -1750,7 +1750,11 @@ impl BenchmarkReport {
             .map(|r| r.fluxion_value)
             .unwrap_or(0.0);
 
-        file.write_all("Energy comparison visualization placeholder\n".to_string().as_bytes())?;
+        file.write_all(
+            "Energy comparison visualization placeholder\n"
+                .to_string()
+                .as_bytes(),
+        )?;
         file.write_all(format!("Case 960 Heating: {:.2} MWh\n", case_960_heating).as_bytes())?;
         file.write_all(format!("Case 970 Heating: {:.2} MWh\n", case_970_heating).as_bytes())?;
         file.write_all(b"Actual chart would be generated here in a full implementation\n")?;
