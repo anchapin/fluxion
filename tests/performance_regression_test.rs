@@ -182,7 +182,10 @@ fn test_performance_smoke_test() {
     // Debug mode is much slower than release mode
     // In release: >500 configs/sec (target)
     // In debug: ~40-50 configs/sec is typical
-    // Use cfg! to detect build type
+    // In coverage mode (tarpaulin): much slower due to instrumentation
+    #[cfg(tarpaulin)]
+    let min_throughput = 5.0; // Tarpaulin is ~10x slower
+    #[cfg(not(tarpaulin))]
     let min_throughput = if cfg!(debug_assertions) {
         20.0 // Much lower threshold for debug builds
     } else {
@@ -194,7 +197,12 @@ fn test_performance_smoke_test() {
         "  Throughput: {:.0} configs/sec (target: >{})",
         metrics.throughput, min_throughput
     );
+
+    #[cfg(tarpaulin)]
+    let target_latency = 200.0; // Tarpaulin is much slower
+    #[cfg(not(tarpaulin))]
     let target_latency = if cfg!(debug_assertions) { 50.0 } else { 2.0 };
+
     println!(
         "  Latency: {:.3}ms per config (target: <{}ms)",
         metrics.latency_per_config_ms, target_latency
