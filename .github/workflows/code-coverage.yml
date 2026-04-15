@@ -27,13 +27,18 @@ jobs:
         run: |
           set -o pipefail
           cargo tarpaulin \
-            --timeout 1200 \
+            --timeout 600 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
             --features wiring-tracing \
             2>&1 | tee tarpaulin.log
+          TARPAULIN_EXIT=${PIPESTATUS[0]}
           ls -la cobertura.xml
+          if [ $TARPAULIN_EXIT -ne 0 ]; then
+            echo "::error::cargo-tarpaulin failed with exit code $TARPAULIN_EXIT"
+            exit $TARPAULIN_EXIT
+          fi
       - name: Extract Physics Coverage
         if: success()
         run: |

@@ -95,17 +95,26 @@ impl PredictiveController {
         mass_temp: f64,
         temp_rate: f64,
     ) -> (HVACMode, f64) {
+        // Step 0: Handle edge cases
+        if zone_temp.is_infinite() || zone_temp.is_nan() {
+            return (HVACMode::Off, 0.0);
+        }
+
         // Step 1: Inertia factor based on mass temperature offset
-        // If mass temp is cooler than zone temp, building will cool faster (anticipate this)
+        // If mass temp is cooler than zone temp, building will cool faster
+        // So subtract from setpoints to anticipate cooling earlier
         let inertia_factor = self.thermal_inertia_gain * (zone_temp - mass_temp);
 
         // Step 2: Predictive factor based on temperature rate
         // If temperature is rising rapidly, anticipate overshoot
+        // For cooling: rising temp -> reduce modulation
+        // For heating: falling temp -> reduce modulation
         let predictive_factor = self.temp_rate_gain * temp_rate;
 
         // Step 3: Effective setpoints adjusted by inertia and prediction
-        let effective_heating_sp = self.heating_setpoint + inertia_factor - predictive_factor;
-        let effective_cooling_sp = self.cooling_setpoint + inertia_factor - predictive_factor;
+        // Cooler mass (positive inertia_factor) lowers setpoints -> triggers heating/cooling earlier
+        let effective_heating_sp = self.heating_setpoint - inertia_factor - predictive_factor;
+        let effective_cooling_sp = self.cooling_setpoint - inertia_factor - predictive_factor;
 
         // Step 4: Determine mode based on zone temp vs adjusted setpoints
         // Apply deadband tolerance to prevent cycling
