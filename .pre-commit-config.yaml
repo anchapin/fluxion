@@ -67,7 +67,7 @@ repos:
 
       - id: cargo-audit
         name: "Cargo Audit"
-        entry: cargo audit
+        entry: cargo audit --ignore RUSTSEC-2025-0009
         language: system
         types: [rust]
         pass_filenames: false

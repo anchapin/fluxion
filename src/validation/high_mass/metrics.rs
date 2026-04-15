@@ -325,8 +325,9 @@ mod tests {
         // CV(RMSE) should be non-zero due to differences
         assert!(metrics.cv_rmse_heating > 0.0);
         assert!(metrics.cv_rmse_cooling > 0.0);
-        assert_eq!(metrics.mae_heating, 0.3333333333333333);
-        assert_eq!(metrics.mae_cooling, 0.3333333333333333);
+        // MAE = (|10-10| + |11-10| + |9-10|) / 3 = (0 + 1 + 1) / 3 = 2/3
+        assert!((metrics.mae_heating - 2.0 / 3.0).abs() < 0.0001);
+        assert!((metrics.mae_cooling - 2.0 / 3.0).abs() < 0.0001);
         assert_eq!(metrics.max_error_heating, 1.0);
         assert_eq!(metrics.max_error_cooling, 1.0);
     }
