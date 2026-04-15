@@ -77,6 +77,7 @@ jobs:
           # Parse cobertura.xml for physics files only
           python3 << 'EOF'
           import xml.etree.ElementTree as ET
+          import os
 
           tree = ET.parse('cobertura.xml')
           root = tree.getroot()
@@ -98,11 +99,13 @@ jobs:
               physics_coverage = (covered_lines / total_lines) * 100
               print(f"Physics coverage: {physics_coverage:.2f}%")
               print(f"Physics files analyzed: {len(physics_files)}")
-              print(f"PHYSICS_COVERAGE={physics_coverage:.2f}") >> $GITHUB_ENV
-              print(f"PHYSICS_FILE_COUNT={len(physics_files)}") >> $GITHUB_ENV
+              with open(os.environ['GITHUB_ENV'], 'a') as f:
+                  f.write(f"PHYSICS_COVERAGE={physics_coverage:.2f}\n")
+                  f.write(f"PHYSICS_FILE_COUNT={len(physics_files)}\n")
           else:
               print("Warning: No physics files found in coverage report")
-              print(f"PHYSICS_COVERAGE=0.00") >> $GITHUB_ENV
+              with open(os.environ['GITHUB_ENV'], 'a') as f:
+                  f.write("PHYSICS_COVERAGE=0.00\n")
 
           # List all physics files for debugging
           print("")
