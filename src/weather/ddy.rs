@@ -117,7 +117,7 @@ pub fn generate_design_day_hours(spec: &DesignDaySpec) -> Vec<HourlyWeatherData>
         let humidity = 50.0; // 50%
 
         // Calculate hour of year (approximate based on month/day)
-        let days_in_month = days_in_month(spec.month);
+        let _days_in_month = days_in_month(spec.month);
         let day_of_year = cumulative_days_before_month(spec.month) + spec.day_of_month as usize - 1;
         let hour_of_year = day_of_year * 24 + hour;
 
@@ -140,7 +140,7 @@ pub fn generate_design_day_hours(spec: &DesignDaySpec) -> Vec<HourlyWeatherData>
 /// Design day weather source parsed from DDY file.
 ///
 /// Provides heating and cooling design conditions for HVAC sizing.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct DesignDaySource {
     /// Location name extracted from DDY file
     pub location: Option<String>,
@@ -153,11 +153,7 @@ pub struct DesignDaySource {
 impl DesignDaySource {
     /// Creates a new empty DesignDaySource.
     pub fn new() -> Self {
-        Self {
-            location: None,
-            heating_design: None,
-            cooling_design: None,
-        }
+        Self::default()
     }
 
     /// Parses a DDY file and returns a DesignDaySource.
@@ -273,7 +269,7 @@ fn parse_design_day<R: BufRead>(lines: &mut std::io::Lines<R>) -> Option<DesignD
             }
 
             // Field 1: Name
-            if parts.len() > 0 && !parts[0].trim().is_empty() {
+            if !parts.is_empty() && !parts[0].trim().is_empty() {
                 name = parts[0].trim().to_string();
             }
 

@@ -4,7 +4,35 @@
 
 Fluxion is a Rust-based Building Energy Modeling (BEM) engine with a Neuro-Symbolic hybrid architecture. It combines physics-based thermal networks with AI surrogates for 100x speedups, designed to serve as a high-throughput oracle for quantum optimization and genetic algorithms.
 
-## Current State (v1.0 - SHIPPED)
+## Current State (v1.1 - SHIPPED)
+
+**Milestone:** v1.1 ASHRAE 140 Completion (Partial) ✅ SHIPPED 2026-04-08
+**Status:** Partial ASHRAE 140 compliance with expanded validation framework
+
+**Codebase Stats:**
+- Total LOC: ~124,509 Rust lines
+- Tests: Comprehensive unit and integration test coverage
+- Files: 300+ Rust source files
+- Phases completed: 4 (M1-M3 + Phase 40)
+- Plans completed: 21 (12 in v1.0 + 9 in v1.1)
+- Tasks completed: 63 (36 in v1.0 + 27 in v1.1)
+
+**v1.1 Achievement (Partial Completion):**
+- ASHRAE 140 case expansion: Cases 800-810 (HVAC equipment) and 195-470 (diagnostic validation)
+- Extended reference database: 96,361 + 2,417,761 data rows with complete hourly coverage
+- Cross-validation framework: EnergyPlus and TRNSYS adapters with file-based comparison
+- CLI integration: Validation commands for case execution and cross-validation
+- Performance infrastructure: Parallel execution framework and monitoring
+- 6/16 v1.1 requirements completed (37.5%)
+
+**v1.1 Validated Requirements:**
+- CASE-01, CASE-02, CASE-03: ASHRAE 140 case expansion complete
+- CROSS-01, CROSS-02: Cross-validation framework functional
+- PERF-01: Performance infrastructure established
+- MZ-01-MZ-10: All v1.0 multi-zone requirements maintained
+
+<details>
+<summary>Previous State (v1.0)</summary>
 
 **Milestone:** v1.0 Multi-Zone Support ✅ SHIPPED 2026-04-07
 **Status:** Full ASHRAE 140 compliance for multi-zone building energy modeling
@@ -31,7 +59,7 @@ Fluxion is a Rust-based Building Energy Modeling (BEM) engine with a Neuro-Symbo
 - All v0.8 requirements maintained
 
 <details>
-<summary>Previous State (v0.8)</summary>
+<summary>v0.8 State</summary>
 
 **Milestone:** v0.8 Peak Load & Free-Float Validation ✅ SHIPPED 2026-04-07
 **Status:** Full ASHRAE 140 compliance for peak loads and free-floating temperature profiles
@@ -55,11 +83,28 @@ Fluxion is a Rust-based Building Energy Modeling (BEM) engine with a Neuro-Symbo
 
 </details>
 
+</details>
+
 ---
 
-## Next Milestone Goals (v1.1 - Planning)
+## Current Milestone: Planning Next Milestone
 
-After v1.0 completes, the following areas are planned for v1.1:
+**Status:** v1.1 ASHRAE 140 Completion archived. Planning next milestone.
+
+**v1.1 Deferred Work:**
+- Phase 41: High-mass physics validation and thermal mass diagnostics
+- Phase 42: ESP-r cross-validation and advanced reporting
+- Phase 43: Validation optimization, polish, and CI/CD integration
+- 10 remaining v1.1 requirements (CASE-04, CROSS-03-05, MASS-01-04, PERF-02-04)
+
+**Next Milestone Candidates:**
+- v1.2: Complete v1.1 deferred work (Phases 41-43)
+- v2.0: Major architecture upgrade or new features
+- v1.1.1: Incremental improvements to current framework
+
+## Next Milestone Goals (Future Planning)
+
+After v1.1 completes, the following areas are planned:
 
 **1. Production Deployment**
 - REST/gRPC API for remote access
@@ -67,19 +112,13 @@ After v1.0 completes, the following areas are planned for v1.1:
 - Production deployment guide
 - Load testing and monitoring
 
-**2. Extended Validation**
-- Additional ASHRAE 140 cases beyond 960/970
-- Cross-validation against EnergyPlus, TRNSYS, ESP-r
-- Extended tolerance bands for high-mass buildings
-- Performance optimization for large-scale simulations
-
-**3. Advanced Features**
+**2. Advanced Features**
 - Zone scheduling and occupancy patterns
 - Advanced HVAC system types (VAV, heat pumps)
 - Weather data integration
 - Visualization tools
 
-**4. Documentation and Tooling**
+**3. Documentation and Tooling**
 - Comprehensive user guide
 - API reference documentation
 - Tutorials and examples
@@ -138,4 +177,4 @@ This section records architectural and process decisions made during v0.4 throug
 
 ---
 
-*Last updated: 2026-04-07 after v0.8.0 milestone completion
+*Last updated: 2026-04-08 after v1.1 milestone archival

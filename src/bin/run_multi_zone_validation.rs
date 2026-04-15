@@ -14,7 +14,7 @@
 
 use clap::{ArgAction, Parser, Subcommand};
 use fluxion::validation::ashrae_140_multi_zone::ASHRAE140MultiZoneValidator;
-use fluxion::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
+use fluxion::validation::report::{BenchmarkReport, ValidationStatus};
 use std::path::Path;
 use std::process;
 
@@ -129,7 +129,7 @@ fn run_case_960(
             ValidationStatus::Fail => "✗",
         };
 
-        let status_color = match result.status {
+        let _status_color = match result.status {
             ValidationStatus::Pass => "green",
             ValidationStatus::Warning => "yellow",
             ValidationStatus::Fail => "red",
@@ -186,7 +186,7 @@ fn run_case_960(
 
 fn run_case_970(
     validator: &mut ASHRAE140MultiZoneValidator,
-    cli: &Cli,
+    _cli: &Cli,
 ) -> Result<(), Box<dyn std::error::Error>> {
     println!("=== ASHRAE 140 Case 970 Validation ===");
     println!("Multi-zone building validation framework");

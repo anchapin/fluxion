@@ -18,7 +18,7 @@ use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_multi_zone::Case960Reference;
-use crate::validation::report::{BenchmarkReport, MetricType, ValidationResult, ValidationStatus};
+use crate::validation::report::ValidationStatus;
 use crate::weather::denver::DenverTmyWeather;
 use crate::weather::WeatherSource;
 use serde::{Deserialize, Serialize};
@@ -50,6 +50,7 @@ pub struct Case960ReferenceImplementation {
     /// Reference data for validation
     reference: Case960Reference,
     /// Weather data for Denver
+    #[allow(dead_code)]
     weather: DenverTmyWeather,
 }
 
@@ -116,7 +117,7 @@ impl Case960ReferenceImplementation {
         model.reset_peak_power();
 
         const STEPS: usize = 8760; // Annual simulation
-        let num_zones = model.num_zones;
+        let _num_zones = model.num_zones;
 
         // Initialize tracking variables
         let mut annual_heating_joules = 0.0;

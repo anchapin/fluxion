@@ -18,7 +18,15 @@ impl WiringTracer {
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
+}
 
+impl Default for WiringTracer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WiringTracer {
     /// Record a function call
     pub fn record_call(&self, name: &str) {
         self.calls.lock().unwrap().push(name.to_string());

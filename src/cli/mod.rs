@@ -3,8 +3,12 @@
 
 pub mod hvac_commands;
 pub mod multi_zone;
+pub mod performance;
+pub mod validation;
 
 pub use multi_zone::*;
+pub use performance::PerformanceCommand;
+pub use validation::ValidationSubcommand;
 
 use clap::{Parser, Subcommand};
 
@@ -12,6 +16,9 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(name = "fluxion")]
 #[command(about = "Fluxion Building Energy Modeling CLI", long_about = None)]
+#[command(
+    after_help = "Examples:\n  fluxion validation run 800\n  fluxion validation run-series 800-810\n  fluxion validation cross-validate 800 --tool energyplus --reference-file results/case_800.csv"
+)]
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -23,8 +30,14 @@ pub enum Commands {
     /// Multi-zone building energy modeling commands
     #[command(subcommand)]
     MultiZone(MultiZoneCommand),
-    // Other commands would be added here
-    // Validate, Simulate, etc.
+
+    /// Building energy model validation commands
+    #[command(subcommand)]
+    Validation(ValidationSubcommand),
+
+    /// Performance testing and validation commands
+    #[command(subcommand)]
+    Performance(performance::PerformanceCommand),
 }
 
 /// Parse and execute CLI commands
@@ -38,5 +51,13 @@ pub fn run_cli() -> Result<(), anyhow::Error> {
             MultiZoneCommand::Validate(cmd) => multi_zone::execute_validate_command(&cmd),
             MultiZoneCommand::Performance(cmd) => multi_zone::execute_performance_command(&cmd),
         },
+        Commands::Validation(cmd) => {
+            validation::handle_validation_command(&cmd)?;
+            Ok(())
+        }
+        Commands::Performance(cmd) => {
+            performance::handle_performance_command(&cmd).map_err(|e| anyhow::anyhow!(e))?;
+            Ok(())
+        }
     }
 }

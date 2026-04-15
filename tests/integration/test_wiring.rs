@@ -34,8 +34,8 @@ fn test_surrogate_integration_wiring() {
     // Verify energy is finite and non-zero
     assert!(energy.is_finite());
 
-    // Verify solve_timesteps and step_physics were called
-    assert!(tracer.verify_called(&["solve_timesteps"]));
+    // Verify solve_timesteps_with_dt and step_physics were called
+    assert!(tracer.verify_called(&["solve_timesteps_with_dt"]));
     assert!(tracer.verify_called(&["step_physics"]));
 
     // Verify no AI calls were made (analytical path)
@@ -100,8 +100,8 @@ fn test_weather_data_flow() {
     // Temperature field should have been modified during simulation
     assert!(model.temperatures.len() > 0);
 
-    // Verify solve_timesteps and step_physics were called
-    assert!(tracer.verify_called(&["solve_timesteps"]));
+    // Verify solve_timesteps_with_dt and step_physics were called
+    assert!(tracer.verify_called(&["solve_timesteps_with_dt"]));
     assert!(tracer.verify_called(&["step_physics"]));
 }
 
@@ -128,8 +128,8 @@ fn test_analytical_simulation() {
     // Should produce valid, finite results
     assert!(energy.is_finite());
 
-    // Verify solve_timesteps and step_physics were called
-    assert!(tracer.verify_called(&["solve_timesteps"]));
+    // Verify solve_timesteps_with_dt and step_physics were called
+    assert!(tracer.verify_called(&["solve_timesteps_with_dt"]));
     assert!(tracer.verify_called(&["step_physics"]));
 
     // Verify analytical path was used (no AI calls)

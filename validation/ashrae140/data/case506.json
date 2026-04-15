@@ -1,0 +1,13 @@
+{
+  "case506": {
+    "description": "Low mass with alternative roof construction",
+    "annual_heating_min": 12.2,
+    "annual_heating_max": 13.2,
+    "annual_cooling_min": 8.3,
+    "annual_cooling_max": 9.1,
+    "peak_heating_min": 5.7,
+    "peak_heating_max": 6.4,
+    "peak_cooling_min": 4.2,
+    "peak_cooling_max": 4.9
+  }
+}

@@ -19,7 +19,7 @@ use pyo3::prelude::*;
 #[pymodule]
 pub fn fluxion_python(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Import and initialize the main fluxion module
-    let fluxion_module = PyModule::import_bound(_py, "fluxion")?;
+    let _fluxion_module = PyModule::import_bound(_py, "fluxion")?;
 
     // Re-export multi-zone functionality
     m.add_wrapped(pyo3::wrap_pymodule!(bindings::multi_zone))?;

@@ -51,7 +51,7 @@ pub fn build_inter_zone_matrix(num_zones: usize, zone_properties: &ZonePropertie
 
     // For now, implement a simple symmetric matrix
     // In a real implementation, this would use the zone properties
-    for i in 0..num_zones {
+    for _i in 0..num_zones {
         // Placeholder: calculate conductance for zone i
         // In practice, this would use wall areas, U-values, etc.
         conductances.push(zone_properties.default_conductance);

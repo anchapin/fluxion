@@ -32,40 +32,15 @@ pub enum FluxionError {
 }
 
 #[cfg(feature = "python-bindings")]
-/// Base exception for all Fluxion-specific errors.
-///
-/// Python users can catch this base type to handle all Fluxion errors uniformly,
-/// or catch specific subclasses for fine-grained error handling.
 create_exception!(fluxion, PyFluxionError, PyException);
 
 #[cfg(feature = "python-bindings")]
-/// Exception raised for parameter validation errors.
-///
-/// This includes:
-/// - Parameter values outside valid ranges (e.g., U-value < 0.1 or > 5.0)
-/// - NaN or Infinity values in parameters
-/// - Invalid parameter vector lengths
-/// - Heating/cooling setpoint conflicts
 create_exception!(fluxion, ValidationError, PyFluxionError);
 
 #[cfg(feature = "python-bindings")]
-/// Exception raised for surrogate model errors.
-///
-/// This includes:
-/// - ONNX Runtime initialization failures
-/// - Model loading errors (file not found, invalid format)
-/// - Inference failures (e.g., GPU not available)
-/// - Session pool exhaustion
 create_exception!(fluxion, SurrogateError, PyFluxionError);
 
 #[cfg(feature = "python-bindings")]
-/// Exception raised for simulation errors.
-///
-/// This includes:
-/// - Physics calculation failures (e.g., singular matrices)
-/// - NaN/Infinity propagation during simulation
-/// - Integration errors
-/// - State corruption or invalid thermal network states
 create_exception!(fluxion, SimulationError, PyFluxionError);
 
 #[cfg(feature = "python-bindings")]

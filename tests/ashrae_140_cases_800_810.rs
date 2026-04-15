@@ -6,7 +6,7 @@
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
-use fluxion::sim::hvac::{AnyEquipment, Chiller, HVACMode, HeatPump, VariableCapacityEquipment};
+use fluxion::sim::hvac::{HVACMode, HeatPump, VariableCapacityEquipment};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 
 /// ASHRAE 140 Case 800: Simple heat pump system
@@ -794,11 +794,14 @@ fn test_cycling_losses_startup_penalty() {
     // (Note: May not have startup events in 100 timesteps depending on conditions)
     let startup_count = model.cycling_tracker.startup_count;
     // Allow for minimal cycling in short simulation
-    assert!(startup_count >= 0);
+    assert!(startup_count >= 0, "startup_count should be non-negative");
+    // Remove useless comparison that always evaluates to true
+    #[allow(clippy::absurd_extreme_comparisons)]
+    let _ = startup_count >= 0;
 
     // Verify cumulative runtime was tracked
     let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
-    assert!(runtime_hours >= 0.0);
+    assert!(runtime_hours >= 0.0, "runtime_hours should be non-negative");
 }
 
 /// Test minimum runtime constraint

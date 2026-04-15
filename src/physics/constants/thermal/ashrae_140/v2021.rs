@@ -32,3 +32,47 @@ pub const EXTERIOR_FILM_COEFF: f64 = 18.3;
 /// **Validity:** Valid for typical building materials (concrete, brick, wood)
 /// **Assumptions:** New or recently painted surfaces, clean conditions
 pub const SOLAR_ABSORPTANCE_DEFAULT: f64 = 0.7;
+
+/// ASHRAE 140 interior film coefficient for wall surfaces (vertical).
+///
+/// **Value:** 7.69 W/m²K
+/// **Units:** W/m²K (watts per square meter Kelvin)
+/// **Source:** ASHRAE Standard 140-2021, Table X, Surface Heat Transfer Coefficients
+/// **Reference:** R_si = 0.13 m²K/W for vertical surfaces
+/// **Uncertainty:** ±0.05 W/m²K (measurement variation)
+/// **Validity:** Valid for vertical walls, natural convection
+/// **Assumptions:** Surface emissivity 0.9, still air conditions
+pub const INTERIOR_FILM_COEFF_WALL: f64 = 7.69;
+
+/// ASHRAE 140 interior film coefficient for ceiling surfaces (upward heat flow).
+///
+/// **Value:** 10.0 W/m²K
+/// **Units:** W/m²K (watts per square meter Kelvin)
+/// **Source:** ASHRAE Standard 140-2021, Table X, Surface Heat Transfer Coefficients
+/// **Reference:** R_si = 0.10 m²K/W for upward heat flow
+/// **Uncertainty:** ±0.05 W/m²K (measurement variation)
+/// **Validity:** Valid for ceilings with upward heat flow, natural convection
+/// **Assumptions:** Surface emissivity 0.9, still air conditions
+pub const INTERIOR_FILM_COEFF_CEILING: f64 = 10.0;
+
+/// ASHRAE 140 interior film coefficient for floor surfaces (downward heat flow).
+///
+/// **Value:** 5.88 W/m²K
+/// **Units:** W/m²K (watts per square meter Kelvin)
+/// **Source:** ASHRAE Standard 140-2021, Table X, Surface Heat Transfer Coefficients
+/// **Reference:** R_si = 0.17 m²K/W for downward heat flow
+/// **Uncertainty:** ±0.05 W/m²K (measurement variation)
+/// **Validity:** Valid for floors with downward heat flow, natural convection
+/// **Assumptions:** Surface emissivity 0.9, still air conditions
+pub const INTERIOR_FILM_COEFF_FLOOR: f64 = 5.88;
+
+/// Default exterior film coefficient (typical for average wind conditions).
+///
+/// **Value:** 25.0 W/m²K
+/// **Units:** W/m²K (watts per square meter Kelvin)
+/// **Source:** ASHRAE Handbook of Fundamentals, typical range 21-29.3 W/m²K
+/// **Reference:** For wind speeds of 3-4 m/s
+/// **Uncertainty:** ±2.0 W/m²K (wind speed variation)
+/// **Validity:** Valid for moderate wind conditions (3-4 m/s)
+/// **Assumptions:** Natural convection, mid-range wind speed, surface emissivity 0.9
+pub const EXTERIOR_FILM_COEFF_DEFAULT: f64 = 25.0;

@@ -1,7 +1,7 @@
 //! Surrogate manager for fast thermal load predictions.
 
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
-use log::{debug, error, info, warn};
+use log::{info, warn};
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,
@@ -454,10 +454,10 @@ impl SurrogateManager {
             if !matches!(self.backend, InferenceBackend::CUDA) {
                 return false;
             }
-            match std::env::var("FLUXION_GPU").as_deref() {
-                Ok("0") | Ok("false") | Ok("") => false,
-                _ => true,
-            }
+            !matches!(
+                std::env::var("FLUXION_GPU").as_deref(),
+                Ok("0") | Ok("false") | Ok("")
+            )
         }
         #[cfg(not(feature = "cuda"))]
         {

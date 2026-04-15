@@ -20,7 +20,7 @@ pub enum HVACStatus {
 #[derive(Debug)]
 pub struct ZoneControl {
     /// Reference to the thermal model
-    thermal_model: Arc<ThermalModel>,
+    pub thermal_model: Arc<ThermalModel>,
 
     /// Zone setpoints configuration
     setpoints: crate::hvac::zone_setpoints::ZoneSetpoints,
@@ -92,7 +92,7 @@ impl ZoneControl {
     /// Determine HVAC status for a zone.
     fn determine_hvac_status(
         &self,
-        zone_id: usize,
+        _zone_id: usize,
         current_temp: f64,
         heating_setpoint: f64,
         cooling_setpoint: f64,

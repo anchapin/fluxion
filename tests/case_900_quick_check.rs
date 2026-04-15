@@ -21,15 +21,12 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
     println!("Expected: 4.0 (symmetric thermal mass correction)");
 
     // Run 365 days (8760 hours)
-    let mut heating_total_mwh = 0.0;
-    let mut cooling_total_mwh = 0.0;
-    let mut step_count = 0;
+    // Removed unused variables
 
     for step in 0..8760 {
         if let Ok(weather_data) = weather.get_hourly_data(step) {
             model.weather = Some(weather_data.clone());
             let _energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-            step_count += 1;
 
             // Log progress every 24 hours
             if step % 24 == 0 {
@@ -43,8 +40,8 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
         }
     }
 
-    heating_total_mwh = model.annual_heating_energy / 1000.0;
-    cooling_total_mwh = model.annual_cooling_energy / 1000.0;
+    let heating_total_mwh = model.annual_heating_energy / 1000.0;
+    let cooling_total_mwh = model.annual_cooling_energy / 1000.0;
 
     println!("\n=== Results ===");
     println!("Total heating: {:.2} MWh", heating_total_mwh);

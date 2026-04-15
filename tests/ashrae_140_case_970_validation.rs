@@ -10,12 +10,8 @@
 //!
 //! This framework establishes the structure for future Case 970 validation work.
 
-use fluxion::physics::cta::VectorField;
-use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::validation::ashrae_140_multi_zone::{Case970Reference, Case970Validator};
-use fluxion::weather::denver::DenverTmyWeather;
-use fluxion::weather::WeatherSource;
 
 /// Reference data for Case 970 validation
 ///
@@ -24,19 +20,7 @@ use fluxion::weather::WeatherSource;
 mod reference {
     // Placeholder reference ranges for Case 970
     // These will be updated with actual ASHRAE 140-2017 values
-    pub const ANNUAL_HEATING_MIN: f64 = 10.0;
-    pub const ANNUAL_HEATING_MAX: f64 = 20.0;
-    pub const ANNUAL_COOLING_MIN: f64 = 8.0;
-    pub const ANNUAL_COOLING_MAX: f64 = 18.0;
-    pub const PEAK_HEATING_MIN: f64 = 5.0;
-    pub const PEAK_HEATING_MAX: f64 = 15.0;
-    pub const PEAK_COOLING_MIN: f64 = 3.0;
-    pub const PEAK_COOLING_MAX: f64 = 12.0;
-
-    /// Tolerance for energy validation (15% per ASHRAE 140)
-    pub const ENERGY_TOLERANCE: f64 = 0.15;
-    /// Tolerance for peak load validation (10% per ASHRAE 140)
-    pub const PEAK_TOLERANCE: f64 = 0.10;
+    // Constants removed as they were unused
 }
 
 /// Validates energy values against reference ranges
@@ -210,7 +194,7 @@ fn test_annual_energy_validation() {
 /// This will be fully implemented in future work
 #[test]
 fn test_peak_load_validation() {
-    let mut validator = Case970Validator::new();
+    let validator = Case970Validator::new();
 
     // Placeholder test values - would come from actual simulation in full implementation
     let actual_peak_heating = 7.5; // kW

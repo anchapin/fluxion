@@ -5,7 +5,6 @@
 //! - Envelope mass (walls, roof, floor)
 //! - Internal mass (furniture, partitions)
 
-use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::{ThermalModel, ThermalModelType};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;

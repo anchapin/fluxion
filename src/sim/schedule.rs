@@ -39,6 +39,7 @@ pub enum DayType {
 
 /// Schedule values storage based on schedule type.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ScheduleValues {
     /// 24-hour daily values.
     Daily([f64; 24]),
@@ -195,10 +196,10 @@ impl DailySchedule {
     /// * `value` - Value to set
     pub fn fill_weekday(&mut self, start_hour: usize, end_hour: usize, value: f64) {
         if let ScheduleValues::Weekly(ref mut weekly) = self.values {
-            for day in 0..5 {
-                for hour in start_hour..end_hour {
-                    if hour < 24 {
-                        weekly[day][hour] = value;
+            for day in weekly.iter_mut().take(5) {
+                for (hour, slot) in day.iter_mut().enumerate() {
+                    if hour >= start_hour && hour < end_hour {
+                        *slot = value;
                     }
                 }
             }
@@ -213,10 +214,10 @@ impl DailySchedule {
     /// * `value` - Value to set
     pub fn fill_weekend(&mut self, start_hour: usize, end_hour: usize, value: f64) {
         if let ScheduleValues::Weekly(ref mut weekly) = self.values {
-            for day in 5..7 {
-                for hour in start_hour..end_hour {
-                    if hour < 24 {
-                        weekly[day][hour] = value;
+            for day in weekly.iter_mut().take(7).skip(5) {
+                for (hour, slot) in day.iter_mut().enumerate() {
+                    if hour >= start_hour && hour < end_hour {
+                        *slot = value;
                     }
                 }
             }
@@ -231,10 +232,10 @@ impl DailySchedule {
     /// * `value` - Value to set
     pub fn fill_holiday(&mut self, start_hour: usize, end_hour: usize, value: f64) {
         if let ScheduleValues::Weekly(ref mut weekly) = self.values {
-            for day in 0..7 {
-                for hour in start_hour..end_hour {
-                    if hour < 24 {
-                        weekly[day][hour] = value;
+            for day in weekly.iter_mut() {
+                for (hour, slot) in day.iter_mut().enumerate() {
+                    if hour >= start_hour && hour < end_hour {
+                        *slot = value;
                     }
                 }
             }
@@ -251,11 +252,11 @@ impl DailySchedule {
     /// ```
     pub fn office_hours(mut self) -> Self {
         if let ScheduleValues::Weekly(ref mut weekly) = self.values {
-            for day in 0..5 {
-                // Monday-Friday
-                for hour in 8..=17 {
-                    // 8am-6pm
-                    weekly[day][hour] = 1.0;
+            for day in weekly.iter_mut().take(5) {
+                for (hour, slot) in day.iter_mut().enumerate() {
+                    if hour >= 8 && hour <= 17 {
+                        *slot = 1.0;
+                    }
                 }
             }
         }
@@ -484,7 +485,7 @@ mod tests {
         }
 
         // Verify weekday hours outside 8am-6pm are zero
-        for day in 0..5 {
+        for _day in 0..5 {
             for hour in 0..8 {
                 assert_eq!(schedule.value_for_day(DayType::Weekday, hour), 0.0);
             }
@@ -501,7 +502,7 @@ mod tests {
         schedule.fill_weekday(9, 17, 0.5);
 
         // Verify weekday hours filled
-        for day in 0..5 {
+        for _day in 0..5 {
             for hour in 9..17 {
                 assert_eq!(schedule.value_for_day(DayType::Weekday, hour), 0.5);
             }
@@ -549,7 +550,7 @@ mod tests {
         }
 
         // Verify weekday hours not filled
-        for day in 0..5 {
+        for _day in 0..5 {
             for hour in 10..18 {
                 assert_eq!(schedule.value_for_day(DayType::Weekday, hour), 0.0);
             }

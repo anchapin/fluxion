@@ -1,0 +1,247 @@
+#![allow(dead_code)]
+
+
+use fluxion::physics::fd_discretization::MaterialLayer;
+use fluxion::physics::fd_solver::{ImplicitFDSolver, SurfaceBC};
+
+/// Test window conduction with single glazing layer
+#[test]
+fn test_window_conduction_single_glazing() {
+    let layers = vec![MaterialLayer::new("Glass", 0.003, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite() && t > -50.0 && t < 100.0));
+}
+
+/// Test window conduction with double glazing
+#[test]
+fn test_window_conduction_double_glazing() {
+    let layers = vec![
+        MaterialLayer::new("Glass 1", 0.003, 1.0, 2300.0, 840.0),
+        MaterialLayer::new("Air gap", 0.012, 0.024, 1.2, 1000.0),
+        MaterialLayer::new("Glass 2", 0.006, 1.0, 2300.0, 840.0),
+    ];
+    let mut solver = ImplicitFDSolver::new(layers, 30);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.len() >= 30);
+}
+
+/// Test window conduction with low-E coating
+#[test]
+fn test_window_conduction_low_e_coating() {
+    let layers = vec![MaterialLayer::new("Glass with Low-E", 0.004, 0.1, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window convection with high interior velocity
+#[test]
+fn test_window_convection_high_velocity() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(25.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps[0] > 20.0);
+}
+
+/// Test window convection with natural convection
+#[test]
+fn test_window_convection_natural() {
+    let layers = vec![MaterialLayer::new("Glass", 0.005, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window convection with extreme temperature difference
+#[test]
+fn test_window_convection_extreme_temp_diff() {
+    let layers = vec![MaterialLayer::new("Glass", 0.005, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, -20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 40.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite() && t > -100.0 && t < 100.0));
+}
+
+/// Test solar radiation gain through window
+#[test]
+fn test_window_solar_radiation_gain() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(35.0, 30.0, 300.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    let max_temp = temps.iter().fold(f64::NEG_INFINITY, |a, &b| a.max(b));
+    assert!(max_temp > 20.0);
+}
+
+/// Test window radiation with low emissivity (Low-E)
+#[test]
+fn test_window_radiation_low_e() {
+    let layers = vec![MaterialLayer::new("Low-E Glass", 0.006, 0.1, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 30.0, 400.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window radiation at extreme temperatures
+#[test]
+fn test_window_radiation_extreme() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, -40.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 50.0, 1500.0);
+    solver.step(3600, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite() && t > -200.0 && t < 200.0));
+}
+
+/// Test combined conduction, convection, and radiation
+#[test]
+fn test_window_combined_all_modes() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 22.0);
+    let exterior_bc = SurfaceBC::new_exterior(35.0, 28.0, 500.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window at dawn/dusk conditions (low solar, temperature transition)
+#[test]
+fn test_window_dawn_dusk_conditions() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 18.0);
+    let exterior_bc = SurfaceBC::new_exterior(15.0, 12.0, 50.0);
+    solver.step(7200.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window during peak solar hours
+#[test]
+fn test_window_peak_solar() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 24.0);
+    let exterior_bc = SurfaceBC::new_exterior(38.0, 35.0, 1000.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite() && t < 80.0));
+}
+
+/// Test window with thermal mass (concrete wall with window)
+#[test]
+fn test_window_with_thermal_mass() {
+    let layers = vec![
+        MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0),
+        MaterialLayer::new("Concrete", 0.200, 1.4, 2300.0, 880.0),
+    ];
+    let mut solver = ImplicitFDSolver::new(layers, 30);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 28.0, 400.0);
+    solver.step(7200.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window with very thin glazing
+#[test]
+fn test_window_very_thin_glazing() {
+    let layers = vec![MaterialLayer::new("Thin Glass", 0.001, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 15);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 25.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+    assert!(temps[0] - temps[temps.len() - 1] > 10.0);
+}
+
+/// Test window with very thick insulation
+#[test]
+fn test_window_very_thick_insulation() {
+    let layers = vec![
+        MaterialLayer::new("Glass", 0.005, 1.0, 2300.0, 840.0),
+        MaterialLayer::new("Insulation", 0.300, 0.04, 50.0, 840.0),
+    ];
+    let mut solver = ImplicitFDSolver::new(layers, 25);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 5.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+    assert!((temps[0] - 20.0).abs() < (temps[temps.len() - 1] - 20.0).abs());
+}
+
+/// Test window with extreme cold outdoor temperature
+#[test]
+fn test_window_extreme_cold() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, -30.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite() && t > -100.0));
+}
+
+/// Test window with extreme hot outdoor temperature
+#[test]
+fn test_window_extreme_hot() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 25.0);
+    let exterior_bc = SurfaceBC::new_exterior(60.0, 50.0, 0.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite() && t < 120.0));
+}
+
+/// Test window with zero solar absorptance (fully reflective)
+#[test]
+fn test_window_zero_solar_absorptance() {
+    let layers = vec![MaterialLayer::new("Glass", 0.006, 1.0, 2300.0, 840.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(35.0, 30.0, 500.0);
+    solver.step(3600.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+}
+
+/// Test window with very high heat capacity material
+#[test]
+fn test_window_high_heat_capacity() {
+    let layers = vec![MaterialLayer::new("Water wall", 0.100, 1.0, 4180.0, 1000.0)];
+    let mut solver = ImplicitFDSolver::new(layers, 20);
+    let interior_bc = SurfaceBC::new_interior(8.0, 20.0);
+    let exterior_bc = SurfaceBC::new_exterior(25.0, 20.0, 0.0);
+    solver.step(7200.0, &interior_bc, &exterior_bc);
+    let temps = solver.temperatures();
+    assert!(temps.iter().all(|&t| t.is_finite()));
+    assert!((temps[0] - 20.0).abs() < 5.0);
+}

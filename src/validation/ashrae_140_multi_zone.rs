@@ -27,12 +27,16 @@ use std::path::Path;
 /// like Case 960, 970, and 980.
 pub struct ASHRAE140MultiZoneValidator {
     /// Base ASHRAE 140 validator for single-zone cases
+    #[allow(dead_code)]
     base_validator: ASHRAE140Validator,
     /// Case 960 reference data
+    #[allow(dead_code)]
     case_960_reference: Option<Case960Reference>,
     /// Case 970 reference data (stub for future implementation)
+    #[allow(dead_code)]
     case_970_reference: Option<Case970Reference>,
     /// Case 980 reference data (stub for future implementation)
+    #[allow(dead_code)]
     case_980_reference: Option<Case960Reference>,
 }
 
@@ -156,21 +160,19 @@ impl ASHRAE140MultiZoneValidator {
     /// ValidationResult indicating pass/fail status
     pub fn validate_case_960<T: crate::physics::cta::ContinuousTensor<f64>>(
         &self,
-        thermal_model: &ThermalModel<T>,
+        _thermal_model: &ThermalModel<T>,
         reference: &Case960Reference,
     ) -> ValidationResult {
         let mut report = BenchmarkReport::new();
         let mut overall_status = ValidationStatus::Pass;
 
         // Validate zone temperatures at key timesteps
-        for (timestep, expected_temps) in &reference.zone_temperatures {
+        for expected_temps in reference.zone_temperatures.values() {
             // In a real implementation, we would extract temperatures from the model
             // For now, we'll use placeholder values that should pass validation
             let actual_temps = vec![20.0, 18.5]; // Placeholder - would come from model
 
-            for (_zone_idx, (&expected_temp, &actual_temp)) in
-                expected_temps.iter().zip(actual_temps.iter()).enumerate()
-            {
+            for (&expected_temp, &actual_temp) in expected_temps.iter().zip(actual_temps.iter()) {
                 let error = (actual_temp - expected_temp).abs();
                 let _error_pct = (error / expected_temp) * 100.0;
 
@@ -478,7 +480,7 @@ mod tests {
 
     #[test]
     fn test_case_960_validation() {
-        let mut validator = ASHRAE140MultiZoneValidator::new();
+        let validator = ASHRAE140MultiZoneValidator::new();
         let reference = Case960Reference::load_case_960_reference_data();
 
         // Create a thermal model for testing
@@ -518,6 +520,12 @@ mod tests {
     }
 }
 
+impl Default for Case960Validator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Case960Validator {
     /// Create a new Case 960 validator with default reference data
     pub fn new() -> Self {
@@ -541,6 +549,31 @@ impl Case960Validator {
     /// from the benchmark data module.
     pub fn load_reference_data() -> Case960Reference {
         Case960Reference::load_case_960_reference_data()
+    }
+
+    /// Get reference annual heating energy (MWh)
+    pub fn annual_heating(&self) -> f64 {
+        self.reference.annual_heating
+    }
+
+    /// Get reference annual cooling energy (MWh)
+    pub fn annual_cooling(&self) -> f64 {
+        self.reference.annual_cooling
+    }
+
+    /// Get reference peak heating load (kW)
+    pub fn peak_heating(&self) -> f64 {
+        self.reference.peak_heating
+    }
+
+    /// Get reference peak cooling load (kW)
+    pub fn peak_cooling(&self) -> f64 {
+        self.reference.peak_cooling
+    }
+
+    /// Get zone temperatures reference data
+    pub fn zone_temperatures(&self) -> &HashMap<usize, Vec<f64>> {
+        &self.reference.zone_temperatures
     }
 
     /// Validate annual heating energy consumption
@@ -801,6 +834,12 @@ impl Case960Validator {
     }
 }
 
+impl Default for Case970Validator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Case970Validator {
     /// Create a new Case 970 validator with default reference data
     pub fn new() -> Self {
@@ -816,6 +855,31 @@ impl Case970Validator {
             reference,
             statistics: Case970Statistics::default(),
         }
+    }
+
+    /// Get reference annual heating energy (MWh)
+    pub fn annual_heating(&self) -> f64 {
+        self.reference.annual_heating
+    }
+
+    /// Get reference annual cooling energy (MWh)
+    pub fn annual_cooling(&self) -> f64 {
+        self.reference.annual_cooling
+    }
+
+    /// Get reference peak heating load (kW)
+    pub fn peak_heating(&self) -> f64 {
+        self.reference.peak_heating
+    }
+
+    /// Get reference peak cooling load (kW)
+    pub fn peak_cooling(&self) -> f64 {
+        self.reference.peak_cooling
+    }
+
+    /// Get zone temperatures reference data
+    pub fn zone_temperatures(&self) -> &HashMap<usize, Vec<f64>> {
+        &self.reference.zone_temperatures
     }
 
     /// Load reference data for Case 970
@@ -898,7 +962,7 @@ impl ASHRAE140MultiZoneValidator {
     /// Validate Case 960 using the dedicated validator
     pub fn validate_case_960_with_validator(
         &self,
-        thermal_model: &ThermalModel<impl crate::physics::cta::ContinuousTensor<f64>>,
+        _thermal_model: &ThermalModel<impl crate::physics::cta::ContinuousTensor<f64>>,
     ) -> ValidationResult {
         let mut case_validator = Case960Validator::new();
         let reference = &case_validator.reference;
@@ -911,7 +975,7 @@ impl ASHRAE140MultiZoneValidator {
 
         // Create placeholder temperature profiles
         let mut actual_temperatures = HashMap::new();
-        for (timestep, _) in &reference.zone_temperatures {
+        for timestep in reference.zone_temperatures.keys() {
             actual_temperatures.insert(*timestep, vec![20.0, 18.5]); // Placeholder values
         }
 
@@ -925,9 +989,9 @@ impl ASHRAE140MultiZoneValidator {
             case_validator.validate_peak_heating(actual_peak_heating);
         let (peak_cooling_pass, peak_cooling_pct) =
             case_validator.validate_peak_cooling(actual_peak_cooling);
-        let (rmse, max_temp_diff) =
+        let (rmse, _max_temp_diff) =
             case_validator.validate_hourly_temperature_profiles(&actual_temperatures);
-        let overall_score = case_validator.calculate_overall_score();
+        let _overall_score = case_validator.calculate_overall_score();
 
         // Generate report
         let report_text = case_validator.generate_report();
@@ -949,7 +1013,7 @@ impl ASHRAE140MultiZoneValidator {
     /// Validate Case 970 using the dedicated validator
     pub fn validate_case_970_with_validator(
         &self,
-        thermal_model: &ThermalModel<impl crate::physics::cta::ContinuousTensor<f64>>,
+        _thermal_model: &ThermalModel<impl crate::physics::cta::ContinuousTensor<f64>>,
     ) -> ValidationResult {
         let mut case_validator = Case970Validator::new();
 
@@ -986,7 +1050,7 @@ impl ASHRAE140MultiZoneValidator {
         let mut writer = Writer::from_path(file_path)?;
 
         // Write header
-        writer.write_record(&[
+        writer.write_record([
             "Case",
             "Metric",
             "Actual",
@@ -996,14 +1060,14 @@ impl ASHRAE140MultiZoneValidator {
         ])?;
 
         // Case 960 data (placeholder - would be real data in full implementation)
-        writer.write_record(&["960", "Annual Heating", "12.5", "12.4", "0.1", "true"])?;
-        writer.write_record(&["960", "Annual Cooling", "8.5", "8.7", "-0.2", "true"])?;
-        writer.write_record(&["960", "Peak Heating", "5.1", "5.2", "-0.1", "true"])?;
-        writer.write_record(&["960", "Peak Cooling", "4.9", "4.8", "0.1", "true"])?;
+        writer.write_record(["960", "Annual Heating", "12.5", "12.4", "0.1", "true"])?;
+        writer.write_record(["960", "Annual Cooling", "8.5", "8.7", "-0.2", "true"])?;
+        writer.write_record(["960", "Peak Heating", "5.1", "5.2", "-0.1", "true"])?;
+        writer.write_record(["960", "Peak Cooling", "4.9", "4.8", "0.1", "true"])?;
 
         // Case 970 data (stub)
-        writer.write_record(&["970", "Annual Heating", "N/A", "N/A", "N/A", "N/A"])?;
-        writer.write_record(&["970", "Annual Cooling", "N/A", "N/A", "N/A", "N/A"])?;
+        writer.write_record(["970", "Annual Heating", "N/A", "N/A", "N/A", "N/A"])?;
+        writer.write_record(["970", "Annual Cooling", "N/A", "N/A", "N/A", "N/A"])?;
 
         writer.flush()?;
         Ok(())
@@ -1015,7 +1079,7 @@ impl ASHRAE140MultiZoneValidator {
 
         // Load reference data
         let case_960_ref = Case960Reference::load_case_960_reference_data();
-        let case_970_ref = Case970Reference::load_case_970_reference_data();
+        let _case_970_ref = Case970Reference::load_case_970_reference_data();
 
         // Create a placeholder thermal model for Case 960
         let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
@@ -1025,7 +1089,7 @@ impl ASHRAE140MultiZoneValidator {
         let case_960_result = self.validate_case_960_with_validator(&model);
 
         // Validate Case 970 with dedicated validator
-        let case_970_result = self.validate_case_970_with_validator(&model);
+        let _case_970_result = self.validate_case_970_with_validator(&model);
 
         // Add results to report
         report.add_result_simple(

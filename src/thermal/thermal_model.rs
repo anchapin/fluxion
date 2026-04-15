@@ -81,11 +81,20 @@ impl ThermalModel {
         }
     }
 
-    /// Get current zone temperatures.
-    pub fn get_temperatures(&self) -> Vec<f64> {
-        self.temperatures.as_slice().to_vec()
+    /// Get the number of zones in the model.
+    pub fn num_zones(&self) -> usize {
+        self.num_zones
     }
+}
 
+impl Default for ThermalModel {
+    /// Create a default ThermalModel with 1 zone at 20°C.
+    fn default() -> Self {
+        ThermalModel::new(1, 20.0)
+    }
+}
+
+impl ThermalModel {
     /// Set zone temperatures.
     pub fn set_temperatures(&mut self, temperatures: Vec<f64>) {
         self.temperatures = VectorField::new(temperatures);
@@ -94,6 +103,11 @@ impl ThermalModel {
     /// Get zone thermal capacitances.
     pub fn get_thermal_capacitances(&self) -> Vec<f64> {
         self.thermal_capacitances.as_slice().to_vec()
+    }
+
+    /// Get zone temperatures.
+    pub fn get_temperatures(&self) -> Vec<f64> {
+        self.temperatures.as_slice().to_vec()
     }
 
     /// Set zone thermal capacitances.
@@ -120,10 +134,10 @@ mod tests {
     fn test_thermal_model_creation() {
         let model = ThermalModel::new(3, 20.0);
         assert_eq!(model.num_zones, 3);
-        assert_eq!(model.get_temperatures(), vec![20.0, 20.0, 20.0]);
+        assert_eq!(model.temperatures.as_slice(), &[20.0, 20.0, 20.0]);
         assert_eq!(
-            model.get_thermal_capacitances(),
-            vec![1000000.0, 1000000.0, 1000000.0]
+            model.thermal_capacitances.as_slice(),
+            &[1000000.0, 1000000.0, 1000000.0]
         );
     }
 
@@ -139,7 +153,7 @@ mod tests {
             vec![800000.0, 900000.0],
         );
         assert_eq!(model.num_zones, 2);
-        assert_eq!(model.get_temperatures(), vec![20.0, 22.0]);
+        assert_eq!(model.temperatures.as_slice(), &[20.0, 22.0]);
         assert_eq!(model.get_inter_zone_conductance(), vec![50.0, 60.0]);
     }
 

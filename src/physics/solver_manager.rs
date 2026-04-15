@@ -191,8 +191,8 @@ impl SolverManager {
     /// # Returns
     ///
     /// Some(solver) if solver exists, None if not found
-    pub fn get_solver(&self, wall_index: usize) -> Option<&Box<dyn HeatConductionSolver>> {
-        self.solvers.get(&wall_index)
+    pub fn get_solver(&self, wall_index: usize) -> Option<&dyn HeatConductionSolver> {
+        self.solvers.get(&wall_index).map(|v| &**v)
     }
 
     /// Calculate heat flux through a wall.
@@ -425,7 +425,7 @@ mod tests {
 
     #[test]
     fn test_solver_manager_get_solver() {
-        let manager = SolverManager::default();
+        let _manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.2)))
             .build()

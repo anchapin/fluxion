@@ -200,9 +200,11 @@ impl EnergyBalanceValidator {
         // In a well-insulated building, inter-zone conductance should be low
         let h_tr_iz_values = thermal_model.h_tr_iz.as_ref();
 
-        for zone_idx in 0..thermal_model.num_zones {
-            let conductance = h_tr_iz_values[zone_idx];
-
+        for (zone_idx, &conductance) in h_tr_iz_values
+            .iter()
+            .enumerate()
+            .take(thermal_model.num_zones)
+        {
             // Check for unreasonable conductance values
             if conductance < 0.0 {
                 return Err(ValidationError::GeneralError(format!(

@@ -22,6 +22,7 @@ use serde::{Deserialize, Serialize};
 /// For more accurate zone enthalpy, use HourlyWeatherData for zone conditions
 /// if available. This helper is for economizer control where only zone_temp
 /// is typically known.
+#[allow(dead_code)]
 fn zone_enthalpy_from_temp(zone_temp: f64, outdoor_humidity: f64) -> f64 {
     use crate::weather::calculate_enthalpy;
     calculate_enthalpy(

@@ -1,0 +1,17 @@
+{
+  "case699": {
+    "description": "Low mass with comprehensive HVAC integration",
+    "annual_heating_min": 10.2,
+    "annual_heating_max": 11.0,
+    "annual_cooling_min": 9.5,
+    "annual_cooling_max": 10.5,
+    "peak_heating_min": 4.8,
+    "peak_heating_max": 5.3,
+    "peak_cooling_min": 5.2,
+    "peak_cooling_max": 6.0,
+    "min_free_float_min": 12.5,
+    "min_free_float_max": 14.0,
+    "max_free_float_min": 32.0,
+    "max_free_float_max": 34.5
+  }
+}

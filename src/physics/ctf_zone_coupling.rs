@@ -324,7 +324,7 @@ impl SimplifiedCtfCoupling {
     pub fn flux_corrected(
         solver: &mut CTFSolver,
         t_zone: f64,
-        t_mass: f64,
+        _t_mass: f64,
         t_sol_air: f64,
         solar_interior: f64,
         h_i: f64,
@@ -342,9 +342,7 @@ impl SimplifiedCtfCoupling {
         let t_si_est = t_zone + (q_ctf_initial - solar_interior) / effective_h;
 
         // Second pass with corrected T_si
-        let q_ctf_corrected = solver.step(t_si_est, t_sol_air);
-
-        q_ctf_corrected
+        solver.step(t_si_est, t_sol_air)
     }
 }
 

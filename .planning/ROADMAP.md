@@ -1,14 +1,16 @@
 # Fluxion Roadmap
 
 **Project:** Building Energy Modeling Engine (Rust + Python)
-**Milestone:** v1.0 (Next Milestone)
+**Milestone:** v1.2 Validation & Testing Completion
 **Current Phase:** Planning
-**Last Updated:** 2026-04-07
+**Last Updated:** 2026-04-08
 
 ---
 
 ## Milestones
 
+- 🚧 **v1.2 Validation & Testing Completion** — Phases 44-47 (planning)
+- ✅ **v1.1 ASHRAE 140 Completion (Partial)** — Phase 40 (shipped 2026-04-08)
 - ✅ **v1.0 Multi-Zone Support** — Phases M1-M3 (shipped 2026-04-07)
 - ✅ **v0.8 Peak Load & Free-Float Validation** — Phases 33-36 (shipped 2026-04-07)
 - ✅ **v0.7 Thermal Physics Complete** — Phases 28-32 (COMPLETE 2026-04-02)
@@ -18,13 +20,51 @@
 
 ## Current Status
 
-**Milestone:** v1.0 (Multi-Zone Support) ✅ COMPLETED 2026-04-07
-**Next Milestone:** Planning
-**Status:** v1.0 milestone completed successfully. Ready for next milestone planning.
+**Milestone:** v1.2 (Validation & Testing Completion) 🚧 PLANNING
+**Previous Milestone:** v1.1 (ASHRAE 140 Completion - Partial) ✅ COMPLETED 2026-04-08
+**Status:** v1.2 milestone planning in progress. Phases 44-47 defined and ready for execution.
 
 ---
 
 ## Phases
+
+<details>
+<summary>🚧 v1.2 Validation & Testing Completion (Phases 44-47) — PLANNING</summary>
+
+- [x] **Phase 44: High-Mass Physics & Validation Completion** - Complete high-mass validation and thermal mass diagnostics (4/4 plans) (completed 2026-04-08)
+- [x] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (1/3 plans) (EXECUTING)
+  - [x] 41-01: High-mass validation framework (COMPLETED)
+- [ ] **Phase 45: Advanced Cross-Validation & Automation** - ESP-r integration, automated testing infrastructure (6/6 plans)
+- [ ] **Phase 46: Expanded Validation Coverage** - Additional test cases and comprehensive reporting (1/4 plans)
+  - [x] 46-01: Extended ASHRAE 140 validation with 500-699 series cases (12 new cases)
+  - [ ] 46-02: Climate zone validation framework
+  - [ ] 46-03: Occupancy pattern validation
+  - [ ] 46-04: Comprehensive validation reporting
+- [ ] **Phase 47: Performance Validation & Optimization** - Performance validation and testing optimization (0/8 plans)
+  - [x] 47-01: Performance benchmarking infrastructure and validation framework
+  - [x] 47-02: Thermal solver and zone coupling optimization
+  - [x] 47-03: CI/CD integration and CLI performance commands
+  - [x] 47-04: Comparative and historical performance analysis
+  - [x] 47-05: Integration with main validation suite
+  - [x] 47-06: Finalization, examples, and user documentation
+  - [x] 47-07: Phase completion validation and reporting
+  - [x] 47-08: Gap closure - benchmark expansion, metrics implementation, and wiring completion
+
+**Note:** v1.2 milestone planning in progress. Phase 41 planned (3/3 plans), Phases 42-43 still deferred from v1.1.
+
+</details>
+
+<details>
+<summary>✅ v1.1 ASHRAE 140 Completion (Phase 40) — SHIPPED 2026-04-08</summary>
+
+- [x] **Phase 40: Case Expansion Foundation** - ASHRAE 140 case expansion, reference database, cross-validation framework (9/9 plans complete)
+- [ ] **Phase 41: High-Mass Physics & Performance** - High-mass validation, thermal mass diagnostics (3/3 plans)
+- [ ] **Phase 42: Advanced Cross-Validation & Automation** - ESP-r integration, multi-reference reporting (0/3 plans - DEFERRED to v1.2)
+- [ ] **Phase 43: Validation Optimization & Polish** - Performance optimization, CI/CD integration (0/3 plans - DEFERRED to v1.2)
+
+**Note:** v1.1 represents partial completion with Phase 40 fully implemented. Remaining phases deferred to v1.2.
+
+</details>
 
 <details>
 <summary>✅ v1.0 Multi-Zone Support (Phases M1-M3) — SHIPPED 2026-04-07</summary>
@@ -45,106 +85,23 @@
 
 </details>
 
-## Phase M2: Zone-Level HVAC Controls
-
-**Goal:** Implement zone-level HVAC controls for the multi-zone thermal network established in Phase M1. This phase focuses on adding per-zone heating/cooling setpoints, independent HVAC control logic, and extending the Python API and CLI to support multi-zone HVAC operations.
-
-**Requirements:** [MZ-03, MZ-04, MZ-09, MZ-10]
-
-**Status:** Gap closure in progress - addressing compilation errors and completing integration
-
-- [x] M2-01: Zone-Level HVAC Controls Foundation (COMPLETE)
-  - Implemented ZoneSetpoints and ZoneControl structs
-  - Created comprehensive HVAC control tests
-  - Verified independent zone control logic
-
-- [⚠️] M2-02: Python API Multi-Zone HVAC Bindings (PARTIAL - Build failures)
-  - Created PyZoneSetpoints and PyZoneControl wrappers
-  - Implemented Python module registration
-  - Blocked by VectorField API incompatibility
-
-- [⚠️] M2-03: CLI Multi-Zone HVAC Support (PARTIAL - Integration blocked)
-  - Created HVAC CLI command structure
-  - Integrated with multi-zone CLI
-  - Blocked by unresolved HVAC module dependencies
-
-- [✅] M2-04: Fix Python Bindings Technical Blockers (COMPLETE)
-  - Fixed ThermalModel import paths
-  - Resolved PyO3 API compatibility issues
-  - Added proper feature flag gating
-  - HVAC bindings temporarily disabled due to ThermalModel API mismatch
-
-- [x] M2-05: Fix Critical Gaps - VectorField API & CLI Integration (Gap Closure)
-  - Fix VectorField API usage in HVAC control tests
-  - Correct ThermalModel import path in zone_control.rs
-  - Implement actual HVAC integration in CLI handlers
-
-- [x] M2-06: Enable and Verify Python Bindings (Gap Closure)
-  - Enable HVAC bindings module registration
-  - Build and test Python bindings
-  - Verify end-to-end Python HVAC functionality
-
-- [x] M2-07: Fix Critical Compilation Errors (Gap Closure)
-  - Fix ThermalModel import paths
-  - Fix VectorField API usage in tests
-  - Fix zone_setpoints module imports
-
-- [x] M2-08: Complete Python Bindings Verification (Gap Closure)
-  - Enable HVAC bindings module registration
-  - Build and test Python bindings
-  - Verify end-to-end Python HVAC functionality
-
-- [x] M2-07: Fix Critical Compilation Errors (Gap Closure)
-  - Fix ThermalModel import paths
-  - Fix VectorField API usage in tests
-  - Fix zone_setpoints module imports
-
-- [ ] M2-08: Complete Python Bindings Verification (Gap Closure)
-  - Enable HVAC bindings module registration
-  - Build and test Python bindings
-  - Verify end-to-end Python HVAC functionality
-
----
-
-## Phase M3: ASHRAE 140 Multi-Zone Validation
-
-**Goal:** Validate multi-zone implementation against ASHRAE 140 cases 960 and 970
-
-**Requirements:** [MZ-06, MZ-07]
-
-**Status:** Not started
-
-- [x] M3-01: Multi-Zone Validation Framework - Extend validation infrastructure for multi-zone cases
-  - Implement Case960Validator and Case970Validator structs
-  - Extend ASHRAE140MultiZoneValidator with case-specific methods
-  - Create comprehensive validation tests
-
-- [x] M3-02: Reference Data and Statistical Methods - Add reference data and statistical analysis
-  - Implement Case 960 reference data in benchmark.rs
-  - Extend reference_data.rs with multi-zone loading utilities
-  - Add statistical validation methods (RMSE, MBE, percentage difference)
-
-- [x] M3-03: Validation Execution and Reporting - CLI tool and documentation
-  - Create run_multi_zone_validation CLI tool
-  - Enhance validation reporting with multi-zone support
-  - Generate comprehensive validation results documentation
-
----
-
-## Progress
-
-| Phase | Milestone | Plans Complete | Status | Completed |
-|-------|----------|----------------|--------|-----------|
-| 33. Peak Load Diagnostics | v0.8 | 1/1 | Complete | ✅ 2026-04-03 |
+| 41. High-Mass Physics & Performance | v1.2 | 3/3 | Planned    |  | 🚧 2026-04-08 |
+| 44. High-Mass Physics & Validation Completion | 6/4 | Complete   | 2026-04-08 | 🚧 2026-04-08 |
+| 45. Advanced Cross-Validation & Automation | 2/6 | In Progress|  | 🚧 2026-04-08 |
+| 46. Expanded Validation Coverage | v1.2 | 4/4 | Complete    | 2026-04-08 |
+| 47. Performance Validation & Optimization | v1.2 | 8/8 | Complete   | 2026-04-08 |
+| 40. Case Expansion Foundation | v1.1 | 9/9 | Complete | ✅ 2026-04-08 |
+| 32. CTF Thermal Mass Integration Fix | v0.7 | 3/3 | Complete    | 2026-04-08 |
+| 33. Peak Load Diagnostics | v0.8 | 3/3 | Complete    | 2026-04-08 |
 | 34. Peak Load Physics Fix | v0.8 | 4/4 | Complete | ✅ 2026-04-03 |
 | 35. Free-Floating Validation | v0.8 | 1/1 | Complete | ✅ 2026-04-06 |
 | 36. v0.8.0 Release | v0.8 | 4/4 | Complete | ✅ 2026-04-06 |
-| 37. Multi-Zone Thermal Network Foundation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
-| 38. Zone-Level HVAC Controls | v1.0 | 5/8 | In Progress | ⚠️ Gap Closure |
-| 39. ASHRAE 140 Multi-Zone Validation | v1.0 | 0/3 | Not started | - |
+| M1. Multi-Zone Thermal Network Foundation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
+| M2. Zone-Level HVAC Controls | v1.0 | 8/8 | Complete | ✅ 2026-04-07 |
+| M3. ASHRAE 140 Multi-Zone Validation | v1.0 | 3/3 | Complete | ✅ 2026-04-07 |
 
-**Overall Progress:** v0.8.0 milestone complete (100%), v1.0 in progress (40%)
+**Overall Progress:** v1.2 planning (33% - Phase 41 planned), v1.1 complete (100% of Phase 40), v1.0 complete (100%), v0.8 complete (100%), v0.7 complete (100%)
 
 ---
 
-*Roadmap updated: 2026-04-07 - M2 gap closure plan added to address technical blockers*
+*Roadmap updated: 2026-04-08 - v1.2 milestone created with Phases 44-47, incorporating deferred v1.1 work*

@@ -3,6 +3,7 @@
 
 use crate::validation::ashrae_140_multi_zone::ASHRAE140MultiZoneValidator;
 use crate::validation::energy_balance::EnergyBalanceValidator;
+use crate::validation::performance;
 use crate::validation::performance::PerformanceValidator;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
@@ -91,6 +92,15 @@ impl M1ValidationSuite {
             performance_report_text,
             validation_duration_seconds: total_duration.as_secs_f64(),
         })
+    }
+
+    /// Run performance validation using the new performance module
+    pub fn run_performance_validation(
+        &self,
+    ) -> Result<performance::PerformanceReport, anyhow::Error> {
+        let thermal_model = self.create_thermal_model()?;
+        let validator = performance::PerformanceValidator::new(thermal_model);
+        Ok(validator.validate_performance())
     }
 
     /// Check if all M1 requirements are satisfied

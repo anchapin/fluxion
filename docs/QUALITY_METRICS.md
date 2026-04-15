@@ -1,20 +1,20 @@
 # Quality Metrics Tracker
 
-*Generated: 2026-04-02 23:29 UTC
+*Generated: 2026-04-14 18:06 UTC
 
 ## Current Status
 
 - **Pass Rate:** 0.0% (0 / 18 cases)
-- **MAE:** 31.75%
-- **Max Deviation:** 321.63%
+- **MAE:** 47.23%
+- **Max Deviation:** 346.87%
 
 ### Status Breakdown
 
 | Status | Count | Percentage |
 |--------|-------|------------|
-| FAIL | 26 | 40.6% |
-| WARN | 16 | 25.0% |
-| PASS | 22 | 34.4% |
+| PASS | 4 | 6.2% |
+| WARN | 2 | 3.1% |
+| FAIL | 58 | 90.6% |
 
 ## Phase Progression
 
@@ -25,42 +25,42 @@
 | Phase 2 | 35% | 38.5% | 250% | Thermal mass |
 | Phase 3 | 42% | 32.1% | 200% | Solar improvements |
 | Phase 4 | 47% | 28.4% | 180% | Multi-zone correct |
-| Current (Phase 5) | 0.0% | 31.7% | 322% | Diagnostics |
+| Current (Phase 5) | 0.0% | 47.2% | 347% | Diagnostics |
 
 ## Metric Deviations
 
 | Case | Metric | Actual | Ref Range | Error | Issue |
 |------|--------|--------|-----------|-------|-------|
-| 950 | Peak Cooling (kW) | 3.37 | 0.70-0.90 | 321.6% | Unknown |
-| 650 | Peak Cooling (kW) | 5.60 | 1.90-2.50 | 154.5% | SolarGains |
-| 900FF | Min Free-Float Temp (°C) | -9.59 | -6.40--1.60 | 139.8% | ThermalMass |
-| 900 | Peak Heating (kW) | 4.44 | 1.80-2.40 | 111.3% | Unknown |
-| 910 | Peak Cooling (kW) | 2.91 | 1.20-1.60 | 108.0% | Unknown |
-| 910 | Peak Heating (kW) | 4.44 | 1.90-2.50 | 102.0% | Unknown |
-| 940 | Peak Heating (kW) | 4.21 | 1.90-2.50 | 91.6% | Unknown |
-| 610 | Peak Cooling (kW) | 4.72 | 2.20-2.90 | 85.1% | SolarGains |
-| 900 | Peak Cooling (kW) | 3.42 | 1.60-2.10 | 84.6% | Unknown |
-| 920 | Peak Heating (kW) | 4.34 | 2.10-2.80 | 77.3% | Unknown |
-| 640 | Peak Cooling (kW) | 5.61 | 2.80-3.70 | 72.5% | SolarGains |
-| 940 | Peak Cooling (kW) | 3.42 | 1.70-2.30 | 70.8% | Unknown |
-| 930 | Peak Heating (kW) | 4.37 | 2.30-3.00 | 65.0% | Unknown |
-| 960 | Peak Cooling (kW) | 3.28 | 0.00-4.00 | 64.1% | Unknown |
-| 960 | Annual Cooling (MWh) | 3.59 | 1.00-3.50 | 59.7% | InterZoneTransfer |
-| 195 | Annual Heating (MWh) | 7.34 | 3.50-6.00 | 54.4% | Unknown |
-| 650FF | Min Free-Float Temp (°C) | -11.88 | -23.00--21.00 | 46.0% | FreeFloat |
-| 600 | Peak Heating (kW) | 4.77 | 2.80-3.80 | 44.7% | Unknown |
-| 620 | Peak Heating (kW) | 4.77 | 2.80-3.80 | 44.5% | Unknown |
-| 195 | Peak Heating (kW) | 2.59 | 1.40-2.20 | 44.1% | Unknown |
-| 640 | Annual Heating (MWh) | 4.57 | 2.75-3.80 | 39.6% | Unknown |
-| 950FF | Min Free-Float Temp (°C) | -11.52 | -20.20--17.80 | 39.3% | ThermalMass |
-| 910 | Annual Cooling (MWh) | 1.87 | 0.82-1.88 | 38.3% | ModelLimitation |
-| 600FF | Min Free-Float Temp (°C) | -10.77 | -18.80--15.60 | 37.4% | FreeFloat |
-| 630 | Annual Cooling (MWh) | 2.02 | 2.13-3.70 | 30.6% | Unknown |
-| 960 | Annual Heating (MWh) | 7.02 | 5.00-15.00 | 29.8% | Unknown |
-| 610 | Annual Heating (MWh) | 6.52 | 4.36-5.79 | 28.5% | Unknown |
-| 920 | Peak Cooling (kW) | 2.08 | 1.40-1.90 | 26.2% | Unknown |
-| 950FF | Max Free-Float Temp (°C) | 46.50 | 35.50-38.50 | 25.7% | ThermalMass |
-| 650 | Annual Cooling (MWh) | 7.33 | 4.82-7.06 | 23.5% | Unknown |
+| 900 | Annual Heating Energy (MWh) | 7.17 | 1.17-2.04 | 346.9% | ModelLimitation |
+| 950 | Annual Heating Energy (MWh) | 0.00 | N/A | 100.0% | ModelLimitation |
+| 950 | Peak Heating Load (kW) | 0.00 | N/A | 100.0% | Unknown |
+| 195 | Annual Cooling Energy (MWh) | 0.00 | N/A | 100.0% | Unknown |
+| 195 | Peak Cooling Load (kW) | 0.00 | N/A | 100.0% | Unknown |
+| 930 | Peak Cooling Load (kW) | 0.61 | 1.10-1.50 | 87.2% | Unknown |
+| 930 | Annual Cooling Energy (MWh) | 1.00 | 1.04-2.24 | 78.8% | ModelLimitation |
+| 920 | Annual Heating Energy (MWh) | 6.72 | 3.26-4.30 | 77.7% | ModelLimitation |
+| 940 | Peak Heating Load (kW) | 1.61 | 1.90-2.50 | 76.5% | Unknown |
+| 960 | Annual Heating Energy (MWh) | 1.88 | 1.65-2.45 | 75.0% | Unknown |
+| 920 | Peak Cooling Load (kW) | 0.95 | 1.40-1.90 | 74.8% | Unknown |
+| 900 | Annual Cooling Energy (MWh) | 5.06 | 2.13-3.67 | 74.6% | ModelLimitation |
+| 950 | Peak Cooling Load (kW) | 1.66 | 0.70-0.90 | 72.6% | Unknown |
+| 940 | Peak Cooling Load (kW) | 1.68 | 1.70-2.30 | 69.1% | Unknown |
+| 930 | Peak Heating Load (kW) | 1.58 | 2.30-3.00 | 66.7% | Unknown |
+| 900FF | Minimum Free-Floating Temperature (°C) | -6.57 | -6.40--1.60 | 64.1% | ThermalMass |
+| 930 | Annual Heating Energy (MWh) | 7.65 | 4.14-5.34 | 61.4% | ModelLimitation |
+| 195 | Annual Heating Energy (MWh) | 5.00 | 3.50-6.00 | 59.7% | Unknown |
+| 920 | Peak Heating Load (kW) | 1.55 | 2.10-2.80 | 59.1% | Unknown |
+| 195 | Peak Heating Load (kW) | 6.86 | 1.40-2.20 | 50.6% | Unknown |
+| 960 | Peak Cooling Load (kW) | 3.40 | 0.00-4.00 | 49.7% | Unknown |
+| 920 | Annual Cooling Energy (MWh) | 1.93 | 1.84-3.31 | 48.9% | ModelLimitation |
+| 650FF | Minimum Free-Floating Temperature (°C) | -11.91 | -23.00--21.00 | 45.8% | FreeFloat |
+| 950FF | Minimum Free-Floating Temperature (°C) | -10.95 | -20.20--17.80 | 42.4% | ThermalMass |
+| 900 | Peak Cooling Load (kW) | 1.68 | 1.60-2.10 | 39.9% | Unknown |
+| 600FF | Minimum Free-Floating Temperature (°C) | -11.31 | -18.80--15.60 | 34.2% | FreeFloat |
+| 950 | Annual Cooling Energy (MWh) | 3.80 | 0.39-0.92 | 33.0% | ModelLimitation |
+| 950FF | Maximum Free-Floating Temperature (°C) | 48.01 | 35.50-38.50 | 29.8% | ThermalMass |
+| 960 | Peak Heating Load (kW) | 6.31 | 2.00-8.00 | 25.7% | Unknown |
+| 600FF | Maximum Free-Floating Temperature (°C) | 53.45 | 64.90-75.10 | 23.6% | FreeFloat |
 
 ## Problematic Cases
 
@@ -68,16 +68,16 @@ Cases with the highest number of failing metrics:
 
 | Case | Failing Metrics | Total Error |
 |------|-----------------|-------------|
-| 950 | 1 | 321.6% |
-| 910 | 2 | 210.0% |
-| 900 | 2 | 195.9% |
-| 940 | 2 | 162.3% |
-| 650 | 1 | 154.5% |
-| 900FF | 1 | 139.8% |
-| 610 | 2 | 113.6% |
-| 640 | 2 | 112.1% |
-| 920 | 2 | 103.5% |
-| 195 | 2 | 98.6% |
+| 900 | 3 | 461.4% |
+| 195 | 4 | 310.3% |
+| 950 | 4 | 305.6% |
+| 930 | 4 | 294.1% |
+| 920 | 4 | 260.6% |
+| 960 | 4 | 167.7% |
+| 940 | 3 | 162.6% |
+| 950FF | 2 | 72.1% |
+| 650FF | 2 | 67.6% |
+| 900FF | 1 | 64.1% |
 
 ---
 *Note: MAE = Mean Absolute Error of percent deviation from reference midpoints.*

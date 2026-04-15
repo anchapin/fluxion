@@ -210,8 +210,8 @@ pub fn create_zone_setpoints(config: &Bound<'_, PyDict>) -> PyResult<PyZoneSetpo
 
         for (key, value) in zones_dict {
             let zone_key: String = key.extract()?;
-            if zone_key.starts_with("zone_") {
-                if let Ok(zone_idx) = zone_key[5..].parse::<usize>() {
+            if let Some(stripped) = zone_key.strip_prefix("zone_") {
+                if let Ok(zone_idx) = stripped.parse::<usize>() {
                     let zone_dict: &Bound<'_, PyDict> = value.downcast()?;
 
                     if let Ok(Some(heating)) = zone_dict.get_item("heating") {

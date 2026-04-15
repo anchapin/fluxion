@@ -10,11 +10,6 @@
 //! 4. Reports daily and monthly cooling energy
 //! 5. Identifies pattern: is cooling running too much/little? Is zone staying warm?
 
-use fluxion::sim::engine::ThermalModel;
-use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use std::fs::File;
-use std::io::Write;
-
 #[test]
 #[ignore = "API outdated - needs update to use step_physics"]
 fn test_case_900_cooling_diagnostic() {

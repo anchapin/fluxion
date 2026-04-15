@@ -44,7 +44,6 @@
 //! ```
 
 use num_complex::Complex64;
-use std::f64::consts::PI;
 
 /// Material layer with thermal properties.
 #[derive(Debug, Clone)]
@@ -198,6 +197,7 @@ pub struct CTFCalculator<'a> {
     max_coeffs: usize,
 }
 
+#[allow(dead_code)]
 impl<'a> CTFCalculator<'a> {
     /// Multiply two 2x2 real matrices.
     ///
@@ -333,7 +333,7 @@ impl<'a> CTFCalculator<'a> {
     /// Find a single pole using bisection on the real axis.
     ///
     /// Searches for s where |A(s)| is minimized (pole of 1/A(s)).
-    fn find_pole_bisection(&self, s_guess: f64, n: usize) -> f64 {
+    fn find_pole_bisection(&self, s_guess: f64, _n: usize) -> f64 {
         // Bracket the pole: search between s_guess/2 and s_guess*2
         let mut s_low = s_guess * 2.0;
         let mut s_high = s_guess / 2.0;
@@ -429,7 +429,7 @@ impl<'a> CTFCalculator<'a> {
             // Newton step: s_new = s - A(s)/A'(s)
             if da_ds.norm() > 1e-15 {
                 let delta = a_val / da_ds;
-                s = s - delta;
+                s -= delta;
 
                 // Check convergence
                 if delta.norm() < tol {
@@ -483,7 +483,7 @@ impl<'a> CTFCalculator<'a> {
         coeffs: &mut CTFCoefficients,
         poles: &[Complex64],
         residues: &[Complex64],
-        u_value: f64,
+        _u_value: f64,
     ) {
         let dt = self.timestep;
 
@@ -524,7 +524,7 @@ impl<'a> CTFCalculator<'a> {
         if let Some(&dominant_pole) = poles.first() {
             for j in 1..self.max_coeffs {
                 let exp_term = (dominant_pole * dt * (j as f64)).exp();
-                coeffs.phi[j] = exp_term.re.abs().min(1.0).max(0.0);
+                coeffs.phi[j] = exp_term.re.abs().clamp(0.0, 1.0);
             }
         }
     }
@@ -537,7 +537,7 @@ impl<'a> CTFCalculator<'a> {
         &self,
         coeffs: &mut CTFCoefficients,
         u_value: f64,
-        time_constant: f64,
+        _time_constant: f64,
     ) {
         // Calculate decay factor based on wall time constant
         // For multi-layer walls, use effective time constant
@@ -820,7 +820,7 @@ impl<'a> CTFCalculator<'a> {
         let y0 = coeffs.y[0].abs().max(1e-10);
         for j in 1..self.max_coeffs {
             // Φ coefficients decay based on thermal mass
-            coeffs.phi[j] = (coeffs.y[j] / y0).abs().min(1.0).max(0.0);
+            coeffs.phi[j] = (coeffs.y[j] / y0).abs().clamp(0.0, 1.0);
         }
 
         // Ensure Φ coefficients decay smoothly
@@ -1044,9 +1044,9 @@ mod tests {
         let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
 
         // Create temperature histories with warmup
-        let mut t_ext_history = vec![0.0; 50];
-        let mut t_int_history = vec![20.0; 49];
-        let mut flux_history = vec![0.0; 49];
+        let t_ext_history = vec![0.0; 50];
+        let t_int_history = vec![20.0; 49];
+        let flux_history = vec![0.0; 49];
 
         // Calculate flux
         let q_flux =
@@ -1083,9 +1083,9 @@ mod tests {
         let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
 
         // Create temperature histories with warmup
-        let mut t_ext_history = vec![35.0; 50];
-        let mut t_int_history = vec![20.0; 49];
-        let mut flux_history = vec![0.0; 49];
+        let t_ext_history = vec![35.0; 50];
+        let t_int_history = vec![20.0; 49];
+        let flux_history = vec![0.0; 49];
 
         // Calculate flux
         let q_flux =
@@ -1594,7 +1594,7 @@ mod tests {
         assert!(s.im > 0.0);
 
         // Should match expected frequency
-        let expected_omega = 2.0 * PI * 5.0 / (10.0 * 3600.0);
+        let expected_omega = 2.0 * std::f64::consts::PI * 5.0 / (10.0 * 3600.0);
         assert_relative_eq!(s.im, expected_omega, max_relative = 0.01);
     }
 
@@ -1627,10 +1627,8 @@ mod tests {
         let coeffs = CTFCalculator::with_defaults(&layers, 3600.0).compute_coefficients();
 
         // Check decay pattern for X coefficients
-        let mut decays = true;
         for i in 1..coeffs.x.len().min(10) {
             if coeffs.x[i] > coeffs.x[i - 1] {
-                decays = false;
                 break;
             }
         }
