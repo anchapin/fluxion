@@ -23,20 +23,49 @@ jobs:
         env:
           RUSTFLAGS: "-C target-cpu=x86-64"
           RUST_MIN_STACK: 16777216
+          RUST_LOG: debug
         shell: bash
         run: |
           set -o pipefail
+
+          # Debug info
+          echo "=== DEBUG INFO ==="
+          echo "tarpaulin version:"
+          cargo tarpaulin --version 2>&1 || echo "tarpaulin not installed yet"
+          echo ""
+          echo "rustc version:"
+          rustc --version
+          echo ""
+          echo "cargo version:"
+          cargo --version
+          echo ""
+          echo "Starting tarpaulin at $(date -Iseconds)"
+          echo "===================="
+
+          # Run tarpaulin with verbose output
+          # --timeout is test response timeout (default 60s), increase to 600s to handle slow tests
           cargo tarpaulin \
-            --timeout 900 \
+            --timeout 600 \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
             --features wiring-tracing \
+            --verbose \
             2>&1 | tee tarpaulin.log
           TARPAULIN_EXIT=${PIPESTATUS[0]}
-          ls -la cobertura.xml
+
+          echo ""
+          echo "=== tarpaulin finished at $(date -Iseconds) with exit code $TARPAULIN_EXIT ==="
+
+          # Debug: show what was created
+          echo ""
+          echo "=== Files in current directory ==="
+          ls -la *.xml *.log 2>/dev/null || echo "No xml/log files found"
+
           if [ $TARPAULIN_EXIT -ne 0 ]; then
             echo "::error::cargo-tarpaulin failed with exit code $TARPAULIN_EXIT"
+            echo "=== Last 50 lines of tarpaulin.log ==="
+            tail -50 tarpaulin.log
             exit $TARPAULIN_EXIT
           fi
       - name: Extract Physics Coverage
