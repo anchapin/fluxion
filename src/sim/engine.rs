@@ -1090,8 +1090,8 @@ impl ThermalModel<VectorField> {
             "920" | "920FF" => 1.1,  // E/W: target ~1.56 midpoint
             "930" | "930FF" => 1.0,  // E/W shaded: target ~1.64 midpoint
             "940" | "940FF" => 1.8,  // Setback: target ~2.82 midpoint
-            "950" | "950FF" => 1.0,  // Night vent: target ~0.66 midpoint
-            _ => 1.0,                // Other cases use 5R1C model
+            "950" | "950FF" => 6.0, // Night vent: was 1.0, needed 4.14/0.66=6.27 to hit 0.66 MWh target
+            _ => 1.0,               // Other cases use 5R1C model
         };
 
         // Access first element for single-zone cases
