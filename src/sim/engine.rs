@@ -4788,8 +4788,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // Use envelope mass temperature instead of single mass temperature
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
-        let num_phi_st = self.h_tr_is.clone() * phi_st.clone();
+        // Optimized: use zip_with to avoid double clones
+        let num_tm = self
+            .derived_h_ms_is_prod
+            .zip_with(&self.envelope_mass_temperatures, |a, b| a * b);
+        let num_phi_st = self.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
         let num_zones = self.num_zones;
@@ -6181,7 +6184,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // Use envelope_mass_temperatures to match step_physics_6r2c
-        let num_tm = self.derived_h_ms_is_prod.clone() * self.envelope_mass_temperatures.clone();
+        // Optimized: use zip_with to avoid double clones
+        let num_tm = self
+            .derived_h_ms_is_prod
+            .zip_with(&self.envelope_mass_temperatures, |a, b| a * b);
         let num_phi_st = self.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
