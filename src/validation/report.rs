@@ -605,19 +605,8 @@ impl BenchmarkReport {
         let case_refs = match db.cases.get(case_id) {
             Some(c) => c,
             None => {
-                // If case not found in multi-ref DB, fall back to simple method with zeros?
-                // To avoid panics, we'll create a result with per_program=None and zero refs.
-                let result = ValidationResult {
-                    case_id: case_id.to_string(),
-                    metric,
-                    fluxion_value,
-                    ref_min: 0.0,
-                    ref_max: 0.0,
-                    percent_error: 0.0,
-                    status: ValidationStatus::Fail,
-                    per_program: None,
-                };
-                self.results.push(result);
+                // Case not found in multi-ref DB - do NOT push a result.
+                // Caller (enrich_with_multi_reference) will preserve the original result.
                 return;
             }
         };
@@ -644,10 +633,9 @@ impl BenchmarkReport {
             }
         };
 
-        // If no program ranges available, return fail
+        // If no program ranges available, return without pushing a result.
+        // Caller will preserve the original result.
         if program_ranges.is_empty() {
-            let result = ValidationResult::new(case_id, metric, fluxion_value, 0.0, 0.0);
-            self.results.push(result);
             return;
         }
 
