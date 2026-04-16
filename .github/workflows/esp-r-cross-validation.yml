@@ -1,14 +1,9 @@
 name: ESP-r Cross-Validation
 
 on:
-  # Run weekly on Sunday at 00:00 UTC
   schedule:
     - cron: '0 0 * * 0'
-
-  # Allow manual triggering
   workflow_dispatch:
-
-  # Run on pushes to main branch
   push:
     branches: [ main ]
 
@@ -25,14 +20,12 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Install Rust toolchain
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        toolchain: stable
-        override: true
         components: rustfmt, clippy
 
     - name: Cache cargo dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: |
           ~/.cargo/bin/
@@ -50,7 +43,7 @@ jobs:
 
     - name: Upload test reports
       if: always()
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: esp-r-cross-validation-reports
         path: |
