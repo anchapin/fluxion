@@ -12,7 +12,7 @@ use crate::sim::components::WallSurface;
 use crate::sim::equipment::Equipment;
 use crate::sim::holiday;
 use crate::sim::hvac::{
-    AnyEquipment, CyclingTracker, EconomizerMode, HVACMode as EquipmentHVACMode,
+    AnyEquipment, CyclingTracker, EconomizerMode, HVACMode as EquipmentHVACMode, IdealLoadsSystem,
     PredictiveController, VariableCapacityEquipment,
 };
 use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
@@ -500,6 +500,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// - No curve fitting or artificial delays
     pub ideal_air_loads_mode: bool,
 
+    /// IdealLoadsSystem for calculating HVAC loads using proper thermodynamic formulas.
+    /// Uses mass_flow * cp * delta_t instead of sensitivity-based calculation.
+    /// Initialized with zone volume and infiltration rate from geometry.
+    /// One per zone for multi-zone support.
+    pub ideal_loads_system: Vec<Option<IdealLoadsSystem>>,
+
     // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
     /// CTF coefficients for each wall construction (precomputed during initialization)
     pub ctf_coefficients: Option<CTFCoefficients>,
@@ -804,6 +810,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
 
             // Variable capacity HVAC equipment (Plan 15-06)
             hvac_equipment: self.hvac_equipment.clone(),
+
+            // IdealLoadsSystem for thermodynamic HVAC load calculation (Issue #521)
+            ideal_loads_system: self.ideal_loads_system.clone(),
 
             // Door geometry for temperature-dependent inter-zone air exchange
             door_geometry: self.door_geometry,
@@ -2318,6 +2327,14 @@ impl ThermalModel<VectorField> {
         // This is required for Cases 800-810 (HVAC equipment cases)
         model.hvac_equipment = spec.hvac_equipment.clone();
 
+        // Initialize IdealLoadsSystem with zone properties from geometry (Issue #521)
+        // Create one IdealLoadsSystem per zone with that zone's volume
+        let zone_vols = model.zone_volume.as_ref();
+        model.ideal_loads_system = zone_vols
+            .iter()
+            .map(|&vol| Some(IdealLoadsSystem::new(vol, spec.infiltration_ach)))
+            .collect();
+
         model
     }
 
@@ -2791,6 +2808,10 @@ impl ThermalModel<VectorField> {
 
             // Variable capacity HVAC equipment (Plan 15-06)
             hvac_equipment: None, // Default to no equipment (uses IdealHVACController)
+
+            // IdealLoadsSystem for proper thermodynamic HVAC load calculation (Issue #521)
+            // Initialized with zone properties from geometry when setting up from spec
+            ideal_loads_system: vec![], // Will be populated by from_spec() with one per zone
 
             // Door geometry for temperature-dependent inter-zone air exchange (stack effect)
             door_geometry: DoorGeometry::default(),

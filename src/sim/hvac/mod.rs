@@ -18,6 +18,7 @@ pub use efficiency_curves::{
     default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
 };
 pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
+pub use ideal_loads::IdealLoadsSystem;
 
 use serde::{Deserialize, Serialize};
 

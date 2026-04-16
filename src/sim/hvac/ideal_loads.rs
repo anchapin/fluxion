@@ -304,39 +304,14 @@ pub struct IdealLoadsSystem {
     pub air_changes_per_hour: f64,
 }
 
-impl Default for IdealLoadsSystem {
-    fn default() -> Self {
-        Self {
-            zone_loads: ZoneIdealLoads::new(),
-            equipment: SimpleHVACEquipment::new(),
-            supply_cooling_temp: 13.0,
-            supply_heating_temp: 40.0,
-            zone_volume: 129.6, // ASHRAE 140 standard zone volume (8m × 6m × 2.7m)
-            air_changes_per_hour: 0.5, // ASHRAE 140 standard infiltration rate
-        }
-    }
-}
-
 impl IdealLoadsSystem {
-    /// Create a new IdealLoadsSystem with default values
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Create IdealLoadsSystem with custom equipment
-    pub fn with_equipment(equipment: SimpleHVACEquipment) -> Self {
-        Self {
-            zone_loads: ZoneIdealLoads::new(),
-            equipment,
-            supply_cooling_temp: 13.0,
-            supply_heating_temp: 40.0,
-            zone_volume: 129.6,
-            air_changes_per_hour: 0.5,
-        }
-    }
-
-    /// Create IdealLoadsSystem with zone properties
-    pub fn with_zone_properties(zone_volume: f64, air_changes_per_hour: f64) -> Self {
+    /// Create a new IdealLoadsSystem with zone properties.
+    /// Zone properties are required - no hardcoded defaults.
+    ///
+    /// # Arguments
+    /// * `zone_volume` - Zone volume in cubic meters (m³)
+    /// * `air_changes_per_hour` - Ventilation air changes per hour (ACH)
+    pub fn new(zone_volume: f64, air_changes_per_hour: f64) -> Self {
         Self {
             zone_loads: ZoneIdealLoads::new(),
             equipment: SimpleHVACEquipment::new(),
@@ -347,7 +322,12 @@ impl IdealLoadsSystem {
         }
     }
 
-    /// Create IdealLoadsSystem with custom equipment and zone properties
+    /// Create IdealLoadsSystem with custom equipment and zone properties.
+    ///
+    /// # Arguments
+    /// * `equipment` - HVAC equipment model
+    /// * `zone_volume` - Zone volume in cubic meters (m³)
+    /// * `air_changes_per_hour` - Ventilation air changes per hour (ACH)
     pub fn with_equipment_and_zone_properties(
         equipment: SimpleHVACEquipment,
         zone_volume: f64,
@@ -545,54 +525,52 @@ mod tests {
     // ==================== IdealLoadsSystem Tests ====================
 
     #[test]
-    fn test_ideal_loads_system_default() {
-        let system = IdealLoadsSystem::default();
+    fn test_ideal_loads_system_with_ashrae_140_properties() {
+        let zone_volume = 129.6; // ASHRAE 140 standard (8m × 6m × 2.7m)
+        let ach = 0.5; // ASHRAE 140 standard infiltration
+        let system = IdealLoadsSystem::new(zone_volume, ach);
         assert_eq!(system.supply_cooling_temp, 13.0);
         assert_eq!(system.supply_heating_temp, 40.0);
-        assert_eq!(system.zone_volume, 129.6); // ASHRAE 140 standard zone volume
-        assert_eq!(system.air_changes_per_hour, 0.5); // ASHRAE 140 standard infiltration
+        assert_eq!(system.zone_volume, 129.6);
+        assert_eq!(system.air_changes_per_hour, 0.5);
     }
 
     #[test]
     fn test_ideal_loads_system_with_equipment() {
+        let zone_volume = 129.6;
+        let ach = 0.5;
         let equipment = SimpleHVACEquipment::with_custom_cop(5.0, 1.0);
-        let system = IdealLoadsSystem::with_equipment(equipment);
+        let system =
+            IdealLoadsSystem::with_equipment_and_zone_properties(equipment, zone_volume, ach);
         assert_eq!(system.equipment.cooling_cop, 5.0);
-        assert_eq!(system.zone_volume, 129.6); // Should have default zone properties
+        assert_eq!(system.zone_volume, 129.6);
         assert_eq!(system.air_changes_per_hour, 0.5);
     }
 
     #[test]
     fn test_calculate_cooling_mode() {
-        let mut system = IdealLoadsSystem::new();
-        // Zone at 25°C, heating setpoint 20°C, cooling setpoint 24°C
-        // Should be in cooling mode
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let result = system.calculate(25.0, 20.0, 24.0);
 
         assert_eq!(result.mode, HVACMode::Cooling);
         assert!(result.thermal_load_watts > 0.0);
-        // Electrical = thermal / COP = load / 3.0
         assert!(result.electrical_kw > 0.0);
         assert!(result.electrical_kw < result.thermal_load_watts / 1000.0);
     }
 
     #[test]
     fn test_calculate_heating_mode() {
-        let mut system = IdealLoadsSystem::new();
-        // Zone at 18°C, heating setpoint 20°C, cooling setpoint 24°C
-        // Should be in heating mode
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let result = system.calculate(18.0, 20.0, 24.0);
 
         assert_eq!(result.mode, HVACMode::Heating);
         assert!(result.thermal_load_watts > 0.0);
-        // Electrical = thermal / efficiency = load / 0.9 > load
         assert!(result.electrical_kw > result.thermal_load_watts / 1000.0);
     }
 
     #[test]
     fn test_calculate_deadband() {
-        let mut system = IdealLoadsSystem::new();
-        // Zone at 22°C, in deadband between 20°C heating and 24°C cooling
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let result = system.calculate(22.0, 20.0, 24.0);
 
         assert_eq!(result.mode, HVACMode::None);
@@ -602,12 +580,10 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let mut system = IdealLoadsSystem::new();
-        // Calculate something
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let _ = system.calculate(25.0, 20.0, 24.0);
         assert!(system.zone_loads.sensible_cooling_watts > 0.0);
 
-        // Reset
         system.reset();
         assert_eq!(system.zone_loads.sensible_cooling_watts, 0.0);
     }
@@ -706,7 +682,7 @@ mod tests {
 
     #[test]
     fn test_ideal_loads_system_with_custom_zone_properties() {
-        let mut system = IdealLoadsSystem::with_zone_properties(200.0, 1.0);
+        let mut system = IdealLoadsSystem::new(200.0, 1.0);
         assert_eq!(system.zone_volume, 200.0);
         assert_eq!(system.air_changes_per_hour, 1.0);
 
