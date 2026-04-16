@@ -2322,24 +2322,21 @@ impl ValidationSuite {
         // Metric-specific hypotheses
         for metric in failed_metrics {
             match metric.metric {
-                MetricType::AnnualCooling => {
-                    if case_id.starts_with("9") {
-                        hypotheses.push(
-                            "High-mass cooling energy over-prediction suggests thermal mass coupling \
-                             ratio (h_tr_em / h_tr_ms) may be too low, causing excessive heat \
-                             storage and delayed cooling response.".to_string()
-                        );
-                    }
+                MetricType::AnnualCooling if case_id.starts_with("9") => {
+                    hypotheses.push(
+                        "High-mass cooling energy over-prediction suggests thermal mass coupling \
+                         ratio (h_tr_em / h_tr_ms) may be too low, causing excessive heat \
+                         storage and delayed cooling response."
+                            .to_string(),
+                    );
                 }
-                MetricType::AnnualHeating => {
-                    if case_id.starts_with("9") {
-                        hypotheses.push(
-                            "High-mass heating energy over-prediction indicates thermal mass is \
-                             storing too much heat during the day and releasing it slowly, \
-                             increasing heating demand."
-                                .to_string(),
-                        );
-                    }
+                MetricType::AnnualHeating if case_id.starts_with("9") => {
+                    hypotheses.push(
+                        "High-mass heating energy over-prediction indicates thermal mass is \
+                         storing too much heat during the day and releasing it slowly, \
+                         increasing heating demand."
+                            .to_string(),
+                    );
                 }
                 _ => {}
             }

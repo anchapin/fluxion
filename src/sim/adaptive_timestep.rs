@@ -171,11 +171,7 @@ impl AdaptiveTimestepScheduler {
     /// Get the number of timesteps per hour
     pub fn timesteps_per_hour(&self) -> usize {
         let secs = self.dt.as_secs();
-        if secs == 0 {
-            60 // Default to 1 minute
-        } else {
-            (3600 / secs) as usize
-        }
+        3600u64.checked_div(secs).unwrap_or(60) as usize
     }
 
     /// Schedule simulation timesteps for given duration

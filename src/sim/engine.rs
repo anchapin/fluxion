@@ -1358,32 +1358,24 @@ impl ThermalModel<VectorField> {
                 // Add shading if applicable to this orientation
                 if let Some(shading) = &spec.shading {
                     match shading.shading_type {
-                        ShadingType::Overhang | ShadingType::OverhangAndFins => {
-                            // In ASHRAE 140, overhangs are typically on the same orientation as windows
-                            if win_area > 0.0 {
-                                surface.overhang = Some(Overhang {
-                                    depth: shading.overhang_depth,
-                                    distance_above: 0.0, // Default for ASHRAE 140
-                                    extension: 10.0,     // "Infinite"
-                                });
-                            }
+                        ShadingType::Overhang | ShadingType::OverhangAndFins if win_area > 0.0 => {
+                            surface.overhang = Some(Overhang {
+                                depth: shading.overhang_depth,
+                                distance_above: 0.0, // Default for ASHRAE 140
+                                extension: 10.0,     // "Infinite"
+                            });
                         }
-                        _ => {}
-                    }
-                    match shading.shading_type {
-                        ShadingType::Fins | ShadingType::OverhangAndFins => {
-                            if win_area > 0.0 {
-                                surface.fins.push(ShadeFin {
-                                    depth: shading.fin_width,
-                                    distance_from_edge: 0.0,
-                                    side: Side::Left,
-                                });
-                                surface.fins.push(ShadeFin {
-                                    depth: shading.fin_width,
-                                    distance_from_edge: 0.0,
-                                    side: Side::Right,
-                                });
-                            }
+                        ShadingType::Fins | ShadingType::OverhangAndFins if win_area > 0.0 => {
+                            surface.fins.push(ShadeFin {
+                                depth: shading.fin_width,
+                                distance_from_edge: 0.0,
+                                side: Side::Left,
+                            });
+                            surface.fins.push(ShadeFin {
+                                depth: shading.fin_width,
+                                distance_from_edge: 0.0,
+                                side: Side::Right,
+                            });
                         }
                         _ => {}
                     }
