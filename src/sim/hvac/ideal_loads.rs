@@ -396,6 +396,68 @@ impl IdealLoadsSystem {
     pub fn reset(&mut self) {
         self.zone_loads = ZoneIdealLoads::new();
     }
+
+    /// Calculate per-zone HVAC power demand vector using thermodynamic formulas.
+    ///
+    /// This method replaces the sensitivity-based `hvac_power_demand()` calculation
+    /// with proper ideal loads physics: `mass_flow * cp * delta_t`.
+    ///
+    /// Returns a vector of power values where:
+    /// - Positive = heating demand (W)
+    /// - Negative = cooling demand (W)
+    /// - Zero = no demand or HVAC disabled
+    ///
+    /// # Arguments
+    /// * `zone_temps` - Current zone temperatures (°C)
+    /// * `heating_setpoints` - Heating setpoints per zone (°C)
+    /// * `cooling_setpoints` - Cooling setpoints per zone (°C)
+    /// * `hvac_enabled` - HVAC enabled flag per zone (true = enabled)
+    pub fn calculate_power_demand_vector(
+        &self,
+        zone_temps: &[f64],
+        heating_setpoints: &[f64],
+        cooling_setpoints: &[f64],
+        hvac_enabled: &[f64],
+    ) -> Vec<f64> {
+        let n = zone_temps.len();
+        let mut demand_vec = Vec::with_capacity(n);
+
+        for i in 0..n {
+            let enabled = hvac_enabled.get(i).copied().unwrap_or(1.0);
+            if enabled < 0.5 {
+                demand_vec.push(0.0);
+                continue;
+            }
+
+            let zone_temp = zone_temps[i];
+            let heating_sp = heating_setpoints.get(i).copied().unwrap_or(20.0);
+            let cooling_sp = cooling_setpoints.get(i).copied().unwrap_or(24.0);
+
+            let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
+                zone_temp,
+                cooling_sp,
+                self.supply_cooling_temp,
+                self.zone_volume,
+                self.air_changes_per_hour,
+            );
+            let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
+                zone_temp,
+                heating_sp,
+                self.supply_heating_temp,
+                self.zone_volume,
+                self.air_changes_per_hour,
+            );
+
+            let thermal_load = if cooling_load > heating_load {
+                cooling_load
+            } else {
+                heating_load
+            };
+            demand_vec.push(thermal_load)
+        }
+
+        demand_vec
+    }
 }
 
 #[cfg(test)]

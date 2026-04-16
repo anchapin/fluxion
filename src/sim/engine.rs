@@ -3434,6 +3434,51 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         T::from(VectorField::new(demand_vec))
     }
 
+    /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
+    ///
+    /// This replaces the sensitivity-based `(setpoint - temp) / sensitivity` formula
+    /// with proper ideal loads physics: `mass_flow * cp * delta_t`.
+    ///
+    /// Returns a VectorField of power values:
+    /// - Positive = heating demand (W)
+    /// - Negative = cooling demand (W)
+    ///
+    /// # Arguments
+    /// * `zone_temps` - Current zone temperatures (°C)
+    /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
+    /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
+    fn hvac_demand_from_ideal_loads(
+        &self,
+        zone_temps: &[f64],
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+    ) -> T {
+        let enabled_vec = self.hvac_enabled.as_ref();
+
+        let heating_vec = vec![heating_setpoint; self.num_zones];
+        let cooling_vec = vec![cooling_setpoint; self.num_zones];
+
+        let mut combined_demand = vec![0.0; self.num_zones];
+        for (zone_idx, opt_system) in self.ideal_loads_system.iter().enumerate() {
+            if let Some(ref system) = opt_system {
+                let zone_temps_slice = &zone_temps[zone_idx..zone_idx + 1];
+                let heating_slice = &heating_vec[zone_idx..zone_idx + 1];
+                let cooling_slice = &cooling_vec[zone_idx..zone_idx + 1];
+                let enabled_slice = &enabled_vec[zone_idx..zone_idx + 1];
+
+                let demands = system.calculate_power_demand_vector(
+                    zone_temps_slice,
+                    heating_slice,
+                    cooling_slice,
+                    enabled_slice,
+                );
+                combined_demand[zone_idx] = demands[0];
+            }
+        }
+
+        T::from(VectorField::new(combined_demand))
+    }
+
     /// Core physics simulation loop for annual building energy performance.
     ///
     /// Simulates hourly thermal dynamics using batched inference with a coordinator.
@@ -4231,9 +4276,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // FIX: For multi-zone buildings (e.g., Case 960), use per-zone HVAC demand
             // instead of broadcasting a single scalar value to all zones.
-            // Use hvac_power_demand which calculates per-zone values based on each zone's
-            // free-floating temperature and setpoint.
-            let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+            // Use IdealLoadsSystem thermodynamic formulas (mass_flow * cp * delta_t)
+            // instead of sensitivity-based (setpoint - temp) / sensitivity
+            let hvac_output = self.hvac_demand_from_ideal_loads(
+                t_i_free.as_ref(),
+                heating_setpoint,
+                cooling_setpoint,
+            );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // TASK 2: Apply direct calibration factor for high-mass cases
