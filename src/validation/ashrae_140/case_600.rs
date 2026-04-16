@@ -147,16 +147,28 @@ impl Case600Model {
         let h_ve = air_density * cp_air * q_vent;
         model.h_ve = VectorField::from_scalar(h_ve, 1);
 
-        // Set thermal mass (for low-mass construction)
-        // Use approximate thermal capacitance for light construction
-        let thermal_capacitance = floor_area * 150000.0; // J/K (150 kJ/m²K)
-        model.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
+        // Set h_tr_is for Case 600's zone geometry
+        // ASHRAE 140 Table 3 interior heat transfer coefficients:
+        // - Walls: 7.69 W/m²K, Ceiling: 10.0 W/m²K, Floor: 5.88 W/m²K
+        // opaque_wall_area = gross_wall_area - window_area
+        let perimeter = 2.0 * (width + depth); // 28 m
+        let gross_wall_area = perimeter * ceiling_height; // 75.6 m²
+        let window_area_case600 = 12.0; // m² (south-facing)
+        let opaque_wall_area = gross_wall_area - window_area_case600; // 63.6 m²
+        let wall_h_tr_is = opaque_wall_area * 7.69; // 489.1 W/K
+        let ceiling_h_tr_is = floor_area * 10.0; // 480 W/K
+        let floor_h_tr_is = floor_area * 5.88; // 282.2 W/K
+        model.h_tr_is = VectorField::from_scalar(wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is, 1); // 1251.3 W/K
 
         // Initialize temperatures at 20°C
         model.temperatures = VectorField::from_scalar(20.0, 1);
         model.mass_temperatures = VectorField::from_scalar(20.0, 1);
 
-        // Update optimization cache since we manually modified conductances
+        // Set thermal mass for low-mass construction: 150 kJ/m²K
+        let thermal_capacitance = floor_area * 150000.0; // J/K
+        model.thermal_capacitance = VectorField::from_scalar(thermal_capacitance, 1);
+
+        // Update optimization cache since we modified h_tr_is and thermal_capacitance
         model.update_optimization_cache();
 
         model.case_id = "600".to_string();
