@@ -8,6 +8,7 @@ pub mod cycling;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
+pub mod ideal_loads;
 
 // Re-export common types for convenience
 pub use control::PredictiveController;
@@ -17,6 +18,7 @@ pub use efficiency_curves::{
     default_ahri_coefficients, CurveCoefficients, EfficiencyCurve, EfficiencyCurveConfig,
 };
 pub use equipment::{AnyEquipment, Boiler, Chiller, HVACMode, VariableCapacityEquipment};
+pub use ideal_loads::IdealLoadsSystem;
 
 use serde::{Deserialize, Serialize};
 

@@ -12,7 +12,7 @@ use crate::sim::components::WallSurface;
 use crate::sim::equipment::Equipment;
 use crate::sim::holiday;
 use crate::sim::hvac::{
-    AnyEquipment, CyclingTracker, EconomizerMode, HVACMode as EquipmentHVACMode,
+    AnyEquipment, CyclingTracker, EconomizerMode, HVACMode as EquipmentHVACMode, IdealLoadsSystem,
     PredictiveController, VariableCapacityEquipment,
 };
 use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
@@ -500,6 +500,12 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     /// - No curve fitting or artificial delays
     pub ideal_air_loads_mode: bool,
 
+    /// IdealLoadsSystem for calculating HVAC loads using proper thermodynamic formulas.
+    /// Uses mass_flow * cp * delta_t instead of sensitivity-based calculation.
+    /// Initialized with zone volume and infiltration rate from geometry.
+    /// One per zone for multi-zone support.
+    pub ideal_loads_system: Vec<Option<IdealLoadsSystem>>,
+
     // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
     /// CTF coefficients for each wall construction (precomputed during initialization)
     pub ctf_coefficients: Option<CTFCoefficients>,
@@ -804,6 +810,9 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
 
             // Variable capacity HVAC equipment (Plan 15-06)
             hvac_equipment: self.hvac_equipment.clone(),
+
+            // IdealLoadsSystem for thermodynamic HVAC load calculation (Issue #521)
+            ideal_loads_system: self.ideal_loads_system.clone(),
 
             // Door geometry for temperature-dependent inter-zone air exchange
             door_geometry: self.door_geometry,
@@ -2318,6 +2327,14 @@ impl ThermalModel<VectorField> {
         // This is required for Cases 800-810 (HVAC equipment cases)
         model.hvac_equipment = spec.hvac_equipment.clone();
 
+        // Initialize IdealLoadsSystem with zone properties from geometry (Issue #521)
+        // Create one IdealLoadsSystem per zone with that zone's volume
+        let zone_vols = model.zone_volume.as_ref();
+        model.ideal_loads_system = zone_vols
+            .iter()
+            .map(|&vol| Some(IdealLoadsSystem::new(vol, spec.infiltration_ach)))
+            .collect();
+
         model
     }
 
@@ -2791,6 +2808,10 @@ impl ThermalModel<VectorField> {
 
             // Variable capacity HVAC equipment (Plan 15-06)
             hvac_equipment: None, // Default to no equipment (uses IdealHVACController)
+
+            // IdealLoadsSystem for proper thermodynamic HVAC load calculation (Issue #521)
+            // Initialized with zone properties from geometry when setting up from spec
+            ideal_loads_system: vec![], // Will be populated by from_spec() with one per zone
 
             // Door geometry for temperature-dependent inter-zone air exchange (stack effect)
             door_geometry: DoorGeometry::default(),
@@ -3411,6 +3432,51 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         T::from(VectorField::new(demand_vec))
+    }
+
+    /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
+    ///
+    /// This replaces the sensitivity-based `(setpoint - temp) / sensitivity` formula
+    /// with proper ideal loads physics: `mass_flow * cp * delta_t`.
+    ///
+    /// Returns a VectorField of power values:
+    /// - Positive = heating demand (W)
+    /// - Negative = cooling demand (W)
+    ///
+    /// # Arguments
+    /// * `zone_temps` - Current zone temperatures (°C)
+    /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
+    /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
+    fn hvac_demand_from_ideal_loads(
+        &self,
+        zone_temps: &[f64],
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+    ) -> T {
+        let enabled_vec = self.hvac_enabled.as_ref();
+
+        let heating_vec = vec![heating_setpoint; self.num_zones];
+        let cooling_vec = vec![cooling_setpoint; self.num_zones];
+
+        let mut combined_demand = vec![0.0; self.num_zones];
+        for (zone_idx, opt_system) in self.ideal_loads_system.iter().enumerate() {
+            if let Some(ref system) = opt_system {
+                let zone_temps_slice = &zone_temps[zone_idx..zone_idx + 1];
+                let heating_slice = &heating_vec[zone_idx..zone_idx + 1];
+                let cooling_slice = &cooling_vec[zone_idx..zone_idx + 1];
+                let enabled_slice = &enabled_vec[zone_idx..zone_idx + 1];
+
+                let demands = system.calculate_power_demand_vector(
+                    zone_temps_slice,
+                    heating_slice,
+                    cooling_slice,
+                    enabled_slice,
+                );
+                combined_demand[zone_idx] = demands[0];
+            }
+        }
+
+        T::from(VectorField::new(combined_demand))
     }
 
     /// Core physics simulation loop for annual building energy performance.
@@ -4210,9 +4276,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // FIX: For multi-zone buildings (e.g., Case 960), use per-zone HVAC demand
             // instead of broadcasting a single scalar value to all zones.
-            // Use hvac_power_demand which calculates per-zone values based on each zone's
-            // free-floating temperature and setpoint.
-            let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+            // Use IdealLoadsSystem thermodynamic formulas (mass_flow * cp * delta_t)
+            // instead of sensitivity-based (setpoint - temp) / sensitivity
+            let hvac_output = self.hvac_demand_from_ideal_loads(
+                t_i_free.as_ref(),
+                heating_setpoint,
+                cooling_setpoint,
+            );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // TASK 2: Apply direct calibration factor for high-mass cases
@@ -4271,9 +4341,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // so it needs to be returned for both branches
             hvac_output
         } else {
-            // Fallback to IdealHVACController when no equipment attached
-            let hvac_output_raw =
-                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+            // Fallback: Use IdealLoadsSystem thermodynamic formulas if available,
+            // otherwise use sensitivity-based hvac_power_demand
+            let hvac_output_raw = if self.ideal_loads_system.iter().any(|opt| opt.is_some()) {
+                // ideal_loads_system is initialized - use thermodynamic formulas
+                self.hvac_demand_from_ideal_loads(
+                    t_i_free.as_ref(),
+                    self.heating_setpoint,
+                    self.cooling_setpoint,
+                )
+            } else {
+                // ideal_loads_system not initialized - fall back to sensitivity-based
+                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
+            };
 
             // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
             if self.hvac_equipment.is_none() {

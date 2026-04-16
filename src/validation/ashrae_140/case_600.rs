@@ -8,6 +8,7 @@ use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::VectorField;
 use crate::sim::construction::Assemblies;
 use crate::sim::engine::ThermalModel;
+use crate::sim::hvac::ideal_loads::IdealLoadsSystem;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::validation::ashrae_140_cases::Orientation;
 use crate::weather::denver::DenverTmyWeather;
@@ -157,6 +158,11 @@ impl Case600Model {
 
         // Update optimization cache since we manually modified conductances
         model.update_optimization_cache();
+
+        // Initialize IdealLoadsSystem with zone properties (Issue #521)
+        // Case 600 uses 0.5 ACH infiltration per ASHRAE 140
+        let zone_volume = floor_area * ceiling_height; // 48 × 2.7 = 129.6 m³
+        model.ideal_loads_system = vec![Some(IdealLoadsSystem::new(zone_volume, 0.5))];
 
         // Create Denver TMY weather source
         let weather = DenverTmyWeather::new();

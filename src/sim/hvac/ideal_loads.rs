@@ -95,6 +95,8 @@ impl ZoneIdealLoads {
     /// * `zone_temp` - Current zone air temperature (°C)
     /// * `cooling_setpoint` - Cooling setpoint temperature (°C)
     /// * `supply_air_temp` - Supply air temperature from HVAC (°C), typically 13°C for cooling
+    /// * `zone_volume` - Zone volume in cubic meters (m³)
+    /// * `air_changes_per_hour` - Ventilation air changes per hour (ACH)
     ///
     /// # Returns
     /// Sensible cooling load in watts (positive when zone needs cooling)
@@ -102,28 +104,22 @@ impl ZoneIdealLoads {
         zone_temp: f64,
         cooling_setpoint: f64,
         supply_air_temp: f64,
+        zone_volume: f64,
+        air_changes_per_hour: f64,
     ) -> f64 {
-        // Only calculate if zone temperature is above cooling setpoint
         if zone_temp <= cooling_setpoint {
             return 0.0;
         }
 
-        // Assume supply air is at cooling setpoint temperature (for ideal loads)
-        // In reality, supply might be 12-15°C, but ideal loads assumes perfect control
         let effective_supply = supply_air_temp.max(cooling_setpoint);
 
-        // Simple calculation: heat to remove = mass_flow * cp * delta_T
-        // Assume default air changes: 6 ACH (air changes per hour) for typical building
-        // Volume = 3m height * 100m² = 300 m³, ACH = 6 => 1800 m³/hr = 0.5 m³/s
-        let air_changes_per_hour = 6.0;
-        let zone_volume = 300.0; // m³ (assumed 100m² floor, 3m ceiling)
-        let airflow_m3s = zone_volume * air_changes_per_hour / 3600.0; // m³/s
+        let airflow_m3s = zone_volume * air_changes_per_hour / 3600.0;
 
-        let rho = 1.2; // kg/m³ (air density at sea level)
-        let cp = 1005.0; // J/kg·K (specific heat of air)
+        let rho = 1.2;
+        let cp = 1005.0;
 
-        let mass_flow = airflow_m3s * rho; // kg/s
-        let delta_t = (zone_temp - effective_supply).max(0.0); // K
+        let mass_flow = airflow_m3s * rho;
+        let delta_t = (zone_temp - effective_supply).max(0.0);
 
         mass_flow * cp * delta_t
     }
@@ -137,6 +133,8 @@ impl ZoneIdealLoads {
     /// * `zone_temp` - Current zone air temperature (°C)
     /// * `heating_setpoint` - Heating setpoint temperature (°C)
     /// * `supply_air_temp` - Supply air temperature from HVAC (°C), typically 40-50°C for heating
+    /// * `zone_volume` - Zone volume in cubic meters (m³)
+    /// * `air_changes_per_hour` - Ventilation air changes per hour (ACH)
     ///
     /// # Returns
     /// Sensible heating load in watts (positive when zone needs heating)
@@ -144,18 +142,15 @@ impl ZoneIdealLoads {
         zone_temp: f64,
         heating_setpoint: f64,
         supply_air_temp: f64,
+        zone_volume: f64,
+        air_changes_per_hour: f64,
     ) -> f64 {
-        // Only calculate if zone temperature is below heating setpoint
         if zone_temp >= heating_setpoint {
             return 0.0;
         }
 
-        // Assume supply air is at heating setpoint temperature (for ideal loads)
         let effective_supply = supply_air_temp.min(heating_setpoint);
 
-        // Same assumptions as cooling
-        let air_changes_per_hour = 6.0;
-        let zone_volume = 300.0;
         let airflow_m3s = zone_volume * air_changes_per_hour / 3600.0;
 
         let rho = 1.2;
@@ -258,7 +253,7 @@ impl SimpleHVACEquipment {
     pub fn with_custom_cop(cop: f64, efficiency: f64) -> Self {
         Self {
             cooling_cop: cop,
-            heating_efficiency: efficiency.max(0.1).min(1.0), // Clamp to reasonable range
+            heating_efficiency: efficiency.clamp(0.1, 1.0), // Clamp to reasonable range
             equipment_name: "Custom".to_string(),
         }
     }
@@ -303,32 +298,48 @@ pub struct IdealLoadsSystem {
     pub supply_cooling_temp: f64,
     /// Supply air temperature for heating (°C), typically 40°C
     pub supply_heating_temp: f64,
-}
-
-impl Default for IdealLoadsSystem {
-    fn default() -> Self {
-        Self {
-            zone_loads: ZoneIdealLoads::new(),
-            equipment: SimpleHVACEquipment::new(),
-            supply_cooling_temp: 13.0, // Typical cooling supply
-            supply_heating_temp: 40.0, // Typical heating supply
-        }
-    }
+    /// Zone volume in cubic meters (m³)
+    pub zone_volume: f64,
+    /// Ventilation air changes per hour (ACH)
+    pub air_changes_per_hour: f64,
 }
 
 impl IdealLoadsSystem {
-    /// Create a new IdealLoadsSystem with default values
-    pub fn new() -> Self {
-        Self::default()
+    /// Create a new IdealLoadsSystem with zone properties.
+    /// Zone properties are required - no hardcoded defaults.
+    ///
+    /// # Arguments
+    /// * `zone_volume` - Zone volume in cubic meters (m³)
+    /// * `air_changes_per_hour` - Ventilation air changes per hour (ACH)
+    pub fn new(zone_volume: f64, air_changes_per_hour: f64) -> Self {
+        Self {
+            zone_loads: ZoneIdealLoads::new(),
+            equipment: SimpleHVACEquipment::new(),
+            supply_cooling_temp: 13.0,
+            supply_heating_temp: 40.0,
+            zone_volume,
+            air_changes_per_hour,
+        }
     }
 
-    /// Create IdealLoadsSystem with custom equipment
-    pub fn with_equipment(equipment: SimpleHVACEquipment) -> Self {
+    /// Create IdealLoadsSystem with custom equipment and zone properties.
+    ///
+    /// # Arguments
+    /// * `equipment` - HVAC equipment model
+    /// * `zone_volume` - Zone volume in cubic meters (m³)
+    /// * `air_changes_per_hour` - Ventilation air changes per hour (ACH)
+    pub fn with_equipment_and_zone_properties(
+        equipment: SimpleHVACEquipment,
+        zone_volume: f64,
+        air_changes_per_hour: f64,
+    ) -> Self {
         Self {
             zone_loads: ZoneIdealLoads::new(),
             equipment,
             supply_cooling_temp: 13.0,
             supply_heating_temp: 40.0,
+            zone_volume,
+            air_changes_per_hour,
         }
     }
 
@@ -351,23 +362,24 @@ impl IdealLoadsSystem {
         heating_setpoint: f64,
         cooling_setpoint: f64,
     ) -> HVACEnergyResult {
-        // Step 1: Calculate ideal thermal loads
         let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
             zone_temp,
             cooling_setpoint,
             self.supply_cooling_temp,
+            self.zone_volume,
+            self.air_changes_per_hour,
         );
         let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
             zone_temp,
             heating_setpoint,
             self.supply_heating_temp,
+            self.zone_volume,
+            self.air_changes_per_hour,
         );
 
-        // Store in zone_loads for reference
         self.zone_loads.sensible_cooling_watts = cooling_load;
         self.zone_loads.sensible_heating_watts = heating_load;
 
-        // Determine mode and calculate electrical consumption
         let mode = self.zone_loads.determine_mode();
         let thermal_load = match mode {
             HVACMode::Cooling => cooling_load,
@@ -383,6 +395,70 @@ impl IdealLoadsSystem {
     /// Reset loads for new timestep
     pub fn reset(&mut self) {
         self.zone_loads = ZoneIdealLoads::new();
+    }
+
+    /// Calculate per-zone HVAC power demand vector using thermodynamic formulas.
+    ///
+    /// This method replaces the sensitivity-based `hvac_power_demand()` calculation
+    /// with proper ideal loads physics: `mass_flow * cp * delta_t`.
+    ///
+    /// Returns a vector of power values where:
+    /// - Positive = heating demand (W)
+    /// - Negative = cooling demand (W)
+    /// - Zero = no demand or HVAC disabled
+    ///
+    /// # Arguments
+    /// * `zone_temps` - Current zone temperatures (°C)
+    /// * `heating_setpoints` - Heating setpoints per zone (°C)
+    /// * `cooling_setpoints` - Cooling setpoints per zone (°C)
+    /// * `hvac_enabled` - HVAC enabled flag per zone (true = enabled)
+    pub fn calculate_power_demand_vector(
+        &self,
+        zone_temps: &[f64],
+        heating_setpoints: &[f64],
+        cooling_setpoints: &[f64],
+        hvac_enabled: &[f64],
+    ) -> Vec<f64> {
+        let n = zone_temps.len();
+        let mut demand_vec = Vec::with_capacity(n);
+
+        for (i, zone_temp) in zone_temps.iter().enumerate().take(n) {
+            let enabled = hvac_enabled.get(i).copied().unwrap_or(1.0);
+            if enabled < 0.5 {
+                demand_vec.push(0.0);
+                continue;
+            }
+            let heating_sp = heating_setpoints.get(i).copied().unwrap_or(20.0);
+            let cooling_sp = cooling_setpoints.get(i).copied().unwrap_or(24.0);
+
+            let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
+                *zone_temp,
+                cooling_sp,
+                self.supply_cooling_temp,
+                self.zone_volume,
+                self.air_changes_per_hour,
+            );
+            let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
+                *zone_temp,
+                heating_sp,
+                self.supply_heating_temp,
+                self.zone_volume,
+                self.air_changes_per_hour,
+            );
+
+            let thermal_load = if cooling_load > 0.0 && cooling_load >= heating_load {
+                // Cooling mode: return negative to indicate heat removal
+                -cooling_load
+            } else if heating_load > 0.0 {
+                // Heating mode: return positive
+                heating_load
+            } else {
+                0.0
+            };
+            demand_vec.push(thermal_load)
+        }
+
+        demand_vec
     }
 }
 
@@ -401,8 +477,10 @@ mod tests {
 
     #[test]
     fn test_sensible_cooling_load_above_setpoint() {
-        // Zone at 25°C, cooling setpoint 24°C, supply 13°C
-        let load = ZoneIdealLoads::calculate_sensible_cooling_load(25.0, 24.0, 13.0);
+        let zone_volume = 129.6; // ASHRAE 140 standard
+        let ach = 0.5; // ASHRAE 140 standard
+        let load =
+            ZoneIdealLoads::calculate_sensible_cooling_load(25.0, 24.0, 13.0, zone_volume, ach);
         assert!(
             load > 0.0,
             "Should have positive cooling load when zone > setpoint"
@@ -411,15 +489,19 @@ mod tests {
 
     #[test]
     fn test_sensible_cooling_load_below_setpoint() {
-        // Zone at 22°C, cooling setpoint 24°C - no cooling needed
-        let load = ZoneIdealLoads::calculate_sensible_cooling_load(22.0, 24.0, 13.0);
+        let zone_volume = 129.6;
+        let ach = 0.5;
+        let load =
+            ZoneIdealLoads::calculate_sensible_cooling_load(22.0, 24.0, 13.0, zone_volume, ach);
         assert_eq!(load, 0.0, "No cooling load when zone < setpoint");
     }
 
     #[test]
     fn test_sensible_heating_load_below_setpoint() {
-        // Zone at 18°C, heating setpoint 20°C, supply 40°C
-        let load = ZoneIdealLoads::calculate_sensible_heating_load(18.0, 20.0, 40.0);
+        let zone_volume = 129.6;
+        let ach = 0.5;
+        let load =
+            ZoneIdealLoads::calculate_sensible_heating_load(18.0, 20.0, 40.0, zone_volume, ach);
         assert!(
             load > 0.0,
             "Should have positive heating load when zone < setpoint"
@@ -428,8 +510,10 @@ mod tests {
 
     #[test]
     fn test_sensible_heating_load_above_setpoint() {
-        // Zone at 22°C, heating setpoint 20°C - no heating needed
-        let load = ZoneIdealLoads::calculate_sensible_heating_load(22.0, 20.0, 40.0);
+        let zone_volume = 129.6;
+        let ach = 0.5;
+        let load =
+            ZoneIdealLoads::calculate_sensible_heating_load(22.0, 20.0, 40.0, zone_volume, ach);
         assert_eq!(load, 0.0, "No heating load when zone > setpoint");
     }
 
@@ -505,50 +589,52 @@ mod tests {
     // ==================== IdealLoadsSystem Tests ====================
 
     #[test]
-    fn test_ideal_loads_system_default() {
-        let system = IdealLoadsSystem::default();
+    fn test_ideal_loads_system_with_ashrae_140_properties() {
+        let zone_volume = 129.6; // ASHRAE 140 standard (8m × 6m × 2.7m)
+        let ach = 0.5; // ASHRAE 140 standard infiltration
+        let system = IdealLoadsSystem::new(zone_volume, ach);
         assert_eq!(system.supply_cooling_temp, 13.0);
         assert_eq!(system.supply_heating_temp, 40.0);
+        assert_eq!(system.zone_volume, 129.6);
+        assert_eq!(system.air_changes_per_hour, 0.5);
     }
 
     #[test]
     fn test_ideal_loads_system_with_equipment() {
+        let zone_volume = 129.6;
+        let ach = 0.5;
         let equipment = SimpleHVACEquipment::with_custom_cop(5.0, 1.0);
-        let system = IdealLoadsSystem::with_equipment(equipment);
+        let system =
+            IdealLoadsSystem::with_equipment_and_zone_properties(equipment, zone_volume, ach);
         assert_eq!(system.equipment.cooling_cop, 5.0);
+        assert_eq!(system.zone_volume, 129.6);
+        assert_eq!(system.air_changes_per_hour, 0.5);
     }
 
     #[test]
     fn test_calculate_cooling_mode() {
-        let mut system = IdealLoadsSystem::new();
-        // Zone at 25°C, heating setpoint 20°C, cooling setpoint 24°C
-        // Should be in cooling mode
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let result = system.calculate(25.0, 20.0, 24.0);
 
         assert_eq!(result.mode, HVACMode::Cooling);
         assert!(result.thermal_load_watts > 0.0);
-        // Electrical = thermal / COP = load / 3.0
         assert!(result.electrical_kw > 0.0);
         assert!(result.electrical_kw < result.thermal_load_watts / 1000.0);
     }
 
     #[test]
     fn test_calculate_heating_mode() {
-        let mut system = IdealLoadsSystem::new();
-        // Zone at 18°C, heating setpoint 20°C, cooling setpoint 24°C
-        // Should be in heating mode
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let result = system.calculate(18.0, 20.0, 24.0);
 
         assert_eq!(result.mode, HVACMode::Heating);
         assert!(result.thermal_load_watts > 0.0);
-        // Electrical = thermal / efficiency = load / 0.9 > load
         assert!(result.electrical_kw > result.thermal_load_watts / 1000.0);
     }
 
     #[test]
     fn test_calculate_deadband() {
-        let mut system = IdealLoadsSystem::new();
-        // Zone at 22°C, in deadband between 20°C heating and 24°C cooling
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let result = system.calculate(22.0, 20.0, 24.0);
 
         assert_eq!(result.mode, HVACMode::None);
@@ -558,12 +644,10 @@ mod tests {
 
     #[test]
     fn test_reset() {
-        let mut system = IdealLoadsSystem::new();
-        // Calculate something
+        let mut system = IdealLoadsSystem::new(129.6, 0.5);
         let _ = system.calculate(25.0, 20.0, 24.0);
         assert!(system.zone_loads.sensible_cooling_watts > 0.0);
 
-        // Reset
         system.reset();
         assert_eq!(system.zone_loads.sensible_cooling_watts, 0.0);
     }
@@ -572,19 +656,16 @@ mod tests {
 
     #[test]
     fn test_separate_loads_and_equipment() {
-        // This test demonstrates the separation of concerns:
-        // 1. Zone loads calculate what the zone NEEDS
-        // 2. Equipment converts to what equipment USES
+        let zone_volume = 129.6;
+        let ach = 0.5;
 
-        // Part 1: Calculate loads independently
-        let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(28.0, 24.0, 13.0);
+        let cooling_load =
+            ZoneIdealLoads::calculate_sensible_cooling_load(28.0, 24.0, 13.0, zone_volume, ach);
 
-        // Part 2: Equipment converts thermal to electrical
         let equipment = SimpleHVACEquipment::default();
         let electrical_watts =
             equipment.calculate_electrical_consumption(cooling_load, HVACMode::Cooling);
 
-        // Verify the calculation: thermal / COP = electrical
         let expected = cooling_load / 3.0;
         assert!((electrical_watts - expected).abs() < 0.1);
     }
@@ -617,26 +698,59 @@ mod tests {
 
     #[test]
     fn test_ashrae_140_standard_values() {
-        // Verify ASHRAE 140 standard values are used by default
         let equipment = SimpleHVACEquipment::default();
 
-        // ASHRAE 140: Cooling COP = 3.0
         assert_eq!(equipment.cooling_cop, 3.0);
-
-        // ASHRAE 140: Heating efficiency = 0.9 (electric resistance)
         assert_eq!(equipment.heating_efficiency, 0.9);
 
-        // Verify the math works as expected
         let thermal_3000w = 3000.0;
         let cooling_power =
             equipment.calculate_electrical_consumption(thermal_3000w, HVACMode::Cooling);
         let heating_power =
             equipment.calculate_electrical_consumption(thermal_3000w, HVACMode::Heating);
 
-        // Cooling: 3000W / 3.0 = 1000W
         assert!((cooling_power - 1000.0).abs() < 0.1);
-
-        // Heating: 3000W / 0.9 = 3333W
         assert!((heating_power - 3333.33).abs() < 1.0);
+    }
+
+    #[test]
+    fn test_zone_properties_affect_cooling_load() {
+        // ASHRAE 140 Case 900: V=129.6 m³, ACH=0.5
+        let load_standard =
+            ZoneIdealLoads::calculate_sensible_cooling_load(28.0, 24.0, 13.0, 129.6, 0.5);
+
+        // Larger zone with same ACH: V=300 m³
+        let load_large_zone =
+            ZoneIdealLoads::calculate_sensible_cooling_load(28.0, 24.0, 13.0, 300.0, 0.5);
+
+        // Same zone volume but higher ACH: ACH=6
+        let load_high_ach =
+            ZoneIdealLoads::calculate_sensible_cooling_load(28.0, 24.0, 13.0, 129.6, 6.0);
+
+        // Larger zone with higher ACH (old hardcoded values)
+        let load_old_hardcoded =
+            ZoneIdealLoads::calculate_sensible_cooling_load(28.0, 24.0, 13.0, 300.0, 6.0);
+
+        // Verify that load scales with volume and ACH
+        assert!(load_large_zone > load_standard);
+        assert!(load_high_ach > load_standard);
+        assert!(load_old_hardcoded > load_high_ach);
+
+        // The ratio between old hardcoded and ASHRAE standard should be significant
+        let ratio = load_old_hardcoded / load_standard;
+        assert!(
+            ratio > 10.0,
+            "Old hardcoded values should produce >10x load due to wrong volume and ACH"
+        );
+    }
+
+    #[test]
+    fn test_ideal_loads_system_with_custom_zone_properties() {
+        let mut system = IdealLoadsSystem::new(200.0, 1.0);
+        assert_eq!(system.zone_volume, 200.0);
+        assert_eq!(system.air_changes_per_hour, 1.0);
+
+        let result = system.calculate(28.0, 20.0, 24.0);
+        assert!(result.thermal_load_watts > 0.0);
     }
 }

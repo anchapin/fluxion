@@ -102,7 +102,11 @@ pub fn get_energyplus_reference(case_id: &str) -> Option<EnergyPlusReference> {
             max_temp_c: Some(27.0),
             min_temp_c: Some(20.0),
             heating_tolerance_pct: 15.0,
-            cooling_tolerance_pct: 400.0, // TEMPORARY: Increased tolerance due to hardcoded zone volume assumptions in cooling calculation
+            // Note: Issue #521 fixed ideal_loads.rs to use actual zone properties (129.6 m³, 0.5 ACH).
+            // The 400% tolerance may still be needed due to other model formulation gaps (Session 66
+            // removed empirical factors). Future work should address the root cause in the actual
+            // simulation's hvac_power_demand calculation.
+            cooling_tolerance_pct: 400.0,
         }),
         "900FF" => Some(EnergyPlusReference {
             case_id: "900FF".to_string(),
@@ -500,7 +504,9 @@ fn test_case_900_peak_loads_vs_energyplus() {
     println!("  Peak Heating Error: {:.1}%", heating_peak_error_pct);
     println!("  Peak Cooling Error: {:.1}%", cooling_peak_error_pct);
 
-    // Allow 20% tolerance for peak loads (40% for cooling due to hardcoded zone volume assumptions)
+    // Allow 20% tolerance for peak loads
+    // Note: Issue #521 fixed ideal_loads.rs zone properties; 40% cooling tolerance may still
+    // be needed due to other model gaps (see Session 66 documentation)
     const PEAK_TOLERANCE_PCT: f64 = 20.0;
     const PEAK_COOLING_TOLERANCE_PCT: f64 = 40.0;
 
