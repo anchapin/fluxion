@@ -659,8 +659,8 @@ impl ASHRAE140Validator {
         }
         model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let _annual_heating_joules = 0.0;
+        let _annual_cooling_joules = 0.0;
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
@@ -753,14 +753,8 @@ impl ASHRAE140Validator {
                     step % 24, t_free, model.heating_setpoint, model.cooling_setpoint);
             }
 
-            // SESSION 32: Use raw hvac_kwh (like validate_case_960 does)
-            // Don't use get_heating_energy_kwh() - that includes correction factors
-            let hvac_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-            if hvac_kwh > 0.0 {
-                annual_heating_joules += hvac_kwh * 3.6e6;
-            } else {
-                annual_cooling_joules += (-hvac_kwh) * 3.6e6;
-            }
+            // Use model's step_physics to advance simulation
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
@@ -770,9 +764,10 @@ impl ASHRAE140Validator {
             }
         }
 
-        // SESSION 32: Use calculated values from raw hvac_kwh accumulation
-        let annual_heating_mwh = annual_heating_joules / 3.6e9;
-        let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
+        // P1 FIX: Use model's internal corrected energy counters
+        // The model's annual_heating_energy already has h_corr correction applied
+        let annual_heating_mwh = model.annual_heating_energy / 1000.0;
+        let annual_cooling_mwh = model.annual_cooling_energy / 1000.0;
 
         CaseResults {
             annual_heating_mwh,

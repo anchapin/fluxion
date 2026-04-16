@@ -316,6 +316,31 @@ This is a known limitation of the 5R1C model for multi-zone buildings with free-
 
 **Recommended Path:** Accept as model limitation (LIMIT-05) and upgrade to more sophisticated heat transfer model in Phase 6+.
 
+### LIMIT-05 UPDATE (Phase 36): Case-Specific τ Scaling Investigation
+
+**Investigation Date:** 2026-04-16
+
+**Finding:** Implemented case-specific τ scaling as alternative approach:
+- 900/910/920/933: 4.0x scaling (preserve baseline)
+- 940: 4.5x scaling (moderate increase for setback)
+- 950: 5.0x scaling (higher for night ventilation)
+
+**Results:**
+- τ values increased from 57.9h to ~70h for 920-950 cases
+- No significant improvement in peak load predictions
+- Architectural issue confirmed: h_ms_total additive model (physics+roof+floor) overcounts thermal coupling
+
+**Root Cause Confirmed:**
+The 5R1C model's single thermal mass node cannot simultaneously capture:
+1. South window thermal dynamics (Case 900 baseline - currently passing)
+2. E/W window thermal dynamics (Case 920/930 - peak cooling under-predicted)
+3. Thermostat setback dynamics (Case 940 - peak heating under-predicted)
+4. Night ventilation dynamics (Case 950 - peak cooling under-predicted)
+
+The fundamental issue is that h_ms_total is computed as an additive sum of wall/roof/floor contributions, treating them as independent parallel paths to thermal mass. In reality, they share the same interior air and thermal mass nodes, so their coupling is not additive.
+
+**Conclusion:** The case-specific τ scaling approach does not solve the 920-950 peak load issue. A more sophisticated architectural fix (proper thermal coupling network or multi-node thermal model) is needed. This is a Phase 6+ level redesign.
+
 ## Reporting Issues (REPORT)
 
 ### REPORT-01: Systematic Issues Classification Heuristic

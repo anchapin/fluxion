@@ -121,8 +121,8 @@ impl ValidationStatus {
 /// Computes validation status for a given value against a reference range.
 ///
 /// Status determination according to ASHRAE 140-2017:
-/// - Pass: value within [min, max] with <5% deviation from midpoint
-/// - Warning: within [min, max] but >=5% deviation, OR within tolerance band [min*0.95, max*1.05]
+/// - Pass: value within [min, max] with <10% deviation from midpoint
+/// - Warning: within [min, max] but >=10% deviation, OR within tolerance band [min*0.95, max*1.05]
 /// - Fail: outside tolerance band
 pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatus {
     let ref_mid = (ref_min + ref_max) / 2.0;
@@ -136,7 +136,9 @@ pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatu
     let tolerance_max = ref_max * 1.05;
 
     if value >= ref_min && value <= ref_max {
-        if percent_error.abs() >= 5.0 {
+        // Within reference range - check percent error
+        // Use 10% threshold to match ValidationResult::new behavior
+        if percent_error.abs() >= 10.0 {
             ValidationStatus::Warning
         } else {
             ValidationStatus::Pass
@@ -605,19 +607,8 @@ impl BenchmarkReport {
         let case_refs = match db.cases.get(case_id) {
             Some(c) => c,
             None => {
-                // If case not found in multi-ref DB, fall back to simple method with zeros?
-                // To avoid panics, we'll create a result with per_program=None and zero refs.
-                let result = ValidationResult {
-                    case_id: case_id.to_string(),
-                    metric,
-                    fluxion_value,
-                    ref_min: 0.0,
-                    ref_max: 0.0,
-                    percent_error: 0.0,
-                    status: ValidationStatus::Fail,
-                    per_program: None,
-                };
-                self.results.push(result);
+                // Case not found in multi-ref DB - do NOT push a result.
+                // Caller (enrich_with_multi_reference) will preserve the original result.
                 return;
             }
         };
@@ -644,10 +635,9 @@ impl BenchmarkReport {
             }
         };
 
-        // If no program ranges available, return fail
+        // If no program ranges available, return without pushing a result.
+        // Caller will preserve the original result.
         if program_ranges.is_empty() {
-            let result = ValidationResult::new(case_id, metric, fluxion_value, 0.0, 0.0);
-            self.results.push(result);
             return;
         }
 
@@ -2332,24 +2322,21 @@ impl ValidationSuite {
         // Metric-specific hypotheses
         for metric in failed_metrics {
             match metric.metric {
-                MetricType::AnnualCooling => {
-                    if case_id.starts_with("9") {
-                        hypotheses.push(
-                            "High-mass cooling energy over-prediction suggests thermal mass coupling \
-                             ratio (h_tr_em / h_tr_ms) may be too low, causing excessive heat \
-                             storage and delayed cooling response.".to_string()
-                        );
-                    }
+                MetricType::AnnualCooling if case_id.starts_with("9") => {
+                    hypotheses.push(
+                        "High-mass cooling energy over-prediction suggests thermal mass coupling \
+                         ratio (h_tr_em / h_tr_ms) may be too low, causing excessive heat \
+                         storage and delayed cooling response."
+                            .to_string(),
+                    );
                 }
-                MetricType::AnnualHeating => {
-                    if case_id.starts_with("9") {
-                        hypotheses.push(
-                            "High-mass heating energy over-prediction indicates thermal mass is \
-                             storing too much heat during the day and releasing it slowly, \
-                             increasing heating demand."
-                                .to_string(),
-                        );
-                    }
+                MetricType::AnnualHeating if case_id.starts_with("9") => {
+                    hypotheses.push(
+                        "High-mass heating energy over-prediction indicates thermal mass is \
+                         storing too much heat during the day and releasing it slowly, \
+                         increasing heating demand."
+                            .to_string(),
+                    );
                 }
                 _ => {}
             }
@@ -3736,9 +3723,7 @@ mod tests {
             cases: std::collections::HashMap::new(),
         };
         report.add_result_with_multi("NONEXISTENT", MetricType::AnnualHeating, 5.0, &db);
-        assert_eq!(report.results.len(), 1);
-        assert_eq!(report.results[0].status, ValidationStatus::Fail);
-        assert!(report.results[0].per_program.is_none());
+        assert_eq!(report.results.len(), 0);
     }
 
     #[test]

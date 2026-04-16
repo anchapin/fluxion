@@ -174,9 +174,11 @@ jobs:
           summary = data.get('summary', {})
           pass_rate = summary.get('pass_rate', 0)
 
-            # Temporary threshold set to 4% due to HVAC energy inflation regression
-            # Issue #497 tracks investigation and restoration to 12.5% baseline
-            # heating/cooling values are currently 300%-1000% above reference
+          # Issue #497: Threshold temporarily kept at 4% while root cause is investigated
+          # Current pass rate: ~6.2% (still below 12.5% target)
+          # Root cause analysis shows 900-series cases still overpredicting by 3-6x
+          # The correction factors in from_spec() are 1.0 (reset in Phase 30),
+          # so validation now reflects raw physics model output
           MIN_PASS_RATE = 4.0
 
           if pass_rate >= MIN_PASS_RATE:

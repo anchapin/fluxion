@@ -16,6 +16,7 @@ use fluxion::validation::report::ValidationStatus;
 /// - All 18 ASHRAE 140 cases run successfully
 /// - Critical cases (195, 600, 620) pass validation (panic on regressions)
 /// - 900-series cases (900, 960) log warnings for ongoing calibration
+/// - Pass rate must meet or exceed 25% threshold
 /// - Markdown report is generated with all case results
 /// - Report summary is printed for CI visibility
 #[test]
@@ -110,6 +111,15 @@ fn test_ashrae_140_comprehensive_regression() {
         mae >= 0.0 && mae <= 100.0,
         "MAE should be between 0% and 100%, got {:.2}%",
         mae
+    );
+
+    // Enforce minimum pass rate threshold (25%)
+    // This ensures validation quality doesn't regress below acceptable level
+    let pass_rate = report.pass_rate();
+    assert!(
+        pass_rate >= 25.0,
+        "Pass rate {:.1}% is below 25% threshold. Validation needs improvement.",
+        pass_rate
     );
 
     // Print detailed markdown report for CI output
