@@ -659,8 +659,8 @@ impl ASHRAE140Validator {
         }
         model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
-        let mut annual_heating_joules = 0.0;
-        let mut annual_cooling_joules = 0.0;
+        let _annual_heating_joules = 0.0;
+        let _annual_cooling_joules = 0.0;
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;

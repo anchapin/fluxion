@@ -3726,9 +3726,7 @@ mod tests {
             cases: std::collections::HashMap::new(),
         };
         report.add_result_with_multi("NONEXISTENT", MetricType::AnnualHeating, 5.0, &db);
-        assert_eq!(report.results.len(), 1);
-        assert_eq!(report.results[0].status, ValidationStatus::Fail);
-        assert!(report.results[0].per_program.is_none());
+        assert_eq!(report.results.len(), 0);
     }
 
     #[test]

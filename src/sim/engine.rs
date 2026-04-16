@@ -1635,9 +1635,11 @@ impl ThermalModel<VectorField> {
             {
                 if spec.case_id.contains("FF") {
                     2.0 // FF cases need less damping
-                } else if spec.case_id == "900" || spec.case_id == "910" {
-                    4.0
-                } else if spec.case_id == "920" || spec.case_id == "930" {
+                } else if spec.case_id == "900"
+                    || spec.case_id == "910"
+                    || spec.case_id == "920"
+                    || spec.case_id == "930"
+                {
                     4.0
                 } else if spec.case_id == "940" {
                     4.5
