@@ -10,9 +10,7 @@ on:
   workflow_dispatch:
 
 env:
-  RUST_VERSION: '1.70.0'
   CARGO_TERM_COLOR: always
-  # Increase stack size to prevent SIGSEGV during LTO compilation
   RUST_MIN_STACK: '16777216'
 
 jobs:
@@ -32,11 +30,9 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: ${{ env.RUST_VERSION }}
 
       - name: Cache cargo dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/registry
