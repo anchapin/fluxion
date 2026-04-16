@@ -8,6 +8,7 @@ pub mod cycling;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
+pub mod ideal_loads;
 
 // Re-export common types for convenience
 pub use control::PredictiveController;

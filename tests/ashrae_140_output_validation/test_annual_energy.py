@@ -47,7 +47,10 @@ class TestASHRAE140AnnualEnergy:
     TOLERANCES = {
         "baseline": 50.0,  # ±50% for baseline cases
         "free_floating": 100.0,  # ±100% for free-floating (no HVAC)
-        "cooling_baseline": 400.0,  # ±400% for cooling due to hardcoded zone volume assumptions
+        # Note: Issue #521 fixed ideal_loads.rs to use actual zone properties (129.6 m³, 0.5 ACH).
+        # The 400% cooling tolerance may still be needed due to other model formulation gaps
+        # (see Session 66 removal of empirical factors).
+        "cooling_baseline": 400.0,
         "heating_600": 100.1,  # ±100.1% for Case 600 heating (investigation needed)
     }
 
