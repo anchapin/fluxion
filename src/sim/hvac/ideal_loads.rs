@@ -253,7 +253,7 @@ impl SimpleHVACEquipment {
     pub fn with_custom_cop(cop: f64, efficiency: f64) -> Self {
         Self {
             cooling_cop: cop,
-            heating_efficiency: efficiency.max(0.1).min(1.0), // Clamp to reasonable range
+            heating_efficiency: efficiency.clamp(0.1, 1.0), // Clamp to reasonable range
             equipment_name: "Custom".to_string(),
         }
     }
@@ -422,26 +422,24 @@ impl IdealLoadsSystem {
         let n = zone_temps.len();
         let mut demand_vec = Vec::with_capacity(n);
 
-        for i in 0..n {
+        for (i, zone_temp) in zone_temps.iter().enumerate().take(n) {
             let enabled = hvac_enabled.get(i).copied().unwrap_or(1.0);
             if enabled < 0.5 {
                 demand_vec.push(0.0);
                 continue;
             }
-
-            let zone_temp = zone_temps[i];
             let heating_sp = heating_setpoints.get(i).copied().unwrap_or(20.0);
             let cooling_sp = cooling_setpoints.get(i).copied().unwrap_or(24.0);
 
             let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
-                zone_temp,
+                *zone_temp,
                 cooling_sp,
                 self.supply_cooling_temp,
                 self.zone_volume,
                 self.air_changes_per_hour,
             );
             let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
-                zone_temp,
+                *zone_temp,
                 heating_sp,
                 self.supply_heating_temp,
                 self.zone_volume,
