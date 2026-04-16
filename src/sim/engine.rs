@@ -4341,9 +4341,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // so it needs to be returned for both branches
             hvac_output
         } else {
-            // Fallback to IdealHVACController when no equipment attached
-            let hvac_output_raw =
-                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+            // Fallback: Use IdealLoadsSystem thermodynamic formulas if available,
+            // otherwise use sensitivity-based hvac_power_demand
+            let hvac_output_raw = if self.ideal_loads_system.iter().any(|opt| opt.is_some()) {
+                // ideal_loads_system is initialized - use thermodynamic formulas
+                self.hvac_demand_from_ideal_loads(
+                    t_i_free.as_ref(),
+                    self.heating_setpoint,
+                    self.cooling_setpoint,
+                )
+            } else {
+                // ideal_loads_system not initialized - fall back to sensitivity-based
+                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
+            };
 
             // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
             if self.hvac_equipment.is_none() {

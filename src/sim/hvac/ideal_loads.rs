@@ -448,10 +448,14 @@ impl IdealLoadsSystem {
                 self.air_changes_per_hour,
             );
 
-            let thermal_load = if cooling_load > heating_load {
-                cooling_load
-            } else {
+            let thermal_load = if cooling_load > 0.0 && cooling_load >= heating_load {
+                // Cooling mode: return negative to indicate heat removal
+                -cooling_load
+            } else if heating_load > 0.0 {
+                // Heating mode: return positive
                 heating_load
+            } else {
+                0.0
             };
             demand_vec.push(thermal_load)
         }
