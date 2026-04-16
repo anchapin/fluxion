@@ -83,62 +83,62 @@
 
 ## Delta Analysis
 
-Baseline: 920
+Baseline: 195
 
 | Case - Metric | Delta from Baseline |
 |---------------|---------------------|
-| 620 - Peak Cooling Load (kW) | +1.54 |
-| 910 - Peak Cooling Load (kW) | -0.52 |
-| 900 - Annual Heating Energy (MWh) | -1.81 |
-| 910 - Annual Cooling Energy (MWh) | -2.02 |
-| 950 - Annual Cooling Energy (MWh) | -2.53 |
-| 940 - Peak Cooling Load (kW) | -0.22 |
-| 610 - Annual Heating Energy (MWh) | +5.95 |
-| 620 - Annual Cooling Energy (MWh) | +0.91 |
-| 640 - Annual Cooling Energy (MWh) | +3.20 |
-| 630 - Annual Heating Energy (MWh) | +5.83 |
-| 900 - Peak Heating Load (kW) | -1.45 |
-| 640 - Peak Heating Load (kW) | +3.51 |
-| 610 - Peak Heating Load (kW) | +3.53 |
-| 640 - Peak Cooling Load (kW) | +3.72 |
-| 650 - Annual Heating Energy (MWh) | -3.49 |
-| 600 - Annual Heating Energy (MWh) | +3.00 |
-| 640 - Annual Heating Energy (MWh) | +3.23 |
-| 650 - Annual Cooling Energy (MWh) | +2.17 |
-| 630 - Peak Heating Load (kW) | +3.51 |
-| 930 - Peak Heating Load (kW) | +0.06 |
-| 950 - Annual Heating Energy (MWh) | -3.49 |
-| 630 - Peak Cooling Load (kW) | +0.47 |
-| 910 - Annual Heating Energy (MWh) | -1.52 |
-| 600 - Annual Cooling Energy (MWh) | +6.03 |
-| 960 - Annual Heating Energy (MWh) | -1.61 |
-| 650 - Peak Heating Load (kW) | -3.09 |
-| 650 - Peak Cooling Load (kW) | +3.67 |
-| 900 - Peak Cooling Load (kW) | -0.23 |
-| 600 - Peak Cooling Load (kW) | +3.72 |
-| 600 - Peak Heating Load (kW) | +3.52 |
-| 930 - Annual Cooling Energy (MWh) | -1.54 |
-| 940 - Peak Heating Load (kW) | -1.54 |
-| 950 - Peak Heating Load (kW) | -3.09 |
-| 195 - Annual Heating Energy (MWh) | +1.51 |
-| 195 - Peak Heating Load (kW) | +3.77 |
-| 910 - Peak Heating Load (kW) | -1.44 |
-| 940 - Annual Cooling Energy (MWh) | -0.34 |
-| 195 - Peak Cooling Load (kW) | -1.91 |
-| 930 - Annual Heating Energy (MWh) | +1.73 |
-| 900 - Annual Cooling Energy (MWh) | -0.31 |
-| 960 - Peak Heating Load (kW) | +3.22 |
-| 630 - Annual Cooling Energy (MWh) | -1.62 |
-| 960 - Peak Cooling Load (kW) | +1.49 |
-| 610 - Peak Cooling Load (kW) | +2.86 |
-| 940 - Annual Heating Energy (MWh) | -2.30 |
-| 620 - Annual Heating Energy (MWh) | +2.02 |
-| 930 - Peak Cooling Load (kW) | -0.69 |
-| 610 - Annual Cooling Energy (MWh) | +1.50 |
-| 620 - Peak Heating Load (kW) | +3.50 |
-| 195 - Annual Cooling Energy (MWh) | -3.22 |
-| 950 - Peak Cooling Load (kW) | -0.23 |
-| 960 - Annual Cooling Energy (MWh) | +4.12 |
+| 600 - Peak Heating Load (kW) | -0.25 |
+| 960 - Annual Cooling Energy (MWh) | +7.33 |
+| 610 - Peak Cooling Load (kW) | +4.77 |
+| 640 - Annual Cooling Energy (MWh) | +6.42 |
+| 650 - Peak Heating Load (kW) | -6.86 |
+| 930 - Annual Cooling Energy (MWh) | +1.68 |
+| 960 - Peak Heating Load (kW) | -0.55 |
+| 950 - Peak Heating Load (kW) | -6.86 |
+| 960 - Annual Heating Energy (MWh) | -3.12 |
+| 950 - Annual Heating Energy (MWh) | -5.00 |
+| 950 - Annual Cooling Energy (MWh) | +0.69 |
+| 900 - Annual Heating Energy (MWh) | -3.33 |
+| 930 - Peak Cooling Load (kW) | +1.22 |
+| 910 - Annual Heating Energy (MWh) | -3.03 |
+| 620 - Peak Cooling Load (kW) | +3.45 |
+| 940 - Annual Heating Energy (MWh) | -3.81 |
+| 620 - Annual Heating Energy (MWh) | +0.51 |
+| 940 - Peak Heating Load (kW) | -5.31 |
+| 950 - Peak Cooling Load (kW) | +1.68 |
+| 620 - Annual Cooling Energy (MWh) | +4.13 |
+| 910 - Peak Heating Load (kW) | -5.21 |
+| 630 - Peak Heating Load (kW) | -0.26 |
+| 900 - Peak Cooling Load (kW) | +1.68 |
+| 930 - Annual Heating Energy (MWh) | +0.22 |
+| 960 - Peak Cooling Load (kW) | +3.40 |
+| 920 - Annual Heating Energy (MWh) | -1.51 |
+| 930 - Peak Heating Load (kW) | -3.71 |
+| 900 - Peak Heating Load (kW) | -5.22 |
+| 630 - Annual Cooling Energy (MWh) | +1.60 |
+| 610 - Peak Heating Load (kW) | -0.25 |
+| 600 - Peak Cooling Load (kW) | +5.63 |
+| 640 - Peak Heating Load (kW) | -0.27 |
+| 650 - Annual Heating Energy (MWh) | -5.00 |
+| 910 - Annual Cooling Energy (MWh) | +1.20 |
+| 910 - Peak Cooling Load (kW) | +1.39 |
+| 650 - Annual Cooling Energy (MWh) | +5.39 |
+| 920 - Annual Cooling Energy (MWh) | +3.22 |
+| 600 - Annual Cooling Energy (MWh) | +9.25 |
+| 640 - Annual Heating Energy (MWh) | +1.71 |
+| 610 - Annual Heating Energy (MWh) | +4.44 |
+| 620 - Peak Heating Load (kW) | -0.27 |
+| 640 - Peak Cooling Load (kW) | +5.63 |
+| 630 - Peak Cooling Load (kW) | +2.38 |
+| 900 - Annual Cooling Energy (MWh) | +2.91 |
+| 610 - Annual Cooling Energy (MWh) | +4.72 |
+| 920 - Peak Heating Load (kW) | -3.77 |
+| 920 - Peak Cooling Load (kW) | +1.91 |
+| 940 - Annual Cooling Energy (MWh) | +2.87 |
+| 630 - Annual Heating Energy (MWh) | +4.32 |
+| 940 - Peak Cooling Load (kW) | +1.69 |
+| 650 - Peak Cooling Load (kW) | +5.58 |
+| 600 - Annual Heating Energy (MWh) | +1.49 |
 
 ## Worst Performing Cases
 
