@@ -4234,14 +4234,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let ti_free_val = t_i_free.as_ref()[0];
             let sens_val = sensitivity_val.as_ref()[0];
 
-            // Debug output for Case 600 to understand heating duration under-prediction
-            if self.case_id == "600" && matches!(hvac_mode, EquipmentHVACMode::Heating) {
-                eprintln!(
-                    "CASE600_DEBUG t_i_free={:.2}°C, sensitivity={:.4} K/W, heating_setpoint={}°C, temp_deficit={:.2} K",
-                    ti_free_val, sens_val, heating_setpoint, heating_setpoint - ti_free_val
-                );
-            }
-
             let required_load = match hvac_mode {
                 EquipmentHVACMode::Heating => {
                     let temp_deficit = heating_setpoint - ti_free_val;
@@ -4360,6 +4352,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 )
             } else {
                 // ideal_loads_system not initialized - fall back to sensitivity-based
+                let ti_free_val = t_i_free.as_ref()[0];
+                let sens_val = sensitivity_val.as_ref()[0];
+                if self.case_id == "600" {
+                    let temp_deficit = self.heating_setpoint - ti_free_val;
+                    eprintln!(
+                        "CASE600_DEBUG t_i_free={:.2}°C, sensitivity={:.4} K/W, heating_setpoint={}°C, temp_deficit={:.2} K",
+                        ti_free_val, sens_val, self.heating_setpoint, temp_deficit
+                    );
+                }
                 self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
             };
 
