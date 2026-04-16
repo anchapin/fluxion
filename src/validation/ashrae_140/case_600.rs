@@ -159,6 +159,8 @@ impl Case600Model {
         // Update optimization cache since we manually modified conductances
         model.update_optimization_cache();
 
+        model.case_id = "600".to_string();
+
         // Initialize IdealLoadsSystem with zone properties (Issue #521, #522)
         // Case 600 uses 0.5 ACH infiltration per ASHRAE 140, but for IDEAL HVAC
         // (unlimited capacity), we use None so hvac_power_demand is used instead.
