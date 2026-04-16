@@ -121,8 +121,8 @@ impl ValidationStatus {
 /// Computes validation status for a given value against a reference range.
 ///
 /// Status determination according to ASHRAE 140-2017:
-/// - Pass: value within [min, max] with <5% deviation from midpoint
-/// - Warning: within [min, max] but >=5% deviation, OR within tolerance band [min*0.95, max*1.05]
+/// - Pass: value within [min, max] with <10% deviation from midpoint
+/// - Warning: within [min, max] but >=10% deviation, OR within tolerance band [min*0.95, max*1.05]
 /// - Fail: outside tolerance band
 pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatus {
     let ref_mid = (ref_min + ref_max) / 2.0;
@@ -136,7 +136,9 @@ pub fn compute_status(value: f64, ref_min: f64, ref_max: f64) -> ValidationStatu
     let tolerance_max = ref_max * 1.05;
 
     if value >= ref_min && value <= ref_max {
-        if percent_error.abs() >= 5.0 {
+        // Within reference range - check percent error
+        // Use 10% threshold to match ValidationResult::new behavior
+        if percent_error.abs() >= 10.0 {
             ValidationStatus::Warning
         } else {
             ValidationStatus::Pass
