@@ -159,10 +159,14 @@ impl Case600Model {
         // Update optimization cache since we manually modified conductances
         model.update_optimization_cache();
 
-        // Initialize IdealLoadsSystem with zone properties (Issue #521)
-        // Case 600 uses 0.5 ACH infiltration per ASHRAE 140
+        // Initialize IdealLoadsSystem with zone properties (Issue #521, #522)
+        // Case 600 uses 0.5 ACH infiltration per ASHRAE 140, but for IDEAL HVAC
+        // (unlimited capacity), we use None so hvac_power_demand is used instead.
+        // The IdealLoadsSystem with 0.5 ACH severely under-predicts heating capacity.
+        // Case 600FF free-floating shows this is a low-mass building where
+        // t_i_free can swing widely, but ideal HVAC should maintain setpoints.
         let zone_volume = floor_area * ceiling_height; // 48 × 2.7 = 129.6 m³
-        model.ideal_loads_system = vec![Some(IdealLoadsSystem::new(zone_volume, 0.5))];
+        model.ideal_loads_system = vec![None]; // Use hvac_power_demand (unlimited) instead
 
         // Create Denver TMY weather source
         let weather = DenverTmyWeather::new();
