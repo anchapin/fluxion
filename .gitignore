@@ -53,6 +53,8 @@ env/
 *.o
 *.a
 *.lib
+*.cdtor.c
+*.res
 
 # Temporary files
 tmp/
