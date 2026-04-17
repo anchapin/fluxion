@@ -1064,10 +1064,7 @@ impl ThermalModel<VectorField> {
             "950" | "950FF" => (4.0, 4.0),  // Night vent
             "960" => (0.27, 1.0),           // Sunspace - 5R1C model correction
             "600" | "600FF" => (1.0, 1.0), // Low-mass: no correction needed after h_tr_is physics fix
-            "610" => (1.7, 1.0),
-            "620" => (2.69, 0.64), // E/W windows: adjusted for corrected energy tracking
-            "195" => (4.37, 1.0),  // Solid conduction: adjusted for corrected energy tracking
-            "630" | "640" | "650" | "650FF" => (1.7, 1.0),
+            "610" | "620" | "630" | "640" | "650" | "650FF" => (1.0, 1.0),
             _ => (1.0, 1.0),
         };
         model.time_constant_sensitivity_correction = heating_corr;
