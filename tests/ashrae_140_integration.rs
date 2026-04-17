@@ -33,16 +33,12 @@ fn test_case_600_baseline() {
 
     // TODO: The simulation currently produces results outside reference ranges.
     // This is a known issue tracked in Issue #226.
-    // The dedicated Case600Model test passes, indicating the physics model is correct,
-    // but the ASHRAE140Validator simulation loop needs calibration.
     //
     // Current results:
     // - Annual Heating: ~18.70 MWh (reference: 4.30-5.71 MWh)
     // - Annual Cooling: ~35.51 MWh (reference: 6.14-8.45 MWh)
     //
-    // The discrepancy is likely due to:
-    // 1. Solar gain calculation differences between Case600Model and ASHRAE140Validator
-    // 2. Conductance parameter differences in from_spec() vs dedicated model
+    // The discrepancy may be due to solar gain calculation differences.
     //
     // For now, we verify that the simulation produces non-trivial results.
     println!("Case 600 result: {:?}", result);
