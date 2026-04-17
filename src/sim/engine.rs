@@ -1511,11 +1511,18 @@ impl ThermalModel<VectorField> {
             h_tr_floor_vec.push(h_tr_floor_val);
 
             // h_tr_is = Surface-to-air conductance for simplified 5R1C model
-            // Per ASHRAE 140, h_si = 8.29 W/m²K (interior surface film coefficient)
+            // Per ASHRAE 140 Table 3, use surface-specific interior film coefficients:
+            // - Walls (vertical): 7.69 W/m²K
+            // - Ceiling (upward): 10.0 W/m²K
+            // - Floor (downward): 5.88 W/m²K
             let opaque_area = zone_wall_area - zone_window_area;
-            let interior_surface_area = opaque_area + zone_floor_area;
-            let h_si = crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF;
-            h_tr_is_vec.push(h_si * interior_surface_area);
+            let wall_h_tr_is = opaque_area
+                * crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
+            let ceiling_h_tr_is =
+                zone_floor_area * crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_CEILING;
+            let floor_h_tr_is = zone_floor_area
+                * crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_FLOOR;
+            h_tr_is_vec.push(wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is);
 
             // Calculate effective specific capacitances per area for each construction
             let kappa_wall = spec
