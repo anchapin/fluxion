@@ -111,15 +111,13 @@ impl ZoneIdealLoads {
             return 0.0;
         }
 
-        let effective_supply = supply_air_temp.max(cooling_setpoint);
-
         let airflow_m3s = zone_volume * air_changes_per_hour / 3600.0;
 
         let rho = 1.2;
         let cp = 1005.0;
 
         let mass_flow = airflow_m3s * rho;
-        let delta_t = (zone_temp - effective_supply).max(0.0);
+        let delta_t = (zone_temp - supply_air_temp).max(0.0);
 
         mass_flow * cp * delta_t
     }
@@ -149,15 +147,13 @@ impl ZoneIdealLoads {
             return 0.0;
         }
 
-        let effective_supply = supply_air_temp.min(heating_setpoint);
-
         let airflow_m3s = zone_volume * air_changes_per_hour / 3600.0;
 
         let rho = 1.2;
         let cp = 1005.0;
 
         let mass_flow = airflow_m3s * rho;
-        let delta_t = (effective_supply - zone_temp).max(0.0);
+        let delta_t = (supply_air_temp - zone_temp).max(0.0);
 
         mass_flow * cp * delta_t
     }

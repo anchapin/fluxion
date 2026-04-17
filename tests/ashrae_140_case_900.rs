@@ -285,12 +285,15 @@ fn test_case_900_annual_heating_within_reference_range() {
     println!("Reference Range: [{:.2}, {:.2}] MWh", ref_min, ref_max);
     println!("Tolerance: ±{:.2} MWh", tolerance);
 
-    // This test will fail until thermal mass dynamics are corrected
-    // TODO: Fix thermal mass modeling to bring heating energy within ASHRAE 140 reference range
+    // ASHRAE 140 allows ±15% tolerance on reference range
+    // Check if value is within reference range ± tolerance
     assert!(
-        annual_heating_mwh >= 8.0 && annual_heating_mwh <= 12.0,
-        "Annual heating {:.2} MWh outside temporary range [8.0, 12.0] MWh (thermal mass modeling needs fix)",
-        annual_heating_mwh
+        annual_heating_mwh >= ref_min - tolerance && annual_heating_mwh <= ref_max + tolerance,
+        "Annual heating {:.2} MWh outside reference range [{:.2}, {:.2}] MWh (±15% tolerance: ±{:.2} MWh)",
+        annual_heating_mwh,
+        ref_min,
+        ref_max,
+        tolerance
     );
 
     println!("✅ Test 1 PASSED: Annual heating within reference range");
