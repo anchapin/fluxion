@@ -4940,6 +4940,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
+        // Use sensitivity-based hvac_power_demand for 6R2C model
+        // The thermodynamic hvac_demand_from_ideal_loads is designed for equipment-based HVAC
+        // and produces incorrect results when applied to the simplified 6R2C thermal network
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
 
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
