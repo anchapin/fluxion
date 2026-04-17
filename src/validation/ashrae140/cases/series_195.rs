@@ -58,7 +58,9 @@ fn build_case_195() -> ASHRAE140CaseDefinition {
         case_type: ASHRAE140Case::Case195,
         building: BuildingProperties {
             construction_type: crate::validation::ashrae140::ConstructionType::MediumWeight,
-            floor_area: 557.0, // m²
+            floor_area: 557.0,      // m²
+            window_wall_ratio: 0.0, // No windows - solid conduction test
+            infiltration_rate: 0.0, // No infiltration - solid conduction test
             ..Default::default()
         },
         hvac: HVACSystem {
