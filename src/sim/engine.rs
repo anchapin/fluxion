@@ -4940,7 +4940,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
-        let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
+        let hvac_output_raw = if self.ideal_loads_system.iter().any(|opt| opt.is_some()) {
+            self.hvac_demand_from_ideal_loads(
+                t_i_free.as_ref(),
+                self.heating_setpoint,
+                self.cooling_setpoint,
+            )
+        } else {
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity)
+        };
 
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
