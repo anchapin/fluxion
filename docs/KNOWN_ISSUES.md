@@ -437,4 +437,13 @@ Once these are addressed, expect pass rate to increase significantly. Remaining 
 | 630 | 0.35 | Ref 5.05-6.47, shading helps |
 | 640 | 0.40 | Ref 2.75-3.80, setback reduces demand |
 
-**NOTE:** Cooling correction factors NOT yet applied. 600-series cooling is still 0.66 MWh vs 8.0-10.5 MWh reference (92% below minimum). This requires separate investigation into solar gain distribution and HVAC cooling physics.
+**NOTE:** Cooling correction factors NOT yet applied. 600-series cooling is still 0.66 MWh vs 8.0-10.5 MWh reference (92% below minimum). This requires separate investigation - see GitHub Issue #531.
+
+## Related GitHub Issues
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| #522 | Investigate Case 600 heating energy discrepancy | ✅ Fixed (Phase 36) |
+| #531 | Investigate Case 600-series cooling underprediction | 🔄 Open |
+| #533 | Investigate Case 600-series peak load underprediction | 🔄 Open |
+| #532 | Investigate Case 195 producing zero annual energy | 🔄 Open |
