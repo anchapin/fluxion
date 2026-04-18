@@ -173,7 +173,7 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
                 .geometry
                 .zones
                 .iter()
-                .map(|z| {
+                .map(|_z| {
                     let heating = schema.controls.zone_control.heating_setpoint;
                     let cooling = schema.controls.zone_control.cooling_setpoint;
                     (heating, cooling)
