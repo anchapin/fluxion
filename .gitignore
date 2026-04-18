@@ -140,10 +140,16 @@ tests/*_ORIG             # Backup/orig files
 # Validation outputs and diagnostics
 *.log
 validation_*.txt
+validation_results.json
 diagnostics_*.csv
 hourly_output.csv
 session_*_test_results.txt
 *.profraw
+
+# Benchmark results
+benchmark_results.json
+gate_status.json
+validation_baseline.json
 
 # Benchmark data
 benchmarks/outputs/
