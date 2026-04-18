@@ -65,6 +65,8 @@ pub struct LoadBreakdown {
     pub inter_zone: Vec<Vec<f64>>,
     /// Infiltration heat loss per zone (Watts)
     pub infiltration: Vec<Vec<f64>>,
+    /// Envelope conduction per zone (Watts, positive=heat loss to exterior)
+    pub conduction: Vec<Vec<f64>>,
 }
 
 /// Energy accumulation over simulation.
@@ -98,6 +100,7 @@ impl SimulationDiagnostics {
                 hvac: Vec::with_capacity(num_timesteps),
                 inter_zone: Vec::with_capacity(num_timesteps),
                 infiltration: Vec::with_capacity(num_timesteps),
+                conduction: Vec::with_capacity(num_timesteps),
             },
             cumulative_energy: EnergyAccumulation {
                 heating_kwh: vec![0.0; num_zones],
@@ -213,10 +216,21 @@ impl SimulationDiagnostics {
                         .join(";")
                 })
                 .unwrap_or_default();
+            let conduction_str = self
+                .loads
+                .conduction
+                .get(i)
+                .map(|v| {
+                    v.iter()
+                        .map(|w| format!("{:.2}", w))
+                        .collect::<Vec<_>>()
+                        .join(";")
+                })
+                .unwrap_or_default();
 
             writeln!(
                 writer,
-                "{},{:.2},{:.2},{},{},{},{},{},{},{},{}",
+                "{},{:.2},{:.2},{},{},{},{},{},{},{},{},{}",
                 hour,
                 outdoor_temp,
                 ground_temp,
@@ -227,7 +241,8 @@ impl SimulationDiagnostics {
                 internal_str,
                 hvac_str,
                 inter_zone_str,
-                infiltration_str
+                infiltration_str,
+                conduction_str
             )?;
         }
 
@@ -360,6 +375,20 @@ impl SimulationDiagnostics {
         }
         self.loads.infiltration.push(infiltration_watts);
 
+        // Envelope conduction (W): Q = h_tr_em * (T_outdoor - T_mass)
+        // h_tr_em is the exterior-to-mass conductance
+        let h_tr_em_vec: Vec<f64> = model.h_tr_em.as_ref().to_vec();
+        let mass_temps: Vec<f64> = model.mass_temperatures.as_ref().to_vec();
+        let mut conduction_watts = Vec::with_capacity(num_zones);
+        for i in 0..num_zones {
+            let h_tr_em = h_tr_em_vec.get(i).copied().unwrap_or(0.0);
+            let t_mass = mass_temps.get(i).copied().unwrap_or(20.0);
+            let delta_t = outdoor_temp - t_mass;
+            let watts = h_tr_em * delta_t;
+            conduction_watts.push(watts);
+        }
+        self.loads.conduction.push(conduction_watts);
+
         // Update cumulative energy per zone (kWh)
         for i in 0..num_zones {
             let hvac_power = hvac_vec.get(i).copied().unwrap_or(0.0);
@@ -413,10 +442,12 @@ mod tests {
             hvac: vec![vec![300.0, 0.0]],
             inter_zone: vec![vec![10.0, -10.0]],
             infiltration: vec![vec![20.0, 25.0]],
+            conduction: vec![vec![30.0, 35.0]],
         };
         let cloned = load.clone();
         assert_eq!(cloned.solar[0][0], 100.0);
         assert_eq!(cloned.infiltration[0][1], 25.0);
+        assert_eq!(cloned.conduction[0][0], 30.0);
     }
 
     #[test]
@@ -443,6 +474,7 @@ mod tests {
         diag.loads.hvac.push(vec![200.0]);
         diag.loads.inter_zone.push(vec![0.0]);
         diag.loads.infiltration.push(vec![30.0]);
+        diag.loads.conduction.push(vec![40.0]);
 
         let cloned = diag.clone();
         assert_eq!(cloned.hours[0], 0);
@@ -465,6 +497,7 @@ mod tests {
             diag.loads.hvac.push(vec![200.0]);
             diag.loads.inter_zone.push(vec![0.0]);
             diag.loads.infiltration.push(vec![30.0]);
+            diag.loads.conduction.push(vec![40.0]);
         }
 
         let temp_dir = std::env::temp_dir();
@@ -503,6 +536,7 @@ mod tests {
             diag.loads.hvac.push(vec![200.0, 150.0]);
             diag.loads.inter_zone.push(vec![5.0, -5.0]);
             diag.loads.infiltration.push(vec![30.0, 25.0]);
+            diag.loads.conduction.push(vec![35.0, 30.0]);
         }
 
         let temp_dir = std::env::temp_dir();
@@ -553,6 +587,7 @@ mod tests {
             diag.loads.hvac.push(vec![200.0, 150.0]);
             diag.loads.inter_zone.push(vec![0.0, 0.0]);
             diag.loads.infiltration.push(vec![30.0, 25.0]);
+            diag.loads.conduction.push(vec![35.0, 30.0]);
         }
 
         diag.cumulative_energy.heating_kwh = vec![1.5, 1.2];
@@ -582,6 +617,7 @@ mod tests {
         diag.loads.hvac.push(vec![200.0]);
         diag.loads.inter_zone.push(vec![0.0]);
         diag.loads.infiltration.push(vec![30.0]);
+        diag.loads.conduction.push(vec![40.0]);
 
         let json = serde_json::to_string(&diag).unwrap();
         let deserialized: SimulationDiagnostics = serde_json::from_str(&json).unwrap();
@@ -603,6 +639,7 @@ mod tests {
         diag.loads.hvac.push(vec![]);
         diag.loads.inter_zone.push(vec![]);
         diag.loads.infiltration.push(vec![]);
+        diag.loads.conduction.push(vec![]);
 
         let temp_dir = std::env::temp_dir();
         let csv_path = temp_dir.join(format!(
@@ -647,6 +684,7 @@ mod tests {
             hvac: vec![],
             inter_zone: vec![],
             infiltration: vec![],
+            conduction: vec![],
         };
         assert!(load.solar.is_empty());
         assert!(load.hvac.is_empty());
@@ -675,6 +713,7 @@ mod tests {
         model.current_hvac_output = Some(VectorField::new(vec![1000.0]));
         model.infiltration_rate = VectorField::new(vec![0.5]);
         model.ceiling_height = VectorField::new(vec![2.5]);
+        model.h_tr_em = VectorField::new(vec![10.0]);
 
         let mut diag = SimulationDiagnostics::new(1, 10);
         diag.record_timestep(0, &model, -5.0, 10.0);
@@ -687,6 +726,8 @@ mod tests {
         assert_eq!(diag.loads.solar[0][0], 500.0); // 10.0 * 50.0
         assert_eq!(diag.loads.internal[0][0], 250.0); // 5.0 * 50.0
         assert_eq!(diag.loads.hvac[0][0], 1000.0);
+        // Conduction: h_tr_em * (outdoor_temp - mass_temp) = 10.0 * (-5.0 - 21.0) = -260.0 W
+        assert_eq!(diag.loads.conduction[0][0], -260.0);
         assert!(diag.cumulative_energy.heating_kwh[0] > 0.0);
     }
 }
