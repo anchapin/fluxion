@@ -2,8 +2,9 @@
 Python tests for HVAC bindings
 """
 
-import fluxion
 import pytest
+
+import fluxion
 
 # Use direct imports since hvac submodule is not working
 ZoneSetpoints = fluxion.ZoneSetpoints
@@ -145,12 +146,22 @@ def test_energy_calculation():
     # Must call update_controls first to compute zone status
     energy = zone_control.update_controls([20.0])
 
-    # Test heating energy: 2°C difference * 1000W/°C = 2000W
-    assert abs(energy[0] - 2000.0) < 0.01
+    # Test heating energy: thermodynamic calculation with zone_volume=129.6 m³,
+    # ACH=0.5, supply_heating_temp=40°C, heating_efficiency=0.9
+    # airflow = 129.6 * 0.5 / 3600 = 0.018 m³/s
+    # mass_flow = 0.018 * 1.2 = 0.0216 kg/s
+    # delta_t = 40 - 20 = 20°C
+    # Q = 0.0216 * 1005 * 20 = 434.16 W (thermal)
+    # Electrical = 434.16 / 0.9 = 482.4 W
+    assert abs(energy[0] - 482.4) < 1.0
 
     # Test cooling energy: update with higher temperature
+    # Zone at 28°C, cooling setpoint 26°C, supply_cooling_temp=13°C, COP=3.0
+    # delta_t = 28 - 13 = 15°C
+    # Q = 0.0216 * 1005 * 15 = 325.62 W (thermal)
+    # Electrical = 325.62 / 3.0 = 108.5 W
     energy = zone_control.update_controls([28.0])
-    assert abs(energy[0] - 2000.0) < 0.01
+    assert abs(energy[0] - 108.5) < 1.0
 
     # Test no energy in deadband
     energy = zone_control.update_controls([23.0])

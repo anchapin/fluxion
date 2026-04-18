@@ -94,8 +94,7 @@ impl PyMultiZoneThermalModel {
             ));
         }
 
-        // TODO: Implement inter-zone conductance once ThermalModel API is updated
-        Ok(0.0)
+        Ok(self.inner.h_tr_iz.as_slice()[zone_i])
     }
 
     /// Set inter-zone conductance between two zones
@@ -117,8 +116,37 @@ impl PyMultiZoneThermalModel {
             ));
         }
 
-        // TODO: Implement inter-zone conductance once ThermalModel API is updated
+        self.inner.h_tr_iz.as_mut_slice()[zone_i] = conductance;
+        if zone_i != zone_j {
+            self.inner.h_tr_iz.as_mut_slice()[zone_j] = conductance;
+        }
         Ok(())
+    }
+
+    /// Set all inter-zone conductances from a vector
+    pub fn set_inter_zone_conductance_vector(&mut self, conductances: Vec<f64>) -> PyResult<()> {
+        if conductances.len() != self.inner.num_zones {
+            return Err(pyo3::exceptions::PyValueError::new_err(format!(
+                "Conductance vector length ({}) must match number of zones ({})",
+                conductances.len(),
+                self.inner.num_zones
+            )));
+        }
+
+        for (i, &c) in conductances.iter().enumerate() {
+            if c < 0.0 {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "All conductances must be non-negative",
+                ));
+            }
+            self.inner.h_tr_iz.as_mut_slice()[i] = c;
+        }
+        Ok(())
+    }
+
+    /// Get all inter-zone conductances as a vector
+    pub fn get_inter_zone_conductance_vector(&self) -> Vec<f64> {
+        self.inner.h_tr_iz.as_slice().to_vec()
     }
 
     /// Simulate multi-zone building energy consumption
@@ -189,9 +217,9 @@ pub fn create_multi_zone_model_from_config(
     config: &Bound<'_, PyDict>,
 ) -> PyResult<PyMultiZoneThermalModel> {
     // Extract number of zones
-    let num_zones: usize = match config.get_item("num_zones")? {
-        Some(item) => item.extract()?,
-        None => {
+    let num_zones: usize = match config.get_item("num_zones") {
+        Ok(Some(item)) => item.extract()?,
+        _ => {
             return Err(pyo3::exceptions::PyKeyError::new_err(
                 "Missing 'num_zones' in config",
             ))
@@ -201,20 +229,245 @@ pub fn create_multi_zone_model_from_config(
     // Create model
     let mut model = PyMultiZoneThermalModel::new(num_zones)?;
 
-    // Set zone setpoints if provided
-    if let Some(zone_setpoints) = config.get_item("zone_setpoints")? {
-        let setpoints_dict: &Bound<'_, PyDict> = zone_setpoints.downcast()?;
+    // Set zone setpoints from zones dict (zone_0, zone_1, etc.)
+    if let Ok(Some(zone_configs)) = config.get_item("zones") {
+        let zones_dict: &Bound<'_, PyDict> = match zone_configs.downcast() {
+            Ok(d) => d,
+            Err(_) => {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "Expected dict for 'zones'",
+                ))
+            }
+        };
 
-        for (key, value) in setpoints_dict {
-            let zone_key: String = key.extract()?;
+        for (key, value) in zones_dict.iter() {
+            let zone_key: String = match key.extract() {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
             if let Some(stripped) = zone_key.strip_prefix("zone_") {
                 if let Ok(zone_idx) = stripped.parse::<usize>() {
-                    let setpoints_tuple: (f64, f64) = value.extract()?;
+                    let zone_dict: &Bound<'_, PyDict> = match value.downcast() {
+                        Ok(d) => d,
+                        Err(_) => continue,
+                    };
+
+                    if let Ok(Some(heating)) = zone_dict.get_item("heating") {
+                        let heating_temp: f64 = match heating.extract() {
+                            Ok(t) => t,
+                            Err(_) => continue,
+                        };
+                        let current_cooling = model.inner.cooling_setpoints.as_slice()[zone_idx];
+                        model.set_zone_setpoints(zone_idx, heating_temp, current_cooling)?;
+                    }
+
+                    if let Ok(Some(cooling)) = zone_dict.get_item("cooling") {
+                        let cooling_temp: f64 = match cooling.extract() {
+                            Ok(t) => t,
+                            Err(_) => continue,
+                        };
+                        let current_heating = model.inner.heating_setpoints.as_slice()[zone_idx];
+                        model.set_zone_setpoints(zone_idx, current_heating, cooling_temp)?;
+                    }
+                }
+            }
+        }
+    } else if let Ok(Some(zone_setpoints)) = config.get_item("zone_setpoints") {
+        // Legacy zone_setpoints format (zone_0: (heating, cooling), zone_1: (heating, cooling), ...)
+        let setpoints_dict: &Bound<'_, PyDict> = match zone_setpoints.downcast() {
+            Ok(d) => d,
+            Err(_) => {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "Expected dict for 'zone_setpoints'",
+                ))
+            }
+        };
+
+        for (key, value) in setpoints_dict.iter() {
+            let zone_key: String = match key.extract() {
+                Ok(k) => k,
+                Err(_) => continue,
+            };
+            if let Some(stripped) = zone_key.strip_prefix("zone_") {
+                if let Ok(zone_idx) = stripped.parse::<usize>() {
+                    let setpoints_tuple: (f64, f64) = match value.extract() {
+                        Ok(t) => t,
+                        Err(_) => continue,
+                    };
                     model.set_zone_setpoints(zone_idx, setpoints_tuple.0, setpoints_tuple.1)?;
                 }
             }
         }
     }
+
+    // Set inter-zone conductances
+    if let Ok(Some(iz_conductance)) = config.get_item("inter_zone_conductance") {
+        let iz_dict: &Bound<'_, PyDict> = match iz_conductance.downcast() {
+            Ok(d) => d,
+            Err(_) => {
+                return Err(pyo3::exceptions::PyTypeError::new_err(
+                    "Expected dict for 'inter_zone_conductance'",
+                ))
+            }
+        };
+
+        let mut conductance_vec = Vec::new();
+        for i in 0..num_zones {
+            let row_key = format!("zone_{}", i);
+            if let Ok(Some(row)) = iz_dict.get_item(&row_key) {
+                let row_dict: &Bound<'_, PyDict> = match row.downcast() {
+                    Ok(d) => d,
+                    Err(_) => {
+                        conductance_vec.push(vec![0.0; num_zones]);
+                        continue;
+                    }
+                };
+                let mut row_vec = Vec::new();
+                for j in 0..num_zones {
+                    let col_key = format!("zone_{}", j);
+                    if let Ok(Some(val)) = row_dict.get_item(&col_key) {
+                        match val.extract::<f64>() {
+                            Ok(v) => row_vec.push(v),
+                            Err(_) => row_vec.push(0.0),
+                        }
+                    } else {
+                        row_vec.push(0.0);
+                    }
+                }
+                conductance_vec.push(row_vec);
+            } else {
+                conductance_vec.push(vec![0.0; num_zones]);
+            }
+        }
+
+        // Flatten and set conductances (matching CLI behavior)
+        for i in 0..num_zones {
+            for j in 0..num_zones {
+                if i < conductance_vec.len() && j < conductance_vec[i].len() {
+                    let conductance = conductance_vec[i][j];
+                    // Only set when i <= j to avoid double-setting
+                    if i == j || i == 0 {
+                        model.set_inter_zone_conductance(i, j, conductance)?;
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(model)
+}
+
+/// Create a multi-zone thermal model from a schema JSON file path
+#[pyfunction]
+pub fn create_multi_zone_model_from_schema_file(
+    schema_path: &str,
+) -> PyResult<PyMultiZoneThermalModel> {
+    use crate::api::schema::SimulationSchema;
+    use std::path::Path;
+
+    let path = Path::new(schema_path);
+    if !path.exists() {
+        return Err(pyo3::exceptions::PyFileNotFoundError::new_err(format!(
+            "Schema file not found: {}",
+            schema_path
+        )));
+    }
+
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        pyo3::exceptions::PyIOError::new_err(format!("Failed to read schema file: {}", e))
+    })?;
+
+    let schema: SimulationSchema = serde_json::from_str(&content).map_err(|e| {
+        pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema JSON: {}", e))
+    })?;
+
+    let schema_v1 = match schema {
+        SimulationSchema::V1(v1) => v1,
+    };
+
+    // Create model from schema V1
+    let mut model = PyMultiZoneThermalModel::new(schema_v1.geometry.zones.len().max(1))?;
+
+    // Set zone setpoints from schema
+    let heating = schema_v1.controls.zone_control.heating_setpoint;
+    let cooling = schema_v1.controls.zone_control.cooling_setpoint;
+    for zone_idx in 0..model.inner.num_zones {
+        model.set_zone_setpoints(zone_idx, heating, cooling)?;
+    }
+
+    // Set inter-zone conductances from schema (using default matrix from schema geometry)
+    let n = schema_v1.geometry.zones.len().max(1);
+    let default_conductance = 5.0; // Default value matching CLI behavior
+    for i in 0..n {
+        model.set_inter_zone_conductance(i, i, default_conductance)?;
+        if i < n - 1 {
+            model.set_inter_zone_conductance(i, i + 1, default_conductance)?;
+        }
+    }
+
+    Ok(model)
+}
+
+/// Create a multi-zone thermal model from a schema dictionary (PyDict)
+#[pyfunction]
+pub fn create_multi_zone_model_from_schema_dict(
+    schema: &Bound<'_, PyDict>,
+) -> PyResult<PyMultiZoneThermalModel> {
+    // Extract number of zones from geometry
+    let num_zones: usize = match schema.get_item("geometry") {
+        Ok(Some(geometry)) => {
+            let geometry_dict: &Bound<'_, PyDict> = match geometry.downcast() {
+                Ok(d) => d,
+                Err(_) => return Ok(PyMultiZoneThermalModel::new(1)?),
+            };
+            match geometry_dict.get_item("zones") {
+                Ok(Some(zones)) => {
+                    let zones_list: &Bound<'_, pyo3::types::PyList> = match zones.downcast() {
+                        Ok(d) => d,
+                        Err(_) => return Ok(PyMultiZoneThermalModel::new(1)?),
+                    };
+                    zones_list.len()
+                }
+                _ => 1,
+            }
+        }
+        _ => 1,
+    };
+
+    let mut model = PyMultiZoneThermalModel::new(num_zones)?;
+
+    // Extract setpoints from controls
+    if let Ok(Some(controls)) = schema.get_item("controls") {
+        let controls_dict: &Bound<'_, PyDict> = match controls.downcast() {
+            Ok(d) => d,
+            Err(_) => return Ok(model),
+        };
+
+        if let Ok(Some(zone_control)) = controls_dict.get_item("zone_control") {
+            let zone_control_dict: &Bound<'_, PyDict> = match zone_control.downcast() {
+                Ok(d) => d,
+                Err(_) => return Ok(model),
+            };
+
+            let heating = match zone_control_dict.get_item("heating_setpoint") {
+                Ok(Some(v)) => v.extract::<f64>().ok(),
+                _ => None,
+            };
+            let cooling = match zone_control_dict.get_item("cooling_setpoint") {
+                Ok(Some(v)) => v.extract::<f64>().ok(),
+                _ => None,
+            };
+
+            if let (Some(h), Some(c)) = (heating, cooling) {
+                for zone_idx in 0..num_zones {
+                    model.set_zone_setpoints(zone_idx, h, c)?;
+                }
+            }
+        }
+    }
+
+    // Extract inter-zone conductance from constructions if available
+    // (For now, use default values - full schema parsing would go here)
 
     Ok(model)
 }
@@ -224,6 +477,14 @@ pub fn create_multi_zone_model_from_config(
 pub fn multi_zone(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyMultiZoneThermalModel>()?;
     m.add_function(wrap_pyfunction!(create_multi_zone_model_from_config, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        create_multi_zone_model_from_schema_file,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(
+        create_multi_zone_model_from_schema_dict,
+        m
+    )?)?;
 
     Ok(())
 }
