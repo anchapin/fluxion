@@ -3231,6 +3231,68 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.fd_enabled
     }
 
+    /// Enable the unified solver manager with explicit solver selection.
+    ///
+    /// The solver manager provides automatic method selection (5R1C/CTF/FD) based on
+    /// thermal mass, but with explicit configuration control per Issue #502 requirements.
+    ///
+    /// # Arguments
+    ///
+    /// * `selection_config` - Solver selection configuration (Automatic, ForceMethod, PerSurface)
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use fluxion::physics::method_selector::{
+    ///     ThermalMethodSelector, SolverSelectionConfig, SurfaceSolverConfig, ThermalMethod
+    /// };
+    ///
+    /// // Automatic selection based on thermal mass
+    /// model.enable_solver_manager(SolverSelectionConfig::Automatic);
+    ///
+    /// // Force all surfaces to use CTF
+    /// model.enable_solver_manager(SolverSelectionConfig::ForceMethod(ThermalMethod::CTF));
+    ///
+    /// // Per-surface explicit selection
+    /// model.enable_solver_manager(SolverSelectionConfig::PerSurface(vec![
+    ///     SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
+    ///     SurfaceSolverConfig::roof(ThermalMethod::CTF),
+    /// ]));
+    /// ```
+    pub fn enable_solver_manager(
+        &mut self,
+        selection_config: crate::physics::method_selector::SolverSelectionConfig,
+    ) {
+        use crate::physics::method_selector::ThermalMethodSelector;
+
+        let mut selector = ThermalMethodSelector::default();
+        selector.set_selection_config(selection_config);
+
+        self.solver_manager = Some(crate::physics::solver_manager::SolverManager::new(selector));
+    }
+
+    /// Get a reference to the solver manager if it exists.
+    pub fn get_solver_manager(&self) -> Option<&crate::physics::solver_manager::SolverManager> {
+        self.solver_manager.as_ref()
+    }
+
+    /// Get a mutable reference to the solver manager if it exists.
+    pub fn get_solver_manager_mut(
+        &mut self,
+    ) -> Option<&mut crate::physics::solver_manager::SolverManager> {
+        self.solver_manager.as_mut()
+    }
+
+    /// Disable the solver manager and revert to default 5R1C/CTF/FD behavior.
+    pub fn disable_solver_manager(&mut self) {
+        self.solver_manager = None;
+    }
+
+    /// Check if solver manager is enabled.
+    pub fn solver_manager_is_enabled(&self) -> bool {
+        self.solver_manager.is_some()
+    }
+
     /// Enable CTF with automatic fallback to FD if coefficients are invalid.
     ///
     /// This method attempts to enable CTF solver, but if coefficient calculation fails
