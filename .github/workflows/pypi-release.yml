@@ -1,5 +1,6 @@
 # PyPI Release Workflow
 # Implements Issue #168: Configure PyPI package distribution
+# Release gates implemented per Issue #505
 
 name: PyPI Release
 
@@ -10,9 +11,170 @@ on:
   workflow_dispatch:
 
 jobs:
-  # Build and publish to PyPI
+  # Gate check job - must pass before publish
+  gate-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run ASHRAE 140 Validation
+        run: |
+          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
+        continue-on-error: true
+
+      - name: Extract Validation Results
+        run: |
+          python3 << 'EOF'
+          import re
+          import json
+
+          with open('validation_output.txt', 'r') as f:
+              output = f.read()
+
+          # Extract case results
+          cases = {}
+          case_pattern = r"Case (\d+[A-Z]*): Heating=([\d.]+) \(Ref: ([\d.-]+)-([\d.-]+)\), Cooling=([\d.]+) \(Ref: ([\d.-]+)-([\d.-]+)\)"
+          for match in re.finditer(case_pattern, output):
+              case_id, heating, heating_min, heating_max, cooling, cooling_min, cooling_max = match.groups()
+              cases[case_id] = {
+                  'heating': float(heating),
+                  'heating_min': float(heating_min),
+                  'heating_max': float(heating_max),
+                  'cooling': float(cooling),
+                  'cooling_min': float(cooling_min),
+                  'cooling_max': float(cooling_max)
+              }
+
+          # Extract summary
+          summary_pattern = r"Validation Report Summary:.*?Pass Rate: ([\d.]+)%.*?Passed: (\d+).*?Failed: (\d+).*?Mean Absolute Error: ([\d.]+)%"
+          summary_match = re.search(summary_pattern, output, re.DOTALL)
+
+          summary = {}
+          if summary_match:
+              pass_rate, passed, failed, mae = summary_match.groups()
+              summary = {
+                  'pass_rate': float(pass_rate),
+                  'passed': int(passed),
+                  'failed': int(failed),
+                  'mae': float(mae)
+              }
+
+          with open('validation_results.json', 'w') as f:
+              json.dump({'cases': cases, 'summary': summary}, f, indent=2)
+          EOF
+
+      - name: Run Performance Benchmarks
+        run: |
+          cargo test --test performance_regression_test --release -- --nocapture 2>&1 | tee perf_output.txt
+
+      - name: Extract Benchmark Results
+        run: |
+          python3 << 'EOF'
+          import re
+          import json
+
+          with open('perf_output.txt', 'r') as f:
+              output = f.read()
+
+          throughput_match = re.search(r'Throughput:\s*([\d.]+)\s*configs/sec', output)
+          latency_match = re.search(r'Latency per config:\s*([\d.]+)ms', output)
+
+          results = {
+              "metrics": {
+                  "throughput_configs_per_sec": float(throughput_match.group(1)) if throughput_match else 0,
+                  "latency_ms_per_config": float(latency_match.group(1)) if latency_match else 0
+              }
+          }
+
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+          EOF
+
+      - name: Run Release Gate Checker
+        run: |
+          python3 scripts/release_gate_checker.py \
+            --validation-results validation_results.json \
+            --benchmark-results benchmark_results.json \
+            --json --output gate_status.json
+
+      - name: Display Gate Status
+        run: |
+          echo "# Release Gate Status" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            python3 -c "
+            import json
+            with open('gate_status.json') as f:
+              data = json.load(f)
+            status = '✅ PASSED' if data['overall_passed'] else '❌ FAILED'
+            print(f'**Overall:** {status}')
+            print(f'**Gates:** {data[\"summary\"][\"passed\"]}/{data[\"summary\"][\"total\"]} passed')
+            print()
+            for gate in data['gates']:
+              icon = '✅' if gate['passed'] else '❌'
+              print(f'{icon} **{gate[\"category\"]}/{gate[\"name\"]}**: {gate[\"message\"]}')
+            " >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if gates not passed
+        if: failure()
+        run: |
+          echo "❌ Release gates failed - cannot proceed with release"
+          echo ""
+          if [ -f gate_status.json ]; then
+            python3 -c "
+            import json
+            with open('gate_status.json') as f:
+              data = json.load(f)
+            print('Failed gates:')
+            for gate in data['gates']:
+              if not gate['passed']:
+                print(f\"  ❌ {gate['category']}/{gate['name']}: {gate['message']}\")
+            "
+          fi
+          echo ""
+          echo "Fix the issues above or update baseline if changes are intentional:"
+          echo "  python scripts/release_gate_checker.py --update-baseline"
+          exit 1
+
+      - name: Upload Gate Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: gate-results
+          path: |
+            validation_results.json
+            benchmark_results.json
+            gate_status.json
+          retention-days: 30
+
+  # Build and publish to PyPI - depends on gate-check
   publish:
     runs-on: ubuntu-latest
+    needs: gate-check
     permissions:
       contents: read
       id-token: write  # Required for trusted publishing
@@ -46,6 +208,7 @@ jobs:
   # Build and publish to Test PyPI
   publish-test:
     runs-on: ubuntu-latest
+    needs: gate-check
     if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: read
