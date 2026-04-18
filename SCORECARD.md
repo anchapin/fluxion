@@ -10,11 +10,11 @@
 
 | Metric | Value | Status |
 |--------|-------|--------|
-| ASHRAE 140 Pass Rate | 3.1% (2/63) | ❌ Below Target
-| Mean Absolute Error | 16.23% | ✅ Good
-| Test Pass Rate | 100.00% (2285/2285) | ✅ Healthy
-| Benchmark Throughput | 1237 configs/sec | ✅ Exceeds
-| Open Issues (Critical/High) | 12 | ❌ Blocking
+| ASHRAE 140 Pass Rate | 0.0% (0/0) | ❌ Below Target |
+| Mean Absolute Error | 37.48% | ❌ High |
+| Test Pass Rate | 100.00% (2285/2285) | ✅ Healthy |
+| Benchmark Throughput | 892 configs/sec | ✅ Exceeds |
+| Open Issues (Critical/High) | 12 | ❌ Blocking |
 
 ---
 
@@ -45,7 +45,7 @@
 
 | Benchmark | Value | Target | Status |
 |-----------|-------|--------|--------|
-| Throughput (configs/sec) | 1237 | ≥800 | ✅ Exceeds
+| Throughput (configs/sec) | 892 | ≥800 | ✅ Exceeds |
 | CTA Simulation Time | <100ms | <100ms | ✅ Meets |
 | Multi-Zone (10 zones) | 800-1,200 | ≥500 | ✅ Exceeds |
 | Cross-Validation Latency | <100ms | ≤500ms | ✅ Exceeds |
@@ -56,8 +56,8 @@
 
 | Severity | Count | Status |
 |----------|-------|--------|
-| Critical | 4 | ❌ Blocking
-| High | 8 | ⚠️ Review
+| Critical | 4 | ❌ Blocking |
+| High | 8 | ⚠️ Review |
 | Medium | 8 | 🔄 In Progress |
 | Low | 5 | ✅ Tracked |
 
@@ -70,10 +70,10 @@
 | Requirement | Status | Notes |
 |-------------|--------|-------|
 | Compilation | ✅ Pass | All crates compile |
-| Unit Tests | ✅ Pass | 2285/2285 passed (100.0%)
+| Unit Tests | ✅ Pass | 2285/2285 passed (100.0%) |
 | Integration Tests | ✅ Pass | All pass |
-| ASHRAE 140 Pass Rate ≥12.5% | ❌ Fail | Currently 3.1%
-| Benchmark Throughput ≥800 | ✅ Pass | 1237 configs/sec |
+| ASHRAE 140 Pass Rate ≥12.5% | ❌ Fail | Currently 0.0% |
+| Benchmark Throughput ≥800 | ✅ Pass | 892 configs/sec |
 | Critical Issues Resolved | ⚠️ Partial | 4 critical open |
 | Documentation Complete | ✅ Pass | 100% coverage |
 

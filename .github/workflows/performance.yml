@@ -8,109 +8,124 @@ on:
   workflow_dispatch:
 
 jobs:
-  performance-test:
-    name: Performance Validation
+  thermal-model-bench:
+    name: Thermal Model Bench
     runs-on: ubuntu-latest
-
+    timeout-minutes: 15
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
+          key: ${{ runner.os }}-perf-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run thermal model benchmarks
+        run: cargo bench --bench performance --no-fail-fast -- thermal_model
 
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
-        echo "PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/x86_64-linux-gnu/pkgconfig" >> $GITHUB_ENV
+  batch-oracle-bench:
+    name: Batch Oracle Bench
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
+          key: ${{ runner.os }}-perf-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run batch oracle benchmarks
+        run: cargo bench --bench performance --no-fail-fast -- batch_oracle
 
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: stable
-        components: llvm-tools-preview
+  performance-tests:
+    name: Performance Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
+          key: ${{ runner.os }}-perf-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Run performance tests
+        run: |
+          cargo test --test performance_ci_test
+          cargo test --test performance_regression_test
 
-    - name: Cache cargo
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.cargo/bin/
-          ~/.cargo/registry/index/
-          ~/.cargo/registry/cache/
-          ~/.cargo/git/db/
-          target/
-        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Generate benchmark results
+        run: |
+          cargo test --test performance_regression_test --release -- --nocapture 2>&1 | tee perf_output.txt
 
-    - name: Run performance benchmarks
-      run: cargo bench --bench performance
+          python3 << 'EOF'
+          import re
+          import json
 
-    - name: Run performance validation
-      run: cargo test --test performance_ci_test
+          with open('perf_output.txt', 'r') as f:
+              output = f.read()
 
-    - name: Check for performance regressions
-      run: cargo test --test performance_regression_test
+          throughput_match = re.search(r'Throughput:\s*([\d.]+)\s*configs/sec', output)
+          latency_match = re.search(r'Latency per config:\s*([\d.]+)ms', output)
 
-    - name: Generate benchmark results
-      run: |
-        cargo test --test performance_regression_test --release -- --nocapture 2>&1 | tee perf_output.txt
+          results = {
+              "metrics": {
+                  "throughput_configs_per_sec": float(throughput_match.group(1)) if throughput_match else 0,
+                  "latency_ms_per_config": float(latency_match.group(1)) if latency_match else 0
+              }
+          }
 
-        # Extract metrics from test output and create JSON
-        python3 << 'EOF'
-        import re
-        import json
+          with open('benchmark_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
 
-        with open('perf_output.txt', 'r') as f:
-            output = f.read()
+          print(f"Generated benchmark_results.json")
+          if throughput_match:
+              print(f"Throughput: {throughput_match.group(1)} configs/sec")
+          if latency_match:
+              print(f"Latency: {latency_match.group(1)} ms/config")
+          EOF
 
-        # Parse throughput from test output
-        throughput_match = re.search(r'Throughput:\s*([\d.]+)\s*configs/sec', output)
-        latency_match = re.search(r'Latency per config:\s*([\d.]+)ms', output)
+      - name: Run Release Gate Checker
+        run: |
+          python3 scripts/release_gate_checker.py \
+            --benchmark-results benchmark_results.json \
+            --json --output gate_status.json
 
-        results = {
-            "metrics": {
-                "throughput_configs_per_sec": float(throughput_match.group(1)) if throughput_match else 0,
-                "latency_ms_per_config": float(latency_match.group(1)) if latency_match else 0
-            }
-        }
+      - name: Display Gate Status
+        run: |
+          echo "## Performance Gate Status" >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat gate_status.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
 
-        with open('benchmark_results.json', 'w') as f:
-            json.dump(results, f, indent=2)
+      - name: Upload performance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-report
+          path: |
+            target/criterion/**/*
+            benchmark_results.json
+            gate_status.json
+          retention-days: 30
 
-        print(f"Generated benchmark_results.json")
-        if throughput_match:
-            print(f"Throughput: {throughput_match.group(1)} configs/sec")
-        if latency_match:
-            print(f"Latency: {latency_match.group(1)} ms/config")
-        EOF
-
-    - name: Run Release Gate Checker
-      run: |
-        python3 scripts/release_gate_checker.py \
-          --benchmark-results benchmark_results.json \
-          --json --output gate_status.json
-
-    - name: Display Gate Status
-      run: |
-        echo "## Performance Gate Status" >> $GITHUB_STEP_SUMMARY
-        if [ -f gate_status.json ]; then
-          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
-          cat gate_status.json >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        fi
-
-    - name: Upload performance report
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: performance-report
-        path: |
-          target/criterion/**/*
-          benchmark_results.json
-          gate_status.json
-        retention-days: 30
-
-    - name: Fail if performance gate failed
-      if: failure()
-      run: |
-        echo "❌ Performance gate check failed"
-        if [ -f gate_status.json ]; then
-          python3 scripts/display_gate_status.py
-        fi
-        exit 1
+      - name: Fail if performance gate failed
+        if: failure()
+        run: |
+          echo "❌ Performance gate check failed"
+          if [ -f gate_status.json ]; then
+            python3 scripts/display_gate_status.py
+          fi
+          exit 1

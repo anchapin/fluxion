@@ -20,7 +20,7 @@ Fluxion v0.8.0 introduces **Peak Load & Free-Float Validation** with comprehensi
 - **Free-Floating Temperature Validation**: Comprehensive validation of unconditioned building temperature profiles.
 - **Automated Validation System**: Enhanced validation runner with proper reference data loading and detailed reporting.
 - **Physics Improvements**: Continued refinement of CTF solver parameters for high-mass buildings.
-- **Performance**: Maintaining 1,237 configs/sec throughput (exceeds 800 target).
+- **Performance**: Achieves ~900 configs/sec throughput in release mode (exceeds 800 target).
 
 See [ASHRAE 140 v0.8.0 Validation Results](docs/ASHRAE140_RESULTS_v0.8.0.md) for comprehensive validation data including peak loads and free-floating temperature profiles.
 
@@ -36,7 +36,7 @@ For a consolidated view of release readiness, pass rates, and benchmark status, 
 
 ## 🚀 Features
 
-  * **Throughput**: Evaluates **10,000+ configurations/sec** via `BatchOracle` and `rayon` threading.
+  * **Throughput**: Evaluates **800-1000+ configurations/sec** via `BatchOracle` and `rayon` threading.
   * **Speed**: <100ms annual simulations via AI approximation.
   * **Hybrid Physics**: Hard constraints (Energy Balance) + Soft constraints (Neural Surrogates).
   * **Interoperability**: Native Python SDK via `pyo3`.
