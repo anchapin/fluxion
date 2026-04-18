@@ -2,6 +2,21 @@
 
 All notable changes to Fluxion will be documented in this file.
 
+## [Unreleased] - QG-01 Release Scorecard
+
+### Added
+
+- **Release Scorecard** (`SCORECARD.md`): Consolidated view of release readiness metrics
+  - ASHRAE 140 pass rates by case series
+  - Benchmark throughput status
+  - Open issues by severity
+  - Conflicting metrics resolution
+  - Regeneration commands for CI automation
+
+### Changed
+
+- README.md now links to Release Scorecard for consolidated status view
+
 ## [0.8.0] - 2026-04-03
 
 ### Added
