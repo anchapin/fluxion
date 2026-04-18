@@ -30,7 +30,9 @@
 use crate::physics::ctf_solver_wrapper::CTFSolverWrapper;
 use crate::physics::fd_solver_wrapper::FDSolverWrapper;
 use crate::physics::five_r1c_solver::FiveR1CSolver;
-use crate::physics::method_selector::{ThermalMethod, ThermalMethodSelector};
+use crate::physics::method_selector::{
+    SolverSelectionResult, ThermalMethod, ThermalMethodSelector,
+};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::sim::assembly::BuildingAssembly;
 use log::{debug, warn};
@@ -108,14 +110,16 @@ impl SolverManager {
         &mut self,
         wall_index: usize,
         wall_assembly: &BuildingAssembly,
-    ) -> Result<(), SolverError> {
+        surface_id: &str,
+    ) -> Result<SolverSelectionResult, SolverError> {
         // Check if solver already exists
         if self.solvers.contains_key(&wall_index) {
-            return Ok(());
+            return Ok(self.selector.select_with_result(wall_assembly, surface_id));
         }
 
-        // Select appropriate solver method
-        let method = self.selector.select_method(wall_assembly);
+        // Select appropriate solver method with full result (for transparency)
+        let result = self.selector.select_with_result(wall_assembly, surface_id);
+        let method = result.method;
 
         // Create solver based on method
         let solver: Box<dyn HeatConductionSolver> = match method {
@@ -163,7 +167,7 @@ impl SolverManager {
         let method_name = method.name().to_string();
         *self.solver_counts.entry(method_name).or_insert(0) += 1;
 
-        Ok(())
+        Ok(result)
     }
 
     /// Get mutable reference to solver for a wall.
@@ -313,7 +317,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = manager.get_or_create_solver(0, &wall);
+        let result = manager.get_or_create_solver(0, &wall, "Wall");
         assert!(result.is_ok());
         assert_eq!(manager.num_solvers(), 1);
 
@@ -332,7 +336,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = manager.get_or_create_solver(0, &wall);
+        let result = manager.get_or_create_solver(0, &wall, "Wall");
         assert!(result.is_ok());
         assert_eq!(manager.num_solvers(), 1);
 
@@ -351,7 +355,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         // Calculate flux
         let flux = manager.step(0, 3600.0, 20.0, 5.0, 8.0, 25.0).unwrap();
@@ -376,8 +380,12 @@ mod tests {
             .unwrap();
 
         // Initialize solvers
-        manager.get_or_create_solver(0, &light_wall).unwrap();
-        manager.get_or_create_solver(1, &heavy_wall).unwrap();
+        manager
+            .get_or_create_solver(0, &light_wall, "Wall")
+            .unwrap();
+        manager
+            .get_or_create_solver(1, &heavy_wall, "Wall")
+            .unwrap();
 
         // Should have 2 solvers
         assert_eq!(manager.num_solvers(), 2);
@@ -398,7 +406,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
         assert_eq!(manager.num_solvers(), 1);
 
         manager.clear();
@@ -415,7 +423,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         let solver = manager.get_solver_mut(0);
         assert!(solver.is_some());
@@ -432,7 +440,7 @@ mod tests {
             .unwrap();
 
         let mut manager_mut = SolverManager::default();
-        manager_mut.get_or_create_solver(0, &wall).unwrap();
+        manager_mut.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         let solver = manager_mut.get_solver(0);
         assert!(solver.is_some());
@@ -458,7 +466,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         let rate = manager.energy_storage_rate(0);
         // All current solver implementations return 0 for energy storage rate
@@ -486,7 +494,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         // Should be valid after initialization
         assert!(manager.all_valid());
@@ -501,7 +509,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         let dist = manager.method_distribution();
         assert!(!dist.is_empty());
@@ -532,11 +540,11 @@ mod tests {
             .unwrap();
 
         // First initialization
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
         assert_eq!(manager.num_solvers(), 1);
 
         // Re-initialization should succeed (no new solver created)
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
         assert_eq!(manager.num_solvers(), 1);
     }
 
@@ -570,7 +578,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         let stats = manager.get_stats();
         // Should have exactly one FD solver
@@ -589,7 +597,7 @@ mod tests {
             .build()
             .unwrap();
 
-        manager.get_or_create_solver(0, &wall).unwrap();
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
 
         let stats = manager.get_stats();
         // Should have exactly one 5R1C solver

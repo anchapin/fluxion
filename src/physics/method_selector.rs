@@ -50,6 +50,88 @@ impl ThermalMethod {
     }
 }
 
+/// Configuration for solver selection mode.
+///
+/// This allows explicit control over solver selection instead of relying
+/// on implicit automatic selection based on thermal mass time constant.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SolverSelectionConfig {
+    /// Automatic selection based on thermal mass time constant (τ)
+    Automatic,
+    /// Force a specific method for all surfaces
+    ForceMethod(ThermalMethod),
+    /// Per-surface explicit solver selection
+    PerSurface(Vec<SurfaceSolverConfig>),
+}
+
+/// Configuration for a specific surface's solver selection.
+///
+/// This allows intentional selection of solver method per surface rather than
+/// relying on automatic selection based on thermal mass characteristics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurfaceSolverConfig {
+    /// Surface identifier (e.g., "Wall", "Roof", "Floor", or surface index)
+    pub surface_id: String,
+    /// Explicit solver method to use for this surface
+    pub method: ThermalMethod,
+}
+
+impl SurfaceSolverConfig {
+    /// Create a new surface solver config.
+    pub fn new(surface_id: impl Into<String>, method: ThermalMethod) -> Self {
+        Self {
+            surface_id: surface_id.into(),
+            method,
+        }
+    }
+
+    /// Create config for a wall surface.
+    pub fn wall(method: ThermalMethod) -> Self {
+        Self::new("Wall", method)
+    }
+
+    /// Create config for a roof surface.
+    pub fn roof(method: ThermalMethod) -> Self {
+        Self::new("Roof", method)
+    }
+
+    /// Create config for a floor surface.
+    pub fn floor(method: ThermalMethod) -> Self {
+        Self::new("Floor", method)
+    }
+}
+
+/// Solver selection result with method and reason for selection.
+///
+/// This provides transparency into why a particular solver was selected,
+/// supporting the requirement for "intentional, not implicit" selection.
+#[derive(Debug, Clone)]
+pub struct SolverSelectionResult {
+    /// The selected thermal method
+    pub method: ThermalMethod,
+    /// Human-readable reason for the selection
+    pub reason: String,
+    /// Time constant τ in hours (if calculated)
+    pub time_constant_hours: Option<f64>,
+}
+
+impl SolverSelectionResult {
+    /// Create a new selection result.
+    pub fn new(method: ThermalMethod, reason: impl Into<String>) -> Self {
+        Self {
+            method,
+            reason: reason.into(),
+            time_constant_hours: None,
+        }
+    }
+
+    /// Create with time constant.
+    pub fn with_time_constant(mut self, tau: f64) -> Self {
+        self.time_constant_hours = Some(tau);
+        self
+    }
+}
+
 /// Automatic method selection based on building thermal mass.
 ///
 /// # Selection Strategy
@@ -90,6 +172,8 @@ pub struct ThermalMethodSelector {
     pub h_interior: f64,
     /// Exterior convective coefficient [W/m²·K]
     pub h_exterior: f64,
+    /// Explicit solver selection configuration
+    pub selection_config: SolverSelectionConfig,
 }
 
 impl ThermalMethodSelector {
@@ -240,6 +324,97 @@ impl ThermalMethodSelector {
         }
     }
 
+    /// Select method with explicit configuration and return selection result.
+    ///
+    /// This method provides transparency into the solver selection process by returning
+    /// both the selected method and the reason for selection.
+    ///
+    /// # Arguments
+    ///
+    /// * `wall` - Wall assembly to analyze
+    /// * `surface_id` - Surface identifier (e.g., "Wall", "Roof") for per-surface config
+    ///
+    /// # Returns
+    ///
+    /// Selection result with method and reason
+    pub fn select_with_result(
+        &self,
+        wall: &BuildingAssembly,
+        surface_id: &str,
+    ) -> SolverSelectionResult {
+        // Check for explicit per-surface configuration first
+        if let SolverSelectionConfig::PerSurface(ref configs) = self.selection_config {
+            if let Some(config) = configs.iter().find(|c| c.surface_id == surface_id) {
+                return SolverSelectionResult::new(
+                    config.method,
+                    format!("Explicit per-surface config for '{}'", surface_id),
+                );
+            }
+        }
+
+        // Check for forced method
+        if let SolverSelectionConfig::ForceMethod(method) = &self.selection_config {
+            return SolverSelectionResult::new(
+                *method,
+                format!("Explicit force to {}", method.name()),
+            );
+        }
+
+        // Fall back to automatic selection based on thermal mass
+        let method = self.select_method(wall);
+        let tau = self.calculate_time_constant(wall);
+
+        let reason = if let Some(override_method) = self.override_method {
+            format!("Override to {} (τ = {:.2}h)", override_method.name(), tau)
+        } else if tau < self.threshold_hours {
+            format!(
+                "Low thermal mass (τ = {:.2}h < {:.1}h threshold)",
+                tau, self.threshold_hours
+            )
+        } else {
+            format!(
+                "High thermal mass (τ = {:.2}h >= {:.1}h threshold)",
+                tau, self.threshold_hours
+            )
+        };
+
+        SolverSelectionResult::new(method, reason).with_time_constant(tau)
+    }
+
+    /// Get the explicit selection configuration.
+    pub fn selection_config(&self) -> &SolverSelectionConfig {
+        &self.selection_config
+    }
+
+    /// Set the explicit selection configuration.
+    pub fn set_selection_config(&mut self, config: SolverSelectionConfig) {
+        self.selection_config = config;
+    }
+
+    /// Create selector with automatic selection mode.
+    pub fn with_automatic_selection() -> Self {
+        Self {
+            selection_config: SolverSelectionConfig::Automatic,
+            ..Self::default()
+        }
+    }
+
+    /// Create selector with forced method.
+    pub fn with_forced_method(method: ThermalMethod) -> Self {
+        Self {
+            selection_config: SolverSelectionConfig::ForceMethod(method),
+            ..Self::default()
+        }
+    }
+
+    /// Create selector with per-surface explicit configuration.
+    pub fn with_per_surface_selection(configs: Vec<SurfaceSolverConfig>) -> Self {
+        Self {
+            selection_config: SolverSelectionConfig::PerSurface(configs),
+            ..Self::default()
+        }
+    }
+
     /// Validate CTF coefficients.
     ///
     /// # Arguments
@@ -339,6 +514,7 @@ impl Default for ThermalMethodSelector {
             enable_fallback: true,
             h_interior: 8.0,  // Typical interior film coefficient
             h_exterior: 25.0, // Typical exterior film coefficient
+            selection_config: SolverSelectionConfig::Automatic,
         }
     }
 }
@@ -637,5 +813,128 @@ mod tests {
             let name = method.name();
             assert!(!name.is_empty());
         }
+    }
+
+    #[test]
+    fn test_select_with_result() {
+        let selector = ThermalMethodSelector::default();
+        let wall = create_lightweight_wall();
+
+        let result = selector.select_with_result(&wall, "Wall");
+
+        assert!(result.time_constant_hours.is_some());
+        assert!(result.reason.contains("τ") || result.reason.contains("Low thermal mass"));
+    }
+
+    #[test]
+    fn test_select_with_result_per_surface_config() {
+        let mut selector = ThermalMethodSelector::default();
+        selector.set_selection_config(SolverSelectionConfig::PerSurface(vec![
+            SurfaceSolverConfig::wall(ThermalMethod::FiniteDifference),
+        ]));
+
+        let wall = create_lightweight_wall();
+        let result = selector.select_with_result(&wall, "Wall");
+
+        assert_eq!(result.method, ThermalMethod::FiniteDifference);
+        assert!(result.reason.contains("Explicit per-surface config"));
+    }
+
+    #[test]
+    fn test_select_with_result_force_method() {
+        let mut selector = ThermalMethodSelector::default();
+        selector.set_selection_config(SolverSelectionConfig::ForceMethod(
+            ThermalMethod::FiniteDifference,
+        ));
+
+        let wall = create_lightweight_wall();
+        let result = selector.select_with_result(&wall, "Wall");
+
+        assert_eq!(result.method, ThermalMethod::FiniteDifference);
+        assert!(result.reason.contains("Explicit force"));
+    }
+
+    #[test]
+    fn test_with_automatic_selection() {
+        let selector = ThermalMethodSelector::with_automatic_selection();
+        assert_eq!(selector.selection_config, SolverSelectionConfig::Automatic);
+    }
+
+    #[test]
+    fn test_with_forced_method() {
+        let selector = ThermalMethodSelector::with_forced_method(ThermalMethod::CTF);
+        assert_eq!(
+            selector.selection_config,
+            SolverSelectionConfig::ForceMethod(ThermalMethod::CTF)
+        );
+    }
+
+    #[test]
+    fn test_with_per_surface_selection() {
+        let configs = vec![
+            SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
+            SurfaceSolverConfig::roof(ThermalMethod::CTF),
+        ];
+        let selector = ThermalMethodSelector::with_per_surface_selection(configs.clone());
+        assert_eq!(
+            selector.selection_config,
+            SolverSelectionConfig::PerSurface(configs)
+        );
+    }
+
+    #[test]
+    fn test_surface_solver_config_helpers() {
+        let wall_config = SurfaceSolverConfig::wall(ThermalMethod::FiveR1C);
+        assert_eq!(wall_config.surface_id, "Wall");
+        assert_eq!(wall_config.method, ThermalMethod::FiveR1C);
+
+        let roof_config = SurfaceSolverConfig::roof(ThermalMethod::CTF);
+        assert_eq!(roof_config.surface_id, "Roof");
+        assert_eq!(roof_config.method, ThermalMethod::CTF);
+
+        let floor_config = SurfaceSolverConfig::floor(ThermalMethod::FiniteDifference);
+        assert_eq!(floor_config.surface_id, "Floor");
+        assert_eq!(floor_config.method, ThermalMethod::FiniteDifference);
+    }
+
+    #[test]
+    fn test_solver_selection_result() {
+        let result =
+            SolverSelectionResult::new(ThermalMethod::CTF, "test reason").with_time_constant(2.5);
+
+        assert_eq!(result.method, ThermalMethod::CTF);
+        assert_eq!(result.reason, "test reason");
+        assert_eq!(result.time_constant_hours, Some(2.5));
+    }
+
+    #[test]
+    fn test_solver_selection_config_variants() {
+        use SolverSelectionConfig::*;
+        assert_eq!(Automatic, Automatic);
+        assert_eq!(
+            ForceMethod(ThermalMethod::FiveR1C),
+            ForceMethod(ThermalMethod::FiveR1C)
+        );
+        assert_ne!(
+            ForceMethod(ThermalMethod::FiveR1C),
+            ForceMethod(ThermalMethod::CTF)
+        );
+    }
+
+    #[test]
+    fn test_selection_config_getter() {
+        let mut selector = ThermalMethodSelector::default();
+        assert_eq!(
+            selector.selection_config(),
+            &SolverSelectionConfig::Automatic
+        );
+
+        selector.set_selection_config(SolverSelectionConfig::ForceMethod(
+            ThermalMethod::FiniteDifference,
+        ));
+        assert_eq!(
+            selector.selection_config(),
+            &SolverSelectionConfig::ForceMethod(ThermalMethod::FiniteDifference)
+        );
     }
 }
