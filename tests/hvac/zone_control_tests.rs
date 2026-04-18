@@ -138,8 +138,14 @@ fn test_energy_calculation() {
 
     let energy_input = zone_control.update_zone_controls(&current_temps);
 
-    assert_eq!(energy_input.as_slice()[0], 2000.0);
-    assert_eq!(energy_input.as_slice()[1], 2000.0);
+    // Ideal loads: zone_volume=129.6, ACH=0.5, supply=40°C, efficiency=0.9
+    // airflow = 129.6 * 0.5 / 3600 = 0.018 m³/s
+    // mass_flow = 0.018 * 1.2 = 0.0216 kg/s
+    // delta_t = 40 - 20 = 20°C
+    // Q = 0.0216 * 1005 * 20 = 434.16 W (thermal)
+    // Electrical = 434.16 / 0.9 = 482.4 W
+    assert!((energy_input.as_slice()[0] - 482.4).abs() < 1.0);
+    assert!((energy_input.as_slice()[1] - 482.4).abs() < 1.0);
 }
 
 #[test]
