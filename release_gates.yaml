@@ -1,0 +1,152 @@
+# Release Gates Configuration
+# Issue #505: Define release gates for accuracy and performance
+#
+# This file defines explicit fail conditions for validation regressions,
+# benchmark regressions, and report drift.
+#
+# Gates are evaluated in CI and must pass before a release is cut.
+# Run `python scripts/release_gate_checker.py` locally to check gate status.
+
+# =============================================================================
+# VALIDATION GATES
+# =============================================================================
+# Validation gates check that ASHRAE 140 test pass rates meet minimum thresholds.
+# These gates prevent releasing when validation accuracy has regressed.
+
+validation:
+  # Minimum overall pass rate required (as percentage)
+  # ASHRAE 140 defines pass/fail based on NMABE and CV(RMSE) <= certain tolerance
+  min_pass_rate: 4.0  # Temporarily at 4% (Issue #497) - target is 12.5%
+
+  # Pass rate by case series - fail if any series drops below threshold
+  by_series:
+    baseline:    # 600-650 series
+      min_pass_rate: 0.0
+      description: "Low-mass baseline cases"
+    high_mass:   # 900-950 series
+      min_pass_rate: 0.0
+      description: "High-mass building cases"
+    free_floating:  # FF cases
+      min_pass_rate: 0.0
+      description: "Free-floating temperature cases"
+    special:     # 195, 960 series
+      min_pass_rate: 0.0
+      description: "Special test cases"
+
+  # Maximum mean absolute error (MAE) allowed across all cases
+  max_mae: 30.0  # percentage
+
+  # Individual case thresholds
+  individual:
+    # Maximum allowed deviation for any single case (percentage)
+    max_deviation: 150.0
+    # Number of cases that can exceed 100% deviation before gate fails
+    extreme_deviation_limit: 2
+
+# =============================================================================
+# BENCHMARK GATES
+# =============================================================================
+# Benchmark gates check that performance metrics meet minimum requirements.
+# These gates prevent releasing when performance has regressed.
+
+benchmark:
+  # Throughput - minimum configs per second
+  throughput:
+    min_configs_per_sec: 800
+    description: "Minimum throughput for batch simulation"
+
+  # Latency - maximum allowed latency per config (milliseconds)
+  latency:
+    max_ms_per_config: 10.0
+    description: "Maximum latency for single config evaluation"
+
+  # Multi-zone scaling
+  multi_zone:
+    min_configs_per_sec: 500
+    zones: 10
+    description: "Minimum throughput for 10-zone simulation"
+
+  # Cross-validation latency
+  cross_validation:
+    max_ms: 500
+    description: "Maximum latency for cross-validation"
+
+  # Regression threshold - percentage change allowed before warning
+  regression_threshold: 5.0  # percentage
+
+  # Absolute minimum - any value below this fails regardless of baseline
+  absolute_min_throughput: 100
+
+# =============================================================================
+# REPORT DRIFT GATES
+# =============================================================================
+# Report drift gates detect unexpected changes in validation reports over time.
+# These gates prevent releasing when validation results have changed unexpectedly.
+
+drift:
+  # Enable drift detection
+  enabled: true
+
+  # Maximum allowed change in pass rate between baseline and current (percentage points)
+  max_pass_rate_change: 2.0
+
+  # Maximum allowed change in MAE (percentage points)
+  max_mae_change: 5.0
+
+  # Maximum number of cases that can change from pass to fail
+  max_pass_to_fail: 1
+
+  # Maximum number of cases that can change from fail to pass
+  max_fail_to_pass: 5
+
+  # Baseline file path (relative to project root)
+  baseline_file: "validation_baseline.json"
+
+  # Create baseline if it doesn't exist
+  create_baseline_if_missing: false
+
+# =============================================================================
+# RELEASE GATE REQUIREMENTS
+# =============================================================================
+# Defines which gates must pass for different release types.
+
+release_requirements:
+  # Major releases - all gates must pass
+  major:
+    - validation
+    - benchmark
+    - drift
+
+  # Minor releases - all gates must pass
+  minor:
+    - validation
+    - benchmark
+    - drift
+
+  # Patch releases - relaxed validation, must pass benchmark and drift
+  patch:
+    validation:
+      min_pass_rate: 2.0  # Can be lower for patch releases
+    benchmark:
+      - throughput
+      - latency
+    drift:
+      - max_pass_rate_change  # Still check drift even for patches
+
+# =============================================================================
+# CI INTEGRATION
+# =============================================================================
+# Settings for how gates are checked in CI
+
+ci:
+  # Fail fast - stop checking after first gate fails
+  fail_fast: true
+
+  # Upload gate results as artifact
+  upload_results: true
+
+  # Post results as PR comment
+  post_pr_comment: true
+
+  # Gate status output file
+  output_file: "gate_status.json"

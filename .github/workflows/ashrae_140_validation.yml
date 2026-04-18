@@ -165,29 +165,19 @@ jobs:
       - name: Check Validation Results
         id: check
         run: |
-          python3 << 'EOF'
-          import json
+          # Run centralized release gate checker for validation gates
+          python3 scripts/release_gate_checker.py \
+            --validation-results validation_results.json \
+            --json --output gate_status.json
 
-          with open('validation_results.json', 'r') as f:
-              data = json.load(f)
-
-          summary = data.get('summary', {})
-          pass_rate = summary.get('pass_rate', 0)
-
-          # Issue #497: Threshold temporarily kept at 4% while root cause is investigated
-          # Current pass rate: ~6.2% (still below 12.5% target)
-          # Root cause analysis shows 900-series cases still overpredicting by 3-6x
-          # The correction factors in from_spec() are 1.0 (reset in Phase 30),
-          # so validation now reflects raw physics model output
-          MIN_PASS_RATE = 4.0
-
-          if pass_rate >= MIN_PASS_RATE:
-              print(f"✓ Validation passed (pass_rate={pass_rate:.1f}%)")
-              exit(0)
-          else:
-              print(f"✗ Validation failed (pass_rate={pass_rate:.1f}% < {MIN_PASS_RATE}%)")
-              exit(1)
-          EOF
+      - name: Display Gate Status
+        run: |
+          echo "## Release Gate Status" >> $GITHUB_STEP_SUMMARY
+          if [ -f gate_status.json ]; then
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat gate_status.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
 
       - name: Upload Artifacts
         if: always()
@@ -198,6 +188,7 @@ jobs:
             validation_output.txt
             validation_results.json
             ASHRAE_140_VALIDATION_REPORT.md
+            gate_status.json
           retention-days: 30
 
       - name: Comment on PR
@@ -224,8 +215,23 @@ jobs:
           EOF
         continue-on-error: true
 
-      - name: Fail if validation failed
+      - name: Fail if validation gate failed
         if: failure() || steps.check.outcome == 'failure'
         run: |
-          echo "❌ ASHRAE 140 validation failed"
+          echo "❌ Release gate check failed"
+          echo ""
+          echo "## Gate Failure Summary"
+          if [ -f gate_status.json ]; then
+            python3 -c "
+            import json
+            with open('gate_status.json') as f:
+              data = json.load(f)
+            print(f\"Overall: {'PASSED' if data['overall_passed'] else 'FAILED'}\")
+            print(f\"Gates: {data['summary']['passed']}/{data['summary']['total']} passed\")
+            print()
+            for gate in data['gates']:
+              if not gate['passed']:
+                print(f\"  ❌ {gate['category']}/{gate['name']}: {gate['message']}\")
+            "
+          fi
           exit 1
