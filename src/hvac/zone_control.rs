@@ -246,9 +246,7 @@ impl LayeredController {
             self.cycling_tracker.calculate_cycling_loss(is_on, plr);
 
         // Calculate final energy with cycling penalty (in watts)
-        let energy_with_loss = base_energy * efficiency_mult + startup_penalty * 1000.0;
-
-        energy_with_loss
+        base_energy * efficiency_mult + startup_penalty * 1000.0
     }
 
     /// Calculate energy using schedule-aware predictive control.
