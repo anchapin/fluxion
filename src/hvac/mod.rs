@@ -4,3 +4,7 @@
 
 pub mod zone_control;
 pub mod zone_setpoints;
+
+pub use zone_control::{
+    ControlStrategy, HVACStatus, LayeredController, LayeredControllerConfig, ZoneControl,
+};
