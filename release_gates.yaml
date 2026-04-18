@@ -103,7 +103,7 @@ drift:
   baseline_file: "validation_baseline.json"
 
   # Create baseline if it doesn't exist
-  create_baseline_if_missing: false
+  create_baseline_if_missing: true
 
 # =============================================================================
 # RELEASE GATE REQUIREMENTS

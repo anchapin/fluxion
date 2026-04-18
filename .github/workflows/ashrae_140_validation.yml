@@ -222,16 +222,6 @@ jobs:
           echo ""
           echo "## Gate Failure Summary"
           if [ -f gate_status.json ]; then
-            python3 -c "
-            import json
-            with open('gate_status.json') as f:
-              data = json.load(f)
-            print(f\"Overall: {'PASSED' if data['overall_passed'] else 'FAILED'}\")
-            print(f\"Gates: {data['summary']['passed']}/{data['summary']['total']} passed\")
-            print()
-            for gate in data['gates']:
-              if not gate['passed']:
-                print(f\"  ❌ {gate['category']}/{gate['name']}: {gate['message']}\")
-            "
+            python3 scripts/display_gate_status.py
           fi
           exit 1

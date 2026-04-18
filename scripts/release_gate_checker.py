@@ -21,7 +21,7 @@ import argparse
 import json
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -427,7 +427,7 @@ class ReleaseGateChecker:
                 summary["by_category"][r.category]["failed"] += 1
 
         return GateReport(
-            timestamp=datetime.utcnow().isoformat() + "Z",
+            timestamp=datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             overall_passed=overall_passed,
             gates=self.results,
             summary=summary,

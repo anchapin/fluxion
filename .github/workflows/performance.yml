@@ -111,14 +111,6 @@ jobs:
       run: |
         echo "❌ Performance gate check failed"
         if [ -f gate_status.json ]; then
-          python3 -c "
-          import json
-          with open('gate_status.json') as f:
-            data = json.load(f)
-          print(f\"Overall: {'PASSED' if data['overall_passed'] else 'FAILED'}\")
-          for gate in data['gates']:
-            if not gate['passed']:
-              print(f\"  ❌ {gate['category']}/{gate['name']}: {gate['message']}\")
-          "
+          python3 scripts/display_gate_status.py
         fi
         exit 1
