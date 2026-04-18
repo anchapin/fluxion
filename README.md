@@ -24,6 +24,10 @@ Fluxion v0.8.0 introduces **Peak Load & Free-Float Validation** with comprehensi
 
 See [ASHRAE 140 v0.8.0 Validation Results](docs/ASHRAE140_RESULTS_v0.8.0.md) for comprehensive validation data including peak loads and free-floating temperature profiles.
 
+### Release Scorecard
+
+For a consolidated view of release readiness, pass rates, and benchmark status, see the [Release Scorecard](SCORECARD.md).
+
 ### Known Limitations
 
 - **Peak Load Accuracy**: High-mass peak loads show ~76-100% overestimation due to CTF solver limitations with instantaneous peak conditions. This is a known architectural constraint for v0.8.0.
