@@ -381,9 +381,7 @@ pub fn create_multi_zone_model_from_schema_file(
         pyo3::exceptions::PyValueError::new_err(format!("Failed to parse schema JSON: {}", e))
     })?;
 
-    let schema_v1 = match schema {
-        SimulationSchema::V1(v1) => v1,
-    };
+    let SimulationSchema::V1(schema_v1) = schema;
 
     // Create model from schema V1
     let mut model = PyMultiZoneThermalModel::new(schema_v1.geometry.zones.len().max(1))?;
@@ -418,13 +416,13 @@ pub fn create_multi_zone_model_from_schema_dict(
         Ok(Some(geometry)) => {
             let geometry_dict: &Bound<'_, PyDict> = match geometry.downcast() {
                 Ok(d) => d,
-                Err(_) => return Ok(PyMultiZoneThermalModel::new(1)?),
+                Err(_) => return PyMultiZoneThermalModel::new(1),
             };
             match geometry_dict.get_item("zones") {
                 Ok(Some(zones)) => {
                     let zones_list: &Bound<'_, pyo3::types::PyList> = match zones.downcast() {
                         Ok(d) => d,
-                        Err(_) => return Ok(PyMultiZoneThermalModel::new(1)?),
+                        Err(_) => return PyMultiZoneThermalModel::new(1),
                     };
                     zones_list.len()
                 }
