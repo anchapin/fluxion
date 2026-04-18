@@ -176,7 +176,7 @@ impl PyZoneControl {
 
     /// Get energy input for a zone
     pub fn get_energy_input(&self, zone_id: usize, current_temp: f64) -> PyResult<f64> {
-        let control = self.inner.lock().map_err(|e| {
+        let mut control = self.inner.lock().map_err(|e| {
             pyo3::exceptions::PyRuntimeError::new_err(format!("Failed to lock ZoneControl: {}", e))
         })?;
 
