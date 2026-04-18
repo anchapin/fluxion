@@ -234,3 +234,8 @@ harness = true
 name = "thermal_mass_coupling_tests"
 path = "tests/thermal_mass_coupling_tests.rs"
 harness = true
+
+[[test]]
+name = "validation_case_900_peak_attribution"
+path = "tests/validation/case_900_peak_attribution.rs"
+harness = true
