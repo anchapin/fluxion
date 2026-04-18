@@ -1,0 +1,120 @@
+{
+  "V1": {
+    "version": "V1",
+    "metadata": {
+      "name": "Example Office Building",
+      "description": "A simple multi-zone office building simulation",
+      "author": "Fluxion Team",
+      "created_at": "2026-04-17",
+      "schema_version": "V1"
+    },
+    "geometry": {
+      "zones": [
+        {
+          "name": "Office Floor 1 - North",
+          "floor_area": 50.0,
+          "volume": 135.0,
+          "height": 2.7
+        },
+        {
+          "name": "Office Floor 1 - South",
+          "floor_area": 50.0,
+          "volume": 135.0,
+          "height": 2.7
+        }
+      ],
+      "total_floor_area": 100.0,
+      "total_volume": 270.0,
+      "number_of_floors": 1,
+      "floor_height": 2.7
+    },
+    "constructions": {
+      "wall": {
+        "name": "Standard Office Wall",
+        "layers": [
+          {"name": "Plasterboard", "conductivity": 0.16, "density": 950.0, "specific_heat": 840.0, "thickness": 0.012},
+          {"name": "Fiberglass Insulation", "conductivity": 0.04, "density": 12.0, "specific_heat": 840.0, "thickness": 0.066},
+          {"name": "Wood Siding", "conductivity": 0.14, "density": 500.0, "specific_heat": 1300.0, "thickness": 0.009}
+        ],
+        "window": {
+          "window_area": 6.0,
+          "window_u_value": 1.5,
+          "window_shgc": 0.3
+        }
+      },
+      "roof": {
+        "name": "Standard Roof",
+        "layers": [
+          {"name": "Roof Membrane", "conductivity": 0.16, "density": 1100.0, "specific_heat": 840.0, "thickness": 0.012},
+          {"name": "Roof Insulation", "conductivity": 0.04, "density": 12.0, "specific_heat": 840.0, "thickness": 0.100}
+        ],
+        "window": null
+      },
+      "floor": {
+        "name": "Standard Floor",
+        "layers": [
+          {"name": "Concrete Slab", "conductivity": 1.0, "density": 2300.0, "specific_heat": 840.0, "thickness": 0.150}
+        ],
+        "window": null
+      },
+      "interzone": null
+    },
+    "schedules": {
+      "occupancy": {
+        "name": "Office Occupancy",
+        "hourly_values": [
+          0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.2, 0.5, 0.9, 1.0,
+          1.0, 1.0, 0.9, 1.0, 1.0, 1.0, 0.9, 0.5, 0.2, 0.1,
+          0.0, 0.0, 0.0, 0.0
+        ],
+        "day_types": ["weekday", "weekday", "weekday", "weekday", "weekday", "weekend", "weekend"]
+      },
+      "lighting": {
+        "name": "Office Lighting",
+        "hourly_values": [
+          0.0, 0.0, 0.0, 0.0, 0.0, 0.1, 0.2, 0.4, 0.6, 0.8,
+          0.9, 1.0, 0.9, 0.8, 0.9, 1.0, 0.9, 0.6, 0.4, 0.2,
+          0.1, 0.0, 0.0, 0.0
+        ],
+        "day_types": ["weekday", "weekday", "weekday", "weekday", "weekday", "weekend", "weekend"]
+      },
+      "hvac": {
+        "heating_setpoint_schedule": [
+          18.0, 18.0, 18.0, 18.0, 18.0, 18.0, 18.0, 18.0, 20.0, 20.0,
+          20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 18.0, 18.0, 18.0,
+          18.0, 18.0, 18.0, 18.0
+        ],
+        "cooling_setpoint_schedule": [
+          26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 26.0, 24.0, 24.0,
+          24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 26.0, 26.0, 26.0,
+          26.0, 26.0, 26.0, 26.0
+        ],
+        "day_types": ["weekday", "weekday", "weekday", "weekday", "weekday", "weekend", "weekend"]
+      },
+      "infiltration": null
+    },
+    "weather": {
+      "type": "tmy",
+      "location": "Denver, CO"
+    },
+    "controls": {
+      "zone_control": {
+        "heating_setpoint": 20.0,
+        "cooling_setpoint": 24.0,
+        "deadband_tolerance": 0.5,
+        "heating_capacity": 100000.0,
+        "cooling_capacity": 100000.0
+      },
+      "global_control": null
+    },
+    "output": {
+      "eui": 0.0,
+      "total_energy": 0.0,
+      "peak_heating_load": 0.0,
+      "peak_cooling_load": 0.0,
+      "heating_energy": 0.0,
+      "cooling_energy": 0.0,
+      "zone_temperatures": null
+    }
+  }
+}

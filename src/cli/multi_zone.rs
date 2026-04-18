@@ -22,9 +22,13 @@ pub struct SimulateCommand {
     #[arg(short, long, default_value_t = 2)]
     pub zones: usize,
 
-    /// Path to configuration file (JSON or YAML)
-    #[arg(short, long)]
+    /// Path to configuration file (JSON or YAML) - legacy format
+    #[arg(short = 'c', long)]
     pub config: Option<PathBuf>,
+
+    /// Path to unified schema file (JSON) - new schema format
+    #[arg(long)]
+    pub schema: Option<PathBuf>,
 
     /// Output format (json, csv, or text)
     #[arg(short, long, default_value = "json")]
@@ -146,11 +150,49 @@ pub fn execute_hvac_command(command: &HvacSubcommand) -> Result<(), anyhow::Erro
 /// Execute multi-zone simulation
 pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow::Error> {
     use crate::ai::surrogate::SurrogateManager;
+    use crate::api::schema::{SimulationSchema, SimulationSchemaV1};
     use crate::physics::cta::VectorField;
     use crate::sim::engine::ThermalModel;
 
-    // Load or create configuration
-    let config = if let Some(config_path) = &command.config {
+    // Load configuration from schema or legacy config
+    let schema: Option<SimulationSchemaV1> = if let Some(schema_path) = &command.schema {
+        let content = std::fs::read_to_string(schema_path)?;
+        let loaded: SimulationSchema = serde_json::from_str(&content)?;
+        match loaded {
+            SimulationSchema::V1(v1) => Some(v1),
+        }
+    } else {
+        None
+    };
+
+    let config = if let Some(schema) = &schema {
+        // Extract configuration from schema
+        MultiZoneConfig {
+            num_zones: schema.geometry.zones.len().max(1),
+            zone_setpoints: schema
+                .geometry
+                .zones
+                .iter()
+                .map(|_z| {
+                    let heating = schema.controls.zone_control.heating_setpoint;
+                    let cooling = schema.controls.zone_control.cooling_setpoint;
+                    (heating, cooling)
+                })
+                .collect(),
+            inter_zone_conductance: {
+                let n = schema.geometry.zones.len().max(1);
+                vec![vec![5.0; n]; n]
+            },
+            building_properties: BuildingProperties {
+                u_value: 1.5,
+                area_per_zone: schema.geometry.total_floor_area
+                    / schema.geometry.zones.len().max(1) as f64,
+                volume_per_zone: schema.geometry.total_volume
+                    / schema.geometry.zones.len().max(1) as f64,
+                occupancy_schedule: None,
+            },
+        }
+    } else if let Some(config_path) = &command.config {
         let config_content = std::fs::read_to_string(config_path)?;
         if config_path.extension().is_some_and(|ext| ext == "json") {
             serde_json::from_str(&config_content)?

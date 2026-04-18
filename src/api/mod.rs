@@ -4,14 +4,21 @@
 //! Python API support modules.
 //!
 //! This module contains components specifically for the Python API,
-//! including parameter types and custom exception definitions.
+//! including parameter types, error definitions, and the unified
+//! simulation schema.
 
 pub mod error;
 pub mod parameters;
+pub mod schema;
 
 // Re-export commonly used types
 pub use error::FluxionError;
 pub use parameters::BuildingParameters;
+pub use schema::{
+    ConstructionSet, ControlConfig, ControlSet, Geometry, SchemaMetadata, SchemaVersion,
+    SimulationOutput, SimulationSchema, SimulationSchemaV1, SurfaceConstruction, WeatherData,
+    WindowSpec, ZoneGeometry,
+};
 
 #[cfg(feature = "python-bindings")]
 pub use error::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
