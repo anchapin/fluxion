@@ -6,7 +6,7 @@
 
 - **Core Language**: Rust (Edition 2021)
 - **Python Bindings**: PyO3 + maturin
-- **Key Use Case**: Evaluating 10,000+ building design configurations/second
+- **Key Use Case**: Evaluating 800-1000+ building design configurations/second via BatchOracle
 
 ## Architecture: The "Batch Oracle" Pattern
 
@@ -17,7 +17,7 @@ Fluxion uses a **two-class** PyO3 API pattern critical to understand:
 - **Location**: `src/lib.rs` (exposed to Python)
 - **Threading Model**: Uses `rayon` for data parallelism—each configuration runs on a thread pool
 - **Key Method**: `evaluate_population(population: Vec<Vec<f64>>, use_surrogates: bool) -> Vec<f64>`
-  - Accepts ~10,000 gene vectors (parameter arrays) from quantum optimizers or GA algorithms
+  - Accepts population gene vectors (parameter arrays) from quantum optimizers or GA algorithms
   - Returns corresponding fitness scores (EUI - Energy Use Intensity)
   - **Critical**: Minimize Python-Rust boundary crossings; pass entire population at once
 - **Pattern**: Light clones of `ThermalModel`, apply parameters, solve in parallel, collect results

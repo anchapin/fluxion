@@ -122,23 +122,39 @@ mockito = "1.7"
 
 [[bench]]
 name = "cta_bench"
-harness = true
+harness = false
 
 [[bench]]
 name = "engine_bench"
-harness = true
+harness = false
 
 [[bench]]
 name = "cta_perf_comparison"
-harness = true
+harness = false
 
 [[bench]]
 name = "batch_oracle_bench"
-harness = true
+harness = false
+
+[[bench]]
+name = "benchmark_8760_timesteps"
+harness = false
+
+[[bench]]
+name = "performance"
+harness = false
 
 [[bench]]
 name = "performance_regression"
-harness = true
+harness = false
+
+[[bench]]
+name = "validation_performance"
+harness = false
+
+[[bench]]
+name = "parallel_validation"
+harness = false
 
 [[bin]]
 name = "fluxion-delta"

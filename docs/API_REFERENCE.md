@@ -216,9 +216,9 @@ Evaluate a population of building designs in parallel.
 **Returns:** List of EUI values (kWh/m²/year) for each parameter vector.
 
 **Performance:**
-- Analytical mode (use_surrogates=False): ~2,575 configs/sec on 8-core CPU
-- Surrogate mode (use_surrogates=True): >10,000 configs/sec with GPU acceleration
-- Target latency: <100ms for 1000 configs (100µs per config)
+- Analytical mode (use_surrogates=False): ~900 configs/sec on 8-core CPU (release build)
+- Surrogate mode (use_surrogates=True): GPU acceleration enables higher throughput
+- Target latency: <100ms for 1000 configs
 
 **Architecture:**
 

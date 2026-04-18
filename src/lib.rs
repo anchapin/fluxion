@@ -97,7 +97,6 @@ use crate::api::error::{FluxionErrorPy, SimulationError, SurrogateError, Validat
 #[cfg(feature = "python-bindings")]
 use crate::api::parameters::BuildingParameters;
 
-use crate::physics::cta::ContinuousTensor;
 use anyhow::Result;
 #[allow(unused_imports)]
 use log::{debug, info};
