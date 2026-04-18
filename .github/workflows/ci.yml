@@ -102,7 +102,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-build-target-
       - name: Install sccache
-        uses: mozilla/sccache-action@e4989a1f6b338ce7a6a5b469ad38a8459f1565cf
+        uses: mozilla/sccache-action@v0.0.9
       - name: Install dependencies
         run: |
           sudo apt-get update
