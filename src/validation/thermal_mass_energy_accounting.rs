@@ -40,6 +40,47 @@
 
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use serde::{Deserialize, Serialize};
+
+const AIR_DENSITY: f64 = 1.2; // kg/m³
+const AIR_HEAT_CAPACITY: f64 = 1005.0; // J/kg·K
+const AIR_CAPACITANCE_PER_M3: f64 = AIR_DENSITY * AIR_HEAT_CAPACITY;
+
+/// Per-zone energy balance data for zone-level diagnostics
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZoneBalanceEntry {
+    /// Zone index
+    pub zone_index: usize,
+    /// Zone air energy at start of period (J)
+    pub zone_energy_start: f64,
+    /// Zone air energy at end of period (J)
+    pub zone_energy_end: f64,
+    /// Energy transferred from/to adjacent zones (J)
+    pub inter_zone_transfer: f64,
+    /// Energy transferred to/from exterior (J)
+    pub exterior_transfer: f64,
+    /// HVAC energy input to this zone (J)
+    pub hvac_input: f64,
+    /// Solar gains to this zone (J)
+    pub solar_gains: f64,
+    /// Internal gains to this zone (J)
+    pub internal_gains: f64,
+}
+
+impl ZoneBalanceEntry {
+    pub fn new(zone_index: usize) -> Self {
+        Self {
+            zone_index,
+            zone_energy_start: 0.0,
+            zone_energy_end: 0.0,
+            inter_zone_transfer: 0.0,
+            exterior_transfer: 0.0,
+            hvac_input: 0.0,
+            solar_gains: 0.0,
+            internal_gains: 0.0,
+        }
+    }
+}
 
 /// Report of energy balance validation over a simulation period.
 ///
@@ -59,6 +100,64 @@ pub struct EnergyBalanceReport {
     pub energy_in_total: f64,
     /// Total energy leaving the system (Joules)
     pub energy_out_total: f64,
+    /// Per-zone balance breakdown for zone-level diagnostics
+    pub zone_balances: Vec<ZoneBalanceEntry>,
+    /// Whole-building energy balance summary
+    pub building_balance: BuildingBalanceSummary,
+}
+
+/// Whole-building energy balance summary
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BuildingBalanceSummary {
+    /// Total energy into building (J)
+    pub total_energy_in: f64,
+    /// Total energy out of building (J)
+    pub total_energy_out: f64,
+    /// Net energy change in building (J)
+    pub net_energy_change: f64,
+    /// Energy stored in building mass (J)
+    pub stored_energy: f64,
+    /// Unaccounted energy (should be near zero if balance is correct)
+    pub unaccounted_energy: f64,
+    /// Balance error percentage
+    pub balance_error_pct: f64,
+}
+
+impl BuildingBalanceSummary {
+    pub fn new() -> Self {
+        Self {
+            total_energy_in: 0.0,
+            total_energy_out: 0.0,
+            net_energy_change: 0.0,
+            stored_energy: 0.0,
+            unaccounted_energy: 0.0,
+            balance_error_pct: 0.0,
+        }
+    }
+
+    pub fn to_summary_string(&self) -> String {
+        format!(
+            "=== Whole-Building Energy Balance ===\n\
+             Total Energy In:    {:.6e} J\n\
+             Total Energy Out:   {:.6e} J\n\
+             Net Energy Change:  {:.6e} J\n\
+             Stored Energy:      {:.6e} J\n\
+             Unaccounted Energy: {:.6e} J\n\
+             Balance Error:      {:.6}%",
+            self.total_energy_in,
+            self.total_energy_out,
+            self.net_energy_change,
+            self.stored_energy,
+            self.unaccounted_energy,
+            self.balance_error_pct
+        )
+    }
+}
+
+impl Default for BuildingBalanceSummary {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl EnergyBalanceReport {
@@ -71,6 +170,8 @@ impl EnergyBalanceReport {
             hourly_errors: Vec::new(),
             energy_in_total: 0.0,
             energy_out_total: 0.0,
+            zone_balances: Vec::new(),
+            building_balance: BuildingBalanceSummary::new(),
         }
     }
 
@@ -84,13 +185,17 @@ impl EnergyBalanceReport {
              Error Percentage: {:.6}%\n\
              Energy In Total: {:.6e} J\n\
              Energy Out Total: {:.6e} J\n\
-             Hourly Errors: {} timesteps\n",
+             Hourly Errors: {} timesteps\n\
+             Zones Tracked: {}\n\
+             \n{}\n",
             status,
             self.cumulative_error,
             self.error_pct,
             self.energy_in_total,
             self.energy_out_total,
-            self.hourly_errors.len()
+            self.hourly_errors.len(),
+            self.zone_balances.len(),
+            self.building_balance.to_summary_string()
         )
     }
 }
@@ -209,12 +314,6 @@ pub fn calculate_mass_energy(model: &ThermalModel<VectorField>) -> f64 {
 pub fn calculate_zone_energy(model: &ThermalModel<VectorField>) -> f64 {
     let mut total_energy = 0.0;
 
-    // Assume zone air capacitance is 1.2 kg/m³ * 1005 J/kg·K * volume
-    // For simplicity, we'll use a constant air capacitance per zone
-    const AIR_DENSITY: f64 = 1.2; // kg/m³
-    const AIR_HEAT_CAPACITY: f64 = 1005.0; // J/kg·K
-    const AIR_CAPACITANCE_PER_M3: f64 = AIR_DENSITY * AIR_HEAT_CAPACITY;
-
     for (i, temp) in model.temperatures.as_ref().iter().enumerate() {
         let volume = model.zone_volume.as_ref()[i];
         let air_capacitance = volume * AIR_CAPACITANCE_PER_M3;
@@ -265,11 +364,16 @@ pub fn validate_energy_balance_over_year(
     let weather = DenverTmyWeather::new();
     let steps = 8760;
     let dt = 3600.0; // Timestep duration in seconds (1 hour)
+    let num_zones = model.num_zones;
 
     let mut cumulative_error = 0.0_f64;
     let mut energy_in_total = 0.0_f64;
     let mut energy_out_total = 0.0_f64;
     let mut hourly_errors = Vec::with_capacity(steps);
+
+    // Initialize zone balances for per-zone tracking
+    let mut zone_balances: Vec<ZoneBalanceEntry> =
+        (0..num_zones).map(ZoneBalanceEntry::new).collect();
 
     // Get initial energies
     let initial_mass_energy = calculate_mass_energy(model);
@@ -280,9 +384,23 @@ pub fn validate_energy_balance_over_year(
     let mut previous_mass_energy = initial_mass_energy;
     let mut previous_zone_energy = initial_zone_energy;
 
+    // Track initial zone air energies for zone balance calculation
+    let mut zone_energy_start: Vec<f64> = Vec::with_capacity(num_zones);
+    for (i, temp) in model.temperatures.as_ref().iter().enumerate() {
+        let volume = model.zone_volume.as_ref()[i];
+        let air_capacitance = volume * AIR_CAPACITANCE_PER_M3;
+        zone_energy_start.push(air_capacitance * temp);
+    }
+    for zone in &mut zone_balances {
+        zone.zone_energy_start = zone_energy_start[zone.zone_index];
+        zone.zone_energy_end = zone_energy_start[zone.zone_index]; // Will be updated at end
+    }
+
     // Run full year simulation and track energy balance at each timestep
     let mut debug_hvac_sum = 0.0;
     let mut debug_step_count = 0;
+    let stored_energy_start = initial_mass_energy + initial_zone_energy;
+    let mut stored_energy_end = stored_energy_start;
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
@@ -351,6 +469,29 @@ pub fn validate_energy_balance_over_year(
 
         cumulative_error += balance_error.abs();
         hourly_errors.push(balance_error);
+
+        // Update zone balances with per-zone tracking
+        let hvac_per_zone = hvac_energy / (num_zones as f64);
+        let solar_per_zone = energy_solar / (num_zones as f64);
+        let internal_per_zone = energy_internal / (num_zones as f64);
+        for zone in zone_balances.iter_mut() {
+            zone.hvac_input += hvac_per_zone.max(0.0) * dt;
+            zone.solar_gains += solar_per_zone * dt;
+            zone.internal_gains += internal_per_zone * dt;
+        }
+
+        // Track end-of-timestep zone energies
+        for (i, temp) in model.temperatures.as_ref().iter().enumerate() {
+            let volume = model.zone_volume.as_ref()[i];
+            let air_capacitance = volume * AIR_CAPACITANCE_PER_M3;
+            let current_zone_energy = air_capacitance * temp;
+            if step == steps - 1 {
+                zone_balances[i].zone_energy_end = current_zone_energy;
+            }
+        }
+
+        // Track stored energy end
+        stored_energy_end = current_mass_energy + current_zone_energy;
     }
 
     // Debug output for Case 960
@@ -447,6 +588,18 @@ pub fn validate_energy_balance_over_year(
     // for open systems with exterior heat exchange.
     let is_valid = error_pct.is_finite();
 
+    // Calculate whole-building balance summary
+    let net_energy_change = stored_energy_end - stored_energy_start;
+    let unaccounted_energy = energy_in_total - energy_out_total - net_energy_change;
+    let building_balance = BuildingBalanceSummary {
+        total_energy_in: energy_in_total,
+        total_energy_out: energy_out_total,
+        net_energy_change,
+        stored_energy: net_energy_change,
+        unaccounted_energy,
+        balance_error_pct: error_pct,
+    };
+
     EnergyBalanceReport {
         cumulative_error,
         error_pct,
@@ -454,6 +607,8 @@ pub fn validate_energy_balance_over_year(
         hourly_errors,
         energy_in_total,
         energy_out_total,
+        zone_balances,
+        building_balance,
     }
 }
 

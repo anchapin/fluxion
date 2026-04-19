@@ -5,6 +5,7 @@ use crate::validation::ashrae_140_multi_zone::ASHRAE140MultiZoneValidator;
 use crate::validation::energy_balance::EnergyBalanceValidator;
 use crate::validation::performance;
 use crate::validation::performance::PerformanceValidator;
+use crate::validation::thermal_mass_energy_accounting::EnergyBalanceReport;
 use serde::{Deserialize, Serialize};
 use std::time::Instant;
 
@@ -35,13 +36,42 @@ impl M1ValidationSuite {
         // 1. Energy Balance Validation
         println!("\n[1/4] Running energy balance validation...");
         let energy_balance_start = Instant::now();
-        let energy_balance_result = self
-            .energy_balance_validator
-            .validate_energy_conservation()?;
+        let energy_balance_report = self.energy_balance_validator.run()?;
         let energy_balance_duration = energy_balance_start.elapsed();
+        let energy_balance_passed = energy_balance_report.is_valid;
+
+        // Print zone and building balance summary
+        if !energy_balance_report.zone_balances.is_empty() {
+            println!("\n  Zone Balance Summary:");
+            for entry in &energy_balance_report.zone_balances {
+                println!(
+                    "    Zone {}: HVAC={:.2e}J, Solar={:.2e}J, Internal={:.2e}J",
+                    entry.zone_index, entry.hvac_input, entry.solar_gains, entry.internal_gains
+                );
+            }
+            println!("\n  Whole-Building Balance:");
+            println!(
+                "    Total Energy In: {:.6e} J",
+                energy_balance_report.building_balance.total_energy_in
+            );
+            println!(
+                "    Total Energy Out: {:.6e} J",
+                energy_balance_report.building_balance.total_energy_out
+            );
+            println!(
+                "    Balance Error: {:.6}%",
+                energy_balance_report.building_balance.balance_error_pct
+            );
+        }
+
         println!(
-            "✅ Energy balance validation completed in {:.3}s",
-            energy_balance_duration.as_secs_f64()
+            "✅ Energy balance validation completed in {:.3}s - {}",
+            energy_balance_duration.as_secs_f64(),
+            if energy_balance_passed {
+                "PASSED"
+            } else {
+                "FAILED"
+            }
         );
 
         // 2. Performance Validation
@@ -86,7 +116,8 @@ impl M1ValidationSuite {
         );
 
         Ok(M1ValidationReport {
-            energy_balance_passed: energy_balance_result,
+            energy_balance_passed,
+            energy_balance_report,
             performance_report,
             case_960_report: case_960_result,
             performance_report_text,
@@ -290,6 +321,7 @@ pub fn run_m1_validation_cli() -> Result<(), anyhow::Error> {
 #[derive(Debug, Clone)]
 pub struct M1ValidationReport {
     pub energy_balance_passed: bool,
+    pub energy_balance_report: EnergyBalanceReport,
     pub performance_report: crate::validation::performance::PerformanceReport,
     pub case_960_report: Case960ValidationResult,
     pub performance_report_text: String,
