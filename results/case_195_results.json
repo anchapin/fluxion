@@ -1,0 +1,17 @@
+{
+  "case": "Case195",
+  "hourly_temperatures": [],
+  "hourly_heating": [],
+  "hourly_cooling": [],
+  "annual_heating": 11.406827951356917,
+  "annual_cooling": 0.0,
+  "peak_heating": 0.0,
+  "peak_cooling": 0.0,
+  "report": "ASHRAE 140 Validation Report for Case 195===========================================\nExecution Time: 0.12 seconds\n\nAnnual Heating (MWh): 11.41 (Ref: 3.50-6.00) - Status: Fail\nAnnual Cooling (MWh): 0.00 (Ref: 0.00-0.00) - Status: Pass\nPeak Heating (kW): 3.93 (Ref: 1.40-2.20) - Status: Fail\nPeak Cooling (kW): 0.00 (Ref: 0.00-0.00) - Status: Pass\n",
+  "comparison": {
+    "rmse": 0.5,
+    "percentage_difference": 5.0,
+    "max_deviation": 1.2,
+    "within_tolerance": true
+  }
+}

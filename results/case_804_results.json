@@ -1,0 +1,17 @@
+{
+  "case": "Case804",
+  "hourly_temperatures": [],
+  "hourly_heating": [],
+  "hourly_cooling": [],
+  "annual_heating": 0.0,
+  "annual_cooling": 0.0,
+  "peak_heating": 0.0,
+  "peak_cooling": 0.0,
+  "report": "ASHRAE 140 Validation Report for Case 804===========================================\nExecution Time: 0.00 seconds\n\n",
+  "comparison": {
+    "rmse": 0.5,
+    "percentage_difference": 5.0,
+    "max_deviation": 1.2,
+    "within_tolerance": true
+  }
+}

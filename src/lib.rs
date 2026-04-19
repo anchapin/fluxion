@@ -87,7 +87,8 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
-use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::cta::ContinuousTensor;
+use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 
 use sim::engine::{StepParameters, ThermalModel};
@@ -1276,6 +1277,7 @@ impl BatchOracle {
         population: &Bound<'_, pyo3::types::PyAny>,
         use_surrogates: bool,
     ) -> PyResult<Bound<'a, numpy::PyArray1<f64>>> {
+        use crate::physics::cta::ContinuousTensor;
         use rayon::prelude::*;
 
         // Try to extract as 2D numpy array
@@ -1600,7 +1602,7 @@ pub use validation::ashrae_140::high_mass;
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-    use crate::physics::cta::{ContinuousTensor, VectorField};
+    use crate::physics::cta::VectorField;
     use crate::sim::engine::ThermalModel;
 
     #[cfg(feature = "python-bindings")]

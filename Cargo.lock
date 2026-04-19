@@ -932,6 +932,7 @@ dependencies = [
  "num-traits",
  "num_cpus",
  "numpy",
+ "once_cell",
  "ort",
  "parking_lot",
  "plotters",
