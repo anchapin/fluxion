@@ -474,7 +474,7 @@ pub fn validate_energy_balance_over_year(
         let hvac_per_zone = hvac_energy / (num_zones as f64);
         let solar_per_zone = energy_solar / (num_zones as f64);
         let internal_per_zone = energy_internal / (num_zones as f64);
-        for (_zone_idx, zone) in zone_balances.iter_mut().enumerate() {
+        for zone in zone_balances.iter_mut() {
             zone.hvac_input += hvac_per_zone.max(0.0) * dt;
             zone.solar_gains += solar_per_zone * dt;
             zone.internal_gains += internal_per_zone * dt;
