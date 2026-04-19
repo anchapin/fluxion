@@ -181,7 +181,8 @@ impl Default for ComparisonMetrics {
 }
 pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerator};
 pub use thermal_mass_energy_accounting::{
-    calculate_mass_energy, validate_energy_balance_over_year, EnergyBalanceReport,
+    calculate_mass_energy, validate_energy_balance_over_year, BuildingBalanceSummary,
+    EnergyBalanceReport, ZoneBalanceEntry,
 };
 
 #[cfg(test)]

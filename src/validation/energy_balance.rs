@@ -310,6 +310,37 @@ impl EnergyBalanceValidator {
             report.energy_in_total
         ));
 
+        // Add zone balance summary if available
+        if !report.zone_balances.is_empty() {
+            report_text.push_str("\n=== Zone Balance Summary ===\n");
+            for entry in &report.zone_balances {
+                report_text.push_str(&format!(
+                    "  Zone {}: Energy Start={:.2e} J, End={:.2e} J, HVAC={:.2e} J, Solar={:.2e} J, Internal={:.2e} J\n",
+                    entry.zone_index,
+                    entry.zone_energy_start,
+                    entry.zone_energy_end,
+                    entry.hvac_input,
+                    entry.solar_gains,
+                    entry.internal_gains
+                ));
+            }
+        }
+
+        // Add whole-building balance summary if available
+        report_text.push_str(&format!(
+            "\n=== Whole-Building Balance ===\n\
+             Total Energy In:    {:.6e} J\n\
+             Total Energy Out:   {:.6e} J\n\
+             Net Energy Change:  {:.6e} J\n\
+             Unaccounted Energy: {:.6e} J\n\
+             Balance Error:      {:.6}%\n",
+            report.building_balance.total_energy_in,
+            report.building_balance.total_energy_out,
+            report.building_balance.net_energy_change,
+            report.building_balance.unaccounted_energy,
+            report.building_balance.balance_error_pct
+        ));
+
         if !report.is_valid {
             report_text.push_str("\n⚠️  Energy balance validation FAILED\n");
             report_text.push_str("This may indicate:\n");
