@@ -548,7 +548,7 @@ impl SurrogateManager {
         }
     }
 
-    fn analytical_loads(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
+    pub fn analytical_loads(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
         if temps.is_empty() {
             return Ok(vec![]);
         }
