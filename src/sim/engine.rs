@@ -4,6 +4,7 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
+use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::assembly::BuildingAssembly;
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
@@ -402,6 +403,9 @@ pub struct ThermalModel<T: ContinuousTensor<f64>> {
     // Thermal model type (5R1C or 6R2C)
     pub thermal_model_type: ThermalModelType,
 
+    // Adaptive timestep configuration for high-mass buildings (Phase 31)
+    pub timestep_mode: TimestepMode,
+
     // Fields for 5R1C model (single mass node)
     pub mass_temperatures: T,   // Tm (Mass temperature)
     pub thermal_capacitance: T, // Cm (J/K) - Includes Air + Structure
@@ -716,6 +720,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModel<T> {
             case_id: self.case_id.clone(),
             building_type: self.building_type,
             thermal_model_type: self.thermal_model_type,
+            timestep_mode: self.timestep_mode.clone(),
             mass_temperatures: self.mass_temperatures.clone(),
             thermal_capacitance: self.thermal_capacitance.clone(),
             envelope_mass_temperatures: self.envelope_mass_temperatures.clone(),
@@ -2717,6 +2722,9 @@ impl ThermalModel<VectorField> {
             // Thermal model type
             thermal_model_type: ThermalModelType::FiveROneC,
 
+            // Adaptive timestep configuration (default: fixed 1-hour for backward compatibility)
+            timestep_mode: TimestepMode::default(),
+
             // Placeholders (will be updated by update_derived_parameters)
             thermal_capacitance: VectorField::from_scalar(1.0, num_zones),
 
@@ -3477,6 +3485,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         trace!("Derived parameters updated after applying parameters");
     }
 
+    /// Set the timestep mode for adaptive timestep simulation.
+    ///
+    /// This enables automatic detection of high-mass buildings (Case 900 series)
+    /// and uses finer timesteps (6 minutes) for improved numerical accuracy.
+    ///
+    /// # Arguments
+    /// * `mode` - TimestepMode: either `Fixed` with a specific dt, or `Adaptive`
+    ///            with base_dt, min_dt, and threshold_tau for automatic detection.
+    ///
+    /// # Example
+    /// ```rust,no_run
+    /// use fluxion::sim::adaptive_timestep::TimestepMode;
+    /// use std::time::Duration;
+    ///
+    /// let mut model = ThermalModel::<VectorField>::new(1);
+    ///
+    /// // Enable adaptive timestep (6-min for high-mass, 1-hr for low-mass)
+    /// model.set_timestep_mode(TimestepMode::adaptive(
+    ///     Duration::from_secs(360),   // 6-minute base timestep
+    ///     Duration::from_secs(60),    // 1-minute minimum
+    ///     2.0,                         // 2-hour threshold
+    /// ));
+    /// ```
+    pub fn set_timestep_mode(&mut self, mode: TimestepMode) {
+        self.timestep_mode = mode;
+        info!("Timestep mode set to {:?}", self.timestep_mode);
+    }
+
+    /// Get the current timestep mode.
+    pub fn get_timestep_mode(&self) -> &TimestepMode {
+        &self.timestep_mode
+    }
+
     /// Calculates HVAC power demand based on free-floating temperature and dual setpoints.
     ///
     /// This function implements the core logic for HVAC power calculation using CTA,
@@ -3659,10 +3700,66 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         equipment: Option<&[Box<dyn Equipment>]>,
         occupancy: Option<&OccupancyProfile>,
     ) -> f64 {
-        // Default to 1-hour timestep (3600 seconds)
+        // Determine timestep based on case_id and timestep_mode
+        let dt_seconds = self.calculate_timestep_seconds();
+
         self.solve_timesteps_with_dt(
-            steps, surrogates, use_ai, lighting, equipment, occupancy, 3600.0, // dt_seconds
+            steps, surrogates, use_ai, lighting, equipment, occupancy, dt_seconds,
         )
+    }
+
+    /// Calculate timestep in seconds based on timestep_mode and case_id.
+    ///
+    /// For high-mass cases (900 series), this returns 360 seconds (6 minutes).
+    /// For low-mass cases (600 series), this returns 3600 seconds (1 hour).
+    pub fn calculate_timestep_seconds(&self) -> f64 {
+        match &self.timestep_mode {
+            TimestepMode::Fixed { dt } => dt.as_secs_f64(),
+            TimestepMode::Adaptive {
+                base_dt,
+                min_dt: _,
+                threshold_tau,
+            } => {
+                // Calculate time constant for this building
+                let tau_hours = self.estimate_time_constant_hours();
+                if tau_hours >= *threshold_tau {
+                    // High-mass: use adaptive timestep
+                    base_dt.as_secs_f64()
+                } else {
+                    // Low-mass: use 1-hour standard timestep
+                    3600.0
+                }
+            }
+        }
+    }
+
+    /// Estimate thermal time constant in hours based on case_id and building parameters.
+    pub fn estimate_time_constant_hours(&self) -> f64 {
+        // Check if we have explicit time constant from ASHRAE 140 case
+        if !self.case_id.is_empty() {
+            if let Some(tau) =
+                crate::sim::adaptive_timestep::TimeConstantAnalyzer::for_case(&self.case_id)
+            {
+                return tau;
+            }
+        }
+
+        // Estimate from thermal capacitance and conductances
+        // τ = C / (h_tr_ms + h_tr_em) in seconds
+        let h_tr_sum = self
+            .h_tr_ms
+            .as_ref()
+            .iter()
+            .zip(self.h_tr_em.as_ref().iter())
+            .map(|(ms, em)| ms + em)
+            .sum::<f64>();
+
+        if h_tr_sum > 0.0 {
+            let tau_seconds = self.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
+            tau_seconds / 3600.0 // Convert to hours
+        } else {
+            2.0 // Default: 2 hours (boundary between low/high mass)
+        }
     }
 
     /// Solve thermal model for specified timesteps with variable timestep support.

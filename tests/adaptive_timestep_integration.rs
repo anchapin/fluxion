@@ -247,3 +247,137 @@ fn test_adaptive_scheduler_low_mass() {
         "1-hour timestep should give 1 timestep per hour"
     );
 }
+
+/// Test ThermalModel::set_timestep_mode and calculate_timestep_seconds
+#[test]
+fn test_thermal_model_timestep_mode_configuration() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use std::time::Duration;
+
+    let mut model = ThermalModel::<VectorField>::new(1);
+    model.case_id = "900".to_string(); // High-mass case
+
+    // Test 1: Default mode (fixed 1-hour)
+    let dt_default = model.calculate_timestep_seconds();
+    assert_eq!(
+        dt_default, 3600.0,
+        "Default mode should use 1-hour timestep"
+    );
+
+    // Test 2: Set adaptive mode
+    model.set_timestep_mode(TimestepMode::adaptive(
+        Duration::from_secs(360), // 6-minute base
+        Duration::from_secs(60),  // 1-minute min
+        2.0,                      // threshold
+    ));
+    let dt_adaptive = model.calculate_timestep_seconds();
+    assert_eq!(
+        dt_adaptive, 360.0,
+        "Adaptive mode for high-mass should use 6-minute timestep"
+    );
+
+    // Test 3: Low-mass case with adaptive mode
+    let mut model_low = ThermalModel::<VectorField>::new(1);
+    model_low.case_id = "600".to_string();
+    model_low.set_timestep_mode(TimestepMode::adaptive(
+        Duration::from_secs(360),
+        Duration::from_secs(60),
+        2.0,
+    ));
+    let dt_low = model_low.calculate_timestep_seconds();
+    assert_eq!(
+        dt_low, 3600.0,
+        "Adaptive mode for low-mass should use 1-hour timestep"
+    );
+
+    // Test 4: Verify is_adaptive works on model (before we change to fixed)
+    assert!(
+        model.get_timestep_mode().is_adaptive(),
+        "model should still be in adaptive mode at this point"
+    );
+
+    // Test 5: Set fixed mode with custom timestep
+    model.set_timestep_mode(TimestepMode::fixed(Duration::from_secs(900)));
+    let dt_fixed = model.calculate_timestep_seconds();
+    assert_eq!(dt_fixed, 900.0, "Fixed mode should use specified timestep");
+
+    // Test 6: Getter returns correct mode (now fixed, not adaptive)
+    assert!(
+        !model.get_timestep_mode().is_adaptive(),
+        "model should now be in fixed mode, not adaptive"
+    );
+}
+
+/// Test estimate_time_constant_hours for ASHRAE 140 cases
+#[test]
+fn test_thermal_model_time_constant_estimation() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+
+    // High-mass case
+    let mut model_900 = ThermalModel::<VectorField>::new(1);
+    model_900.case_id = "900".to_string();
+    let tau_900 = model_900.estimate_time_constant_hours();
+    assert!(
+        tau_900 > 2.0,
+        "Case 900 should have τ > 2 hours, got {}",
+        tau_900
+    );
+
+    // Low-mass case
+    let mut model_600 = ThermalModel::<VectorField>::new(1);
+    model_600.case_id = "600".to_string();
+    let tau_600 = model_600.estimate_time_constant_hours();
+    assert!(
+        tau_600 < 2.0,
+        "Case 600 should have τ < 2 hours, got {}",
+        tau_600
+    );
+
+    // Unknown case - estimated from thermal parameters, not case_id
+    // Default model has thermal_capacitance and conductances, so it returns calculated value
+    let mut model_unknown = ThermalModel::<VectorField>::new(1);
+    let tau_unknown = model_unknown.estimate_time_constant_hours();
+    // Value is estimated from thermal_capacitance / (h_tr_ms + h_tr_em)
+    assert!(
+        tau_unknown > 0.0,
+        "Unknown case should return positive τ, got {}",
+        tau_unknown
+    );
+}
+
+/// Test solve_timesteps uses adaptive timestep for high-mass cases
+#[test]
+fn test_solve_timesteps_uses_adaptive_for_high_mass() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use std::time::Duration;
+
+    let surrogates = SurrogateManager::new().unwrap_or_else(|_| {
+        panic!("Failed to create SurrogateManager");
+    });
+
+    // Case 900 with adaptive mode should use 6-minute timestep
+    let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
+    model.set_timestep_mode(TimestepMode::adaptive(
+        Duration::from_secs(360),
+        Duration::from_secs(60),
+        2.0,
+    ));
+
+    // Verify it's using adaptive
+    assert!(model.get_timestep_mode().is_adaptive());
+
+    // Run 24 hours simulation (should complete without errors)
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        model.solve_timesteps(24, &surrogates, false, None, None, None)
+    }));
+
+    assert!(
+        result.is_ok(),
+        "High-mass case with adaptive timestep should complete"
+    );
+    let eui = result.unwrap();
+    assert!(eui.is_finite(), "EUI should be finite, got {:?}", eui);
+}
