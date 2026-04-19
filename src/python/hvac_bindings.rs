@@ -2,7 +2,7 @@
 //!
 //! This module provides PyO3 bindings for zone setpoints, control, and schedule functionality
 
-use crate::hvac::schedule::{DailySchedule, DayType, HVACSchedule, ScheduleType, ScheduleValues};
+use crate::hvac::schedule::{DailySchedule, HVACSchedule, ScheduleType};
 use crate::hvac::zone_control::{HVACStatus, ZoneControl};
 use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
@@ -283,6 +283,7 @@ impl PyDailySchedule {
         self.inner.value(hour)
     }
 
+    #[staticmethod]
     pub fn constant(value: f64) -> Self {
         PyDailySchedule {
             inner: DailySchedule::constant(value),
@@ -305,12 +306,14 @@ impl PyHVACSchedule {
         }
     }
 
+    #[staticmethod]
     pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> Self {
         PyHVACSchedule {
             inner: HVACSchedule::constant_schedule(heating_sp, cooling_sp),
         }
     }
 
+    #[staticmethod]
     pub fn setback_schedule(
         day_heat: f64,
         night_heat: f64,
@@ -329,6 +332,7 @@ impl PyHVACSchedule {
         }
     }
 
+    #[staticmethod]
     pub fn with_operating_hours(
         heating_sp: f64,
         cooling_sp: f64,
@@ -340,6 +344,7 @@ impl PyHVACSchedule {
         }
     }
 
+    #[staticmethod]
     pub fn free_floating() -> Self {
         PyHVACSchedule {
             inner: HVACSchedule::free_floating(),

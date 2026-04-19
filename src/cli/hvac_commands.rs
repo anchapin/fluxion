@@ -8,7 +8,7 @@ use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::hvac::schedule::{DailySchedule, HVACSchedule, ScheduleType};
+use crate::hvac::schedule::HVACSchedule;
 use crate::hvac::zone_control::ZoneControl;
 use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
