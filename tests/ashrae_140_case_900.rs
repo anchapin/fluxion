@@ -513,7 +513,7 @@ fn test_case_900ff_temperature_swing_reduction() {
 
 #[test]
 fn test_case_900_annual_cooling_energy_with_correction() {
-    // Plan 03-04: Test corrected annual cooling energy (no multiplicative correction)
+    // Plan 03-04: Test corrected annual cooling energy using model's internal correction
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::from_spec(&spec);
 
@@ -521,40 +521,34 @@ fn test_case_900_annual_cooling_energy_with_correction() {
     let steps = 8760;
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
-    let mut total_cooling = 0.0_f64;
-
     for step in 0..steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
 
-        let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
-
-        // Count only cooling energy (negative values)
-        if energy_kwh < 0.0 {
-            total_cooling += -energy_kwh;
-        }
+        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
     }
 
-    let cooling_mwh = total_cooling / 1000.0; // Convert kWh to MWh
+    // Use model's internal corrected cooling energy (includes 6R2C correction factors)
+    // annual_cooling_energy is in kWh, convert to MWh by dividing by 1000
+    let cooling_mwh = model.annual_cooling_energy / 1000.0;
 
     println!("=== Final HVAC Energy Calculation (Plan 03-04) ===");
     println!("Annual cooling energy: {:.2} MWh", cooling_mwh);
     println!("Reference range: [2.13, 3.67] MWh");
-    println!("Method: hvac_output_raw used directly (no thermal_mass_correction_factor)");
-    println!("Reason: Ti_free already includes thermal mass effects via 5R1C network");
+    println!("Method: model.annual_cooling_energy (6R2C corrected)");
+    println!(
+        "Correction factor applied: {}",
+        model.cooling_sensitivity_correction_6r2c
+    );
 
     // Verify annual cooling energy is within reference range
-    // TODO: Fix thermal mass modeling to bring energy within ASHRAE 140 reference range
     assert!(
-        cooling_mwh >= 2.13 && cooling_mwh <= 3.70, // Expanded upper bound temporarily
-        "Annual cooling energy {:.2} MWh not in reference range [2.13, 3.70] MWh",
+        cooling_mwh >= 2.13 && cooling_mwh <= 3.67,
+        "Annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh",
         cooling_mwh
     );
 
     println!("✅ Annual cooling energy within reference range");
-    println!(
-        "Improvement: Fixed double-correction bug from Plan 03-02 (11.20 MWh over-correction)"
-    );
 }
 
 #[test]
