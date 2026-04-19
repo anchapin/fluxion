@@ -1,0 +1,17 @@
+{
+  "success": false,
+  "parameters": {
+    "wall_u_value": 0.5,
+    "roof_u_value": 0.3,
+    "floor_u_value": 0.4,
+    "h_ce": 25.0,
+    "h_ci": 8.3,
+    "thermal_mass_factor": 1.0
+  },
+  "annual_heating": 11.895366762186434,
+  "peak_heating": 3.9320016726870044,
+  "annual_heating_error": 1.5042877394076704,
+  "peak_heating_error": 1.1844453737150025,
+  "iterations": 50,
+  "final_error": 1.40833502969987
+}

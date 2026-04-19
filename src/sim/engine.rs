@@ -3492,7 +3492,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Arguments
     /// * `mode` - TimestepMode: either `Fixed` with a specific dt, or `Adaptive`
-    ///            with base_dt, min_dt, and threshold_tau for automatic detection.
+    ///   with base_dt, min_dt, and threshold_tau for automatic detection.
     ///
     /// # Example
     /// ```rust,no_run
