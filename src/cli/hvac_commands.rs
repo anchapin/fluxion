@@ -8,6 +8,7 @@ use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+use crate::hvac::schedule::HVACSchedule;
 use crate::hvac::zone_control::ZoneControl;
 use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
@@ -18,6 +19,11 @@ lazy_static! {
     static ref HVAC_SYSTEM: Mutex<Option<Arc<Mutex<ZoneControl>>>> = Mutex::new(None);
 }
 
+// Global schedule state
+lazy_static! {
+    static ref CURRENT_SCHEDULE: Mutex<Option<HVACSchedule>> = Mutex::new(None);
+}
+
 /// HVAC command-line interface
 #[derive(Subcommand, Debug, Clone)]
 pub enum HvacCommand {
@@ -25,6 +31,11 @@ pub enum HvacCommand {
     Setpoints {
         #[command(subcommand)]
         action: SetpointAction,
+    },
+    /// Configure HVAC schedules
+    Schedule {
+        #[command(subcommand)]
+        action: ScheduleAction,
     },
     /// Run HVAC simulation
     Simulate {
@@ -71,10 +82,70 @@ pub enum SetpointAction {
     },
 }
 
+/// Schedule configuration actions
+#[derive(Subcommand, Debug, Clone)]
+pub enum ScheduleAction {
+    /// Create a constant schedule
+    Constant {
+        /// Heating setpoint in °C
+        #[arg(long)]
+        heating: f64,
+        /// Cooling setpoint in °C
+        #[arg(long)]
+        cooling: f64,
+    },
+    /// Create a setback schedule
+    Setback {
+        /// Day heating setpoint in °C
+        #[arg(long)]
+        day_heat: f64,
+        /// Night heating setpoint in °C
+        #[arg(long)]
+        night_heat: f64,
+        /// Cooling setpoint in °C
+        #[arg(long)]
+        cooling: f64,
+        /// Night start hour (0-23)
+        #[arg(long)]
+        night_start: usize,
+        /// Night end hour (0-23)
+        #[arg(long)]
+        night_end: usize,
+    },
+    /// Create schedule with operating hours
+    OperatingHours {
+        /// Heating setpoint in °C
+        #[arg(long)]
+        heating: f64,
+        /// Cooling setpoint in °C
+        #[arg(long)]
+        cooling: f64,
+        /// Operating start hour (0-23)
+        #[arg(long)]
+        start_hour: usize,
+        /// Operating end hour (0-23)
+        #[arg(long)]
+        end_hour: usize,
+    },
+    /// Create free-floating schedule (no HVAC control)
+    FreeFloating,
+    /// Show current schedule
+    Show,
+    /// Get setpoint for hour
+    GetSetpoint {
+        /// Hour (0-23)
+        hour: usize,
+        /// Type: heating or cooling
+        #[arg(short, long)]
+        setpoint_type: String,
+    },
+}
+
 /// Handle HVAC commands
 pub fn handle_command(command: HvacCommand) -> Result<(), String> {
     match command {
         HvacCommand::Setpoints { action } => handle_setpoints(action),
+        HvacCommand::Schedule { action } => handle_schedule(action),
         HvacCommand::Simulate { steps, output } => handle_simulate(steps, output),
         HvacCommand::Status => handle_status(),
     }
@@ -145,6 +216,116 @@ fn handle_setpoints(action: SetpointAction) -> Result<(), String> {
                 println!("Showing setpoints for all zones");
             }
             Ok(())
+        }
+    }
+}
+
+fn handle_schedule(action: ScheduleAction) -> Result<(), String> {
+    let mut schedule_lock = CURRENT_SCHEDULE.lock().unwrap();
+
+    match action {
+        ScheduleAction::Constant { heating, cooling } => {
+            let schedule = HVACSchedule::constant_schedule(heating, cooling);
+            *schedule_lock = Some(schedule);
+            println!(
+                "Created constant schedule: heating={}°C, cooling={}°C",
+                heating, cooling
+            );
+            Ok(())
+        }
+        ScheduleAction::Setback {
+            day_heat,
+            night_heat,
+            cooling,
+            night_start,
+            night_end,
+        } => {
+            let schedule = HVACSchedule::setback_schedule(
+                day_heat,
+                night_heat,
+                cooling,
+                night_start,
+                night_end,
+            );
+            *schedule_lock = Some(schedule);
+            println!(
+                "Created setback schedule: day={}°C, night={}°C ({}:00-{}:00), cooling={}°C",
+                day_heat, night_heat, night_start, night_end, cooling
+            );
+            Ok(())
+        }
+        ScheduleAction::OperatingHours {
+            heating,
+            cooling,
+            start_hour,
+            end_hour,
+        } => {
+            let schedule =
+                HVACSchedule::with_operating_hours(heating, cooling, start_hour, end_hour);
+            *schedule_lock = Some(schedule);
+            println!(
+                "Created operating hours schedule: heating={}°C, cooling={}°C ({}:00-{}:00)",
+                heating, cooling, start_hour, end_hour
+            );
+            Ok(())
+        }
+        ScheduleAction::FreeFloating => {
+            let schedule = HVACSchedule::free_floating();
+            *schedule_lock = Some(schedule);
+            println!("Created free-floating schedule (no HVAC control)");
+            Ok(())
+        }
+        ScheduleAction::Show => {
+            if let Some(ref schedule) = *schedule_lock {
+                println!("Current HVAC Schedule:");
+                println!("  Free-floating: {}", schedule.is_free_floating());
+                println!("  Sample heating setpoints:");
+                for hour in [0, 6, 12, 18, 23] {
+                    println!(
+                        "    Hour {}: {:.1}°C",
+                        hour,
+                        schedule.heating_setpoint(hour)
+                    );
+                }
+                println!("  Sample cooling setpoints:");
+                for hour in [0, 6, 12, 18, 23] {
+                    println!(
+                        "    Hour {}: {:.1}°C",
+                        hour,
+                        schedule.cooling_setpoint(hour)
+                    );
+                }
+            } else {
+                println!("No schedule configured");
+            }
+            Ok(())
+        }
+        ScheduleAction::GetSetpoint {
+            hour,
+            setpoint_type,
+        } => {
+            if let Some(ref schedule) = *schedule_lock {
+                let value = match setpoint_type.to_lowercase().as_str() {
+                    "heating" => schedule.heating_setpoint(hour),
+                    "cooling" => schedule.cooling_setpoint(hour),
+                    _ => {
+                        return Err(format!(
+                            "Invalid setpoint type '{}'. Use 'heating' or 'cooling'.",
+                            setpoint_type
+                        ))
+                    }
+                };
+                println!(
+                    "{} setpoint at hour {}: {:.1}°C",
+                    setpoint_type, hour, value
+                );
+                Ok(())
+            } else {
+                Err(
+                    "No schedule configured. Use 'schedule constant' or 'schedule setback' first."
+                        .to_string(),
+                )
+            }
         }
     }
 }
