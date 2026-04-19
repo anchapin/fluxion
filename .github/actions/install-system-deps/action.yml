@@ -1,0 +1,40 @@
+name: Install System Dependencies
+description: Consolidated system dependency installation for Linux/macOS/Windows
+
+inputs:
+  packages:
+    description: 'Comma-separated list of apt packages (Linux only)'
+    required: false
+    default: 'libssl-dev,pkg-config,libfontconfig1-dev'
+  update:
+    description: 'Run apt-get update before install'
+    required: false
+    default: 'true'
+
+runs:
+  using: composite
+  steps:
+    - name: Install system dependencies (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        if [ "${{ inputs.update }}" = "true" ]; then
+          sudo apt-get update
+        fi
+        sudo apt-get install -y $(echo "${{ inputs.packages }}" | tr ',' ' ')
+      env:
+        DEBIAN_FRONTEND: noninteractive
+
+    - name: Install system dependencies (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        brew install ${{ inputs.packages }}
+
+    - name: Install system dependencies (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        # Windows dependencies typically handled via chocolatey or manual
+        # This is a placeholder for Windows-specific logic
+        Write-Host "Windows dependency installation may require additional configuration"
