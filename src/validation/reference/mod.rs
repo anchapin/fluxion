@@ -136,7 +136,7 @@ impl ReferenceDataset {
     }
 
     /// Set peak load value
-    pub fn set_peak_load(&mut self, hour: u32, peak_load: f64) {
+    pub fn set_peak_load(&mut self, _hour: u32, peak_load: f64) {
         self.peak_load = Some(peak_load);
     }
 

@@ -3,16 +3,16 @@
 //! This benchmark file covers PERF-01 requirement: <50ms/timestep performance
 //! and PERF-02: Parallel validation functional verification.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use std::time::Duration;
-use crate::validation::high_mass::test_cases::{
-    create_high_mass_validation_cases, HighMassValidationCase
-};
-use crate::validation::ashrae140::WeatherData;
 use crate::physics::thermal_mass::construction::ConstructionType;
 use crate::physics::thermal_mass::diagnostics::ThermalMassDiagnostics;
 use crate::sim::construction::ConstructionLayer;
+use crate::validation::ashrae140::WeatherData;
+use crate::validation::high_mass::test_cases::{
+    create_high_mass_validation_cases, HighMassValidationCase,
+};
+use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use rayon::prelude::*;
+use std::time::Duration;
 
 /// Benchmark single high-mass validation case execution
 fn bench_single_validation(c: &mut Criterion) {
@@ -43,7 +43,9 @@ fn bench_single_validation(c: &mut Criterion) {
 
     c.bench_function("single_high_mass_validation", |b| {
         b.iter(|| {
-            let result = case.execute().expect("Validation should execute successfully");
+            let result = case
+                .execute()
+                .expect("Validation should execute successfully");
             black_box(result);
         })
     });
@@ -79,7 +81,7 @@ fn bench_thermal_mass_diagnostics(c: &mut Criterion) {
             thickness: 0.015, // 1.5cm gypsum
             emissivity: 0.9,
             absorptance: 0.7,
-        }
+        },
     ];
 
     c.bench_function("thermal_mass_diagnostics", |b| {
@@ -105,14 +107,18 @@ fn bench_construction_type_physics(c: &mut Criterion) {
                 ConstructionType::HeavyWeight,
                 ConstructionType::Custom(vec![
                     crate::physics::thermal_mass::construction::MaterialLayer::new(
-                        "Concrete", 1.7, 2300.0, 840.0, 0.2
+                        "Concrete", 1.7, 2300.0, 840.0, 0.2,
                     ),
                     crate::physics::thermal_mass::construction::MaterialLayer::new(
-                        "Insulation", 0.04, 50.0, 840.0, 0.05
-                    )
-                ])
+                        "Insulation",
+                        0.04,
+                        50.0,
+                        840.0,
+                        0.05,
+                    ),
+                ]),
             ];
-            
+
             for ty in types.iter() {
                 let props = ty.thermal_mass_properties();
                 black_box(props);
@@ -163,7 +169,8 @@ fn bench_parallel_validation(c: &mut Criterion) {
             let results: Vec<_> = cases
                 .par_iter()
                 .map(|case| {
-                    case.execute().expect("Validation should execute successfully")
+                    case.execute()
+                        .expect("Validation should execute successfully")
                 })
                 .collect();
             black_box(results);
@@ -177,7 +184,7 @@ fn bench_performance_requirement(c: &mut Criterion) {
         "PERF-REQ-TEST".to_string(),
         crate::validation::high_mass::test_cases::BuildingConfig {
             construction_type: ConstructionType::HeavyWeight,
-            floor_area: 500.0,  // Large building to stress test
+            floor_area: 500.0, // Large building to stress test
             u_value: 0.30,
             window_wall_ratio: 0.25,
             infiltration_rate: 0.2,
@@ -202,7 +209,9 @@ fn bench_performance_requirement(c: &mut Criterion) {
         b.iter_batched(
             || case.clone(),
             |case| {
-                let result = case.execute().expect("Validation should execute successfully");
+                let result = case
+                    .execute()
+                    .expect("Validation should execute successfully");
                 // PERF-01: Verify execution completes within reasonable time
                 // The actual timestep performance would be measured internally
                 black_box(result);
@@ -218,7 +227,7 @@ criterion_group!(
         .warm_up_time(Duration::from_millis(100))
         .measurement_time(Duration::from_secs(2))
         .sample_size(10);
-    targets = 
+    targets =
         bench_single_validation,
         bench_thermal_mass_diagnostics,
         bench_construction_type_physics,

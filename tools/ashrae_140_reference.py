@@ -29,9 +29,9 @@ Usage:
     is_valid = ref_data.validate_results("900", simulation_results)
 """
 
-from typing import Dict, List, Tuple, Optional, Any
-import math
 import logging
+import math
+from typing import Any, Dict, List, Optional, Tuple
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

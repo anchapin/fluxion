@@ -29,11 +29,12 @@ Usage:
     best_params, best_fitness = optimizer.optimize(max_iterations=100)
 """
 
-import numpy as np
+import logging
 import random
 import time
-from typing import Callable, List, Tuple, Optional
-import logging
+from typing import Callable, List, Optional, Tuple
+
+import numpy as np
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

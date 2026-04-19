@@ -5,8 +5,10 @@ This module tests the Particle Swarm Optimization and Genetic Algorithm implemen
 """
 
 import unittest
+
 import numpy as np
-from tools.optimization import ParticleSwarmOptimizer, GeneticAlgorithmOptimizer
+
+from tools.optimization import GeneticAlgorithmOptimizer, ParticleSwarmOptimizer
 
 
 class TestOptimizationAlgorithms(unittest.TestCase):

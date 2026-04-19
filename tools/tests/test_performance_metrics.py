@@ -4,13 +4,14 @@ Test suite for performance metrics module.
 This module tests the PerformanceProfiler class and related functions.
 """
 
-import unittest
-import time
 import json
+import time
+import unittest
+
 from tools.performance_metrics import (
     PerformanceProfiler,
-    create_batch_performance_benchmark,
     analyze_parallel_scaling,
+    create_batch_performance_benchmark,
 )
 
 
@@ -240,8 +241,8 @@ class TestPerformanceMetrics(unittest.TestCase):
 
     def test_report_saving(self):
         """Test report saving to file."""
-        import tempfile
         import os
+        import tempfile
 
         # Add some data
         with self.profiler.profile_batch("save_test", batch_size=2):

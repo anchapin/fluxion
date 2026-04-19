@@ -28,16 +28,17 @@ Usage:
     print(report)
 """
 
-import time
-import psutil
-import os
-from typing import Dict, List, Tuple, Optional, Callable, Any
-from dataclasses import dataclass
-from collections import defaultdict
-import statistics
-import logging
-from contextlib import contextmanager
 import json
+import logging
+import os
+import statistics
+import time
+from collections import defaultdict
+from contextlib import contextmanager
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import psutil
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -268,9 +269,9 @@ class PerformanceProfiler:
             "average_duration_seconds": statistics.mean(durations),
             "min_duration_seconds": min(durations),
             "max_duration_seconds": max(durations),
-            "std_duration_seconds": statistics.stdev(durations)
-            if len(durations) > 1
-            else 0.0,
+            "std_duration_seconds": (
+                statistics.stdev(durations) if len(durations) > 1 else 0.0
+            ),
             "average_ops_per_second": statistics.mean(ops_per_sec),
             "average_seconds_per_op": statistics.mean(sec_per_op),
             "average_memory_per_op_mb": statistics.mean(memory_per_op),

@@ -19,7 +19,7 @@ The system successfully tested multiple cases in the 195-470 series:
 
 - **Case 195**: Solid conduction test case (calibration target)
 - **Case 196**: Lighting diagnostics
-- **Case 197**: Equipment diagnostics  
+- **Case 197**: Equipment diagnostics
 - **Case 198**: Occupancy diagnostics
 
 ## Usage Examples
@@ -61,7 +61,7 @@ cargo run --bin fluxion -- validation run-series 195-470 --output ./results
 
 #### Issue 1: Calibration does not converge
 
-**Symptoms**: 
+**Symptoms**:
 - Final error remains high (> 0.1)
 - Results are far from target ranges
 - "Calibration did not converge within tolerance" message

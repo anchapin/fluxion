@@ -25,8 +25,8 @@ Usage:
     bounds = validator.get_optimization_bounds()
 """
 
-from typing import List, Tuple, Dict, Optional, Union
 import logging
+from typing import Dict, List, Optional, Tuple, Union
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)

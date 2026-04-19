@@ -5,8 +5,10 @@ This module tests the MultiCaseOptimizer class and related functions.
 """
 
 import unittest
+from unittest.mock import MagicMock, patch
+
 import numpy as np
-from unittest.mock import patch, MagicMock
+
 from tools.multi_case_optimization import (
     MultiCaseOptimizer,
     create_multi_case_benchmark_function,

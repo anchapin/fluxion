@@ -4,8 +4,8 @@ Generate synthetic reference data for ASHRAE 140 Cases 800-810 (HVAC Equipment)
 """
 
 import csv
-import sys
 import math
+import sys
 from datetime import datetime, timedelta
 
 

@@ -4,8 +4,8 @@ Generate synthetic reference data for ASHRAE 140 Cases 195-470 (Diagnostic Valid
 Optimized version that writes directly to file
 """
 
-import sys
 import math
+import sys
 
 
 def generate_hourly_temperature(hour, base_temp, thermal_mass_factor):

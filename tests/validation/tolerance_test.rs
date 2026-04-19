@@ -73,5 +73,5 @@ fn test_edge_cases() {
     let tolerance = ValidationTolerance::default();
     // Note: CV(RMSE) and MAE checks don't use abs(), so negative values will fail
     assert!(!tolerance.within_cv_rmse_tolerance(-1.0)); // Negative CV(RMSE) should fail
-    assert!(!tolerance.within_mae_tolerance(-0.05));   // Negative MAE should fail
+    assert!(!tolerance.within_mae_tolerance(-0.05)); // Negative MAE should fail
 }

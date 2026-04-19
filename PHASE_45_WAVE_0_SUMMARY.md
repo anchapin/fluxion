@@ -27,7 +27,7 @@ The following files were identified as gaps in the Phase 45 research document (`
 
 ### 4. Framework Dependencies
 - **Status**: Required dependencies already present in Cargo.toml
-- **Verification**: 
+- **Verification**:
   - serde (with derive feature) - for JSON serialization
   - csv - for CSV parsing of ESP-r output
   - tempfile - for temporary file management in tests

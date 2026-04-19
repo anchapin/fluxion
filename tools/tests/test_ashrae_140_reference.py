@@ -5,6 +5,7 @@ This module tests the ASHRAE140ReferenceData class and related functions.
 """
 
 import unittest
+
 from tools.ashrae_140_reference import (
     ASHRAE140ReferenceData,
     create_ashrae_140_calibration_targets,

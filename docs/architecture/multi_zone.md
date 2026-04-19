@@ -299,7 +299,7 @@ model.h_tr_iz = VectorField::new(vec![50.0, 50.0]);
 for step in 0..8760 { // Annual simulation
     let weather_temp = get_outdoor_temp(step); // °C
     let hvac_energy = model.step_physics(step, weather_temp, 3600.0); // kWh
-    
+
     // Extract zone temperatures
     let zone_temps = model.temperatures.as_slice();
     println!("Step {}: Zone1={:.1}°C, Zone2={:.1}°C, HVAC={:.2} kWh",

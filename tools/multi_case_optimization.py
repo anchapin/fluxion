@@ -30,18 +30,21 @@ Usage:
     best_params, best_fitness = optimizer.optimize(objective_function)
 """
 
-import numpy as np
-import time
-from typing import List, Dict, Tuple, Callable, Optional
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Callable, Dict, List, Optional, Tuple
+
+import numpy as np
 
 # Local imports
 try:
-    from tools.optimization import ParticleSwarmOptimizer, GeneticAlgorithmOptimizer
+    from tools.ashrae_140_reference import (
+        ASHRAE140ReferenceData,
+        create_ashrae_140_calibration_targets,
+    )
+    from tools.optimization import GeneticAlgorithmOptimizer, ParticleSwarmOptimizer
     from tools.parameter_validation import BuildingParameterValidator
-    from tools.ashrae_140_reference import ASHRAE140ReferenceData
-    from tools.ashrae_140_reference import create_ashrae_140_calibration_targets
 except ImportError:
     # Fallback for testing without local imports
     ParticleSwarmOptimizer = None

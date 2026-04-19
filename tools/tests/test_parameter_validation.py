@@ -5,7 +5,8 @@ This module tests the BuildingParameterValidator and ASHRAE140Validator classes.
 """
 
 import unittest
-from tools.parameter_validation import BuildingParameterValidator, ASHRAE140Validator
+
+from tools.parameter_validation import ASHRAE140Validator, BuildingParameterValidator
 
 
 class TestParameterValidation(unittest.TestCase):

@@ -5,6 +5,13 @@
 use std::error::Error;
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // Run the test automation workflow
-    fluxion::validation::automation::runner::run_test_automation()
+    let config = fluxion::validation::automation::runner::TestRunnerConfig::new(
+        std::path::PathBuf::from("./test_cases"),
+        std::path::PathBuf::from("./output"),
+        0.01,
+        false,
+        "json".to_string(),
+    );
+    fluxion::validation::automation::runner::run_test_automation(config)?;
+    Ok(())
 }
