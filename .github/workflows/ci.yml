@@ -74,47 +74,42 @@ jobs:
           path: target/debug/
           retention-days: 30
 
-  benchmarks:
-    name: Run Benchmarks
+  rust-tests:
+    name: Rust Tests & Linting
     runs-on: ubuntu-latest
-    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache Cargo registry
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/registry
-          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache Cargo index
-        uses: actions/cache@v4
-        with:
-          path: ~/.cargo/git
-          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-      - name: Cache Cargo build
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-build-target-
-      - name: Install sccache
-        uses: mozilla/sccache-action@v0.0.9
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y gnuplot libfontconfig1-dev
-      - name: Run benchmarks
-        run: |
-          sccache --start-server
-          cargo bench --bench performance_regression --no-fail-fast
-      - name: Upload Criterion HTML report
-        if: always()
-        uses: actions/upload-artifact@v4
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
         with:
-          name: criterion-report
-          path: target/criterion/
-          retention-days: 30
+          python-version: '3.10'
+          cache: 'false'
+      - name: Run tests
+        run: cargo test --lib --verbose --no-default-features
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+
+  fmt:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-env
+        with:
+          components: rustfmt
+      - run: cargo fmt -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          rust-components: clippy
+          python-version: '3.10'
+          cache: 'false'
+      - run: cargo clippy --lib --all-features -- -D warnings

@@ -15,14 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
-          key: ${{ runner.os }}-perf-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run thermal model benchmarks
         run: cargo bench --bench performance --no-fail-fast -- thermal_model
 
@@ -33,14 +35,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
-          key: ${{ runner.os }}-perf-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run batch oracle benchmarks
         run: cargo bench --bench performance --no-fail-fast -- batch_oracle
 
@@ -51,14 +55,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
-        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: actions/cache@v4
         with:
           path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
-          key: ${{ runner.os }}-perf-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
       - name: Run performance tests
         run: |
           cargo test --test performance_ci_test

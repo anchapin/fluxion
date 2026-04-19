@@ -35,8 +35,8 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing)
 python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
-# Feature flag for CUDA support
-cuda = []
+# Feature flag for CUDA support (enables GPU-accelerated ONNX inference)
+cuda = ["ort/cuda", "ort/tensorrt"]
 # Feature flag for wiring tracing in integration tests (Plan 21-10)
 wiring-tracing = []
 # Feature flag for multi-zone support
