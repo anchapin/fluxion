@@ -1586,6 +1586,8 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
     // Register HVAC classes directly in main module for now
     m.add_class::<python::hvac_bindings::PyZoneSetpoints>()?;
     m.add_class::<python::hvac_bindings::PyZoneControl>()?;
+    m.add_class::<python::hvac_bindings::PyDailySchedule>()?;
+    m.add_class::<python::hvac_bindings::PyHVACSchedule>()?;
     m.add_function(pyo3::wrap_pyfunction!(
         python::hvac_bindings::create_zone_setpoints,
         m

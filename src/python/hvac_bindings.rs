@@ -1,7 +1,8 @@
 //! Python bindings for HVAC functionality
 //!
-//! This module provides PyO3 bindings for zone setpoints and control functionality
+//! This module provides PyO3 bindings for zone setpoints, control, and schedule functionality
 
+use crate::hvac::schedule::{DailySchedule, DayType, HVACSchedule, ScheduleType, ScheduleValues};
 use crate::hvac::zone_control::{HVACStatus, ZoneControl};
 use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
@@ -235,6 +236,145 @@ pub fn create_zone_setpoints(config: &Bound<'_, PyDict>) -> PyResult<PyZoneSetpo
 
     setpoints.validate()?;
     Ok(setpoints)
+}
+
+/// Python wrapper for DailySchedule
+#[pyclass(name = "DailySchedule")]
+pub struct PyDailySchedule {
+    inner: DailySchedule,
+}
+
+#[pymethods]
+impl PyDailySchedule {
+    #[new]
+    pub fn new(name: String, schedule_type: String) -> PyResult<Self> {
+        let schedule_type = match schedule_type.as_str() {
+            "Constant" => ScheduleType::Constant,
+            "DailyCycle" => ScheduleType::DailyCycle,
+            "Weekly" => ScheduleType::Weekly,
+            "Custom" => ScheduleType::Custom,
+            _ => {
+                return Err(pyo3::exceptions::PyValueError::new_err(
+                    "Invalid schedule type. Use: Constant, DailyCycle, Weekly, or Custom",
+                ))
+            }
+        };
+
+        let mut schedule = match schedule_type {
+            ScheduleType::Weekly => DailySchedule::weekly(name),
+            _ => DailySchedule::new(),
+        };
+        schedule.schedule_type = schedule_type;
+
+        Ok(PyDailySchedule { inner: schedule })
+    }
+
+    pub fn set_hour(&mut self, hour: usize, value: f64) -> PyResult<()> {
+        self.inner.set_hour(hour, value);
+        Ok(())
+    }
+
+    pub fn fill_range(&mut self, start_hour: usize, end_hour: usize, value: f64) -> PyResult<()> {
+        self.inner.fill_range(start_hour, end_hour, value);
+        Ok(())
+    }
+
+    pub fn value(&self, hour: usize) -> f64 {
+        self.inner.value(hour)
+    }
+
+    pub fn constant(value: f64) -> Self {
+        PyDailySchedule {
+            inner: DailySchedule::constant(value),
+        }
+    }
+}
+
+/// Python wrapper for HVACSchedule
+#[pyclass(name = "HVACSchedule")]
+pub struct PyHVACSchedule {
+    inner: HVACSchedule,
+}
+
+#[pymethods]
+impl PyHVACSchedule {
+    #[new]
+    pub fn new() -> Self {
+        PyHVACSchedule {
+            inner: HVACSchedule::new(),
+        }
+    }
+
+    pub fn constant_schedule(heating_sp: f64, cooling_sp: f64) -> Self {
+        PyHVACSchedule {
+            inner: HVACSchedule::constant_schedule(heating_sp, cooling_sp),
+        }
+    }
+
+    pub fn setback_schedule(
+        day_heat: f64,
+        night_heat: f64,
+        cool_sp: f64,
+        night_start: usize,
+        night_end: usize,
+    ) -> Self {
+        PyHVACSchedule {
+            inner: HVACSchedule::setback_schedule(
+                day_heat,
+                night_heat,
+                cool_sp,
+                night_start,
+                night_end,
+            ),
+        }
+    }
+
+    pub fn with_operating_hours(
+        heating_sp: f64,
+        cooling_sp: f64,
+        start_hour: usize,
+        end_hour: usize,
+    ) -> Self {
+        PyHVACSchedule {
+            inner: HVACSchedule::with_operating_hours(heating_sp, cooling_sp, start_hour, end_hour),
+        }
+    }
+
+    pub fn free_floating() -> Self {
+        PyHVACSchedule {
+            inner: HVACSchedule::free_floating(),
+        }
+    }
+
+    pub fn is_free_floating(&self) -> bool {
+        self.inner.is_free_floating()
+    }
+
+    pub fn heating_setpoint(&self, hour: usize) -> f64 {
+        self.inner.heating_setpoint(hour)
+    }
+
+    pub fn cooling_setpoint(&self, hour: usize) -> f64 {
+        self.inner.cooling_setpoint(hour)
+    }
+
+    pub fn get_heating_schedule(&self) -> PyDailySchedule {
+        PyDailySchedule {
+            inner: self.inner.heating.clone(),
+        }
+    }
+
+    pub fn get_cooling_schedule(&self) -> PyDailySchedule {
+        PyDailySchedule {
+            inner: self.inner.cooling.clone(),
+        }
+    }
+}
+
+impl Default for PyHVACSchedule {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 // Python module initialization - classes are registered in main fluxion module
