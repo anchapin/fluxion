@@ -142,6 +142,124 @@ impl InferenceMetrics {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct SurrogateInputs {
+    pub exterior_temp: f64,
+    pub zone_temp: f64,
+    pub solar_rad: f64,
+    pub humidity: f64,
+    pub occupancy: f64,
+    pub climate_zone: String,
+}
+
+impl SurrogateInputs {
+    pub fn from_temps(temps: &[f64]) -> Self {
+        let hour_of_day = (std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            / 3600) as usize
+            % 24;
+        let daily_cycle = (std::f64::consts::PI * (hour_of_day as f64 - 6.0) / 12.0).sin();
+        SurrogateInputs {
+            exterior_temp: temps.first().copied().unwrap_or(20.0),
+            zone_temp: temps.get(1).copied().unwrap_or(22.0),
+            solar_rad: (500.0 * daily_cycle).max(0.0),
+            humidity: 50.0,
+            occupancy: 0.1,
+            climate_zone: "4A".to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct SurrogateDomain {
+    pub temp_bounds: (f64, f64),
+    pub zone_temp_bounds: (f64, f64),
+    pub solar_bounds: (f64, f64),
+    pub humidity_bounds: (f64, f64),
+    pub occupancy_bounds: (f64, f64),
+    pub climate_zones: Vec<String>,
+    pub building_types: Vec<String>,
+    pub training_period: (String, String),
+}
+
+impl SurrogateDomain {
+    pub fn default_residential() -> Self {
+        SurrogateDomain {
+            temp_bounds: (-50.0, 60.0),
+            zone_temp_bounds: (10.0, 40.0),
+            solar_bounds: (0.0, 1200.0),
+            humidity_bounds: (0.0, 100.0),
+            occupancy_bounds: (0.0, 10.0),
+            climate_zones: vec!["4A".to_string(), "5A".to_string(), "6A".to_string()],
+            building_types: vec!["residential".to_string()],
+            training_period: ("2020-01-01".to_string(), "2023-12-31".to_string()),
+        }
+    }
+
+    pub fn is_valid(&self, inputs: &SurrogateInputs) -> bool {
+        let temp_valid = inputs.exterior_temp >= self.temp_bounds.0
+            && inputs.exterior_temp <= self.temp_bounds.1;
+        let zone_valid = inputs.zone_temp >= self.zone_temp_bounds.0
+            && inputs.zone_temp <= self.zone_temp_bounds.1;
+        let solar_valid =
+            inputs.solar_rad >= self.solar_bounds.0 && inputs.solar_rad <= self.solar_bounds.1;
+        let humidity_valid =
+            inputs.humidity >= self.humidity_bounds.0 && inputs.humidity <= self.humidity_bounds.1;
+        let occupancy_valid = inputs.occupancy >= self.occupancy_bounds.0
+            && inputs.occupancy <= self.occupancy_bounds.1;
+        let climate_valid = self.climate_zones.contains(&inputs.climate_zone);
+
+        temp_valid
+            && zone_valid
+            && solar_valid
+            && humidity_valid
+            && occupancy_valid
+            && climate_valid
+    }
+}
+
+#[derive(Clone, Debug, Copy, PartialEq, Eq)]
+pub enum SurrogateMode {
+    NeuralOnly,
+    NeuralWithFallback,
+    AnalyticalOnly,
+}
+
+impl Default for SurrogateMode {
+    fn default() -> Self {
+        SurrogateMode::NeuralWithFallback
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ModelMetadata {
+    pub model_version: String,
+    pub domain: SurrogateDomain,
+    pub onnx_version: Option<String>,
+    pub training_samples: usize,
+    pub test_mae: Option<f64>,
+    pub test_rmse: Option<f64>,
+    pub test_r2: Option<f64>,
+    pub validation_date: Option<String>,
+}
+
+impl Default for ModelMetadata {
+    fn default() -> Self {
+        ModelMetadata {
+            model_version: "0.0.0".to_string(),
+            domain: SurrogateDomain::default_residential(),
+            onnx_version: None,
+            training_samples: 0,
+            test_mae: None,
+            test_rmse: None,
+            test_r2: None,
+            validation_date: None,
+        }
+    }
+}
+
 /// Manages AI surrogate models for fast thermal load prediction.
 ///
 /// Replaces expensive CFD/ray-tracing with pre-trained neural networks.
@@ -462,6 +580,42 @@ impl SurrogateManager {
         #[cfg(not(feature = "cuda"))]
         {
             false
+        }
+    }
+
+    pub fn predict_loads_governed(
+        &self,
+        temps: &[f64],
+        domain: &SurrogateDomain,
+        mode: SurrogateMode,
+    ) -> Result<Vec<f64>, String> {
+        let inputs = SurrogateInputs::from_temps(temps);
+
+        if !domain.is_valid(&inputs) {
+            warn!(
+                "Inputs out of domain bounds for surrogate. \
+                 Temp: {:.1}, Zone: {:.1}, Solar: {:.1}, Climate: {}. \
+                 Falling back to analytical model.",
+                inputs.exterior_temp, inputs.zone_temp, inputs.solar_rad, inputs.climate_zone
+            );
+            return self.analytical_loads(temps);
+        }
+
+        match mode {
+            SurrogateMode::NeuralOnly => {
+                if self.composite.is_some() || self.session_pool.is_some() {
+                    Ok(self
+                        .predict_loads_batched(&[temps.to_vec()])
+                        .into_iter()
+                        .next()
+                        .unwrap_or_else(|| temps.iter().map(|&t| t * 0.05).collect()))
+                } else {
+                    warn!("NeuralOnly mode but no model loaded, using analytical");
+                    self.analytical_loads(temps)
+                }
+            }
+            SurrogateMode::NeuralWithFallback => self.predict_loads_with_fallback(temps),
+            SurrogateMode::AnalyticalOnly => self.analytical_loads(temps),
         }
     }
 
@@ -936,5 +1090,89 @@ mod tests {
     fn test_multi_device_config_auto() {
         let c = MultiDeviceConfig::auto();
         assert!(c.auto_select);
+    }
+
+    #[test]
+    fn test_surrogate_domain_default() {
+        let domain = SurrogateDomain::default_residential();
+        assert_eq!(domain.temp_bounds, (-50.0, 60.0));
+        assert_eq!(domain.zone_temp_bounds, (10.0, 40.0));
+        assert_eq!(domain.solar_bounds, (0.0, 1200.0));
+        assert!(domain.climate_zones.contains(&"4A".to_string()));
+    }
+
+    #[test]
+    fn test_surrogate_domain_is_valid() {
+        let domain = SurrogateDomain::default_residential();
+        let valid_inputs = SurrogateInputs {
+            exterior_temp: 20.0,
+            zone_temp: 22.0,
+            solar_rad: 500.0,
+            humidity: 50.0,
+            occupancy: 0.1,
+            climate_zone: "4A".to_string(),
+        };
+        assert!(domain.is_valid(&valid_inputs));
+
+        let invalid_inputs = SurrogateInputs {
+            exterior_temp: -60.0,
+            zone_temp: 22.0,
+            solar_rad: 500.0,
+            humidity: 50.0,
+            occupancy: 0.1,
+            climate_zone: "4A".to_string(),
+        };
+        assert!(!domain.is_valid(&invalid_inputs));
+    }
+
+    #[test]
+    fn test_surrogate_inputs_from_temps() {
+        let temps = vec![15.0, 22.0];
+        let inputs = SurrogateInputs::from_temps(&temps);
+        assert_eq!(inputs.exterior_temp, 15.0);
+        assert_eq!(inputs.zone_temp, 22.0);
+    }
+
+    #[test]
+    fn test_surrogate_mode_default() {
+        let mode = SurrogateMode::default();
+        assert_eq!(mode, SurrogateMode::NeuralWithFallback);
+    }
+
+    #[test]
+    fn test_model_metadata_default() {
+        let metadata = ModelMetadata::default();
+        assert_eq!(metadata.model_version, "0.0.0");
+        assert_eq!(metadata.training_samples, 0);
+    }
+
+    #[test]
+    fn test_predict_loads_governed_fallback() {
+        let m = SurrogateManager::new().unwrap();
+        let domain = SurrogateDomain::default_residential();
+        let temps = vec![20.0, 22.0];
+
+        let result = m.predict_loads_governed(&temps, &domain, SurrogateMode::NeuralWithFallback);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_predict_loads_governed_analytical_only() {
+        let m = SurrogateManager::new().unwrap();
+        let domain = SurrogateDomain::default_residential();
+        let temps = vec![20.0, 22.0];
+
+        let result = m.predict_loads_governed(&temps, &domain, SurrogateMode::AnalyticalOnly);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_predict_loads_governed_out_of_domain() {
+        let m = SurrogateManager::new().unwrap();
+        let domain = SurrogateDomain::default_residential();
+        let temps = vec![-60.0, 22.0];
+
+        let result = m.predict_loads_governed(&temps, &domain, SurrogateMode::NeuralWithFallback);
+        assert!(result.is_ok());
     }
 }
