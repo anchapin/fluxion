@@ -1,0 +1,46 @@
+{
+  "name": "surrogate_benchmarking",
+  "version": "1.0",
+  "description": "Surrogate model benchmarking pack for accuracy and performance validation",
+  "category": "benchmarking",
+  "target_users": ["surrogate_developers", "model_validators"],
+  "estimated_runtime_seconds": 300,
+  "dependencies": ["examples/dummy_surrogate.onnx"],
+  "reference_cases": [
+    {
+      "case_id": "case_600",
+      "name": "ASHRAE 140 Case 600 (Low Mass)",
+      "thermal_mass_classification": "light"
+    },
+    {
+      "case_id": "case_900",
+      "name": "ASHRAE 140 Case 900 (High Mass)",
+      "thermal_mass_classification": "very_heavy"
+    },
+    {
+      "case_id": "case_960",
+      "name": "ASHRAE 140 Case 960 (High Mass + Sunspace)",
+      "thermal_mass_classification": "very_heavy"
+    }
+  ],
+  "climate_zones": ["5B", "5A"],
+  "surrogate_config": {
+    "model_path": "examples/dummy_surrogate.onnx",
+    "input_features": ["temperature", "weather", "internal_gains"],
+    "output_features": ["heating_load", "cooling_load"],
+    "fallback_to_physics": true
+  },
+  "benchmark_metrics": {
+    "accuracy": {
+      "r_squared_min": 0.95,
+      "max_absolute_temperature_error_c": 0.5,
+      "max_absolute_energy_error_percent": 5.0
+    },
+    "performance": {
+      "speedup_min": 10.0,
+      "throughput_populations_per_second": 100.0
+    }
+  },
+  "batch_sizes": [1, 10, 100],
+  "timesteps": 8760
+}

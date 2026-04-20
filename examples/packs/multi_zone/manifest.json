@@ -1,0 +1,38 @@
+{
+  "name": "multi_zone",
+  "version": "1.0",
+  "description": "Multi-zone building pack demonstrating zone-to-zone heat transfer",
+  "category": "simulation",
+  "target_users": ["developers", "validation_testing"],
+  "estimated_runtime_seconds": 120,
+  "dependencies": [],
+  "parameters": {
+    "zones": 2,
+    "zone_1": {
+      "name": "Living",
+      "floor_area_m2": 80.0,
+      "height_m": 2.7,
+      "heating_setpoint_c": 20.0,
+      "cooling_setpoint_c": 24.0
+    },
+    "zone_2": {
+      "name": "Sunspace",
+      "floor_area_m2": 20.0,
+      "height_m": 2.7,
+      "heating_setpoint_c": 15.0,
+      "cooling_setpoint_c": 99.0
+    },
+    "inter_zone_conductance_w_k": 50.0
+  },
+  "expected_outputs": {
+    "zone_1_heating_mwh": "1.0-2.5",
+    "zone_1_cooling_mwh": "0.3-1.5",
+    "zone_2_heating_mwh": "0.2-0.8",
+    "inter_zone_heat_transfer_annual_mwh": "0.1-0.5"
+  },
+  "validation_checks": {
+    "energy_conservation": true,
+    "zone_temperature_tracking": true,
+    "inter_zone_heat_balance": true
+  }
+}

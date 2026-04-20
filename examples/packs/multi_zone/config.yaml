@@ -1,0 +1,56 @@
+# Multi Zone Config
+# For ASHRAE 140 Case 960 (High Mass with Sunspace)
+
+zones:
+  - id: zone_1
+    name: Living
+    floor_area_m2: 80.0
+    height_m: 2.7
+    volume_m3: 216.0
+    heating_setpoint_c: 20.0
+    cooling_setpoint_c: 24.0
+    construction:
+      wall_type: high_mass_wall
+      window_u_value: 2.0
+      window_shgc: 0.7
+
+  - id: zone_2
+    name: Sunspace
+    floor_area_m2: 20.0
+    height_m: 2.7
+    volume_m3: 54.0
+    heating_setpoint_c: 15.0
+    cooling_setpoint_c: 99.0
+    construction:
+      wall_type: high_mass_wall
+      window_u_value: 2.5
+      window_shgc: 0.85
+      glass_solar_specific_heat: 15.0
+
+inter_zone:
+  conductance_w_k: 50.0
+  area_m2: 10.0
+
+hvac:
+  zone_1:
+    heating_capacity_w: 4000.0
+    cooling_capacity_w: 3000.0
+    efficiency: 0.95
+  zone_2:
+    heating_capacity_w: 1000.0
+    cooling_capacity_w: 0.0
+    efficiency: 0.95
+
+internal_gains:
+  zone_1:
+    equipment_w: 400.0
+    lighting_w_m2: 8.0
+    occupancy: 4
+  zone_2:
+    equipment_w: 0.0
+    lighting_w_m2: 5.0
+    occupancy: 0
+
+weather:
+  location: Denver
+  climate_zone: "5B"

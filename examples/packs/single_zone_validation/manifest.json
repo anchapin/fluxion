@@ -1,0 +1,28 @@
+{
+  "name": "single_zone_validation",
+  "version": "1.0",
+  "description": "Single-zone building pack for quick validation testing",
+  "category": "validation",
+  "target_users": ["new_contributors", "ci_validation"],
+  "estimated_runtime_seconds": 60,
+  "dependencies": [],
+  "parameters": {
+    "zones": 1,
+    "floor_area_m2": 100.0,
+    "heating_setpoint_c": 20.0,
+    "cooling_setpoint_c": 24.0,
+    "internal_gains_w": 500.0,
+    "lighting_w_m2": 10.0,
+    "infiltration_rate": 0.5
+  },
+  "expected_outputs": {
+    "annual_heating_mwh": "1.5-3.0",
+    "annual_cooling_mwh": "0.5-2.0",
+    "peak_heating_kw": "3.0-6.0",
+    "peak_cooling_kw": "2.0-5.0"
+  },
+  "validation_tolerance": {
+    "energy_balance_error_percent": 0.1,
+    "temperature_drift_per_hour": 0.01
+  }
+}
