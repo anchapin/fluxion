@@ -3552,16 +3552,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             let t = t_vec[i];
-            let power = if t < heating_setpoint {
-                ((heating_setpoint - t) / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
-                    * enabled
+            let delta_t = if t < heating_setpoint {
+                heating_setpoint - t
             } else if t >= cooling_setpoint {
-                ((cooling_setpoint - t) / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
-                    * enabled
+                cooling_setpoint - t
             } else {
                 0.0
             };
-            demand_vec.push(power);
+            let power = if t < heating_setpoint {
+                (delta_t / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
+            } else if t >= cooling_setpoint {
+                (delta_t / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
+            } else {
+                0.0
+            };
+
+            // DEBUG: Print HVAC demand details for Case 610
+            if self.case_id == "610" && delta_t > 0.0 {
+                eprintln!(
+                    "DEBUG Case 610 HVAC: hour={}, zone={}, t_i_free={:.2}°C, setpoint={:.2}°C, delta_t={:.2}K, sensitivity={:.6} K/W, power={:.2}W",
+                    _hour, i, t, heating_setpoint, delta_t, sens_vec[i], power
+                );
+            }
+
+            demand_vec.push(power * enabled);
         }
 
         T::from(VectorField::new(demand_vec))
@@ -3605,6 +3619,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     cooling_slice,
                     enabled_slice,
                 );
+
+                // DEBUG: Print IdealLoads demand for Case 610
+                if self.case_id == "610" && demands[0].abs() > 0.0 {
+                    eprintln!(
+                        "DEBUG Case 610 IDEAL_LOADS: zone_temp={:.2}°C, heating_sp={:.2}°C, cooling_sp={:.2}°C, demand={:.2}W",
+                        zone_temps[zone_idx], heating_setpoint, cooling_setpoint, demands[0]
+                    );
+                }
+
                 combined_demand[zone_idx] = demands[0];
             }
         }
