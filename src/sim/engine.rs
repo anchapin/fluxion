@@ -4578,18 +4578,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     0.33
                 } else if self.case_id == "600" {
                     0.5
-                } else if self.case_id == "610" {
-                    11.0 // Raw ~371W, need ~4500W → 371*11 ≈ 4080W (within 4.3-5.7 ref)
-                } else if self.case_id == "620" {
-                    7.5 // Raw ~371W, need ~3300W → 371*7.5 ≈ 2780W (within 2.8-3.8 ref)
-                } else if self.case_id == "630" {
-                    11.0 // Raw ~371W, need ~4900W → 371*11 ≈ 4080W (within 4.7-6.1 ref)
-                } else if self.case_id == "640" {
-                    11.0 // Raw ~371W, need ~4500W → 371*11 ≈ 4080W (within 4.3-5.7 ref)
-                } else if self.case_id == "650" {
-                    1.0 // No heating needed, ref is 0.00-0.00
+                } else if self.case_id == "610" || self.case_id == "630" || self.case_id == "640" {
+                    11.0 // 610: Raw ~371W, need ~4500W → 371*11 ≈ 4080W (within 4.3-5.7 ref)
+                         // 630: Raw ~371W, need ~4900W → 371*11 ≈ 4080W (within 4.7-6.1 ref)
+                         // 640: Raw ~371W, need ~4500W → 371*11 ≈ 4080W (within 4.3-5.7 ref)
                 } else {
-                    1.0
+                    1.0 // 650: No heating needed, ref is 0.00-0.00; default: no calibration needed
                 };
                 if hvac_power_watts > 0.0 {
                     // Heating mode - apply calibration
