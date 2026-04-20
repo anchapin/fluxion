@@ -68,6 +68,7 @@ pub mod analysis;
 pub mod api;
 pub mod cli;
 pub mod hvac;
+pub mod interop;
 pub mod performance;
 pub mod physics;
 #[cfg(feature = "python-bindings")]
