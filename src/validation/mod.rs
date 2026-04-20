@@ -26,6 +26,7 @@ pub mod tolerance;
 pub mod physics_validator;
 pub mod report;
 pub mod reporter;
+pub mod reporting;
 
 pub mod ashrae_140_multi_zone;
 pub mod case_195_calibration;

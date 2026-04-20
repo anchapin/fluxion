@@ -245,26 +245,26 @@
     "195": {
       "annual_cooling": {
         "EnergyPlus": {
-          "max": 10.70,
-          "min": 9.65
+          "max": 0.00,
+          "min": 0.00
         }
       },
       "annual_heating": {
         "EnergyPlus": {
-          "max": 13.30,
-          "min": 11.50
+          "max": 6.00,
+          "min": 3.50
         }
       },
       "peak_cooling": {
         "EnergyPlus": {
-          "max": 11.80,
-          "min": 10.70
+          "max": 0.00,
+          "min": 0.00
         }
       },
       "peak_heating": {
         "EnergyPlus": {
-          "max": 14.80,
-          "min": 13.00
+          "max": 2.20,
+          "min": 1.40
         }
       }
     }

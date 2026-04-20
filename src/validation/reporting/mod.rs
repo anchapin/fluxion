@@ -3,7 +3,6 @@
 ///
 /// This module provides reporting capabilities for validation results
 /// including CLI commands, report generation, and examples.
-
 /// CLI commands for reporting
 pub mod cli;
 
