@@ -1,0 +1,35 @@
+# Single Zone Validation Config
+# For ASHRAE 140 Case 600 (Low Mass) single-zone validation
+
+zone:
+  count: 1
+  floor_area_m2: 100.0
+  height_m: 2.7
+  volume_m3: 270.0
+
+construction:
+  wall_type: light_mass_wall
+  roof_type: low_mass_roof
+  floor_type: insulated_floor
+  window_u_value: 2.0
+  window_shgc: 0.7
+
+hvac:
+  heating_setpoint_c: 20.0
+  cooling_setpoint_c: 24.0
+  heating_capacity_w: 5000.0
+  cooling_capacity_w: 4000.0
+  efficiency: 0.95
+
+internal_gains:
+  equipment_w: 500.0
+  lighting_w_m2: 10.0
+  occupancy: 2
+
+infiltration:
+  rate_per_hour: 0.5
+  vent_rate: 0.0
+
+weather:
+  location: Denver
+  climate_zone: "5B"

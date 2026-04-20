@@ -1,0 +1,57 @@
+# Surrogate Benchmarking Config
+# Validation of ONNX surrogate models against reference physics
+
+surrogate:
+  model_path: "examples/dummy_surrogate.onnx"
+  fallback_to_physics: true
+  warm_up_timesteps: 24
+
+reference_cases:
+  - case_id: case_600
+    name: "ASHRAE 140 Case 600"
+    zones: 1
+    floor_area_m2: 100.0
+    thermal_mass: light
+    config:
+      wall_u_value: 0.514
+      roof_u_value: 0.49
+      window_u_value: 2.2
+
+  - case_id: case_900
+    name: "ASHRAE 140 Case 900"
+    zones: 1
+    floor_area_m2: 100.0
+    thermal_mass: very_heavy
+    config:
+      wall_u_value: 0.284
+      roof_u_value: 0.254
+      window_u_value: 2.2
+
+  - case_id: case_960
+    name: "ASHRAE 140 Case 960"
+    zones: 2
+    floor_area_m2: 100.0
+    thermal_mass: very_heavy
+    inter_zone_conductance: 50.0
+    config:
+      wall_u_value: 0.284
+      roof_u_value: 0.254
+      window_u_value: 2.2
+
+climate_zones:
+  - zone_id: denver_5b
+    name: Denver
+    file: "tests/data/v0.5/weather/USA_CO_Denver.epw"
+  - zone_id: boston_5a
+    name: Boston
+    file: "tests/data/v0.5/weather/USA_MA_Boston.epw"
+
+benchmarking:
+  warm_up_iterations: 10
+  measurement_iterations: 100
+  batch_sizes: [1, 10, 100]
+
+reporting:
+  output_dir: "results/surrogate_benchmark"
+  formats: ["json", "csv"]
+  include_plots: true

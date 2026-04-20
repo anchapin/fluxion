@@ -1,0 +1,38 @@
+# Retrofit Analysis Config
+# Baseline vs Retrofit comparison for energy savings evaluation
+
+building:
+  zones: 1
+  floor_area_m2: 200.0
+  height_m: 2.7
+  construction_type: medium_mass
+  wall_type: light_mass_wall
+
+baseline:
+  name: "1980s Baseline"
+  wall_u_value: 0.5
+  window_u_value: 2.5
+  hvac_cop: 2.5
+  lighting_w_m2: 15.0
+  infiltration_rate: 1.0
+  cooling_setpoint_c: 24.0
+  heating_setpoint_c: 20.0
+
+retrofit:
+  name: "Full Retrofit"
+  wall_u_value: 0.3
+  window_u_value: 1.5
+  hvac_cop: 3.5
+  lighting_w_m2: 8.0
+  infiltration_rate: 0.5
+  cooling_setpoint_c: 24.0
+  heating_setpoint_c: 20.0
+
+weather:
+  location: Boston
+  climate_zone: "5A"
+
+reporting:
+  output_format: "json"
+  include_monthly: true
+  include_peak_demand: true
