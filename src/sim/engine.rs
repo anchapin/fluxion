@@ -3051,18 +3051,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 1. Through h_ext to exterior environment
         // 2. Through h_is_m to thermal mass (which acts as heat sink/source)
         //
-        // FIX #2 (Root Cause Fix): Remove empirical weighting and use full physics sum
-        // Previous weighted average (0.65/0.35) suppressed HVAC power demand
-        // by artificially reducing h_total, leading to 60-90% under-prediction.
-        let h_is_m = self.derived_h_ms_is_prod.clone() / self.derived_term_rest_1.clone();
-        let h_total = self.derived_h_ext.clone() + h_is_m.clone();
-
+        // The series combination of these paths gives the total thermal resistance
+        // that the HVAC system "sees" when trying to control air temperature.
         self.derived_sensitivity = self.temperatures.constant_like(1.0) / h_total.clone();
 
         // Debug: Print sensitivity calculation for Case 600
         if self.case_id == "600" {
-            println!("DEBUG SENS Case 600: h_ext={:.2} W/K, h_is_m={:.2} W/K, h_total={:.2} W/K, sensitivity={:.6} K/W (1/h_total)",
-                self.derived_h_ext.as_ref()[0], h_is_m.as_ref()[0], h_total.as_ref()[0], self.derived_sensitivity.as_ref()[0]);
+            println!(
+                "DEBUG SENS Case 600: h_ext={:.2} W/K, sensitivity={:.6} K/W (1/h_total)",
+                h_total.as_ref()[0],
+                self.derived_sensitivity.as_ref()[0]
+            );
         }
     }
 
@@ -3552,16 +3551,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             let t = t_vec[i];
-            let power = if t < heating_setpoint {
-                ((heating_setpoint - t) / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
-                    * enabled
+            let delta_t = if t < heating_setpoint {
+                heating_setpoint - t
             } else if t >= cooling_setpoint {
-                ((cooling_setpoint - t) / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
-                    * enabled
+                cooling_setpoint - t
             } else {
                 0.0
             };
-            demand_vec.push(power);
+            let power = if t < heating_setpoint {
+                (delta_t / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
+            } else if t >= cooling_setpoint {
+                (delta_t / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
+            } else {
+                0.0
+            };
+
+            // DEBUG: Print HVAC demand details for Case 610
+            if self.case_id == "610" && delta_t > 0.0 {
+                eprintln!(
+                    "DEBUG Case 610 HVAC: hour={}, zone={}, t_i_free={:.2}°C, setpoint={:.2}°C, delta_t={:.2}K, sensitivity={:.6} K/W, power={:.2}W",
+                    _hour, i, t, heating_setpoint, delta_t, sens_vec[i], power
+                );
+            }
+
+            demand_vec.push(power * enabled);
         }
 
         T::from(VectorField::new(demand_vec))
@@ -3605,6 +3618,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     cooling_slice,
                     enabled_slice,
                 );
+
+                // DEBUG: Print IdealLoads demand for Case 610
+                if self.case_id == "610" && demands[0].abs() > 0.0 {
+                    eprintln!(
+                        "DEBUG Case 610 IDEAL_LOADS: zone_temp={:.2}°C, heating_sp={:.2}°C, cooling_sp={:.2}°C, demand={:.2}W",
+                        zone_temps[zone_idx], heating_setpoint, cooling_setpoint, demands[0]
+                    );
+                }
+
                 combined_demand[zone_idx] = demands[0];
             }
         }
@@ -4557,7 +4579,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use hvac_power_demand (sensitivity-based) for peak tracking instead.
             // hvac_power_demand gives ~6.6kW raw, 0.5 calibration brings to ~3.3kW (within 2.8-3.8kW ref).
             let hvac_power_for_peak = if self.case_id.starts_with("60") && self.case_id.len() == 3 {
-                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
+                let power_demand =
+                    self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+                // Debug output for 600-series peak tracking
+                if self.case_id == "610" {
+                    let raw_watts = power_demand.as_ref().iter().sum::<f64>();
+                    println!(
+                        "DEBUG Case 610 peak calc: t_i_free={:.2}°C, sensitivity={:.6} K/W, raw_power={:.2} W",
+                        t_i_free.as_ref()[0], sensitivity_val.as_ref()[0], raw_watts
+                    );
+                }
+                power_demand
             } else {
                 hvac_output_raw.clone()
             };
@@ -4823,13 +4855,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                    // SESSION 72: Include ventilation-to-mass cooling
+                    let effective_h_tr_em = h_tr_em + h_vent_mass_zone;
+                    let t_ext_weighted = if h_vent_mass_zone > 0.0 {
+                        (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
+                            / effective_h_tr_em
+                    } else {
+                        t_sol_air[i]
+                    };
                     crank_nicolson_update(
                         tm_old,
                         dt,
                         cm,
-                        h_tr_em,
+                        effective_h_tr_em,
                         h_tr_ms,
-                        t_sol_air[i],
+                        t_ext_weighted,
                         t_s,
                         phi_m_zone,
                     )
