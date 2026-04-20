@@ -4823,13 +4823,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
+                    // SESSION 72: Include ventilation-to-mass cooling
+                    let effective_h_tr_em = h_tr_em + h_vent_mass_zone;
+                    let t_ext_weighted = if h_vent_mass_zone > 0.0 {
+                        (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
+                            / effective_h_tr_em
+                    } else {
+                        t_sol_air[i]
+                    };
                     crank_nicolson_update(
                         tm_old,
                         dt,
                         cm,
-                        h_tr_em,
+                        effective_h_tr_em,
                         h_tr_ms,
-                        t_sol_air[i],
+                        t_ext_weighted,
                         t_s,
                         phi_m_zone,
                     )
