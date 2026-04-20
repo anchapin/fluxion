@@ -88,8 +88,7 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
-use crate::physics::cta::ContinuousTensor;
-use crate::physics::cta::VectorField;
+use crate::physics::cta::{ContinuousTensor, VectorField};
 use ai::surrogate::SurrogateManager;
 
 use sim::engine::{StepParameters, ThermalModel};
