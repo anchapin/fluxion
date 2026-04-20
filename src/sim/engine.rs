@@ -4557,7 +4557,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use hvac_power_demand (sensitivity-based) for peak tracking instead.
             // hvac_power_demand gives ~6.6kW raw, 0.5 calibration brings to ~3.3kW (within 2.8-3.8kW ref).
             let hvac_power_for_peak = if self.case_id.starts_with("60") && self.case_id.len() == 3 {
-                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
+                let power_demand =
+                    self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+                // Debug output for 600-series peak tracking
+                if self.case_id == "610" {
+                    let raw_watts = power_demand.as_ref().iter().sum::<f64>();
+                    println!(
+                        "DEBUG Case 610 peak calc: t_i_free={:.2}°C, sensitivity={:.6} K/W, raw_power={:.2} W",
+                        t_i_free.as_ref()[0], sensitivity_val.as_ref()[0], raw_watts
+                    );
+                }
+                power_demand
             } else {
                 hvac_output_raw.clone()
             };
