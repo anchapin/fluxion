@@ -4064,7 +4064,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
-        let (_t_sol_air_data, ctf_flux_w, fd_flux_w) =
+        let (t_sol_air_data, ctf_flux_w, fd_flux_w) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
 
         // Get ground temperature at this timestep
@@ -4112,20 +4112,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_st = T::from(VectorField::new(phi_st_data));
         let phi_m = T::from(VectorField::new(phi_m_data));
 
-        // === FIX D1: Calculate sol-air temperature for exterior surface ===
-        // Per ISO 13790, exterior surface temperature is affected by solar radiation
-        // T_sol-air = T_outdoor + (α × I_sol / h_se)
-        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
-        use crate::physics::constants::thermal::ashrae_140::v2023::{
-            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
-        };
-        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
-        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
-        let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
-        for i_sol in solar_ref.iter().take(self.num_zones) {
-            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
-            t_sol_air_data.push(t_sol_air_zone);
-        }
         let t_sol_air = VectorField::new(t_sol_air_data.clone());
 
         // Simplified 5R1C calculation using CTA
@@ -5333,21 +5319,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut t_s_act = ts_num_act;
         t_s_act.div_assign(term_rest_1);
 
-        // === FIX D1: Calculate sol-air temperature for exterior surface ===
-        // Per ISO 13790, exterior surface temperature is affected by solar radiation
-        // T_sol-air = T_outdoor + (α × I_sol / h_se)
-        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
-        use crate::physics::constants::thermal::ashrae_140::v2023::{
-            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
-        };
-        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
-        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
-        let mut t_sol_air_data = Vec::with_capacity(self.num_zones);
-        for &i_sol in solar_ref.iter().take(self.num_zones) {
-            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
-            t_sol_air_data.push(t_sol_air_zone);
-        }
-        let t_sol_air = VectorField::new(t_sol_air_data);
+        let t_sol_air = VectorField::new(t_sol_air_data.clone());
 
         // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
