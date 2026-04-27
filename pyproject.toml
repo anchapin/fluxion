@@ -49,6 +49,8 @@ dev = [
     "pyasn1>=0.6.2",   # CVE-2026-23490: fix RELATIVE-OID memory exhaustion DoS
     "cbor2>=5.9.0",    # CVE-2026-26209: fix uncontrolled recursion DoS
     "jaraco-context>=6.1.0",  # CVE-2026-23949: fix Zip Slip path traversal
+    "diskcache>=5.6.4",  # CVE-2025-69872: fix arbitrary code execution via pickle deserialization
+    "pillow>=12.1.1",   # CVE-2026-25990: fix out-of-bounds write in PSD image loading
 ]
 api = [
     "fastapi>=0.109.0",
