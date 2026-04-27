@@ -35,6 +35,8 @@ crate-type = ["cdylib", "rlib"]
 default = []
 # Feature flag to enable Python bindings (disabled by default for pure Rust testing)
 python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
+# Feature flag to enable Node.js/NAPI bindings (disabled by default for pure Rust testing)
+napi-bindings = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
 # Feature flag for CUDA support (enables GPU-accelerated ONNX inference)
 cuda = ["ort/cuda", "ort/tensorrt"]
 # Feature flag for wiring tracing in integration tests (Plan 21-10)
@@ -101,6 +103,12 @@ ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
 # Python Interop
 pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py310"], optional = true }
 numpy = { version = "0.22", optional = true }
+
+# Node.js/NAPI Interop
+napi = { version = "3", features = ["napi8", "serde-json", "async"], optional = true }
+napi-derive = { version = "3", optional = true }
+napi-build = { version = "2", optional = true }
+
 crossbeam = "0.8.4"
 num-traits = "0.2.19"
 
@@ -109,6 +117,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
+napi-build = { version = "2", optional = true }
 
 [dev-dependencies]
 criterion = "0.5"

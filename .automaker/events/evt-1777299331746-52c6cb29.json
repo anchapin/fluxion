@@ -1,0 +1,11 @@
+{
+  "id": "evt-1777299331746-52c6cb29",
+  "trigger": "feature_error",
+  "timestamp": "2026-04-27T14:15:31.746Z",
+  "projectPath": "/home/alex/Projects/fluxion",
+  "projectName": "fluxion",
+  "featureId": "issue-573-cdd82820-3d28-4c8f-85aa-d67cb8865b52",
+  "featureName": "Increase ASHRAE 140 validation pass rate to 65%",
+  "error": "Claude Code process exited with code 1",
+  "errorType": "execution"
+}

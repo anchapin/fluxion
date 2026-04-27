@@ -1,0 +1,42 @@
+---
+id: gh-573
+title: "[GH#573] Increase ASHRAE 140 validation pass rate to 65%"
+role: backend
+priority: 4
+scope: medium
+complexity: medium
+type: feature
+metadata:
+  issue_number: 573
+---
+
+# [GH#573] Increase ASHRAE 140 validation pass rate to 65%
+
+## Context
+Currently at 36% pass rate (23/64 metrics passing). Target is 65% pass rate.
+
+## Current Status
+From latest validation run:
+- Total: 64 metrics
+- Passed: 23 (35.9%)
+- Failed: 36
+- Warnings: 5
+
+## Areas to Fix
+
+### High Priority (Likely Impact: ~15-20%)
+1. **Peak load calculations** - Multiple cases show peak heating/cooling outside reference ranges
+2. **Free-floating temperature dynamics** - Cases 600FF, 650FF, 950FF min/max temperatures off
+
+### Medium Priority (Likely Impact: ~10-15%)
+3. **Thermal mass coupling** - Cases 900 series temperature swing issues
+4. **Solar gain distribution** - Cases 610, 620, 630 showing discrepancies
+
+## Target
+65% pass rate = ~42 metrics passing (up from 23)
+
+## Acceptance Criteria
+- [ ] Pass rate >= 65%
+- [ ] Mean Absolute Error <= 20%
+- [ ] No new regressions introduced
+

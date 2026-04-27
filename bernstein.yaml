@@ -1,0 +1,13 @@
+# Bernstein orchestration config
+# Uncomment and edit the goal, then run: bernstein
+
+# goal: "Describe what you want the agents to build or improve"
+
+cli: auto  # Bernstein picks the best agent per task
+team: auto
+budget: "$10"
+
+constraints:
+  - "Python 3.12+"
+  - "pytest for tests"
+  - "ruff for linting"

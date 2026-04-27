@@ -1,0 +1,19 @@
+# NPM package - exclude unnecessary files
+src/
+target/
+tests/
+benches/
+examples/
+docs/
+.github/
+.githooks/
+.planning/
+tools/
+*.md
+!README.md
+.gitignore
+.gitattributes
+Cargo.lock
+.refdata/
+.assets/
+.DS_Store

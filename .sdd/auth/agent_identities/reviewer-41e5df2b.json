@@ -1,0 +1,41 @@
+{
+  "id": "reviewer-41e5df2b",
+  "role": "reviewer",
+  "session_id": "reviewer-41e5df2b",
+  "permissions": [
+    "files:read",
+    "files:write",
+    "status:read",
+    "tasks:claim",
+    "tasks:read"
+  ],
+  "status": "active",
+  "created_at": 1777312195.4146085,
+  "last_authenticated_at": 1777312383.4629016,
+  "revoked_at": 0.0,
+  "revocation_reason": "",
+  "credential": {
+    "token_hash": "4568bf42244ea03f7ad39c411dbf743f8ec100fc4dc8c5ace93f4d24741a879c",
+    "created_at": 1777312195.4146085,
+    "expires_at": 1777326595.0,
+    "revoked": false,
+    "token_type": "jwt",
+    "algorithm": "HS256",
+    "jti": "5f11ed3b77224f55a01835cb375affcb",
+    "tenant_id": "default",
+    "task_ids": [
+      "0ddc5dadcfc5",
+      "f5fdf431177e"
+    ],
+    "allowed_files": []
+  },
+  "parent_identity_id": null,
+  "metadata": {
+    "source": "spawner"
+  },
+  "task_ids": [
+    "0ddc5dadcfc5",
+    "f5fdf431177e"
+  ],
+  "allowed_files": []
+}

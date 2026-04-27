@@ -200,3 +200,4 @@ case_900ff_profile_hourly.csv
 .worktrees/
 .security-key
 logs/security/
+.sdd/runtime/

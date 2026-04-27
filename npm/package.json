@@ -1,0 +1,57 @@
+{
+  "name": "@fluxion/native",
+  "version": "1.0.0",
+  "description": "High-performance native Node.js bindings for Fluxion Building Energy Modeling engine",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "name": "fluxion",
+    "triples": {
+      "defaults": true,
+      "additional": [
+        "x86_64-pc-windows-msvc",
+        "aarch64-pc-windows-msvc",
+        "x86_64-apple-darwin",
+        "aarch64-apple-darwin",
+        "x86_64-unknown-linux-gnu"
+      ]
+    }
+  },
+  "scripts": {
+    "artifacts": "napi artifacts",
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform",
+    "prepublishOnly": "napi prepublish",
+    "test": "node --test",
+    "universal": "napi universal",
+    "version": "napi version"
+  },
+  "keywords": [
+    "building-energy",
+    "simulation",
+    "thermal-modeling",
+    "ASHRAE",
+    "machine-learning",
+    "surrogate-model",
+    "energy-plus",
+    "parametric-design",
+    "bim",
+    "optimization"
+  ],
+  "author": "Fluxion Team <team@fluxion.org>",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anchapin/fluxion.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anchapin/fluxion/issues"
+  },
+  "homepage": "https://github.com/anchapin/fluxion#readme",
+  "engines": {
+    "node": ">= 18"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.0.0-alpha.0"
+  }
+}

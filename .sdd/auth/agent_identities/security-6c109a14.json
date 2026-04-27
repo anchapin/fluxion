@@ -1,0 +1,42 @@
+{
+  "id": "security-6c109a14",
+  "role": "security",
+  "session_id": "security-6c109a14",
+  "permissions": [
+    "files:read",
+    "files:write",
+    "status:read",
+    "tasks:claim",
+    "tasks:read",
+    "tests:run"
+  ],
+  "status": "active",
+  "created_at": 1777312561.8870907,
+  "last_authenticated_at": 1777312718.0871816,
+  "revoked_at": 0.0,
+  "revocation_reason": "",
+  "credential": {
+    "token_hash": "bc1e514cc5ef9bab727b824c4bb9a962fec2f29f003ae95f04478b2fc24d493f",
+    "created_at": 1777312561.8870907,
+    "expires_at": 1777326961.0,
+    "revoked": false,
+    "token_type": "jwt",
+    "algorithm": "HS256",
+    "jti": "41b32b7b6e574dd3bbb80b8c3bfb2a90",
+    "tenant_id": "default",
+    "task_ids": [
+      "ccb1cbb608f0",
+      "d70e1a2ee6b8"
+    ],
+    "allowed_files": []
+  },
+  "parent_identity_id": null,
+  "metadata": {
+    "source": "spawner"
+  },
+  "task_ids": [
+    "ccb1cbb608f0",
+    "d70e1a2ee6b8"
+  ],
+  "allowed_files": []
+}

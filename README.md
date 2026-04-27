@@ -39,7 +39,8 @@ For a consolidated view of release readiness, pass rates, and benchmark status, 
   * **Throughput**: Evaluates **800-1000+ configurations/sec** via `BatchOracle` and `rayon` threading.
   * **Speed**: <100ms annual simulations via AI approximation.
   * **Hybrid Physics**: Hard constraints (Energy Balance) + Soft constraints (Neural Surrogates).
-  * **Interoperability**: Native Python SDK via `pyo3`.
+  * **Interoperability**: Native Python SDK via `pyo3` and Node.js bindings via `napi-rs`.
+  * **Cross-Platform**: Supports macOS (x64 + ARM), Linux, and Windows.
 
 ## 🛠 Installation
 
@@ -53,6 +54,15 @@ cargo build --release
 pip install maturin
 maturin develop
 ```
+
+### Node.js Bindings
+```bash
+cd npm
+npm install
+npm run build
+```
+
+The Node.js bindings provide high-performance native access to Fluxion with >10,000 configs/sec throughput and full TypeScript support. See [npm/README.md](npm/README.md) for detailed documentation.
 
 ### Development Setup (recommended)
 
