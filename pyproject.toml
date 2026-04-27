@@ -45,6 +45,8 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.0.0",
     "pre-commit>=3.0.0",
+    "urllib3>=2.6.0",  # CVE-2025-66418: fix unbounded decompression chain DoS
+    "pyasn1>=0.6.2",   # CVE-2026-23490: fix RELATIVE-OID memory exhaustion DoS
 ]
 api = [
     "fastapi>=0.109.0",
