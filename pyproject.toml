@@ -51,6 +51,8 @@ dev = [
     "jaraco-context>=6.1.0",  # CVE-2026-23949: fix Zip Slip path traversal
     "diskcache>=5.6.4",  # CVE-2025-69872: fix arbitrary code execution via pickle deserialization
     "pillow>=12.1.1",   # CVE-2026-25990: fix out-of-bounds write in PSD image loading
+    "brotli>=1.2.0",    # CVE-2025-6176: fix decompression bomb DoS in Scrapy
+    "pygments>=2.20.0",  # CVE-2026-4539: fix ReDoS in AdlLexer
 ]
 api = [
     "fastapi>=0.109.0",
