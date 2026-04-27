@@ -589,14 +589,16 @@ class DistributedInferenceManager:
         endpoint_success = sum(ep.successful_requests for ep in self._endpoints.values())
         endpoint_total = sum(ep.total_requests for ep in self._endpoints.values())
 
+        success_rate = (
+            (self.total_requests - self.total_failures) / self.total_requests * 100
+            if self.total_requests > 0
+            else 0
+        )
+
         return {
             "total_requests": self.total_requests,
             "total_failures": self.total_failures,
-            "success_rate": (
-                endpoint_success / endpoint_total * 100
-                if endpoint_total > 0
-                else 0
-            ),
+            "success_rate": success_rate,
             "endpoints": {
                 url: {
                     "status": ep.status.value,
