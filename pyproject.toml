@@ -47,6 +47,8 @@ dev = [
     "pre-commit>=3.0.0",
     "urllib3>=2.6.0",  # CVE-2025-66418: fix unbounded decompression chain DoS
     "pyasn1>=0.6.2",   # CVE-2026-23490: fix RELATIVE-OID memory exhaustion DoS
+    "cbor2>=5.9.0",    # CVE-2026-26209: fix uncontrolled recursion DoS
+    "jaraco-context>=6.1.0",  # CVE-2026-23949: fix Zip Slip path traversal
 ]
 api = [
     "fastapi>=0.109.0",
