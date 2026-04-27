@@ -29,3 +29,9 @@ urllib3>=2.6.0
 
 # Security patches - fix CVE-2026-23490 (pyasn1 memory exhaustion DoS)
 pyasn1>=0.6.2
+
+# Security patches - fix CVE-2026-26209 (cbor2 uncontrolled recursion DoS)
+cbor2>=5.9.0
+
+# Security patches - fix CVE-2026-23949 (jaraco-context Zip Slip path traversal)
+jaraco-context>=6.1.0
