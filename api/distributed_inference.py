@@ -586,12 +586,15 @@ class DistributedInferenceManager:
 
     def get_metrics(self) -> Dict[str, Any]:
         """Get overall metrics."""
+        endpoint_success = sum(ep.successful_requests for ep in self._endpoints.values())
+        endpoint_total = sum(ep.total_requests for ep in self._endpoints.values())
+
         return {
             "total_requests": self.total_requests,
             "total_failures": self.total_failures,
             "success_rate": (
-                (self.total_requests - self.total_failures) / self.total_requests * 100
-                if self.total_requests > 0
+                endpoint_success / endpoint_total * 100
+                if endpoint_total > 0
                 else 0
             ),
             "endpoints": {
