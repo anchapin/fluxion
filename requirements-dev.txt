@@ -23,3 +23,9 @@ seaborn>=0.12.0
 # Utilities
 tqdm>=4.65.0
 pyyaml>=6.0
+
+# Security patches - fix CVE-2025-66418 (urllib3 unbounded decompression chain)
+urllib3>=2.6.0
+
+# Security patches - fix CVE-2026-23490 (pyasn1 memory exhaustion DoS)
+pyasn1>=0.6.2
