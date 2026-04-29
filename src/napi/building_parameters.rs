@@ -75,7 +75,9 @@ impl BuildingParameters {
     ) -> napi::bindgen_prelude::Result<Self> {
         CoreBuildingParameters::new(window_u_value, heating_setpoint, cooling_setpoint)
             .map(|inner| BuildingParameters { inner })
-            .map_err(|e| napi::bindgen_prelude::Error::from_reason(format!("Validation error: {}", e)))
+            .map_err(|e| {
+                napi::bindgen_prelude::Error::from_reason(format!("Validation error: {}", e))
+            })
     }
 
     /// Get window U-value (thermal transmittance) in W/m²K.

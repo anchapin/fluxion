@@ -99,10 +99,3 @@ pub fn register(js_exports: &napi::bindgen_prelude::Object) -> napi::bindgen_pre
 
     Ok(())
 }
-
-#[cfg(not(feature = "napi-bindings"))]
-pub fn register(_js_exports: &napi::bindgen_prelude::Object) -> napi::bindgen_prelude::Result<()> {
-    Err(napi::bindgen_prelude::Error::from_reason(
-        "NAPI bindings feature is not enabled. Build with --features napi-bindings",
-    ))
-}

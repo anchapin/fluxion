@@ -6,10 +6,10 @@
 //! Provides JavaScript interface for evaluating populations of building configurations
 //! with >10,000 configs/sec throughput. Critical for optimization workflows in BIM tools.
 
-use crate::lib::BatchOracle as CoreBatchOracle;
-use crate::sim::engine::ThermalModel;
-use crate::physics::cta::VectorField;
 use crate::ai::SurrogateManager;
+use crate::lib::BatchOracle as CoreBatchOracle;
+use crate::physics::cta::VectorField;
+use crate::sim::engine::ThermalModel;
 
 /// JavaScript-accessible BatchOracle wrapper for high-throughput building energy evaluation.
 ///
@@ -78,8 +78,12 @@ impl BatchOracle {
     #[napi(constructor)]
     pub fn new() -> napi::bindgen_prelude::Result<Self> {
         // Load default thermal model (ASHRAE 600 configuration)
-        let thermal_model = ThermalModel::<VectorField>::from_case("600")
-            .map_err(|e| napi::bindgen_prelude::Error::from_reason(format!("Failed to load thermal model: {}", e)))?;
+        let thermal_model = ThermalModel::<VectorField>::from_case("600").map_err(|e| {
+            napi::bindgen_prelude::Error::from_reason(format!(
+                "Failed to load thermal model: {}",
+                e
+            ))
+        })?;
 
         let inner = CoreBatchOracle::from_model(thermal_model);
         Ok(BatchOracle { inner })
@@ -183,10 +187,7 @@ impl BatchOracle {
     /// # Throws
     /// - `ValidationError` if parameters are out of valid ranges or violate physical constraints
     #[napi]
-    pub fn validate_parameters(
-        &self,
-        params: Vec<f64>,
-    ) -> napi::bindgen_prelude::Result<()> {
+    pub fn validate_parameters(&self, params: Vec<f64>) -> napi::bindgen_prelude::Result<()> {
         CoreBatchOracle::<VectorField>::validate_parameters(&params)
             .map_err(|e| napi::bindgen_prelude::Error::from_reason(format!("{}", e)))
     }
