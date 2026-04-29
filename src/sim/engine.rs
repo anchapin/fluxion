@@ -859,7 +859,16 @@ where
 {
     /// Prepare sol-air temperature and calculate CTF/FD heat fluxes.
     /// This is a shared helper for 5R1C and 6R2C models.
-    fn prepare_solvers_and_sol_air(&mut self, _timestep: usize, outdoor_temp: f64) -> SolAirResult {
+    fn prepare_solvers_and_sol_air(
+        &mut self,
+        _timestep: usize,
+        outdoor_temp: f64,
+    ) -> (
+        Vec<f64>,
+        Option<Vec<f64>>,
+        Option<Vec<f64>>,
+        Option<Vec<f64>>,
+    ) {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
         };
@@ -1055,13 +1064,6 @@ where
         }
     }
 }
-
-type SolAirResult = (
-    Vec<f64>,
-    Option<Vec<f64>>,
-    Option<Vec<f64>>,
-    Option<Vec<f64>>,
-);
 
 impl ThermalModel<VectorField> {
     /// Create a new ThermalModel from an ASHRAE 140 case specification.

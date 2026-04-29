@@ -1605,7 +1605,7 @@ pub use validation::ashrae_140::high_mass;
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-    use crate::physics::cta::VectorField;
+    use crate::physics::cta::{ContinuousTensor, VectorField};
     use crate::sim::engine::ThermalModel;
 
     #[cfg(feature = "python-bindings")]
