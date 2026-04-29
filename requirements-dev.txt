@@ -37,7 +37,7 @@ cbor2>=5.9.0
 jaraco-context>=6.1.0
 
 # Security patches - fix CVE-2025-69872 (diskcache pickle RCE)
-diskcache>=5.6.4
+diskcache>=5.6.1
 
 # Security patches - fix CVE-2026-25990 (pillow out-of-bounds write in PSD)
 pillow>=12.1.1

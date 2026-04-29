@@ -75,7 +75,9 @@ impl BuildingParameters {
     ) -> napi::bindgen_prelude::Result<Self> {
         CoreBuildingParameters::new(window_u_value, heating_setpoint, cooling_setpoint)
             .map(|inner| BuildingParameters { inner })
-            .map_err(|e| napi::bindgen_prelude::Error::from_reason(format!("Validation error: {}", e)))
+            .map_err(|e| {
+                napi::bindgen_prelude::Error::from_reason(format!("Validation error: {}", e))
+            })
     }
 
     /// Get window U-value (thermal transmittance) in W/m²K.
@@ -123,14 +125,4 @@ impl BuildingParameters {
     pub fn to_vec(&self) -> Vec<f64> {
         self.inner.to_vec()
     }
-}
-
-/// NAPI constructor wrapper for BuildingParameters.
-#[allow(non_snake_case)]
-#[doc(hidden)]
-pub fn js_constructor(
-    env: napi::bindgen_prelude::Env,
-    _this: napi::bindgen_prelude::CallbackInfo<void>,
-) -> napi::bindgen_prelude::Result<BuildingParameters> {
-    BuildingParameters::new(0.0, 0.0, 0.0) // Placeholder - actual values come from JS
 }

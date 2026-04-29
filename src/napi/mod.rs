@@ -53,56 +53,8 @@ pub use building_parameters::BuildingParameters;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use error::{FluxionError, SimulationError, SurrogateError, ValidationError};
 
-/// Register NAPI module with Node.js.
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 #[napi_derive::napi]
-pub fn register(js_exports: &napi::bindgen_prelude::Object) -> napi::bindgen_prelude::Result<()> {
-    let env = js_exports.env();
-
-    // Register BatchOracle class
-    let mut batch_oracle_class = env.define_class(
-        "BatchOracle",
-        batch_oracle::js_constructor,
-        &[
-            napi::bindgen_prelude::Property::new(&env, "evaluatePopulation")
-                .with_method(batch_oracle::evaluate_population),
-            napi::bindgen_prelude::Property::new(&env, "validateParameters")
-                .with_method(batch_oracle::validate_parameters),
-        ],
-    )?;
-
-    // Register BuildingParameters class
-    let mut params_class = env.define_class(
-        "BuildingParameters",
-        building_parameters::js_constructor,
-        &[
-            napi::bindgen_prelude::Property::new(&env, "windowUValue")
-                .with_getter(building_parameters::get_window_u_value),
-            napi::bindgen_prelude::Property::new(&env, "heatingSetpoint")
-                .with_getter(building_parameters::get_heating_setpoint),
-            napi::bindgen_prelude::Property::new(&env, "coolingSetpoint")
-                .with_getter(building_parameters::get_cooling_setpoint),
-            napi::bindgen_prelude::Property::new(&env, "toVec")
-                .with_method(building_parameters::to_vec),
-        ],
-    )?;
-
-    // Register error classes
-    env.define_class("FluxionError", error::fluxion_error_constructor, &[])?;
-    env.define_class("SimulationError", error::simulation_error_constructor, &[])?;
-    env.define_class("SurrogateError", error::surrogate_error_constructor, &[])?;
-    env.define_class("ValidationError", error::validation_error_constructor, &[])?;
-
-    // Export classes
-    js_exports.set_named_property("BatchOracle", batch_oracle_class)?;
-    js_exports.set_named_property("BuildingParameters", params_class)?;
-
+pub fn register() -> napi::bindgen_prelude::Result<()> {
     Ok(())
-}
-
-#[cfg(not(feature = "napi-bindings"))]
-pub fn register(_js_exports: &napi::bindgen_prelude::Object) -> napi::bindgen_prelude::Result<()> {
-    Err(napi::bindgen_prelude::Error::from_reason(
-        "NAPI bindings feature is not enabled. Build with --features napi-bindings",
-    ))
 }
