@@ -1625,8 +1625,11 @@ impl ThermalModel<VectorField> {
 
             // Calculate resistance from exterior to mass node
             // Start with exterior film resistance
+            // ISSUE #584: Use ASHRAE 140 specified EXTERIOR_FILM_COEFF (18.3 W/m²K)
+            // instead of EXTERIOR_FILM_COEFF_DEFAULT (25.0 W/m²K) for proper thermal
+            // conductance calculation per ISO 13790
             let r_ext_film =
-                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
+                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
             let mut r_exterior_to_mass = r_ext_film;
 
             // Add resistance of layers from exterior side up to (and including half of) insulation
@@ -1662,8 +1665,9 @@ impl ThermalModel<VectorField> {
 
             // Calculate resistance from exterior to mass node for roof
             // Start with exterior film resistance
+            // ISSUE #584: Use ASHRAE 140 specified EXTERIOR_FILM_COEFF (18.3 W/m²K)
             let r_ext_film_roof =
-                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
+                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF;
             let mut r_exterior_to_mass_roof = r_ext_film_roof;
 
             // Add resistance of layers from exterior side up to (and including half of) insulation
