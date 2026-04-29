@@ -859,16 +859,7 @@ where
 {
     /// Prepare sol-air temperature and calculate CTF/FD heat fluxes.
     /// This is a shared helper for 5R1C and 6R2C models.
-    fn prepare_solvers_and_sol_air(
-        &mut self,
-        _timestep: usize,
-        outdoor_temp: f64,
-    ) -> (
-        Vec<f64>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-    ) {
+    fn prepare_solvers_and_sol_air(&mut self, _timestep: usize, outdoor_temp: f64) -> SolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
         };
@@ -1064,6 +1055,13 @@ where
         }
     }
 }
+
+type SolAirResult = (
+    Vec<f64>,
+    Option<Vec<f64>>,
+    Option<Vec<f64>>,
+    Option<Vec<f64>>,
+);
 
 impl ThermalModel<VectorField> {
     /// Create a new ThermalModel from an ASHRAE 140 case specification.
@@ -1725,7 +1723,7 @@ impl ThermalModel<VectorField> {
             // Debug output for all contributions
             if zone_idx == 0 && spec.case_id == "900" {
                 let h_ms_value = h_tr_ms_vec[zone_idx]; // Get ISO 13790 h_tr_ms
-                eprintln!("PHASE 37-01 DEBUG: h_tr_em_physics={:.3}, h_tr_em_roof={:.3}, h_tr_em_floor={:.3}, h_tr_em_total={:.3}, h_tr_ms={:.3}", 
+                eprintln!("PHASE 37-01 DEBUG: h_tr_em_physics={:.3}, h_tr_em_roof={:.3}, h_tr_em_floor={:.3}, h_tr_em_total={:.3}, h_tr_ms={:.3}",
                     h_tr_em_physics, h_tr_em_roof, h_tr_em_floor, h_tr_em_total, h_ms_value);
             }
 

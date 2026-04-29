@@ -126,13 +126,3 @@ impl BuildingParameters {
         self.inner.to_vec()
     }
 }
-
-/// NAPI constructor wrapper for BuildingParameters.
-#[allow(non_snake_case)]
-#[doc(hidden)]
-pub fn js_constructor(
-    env: napi::bindgen_prelude::Env,
-    _this: napi::bindgen_prelude::CallbackInfo<void>,
-) -> napi::bindgen_prelude::Result<BuildingParameters> {
-    BuildingParameters::new(0.0, 0.0, 0.0) // Placeholder - actual values come from JS
-}
