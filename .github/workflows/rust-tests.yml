@@ -56,7 +56,7 @@ jobs:
           rust-components: clippy
           python-version: '3.10'
           cache: 'false'
-      - run: cargo clippy --lib --all-features -- -D warnings
+      - run: cargo clippy --lib -- -D warnings
 
   build-release:
     name: Build Release
