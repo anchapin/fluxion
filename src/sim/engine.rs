@@ -1550,6 +1550,7 @@ impl ThermalModel<VectorField> {
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
             // Determine target tau for diagnostics only (actual physics uses resistances)
+            #[allow(unused_variables)]
             let target_tau_hours = if spec.case_id.starts_with("9")
                 && !spec.case_id.contains("FF")
                 && spec.case_id != "960"
@@ -1562,18 +1563,18 @@ impl ThermalModel<VectorField> {
             // === ISO 13790 h_tr_ms Calculation ===
             // Per ISO 13790, h_tr_ms = C_m * h_is / (C_m + h_is)
             // This ensures thermal time constant matches ISO values:
-            // - Light mass (Case 600): τ ~ 10-20 hours  
+            // - Light mass (Case 600): τ ~ 10-20 hours
             // - Heavy mass (Case 900): τ ~ 120-200 hours
             //
             // Where:
             // - C_m = effective thermal capacitance (J/K)
             // - h_is = interior surface conductance (W/K)
-            
+
             // Get interior surface conductance (already calculated above)
             let h_is = h_tr_is_vec[zone_idx]; // W/K
-            
+
             // ISSUE #583 fix: Use proper ISO 13790-aligned h_tr_ms calculation
-            // 
+            //
             // The h_tr_ms value should produce appropriate thermal time constants:
             // - Light mass (Case 600): τ ~ 10-20 hours
             // - Heavy mass (Case 900): τ ~ 120-200 hours
@@ -1581,25 +1582,27 @@ impl ThermalModel<VectorField> {
             // Per ISO 13790, h_tr_ms controls coupling between interior air and thermal mass.
             // For proper thermal response, h_tr_ms should be small enough that:
             // τ = C_m / h_tr_ms matches the mass class.
-            
+
             // Target time constant based on mass class
             let is_heavy_mass = total_thermal_cap > 3e6; // Above ~3 MJ/K is heavy
             let target_tau_hours = if is_heavy_mass { 150.0 } else { 15.0 };
             let target_tau_seconds = target_tau_hours * 3600.0;
-            
+
             // Calculate h_tr_ms to achieve target τ: h_tr_ms = C_m / τ
             let h_ms_target = total_thermal_cap / target_tau_seconds;
-            
+
             // Add minimum coupling (at least 10% of h_is)
             let h_ms_min = h_is * 0.1;
             let h_ms_iso = h_ms_target.max(h_ms_min);
-            
+
             // Debug output
             if zone_idx == 0 && spec.case_id == "900" {
-                eprintln!("PHASE 37-01 ISO DEBUG: C_m={:.0e} J/K, h_is={:.2} W/K, h_tr_ms={:.2} W/K", 
-                    total_thermal_cap, h_is, h_ms_iso);
+                eprintln!(
+                    "PHASE 37-01 ISO DEBUG: C_m={:.0e} J/K, h_is={:.2} W/K, h_tr_ms={:.2} W/K",
+                    total_thermal_cap, h_is, h_ms_iso
+                );
             }
-            
+
             h_tr_ms_vec.push(h_ms_iso);
 
             // === SESSION 82/84: Physics-Based h_tr_em Calculation ===
@@ -1712,7 +1715,7 @@ impl ThermalModel<VectorField> {
             // Fix: Use h_tr_em_base directly (no scaling) - the physics-based
             // calculation from layer resistances is sufficient.
             let h_tr_em_physics = h_tr_em_base;
-            let mut h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
+            let h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
 
             // === PHYSICS-BASED h_tr_em CALCULATION ===
             // No case-specific scaling - use the physics-based value directly.
@@ -4431,6 +4434,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Case-specific calibrations have been removed to establish a physics baseline.
             // Peak values should match reference ranges through proper thermal modeling,
             // not through empirical adjustment factors.
+            #[allow(unused_variables)]
             let peak_calibration = 1.0; // Physics baseline - no calibration factor
             if hvac_output_sum > 0.0 {
                 // Heating mode - apply calibration
@@ -4496,10 +4500,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                 // Physics-based peak tracking - no empirical calibration factors
                 // All peak_calibration values set to 1.0 to establish physics baseline
+                #[allow(unused_variables)]
                 let peak_calibration = 1.0;
                 if hvac_power_watts > 0.0 {
                     // Heating mode - no calibration
-                    self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts * peak_calibration);
+                    self.peak_power_heating = self
+                        .peak_power_heating
+                        .max(hvac_power_watts * peak_calibration);
                 } else if hvac_power_watts < 0.0 {
                     // Cooling mode (store as positive value)
                     let cooling_demand = -hvac_power_watts;
@@ -5049,6 +5056,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // === PEAK LOAD CALCULATION (FALLBACK PATH) ===
         // Physics-based peak tracking: raw HVAC output passes through without calibration.
         // Case-specific calibrations have been removed to establish a physics baseline.
+        #[allow(unused_variables)]
         let peak_calibration = 1.0; // Physics baseline - no calibration factor
 
         if hvac_power_watts > 0.0 {
@@ -5057,9 +5065,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else if hvac_power_watts < 0.0 {
             // Cooling mode (store as positive value)
             let cooling_demand = -hvac_power_watts;
-            self.peak_power_cooling = self
-                .peak_power_cooling
-                .max(cooling_demand);
+            self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
         }
 
         // Plan 03-04: Use hvac_output_raw directly for energy calculation
