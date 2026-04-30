@@ -495,11 +495,13 @@ impl PyVectorField {
 
     /// Compute the sum (integral) of all elements.
     fn integrate(&self) -> f64 {
+        use crate::physics::cta::ContinuousTensor;
         self.inner.integrate()
     }
 
     /// Compute the gradient (rate of change) of the field.
     fn gradient(&self) -> Self {
+        use crate::physics::cta::ContinuousTensor;
         PyVectorField {
             inner: self.inner.gradient(),
         }
