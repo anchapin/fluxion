@@ -42,6 +42,13 @@ use std::sync::OnceLock;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
 
+type SolversAndSolAirResult = (
+    Vec<f64>,
+    Option<Vec<f64>>,
+    Option<Vec<f64>>,
+    Option<Vec<f64>>,
+);
+
 /// Threshold for high-mass building classification (J/K)
 ///
 /// Buildings with thermal capacitance exceeding this threshold are considered high-mass
@@ -863,12 +870,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
-    ) -> (
-        Vec<f64>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-    ) {
+    ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
         };
