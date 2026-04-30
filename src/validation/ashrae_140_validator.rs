@@ -2243,7 +2243,11 @@ impl ASHRAE140Validator {
 
             // Calculate internal loads
             let mut internal_loads_per_zone = vec![0.0; num_zones];
-            for zone_idx in 0..num_zones {
+            for (zone_idx, load) in internal_loads_per_zone
+                .iter_mut()
+                .enumerate()
+                .take(num_zones)
+            {
                 let internal_gains = spec
                     .internal_loads
                     .get(zone_idx)
@@ -2257,7 +2261,7 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                internal_loads_per_zone[zone_idx] = internal_gains / floor_area;
+                *load = internal_gains / floor_area;
             }
 
             // Apply internal loads before stepping
