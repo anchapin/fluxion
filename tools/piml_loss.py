@@ -27,16 +27,15 @@ import argparse
 import json
 import logging
 import sys
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import grad
+import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 
 logging.basicConfig(
@@ -79,7 +78,7 @@ class RCPhysicsConfig:
 class PIMLConfig:
     """Configuration for PIML training."""
 
-    input_dim: int = 8
+    input_dim: int = 9
     output_dim: int = 2
     hidden_dims: List[int] = field(default_factory=lambda: [128, 64, 32])
 
@@ -254,16 +253,8 @@ class PIMLLoss(nn.Module):
         loss_components["mse"] = mse_loss.item()
 
         t_outdoor = features[:, 0]
-        q_solar = (
-            features[:, 3] * 50
-            if features.shape[1] > 3
-            else torch.zeros_like(t_outdoor)
-        )
-        q_internal = (
-            features[:, 4] * 100
-            if features.shape[1] > 4
-            else torch.zeros_like(t_outdoor)
-        )
+        q_solar = features[:, 3] * 50 if features.shape[1] > 3 else torch.zeros_like(t_outdoor)
+        q_internal = features[:, 4] * 100 if features.shape[1] > 4 else torch.zeros_like(t_outdoor)
 
         t_indoor_pred = 20.0 + heating_pred * 0.1 - cooling_pred * 0.1
 
@@ -356,7 +347,7 @@ class PIMLSurrogate(nn.Module):
 
     def __init__(
         self,
-        input_dim: int = 8,
+        input_dim: int = 9,
         output_dim: int = 2,
         hidden_dims: List[int] = [128, 64, 32],
         use_physics_constraints: bool = True,
@@ -469,9 +460,7 @@ def train_piml_surrogate(
         criterion = StandardLoss().to(device)
         logger.info("Using standard MSE loss (baseline)")
 
-    optimizer = optim.AdamW(
-        model.parameters(), lr=config.learning_rate, weight_decay=1e-5
-    )
+    optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=1e-5)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, mode="min", factor=0.5, patience=config.patience // 2
     )
@@ -509,21 +498,9 @@ def train_piml_surrogate(
             if use_piml_loss:
                 physics_params = torch.stack(
                     [
-                        (
-                            batch_X[:, 6:7]
-                            if batch_X.shape[1] > 6
-                            else torch.zeros_like(batch_X[:, 0:1])
-                        ),
-                        (
-                            batch_X[:, 1:2]
-                            if batch_X.shape[1] > 1
-                            else torch.zeros_like(batch_X[:, 0:1])
-                        ),
-                        (
-                            batch_X[:, 2:3]
-                            if batch_X.shape[1] > 2
-                            else torch.zeros_like(batch_X[:, 0:1])
-                        ),
+                        batch_X[:, 6:7] if batch_X.shape[1] > 6 else torch.zeros_like(batch_X[:, 0:1]),
+                        batch_X[:, 1:2] if batch_X.shape[1] > 1 else torch.zeros_like(batch_X[:, 0:1]),
+                        batch_X[:, 2:3] if batch_X.shape[1] > 2 else torch.zeros_like(batch_X[:, 0:1]),
                     ],
                     dim=1,
                 ).squeeze(-1)
@@ -537,9 +514,7 @@ def train_piml_surrogate(
                 )
             else:
                 heating_pred, cooling_pred = model(batch_X)
-                loss, _ = criterion(
-                    (heating_pred, cooling_pred), (batch_y_h, batch_y_c)
-                )
+                loss, _ = criterion((heating_pred, cooling_pred), (batch_y_h, batch_y_c))
 
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -556,21 +531,9 @@ def train_piml_surrogate(
                 if use_piml_loss:
                     physics_params_val = torch.stack(
                         [
-                            (
-                                X_val_t[:, 6:7]
-                                if X_val_t.shape[1] > 6
-                                else torch.zeros_like(X_val_t[:, 0:1])
-                            ),
-                            (
-                                X_val_t[:, 1:2]
-                                if X_val_t.shape[1] > 1
-                                else torch.zeros_like(X_val_t[:, 0:1])
-                            ),
-                            (
-                                X_val_t[:, 2:3]
-                                if X_val_t.shape[1] > 2
-                                else torch.zeros_like(X_val_t[:, 0:1])
-                            ),
+                            X_val_t[:, 6:7] if X_val_t.shape[1] > 6 else torch.zeros_like(X_val_t[:, 0:1]),
+                            X_val_t[:, 1:2] if X_val_t.shape[1] > 1 else torch.zeros_like(X_val_t[:, 0:1]),
+                            X_val_t[:, 2:3] if X_val_t.shape[1] > 2 else torch.zeros_like(X_val_t[:, 0:1]),
                         ],
                         dim=1,
                     ).squeeze(-1)
@@ -586,9 +549,7 @@ def train_piml_surrogate(
                 total_target = y_h_val_t + y_c_val_t
                 cvrmse = compute_cvrmse(total_pred, total_target)
 
-                high_mass_mask = (
-                    total_target > torch.quantile(total_target, 0.75)
-                ).squeeze()
+                high_mass_mask = (total_target > torch.quantile(total_target, 0.75)).squeeze()
                 if high_mass_mask.any():
                     peak_cvrmse = compute_cvrmse(
                         total_pred.squeeze()[high_mass_mask],
@@ -668,7 +629,8 @@ def generate_synthetic_data(
         heating_setpoint = rng.uniform(18, 22)
         cooling_setpoint = rng.uniform(24, 28)
 
-        q_solar = rng.uniform(0, 100) * np.maximum(
+        q_solar_base = rng.uniform(0, 100)
+        q_solar = q_solar_base * np.maximum(
             0, np.sin(2 * np.pi * np.arange(n_timesteps) / n_timesteps)
         )
         q_solar = np.maximum(0, q_solar + rng.normal(0, 5, n_timesteps))
@@ -677,6 +639,7 @@ def generate_synthetic_data(
         q_internal = np.maximum(0, q_internal)
 
         u_value = rng.uniform(0.2, 0.5)
+        wwr = rng.uniform(0.2, 0.6)
 
         heating_load = np.maximum(
             0,
@@ -686,12 +649,10 @@ def generate_synthetic_data(
             0,
             u_value * (t_outdoor - cooling_setpoint) + rng.normal(0, 0.5, n_timesteps),
         )
-        cooling_load = np.maximum(0, cooling_load)
 
         hour = np.arange(n_timesteps) % 24
         day_of_year = rng.randint(0, 365, size=n_timesteps)
         month = (day_of_year // 30) + 1
-        wwr = rng.uniform(0.2, 0.6)
 
         for i in range(n_timesteps):
             features_list.append(
@@ -704,6 +665,7 @@ def generate_synthetic_data(
                     hour[i] / 24.0,
                     (day_of_year[i] % 365) / 365.0,
                     month[i] / 12.0,
+                    wwr,
                 ]
             )
             heating_list.append(heating_load[i])
@@ -769,11 +731,7 @@ def main():
     train_dataset = TensorDataset(X_train_t, y_h_train_t, y_c_train_t)
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True)
 
-    val_data = (
-        torch.from_numpy(X_val).float(),
-        torch.from_numpy(y_h_val).float(),
-        torch.from_numpy(y_c_val).float(),
-    )
+    val_data = (torch.from_numpy(X_val).float(), torch.from_numpy(y_h_val).float(), torch.from_numpy(y_c_val).float())
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
@@ -827,9 +785,7 @@ def main():
 
         standard_cvrmse = history_standard["cvrmse"][-1]
         standard_peak_cvrmse = history_standard["peak_cvrmse"][-1]
-        logger.info(
-            f"Standard Final CvRMSE: {standard_cvrmse:.2f}%, Peak: {standard_peak_cvrmse:.2f}%"
-        )
+        logger.info(f"Standard Final CvRMSE: {standard_cvrmse:.2f}%, Peak: {standard_peak_cvrmse:.2f}%")
 
         results["standard"] = {
             "cvrmse": standard_cvrmse,
@@ -838,34 +794,21 @@ def main():
         }
 
         logger.info("\n[4/4] Comparison:")
-        logger.info(
-            f"  PIML CvRMSE: {piml_cvrmse:.2f}% vs Standard: {standard_cvrmse:.2f}%"
-        )
-        logger.info(
-            f"  PIML Peak CvRMSE: {piml_peak_cvrmse:.2f}% vs Standard: {standard_peak_cvrmse:.2f}%"
-        )
+        logger.info(f"  PIML CvRMSE: {piml_cvrmse:.2f}% vs Standard: {standard_cvrmse:.2f}%")
+        logger.info(f"  PIML Peak CvRMSE: {piml_peak_cvrmse:.2f}% vs Standard: {standard_peak_cvrmse:.2f}%")
 
         if piml_peak_cvrmse < standard_peak_cvrmse:
-            improvement = (
-                (standard_peak_cvrmse - piml_peak_cvrmse) / standard_peak_cvrmse * 100
-            )
-            logger.info(
-                f"  PIML shows {improvement:.1f}% improvement in peak load error!"
-            )
+            improvement = (standard_peak_cvrmse - piml_peak_cvrmse) / standard_peak_cvrmse * 100
+            logger.info(f"  PIML shows {improvement:.1f}% improvement in peak load error!")
     else:
-        logger.info(
-            "\n[3/4] Skipping standard loss comparison (--compare-loss not set)"
-        )
+        logger.info("\n[3/4] Skipping standard loss comparison (--compare-loss not set)")
 
     logger.info("\n[4/4] Saving results...")
     torch.save(model_piml.state_dict(), output_dir / "piml_surrogate.pt")
 
     metrics = {
         "config": vars(args),
-        "results": {
-            k: {kk: vv for kk, vv in v.items() if kk != "history"}
-            for k, v in results.items()
-        },
+        "results": {k: {kk: vv for kk, vv in v.items() if kk != "history"} for k, v in results.items()},
     }
     with open(output_dir / "metrics.json", "w") as f:
         json.dump(metrics, f, indent=2)
@@ -878,13 +821,9 @@ def main():
 
     peak_error_met = piml_peak_cvrmse < 30.0
     if peak_error_met:
-        logger.info(
-            f"SUCCESS: Peak load error ({piml_peak_cvrmse:.2f}%) < 30% threshold"
-        )
+        logger.info(f"SUCCESS: Peak load error ({piml_peak_cvrmse:.2f}%) < 30% threshold")
     else:
-        logger.warning(
-            f"WARNING: Peak load error ({piml_peak_cvrmse:.2f}%) >= 30% threshold"
-        )
+        logger.warning(f"WARNING: Peak load error ({piml_peak_cvrmse:.2f}%) >= 30% threshold")
 
     return model_piml, results
 
