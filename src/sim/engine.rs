@@ -859,6 +859,7 @@ where
 {
     /// Prepare sol-air temperature and calculate CTF/FD heat fluxes.
     /// This is a shared helper for 5R1C and 6R2C models.
+    #[allow(clippy::type_complexity)]
     fn prepare_solvers_and_sol_air(
         &mut self,
         _timestep: usize,
