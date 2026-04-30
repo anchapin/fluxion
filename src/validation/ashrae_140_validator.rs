@@ -15,6 +15,17 @@ use crate::weather::WeatherSource;
 use rayon::prelude::*;
 use std::path::Path;
 
+/// Result of a single ASHRAE 140 case validation.
+///
+/// Contains the free-floating temperature results for cases without HVAC control.
+#[derive(Debug, Clone)]
+pub struct FreeFloatValidationResult {
+    /// Minimum zone temperature (°C) for free-floating cases
+    pub free_float_min_temp: f64,
+    /// Maximum zone temperature (°C) for free-floating cases
+    pub free_float_max_temp: f64,
+}
+
 /// ASHRAE Standard 140 validation for building energy programs.
 ///
 /// Validates Fluxion against ASHRAE 140 reference results (EnergyPlus, ESP-r, TRNSYS).
@@ -2152,6 +2163,93 @@ impl ASHRAE140Validator {
         };
 
         (results, diagnostic)
+    }
+
+    /// Validates a single ASHRAE 140 case specification and returns free-floating temperature results.
+    ///
+    /// This is a convenience function for use in tests that need to validate
+    /// free-floating temperature cases without building a full `ASHRAE140Validator`.
+    ///
+    /// # Arguments
+    /// * `spec` - The case specification to validate
+    ///
+    /// # Returns
+    /// A `FreeFloatValidationResult` containing min/max temperatures for free-floating cases
+    ///
+    /// # Example
+    /// ```rust
+    /// use fluxion::validation::ashrae_140_cases::case_900ff;
+    /// use fluxion::validation::ashrae_140_validator::validate_ashrae_140;
+    ///
+    /// let case = case_900ff();
+    /// let result = validate_ashrae_140(&case);
+    /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C", 
+    ///          result.free_float_min_temp, result.free_float_max_temp);
+    /// ```
+    pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
+        let mut model = ThermalModel::<VectorField>::from_spec(spec);
+        let weather = DenverTmyWeather::new();
+
+        // Reset tracking for clean simulation
+        model.reset_peak_power();
+        model.reset_heating_cooling_energy();
+
+        // Enable ctf_primary mode for free-floating cases with multi-layer construction
+        // This addresses thermal mass dynamics limitation (Issue #486)
+        let is_free_floating = spec.case_id.ends_with("FF");
+        if is_free_floating {
+            model.ctf_primary = true;
+            // Disable HVAC for free-floating
+            model.heating_setpoint = -999.0;
+            model.cooling_setpoint = 999.0;
+            model.hvac_heating_capacity = 0.0;
+            model.hvac_cooling_capacity = 0.0;
+        }
+
+        // Run simulation for one year (8760 hours)
+        let mut min_temp = f64::INFINITY;
+        let mut max_temp = f64::NEG_INFINITY;
+        let num_zones = model.num_zones;
+
+        for step in 0..8760 {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            // Set weather data on model
+            model.set_weather(weather_data.clone());
+
+            // Calculate internal loads
+            let mut internal_loads_per_zone = vec![0.0; num_zones];
+            for zone_idx in 0..num_zones {
+                let internal_gains = spec
+                    .internal_loads
+                    .get(zone_idx)
+                    .or(spec.internal_loads.first())
+                    .and_then(|l| l.as_ref())
+                    .map_or(0.0, |l| l.total_load);
+
+                let floor_area = spec
+                    .geometry
+                    .get(zone_idx)
+                    .or(spec.geometry.first())
+                    .map_or(20.0, |g| g.floor_area());
+
+                internal_loads_per_zone[zone_idx] = internal_gains / floor_area;
+            }
+
+            // Apply internal loads before stepping
+            model.set_loads(&internal_loads_per_zone);
+
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+            // Track temperatures for free-floating cases
+            let zone_temp = model.get_temperatures()[0];
+            min_temp = min_temp.min(zone_temp);
+            max_temp = max_temp.max(zone_temp);
+        }
+
+        FreeFloatValidationResult {
+            free_float_min_temp: min_temp,
+            free_float_max_temp: max_temp,
+        }
     }
 
     /// Validates Case 960 (Sunspace/Multi-zone) against ASHRAE 140 reference.

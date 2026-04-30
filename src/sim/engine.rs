@@ -864,12 +864,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
-    ) -> (
-        Vec<f64>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-    ) {
+    ) -> (Vec<f64>, Option<Vec<f64>>, Option<Vec<f64>>, Option<Vec<f64>>) {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
         };
@@ -884,9 +879,7 @@ where
         }
 
         let ctf_flux_w: Option<Vec<f64>>;
-        let ctf_surface_temps: Option<Vec<f64>> = if self.ctf_enabled
-            && !self.ctf_solvers.is_empty()
-        {
+        let ctf_surface_temps: Option<Vec<f64>> = if self.ctf_enabled && !self.ctf_solvers.is_empty() {
             let temps = self.temperatures.as_ref();
             // Use envelope mass temperatures for high-mass physics if available,
             // otherwise fallback to air temperatures (as an estimate) or zone mass.
@@ -1072,39 +1065,13 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
-        // === PHYSICS-BASED THERMAL MODELING ===
-        // Time constant sensitivity corrections for high-mass 6R2C model
-        // These are physics-based parameters derived from thermal mass and conductance,
-        // NOT empirical correction factors. The corrections account for:
-        // - Thermal mass time constant effects on heat transfer
-        // - Asymmetric heating/cooling response in high-mass buildings
-        //
-        // Per ASHRAE 140 requirement: These remain as they are based on physical properties
-        // (thermal capacitance, surface conductance) rather than curve-fitting to reference values.
-        //
-        // NOTE: These are KEPT as physics-based parameters, not empirical corrections.
-        // Empirical corrections (h_corr, c_corr applied to energy results) have been removed.
-        let (heating_corr, cooling_corr) = match spec.case_id.as_str() {
-            // High-mass 900-series: physics-based thermal mass effects
-            "900" | "900FF" => (1.0, 1.0), // Physics baseline
-            "910" | "910FF" => (1.0, 1.0),
-            "920" | "920FF" => (1.0, 1.0),
-            "930" | "930FF" => (1.0, 1.0),
-            "940" | "940FF" => (1.0, 1.0),
-            "950" | "950FF" => (1.0, 1.0),
-            "960" => (1.0, 1.0), // Sunspace - physics-based
-            // Low-mass 600-series: minimal correction needed
-            "600" | "600FF" => (1.0, 1.0),
-            "610" => (1.0, 1.0),
-            "620" => (1.0, 1.0),
-            "630" => (1.0, 1.0),
-            "640" => (1.0, 1.0),
-            "650" => (1.0, 1.0),
-            "650FF" => (1.0, 1.0),
-            _ => (1.0, 1.0),
-        };
-        model.time_constant_sensitivity_correction = heating_corr;
-        model.cooling_sensitivity_correction = cooling_corr;
+        // Physics-based: No correction factors needed
+        // The thermal network physics should produce correct results without empirical adjustments
+        // τ = Cm / (h_tr_ms + h_tr_em) is determined by actual construction properties
+        model.time_constant_sensitivity_correction = 1.0;
+        model.cooling_sensitivity_correction = 1.0;
+
+        // 6R2C-specific correction factors - also removed for physics-based approach
         model.time_constant_sensitivity_correction_6r2c = 1.0;
         model.cooling_sensitivity_correction_6r2c = 1.0;
 
@@ -1409,28 +1376,6 @@ impl ThermalModel<VectorField> {
         let mut h_tr_em_vec = Vec::with_capacity(num_zones);
         let mut thermal_cap_vec = Vec::with_capacity(num_zones);
 
-        // Thermal mass coupling enhancement factor for temperature swing damping (Issue #470)
-        // This enhances the h_tr_em conductance for high-mass buildings to improve
-        // temperature swing reduction through stronger exterior coupling.
-        // Higher coupling = thermal mass responds more quickly to outdoor temperature changes
-        // and receives solar gains more effectively = better damping.
-        let case_id = &spec.case_id;
-        let coupling_enhancement = match case_id.as_str() {
-            // High-mass cases (900 series): enhance coupling for better damping
-            // Tuned to achieve ~19.6% temperature swing reduction while maintaining reasonable max temp
-            "900" | "900FF" => 1.15, // 15% enhancement (balanced tuning)
-            "910" | "910FF" => 1.15, // High-mass with shading
-            "920" | "920FF" => 1.15, // High-mass with E/W windows
-            "930" | "930FF" => 1.15, // High-mass with both shading and E/W windows
-            "940" | "940FF" => 1.15, // High-mass with night ventilation
-            "950" | "950FF" => 1.15, // High-mass with both shading and night ventilation
-            "960" => 1.15,           // High-mass sunspace
-            // Low-mass cases (600 series): no enhancement needed
-            _ => 1.0, // No enhancement for low-mass or standard cases
-        };
-        model.thermal_mass_coupling_enhancement = coupling_enhancement;
-
-        // Separate heating/cooling coupling parameters (Plan 03-14)
         // Mode-specific factors removed - will use physics-based h_tr_ms calculation
         // The thermal conductance h_tr_ms will be calculated from first principles:
         // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
@@ -1482,23 +1427,8 @@ impl ThermalModel<VectorField> {
             // Floor conductance
             // ASHRAE 140 Case 195 uses specified ground coupling value of 0.039 W/m²K
             // Other cases use the construction's u_value
-            // Issue #471: Only apply 1.2 multiplier to 900-series HVAC cases (not FF free-floating)
-            // Free-floating cases (600FF, 650FF, 900FF, 950FF) should use standard ground coupling
-            let mut floor_u = spec.construction.floor.u_value(None, None);
-
-            // SESSION 79: For free-floating cases, INCREASE floor U-value to maximize ground coupling
-            // Ground acts as a heat sink in winter (cooling the building) and heat source in summer
-            // This helps FF cases achieve more extreme temperatures (closer to outdoor)
-            //
-            // REMEDIATED: For low-mass FF cases (600FF, 650FF), ground coupling was CAUSING
-            // max temps to be too LOW (53°C vs 64-75°C ref). Reducing floor coupling helps.
-            if spec.case_id.contains("FF") {
-                if spec.case_id == "600FF" || spec.case_id == "650FF" {
-                    floor_u *= 0.5; // Reduce ground coupling for low-mass FF - was making max temps too low
-                } else {
-                    floor_u *= 2.0; // Increase ground coupling for high-mass FF
-                }
-            }
+            // Physics-based: Use actual floor U-value from construction
+            let floor_u = spec.construction.floor.u_value(None, None);
 
             let is_900_series_hvac = spec.case_id.starts_with("9")
                 && !spec.case_id.contains("FF")
@@ -1550,61 +1480,84 @@ impl ThermalModel<VectorField> {
             let air_cap = zone_volume * 1.225 * 1005.0;
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
-            // Determine target tau for diagnostics only (actual physics uses resistances)
-            #[allow(unused_variables)]
-            let target_tau_hours = if spec.case_id.starts_with("9")
-                && !spec.case_id.contains("FF")
-                && spec.case_id != "960"
-            {
-                6.5
-            } else {
-                2.0
-            };
+            // === Physics-Based h_tr_ms Calculation ===
+            // h_tr_ms represents the conductance between the thermal mass node
+            // and the interior surface node.
+            // Per ISO 13790 Annex C (half-insulation rule):
+            // - The insulation layer contributes half its conductance to each side.
+            // - Layers interior to insulation contribute their full conductance.
 
-            // === ISO 13790 h_tr_ms Calculation ===
-            // Per ISO 13790, h_tr_ms = C_m * h_is / (C_m + h_is)
-            // This ensures thermal time constant matches ISO values:
-            // - Light mass (Case 600): τ ~ 10-20 hours
-            // - Heavy mass (Case 900): τ ~ 120-200 hours
-            //
-            // Where:
-            // - C_m = effective thermal capacitance (J/K)
-            // - h_is = interior surface conductance (W/K)
+            let wall_construction = &spec.construction.wall;
+            let ins_idx = wall_construction.find_dominant_insulation_layer_index();
+            let mut r_interior_to_mass = 0.0; // No interior film here (it's in h_tr_is)
 
-            // Get interior surface conductance (already calculated above)
-            let h_is = h_tr_is_vec[zone_idx]; // W/K
-
-            // ISSUE #583 fix: Use proper ISO 13790-aligned h_tr_ms calculation
-            //
-            // The h_tr_ms value should produce appropriate thermal time constants:
-            // - Light mass (Case 600): τ ~ 10-20 hours
-            // - Heavy mass (Case 900): τ ~ 120-200 hours
-            //
-            // Per ISO 13790, h_tr_ms controls coupling between interior air and thermal mass.
-            // For proper thermal response, h_tr_ms should be small enough that:
-            // τ = C_m / h_tr_ms matches the mass class.
-
-            // Target time constant based on mass class
-            let is_heavy_mass = total_thermal_cap > 3e6; // Above ~3 MJ/K is heavy
-            let target_tau_hours = if is_heavy_mass { 150.0 } else { 15.0 };
-            let target_tau_seconds = target_tau_hours * 3600.0;
-
-            // Calculate h_tr_ms to achieve target τ: h_tr_ms = C_m / τ
-            let h_ms_target = total_thermal_cap / target_tau_seconds;
-
-            // Add minimum coupling (at least 10% of h_is)
-            let h_ms_min = h_is * 0.1;
-            let h_ms_iso = h_ms_target.max(h_ms_min);
-
-            // Debug output
-            if zone_idx == 0 && spec.case_id == "900" {
-                eprintln!(
-                    "PHASE 37-01 ISO DEBUG: C_m={:.0e} J/K, h_is={:.2} W/K, h_tr_ms={:.2} W/K",
-                    total_thermal_cap, h_is, h_ms_iso
-                );
+            let layers = &wall_construction.layers;
+            for (idx, layer) in layers.iter().enumerate() {
+                let layer_r = layer.r_value();
+                if idx < ins_idx {
+                    // Layer is interior to insulation - full contribution
+                    r_interior_to_mass += layer_r;
+                } else if idx == ins_idx {
+                    // This is the insulation layer - half contribution
+                    r_interior_to_mass += layer_r / 2.0;
+                    break;
+                }
             }
 
-            h_tr_ms_vec.push(h_ms_iso);
+            let h_ms_physics = opaque_area / r_interior_to_mass.max(0.001);
+
+            // PHASE 34-02 FIX: Add roof contribution to h_tr_ms
+            // Roof construction also contributes to thermal mass coupling
+            let roof_construction = &spec.construction.roof;
+            let roof_ins_idx = roof_construction.find_dominant_insulation_layer_index();
+            let mut r_interior_to_mass_roof = 0.0;
+
+            let roof_layers = &roof_construction.layers;
+            for (idx, layer) in roof_layers.iter().enumerate() {
+                let layer_r = layer.r_value();
+                if idx < roof_ins_idx {
+                    // Layer is interior to insulation - full contribution
+                    r_interior_to_mass_roof += layer_r;
+                } else if idx == roof_ins_idx {
+                    // This is the insulation layer - half contribution
+                    r_interior_to_mass_roof += layer_r / 2.0;
+                    break;
+                }
+            }
+
+            let h_ms_roof = zone_floor_area / r_interior_to_mass_roof.max(0.001);
+
+            // PHASE 34-02 FIX: Add floor contribution to h_tr_ms
+            // Floor construction also contributes to thermal mass coupling
+            let floor_construction = &spec.construction.floor;
+            let floor_ins_idx = floor_construction.find_dominant_insulation_layer_index();
+            let mut r_interior_to_mass_floor = 0.0;
+
+            let floor_layers = &floor_construction.layers;
+            for (idx, layer) in floor_layers.iter().enumerate() {
+                let layer_r = layer.r_value();
+                if idx < floor_ins_idx {
+                    // Layer is interior to insulation - full contribution
+                    r_interior_to_mass_floor += layer_r;
+                } else if idx == floor_ins_idx {
+                    // This is the insulation layer - half contribution
+                    r_interior_to_mass_floor += layer_r / 2.0;
+                    break;
+                }
+            }
+
+            let h_ms_floor = zone_floor_area / r_interior_to_mass_floor.max(0.001);
+            let h_ms_total = h_ms_physics + h_ms_roof + h_ms_floor;
+
+            // Physics-based: τ = Cm / h_tr_ms determined by actual construction
+            // No case-specific scaling - physics should be correct for all cases
+
+            // Debug output for all contributions
+            if zone_idx == 0 && spec.case_id == "900" {
+                eprintln!("PHYSICS DEBUG: h_ms_physics={:.3}, h_ms_roof={:.3}, h_ms_floor={:.3}, h_ms_total={:.3}", h_ms_physics, h_ms_roof, h_ms_floor, h_ms_total);
+            }
+
+            h_tr_ms_vec.push(h_ms_total);
 
             // === SESSION 82/84: Physics-Based h_tr_em Calculation ===
             //
@@ -1722,29 +1675,25 @@ impl ThermalModel<VectorField> {
             let h_tr_em_physics = h_tr_em_base;
             let h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
 
-            // === PHYSICS-BASED h_tr_em CALCULATION ===
-            // No case-specific scaling - use the physics-based value directly.
-            // The thermal time constant τ = Cm / (h_tr_ms + h_tr_em) emerges from
-            // actual construction properties, not empirical adjustments.
+            // Physics-based: No case-specific scaling
+            // τ = Cm / (h_tr_ms + h_tr_em) determined by actual construction properties
 
             // Debug output for all contributions
             if zone_idx == 0 && spec.case_id == "900" {
-                let h_ms_value = h_tr_ms_vec[zone_idx]; // Get ISO 13790 h_tr_ms
-                eprintln!("PHASE 37-01 DEBUG: h_tr_em_physics={:.3}, h_tr_em_roof={:.3}, h_tr_em_floor={:.3}, h_tr_em_total={:.3}, h_tr_ms={:.3}",
-                    h_tr_em_physics, h_tr_em_roof, h_tr_em_floor, h_tr_em_total, h_ms_value);
+                eprintln!("PHASE 34-02 DEBUG: h_tr_em_physics={:.3}, h_tr_em_roof={:.3}, h_tr_em_floor={:.3}, h_tr_em_total={:.3}", h_tr_em_physics, h_tr_em_roof, h_tr_em_floor, h_tr_em_total);
             }
 
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
 
             // === TASK 1: τ DIAGNOSTIC OUTPUT ===
             // Calculate thermal time constant τ = Cm / (h_tr_ms + h_tr_em)
-            // For 900-series, τ should be ~120-200 hours (currently ~6.5 hours)
+            // This diagnostic shows the actual τ from physics-based conductances
             if zone_idx == 0 && spec.case_id == "900" && !thermal_cap_vec.is_empty() {
                 let cm = thermal_cap_vec[0]; // J/K
                 let h_total = h_tr_ms_vec[zone_idx] + h_tr_em_total; // W/K
                 let tau_seconds = cm / h_total.max(0.1);
                 let tau_hours = tau_seconds / 3600.0;
-                eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_em={:.2} W/K, τ={:.1} hours (target: 120-200 hours)", cm, h_total, tau_hours);
+                eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_em={:.2} W/K, τ={:.1} hours (physics-based calculation)", cm, h_total, tau_hours);
             }
 
             // === SESSION 83 DIAGNOSTIC: Output h_tr_em, h_tr_ms, solar distribution ===
@@ -1755,12 +1704,11 @@ impl ThermalModel<VectorField> {
                     || spec.case_id == "930"
                     || spec.case_id == "910")
             {
-                let h_ms_calculated = h_tr_ms_vec[zone_idx]; // Get the ISO 13790 h_tr_ms value
-                eprintln!("SESSION 84 DIAG Case {}: zone_idx={}, h_tr_em_base={:.3}, h_tr_em_physics={:.3}, h_tr_ms={:.3}, h_tr_em_total={:.3}",
-                spec.case_id, zone_idx, h_tr_em_base, h_tr_em_physics, h_ms_calculated, h_tr_em_total);
+                eprintln!("SESSION 84 DIAG Case {}: zone_idx={}, h_tr_em_base={:.3}, h_tr_em_physics={:.3}, h_ms_physics={:.3}, h_tr_em_total={:.3}, h_ms_total={:.3}",
+                spec.case_id, zone_idx, h_tr_em_base, h_tr_em_physics, h_ms_physics, h_tr_em_total, h_ms_total);
                 eprintln!(
-                    "  total_thermal_cap={:.2e}, target_tau_hours={:.1}",
-                    total_thermal_cap, target_tau_hours
+                    "  total_thermal_cap={:.2e}",
+                    total_thermal_cap
                 );
             }
 
@@ -1780,22 +1728,8 @@ impl ThermalModel<VectorField> {
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
-        // PHASE 36-01 FIX: For free-floating cases, adjust thermal capacitance based on building mass
-        // High-mass (900FF): 30% of original - 900FF now passing
-        // Mid-mass (950FF): 20% of original - still too warm, need more extreme
-        // Low-mass (600FF, 650FF): 10% of original - more aggressive reduction for extreme swings
-        if spec.case_id.contains("FF") {
-            let cap_factor = if spec.case_id == "900FF" {
-                0.3
-            } else if spec.case_id.starts_with("9") {
-                0.15
-            } else {
-                0.1
-            };
-            for cap in model.thermal_capacitance.as_mut() {
-                *cap *= cap_factor;
-            }
-        }
+        // Physics-based: Thermal capacitance should use actual construction properties
+        // No case-specific reduction factors - physics should be correct for all cases
 
         // Internal loads - zone-specific for multi-zone
         let mut loads_vec = Vec::with_capacity(num_zones);
@@ -1851,133 +1785,19 @@ impl ThermalModel<VectorField> {
             _total_floor_area += zone_floor_area;
         }
 
-        // Solar gain distribution (ASHRAE 140 calibration)
-        // Solar gain distribution (ASHRAE 140 calibration)
-        // Low-mass buildings: higher fraction to air (0.7-0.8) - less thermal mass to buffer gains
-        // High-mass buildings: lower fraction to air (0.5-0.6) - more thermal mass to buffer gains
-        // This implements Issue #278: Solar gain calculation accuracy
-        // ASHRAE 140 specification: 70% of beam solar to mass, 30% to interior surface
-        // Plan 03-07: Fix solar gain distribution parameterization
-        // Previously, solar_distribution_to_air controlled both:
-        //   1. Beam solar distribution (via solar_beam_to_mass_fraction = 1.0 - solar_distribution_to_air)
-        //   2. Internal radiative gain distribution (directly to air vs surface/mass)
-        //
-        // This coupling was incorrect. ASHRAE 140 specifies:
-        //   - Beam solar: 70% to thermal mass, 30% to surface (solar_beam_to_mass_fraction = 0.7)
-        //   - Internal radiative gains: 100% to surface, 0% directly to air (solar_distribution_to_air = 0.0)
-        //
-        // The incorrect coupling caused:
-        //   - Internal radiative gains going to air (0.3 fraction) instead of surface
-        //   - This reduced thermal mass damping effect (less energy stored in mass)
-        //   - Result: Higher HVAC demand (more heating/cooling needed)
-        //   - Annual energy over-prediction: cooling 4.68 MWh vs [2.13, 3.67] MWh reference
-        //
-        // Fix: Decouple the two parameters
-        // Solar gain distribution (ASHRAE 140 calibration)
-        // Low-mass buildings: higher fraction to air (0.7-0.8) - less thermal mass to buffer gains
-        // High-mass buildings: lower fraction to air (0.5-0.6) - more thermal mass to buffer gains
-        // This implements Issue #278: Solar gain calculation accuracy
-        // ASHRAE 140 specification: 70% of beam solar to mass, 30% to interior surface
-        // Plan 03-07: Fix solar gain distribution parameterization
-        //
-        // REVERTED (Session 87): Previous changes to solar_distribution_to_air caused
-        // annual cooling to be too high. The real issue was peak_calibration = 0.5
-        // incorrectly halving peak values for low-mass cases.
+        // Solar gain distribution per ASHRAE 140 specification
+        // ASHRAE 140 specification: 70% of beam solar to thermal mass, 30% to interior surface
+        // This parameter controls beam solar distribution only
+        // Internal radiative gains use solar_distribution_to_air (separate parameter)
+        // Physics rationale: Solar gains to mass provide thermal buffering and delay
+        model.solar_beam_to_mass_fraction = 0.7; // 70% of beam solar to thermal mass (ASHRAE 140 spec)
+
+        // Internal radiative gains: 100% to surface, 0% directly to air (ASHRAE 140)
+        // This decouples from solar_beam_to_mass_fraction
         model.solar_distribution_to_air = 0.0; // Internal gains go to surface, not air
 
-        // === SESSION 86: Enhanced Physics-Based Solar Distribution Fix ===
-        //
-        // Building on Session 85 findings:
-        // - Session 85 reduced South cases from 0.7 to 0.4, but heating still underpredicted (-74%)
-        // - Temperature swing regression: 33.8% (expected ~19.6%)
-        //
-        // Session 86 Improvements:
-        // 1. Further reduce South case solar_beam_to_mass_fraction to 0.25
-        // 2. Implement seasonal variation (winter: less to mass, summer: more to mass)
-        // 3. Fix temperature swing by adjusting thermal capacitance for FF cases
-        //
-        // Physics rationale:
-        // - South windows in winter: Need immediate heating benefit → low mass fraction (0.25)
-        // - South windows in summer: Can delay gains → higher mass fraction (0.5)
-        // - E/W windows: Morning/evening sun hits walls → moderate mass fraction (0.5)
-        //
-        // Determine dominant window orientation from window_orientations field
-        let has_south_windows = model
-            .window_orientations
-            .iter()
-            .any(|zone_orients| zone_orients.contains(&Orientation::South));
-        let has_ew_windows = model.window_orientations.iter().any(|zone_orients| {
-            zone_orients.contains(&Orientation::East) || zone_orients.contains(&Orientation::West)
-        });
-
-        // === SESSION 87: Revert solar_beam_to_mass_fraction to Session 86 values ===
-        //
-        // REVERTED: The solar_distribution_to_air changes caused annual cooling issues.
-        // The real fix was removing the incorrect peak_calibration = 0.5 for Case 600.
-        //
-        // Session 86 values (now restored):
-        // - Low-mass: 0.3 (30% to mass)
-        // - High-mass South: 0.25 (25% to mass)
-        // - High-mass E/W: 0.50 (50% to mass)
-        // === SESSION 88 FIX: Increase solar to mass for free-floating cases ===
-        // Free-floating cases (600FF, 650FF) show max temps of 52.83°C vs ref 64-75°C
-        // The 5R1C single thermal mass node cannot properly distribute solar gains
-        // Increasing solar_beam_to_mass_fraction sends more solar to thermal mass
-        // where it can accumulate and raise peak temperatures
-        model.solar_beam_to_mass_fraction = match spec.case_id.as_str() {
-            "960" => 0.4,             // Sunspace: 40% to mass
-            "600FF" | "650FF" => 0.3, // Free-float: keep at default, floor coupling handles temp
-            _ if spec.case_id.starts_with("9") => {
-                if has_south_windows && !has_ew_windows {
-                    0.25 // Pure South windows (900, 910, 940, 950)
-                } else if has_ew_windows && !has_south_windows {
-                    0.50 // Pure E/W windows (920, 930)
-                } else {
-                    0.35 // Mixed orientations or default
-                }
-            }
-            _ => 0.3, // Low-mass: 30% to mass
-        };
-
-        // SESSION 86: Seasonal Solar Distribution Placeholder
-        // Future implementation should vary solar_beam_to_mass_fraction by month
-        // to account for solar altitude changes and window penetration depths.
-        // winter (low sun) -> more floor hits -> higher fraction
-        // summer (high sun) -> more wall/air hits -> lower fraction
-
-        // Fix: Remove override for free-floating cases (Plan 03-03 Task 4)
-        // Previous code (Issue #275) set solar_beam_to_mass_fraction = 0.0 for free-floating
-        // This prevented thermal mass from storing solar energy, causing insufficient damping
-        // Temperature swing reduction was 9.9% instead of ~19.6% expected
-        // Thermal mass should receive solar gains to damp temperature swings
-        // Commenting out this override allows proper thermal mass damping effects
-
-        // Thermal mass correction factor for HVAC energy (Issue #274)
-        // High-mass buildings have more thermal storage, which reduces HVAC runtime
-        // because the mass buffers temperature swings. This effect is not captured
-        // by the steady-state sensitivity calculation, so we apply a correction factor.
-        //
-        // The factor is based on the thermal time constant ratio:
-        // - Low-mass (600 series): C is smaller, tau is smaller, factor = 1.0
-        // - High-mass (900 series): C is larger, tau is larger, factor < 1.0
-        //
-        // We use sqrt(C / C_ref) as the correction because:
-        // 1. Energy scales with C (larger mass stores more energy)
-        // 2. But HVAC runtime doesn't scale linearly (larger mass also responds slower)
-        // 3. sqrt gives a reasonable intermediate value
-        //
-        // Apply thermal mass correction factor (Issue #274, #375, #462, #472)
-        // The 5R1C/6R2C thermal network accounts for thermal capacitance through Cm,
-        // but ASHRAE 140 high-mass cases (900 series) show lower energy than the model predicts.
-        // Issue #472: Adjusted factors based on uncorrected baseline values.
-        // Target ranges: Case 900=1.17-2.04, 920=3.26-4.30, 930=4.14-5.34
-        // Issue #470: Thermal mass sensitivity correction factor is set above (line 816)
-        // based on thermal mass time constant: τ = C / (h_tr_em + h_tr_ms)
-        // For high-mass buildings (900 series): correction = 0.5 (τ ≈ 4.82 hours)
-        // For low-mass buildings (600 series): correction = 1.0 (τ ≈ 1 hour)
-        // For free-floating cases: correction = 1.0 (no HVAC)
-        // DO NOT override the correction factor set above
-        // It is applied in hvac_power_demand() to reduce HVAC demand for high-mass buildings
+        // Physics-based: Thermal mass effects are captured through Cm in the thermal network
+        // No correction factor is applied - the 5R1C/6R2C model handles this naturally
 
         // Initialize HVAC controller with setpoints from spec
         model.hvac_controller =
@@ -2318,85 +2138,21 @@ impl ThermalModel<VectorField> {
             return;
         }
 
-        // Store pre-correction h_tr_em for τ calculation
+        // Store h_tr_em for τ calculation
         let h_tr_em_pre: f64 = self.h_tr_em.as_ref()[0];
         let h_tr_ms_value: f64 = self.h_tr_ms.as_ref()[0];
 
-        // === TASK 1: τ DIAGNOSTIC OUTPUT (before correction) ===
-        let tau_seconds_pre = total_cap / (h_tr_ms_value + h_tr_em_pre).max(0.1);
-        let tau_hours_pre = tau_seconds_pre / 3600.0;
-
         // Output for 900-series high-mass cases (including free-floating)
         let case_id_str: String = self.case_id.clone();
+        let tau_seconds_pre = total_cap / (h_tr_ms_value + h_tr_em_pre).max(0.1);
+        let tau_hours_pre = tau_seconds_pre / 3600.0;
         if case_id_str.starts_with("9") && case_id_str != "195" {
-            eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours (target: 120-200 hours)",
+            eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours (physics-based)",
                 case_id_str, total_cap, h_tr_ms_value, h_tr_em_pre, tau_hours_pre);
         }
 
-        // Calculate structure thermal capacitance (excluding air)
-        let zone_area = self.zone_area[0];
-        let air_cap = zone_area * 1.2 * 1005.0; // J/K (density * specific_heat * air_mass)
-        let structure_cap = total_cap - air_cap;
-
-        // ASHRAE 140: High-mass buildings have >3x low-mass capacitance
-        // Low-mass (Case 600): 2.4e6 J/K, High-mass (Case 900): 1.2e7 J/K
-        // Threshold: 5e6 J/K (between low and high mass)
-        if structure_cap < HIGH_MASS_THRESHOLD {
-            return;
-        }
-
-        // Calculate current coupling ratio: h_tr_em / h_tr_ms
-        let h_tr_ms_value: f64 = self.h_tr_ms.as_ref()[0];
-        let h_tr_em_value: f64 = self.h_tr_em.as_ref()[0];
-        let current_ratio = h_tr_em_value / h_tr_ms_value;
-
-        // Target ratio based on desired time constant
-        // For high-mass buildings, target time constant should be 120-200 hours
-        let target_tau_hours = if structure_cap > 1.0e7 {
-            // Very high mass buildings (Case 900)
-            180.0
-        } else {
-            // Medium mass buildings
-            120.0
-        };
-
-        let target_tau_seconds = target_tau_hours * 3600.0;
-
-        // Calculate required total conductance for target time constant
-        // τ = C / (h_tr_ms + h_tr_em) => h_tr_ms + h_tr_em = C / τ
-        let required_total_conductance = structure_cap / target_tau_seconds;
-
-        // Calculate target h_tr_em based on required total conductance
-        let target_h_tr_em = required_total_conductance - h_tr_ms_value;
-
-        // Ensure target is positive and reasonable
-        let target_h_tr_em = target_h_tr_em.max(h_tr_ms_value * 0.05); // Minimum 5% of h_tr_ms
-
-        // Calculate new ratio
-        let new_ratio = target_h_tr_em / h_tr_ms_value;
-
-        // Only apply correction if it significantly improves the situation
-        // For free-floating cases, be more lenient as they need stronger correction
-        let improvement_threshold = if case_id_str.contains("FF") {
-            1.05 // Apply correction if at least 5% improvement for FF cases
-        } else {
-            1.10 // Require 10% improvement for non-FF cases
-        };
-
-        if new_ratio <= current_ratio * improvement_threshold {
-            // Less than threshold improvement, skip to avoid unnecessary changes
-            return;
-        }
-
-        // Apply the new h_tr_em value
-        let h_tr_em_data = self.h_tr_em.as_mut();
-        h_tr_em_data.iter_mut().for_each(|v| *v = target_h_tr_em);
-
-        // Output diagnostic information for high-mass cases
-        if case_id_str.starts_with("9") && case_id_str != "195" {
-            eprintln!("PHASE 36-05 CORRECTION: Case {} - Adjusted h_tr_em from {:.2} to {:.2} W/K (ratio: {:.3} -> {:.3}), target τ={:.1} hours",
-                case_id_str, h_tr_em_pre, target_h_tr_em, current_ratio, new_ratio, target_tau_hours);
-        }
+        // Physics-based: No correction applied
+        // τ = Cm / (h_tr_ms + h_tr_em) is determined by actual construction properties
     }
 
     /// Create a new ThermalModel with specified number of thermal zones.
@@ -2716,7 +2472,7 @@ impl ThermalModel<VectorField> {
             ctf_enabled: false,     // Disabled by default (use 5R1C)
             ctf_timestep: 3600.0,   // 1-hour timestep default
             ctf_zone_coupling_solver: None, // Will be initialized when CTF is enabled
-            ctf_primary: false,     // CTF-primary disabled by default (use standard 5R1C/6R2C path)
+            ctf_primary: false, // CTF-primary disabled by default (use standard 5R1C/6R2C path)
 
             // FD (Finite Difference) solver for high-mass walls (Phase 28)
             fd_solvers: Vec::new(), // One solver per zone
@@ -2927,31 +2683,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.derived_h_ms_is_prod = self.h_tr_ms.clone() * self.h_tr_is.clone();
 
         // ground_coeff = term_rest_1 * h_tr_floor
-        // Issue #471: Only apply 1.2 ground coupling multiplier to 900-series HVAC cases
-        // Free-floating cases (600FF, 650FF, 900FF, 950FF) should use standard ground coupling
-        // Plan 03-07: Remove ground multiplier for Case 900 to fix annual energy over-prediction
-        // The 1.2 multiplier was making sensitivity too small, causing HVAC to over-estimate demand
-        let h_tr_floor_val = self.h_tr_floor.as_ref()[0];
-        let is_900_series_hvac =
-            self.case_id.starts_with("9") && !self.case_id.contains("FF") && self.case_id != "195";
-        let ground_multiplier = if self.derived_term_rest_1.as_ref()[0] > 0.0
-            && h_tr_floor_val > 0.0
-            && is_900_series_hvac
-            && self.case_id != "900"
-            && self.case_id != "910"
-            && self.case_id != "920"
-            && self.case_id != "930"
-            && self.case_id != "940"
-            && self.case_id != "950"
-            && self.case_id != "960"
-        {
-            // Apply 1.2 multiplier only for high mass HVAC cases (900-series, not FF, and not Case 900)
-            1.2
-        } else {
-            1.0
-        };
+        // Physics-based: No ground coupling multiplier
         self.derived_ground_coeff =
-            self.derived_term_rest_1.clone() * self.h_tr_floor.clone() * ground_multiplier;
+            self.derived_term_rest_1.clone() * self.h_tr_floor.clone();
 
         // For multi-zone buildings, include inter-zone conductance in sensitivity calculation
         // Issue #351: Update thermal network for inter-zone coupling
@@ -4423,9 +4157,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
-            // TASK 2: Apply direct calibration factor for high-mass cases
-            // Root cause: τ = 26h vs target 120-200h causes peak overestimation
-            // Apply calibration: peak_power / calibration_factor
+            // Physics-based: No calibration factors - track actual HVAC demand
             // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
             let enabled_vec = self.hvac_enabled.as_ref();
             let hvac_output_sum: f64 = hvac_output
@@ -4434,24 +4166,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .zip(enabled_vec.iter())
                 .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
                 .sum::<f64>();
-            // === PEAK LOAD CALCULATION ===
-            // Physics-based peak tracking: raw HVAC output passes through without calibration.
-            // Case-specific calibrations have been removed to establish a physics baseline.
-            // Peak values should match reference ranges through proper thermal modeling,
-            // not through empirical adjustment factors.
-            #[allow(unused_variables)]
-            let peak_calibration = 1.0; // Physics baseline - no calibration factor
             if hvac_output_sum > 0.0 {
-                // Heating mode - apply calibration
+                // Heating mode - track actual demand
                 self.peak_power_heating = self
                     .peak_power_heating
-                    .max(hvac_output_sum * peak_calibration);
+                    .max(hvac_output_sum);
             } else if hvac_output_sum < 0.0 {
                 // Cooling mode (store as positive value)
                 let cooling_demand = -hvac_output_sum;
                 self.peak_power_cooling = self
                     .peak_power_cooling
-                    .max(cooling_demand * peak_calibration);
+                    .max(cooling_demand);
             }
 
             // Both equipment and fallback paths now use hvac_output (per-zone VectorField)
@@ -4475,17 +4200,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Issue #533: For 600-series cases, ideal_loads produces ~217W (too low for peak).
             // Use hvac_power_demand (sensitivity-based) for peak tracking instead.
             // hvac_power_demand gives ~6.6kW raw, 0.5 calibration brings to ~3.3kW (within 2.8-3.8kW ref).
-            let hvac_power_for_peak = if self.case_id.starts_with("60") && self.case_id.len() == 3 {
+            let hvac_power_for_peak = if self.case_id.starts_with("6") && self.case_id.len() == 3 {
                 let power_demand =
                     self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
-                // Debug output for 600-series peak tracking
-                if self.case_id == "610" {
-                    let raw_watts = power_demand.as_ref().iter().sum::<f64>();
-                    println!(
-                        "DEBUG Case 610 peak calc: t_i_free={:.2}°C, sensitivity={:.6} K/W, raw_power={:.2} W",
-                        t_i_free.as_ref()[0], sensitivity_val.as_ref()[0], raw_watts
-                    );
-                }
                 power_demand
             } else {
                 hvac_output_raw.clone()
@@ -4503,21 +4220,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
                     .sum::<f64>();
 
-                // Physics-based peak tracking - no empirical calibration factors
-                // All peak_calibration values set to 1.0 to establish physics baseline
-                #[allow(unused_variables)]
-                let peak_calibration = 1.0;
+                // Physics-based: Track actual HVAC demand without calibration
                 if hvac_power_watts > 0.0 {
-                    // Heating mode - no calibration
-                    self.peak_power_heating = self
-                        .peak_power_heating
-                        .max(hvac_power_watts * peak_calibration);
+                    // Heating mode - track actual demand
+                    self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
                 } else if hvac_power_watts < 0.0 {
                     // Cooling mode (store as positive value)
                     let cooling_demand = -hvac_power_watts;
-                    self.peak_power_cooling = self
-                        .peak_power_cooling
-                        .max(cooling_demand * peak_calibration);
+                    self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
                 }
             }
 
@@ -4565,75 +4275,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let heating_energy_joules = heating_sum * dt;
         let cooling_energy_joules = cooling_sum * dt;
 
-        // Accumulate separate heating and cooling energy
-        // Asymmetric correction: high-mass buildings over-predict heating but cooling is nearly correct
-        // after physics-based conductance fixes.
-        if self.time_constant_sensitivity_correction != 1.0
-            || self.cooling_sensitivity_correction != 1.0
-            || self.time_constant_sensitivity_correction_6r2c != 1.0
-        {
-            // Use 6R2C correction factor if 6R2C model is active, otherwise use 5R1C correction
-            let h_corr = if self.is_6r2c_model() {
-                self.time_constant_sensitivity_correction_6r2c
-            } else {
-                self.time_constant_sensitivity_correction
-            };
-            // Use 6R2C cooling correction factor if 6R2C model is active, otherwise use 5R1C correction
-            let c_corr = if self.is_6r2c_model() {
-                self.cooling_sensitivity_correction_6r2c
-            } else {
-                self.cooling_sensitivity_correction
-            };
-
-            // Divide energy into 5R1C and advanced solver (CTF/FD) components
-            // heating_energy_joules = total heating demand
-            // self.ctf_annual_heating_joules = heating demand attributable to CTF flux
-            // self.fd_annual_heating_joules = heating demand attributable to FD flux
-            let advanced_h_joules = self.ctf_annual_heating_joules + self.fd_annual_heating_joules;
-            let advanced_c_joules = self.ctf_annual_cooling_joules + self.fd_annual_cooling_joules;
-
-            // 5R1C component is the remainder
-            let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
-            let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
-
-            // P2 FIX: Apply correction uniformly to BOTH 5R1C and advanced components
-            // Previously, advanced CTF/FD component was capped at 10% and added UNCORRECTED,
-            // while 5R1C component was divided by h_corr. This caused the uncorrected
-            // advanced component to dominate the result (issue: 3-6x overprediction).
-            //
-            // The fix applies the correction factor to both components consistently:
-            // - When h_corr > 1 (e.g., 10 for Case 900 heating), both components are
-            //   appropriately scaled, preventing either from over-dominating.
-            // - The 10% cap is removed since both components now receive equal treatment.
-            //
-            // Original formula (flawed):
-            //   result = (r5c1 / h_corr + adv_uncorrected)
-            // Fixed formula:
-            //   result = (r5c1 + adv) / h_corr
-            if heating_energy_joules > 0.0 {
-                let combined_h = _r5c1_h_joules + advanced_h_joules;
-                self.annual_heating_energy += combined_h / h_corr / 3.6e6;
-            }
-            if cooling_energy_joules > 0.0 {
-                let combined_c = _r5c1_c_joules + advanced_c_joules;
-                self.annual_cooling_energy += combined_c / c_corr / 3.6e6;
-            }
-
-            // Reset trackers for next step
-            self.ctf_annual_heating_joules = 0.0;
-            self.ctf_annual_cooling_joules = 0.0;
-            self.fd_annual_heating_joules = 0.0;
-            self.fd_annual_cooling_joules = 0.0;
-        } else {
-            self.annual_heating_energy += heating_energy_joules / 3.6e6;
-            self.annual_cooling_energy += cooling_energy_joules / 3.6e6;
-
-            // Reset trackers
-            self.ctf_annual_heating_joules = 0.0;
-            self.ctf_annual_cooling_joules = 0.0;
-            self.fd_annual_heating_joules = 0.0;
-            self.fd_annual_cooling_joules = 0.0;
-        }
+        // Physics-based: No correction factors - use raw energy values
+        self.annual_heating_energy += heating_energy_joules / 3.6e6;
+        self.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+        self.ctf_annual_heating_joules = 0.0;
+        self.ctf_annual_cooling_joules = 0.0;
+        self.fd_annual_heating_joules = 0.0;
+        self.fd_annual_cooling_joules = 0.0;
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
@@ -5057,20 +4705,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_power_watts = hvac_output_raw.as_ref().iter().sum::<f64>();
 
         // Track peak for high-mass cases (6R2C model)
-        // TASK 2: Apply direct calibration factor for high-mass cases
-        // === PEAK LOAD CALCULATION (FALLBACK PATH) ===
-        // Physics-based peak tracking: raw HVAC output passes through without calibration.
-        // Case-specific calibrations have been removed to establish a physics baseline.
-        #[allow(unused_variables)]
-        let peak_calibration = 1.0; // Physics baseline - no calibration factor
-
+        // Physics-based: Track actual HVAC demand without calibration factors
         if hvac_power_watts > 0.0 {
-            // Heating mode - raw HVAC output
+            // Heating mode - track actual demand
             self.peak_power_heating = self.peak_power_heating.max(hvac_power_watts);
         } else if hvac_power_watts < 0.0 {
             // Cooling mode (store as positive value)
             let cooling_demand = -hvac_power_watts;
-            self.peak_power_cooling = self.peak_power_cooling.max(cooling_demand);
+            self.peak_power_cooling = self
+                .peak_power_cooling
+                .max(cooling_demand);
         }
 
         // Plan 03-04: Use hvac_output_raw directly for energy calculation
@@ -5098,75 +4742,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let heating_energy_joules = heating_sum * dt;
         let cooling_energy_joules = cooling_sum * dt;
 
-        // Accumulate separate heating and cooling energy
-        // Asymmetric correction: high-mass buildings over-predict heating but cooling is nearly correct
-        // after physics-based conductance fixes.
-        if self.time_constant_sensitivity_correction != 1.0
-            || self.cooling_sensitivity_correction != 1.0
-            || self.time_constant_sensitivity_correction_6r2c != 1.0
-        {
-            // Use 6R2C correction factor if 6R2C model is active, otherwise use 5R1C correction
-            let h_corr = if self.is_6r2c_model() {
-                self.time_constant_sensitivity_correction_6r2c
-            } else {
-                self.time_constant_sensitivity_correction
-            };
-            // Use 6R2C cooling correction factor if 6R2C model is active, otherwise use 5R1C correction
-            let c_corr = if self.is_6r2c_model() {
-                self.cooling_sensitivity_correction_6r2c
-            } else {
-                self.cooling_sensitivity_correction
-            };
-
-            // Divide energy into 5R1C and advanced solver (CTF/FD) components
-            // heating_energy_joules = total heating demand
-            // self.ctf_annual_heating_joules = heating demand attributable to CTF flux
-            // self.fd_annual_heating_joules = heating demand attributable to FD flux
-            let advanced_h_joules = self.ctf_annual_heating_joules + self.fd_annual_heating_joules;
-            let advanced_c_joules = self.ctf_annual_cooling_joules + self.fd_annual_cooling_joules;
-
-            // 5R1C component is the remainder
-            let _r5c1_h_joules = (heating_energy_joules - advanced_h_joules).max(0.0);
-            let _r5c1_c_joules = (cooling_energy_joules - advanced_c_joules).max(0.0);
-
-            // P2 FIX: Apply correction uniformly to BOTH 5R1C and advanced components
-            // Previously, advanced CTF/FD component was capped at 10% and added UNCORRECTED,
-            // while 5R1C component was divided by h_corr. This caused the uncorrected
-            // advanced component to dominate the result (issue: 3-6x overprediction).
-            //
-            // The fix applies the correction factor to both components consistently:
-            // - When h_corr > 1 (e.g., 10 for Case 900 heating), both components are
-            //   appropriately scaled, preventing either from over-dominating.
-            // - The 10% cap is removed since both components now receive equal treatment.
-            //
-            // Original formula (flawed):
-            //   result = (r5c1 / h_corr + adv_uncorrected)
-            // Fixed formula:
-            //   result = (r5c1 + adv) / h_corr
-            if heating_energy_joules > 0.0 {
-                let combined_h = _r5c1_h_joules + advanced_h_joules;
-                self.annual_heating_energy += combined_h / h_corr / 3.6e6;
-            }
-            if cooling_energy_joules > 0.0 {
-                let combined_c = _r5c1_c_joules + advanced_c_joules;
-                self.annual_cooling_energy += combined_c / c_corr / 3.6e6;
-            }
-
-            // Reset trackers for next step
-            self.ctf_annual_heating_joules = 0.0;
-            self.ctf_annual_cooling_joules = 0.0;
-            self.fd_annual_heating_joules = 0.0;
-            self.fd_annual_cooling_joules = 0.0;
-        } else {
-            self.annual_heating_energy += heating_energy_joules / 3.6e6;
-            self.annual_cooling_energy += cooling_energy_joules / 3.6e6;
-
-            // Reset trackers
-            self.ctf_annual_heating_joules = 0.0;
-            self.ctf_annual_cooling_joules = 0.0;
-            self.fd_annual_heating_joules = 0.0;
-            self.fd_annual_cooling_joules = 0.0;
-        }
+        // Physics-based: No correction factors - use raw energy values
+        self.annual_heating_energy += heating_energy_joules / 3.6e6;
+        self.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+        self.ctf_annual_heating_joules = 0.0;
+        self.ctf_annual_cooling_joules = 0.0;
+        self.fd_annual_heating_joules = 0.0;
+        self.fd_annual_cooling_joules = 0.0;
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
