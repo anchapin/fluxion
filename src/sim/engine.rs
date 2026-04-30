@@ -859,6 +859,7 @@ where
 {
     /// Prepare sol-air temperature and calculate CTF/FD heat fluxes.
     /// This is a shared helper for 5R1C and 6R2C models.
+    #[allow(clippy::type_complexity)]
     fn prepare_solvers_and_sol_air(
         &mut self,
         _timestep: usize,
@@ -1578,6 +1579,8 @@ impl ThermalModel<VectorField> {
 
             // Calculate resistance from exterior to mass node
             // Start with exterior film resistance
+            // Using EXTERIOR_FILM_COEFF_DEFAULT (25.0 W/m²K) for proper thermal
+            // conductance calculation - this matches historical behavior
             let r_ext_film =
                 1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
             let mut r_exterior_to_mass = r_ext_film;
@@ -1615,6 +1618,8 @@ impl ThermalModel<VectorField> {
 
             // Calculate resistance from exterior to mass node for roof
             // Start with exterior film resistance
+            // Using EXTERIOR_FILM_COEFF_DEFAULT (25.0 W/m²K) for proper thermal
+            // conductance calculation - this matches historical behavior
             let r_ext_film_roof =
                 1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
             let mut r_exterior_to_mass_roof = r_ext_film_roof;

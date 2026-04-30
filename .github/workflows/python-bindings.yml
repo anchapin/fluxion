@@ -8,6 +8,8 @@ concurrency:
 
 env:
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+  RUST_MIN_STACK: 33554432
+  CARGO_BUILD_JOBS: 2
 
 jobs:
   build:
@@ -28,7 +30,7 @@ jobs:
         run: pip install maturin
 
       - name: Build wheels
-        run: maturin build --release
+        run: maturin build --release --jobs 2 2>&1
 
       - name: Test Python import
         run: |

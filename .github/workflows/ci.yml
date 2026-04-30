@@ -30,13 +30,14 @@ jobs:
           pip install maturin
       - name: Build and install Python bindings
         env:
-          RUST_MIN_STACK: 16777216
+          RUST_MIN_STACK: 33554432
+          CARGO_BUILD_JOBS: 2
         run: |
           source venv/bin/activate
-          maturin develop --release
+          maturin develop --release --jobs 2
       - name: Run pytest
         env:
-          RUST_MIN_STACK: 16777216
+          RUST_MIN_STACK: 33554432
         run: |
           source venv/bin/activate
           pytest -q
