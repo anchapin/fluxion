@@ -40,7 +40,7 @@ pub mod thermal_mass_energy_accounting;
 // Re-export common types
 pub use ab_testing::{ABTestRunner, ComparisonReport, TestResults, ThermalNetworkVariant};
 pub use analyzer::{Analyzer, AnalyzerConfig, AnalyzerError, QualityMetrics};
-pub use ashrae_140_validator::{validate_ashrae_140, validate_case_with_diagnostics, ASHRAE140Validator, FreeFloatValidationResult};
+pub use ashrae_140_validator::{validate_case_with_diagnostics, ASHRAE140Validator, FreeFloatValidationResult};
 pub use config::{validate_assembly, validate_constants, ConfigValidationResult, ValidationError};
 pub use cross_validation::adapters::{EnergyPlusAdapter, TRNSYSAdapter};
 pub use cross_validation::{CrossValidationAdapter, ValidationResults};
