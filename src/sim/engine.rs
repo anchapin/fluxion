@@ -42,6 +42,13 @@ use std::sync::OnceLock;
 
 static DAILY_CYCLE: OnceLock<[f64; 24]> = OnceLock::new();
 
+type SolversAndSolAirResult = (
+    Vec<f64>,
+    Option<Vec<f64>>,
+    Option<Vec<f64>>,
+    Option<Vec<f64>>,
+);
+
 /// Threshold for high-mass building classification (J/K)
 ///
 /// Buildings with thermal capacitance exceeding this threshold are considered high-mass
@@ -863,12 +870,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
-    ) -> (
-        Vec<f64>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-        Option<Vec<f64>>,
-    ) {
+    ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
         };
@@ -4195,9 +4197,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use hvac_power_demand (sensitivity-based) for peak tracking instead.
             // hvac_power_demand gives ~6.6kW raw, 0.5 calibration brings to ~3.3kW (within 2.8-3.8kW ref).
             let hvac_power_for_peak = if self.case_id.starts_with("6") && self.case_id.len() == 3 {
-                let power_demand =
-                    self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
-                power_demand
+                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
             } else {
                 hvac_output_raw.clone()
             };
