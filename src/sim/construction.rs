@@ -355,7 +355,21 @@ impl Construction {
         let r_film_ext = 1.0 / h_ext;
         let r_materials: f64 = self.layers.iter().map(|l| l.r_value()).sum();
 
-        r_film_int + r_materials + r_film_ext
+        // Issue #588 Fix: For floor surfaces (SurfaceType::Floor), use ground coupling
+        // resistance instead of exterior film coefficient. For slab-on-grade floors,
+        // the exterior boundary is ground, not ambient air. The effective exterior
+        // resistance for ground-coupled slabs is approximately 0.17 m²K/W (ASHRAE HOAFM),
+        // corresponding to a film coefficient of ~6 W/m²K rather than the 25 W/m²K
+        // used for above-grade surfaces.
+        let r_exterior = if surface_type == Some(SurfaceType::Floor) {
+            // Ground coupling resistance for slab-on-grade
+            // Approximate value: R_g = 0.17 m²K/W (includes soil resistance)
+            0.17
+        } else {
+            r_film_ext
+        };
+
+        r_film_int + r_materials + r_exterior
     }
 
     /// Calculates the thermal transmittance (U-value) of the construction.
