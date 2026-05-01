@@ -525,7 +525,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Energy balance calculation needs more careful BC treatment
     fn test_energy_conservation() {
         let disc = concrete_wall(0.200, 20);
         let mut solver = ImplicitFDSolver::new(disc.clone(), 20.0);

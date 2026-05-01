@@ -310,7 +310,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Needs implicit coupling for stability
     fn test_single_step() {
         let mut wall = test_wall();
         let mut coupler = FDZoneCoupler::case_900(20.0);
@@ -328,7 +327,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Needs implicit coupling for stability
     fn test_hvac_heating() {
         let mut wall = test_wall();
         let mut coupler = FDZoneCoupler::case_900(18.0);
