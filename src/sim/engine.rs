@@ -1110,7 +1110,12 @@ impl ThermalModel<VectorField> {
         if spec.case_id == "195" {
             model.floor_u_value = 0.039;
         } else {
-            model.floor_u_value = spec.construction.floor.u_value(None, None);
+            // Issue #588 Fix: Use SurfaceType::Floor for correct film coefficients
+            // and ground coupling resistance in floor U-value calculation.
+            model.floor_u_value = spec
+                .construction
+                .floor
+                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
         }
 
         // Access first HVAC schedule
@@ -1435,8 +1440,13 @@ impl ThermalModel<VectorField> {
             // Floor conductance
             // ASHRAE 140 Case 195 uses specified ground coupling value of 0.039 W/m²K
             // Other cases use the construction's u_value
-            // Physics-based: Use actual floor U-value from construction
-            let floor_u = spec.construction.floor.u_value(None, None);
+            // Issue #588 Fix: Use SurfaceType::Floor for floor U-value to get correct
+            // interior film coefficient (5.88 W/m²K for downward heat flow) and ground
+            // coupling resistance in exterior calculation.
+            let floor_u = spec
+                .construction
+                .floor
+                .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
 
             let is_900_series_hvac = spec.case_id.starts_with("9")
                 && !spec.case_id.contains("FF")
