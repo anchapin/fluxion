@@ -1,0 +1,12 @@
+{
+  "setup": [
+    "uv sync",
+    "cargo build",
+    "[ ! -f .env ] && cp .env.example .env",
+    "docker compose up -d"
+  ],
+  "teardown": [
+    "docker compose down"
+  ],
+  "run": []
+}
