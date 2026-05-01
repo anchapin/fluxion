@@ -58,3 +58,7 @@ pub use error::{FluxionError, SimulationError, SurrogateError, ValidationError};
 pub fn register() -> napi::bindgen_prelude::Result<()> {
     Ok(())
 }
+#[cfg(not(feature = "napi-bindings"))]
+pub fn register() -> Result<(), Box<dyn std::error::Error>> {
+    Ok(())
+}
