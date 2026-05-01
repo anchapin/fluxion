@@ -3195,8 +3195,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
     fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        let heating_setpoint = self.heating_setpoint;
-        let cooling_setpoint = self.cooling_setpoint;
+        // Apply deadband tolerance to setpoints (consistent with IdealHVACController::calculate_power)
+        let heating_threshold = self.heating_setpoint - self.hvac_controller.deadband_tolerance;
+        let cooling_threshold = self.cooling_setpoint + self.hvac_controller.deadband_tolerance;
 
         let t_vec = t_i_free.as_ref();
         let sens_vec = sensitivity.as_ref();
@@ -3212,26 +3213,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             let t = t_vec[i];
-            let delta_t = if t < heating_setpoint {
-                heating_setpoint - t
-            } else if t >= cooling_setpoint {
-                cooling_setpoint - t
+            // Use free_float temp for mode determination (consistent with controller)
+            let mode = if t < heating_threshold {
+                HVACMode::Heating
+            } else if t > cooling_threshold {
+                HVACMode::Cooling
             } else {
-                0.0
+                HVACMode::Off
             };
-            let power = if t < heating_setpoint {
-                (delta_t / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
-            } else if t >= cooling_setpoint {
-                (delta_t / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
-            } else {
-                0.0
+
+            let power = match mode {
+                HVACMode::Heating => {
+                    let target_temp =
+                        self.heating_setpoint + self.hvac_controller.deadband_tolerance;
+                    let temp_deficit = target_temp - t;
+                    (temp_deficit / sens_vec[i]).clamp(0.0, self.hvac_heating_capacity)
+                }
+                HVACMode::Cooling => {
+                    let target_temp =
+                        self.cooling_setpoint - self.hvac_controller.deadband_tolerance;
+                    let temp_excess = t - target_temp;
+                    (-temp_excess / sens_vec[i]).clamp(-self.hvac_cooling_capacity, 0.0)
+                }
+                HVACMode::Off => 0.0,
             };
 
             // DEBUG: Print HVAC demand details for Case 610
-            if self.case_id == "610" && delta_t > 0.0 {
+            if self.case_id == "610" && power != 0.0 {
                 eprintln!(
-                    "DEBUG Case 610 HVAC: hour={}, zone={}, t_i_free={:.2}°C, setpoint={:.2}°C, delta_t={:.2}K, sensitivity={:.6} K/W, power={:.2}W",
-                    _hour, i, t, heating_setpoint, delta_t, sens_vec[i], power
+                    "DEBUG Case 610 HVAC: hour={}, zone={}, t_i_free={:.2}°C, mode={:?}, power={:.2}W",
+                    _hour, i, t, mode, power
                 );
             }
 
