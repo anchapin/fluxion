@@ -1485,7 +1485,7 @@ impl ThermalModel<VectorField> {
             let wall_cap = kappa_wall * opaque_area;
             let roof_cap = kappa_roof * zone_floor_area;
             let floor_cap = kappa_floor * zone_floor_area;
-            let air_cap = zone_volume * 1.225 * 1005.0;
+            let air_cap = zone_volume * 1.2 * 1005.0;
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
             // === Physics-Based h_tr_ms Calculation ===
@@ -1786,16 +1786,29 @@ impl ThermalModel<VectorField> {
             _total_floor_area += zone_floor_area;
         }
 
-        // Solar gain distribution per ASHRAE 140 specification
-        // ASHRAE 140 specification: 70% of beam solar to thermal mass, 30% to interior surface
-        // This parameter controls beam solar distribution only
-        // Internal radiative gains use solar_distribution_to_air (separate parameter)
-        // Physics rationale: Solar gains to mass provide thermal buffering and delay
-        model.solar_beam_to_mass_fraction = 0.7; // 70% of beam solar to thermal mass (ASHRAE 140 spec)
+        // Solar gain distribution per ISO 13790 (Issue #586)
+        // Fraction solar to air = 0.1 × (1 - f_ms) + f_ms
+        // Where f_ms ≈ 0.8 for heavy mass, ~0.4 for light mass
+        // This gives:
+        //   Light mass (f_ms=0.4): 0.1*(1-0.4)+0.4 = 0.46 → 46% to air, 54% to mass
+        //   Heavy mass (f_ms=0.8): 0.1*(1-0.8)+0.8 = 0.82 → 82% to air, 18% to mass
+        // Higher f_ms means more solar absorbed by mass node, less immediate air heating
+        let f_ms = match spec.construction_type {
+            crate::validation::ashrae_140_cases::ConstructionType::HighMass => 0.8,
+            crate::validation::ashrae_140_cases::ConstructionType::LowMass => 0.4,
+            crate::validation::ashrae_140_cases::ConstructionType::Special => 0.6, // Default medium
+        };
+        let solar_to_air_frac = 0.1 * (1.0 - f_ms) + f_ms;
+        let solar_to_mass_frac = 1.0 - solar_to_air_frac;
 
         // Internal radiative gains: 100% to surface, 0% directly to air (ASHRAE 140)
         // This decouples from solar_beam_to_mass_fraction
-        model.solar_distribution_to_air = 0.0; // Internal gains go to surface, not air
+        model.solar_distribution_to_air = solar_to_air_frac;
+
+        // Solar beam (direct) radiation split between mass and surface
+        // Based on ISO 13790 geometric distribution - most beam reaches floor (thermal mass)
+        // The remaining fraction goes to interior surfaces
+        model.solar_beam_to_mass_fraction = solar_to_mass_frac; // Fraction to thermal mass
 
         // Physics-based: Thermal mass effects are captured through Cm in the thermal network
         // No correction factor is applied - the 5R1C/6R2C model handles this naturally
@@ -2699,8 +2712,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // Factor out term_rest_1: den = h_ms_is_prod + term_rest_1 * h_total
-        self.derived_den =
-            self.derived_h_ms_is_prod.clone() + self.derived_term_rest_1.clone() * h_total.clone();
+        // Issue #588 Fix: Include derived_ground_coeff in the base denominator
+        // so ground coupling is always active (not just during night ventilation).
+        // This makes the static denominator consistent with the dynamic denominator
+        // used at runtime in step_physics functions.
+        self.derived_den = self.derived_h_ms_is_prod.clone()
+            + self.derived_term_rest_1.clone() * h_total.clone()
+            + self.derived_ground_coeff.clone();
 
         // sensitivity = 1 / h_total (thermal resistance in K/W)
         // This represents the temperature change per Watt of HVAC power
