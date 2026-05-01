@@ -1492,9 +1492,14 @@ impl ThermalModel<VectorField> {
                 .iso_13790_effective_capacitance_per_area();
 
             // Total thermal capacitance (C_m) from all mass elements
-            let wall_cap = kappa_wall * opaque_area;
-            let roof_cap = kappa_roof * zone_floor_area;
-            let floor_cap = kappa_floor * zone_floor_area;
+            // Issue #585 Fix: Use raw thermal_capacitance_per_area() which sums ALL layers
+            // This follows ISO 13790 which states C_m should be calculated from actual
+            // construction layers without density-based filtering. The density threshold
+            // in iso_13790_effective_capacitance_per_area() was excluding valid thermal mass.
+            let wall_cap = spec.construction.wall.thermal_capacitance_per_area() * opaque_area;
+            let roof_cap = spec.construction.roof.thermal_capacitance_per_area() * zone_floor_area;
+            let floor_cap =
+                spec.construction.floor.thermal_capacitance_per_area() * zone_floor_area;
             let air_cap = zone_volume * 1.2 * 1005.0;
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
