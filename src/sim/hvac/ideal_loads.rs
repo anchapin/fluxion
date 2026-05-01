@@ -418,14 +418,14 @@ impl IdealLoadsSystem {
         let n = zone_temps.len();
         let mut demand_vec = Vec::with_capacity(n);
 
-        for (i, zone_temp) in zone_temps.iter().enumerate().take(n) {
-            let enabled = hvac_enabled.get(i).copied().unwrap_or(1.0);
+        for (zone_idx, zone_temp) in zone_temps.iter().enumerate().take(n) {
+            let enabled = hvac_enabled.get(zone_idx).copied().unwrap_or(1.0);
             if enabled < 0.5 {
                 demand_vec.push(0.0);
                 continue;
             }
-            let heating_sp = heating_setpoints.get(i).copied().unwrap_or(20.0);
-            let cooling_sp = cooling_setpoints.get(i).copied().unwrap_or(24.0);
+            let heating_sp = heating_setpoints.get(zone_idx).copied().unwrap_or(20.0);
+            let cooling_sp = cooling_setpoints.get(zone_idx).copied().unwrap_or(24.0);
 
             let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
                 *zone_temp,

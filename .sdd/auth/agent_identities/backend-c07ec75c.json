@@ -1,0 +1,40 @@
+{
+  "id": "backend-c07ec75c",
+  "role": "backend",
+  "session_id": "backend-c07ec75c",
+  "permissions": [
+    "files:read",
+    "files:write",
+    "status:read",
+    "tasks:claim",
+    "tasks:read",
+    "tests:run"
+  ],
+  "status": "active",
+  "created_at": 1777329442.2766082,
+  "last_authenticated_at": 0.0,
+  "revoked_at": 0.0,
+  "revocation_reason": "",
+  "credential": {
+    "token_hash": "f5d7ac680ee66da162b672fda3baeafd5cb2e71a6a38cc9c251619f0356b2244",
+    "created_at": 1777329442.2766082,
+    "expires_at": 1777343842.0,
+    "revoked": false,
+    "token_type": "jwt",
+    "algorithm": "HS256",
+    "jti": "3a246bbf3fe14f988c5cdd9afc34ad90",
+    "tenant_id": "default",
+    "task_ids": [
+      "2831efed3810"
+    ],
+    "allowed_files": []
+  },
+  "parent_identity_id": null,
+  "metadata": {
+    "source": "spawner"
+  },
+  "task_ids": [
+    "2831efed3810"
+  ],
+  "allowed_files": []
+}

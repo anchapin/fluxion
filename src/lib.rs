@@ -89,7 +89,7 @@ pub use sim::thermal_model::{
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
-use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::cta::VectorField;
 use ai::surrogate::SurrogateManager;
 
 use sim::engine::{StepParameters, ThermalModel};
@@ -495,11 +495,13 @@ impl PyVectorField {
 
     /// Compute the sum (integral) of all elements.
     fn integrate(&self) -> f64 {
+        use crate::physics::cta::ContinuousTensor;
         self.inner.integrate()
     }
 
     /// Compute the gradient (rate of change) of the field.
     fn gradient(&self) -> Self {
+        use crate::physics::cta::ContinuousTensor;
         PyVectorField {
             inner: self.inner.gradient(),
         }
@@ -1605,7 +1607,7 @@ pub use validation::ashrae_140::high_mass;
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-    use crate::physics::cta::VectorField;
+    use crate::physics::cta::{ContinuousTensor, VectorField};
     use crate::sim::engine::ThermalModel;
 
     #[cfg(feature = "python-bindings")]

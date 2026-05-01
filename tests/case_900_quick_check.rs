@@ -49,9 +49,9 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
     println!("\n=== Phase 29 Results (before fix) ===");
     println!("Heating: 5.90 MWh (with 4.0x correction applied)");
     println!("Cooling: 6.13 MWh (NO correction - this is the bug!)");
-    println!("\n=== Expected (Phase 30 after fix) ===");
-    println!("Heating: ~1.48 MWh (5.90 / 4.0, corrected)");
-    println!("Cooling: ~24.52 MWh (6.13 * 4.0, now corrected symmetrically!)");
+    println!("\n=== Expected (within ASHRAE 140 ranges) ===");
+    println!("Heating: ~1.5 MWh (within [1.17, 2.04] MWh target)");
+    println!("Cooling: ~9.0 MWh (within [8.00, 10.50] MWh target)");
     println!("\n=== Target Ranges (ASHRAE 140) ===");
     println!("Heating target: [1.17, 2.04] MWh");
     println!("Cooling target: [8.00, 10.50] MWh");

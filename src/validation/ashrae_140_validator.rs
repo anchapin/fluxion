@@ -77,6 +77,31 @@ impl Default for ASHRAE140Validator {
     }
 }
 
+/// Validates a single ASHRAE 140 case (free-floating mode) and returns min/max temperatures.
+///
+/// This is a standalone function that delegates to `ASHRAE140Validator::validate_ashrae_140()`.
+/// Use this for validating free-floating cases (those ending in "FF").
+///
+/// # Arguments
+/// * `spec` - The case specification to validate
+///
+/// # Returns
+/// A `FreeFloatValidationResult` containing min/max temperatures
+///
+/// # Example
+/// ```rust
+/// use fluxion::validation::ashrae_140_cases::case_900ff;
+/// use fluxion::validation::ashrae_140_validator::validate_ashrae_140;
+///
+/// let case = case_900ff();
+/// let result = validate_ashrae_140(&case);
+/// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
+///          result.free_float_min_temp, result.free_float_max_temp);
+/// ```
+pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
+    ASHRAE140Validator::validate_ashrae_140(spec)
+}
+
 impl ASHRAE140Validator {
     /// Creates a new ASHRAE 140 validator.
     pub fn new() -> Self {
@@ -2183,7 +2208,7 @@ impl ASHRAE140Validator {
     ///
     /// let case = case_900ff();
     /// let result = validate_ashrae_140(&case);
-    /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C", 
+    /// println!("Min temp: {:.2}°C, Max temp: {:.2}°C",
     ///          result.free_float_min_temp, result.free_float_max_temp);
     /// ```
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
@@ -2218,7 +2243,11 @@ impl ASHRAE140Validator {
 
             // Calculate internal loads
             let mut internal_loads_per_zone = vec![0.0; num_zones];
-            for zone_idx in 0..num_zones {
+            for (zone_idx, load) in internal_loads_per_zone
+                .iter_mut()
+                .enumerate()
+                .take(num_zones)
+            {
                 let internal_gains = spec
                     .internal_loads
                     .get(zone_idx)
@@ -2232,7 +2261,7 @@ impl ASHRAE140Validator {
                     .or(spec.geometry.first())
                     .map_or(20.0, |g| g.floor_area());
 
-                internal_loads_per_zone[zone_idx] = internal_gains / floor_area;
+                *load = internal_gains / floor_area;
             }
 
             // Apply internal loads before stepping
