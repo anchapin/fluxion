@@ -2712,8 +2712,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // Factor out term_rest_1: den = h_ms_is_prod + term_rest_1 * h_total
-        self.derived_den =
-            self.derived_h_ms_is_prod.clone() + self.derived_term_rest_1.clone() * h_total.clone();
+        // Issue #588 Fix: Include derived_ground_coeff in the base denominator
+        // so ground coupling is always active (not just during night ventilation).
+        // This makes the static denominator consistent with the dynamic denominator
+        // used at runtime in step_physics functions.
+        self.derived_den = self.derived_h_ms_is_prod.clone()
+            + self.derived_term_rest_1.clone() * h_total.clone()
+            + self.derived_ground_coeff.clone();
 
         // sensitivity = 1 / h_total (thermal resistance in K/W)
         // This represents the temperature change per Watt of HVAC power
