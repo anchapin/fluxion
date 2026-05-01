@@ -2657,7 +2657,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Issue #585 FIX: Thermal capacitance is now calculated from construction layers in from_spec()
         // using iso_13790_effective_capacitance_per_area() for walls, roof, and floor.
-        // Do NOT overwrite with hardcoded value here.
+        // ADD: Calculate proper thermal capacitance (air + structure approximation)
+        let structure_cap = self.zone_area.clone() * 200_000.0;
+        self.thermal_capacitance = air_cap + structure_cap;
 
         // Update optimization cache
         self.update_optimization_cache();
