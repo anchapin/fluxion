@@ -1726,8 +1726,9 @@ impl ThermalModel<VectorField> {
             // Thermal capacitance using ISO 13790 effective specific capacitances
             // PHASE 34 FIX: Include ALL envelope mass (walls + roof + floor) in Cm
             // Previously only wall_cap was used, excluding ~60% of thermal mass
-            let total_mass_cap = wall_cap + roof_cap + floor_cap;
-            thermal_cap_vec.push(total_mass_cap);
+            // Issue #585 FIX: Include air thermal capacitance (previously not added)
+            let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
+            thermal_cap_vec.push(total_thermal_cap);
         }
 
         model.h_tr_w = VectorField::new(h_tr_w_vec);
@@ -2677,8 +2678,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let air_cap = volume * self.air_density.clone() * self.heat_capacity.clone();
         self.h_ve = (air_cap.clone() * self.infiltration_rate.clone()) / 3600.0;
 
-        // Thermal Capacitance (Air + Structure)
-        // Structure assumption: 200 kJ/m²K per m² floor area
+        // Issue #585 FIX: Thermal capacitance is now calculated from construction layers in from_spec()
+        // using iso_13790_effective_capacitance_per_area() for walls, roof, and floor.
+        // ADD: Calculate proper thermal capacitance (air + structure approximation)
         let structure_cap = self.zone_area.clone() * 200_000.0;
         self.thermal_capacitance = air_cap + structure_cap;
 
