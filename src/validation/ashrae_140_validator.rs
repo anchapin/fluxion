@@ -10,7 +10,7 @@ use crate::validation::diagnostic::{
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::multi_reference::MultiReferenceDB;
 use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType, ValidationStatus};
-use crate::weather::denver::DenverTmyWeather;
+use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
 use std::path::Path;
@@ -339,7 +339,10 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         let mut diagnostic_report = DiagnosticReport::new(self.diagnostic_config.clone());
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Cases to validate - all 18 ASHRAE 140 cases
         let cases = vec![
@@ -563,7 +566,10 @@ impl ASHRAE140Validator {
     pub fn validate_with_ideal_control(&mut self, case: ASHRAE140Case) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         let case_id = case.number();
         if let Some(data) = benchmark_data.get(&case_id) {
@@ -653,7 +659,7 @@ impl ASHRAE140Validator {
     fn simulate_case_with_ideal_control(
         &self,
         spec: &CaseSpec,
-        weather: &DenverTmyWeather,
+        weather: &EpwWeatherSource,
         controller: &IdealHVACController,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
@@ -864,7 +870,10 @@ impl ASHRAE140Validator {
     ) -> (BenchmarkReport, DiagnosticCollector) {
         let mut report = BenchmarkReport::new();
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         let case_id = case.number();
         if let Some(data) = benchmark_data.get(&case_id) {
@@ -990,7 +999,10 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         report.set_start(); // Record start time
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Cases to validate - baseline cases + diagnostic cases
         // Skip baseline cases if skip_baseline_cases is true (Phase 18)
@@ -1412,7 +1424,7 @@ impl ASHRAE140Validator {
         }
     }
 
-    fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
+    fn simulate_case(&self, spec: &CaseSpec, weather: &EpwWeatherSource) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
 
         // Phase 29: Enable advanced solver (CTF/FD) for high-mass cases
@@ -1621,7 +1633,7 @@ impl ASHRAE140Validator {
     fn simulate_case_with_diagnostics_collector(
         &mut self,
         spec: &CaseSpec,
-        weather: &DenverTmyWeather,
+        weather: &EpwWeatherSource,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
         // Attach simulation diagnostics if requested (Phase 5)
@@ -1914,7 +1926,7 @@ impl ASHRAE140Validator {
     pub fn simulate_case_with_diagnostics(
         &self,
         spec: &CaseSpec,
-        weather: &DenverTmyWeather,
+        weather: &EpwWeatherSource,
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
@@ -2213,7 +2225,10 @@ impl ASHRAE140Validator {
     /// ```
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Reset tracking for clean simulation
         model.reset_peak_power();
@@ -2287,7 +2302,10 @@ impl ASHRAE140Validator {
     pub fn validate_case_960(&self) -> ValidationReport {
         let spec = ASHRAE140Case::Case960.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // SESSION 23 FIX: Enable 6R2C model for proper sunspace thermal dynamics
         // The 6R2C model (6 Resistances, 2 Capacitances) better represents:
@@ -2475,7 +2493,10 @@ pub fn validate_case_with_diagnostics(
         model.set_diagnostics(Some(diag));
     }
 
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file(
+        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+    )
+    .expect("Failed to load EPW weather data");
 
     // Simulation state
     let mut _annual_heating_joules = 0.0;
