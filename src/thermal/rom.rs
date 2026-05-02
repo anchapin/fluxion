@@ -142,8 +142,8 @@ impl PCATransformer {
                 means[j] += data[i * n_features + j];
             }
         }
-        for j in 0..n_features {
-            means[j] /= n_samples as f64;
+        for mean in means.iter_mut().take(n_features) {
+            *mean /= n_samples as f64;
         }
         self.means = means.clone();
 
@@ -205,14 +205,14 @@ impl PCATransformer {
                     }
                 }
 
-                let norm: f64 = new_v.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let norm = new_v.iter().map(|x| x * x).sum::<f64>().sqrt();
                 if norm > 1e-10 {
-                    for i in 0..n {
-                        new_v[i] /= norm;
+                    for v_i in new_v.iter_mut().take(n) {
+                        *v_i /= norm;
                     }
                 }
 
-                for i in 0..k {
+                for (i, _eig) in eigenvectors.iter().take(k).enumerate() {
                     let dot: f64 = eigenvectors[i]
                         .iter()
                         .zip(&new_v)
@@ -223,10 +223,10 @@ impl PCATransformer {
                     }
                 }
 
-                let norm: f64 = new_v.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let norm = new_v.iter().map(|x| x * x).sum::<f64>().sqrt();
                 if norm > 1e-10 {
-                    for i in 0..n {
-                        new_v[i] /= norm;
+                    for v_i in new_v.iter_mut().take(n) {
+                        *v_i /= norm;
                     }
                 }
 
@@ -240,7 +240,7 @@ impl PCATransformer {
     }
 
     pub fn transform(&self, data: &[f64]) -> ROMResult<Vec<f64>> {
-        if data.len() % self.means.len() != 0 {
+        if !data.len().is_multiple_of(self.means.len()) {
             return Err(Box::new(ROMError::InvalidDimension {
                 expected: self.means.len(),
                 actual: data.len(),
@@ -433,14 +433,14 @@ impl ZoneClustering {
             let mut max_dist = 0.0;
             let mut best_idx = k;
 
-            for i in 0..n {
+            for (i, row) in dist_matrix.iter().enumerate().take(n) {
                 if centroids[..k].contains(&i) {
                     continue;
                 }
 
                 let min_dist_to_centroids: f64 = centroids[..k]
                     .iter()
-                    .map(|&c| dist_matrix[i][c])
+                    .map(|&c| row[c])
                     .fold(f64::MAX, f64::min);
 
                 if min_dist_to_centroids > max_dist {
@@ -460,7 +460,7 @@ impl ZoneClustering {
         centroids: &[usize],
         n_samples: usize,
     ) -> Vec<usize> {
-        let k = centroids.len();
+        let _k = centroids.len();
         let mut assignments = vec![0; n_samples];
 
         for i in 0..n_samples {
@@ -750,7 +750,7 @@ impl ROMCalculator {
 
         if expanded.len() < state.num_original_zones {
             let padding = state.num_original_zones - expanded.len();
-            expanded.extend(std::iter::repeat(20.0).take(padding));
+            expanded.extend(std::iter::repeat_n(20.0, padding));
         } else if expanded.len() > state.num_original_zones {
             expanded.truncate(state.num_original_zones);
         }
