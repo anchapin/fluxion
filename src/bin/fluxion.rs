@@ -77,7 +77,7 @@ use fluxion::validation::guardrails;
 use fluxion::validation::reporter::{BaselineMetrics, ValidationReportGenerator};
 use fluxion::validation::statistical::StatisticalValidator;
 use fluxion::validation::ASHRAE140Validator;
-use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::BatchOracle;
 use serde::Deserialize;
 use std::env;
@@ -589,7 +589,10 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
 
             // Run validation
             let validator = ASHRAE140Validator::new();
-            let weather = DenverTmyWeather::new();
+            let weather = EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data");
             let (results, _) = validator.simulate_case_with_diagnostics(&spec, &weather, case_spec);
 
             println!(
@@ -1032,7 +1035,10 @@ fn main() -> Result<()> {
             let spec = case_id_to_spec(&case)
                 .ok_or_else(|| anyhow::anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
-            let weather = DenverTmyWeather::new();
+            let weather = EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
             let breakdown = diagnostic.energy_breakdown;
             let entries =
@@ -1051,7 +1057,10 @@ fn main() -> Result<()> {
             let spec = case_id_to_spec(&case)
                 .ok_or_else(|| anyhow::anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
-            let weather = DenverTmyWeather::new();
+            let weather = EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
             // Ensure temperature profile has data (free-floating case)
             if diagnostic.temp_profile.hourly_temps.is_empty() {

@@ -358,10 +358,13 @@ pub fn calculate_zone_energy(model: &ThermalModel<VectorField>) -> f64 {
 pub fn validate_energy_balance_over_year(
     model: &mut ThermalModel<VectorField>,
 ) -> EnergyBalanceReport {
-    use crate::weather::denver::DenverTmyWeather;
+    use crate::weather::epw::EpwWeatherSource;
     use crate::weather::WeatherSource;
 
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file(
+        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+    )
+    .expect("Failed to load EPW weather data");
     let steps = 8760;
     let dt = 3600.0; // Timestep duration in seconds (1 hour)
     let num_zones = model.num_zones;
