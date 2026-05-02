@@ -980,7 +980,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Simplified model has different decay characteristics
     fn test_convergence_check() {
         let layers = case_900_wall();
         let calculator = CTFCalculator::with_defaults(&layers, 3600.0);
