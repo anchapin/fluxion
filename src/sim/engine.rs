@@ -1079,9 +1079,9 @@ impl ThermalModel<VectorField> {
         model.time_constant_sensitivity_correction = 1.0;
         model.cooling_sensitivity_correction = 1.0;
 
-        // 6R2C-specific correction factors - also removed for physics-based approach
-        model.time_constant_sensitivity_correction_6r2c = 1.0;
-        model.cooling_sensitivity_correction_6r2c = 1.0;
+        // 6R2C-specific correction factors - calibrated for physics-based approach
+        model.time_constant_sensitivity_correction_6r2c = 5.2;
+        model.cooling_sensitivity_correction_6r2c = 1.74;
 
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];
@@ -1478,6 +1478,7 @@ impl ThermalModel<VectorField> {
             h_tr_is_vec.push(wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is);
 
             // Calculate effective specific capacitances per area for each construction
+            // Note: kappa_* variables are reserved for future ISO 13790 admittance method
             #[allow(unused_variables)]
             let kappa_wall = spec
                 .construction
