@@ -2122,17 +2122,20 @@ impl CaseBuilder {
         Ok(spec)
     }
 
-    /// Generate weather data for ASHRAE 140 cases using Denver TMY.
+    /// Generate weather data for ASHRAE 140 cases using EPW file.
     ///
     /// This creates a vector of 8760 HourlyWeatherData instances representing
     /// a full year of Denver weather with DNI, DHI, GHI, temperature, and humidity.
     ///
-    /// Note: Weather data should be loaded dynamically from DenverTmyWeather in validation,
+    /// Note: Weather data should be loaded dynamically from EpwWeatherSource in validation,
     /// not pre-generated here to avoid performance issues.
     #[allow(dead_code)]
     pub fn generate_denver_weather_data() -> Vec<HourlyWeatherData> {
-        use crate::weather::denver::DenverTmyWeather;
-        let weather = DenverTmyWeather::new();
+        use crate::weather::epw::EpwWeatherSource;
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         (0..8760)
             .map(|hour| weather.get_hourly_data(hour).unwrap())
