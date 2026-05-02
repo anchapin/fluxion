@@ -1478,14 +1478,17 @@ impl ThermalModel<VectorField> {
             h_tr_is_vec.push(wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is);
 
             // Calculate effective specific capacitances per area for each construction
+            #[allow(unused_variables)]
             let kappa_wall = spec
                 .construction
                 .wall
                 .iso_13790_effective_capacitance_per_area();
+            #[allow(unused_variables)]
             let kappa_roof = spec
                 .construction
                 .roof
                 .iso_13790_effective_capacitance_per_area();
+            #[allow(unused_variables)]
             let kappa_floor = spec
                 .construction
                 .floor
