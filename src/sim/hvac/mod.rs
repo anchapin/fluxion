@@ -3,15 +3,16 @@
 //! This module provides advanced HVAC system modeling capabilities including
 //! Variable Air Volume (VAV), Constant Air Volume (CAV), and heat pump systems.
 
-pub mod control;
+pub mod modes;
 pub mod cycling;
 pub mod economizer;
 pub mod efficiency_curves;
 pub mod equipment;
 pub mod ideal_loads;
+pub mod zones;
 
 // Re-export common types for convenience
-pub use control::PredictiveController;
+pub use modes::PredictiveController;
 pub use cycling::CyclingTracker;
 pub use economizer::{calculate_free_cooling_capacity, is_economizer_active, EconomizerMode};
 pub use efficiency_curves::{
