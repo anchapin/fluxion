@@ -24,7 +24,6 @@ use crate::testing::integration::wiring::WiringTracer;
 use crate::validation::ashrae_140_cases::{NightVentilation, Orientation};
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
-use log::{debug, error, info, trace, warn};
 use std::sync::Arc;
 
 pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
