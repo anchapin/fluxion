@@ -4,14 +4,14 @@
 //! The ThermalModel wrapper provides Deref to access ThermalModelData fields.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::physics::ctf_coefficients::CTFCoefficients;
-use crate::physics::ctf_solver::CTFSolver;
+use crate::physics::ctf::coefficients::CTFCoefficients;
+use crate::physics::ctf::solver::CTFSolver;
 use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
-use crate::physics::fd_solver::ImplicitFDSolver;
+use crate::physics::fd::solver::ImplicitFDSolver;
 use crate::physics::solver_manager::SolverManager;
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::boundary::GroundTemperature;
-use crate::sim::components::WallSurface;
+use crate::sim::construction::WallSurface;
 use crate::sim::hvac::{
     AnyEquipment, CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController,
 };

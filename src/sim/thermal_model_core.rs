@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::assembly::BuildingAssembly;
-use crate::sim::components::WallSurface;
+use crate::sim::construction::WallSurface;
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType;
@@ -176,7 +176,7 @@ where
         };
 
         let fd_flux_w: Option<Vec<f64>> = if self.0.fd_enabled && !self.0.fd_solvers.is_empty() {
-            use crate::physics::fd_solver::SurfaceBC;
+            use crate::physics::fd::solver::SurfaceBC;
             let temps = self.0.temperatures.as_ref();
             let mut fd_fluxes = Vec::with_capacity(self.0.num_zones);
 
@@ -1226,7 +1226,7 @@ impl ThermalModel<VectorField> {
         // is too high). The CTF solver captures multi-layer conduction dynamics correctly (τ ≈ 120-200h).
         // Enable CTF with iterative zone coupling so T_si drives the zone air heat balance directly.
         if spec.case_id == "900FF" || spec.case_id == "950FF" {
-            use crate::physics::ctf_coefficients::CTFMaterial;
+            use crate::physics::ctf::coefficients::CTFMaterial;
             // Wall layers match Materials::high_mass_wall() from construction.rs:
             // Concrete Block (0.100m, k=0.51) + Foam (0.0615m, k=0.04) + Wood Siding (0.009m, k=0.14)
             let wall_layers = vec![
