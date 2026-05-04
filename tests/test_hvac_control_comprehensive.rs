@@ -3,7 +3,7 @@
 //! This module provides extensive test coverage for the HVAC predictive controller,
 //! including edge cases, boundary conditions, and physical validation.
 
-use fluxion::sim::hvac::control::PredictiveController;
+use fluxion::sim::hvac::modes::PredictiveController;
 use fluxion::sim::hvac::HVACMode;
 
 // ============================================================================
