@@ -174,11 +174,13 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let energy_joules = energy_kwh * 3.6e6;
 
-        if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
+        // Classify energy based on HVAC output sign, not zone temperature
+        // Positive = heating energy, Negative = cooling energy
+        if energy_kwh > 0.0 {
             total_heating += energy_joules;
             let power_watts = energy_joules / 3600.0;
             peak_heating = peak_heating.max(power_watts);
-        } else if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
+        } else if energy_kwh < 0.0 {
             total_cooling += -energy_joules;
             let power_watts = -energy_joules / 3600.0;
             peak_cooling = peak_cooling.max(power_watts);

@@ -19,7 +19,7 @@ use crate::sim::engine::ThermalModel;
 use crate::validation::ashrae_140_cases::ASHRAE140Case;
 use crate::validation::ashrae_140_multi_zone::Case960Reference;
 use crate::validation::report::ValidationStatus;
-use crate::weather::denver::DenverTmyWeather;
+use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use serde::{Deserialize, Serialize};
 
@@ -51,7 +51,7 @@ pub struct Case960ReferenceImplementation {
     reference: Case960Reference,
     /// Weather data for Denver
     #[allow(dead_code)]
-    weather: DenverTmyWeather,
+    weather: EpwWeatherSource,
 }
 
 impl Default for Case960ReferenceImplementation {
@@ -65,7 +65,10 @@ impl Case960ReferenceImplementation {
     pub fn new() -> Self {
         Self {
             reference: Case960Reference::load_case_960_reference_data(),
-            weather: DenverTmyWeather::new(),
+            weather: EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data"),
         }
     }
 
@@ -110,7 +113,10 @@ impl Case960ReferenceImplementation {
     /// Case960Result containing annual energy, peak loads, and temperature profiles
     pub fn run_case_960_simulation() -> Case960Result {
         let mut model = Self::create_case_960_thermal_model();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Reset energy tracking for clean simulation
         model.reset_heating_cooling_energy();

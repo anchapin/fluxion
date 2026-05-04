@@ -2,7 +2,7 @@ use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crate::validation::diagnostic::HourlyData;
-use crate::weather::denver::DenverTmyWeather;
+use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use anyhow::Result;
 use csv::WriterBuilder;
@@ -236,8 +236,11 @@ fn run_simulation(spec: &CaseSpec, collect_hourly: bool) -> Result<SimulationRes
     }
     model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
-    // Prepare weather (Denver TMY)
-    let weather = DenverTmyWeather::new();
+    // Prepare weather (Denver EPW)
+    let weather = EpwWeatherSource::from_file(
+        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+    )
+    .expect("Failed to load EPW weather data");
 
     // Accumulators
     let mut annual_heating_joules: f64 = 0.0;
