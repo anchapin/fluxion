@@ -28,6 +28,7 @@ pub mod report;
 pub mod reporter;
 pub mod reporting;
 
+pub mod adaptive_calibration;
 pub mod ashrae_140_multi_zone;
 pub mod case_195_calibration;
 pub mod case_960;
@@ -70,6 +71,11 @@ pub use statistical::{
     StatisticalMetrics, StatisticalReport, StatisticalValidator, ValidationGroup,
 };
 
+pub use adaptive_calibration::{
+    AdaptiveCalibrationResult, AdaptiveHourlyCalibrator, BiasPattern, CalibrationIteration,
+    CalibrationState, CalibrationTrigger, HourlyObservation, SmartMeterPatternAnalyzer,
+    TriggerDetector,
+};
 pub use ashrae140::cases::build_case;
 pub use ashrae140::ASHRAE140Case;
 pub use ashrae140::ASHRAE140CaseDefinition;
