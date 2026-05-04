@@ -8,10 +8,10 @@ use lazy_static::lazy_static;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-use crate::hvac::schedule::HVACSchedule;
-use crate::hvac::zone_control::ZoneControl;
-use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
+use crate::sim::hvac::zones::schedule::HVACSchedule;
+use crate::sim::hvac::zones::zone_control::ZoneControl;
+use crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints;
 use crate::thermal::thermal_model::ThermalModel;
 
 // Global HVAC system state
