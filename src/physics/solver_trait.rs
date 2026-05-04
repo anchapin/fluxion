@@ -3,6 +3,47 @@
 //! This module defines the trait interface for heat conduction solvers,
 //! enabling unified treatment of 5R1C, CTF, and finite difference methods.
 //!
+//! # Unified Solver Architecture (Issue #624)
+//!
+//! This trait is part of a consolidated solver architecture that prevents
+//! solver proliferation. Rather than creating separate solver types for each
+//! use case, we use a single trait with runtime dispatch via SolverManager.
+//!
+//! ## Design Principles
+//!
+//! 1. **Single Interface**: All heat conduction solvers implement this trait
+//! 2. **Explicit Selection**: SolverManager selects the appropriate method
+//! 3. **No Duplication**: CTF, FD, and 5R1C share the same lifecycle pattern
+//! 4. **Validation Required**: New solvers only if existing ones fail validation
+//!
+//! ## Solver Lifecycle
+//!
+//! ```text
+//! ┌──────────────┐     ┌─────────────────────┐     ┌─────────────┐
+//! │ HeatConduction│────▶│   SolverManager     │────▶│ 5R1C/CTF/FD │
+//! │    Trait     │     │ (automatic select)  │     │  Wrappers   │
+//! └──────────────┘     └─────────────────────┘     └─────────────┘
+//! ```
+//!
+//! # Overview
+//!
+//! The `HeatConductionSolver` trait provides a common interface for:
+//! - 5R1C thermal network (fast, low-mass buildings)
+//! - CTF (Conduction Transfer Functions, accurate for high-mass)
+//! - FD (Finite Difference, robust fallback for complex constructions)
+//!
+//! # Example
+//!
+//! ```rust
+//! use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
+//! use fluxion::physics::five_r1c_solver::FiveR1CSolver;
+//!
+//! let mut solver = FiveR1CSolver::new();
+//! solver.initialize(&wall_assembly)?;
+//!
+//! let flux = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0)?;
+//! ```
+//!
 //! # Overview
 //!
 //! The `HeatConductionSolver` trait provides a common interface for:
