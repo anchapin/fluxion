@@ -201,3 +201,12 @@ case_900ff_profile_hourly.csv
 .security-key
 logs/security/
 .sdd/runtime/
+
+# Ruff linter cache
+.ruff_cache/
+
+# Node modules
+node_modules/
+
+# Background process output
+nohup.out
