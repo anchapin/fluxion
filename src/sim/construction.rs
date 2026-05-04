@@ -18,12 +18,12 @@
 //! - **Area Multipliers**: Each mass class has an associated effective mass area
 //!   multiplier (A_m factor) used in 5R1C thermal network calculations.
 
-use serde::{Deserialize, Serialize};
-use std::ops::{Add, AddAssign, Mul};
 use crate::physics::continuous::ContinuousField;
 use crate::sim::shading::{Overhang, ShadeFin};
 use crate::validation::ashrae_140_cases::Orientation;
 use num_traits::Zero;
+use serde::{Deserialize, Serialize};
+use std::ops::{Add, AddAssign, Mul};
 // Use constants from physics module instead of hardcoded values
 pub use crate::physics::constants::thermal::ashrae_140::{
     EXTERIOR_FILM_COEFF, EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF,
@@ -2151,7 +2151,11 @@ mod tests {
 
     #[test]
     fn test_wall_surface_with_overhang() {
-        let overhang = Overhang { depth: 1.0, distance_above: 0.5, extension: 0.0 };
+        let overhang = Overhang {
+            depth: 1.0,
+            distance_above: 0.5,
+            extension: 0.0,
+        };
         let surface = WallSurface::new(15.0, 1.2, Orientation::South).with_overhang(overhang);
         assert!(surface.overhang.is_some());
         assert!((surface.overhang.as_ref().unwrap().depth - 1.0).abs() < 1e-6);
@@ -2159,7 +2163,11 @@ mod tests {
 
     #[test]
     fn test_wall_surface_with_fin() {
-        let fin = ShadeFin { depth: 0.5, distance_from_edge: 0.0, side: crate::sim::shading::Side::Left };
+        let fin = ShadeFin {
+            depth: 0.5,
+            distance_from_edge: 0.0,
+            side: crate::sim::shading::Side::Left,
+        };
         let surface = WallSurface::new(12.0, 0.9, Orientation::West).with_fin(fin);
         assert_eq!(surface.fins.len(), 1);
         assert!((surface.fins[0].depth - 0.5).abs() < 1e-6);
@@ -2167,18 +2175,38 @@ mod tests {
 
     #[test]
     fn test_wall_surface_with_multiple_fins() {
-        let fin1 = ShadeFin { depth: 0.3, distance_from_edge: 0.0, side: crate::sim::shading::Side::Left };
-        let fin2 = ShadeFin { depth: 0.6, distance_from_edge: 1.0, side: crate::sim::shading::Side::Right };
-        let surface = WallSurface::new(10.0, 1.0, Orientation::South).with_fin(fin1).with_fin(fin2);
+        let fin1 = ShadeFin {
+            depth: 0.3,
+            distance_from_edge: 0.0,
+            side: crate::sim::shading::Side::Left,
+        };
+        let fin2 = ShadeFin {
+            depth: 0.6,
+            distance_from_edge: 1.0,
+            side: crate::sim::shading::Side::Right,
+        };
+        let surface = WallSurface::new(10.0, 1.0, Orientation::South)
+            .with_fin(fin1)
+            .with_fin(fin2);
         assert_eq!(surface.fins.len(), 2);
     }
 
     #[test]
     fn test_wall_surface_builder_chain() {
-        let overhang = Overhang { depth: 2.0, distance_above: 1.0, extension: 0.5 };
-        let fin = ShadeFin { depth: 0.8, distance_from_edge: 0.5, side: crate::sim::shading::Side::Left };
+        let overhang = Overhang {
+            depth: 2.0,
+            distance_above: 1.0,
+            extension: 0.5,
+        };
+        let fin = ShadeFin {
+            depth: 0.8,
+            distance_from_edge: 0.5,
+            side: crate::sim::shading::Side::Left,
+        };
         let surface = WallSurface::new(30.0, 2.0, Orientation::North)
-            .with_window(8.0).with_overhang(overhang).with_fin(fin);
+            .with_window(8.0)
+            .with_overhang(overhang)
+            .with_fin(fin);
         assert!((surface.window_area - 8.0).abs() < 1e-6);
         assert!(surface.overhang.is_some());
         assert_eq!(surface.fins.len(), 1);
@@ -2193,5 +2221,4 @@ mod tests {
         let debug_str = format!("{:?}", surface);
         assert!(debug_str.contains("WallSurface"));
     }
-
 }
