@@ -22,6 +22,10 @@ pub mod sky_radiation;
 pub mod solar;
 pub mod thermal_model;
 pub mod thermal_model_core;
+pub mod thermal_model_data;
+pub mod thermal_model_iterative;
+pub mod thermal_model_physics;
+pub mod thermal_model_solvers;
 pub mod timestep_solver;
 
 pub mod thermal_integration;
