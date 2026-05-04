@@ -3,51 +3,16 @@
 //! ISO 13790-compliant 5R1C/6R2C thermal network implementation.
 //! Contains the core thermal model types, struct, and implementations.
 
-use crossbeam::channel::{Receiver, Sender};
-use log::{debug, error, info, trace, warn};
-use std::collections::HashMap;
-use std::sync::OnceLock;
+use log::{debug, info, trace, warn};
 
-use crate::ai::surrogate::SurrogateManager;
 use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 use crate::physics::cta::{ContinuousTensor, VectorField};
-use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
+use crate::physics::ctf_coefficients::{CTFCalculator, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
 use crate::sim::adaptive_timestep::TimestepMode;
-use crate::sim::assembly::BuildingAssembly;
-use crate::sim::boundary::{
-    ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
-};
-use crate::sim::components::WallSurface;
-use crate::sim::equipment::Equipment;
-use crate::sim::holiday;
-use crate::sim::hvac::{
-    AnyEquipment, CyclingTracker, EconomizerMode, HVACMode as EquipmentHVACMode, IdealLoadsSystem,
-    PredictiveController, VariableCapacityEquipment,
-};
-use crate::sim::hvac_controller::{HVACMode, HvacSystemMode, IdealHVACController};
-use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
-use crate::sim::lighting::LightingSchedule;
-use crate::sim::occupancy::{BuildingType, OccupancyProfile};
-use crate::sim::profiles;
 use crate::sim::schedule::DailySchedule;
-use crate::sim::shading::{Overhang, ShadeFin, Side};
-use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
-use crate::sim::thermal_integration::{
-    backward_euler_update, crank_nicolson_update, select_integration_method,
-    ThermalIntegrationMethod,
-};
-use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel, ThermalModelType};
-use crate::sim::thermal_model_data::ThermalModelData;
-use crate::sim::timestep_solver::StepParameters;
-use crate::sim::view_factors;
-use crate::validation::ashrae_140_cases::{
-    CaseSpec, GeometrySpec, Orientation, ShadingType, WindowArea,
-};
-use crate::validation::config::{validate_assembly, validate_constants};
-use crate::validation::diagnostics::SimulationDiagnostics;
-use crate::weather::HourlyWeatherData;
+use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Updates derived physical parameters based on geometry and constants.
