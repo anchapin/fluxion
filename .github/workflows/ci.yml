@@ -13,14 +13,11 @@ permissions:
 jobs:
   python-examples:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: [3.11]
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-python-env
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: '3.11'
       - name: Create virtual environment and install deps
         run: |
           python -m venv venv

@@ -1,7 +1,6 @@
 pub mod adaptive_timestep;
 pub mod assembly;
 pub mod boundary;
-pub mod components;
 pub mod construction;
 pub mod demand_response;
 pub mod diagnostics;

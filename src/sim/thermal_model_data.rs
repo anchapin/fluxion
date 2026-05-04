@@ -11,7 +11,7 @@ use crate::physics::fd_solver::ImplicitFDSolver;
 use crate::physics::solver_manager::SolverManager;
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::boundary::GroundTemperature;
-use crate::sim::components::WallSurface;
+use crate::sim::construction::WallSurface;
 use crate::sim::hvac::{
     AnyEquipment, CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController,
 };

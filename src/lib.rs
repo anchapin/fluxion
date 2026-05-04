@@ -759,8 +759,8 @@ pub struct PyWallSurface {
 }
 
 #[cfg(feature = "python-bindings")]
-impl From<&crate::sim::components::WallSurface> for PyWallSurface {
-    fn from(surface: &crate::sim::components::WallSurface) -> Self {
+impl From<&crate::sim::construction::WallSurface> for PyWallSurface {
+    fn from(surface: &crate::sim::construction::WallSurface) -> Self {
         PyWallSurface {
             area: surface.area,
             u_value: surface.u_value,
@@ -789,7 +789,7 @@ impl PyWallSurface {
             }
         };
         let _rust_surface =
-            crate::sim::components::WallSurface::new(area, u_value, rust_orientation);
+            crate::sim::construction::WallSurface::new(area, u_value, rust_orientation);
         Ok(PyWallSurface {
             area,
             u_value,

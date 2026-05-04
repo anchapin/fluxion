@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::assembly::BuildingAssembly;
-use crate::sim::components::WallSurface;
+use crate::sim::construction::WallSurface;
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType;
