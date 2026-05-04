@@ -1,7 +1,6 @@
 pub mod ab_testing;
 pub mod analyzer;
 pub mod ashrae140;
-pub mod ashrae_140;
 pub mod ashrae_140_cases;
 pub mod ashrae_140_validator;
 pub mod assembly_library;
@@ -21,12 +20,12 @@ pub mod multi_reference;
 pub mod performance;
 pub mod reference;
 pub mod reference_data;
+pub mod reporting;
 pub mod tolerance;
 
 pub mod physics_validator;
 pub mod report;
 pub mod reporter;
-pub mod reporting;
 
 pub mod adaptive_calibration;
 pub mod ashrae_140_multi_zone;
