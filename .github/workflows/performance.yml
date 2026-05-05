@@ -70,7 +70,7 @@ jobs:
           cargo test --test performance_ci_test
           cargo test --test performance_regression_test
         env:
-          RAYON_NUM_THREADS: 1
+          RAYON_RS_NUM_CPUS: 1
 
       - name: Generate benchmark results
         run: |
