@@ -70,7 +70,10 @@ impl CompositeSurrogate {
         }
     }
 
-    pub fn with_weights(components: Vec<ComponentSurrogate>, weights: Vec<f64>) -> Result<Self, String> {
+    pub fn with_weights(
+        components: Vec<ComponentSurrogate>,
+        weights: Vec<f64>,
+    ) -> Result<Self, String> {
         if components.is_empty() {
             return Err("CompositeSurrogate requires at least one component".to_string());
         }
@@ -126,9 +129,8 @@ impl CompositeSurrogate {
     }
 
     pub fn predict_loads(&self, temps: &[f64]) -> Vec<f64> {
-        self.predict_loads_with_fallback(temps).unwrap_or_else(|_| {
-            vec![0.0; temps.len()]
-        })
+        self.predict_loads_with_fallback(temps)
+            .unwrap_or_else(|_| vec![0.0; temps.len()])
     }
 
     pub fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
@@ -139,7 +141,12 @@ impl CompositeSurrogate {
         let predictions: Result<Vec<Vec<f64>>, String> = self
             .components
             .iter()
-            .map(|c| c.predict_loads_governed(temps, crate::ai::surrogate::SurrogateMode::NeuralWithFallback))
+            .map(|c| {
+                c.predict_loads_governed(
+                    temps,
+                    crate::ai::surrogate::SurrogateMode::NeuralWithFallback,
+                )
+            })
             .collect();
 
         let predictions = match predictions {
@@ -150,10 +157,7 @@ impl CompositeSurrogate {
             }
         };
 
-        let num_outputs = predictions
-            .first()
-            .map(|p| p.len())
-            .unwrap_or(temps.len());
+        let num_outputs = predictions.first().map(|p| p.len()).unwrap_or(temps.len());
 
         let mut weighted_sum = vec![0.0; num_outputs];
         for (pred, &weight) in predictions.iter().zip(self.weights.iter()) {
@@ -217,10 +221,7 @@ impl CompositeSurrogate {
             .map(|c| c.predict_loads(temps))
             .collect();
 
-        let num_outputs = predictions
-            .first()
-            .map(|p| p.len())
-            .unwrap_or(temps.len());
+        let num_outputs = predictions.first().map(|p| p.len()).unwrap_or(temps.len());
 
         let mut weighted_sum = vec![0.0; num_outputs];
         for (pred, &weight) in predictions.iter().zip(self.weights.iter()) {
