@@ -67,7 +67,6 @@ pub mod ai;
 pub mod analysis;
 pub mod api;
 pub mod cli;
-pub mod hvac;
 pub mod interop;
 pub mod napi;
 pub mod performance;
@@ -1600,7 +1599,7 @@ fn fluxion(_py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
 }
 
 // Re-export ASHRAE 140 validation models
-pub use validation::ashrae_140::high_mass;
+pub use validation::ashrae140::high_mass;
 
 // Tests for core physics engine (no Python bindings required)
 #[cfg(test)]
