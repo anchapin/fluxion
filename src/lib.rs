@@ -1854,6 +1854,12 @@ mod tests {
 
         println!("Sequential time: {:?}", duration_seq);
         println!("Parallel time: {:?}", duration_par);
+        println!(
+            "Available parallelism: {}",
+            std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1)
+        );
 
         let num_threads = std::thread::available_parallelism()
             .map(|n| n.get())
