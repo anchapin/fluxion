@@ -230,7 +230,7 @@ impl M1ValidationSuite {
         check: &RequirementsCheck,
     ) -> Result<String, anyhow::Error> {
         let export_data = M1ValidationExport {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            _timestamp: chrono::Utc::now().to_rfc3339(),
             energy_balance_passed: report.energy_balance_passed,
             performance_analysis: format!("{:?}", report.performance_report.scalability_analysis),
             case_960_passed: report.case_960_report.passed,
@@ -363,7 +363,7 @@ pub struct RequirementFinding {
 /// Export format for validation results
 #[derive(Debug, Serialize, Deserialize)]
 pub struct M1ValidationExport {
-    pub timestamp: String,
+    pub _timestamp: String,
     pub energy_balance_passed: bool,
     pub performance_analysis: String,
     pub case_960_passed: bool,

@@ -164,7 +164,7 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
-        let zone_temp_before = model
+        let _zone_temp_before = model
             .temperatures
             .as_slice()
             .first()
