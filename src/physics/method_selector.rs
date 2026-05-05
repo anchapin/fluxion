@@ -222,6 +222,8 @@ impl ThermalMethodSelector {
             h_exterior: 25.0,
             selection_config: if config.per_surface_selection {
                 SolverSelectionConfig::PerSurface(vec![])
+            } else if config.enable_automatic_selection {
+                SolverSelectionConfig::Automatic
             } else {
                 SolverSelectionConfig::ForceMethod(
                     config
