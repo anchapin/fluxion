@@ -32,6 +32,7 @@ use crate::physics::fd_solver_wrapper::FDSolverWrapper;
 use crate::physics::five_r1c_solver::FiveR1CSolver;
 use crate::physics::method_selector::{
     SolverSelectionResult, ThermalMethod, ThermalMethodSelector,
+    ThermalMethodSelectorConfig,
 };
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::sim::assembly::BuildingAssembly;
@@ -90,7 +91,11 @@ impl SolverManager {
     ///
     /// * `threshold_hours` - Time constant threshold for method selection
     pub fn with_threshold(threshold_hours: f64) -> Self {
-        Self::new(ThermalMethodSelector::with_threshold(threshold_hours))
+        let config = ThermalMethodSelectorConfig {
+            threshold_hours,
+            ..Default::default()
+        };
+        Self::new(ThermalMethodSelector::from_config(config))
     }
 
     /// Get or create solver for a wall assembly.

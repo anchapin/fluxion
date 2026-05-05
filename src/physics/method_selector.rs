@@ -76,6 +76,36 @@ pub struct SurfaceSolverConfig {
     pub method: ThermalMethod,
 }
 
+/// Configuration struct for ThermalMethodSelector.
+///
+/// This replaces the builder pattern with a simple data structure that can be
+/// easily constructed, serialized, and tested.
+#[derive(Debug, Clone)]
+pub struct ThermalMethodSelectorConfig {
+    /// Selection threshold: τ > threshold → CTF/FD (default: 24.0 hours)
+    pub threshold_hours: f64,
+    /// Manual override (None = auto, Some = force method)
+    pub override_method: Option<ThermalMethod>,
+    /// Enable fallback (CTF → FD on failure)
+    pub enable_fallback: bool,
+    /// Enable automatic selection based on thermal mass
+    pub enable_automatic_selection: bool,
+    /// Enable per-surface explicit solver selection
+    pub per_surface_selection: bool,
+}
+
+impl Default for ThermalMethodSelectorConfig {
+    fn default() -> Self {
+        Self {
+            threshold_hours: 24.0,
+            override_method: None,
+            enable_fallback: true,
+            enable_automatic_selection: true,
+            per_surface_selection: false,
+        }
+    }
+}
+
 impl SurfaceSolverConfig {
     /// Create a new surface solver config.
     pub fn new(surface_id: impl Into<String>, method: ThermalMethod) -> Self {
@@ -180,6 +210,24 @@ impl ThermalMethodSelector {
     /// Create a new method selector with default settings.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a method selector from a config struct.
+    pub fn from_config(config: ThermalMethodSelectorConfig) -> Self {
+        Self {
+            threshold_hours: config.threshold_hours,
+            override_method: config.override_method,
+            enable_fallback: config.enable_fallback,
+            h_interior: 8.0,
+            h_exterior: 25.0,
+            selection_config: if config.per_surface_selection {
+                SolverSelectionConfig::PerSurface(vec![])
+            } else if config.enable_automatic_selection {
+                SolverSelectionConfig::Automatic
+            } else {
+                SolverSelectionConfig::Automatic
+            },
+        }
     }
 
     /// Create selector with custom threshold.
@@ -389,30 +437,6 @@ impl ThermalMethodSelector {
     /// Set the explicit selection configuration.
     pub fn set_selection_config(&mut self, config: SolverSelectionConfig) {
         self.selection_config = config;
-    }
-
-    /// Create selector with automatic selection mode.
-    pub fn with_automatic_selection() -> Self {
-        Self {
-            selection_config: SolverSelectionConfig::Automatic,
-            ..Self::default()
-        }
-    }
-
-    /// Create selector with forced method.
-    pub fn with_forced_method(method: ThermalMethod) -> Self {
-        Self {
-            selection_config: SolverSelectionConfig::ForceMethod(method),
-            ..Self::default()
-        }
-    }
-
-    /// Create selector with per-surface explicit configuration.
-    pub fn with_per_surface_selection(configs: Vec<SurfaceSolverConfig>) -> Self {
-        Self {
-            selection_config: SolverSelectionConfig::PerSurface(configs),
-            ..Self::default()
-        }
     }
 
     /// Validate CTF coefficients.
@@ -854,15 +878,31 @@ mod tests {
         assert!(result.reason.contains("Explicit force"));
     }
 
+    // === ARCH-007: Config struct API tests (replaced deprecated builder methods) ===
+
     #[test]
-    fn test_with_automatic_selection() {
-        let selector = ThermalMethodSelector::with_automatic_selection();
+    fn test_config_automatic_selection() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            enable_automatic_selection: true,
+            ..Default::default()
+        };
+        let selector = ThermalMethodSelector::from_config(config);
         assert_eq!(selector.selection_config, SolverSelectionConfig::Automatic);
     }
 
     #[test]
-    fn test_with_forced_method() {
-        let selector = ThermalMethodSelector::with_forced_method(ThermalMethod::CTF);
+    fn test_config_forced_method() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            enable_automatic_selection: false,
+            enable_fallback: true,
+            ..Default::default()
+        };
+        let mut selector = ThermalMethodSelector::from_config(config);
+        selector.set_selection_config(SolverSelectionConfig::ForceMethod(ThermalMethod::CTF));
         assert_eq!(
             selector.selection_config,
             SolverSelectionConfig::ForceMethod(ThermalMethod::CTF)
@@ -870,12 +910,19 @@ mod tests {
     }
 
     #[test]
-    fn test_with_per_surface_selection() {
+    fn test_config_per_surface_selection() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
         let configs = vec![
             SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
             SurfaceSolverConfig::roof(ThermalMethod::CTF),
         ];
-        let selector = ThermalMethodSelector::with_per_surface_selection(configs.clone());
+        let config = ThermalMethodSelectorConfig {
+            per_surface_selection: true,
+            ..Default::default()
+        };
+        let mut selector = ThermalMethodSelector::from_config(config);
+        selector.set_selection_config(SolverSelectionConfig::PerSurface(configs.clone()));
         assert_eq!(
             selector.selection_config,
             SolverSelectionConfig::PerSurface(configs)
@@ -936,5 +983,65 @@ mod tests {
             selector.selection_config(),
             &SolverSelectionConfig::ForceMethod(ThermalMethod::FiniteDifference)
         );
+    }
+
+    // === ARCH-007: Config struct tests ===
+
+    #[test]
+    fn test_config_struct_default() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig::default();
+
+        assert_eq!(config.threshold_hours, 24.0);
+        assert!(config.override_method.is_none());
+        assert!(config.enable_fallback);
+        assert!(config.enable_automatic_selection);
+        assert!(!config.per_surface_selection);
+    }
+
+    #[test]
+    fn test_config_struct_custom_values() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            threshold_hours: 3.5,
+            override_method: Some(ThermalMethod::FiniteDifference),
+            enable_fallback: false,
+            enable_automatic_selection: true,
+            per_surface_selection: true,
+        };
+
+        assert_eq!(config.threshold_hours, 3.5);
+        assert_eq!(config.override_method, Some(ThermalMethod::FiniteDifference));
+        assert!(!config.enable_fallback);
+        assert!(config.enable_automatic_selection);
+        assert!(config.per_surface_selection);
+    }
+
+    #[test]
+    fn test_selector_from_config() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            threshold_hours: 5.0,
+            override_method: None,
+            enable_fallback: true,
+            enable_automatic_selection: false,
+            per_surface_selection: false,
+        };
+
+        let selector = ThermalMethodSelector::from_config(config);
+
+        assert_eq!(selector.threshold_hours, 5.0);
+    }
+
+    #[test]
+    fn test_with_threshold_using_config() {
+        let selector = ThermalMethodSelector::with_threshold(3.0);
+        assert_eq!(selector.threshold_hours, 3.0);
+        // Other fields use defaults
+        assert_eq!(selector.override_method, None);
+        assert!(selector.enable_fallback);
     }
 }
