@@ -197,7 +197,8 @@ pub fn simulate_blind(spec: &BlindTestSpec, weather: &EpwWeatherSource) -> Blind
         let internal_gain = 1.5; // kW
 
         // Total loads
-        let total_heating = (conduction_load + internal_gain - solar_gain_kw).max(0.0) * load_factor;
+        let total_heating =
+            (conduction_load + internal_gain - solar_gain_kw).max(0.0) * load_factor;
         let total_cooling = (cooling_load_base + solar_gain_kw * 0.5).max(0.0) * load_factor;
 
         // Track maximums
