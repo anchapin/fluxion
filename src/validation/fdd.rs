@@ -58,7 +58,7 @@ pub struct Fault {
     pub severity: FaultSeverity,
     pub message: String,
     pub source: String,
-    pub timestamp: usize,
+    pub _timestamp: usize,
     pub confidence: f64,
     pub recommended_action: String,
 }
@@ -80,7 +80,7 @@ impl Fault {
             severity,
             message,
             source,
-            timestamp,
+            _timestamp: timestamp,
             confidence,
             recommended_action,
         }

@@ -1071,7 +1071,7 @@ fn test_900_series_regression() {
                 let weather_data = weather.get_hourly_data(step).unwrap();
                 model.weather = Some(weather_data.clone());
 
-                let zone_temp_before = model
+                let _zone_temp_before = model
                     .temperatures
                     .as_slice()
                     .first()
@@ -1082,11 +1082,11 @@ fn test_900_series_regression() {
                 let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
 
                 // Track heating and cooling separately
-                if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
+                if energy_kwh > 0.0 || _zone_temp_before < model.heating_setpoint {
                     total_heating += energy_joules;
                     let power_watts = energy_joules / 3600.0;
                     peak_heating = peak_heating.max(power_watts);
-                } else if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
+                } else if energy_kwh < 0.0 || _zone_temp_before > model.cooling_setpoint {
                     total_cooling += -energy_joules;
                     let power_watts = -energy_joules / 3600.0;
                     peak_cooling = peak_cooling.max(power_watts);

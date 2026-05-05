@@ -24,7 +24,7 @@ use fluxion::sim::sky_radiation::{
 };
 use fluxion::sim::solar::{
     calculate_day_of_year, calculate_hourly_solar, calculate_solar_position,
-    calculate_surface_irradiance, calculate_window_solar_gain, SolarPosition, SurfaceIrradiance,
+    calculate_surface_irradiance, calculate_window_solar_gain, SurfaceIrradiance,
     WindowProperties,
 };
 use fluxion::validation::ashrae_140_cases::Orientation;
