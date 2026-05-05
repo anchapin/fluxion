@@ -41,7 +41,12 @@ impl Default for TopsisWeights {
 
 impl TopsisWeights {
     pub fn new(ec: f64, tdhp: f64, lcc: f64, lcco2: f64) -> Self {
-        Self { ec, tdhp, lcc, lcco2 }
+        Self {
+            ec,
+            tdhp,
+            lcc,
+            lcco2,
+        }
     }
 
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -150,10 +155,22 @@ impl Topsis {
 
         let ideal_pos = if criteria.len() > 1 {
             [
-                normalized.iter().map(|c| c[0]).fold(f64::INFINITY, f64::min),
-                normalized.iter().map(|c| c[1]).fold(f64::INFINITY, f64::min),
-                normalized.iter().map(|c| c[2]).fold(f64::INFINITY, f64::min),
-                normalized.iter().map(|c| c[3]).fold(f64::INFINITY, f64::min),
+                normalized
+                    .iter()
+                    .map(|c| c[0])
+                    .fold(f64::INFINITY, f64::min),
+                normalized
+                    .iter()
+                    .map(|c| c[1])
+                    .fold(f64::INFINITY, f64::min),
+                normalized
+                    .iter()
+                    .map(|c| c[2])
+                    .fold(f64::INFINITY, f64::min),
+                normalized
+                    .iter()
+                    .map(|c| c[3])
+                    .fold(f64::INFINITY, f64::min),
             ]
         } else {
             normalized[0]
@@ -161,10 +178,22 @@ impl Topsis {
 
         let ideal_neg = if criteria.len() > 1 {
             [
-                normalized.iter().map(|c| c[0]).fold(f64::NEG_INFINITY, f64::max),
-                normalized.iter().map(|c| c[1]).fold(f64::NEG_INFINITY, f64::max),
-                normalized.iter().map(|c| c[2]).fold(f64::NEG_INFINITY, f64::max),
-                normalized.iter().map(|c| c[3]).fold(f64::NEG_INFINITY, f64::max),
+                normalized
+                    .iter()
+                    .map(|c| c[0])
+                    .fold(f64::NEG_INFINITY, f64::max),
+                normalized
+                    .iter()
+                    .map(|c| c[1])
+                    .fold(f64::NEG_INFINITY, f64::max),
+                normalized
+                    .iter()
+                    .map(|c| c[2])
+                    .fold(f64::NEG_INFINITY, f64::max),
+                normalized
+                    .iter()
+                    .map(|c| c[3])
+                    .fold(f64::NEG_INFINITY, f64::max),
             ]
         } else {
             normalized[0]
@@ -244,7 +273,10 @@ mod tests {
         let weights = TopsisWeights::default();
         let result = Topsis::select_optimal(&pareto_front, &weights).unwrap();
 
-        assert!(result.closeness_scores.values().all(|&c| c >= 0.0 && c <= 1.0));
+        assert!(result
+            .closeness_scores
+            .values()
+            .all(|&c| c >= 0.0 && c <= 1.0));
         assert!(result.selected_point.id <= 2);
     }
 
