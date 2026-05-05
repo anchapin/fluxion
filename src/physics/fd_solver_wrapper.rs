@@ -26,6 +26,7 @@
 use crate::physics::fd_discretization::{MaterialLayer, WallDiscretization};
 use crate::physics::fd_solver::{ImplicitFDSolver, SurfaceBC};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::wall_properties::WallProperties;
 use crate::sim::assembly::BuildingAssembly;
 
 /// Finite difference solver wrapper implementing the common HeatConductionSolver trait.
@@ -85,18 +86,21 @@ impl FDSolverWrapper {
         }
     }
 
-    /// Convert BuildingAssembly to material layers.
-    fn assembly_to_material_layers(assembly: &BuildingAssembly) -> Vec<MaterialLayer> {
-        assembly
+    /// Convert WallProperties to material layers.
+    ///
+    /// This hides BuildingAssembly internals from the solver. If BuildingAssembly
+    /// changes its layer structure, only WallProperties::from_assembly() needs updating.
+    fn wall_properties_to_material_layers(wall_props: &WallProperties) -> Vec<MaterialLayer> {
+        wall_props
             .layers
             .iter()
             .map(|layer| {
                 MaterialLayer::new(
-                    layer.name(),
-                    layer.thickness(),
-                    layer.conductivity(),
-                    layer.density(),
-                    layer.specific_heat(),
+                    &layer.name,
+                    layer.thickness_m,
+                    layer.conductivity_w_mk,
+                    layer.density_kg_m3,
+                    layer.specific_heat_j_kgk,
                 )
             })
             .collect()
@@ -134,8 +138,11 @@ impl HeatConductionSolver for FDSolverWrapper {
     }
 
     fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
-        // Convert assembly to material layers
-        let materials = Self::assembly_to_material_layers(wall);
+        // Convert assembly to wall properties (the seam)
+        let wall_props = WallProperties::from_assembly(wall);
+
+        // Convert wall properties to material layers
+        let materials = Self::wall_properties_to_material_layers(&wall_props);
 
         if materials.is_empty() {
             return Err(SolverError::ConstructionError(
