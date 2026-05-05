@@ -121,8 +121,7 @@ impl WallProperties {
             .map(|layer| LayerProperties::from_material_layer(layer.as_ref()))
             .collect();
 
-        let total_thermal_mass_kj_m2: f64 =
-            layers.iter().map(|l| l.thermal_mass_kj_m2).sum();
+        let total_thermal_mass_kj_m2: f64 = layers.iter().map(|l| l.thermal_mass_kj_m2).sum();
 
         Self {
             layers,
