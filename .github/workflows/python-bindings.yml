@@ -27,35 +27,15 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Cache ONNX Runtime binaries (macOS arm64)
-        if: matrix.os == 'macos-latest'
+      - name: Cache ONNX Runtime binaries
         uses: actions/cache@v4
+        if: matrix.os == 'macos-latest'
         with:
           path: |
-            ~/Library/Caches/ort-onnx
-          key: ort-onnx-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
+            ~/Library/Caches/ort.pyke.io
+          key: ort-binaries-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ort-onnx-aarch64-apple-darwin-
-
-      - name: Download and extract ONNX Runtime (macOS arm64)
-        if: matrix.os == 'macos-latest'
-        shell: bash
-        run: |
-          ONNX_VERSION="1.24.2"
-          ONNX_ARCH="onnxruntime-osx-arm64-${ONNX_VERSION}.tgz"
-          ONNX_URL="https://github.com/microsoft/onnxruntime/releases/download/v${ONNX_VERSION}/${ONNX_ARCH}"
-          CACHE_DIR="$HOME/Library/Caches/ort-onnx"
-          mkdir -p "$CACHE_DIR"
-          if [ ! -f "$CACHE_DIR/$ONNX_ARCH" ]; then
-            echo "Downloading ONNX Runtime from $ONNX_URL"
-            curl -fsSL "$ONNX_URL" -o "$CACHE_DIR/$ONNX_ARCH"
-          fi
-          mkdir -p "$CACHE_DIR/onnxruntime"
-          if [ ! -d "$CACHE_DIR/onnxruntime/lib" ]; then
-            echo "Extracting ONNX Runtime..."
-            tar -xzf "$CACHE_DIR/$ONNX_ARCH" -C "$CACHE_DIR/onnxruntime"
-          fi
-          echo "ORT_LIB_DIR=$CACHE_DIR/onnxruntime" >> $GITHUB_ENV
+            ort-binaries-aarch64-apple-darwin-
 
       - name: Install maturin
         run: pip install maturin
