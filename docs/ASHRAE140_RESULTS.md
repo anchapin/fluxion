@@ -1,25 +1,25 @@
 # ASHRAE Standard 140 Validation Results
 
-*Generated: 2026-04-20 04:55 UTC*
+*Generated: 2026-05-05 06:23 UTC*
 
 ## Summary
 
 | Metric | Value |
 |--------|-------|
 | Total Results | 64 |
-| Pass Rate | 35.9% |
-| Passed | 23 |
-| Warnings | 5 |
-| Failed | 36 |
-| Mean Absolute Error | 32.27% |
-| Max Deviation | 100.00% |
+| Pass Rate | 9.4% |
+| Passed | 6 |
+| Warnings | 1 |
+| Failed | 57 |
+| Mean Absolute Error | 153.37% |
+| Max Deviation | 803.33% |
 
 ## Performance Summary
 
 | Metric | Value |
 |--------|-------|
-| Total Validation Duration | 1.34 seconds |
-| Throughput | 13.48 cases/sec |
+| Total Validation Duration | 0.74 seconds |
+| Throughput | 24.33 cases/sec |
 | Total Cases | 18 |
 
 ## Detailed Results
@@ -28,105 +28,105 @@
 
 | Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
 |------|----------------|----------------|--------------|--------------|--------|
-| 600 | 6.54 MWh (Ref: 5.50-7.50) | 9.23 MWh (Ref: 8.00-10.50) | 3.97 kW (Ref: 2.80-3.80) | 3.28 kW (Ref: 4.80-6.20) | ❌ FAIL |
-| 610 | 5.63 MWh (Ref: 4.36-5.79) | 5.08 MWh (Ref: 3.92-6.14) | 5.37 kW (Ref: 4.30-5.70) | 3.74 kW (Ref: 2.20-2.90) | ❌ FAIL |
-| 620 | 5.25 MWh (Ref: 4.50-6.50) | 4.12 MWh (Ref: 3.20-5.00) | 0.49 kW (Ref: 2.80-3.80) | 0.28 kW (Ref: 2.50-3.50) | ❌ FAIL |
-| 630 | 4.97 MWh (Ref: 5.05-6.47) | 2.95 MWh (Ref: 2.13-3.70) | 5.35 kW (Ref: 4.70-6.10) | 2.95 kW (Ref: 1.80-2.40) | ❌ FAIL |
-| 640 | 3.68 MWh (Ref: 2.75-3.80) | 7.12 MWh (Ref: 5.95-8.10) | 5.37 kW (Ref: 4.30-5.70) | 4.16 kW (Ref: 2.80-3.70) | ❌ FAIL |
-| 650 | 0.00 MWh (Ref: 0.00-0.00) | 5.93 MWh (Ref: 4.82-7.06) | 0.00 kW (Ref: 0.00-0.00) | 0.37 kW (Ref: 1.90-2.50) | ❌ FAIL |
+| 600 | 10.24 MWh (Ref: 5.50-7.50) | 16.31 MWh (Ref: 8.00-10.50) | 6.68 kW (Ref: 2.80-3.80) | 11.89 kW (Ref: 4.80-6.20) | ❌ FAIL |
+| 610 | 10.59 MWh (Ref: 4.36-5.79) | 12.72 MWh (Ref: 3.92-6.14) | 6.69 kW (Ref: 4.30-5.70) | 9.46 kW (Ref: 2.20-2.90) | ❌ FAIL |
+| 620 | 9.46 MWh (Ref: 4.50-6.50) | 14.65 MWh (Ref: 3.20-5.00) | 6.60 kW (Ref: 2.80-3.80) | 10.63 kW (Ref: 2.50-3.50) | ❌ FAIL |
+| 630 | 9.65 MWh (Ref: 5.05-6.47) | 11.79 MWh (Ref: 2.13-3.70) | 6.61 kW (Ref: 4.70-6.10) | 10.23 kW (Ref: 1.80-2.40) | ❌ FAIL |
+| 640 | 6.89 MWh (Ref: 2.75-3.80) | 16.06 MWh (Ref: 5.95-8.10) | 6.58 kW (Ref: 4.30-5.70) | 11.88 kW (Ref: 2.80-3.70) | ❌ FAIL |
+| 650 | 0.00 MWh (Ref: 0.00-0.00) | 13.84 MWh (Ref: 4.82-7.06) | 0.00 kW (Ref: 0.00-0.00) | 11.71 kW (Ref: 1.90-2.50) | ❌ FAIL |
 
 ### High-Mass Cases (900 Series)
 
 | Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
 |------|----------------|----------------|--------------|--------------|--------|
-| 900 | 1.45 MWh (Ref: 1.17-2.04) | 2.92 MWh (Ref: 2.13-3.67) | 1.65 kW (Ref: 1.80-2.40) | 1.69 kW (Ref: 1.60-2.10) | ❌ FAIL |
-| 910 | 1.97 MWh (Ref: 1.51-2.28) | 1.20 MWh (Ref: 0.82-1.88) | 1.65 kW (Ref: 1.90-2.50) | 1.40 kW (Ref: 1.20-1.60) | ❌ FAIL |
-| 920 | 3.49 MWh (Ref: 3.26-4.30) | 1.76 MWh (Ref: 1.84-3.31) | 3.09 kW (Ref: 2.10-2.80) | 1.91 kW (Ref: 1.40-1.90) | ❌ FAIL |
-| 930 | 4.92 MWh (Ref: 4.14-5.34) | 1.49 MWh (Ref: 1.04-2.24) | 3.13 kW (Ref: 2.30-3.00) | 1.67 kW (Ref: 1.10-1.50) | ❌ FAIL |
-| 940 | 1.19 MWh (Ref: 0.79-1.41) | 2.88 MWh (Ref: 2.08-3.55) | 1.55 kW (Ref: 1.90-2.50) | 1.69 kW (Ref: 1.70-2.30) | ❌ FAIL |
-| 950 | 0.00 MWh (Ref: 0.00-0.00) | 0.69 MWh (Ref: 0.39-0.92) | 0.00 kW (Ref: 0.00-0.00) | 1.68 kW (Ref: 0.70-0.90) | ❌ FAIL |
+| 900 | 1.40 MWh (Ref: 1.17-2.04) | 12.87 MWh (Ref: 2.13-3.67) | 4.04 kW (Ref: 1.80-2.40) | 15.37 kW (Ref: 1.60-2.10) | ❌ FAIL |
+| 910 | 2.35 MWh (Ref: 1.51-2.28) | 7.41 MWh (Ref: 0.82-1.88) | 4.08 kW (Ref: 1.90-2.50) | 12.65 kW (Ref: 1.20-1.60) | ❌ FAIL |
+| 920 | 5.40 MWh (Ref: 3.26-4.30) | 24.88 MWh (Ref: 1.84-3.31) | 3.88 kW (Ref: 2.10-2.80) | 13.81 kW (Ref: 1.40-1.90) | ❌ FAIL |
+| 930 | 5.61 MWh (Ref: 4.14-5.34) | 21.35 MWh (Ref: 1.04-2.24) | 3.88 kW (Ref: 2.30-3.00) | 13.60 kW (Ref: 1.10-1.50) | ❌ FAIL |
+| 940 | 1.26 MWh (Ref: 0.79-1.41) | 11.40 MWh (Ref: 2.08-3.55) | 4.23 kW (Ref: 1.90-2.50) | 15.37 kW (Ref: 1.70-2.30) | ❌ FAIL |
+| 950 | 0.00 MWh (Ref: 0.00-0.00) | 7.49 MWh (Ref: 0.39-0.92) | 0.00 kW (Ref: 0.00-0.00) | 15.13 kW (Ref: 0.70-0.90) | ❌ FAIL |
 
 ### Free-Floating Cases
 
 | Case | Min Temperature | Max Temperature | Status |
 |------|-----------------|-----------------|--------|
-| 600FF | -11.94°C (Ref: -18.80--15.60) | 53.09°C (Ref: 64.90-75.10) | ❌ FAIL |
-| 650FF | -12.28°C (Ref: -23.00--21.00) | 53.09°C (Ref: 63.20-73.50) | ❌ FAIL |
-| 900FF | -6.57°C (Ref: -6.40--1.60) | 47.14°C (Ref: 41.80-46.40) | ❌ FAIL |
-| 950FF | -10.95°C (Ref: -20.20--17.80) | 48.05°C (Ref: 35.50-38.50) | ❌ FAIL |
+| 600FF | -28.38°C (Ref: -18.80--15.60) | 105.85°C (Ref: 64.90-75.10) | ❌ FAIL |
+| 650FF | -33.04°C (Ref: -23.00--21.00) | 103.59°C (Ref: 63.20-73.50) | ❌ FAIL |
+| 900FF | -22.37°C (Ref: -6.40--1.60) | 125.49°C (Ref: 41.80-46.40) | ❌ FAIL |
+| 950FF | -30.83°C (Ref: -20.20--17.80) | 123.99°C (Ref: 35.50-38.50) | ❌ FAIL |
 
 ### Special Cases
 
 | Case | Annual Heating | Annual Cooling | Peak Heating | Peak Cooling | Status |
 |------|----------------|----------------|--------------|--------------|--------|
-| 960 | 1.88 MWh (Ref: 1.65-2.45) | 7.49 MWh (Ref: 1.55-2.78) | 6.33 kW (Ref: 2.00-8.00) | 3.45 kW (Ref: 0.00-4.00) | ❌ FAIL |
-| 195 | 8.73 MWh (Ref: 3.50-6.00) | 0.00 MWh (Ref: 0.00-0.00) | 1.95 kW (Ref: 1.40-2.20) | 0.00 kW (Ref: 0.00-0.00) | ❌ FAIL |
+| 960 | 10.96 MWh (Ref: 1.65-2.45) | 22.99 MWh (Ref: 1.55-2.78) | 6.36 kW (Ref: 2.00-8.00) | 15.00 kW (Ref: 0.00-4.00) | ❌ FAIL |
+| 195 | 9.10 MWh (Ref: 3.50-6.00) | 0.00 MWh (Ref: 0.00-0.00) | 1.89 kW (Ref: 1.40-2.20) | 0.00 kW (Ref: 0.00-0.00) | ❌ FAIL |
 
 ## Multi-Reference Comparison
 
 | Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |
 |------|--------|------------|-------|--------|---------|
-| 195 | Annual Heating Energy (MWh) | FAIL (8.73) | - | - | FAIL |
+| 195 | Annual Heating Energy (MWh) | FAIL (9.10) | - | - | FAIL |
 | 195 | Annual Cooling Energy (MWh) | PASS (0.00) | - | - | PASS |
-| 195 | Peak Heating Load (kW) | PASS (1.95) | - | - | PASS |
+| 195 | Peak Heating Load (kW) | PASS (1.89) | - | - | PASS |
 | 195 | Peak Cooling Load (kW) | PASS (0.00) | - | - | PASS |
-| 600 | Annual Heating Energy (MWh) | PASS (6.54) | FAIL (6.54) | PASS (6.54) | PASS |
-| 600 | Annual Cooling Energy (MWh) | PASS (9.23) | WARN (9.23) | PASS (9.23) | PASS |
-| 600 | Peak Heating Load (kW) | WARN (3.97) | FAIL (3.97) | WARN (3.97) | FAIL |
-| 600 | Peak Cooling Load (kW) | FAIL (3.28) | FAIL (3.28) | FAIL (3.28) | FAIL |
-| 900 | Annual Heating Energy (MWh) | PASS (1.45) | - | - | PASS |
-| 900 | Annual Cooling Energy (MWh) | PASS (2.92) | - | - | PASS |
-| 900 | Peak Heating Load (kW) | PASS (1.65) | - | - | PASS |
-| 900 | Peak Cooling Load (kW) | FAIL (1.69) | - | - | FAIL |
-| 920 | Annual Heating Energy (MWh) | PASS (3.49) | - | - | PASS |
-| 920 | Annual Cooling Energy (MWh) | FAIL (1.76) | - | - | FAIL |
-| 920 | Peak Heating Load (kW) | FAIL (3.09) | - | - | FAIL |
-| 920 | Peak Cooling Load (kW) | FAIL (1.91) | - | - | FAIL |
-| 930 | Annual Heating Energy (MWh) | PASS (4.92) | - | - | PASS |
-| 930 | Annual Cooling Energy (MWh) | FAIL (1.49) | - | - | FAIL |
-| 930 | Peak Heating Load (kW) | FAIL (3.13) | - | - | FAIL |
-| 930 | Peak Cooling Load (kW) | FAIL (1.67) | - | - | FAIL |
-| 940 | Annual Heating Energy (MWh) | FAIL (1.19) | - | - | FAIL |
-| 940 | Annual Cooling Energy (MWh) | FAIL (2.88) | - | - | FAIL |
-| 940 | Peak Heating Load (kW) | FAIL (1.55) | - | - | FAIL |
-| 940 | Peak Cooling Load (kW) | FAIL (1.69) | - | - | FAIL |
+| 600 | Annual Heating Energy (MWh) | FAIL (10.24) | FAIL (10.24) | FAIL (10.24) | FAIL |
+| 600 | Annual Cooling Energy (MWh) | FAIL (16.31) | FAIL (16.31) | FAIL (16.31) | FAIL |
+| 600 | Peak Heating Load (kW) | FAIL (6.68) | FAIL (6.68) | FAIL (6.68) | FAIL |
+| 600 | Peak Cooling Load (kW) | FAIL (11.89) | FAIL (11.89) | FAIL (11.89) | FAIL |
+| 900 | Annual Heating Energy (MWh) | WARN (1.40) | - | - | FAIL |
+| 900 | Annual Cooling Energy (MWh) | FAIL (12.87) | - | - | FAIL |
+| 900 | Peak Heating Load (kW) | FAIL (4.04) | - | - | FAIL |
+| 900 | Peak Cooling Load (kW) | FAIL (15.37) | - | - | FAIL |
+| 920 | Annual Heating Energy (MWh) | FAIL (5.40) | - | - | FAIL |
+| 920 | Annual Cooling Energy (MWh) | FAIL (24.88) | - | - | FAIL |
+| 920 | Peak Heating Load (kW) | PASS (3.88) | - | - | PASS |
+| 920 | Peak Cooling Load (kW) | FAIL (13.81) | - | - | FAIL |
+| 930 | Annual Heating Energy (MWh) | WARN (5.61) | - | - | FAIL |
+| 930 | Annual Cooling Energy (MWh) | FAIL (21.35) | - | - | FAIL |
+| 930 | Peak Heating Load (kW) | FAIL (3.88) | - | - | FAIL |
+| 930 | Peak Cooling Load (kW) | FAIL (13.60) | - | - | FAIL |
+| 940 | Annual Heating Energy (MWh) | FAIL (1.26) | - | - | FAIL |
+| 940 | Annual Cooling Energy (MWh) | FAIL (11.40) | - | - | FAIL |
+| 940 | Peak Heating Load (kW) | FAIL (4.23) | - | - | FAIL |
+| 940 | Peak Cooling Load (kW) | FAIL (15.37) | - | - | FAIL |
 | 950 | Annual Heating Energy (MWh) | FAIL (0.00) | - | - | FAIL |
-| 950 | Annual Cooling Energy (MWh) | FAIL (0.69) | - | - | FAIL |
+| 950 | Annual Cooling Energy (MWh) | FAIL (7.49) | - | - | FAIL |
 | 950 | Peak Heating Load (kW) | FAIL (0.00) | - | - | FAIL |
-| 950 | Peak Cooling Load (kW) | FAIL (1.68) | - | - | FAIL |
-| 960 | Annual Heating Energy (MWh) | FAIL (1.88) | - | - | FAIL |
-| 960 | Annual Cooling Energy (MWh) | FAIL (7.49) | - | - | FAIL |
-| 960 | Peak Heating Load (kW) | FAIL (6.33) | - | - | FAIL |
-| 960 | Peak Cooling Load (kW) | FAIL (3.45) | - | - | FAIL |
+| 950 | Peak Cooling Load (kW) | FAIL (15.13) | - | - | FAIL |
+| 960 | Annual Heating Energy (MWh) | FAIL (10.96) | - | - | FAIL |
+| 960 | Annual Cooling Energy (MWh) | FAIL (22.99) | - | - | FAIL |
+| 960 | Peak Heating Load (kW) | FAIL (6.36) | - | - | FAIL |
+| 960 | Peak Cooling Load (kW) | FAIL (15.00) | - | - | FAIL |
 
 ## Systematic Issues
 
 The following recurring issues are affecting validation results:
+
+### Solar Gain Calculations
+
+**Affected metrics:** 630 - Peak Cooling Load (kW), 610 - Peak Cooling Load (kW), 640 - Peak Cooling Load (kW), 600 - Peak Cooling Load (kW), 650 - Peak Cooling Load (kW), 620 - Peak Cooling Load (kW) |
+**Count:** 6 metrics
+
+### 5R1C Model Limitation (Accepted)
+
+**Affected metrics:** 920 - Annual Cooling Energy (MWh), 930 - Annual Cooling Energy (MWh), 900 - Annual Heating Energy (MWh), 910 - Annual Cooling Energy (MWh), 930 - Annual Heating Energy (MWh), 950 - Annual Heating Energy (MWh), 900 - Annual Cooling Energy (MWh), 940 - Annual Cooling Energy (MWh), 950 - Annual Cooling Energy (MWh), 920 - Annual Heating Energy (MWh), 940 - Annual Heating Energy (MWh) |
+**Count:** 11 metrics
+
+### Unknown/Unclassified
+
+**Affected metrics:** 640 - Peak Heating Load (kW), 600FF - Maximum Free-Floating Temperature (°C), 620 - Annual Cooling Energy (MWh), 650FF - Minimum Free-Floating Temperature (°C), 640 - Annual Heating Energy (MWh), 960 - Peak Heating Load (kW), 630 - Annual Heating Energy (MWh), 620 - Peak Heating Load (kW), 630 - Annual Cooling Energy (MWh), 600 - Annual Cooling Energy (MWh), 600 - Peak Heating Load (kW), 960 - Annual Heating Energy (MWh), 610 - Annual Heating Energy (MWh), 930 - Peak Cooling Load (kW), 600FF - Minimum Free-Floating Temperature (°C), 610 - Peak Heating Load (kW), 910 - Peak Cooling Load (kW), 930 - Peak Heating Load (kW), 960 - Peak Cooling Load (kW), 950 - Peak Cooling Load (kW), 900 - Peak Cooling Load (kW), 900 - Peak Heating Load (kW), 600 - Annual Heating Energy (MWh), 620 - Annual Heating Energy (MWh), 650FF - Maximum Free-Floating Temperature (°C), 950 - Peak Heating Load (kW), 940 - Peak Cooling Load (kW), 610 - Annual Cooling Energy (MWh), 630 - Peak Heating Load (kW), 940 - Peak Heating Load (kW), 650 - Annual Cooling Energy (MWh), 640 - Annual Cooling Energy (MWh), 910 - Peak Heating Load (kW), 920 - Peak Cooling Load (kW), 195 - Annual Heating Energy (MWh) |
+**Count:** 35 metrics
 
 ### Inter-Zone Heat Transfer
 
 **Affected metrics:** 960 - Annual Cooling Energy (MWh) |
 **Count:** 1 metrics
 
-### Unknown/Unclassified
-
-**Affected metrics:** 600 - Peak Heating Load (kW), 940 - Peak Cooling Load (kW), 940 - Peak Heating Load (kW), 650FF - Minimum Free-Floating Temperature (°C), 600FF - Minimum Free-Floating Temperature (°C), 920 - Peak Cooling Load (kW), 950 - Peak Cooling Load (kW), 600FF - Maximum Free-Floating Temperature (°C), 960 - Peak Heating Load (kW), 910 - Peak Heating Load (kW), 960 - Peak Cooling Load (kW), 950 - Peak Heating Load (kW), 960 - Annual Heating Energy (MWh), 900 - Peak Cooling Load (kW), 930 - Peak Heating Load (kW), 930 - Peak Cooling Load (kW), 195 - Annual Heating Energy (MWh), 920 - Peak Heating Load (kW), 620 - Peak Heating Load (kW), 650FF - Maximum Free-Floating Temperature (°C) |
-**Count:** 20 metrics
-
-### 5R1C Model Limitation (Accepted)
-
-**Affected metrics:** 940 - Annual Cooling Energy (MWh), 950 - Annual Heating Energy (MWh), 920 - Annual Cooling Energy (MWh), 930 - Annual Cooling Energy (MWh), 950 - Annual Cooling Energy (MWh), 940 - Annual Heating Energy (MWh) |
-**Count:** 6 metrics
-
-### Solar Gain Calculations
-
-**Affected metrics:** 610 - Peak Cooling Load (kW), 630 - Peak Cooling Load (kW), 620 - Peak Cooling Load (kW), 650 - Peak Cooling Load (kW), 600 - Peak Cooling Load (kW), 640 - Peak Cooling Load (kW) |
-**Count:** 6 metrics
-
 ### Thermal Mass Dynamics
 
-**Affected metrics:** 900FF - Minimum Free-Floating Temperature (°C), 950FF - Minimum Free-Floating Temperature (°C), 950FF - Maximum Free-Floating Temperature (°C) |
-**Count:** 3 metrics
+**Affected metrics:** 900FF - Maximum Free-Floating Temperature (°C), 900FF - Minimum Free-Floating Temperature (°C), 950FF - Maximum Free-Floating Temperature (°C), 950FF - Minimum Free-Floating Temperature (°C) |
+**Count:** 4 metrics
 
 ## References
 

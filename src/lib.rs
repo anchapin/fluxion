@@ -1800,15 +1800,11 @@ mod tests {
         use rayon::prelude::*;
         use std::path::Path;
 
-        // Verify Send + Sync for ThermalModel (required for parallel execution)
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<ThermalModel<VectorField>>();
 
         let base_model = ThermalModel::<VectorField>::new(10);
 
-        // Try to load a real model if available (created by other tests)
-        // otherwise fall back to mock (but verify parallel mechanism either way)
-        // Ideally we want to test with the pool active.
         let model_path = "tests_tmp_dummy.onnx";
         let (surrogates, use_real_model) = if Path::new(model_path).exists() {
             match SurrogateManager::load_onnx(model_path) {
@@ -1822,7 +1818,6 @@ mod tests {
                 }
             }
         } else {
-            // Fall back to mock SurrogateManager if file missing
             eprintln!("tests_tmp_dummy.onnx not found; proceeding with mock SurrogateManager");
             (
                 SurrogateManager::new().expect("Failed to create SurrogateManager"),
@@ -1830,26 +1825,22 @@ mod tests {
             )
         };
 
-        // Create a large population
         let population_size = 2000;
         let population: Vec<Vec<f64>> = (0..population_size)
             .map(|_| vec![1.5, 20.0, 27.0])
             .collect();
 
-        // Sequential execution (using standard iter)
         let start_seq = std::time::Instant::now();
         let _results_seq: Vec<f64> = population
             .iter()
             .map(|params| {
                 let mut instance = base_model.clone();
                 instance.apply_parameters(params);
-                // Use surrogates to test session pool contention/parallelism
                 instance.solve_timesteps(100, &surrogates, true, None, None, None)
             })
             .collect();
         let duration_seq = start_seq.elapsed();
 
-        // Parallel execution (using rayon par_iter)
         let start_par = std::time::Instant::now();
         let _results_par: Vec<f64> = population
             .par_iter()
@@ -1864,7 +1855,6 @@ mod tests {
         println!("Sequential time: {:?}", duration_seq);
         println!("Parallel time: {:?}", duration_par);
 
-        // On a multi-core machine, parallel should be faster.
         let num_threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1);

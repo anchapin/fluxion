@@ -35,7 +35,8 @@ validation:
 
   # Maximum mean absolute error (MAE) allowed across all cases
   # CI baseline shows ~42% MAE - Issue #497 tracks root cause
-  # TEMPORARILY HIGH: Issue #633 - validation data appears broken (MAE reporting 190%+ instead of ~73%)
+  # TEMPORARILY HIGH: Issue #633 - thermal model physics still produces results
+  # that differ significantly from reference values (MAE ~150%+)
   max_mae: 300.0  # percentage - temporarily set high to unblock PRs
 
   # Individual case thresholds
