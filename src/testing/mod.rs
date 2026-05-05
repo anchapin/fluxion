@@ -10,5 +10,4 @@
 //!   validation against EnergyPlus and analytical references
 
 pub mod integration;
-pub mod tdd;
 pub mod tdd_framework;
