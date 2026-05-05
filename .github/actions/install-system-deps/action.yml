@@ -16,14 +16,13 @@ runs:
   steps:
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
-      shell: bash
-      run: |
-        if [ "${{ inputs.update }}" = "true" ]; then
-          sudo apt-get update
-        fi
-        sudo apt-get install -y $(echo "${{ inputs.packages }}" | tr ',' ' ')
-      env:
-        DEBIAN_FRONTEND: noninteractive
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: ${{ inputs.packages }}
+        version: 1.0
+        retry: 3
+        retry_wait_seconds: 10
+        update: ${{ inputs.update == 'true' }}
 
     - name: Install system dependencies (macOS)
       if: runner.os == 'macOS'

@@ -45,9 +45,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev libfreetype6-dev
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libssl-dev pkg-config libfontconfig1-dev libfreetype6-dev
+          version: 1.0
+          retry: 3
+          retry_wait_seconds: 10
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -78,9 +81,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+        uses: awalsh128/cache-apt-pkgs-action@latest
+        with:
+          packages: libssl-dev pkg-config libfontconfig1-dev
+          version: 1.0
+          retry: 3
+          retry_wait_seconds: 10
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
@@ -95,8 +101,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-rust-env
+      - name: Install Rust and rustfmt
+        uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: stable
           components: rustfmt
       - run: cargo fmt -- --check
 
