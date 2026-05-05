@@ -225,7 +225,11 @@ impl ThermalMethodSelector {
             } else if config.enable_automatic_selection {
                 SolverSelectionConfig::Automatic
             } else {
-                SolverSelectionConfig::Automatic
+                SolverSelectionConfig::ForceMethod(
+                    config
+                        .override_method
+                        .unwrap_or(ThermalMethod::FiniteDifference),
+                )
             },
         }
     }
@@ -1013,7 +1017,10 @@ mod tests {
         };
 
         assert_eq!(config.threshold_hours, 3.5);
-        assert_eq!(config.override_method, Some(ThermalMethod::FiniteDifference));
+        assert_eq!(
+            config.override_method,
+            Some(ThermalMethod::FiniteDifference)
+        );
         assert!(!config.enable_fallback);
         assert!(config.enable_automatic_selection);
         assert!(config.per_surface_selection);

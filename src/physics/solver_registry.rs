@@ -15,7 +15,7 @@
 //!   └── stats: SolverStats
 //! ```
 
-use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::solver_trait::HeatConductionSolver;
 use crate::sim::assembly::BuildingAssembly;
 use std::collections::HashMap;
 

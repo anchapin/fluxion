@@ -31,14 +31,12 @@ use crate::physics::ctf_solver_wrapper::CTFSolverWrapper;
 use crate::physics::fd_solver_wrapper::FDSolverWrapper;
 use crate::physics::five_r1c_solver::FiveR1CSolver;
 use crate::physics::method_selector::{
-    SolverSelectionResult, ThermalMethod, ThermalMethodSelector,
-    ThermalMethodSelectorConfig,
+    SolverSelectionResult, ThermalMethod, ThermalMethodSelector, ThermalMethodSelectorConfig,
 };
 use crate::physics::solver_registry::SolverRegistry;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::sim::assembly::BuildingAssembly;
 use log::{debug, warn};
-use std::collections::HashMap;
 
 /// Unified solver manager for multiple heat conduction methods.
 ///
@@ -157,7 +155,12 @@ impl SolverManager {
         };
 
         // Store solver and wall assembly via registry
-        self.registry.insert(wall_index, solver, wall_assembly.clone(), method.name().to_string());
+        self.registry.insert(
+            wall_index,
+            solver,
+            wall_assembly.clone(),
+            method.name().to_string(),
+        );
 
         Ok(result)
     }
@@ -284,7 +287,10 @@ impl SolverManager {
     /// Check if all solvers are valid.
     pub fn all_valid(&self) -> bool {
         self.registry.wall_assemblies().keys().all(|&idx| {
-            self.registry.get_solver(idx).map(|s| s.is_valid()).unwrap_or(true)
+            self.registry
+                .get_solver(idx)
+                .map(|s| s.is_valid())
+                .unwrap_or(true)
         })
     }
 
@@ -683,10 +689,7 @@ mod tests {
         manager.get_or_create_solver(0, &wall1, "Wall").unwrap();
         manager.get_or_create_solver(1, &wall2, "Wall").unwrap();
 
-        let surfaces = vec![
-            (0, wall1.clone()),
-            (1, wall2.clone()),
-        ];
+        let surfaces = vec![(0, wall1.clone()), (1, wall2.clone())];
         let dt = 3600.0;
         let T_int = 20.0;
         let T_ext = 5.0;
@@ -711,10 +714,7 @@ mod tests {
         manager.get_or_create_solver(0, &wall, "Wall").unwrap();
         manager.get_or_create_solver(1, &wall, "Wall").unwrap();
 
-        let surfaces = vec![
-            (0, wall.clone()),
-            (1, wall.clone()),
-        ];
+        let surfaces = vec![(0, wall.clone()), (1, wall.clone())];
 
         let fluxes = manager.step_all(&surfaces, 3600.0, 20.0, 5.0).unwrap();
 
