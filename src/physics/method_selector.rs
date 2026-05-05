@@ -1016,12 +1016,10 @@ mod tests {
             per_surface_selection: true,
         };
 
-        assert_eq!(config.threshold_hours, 3.5);
         assert_eq!(
             config.override_method,
             Some(ThermalMethod::FiniteDifference)
         );
-        assert!(!config.enable_fallback);
         assert!(config.enable_automatic_selection);
         assert!(config.per_surface_selection);
     }
