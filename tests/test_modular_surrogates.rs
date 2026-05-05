@@ -202,7 +202,11 @@ mod tests {
 
         assert_eq!(scores.len(), 2);
         let sum: f64 = scores.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-9, "scores should sum to 1, got {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 1e-9,
+            "scores should sum to 1, got {}",
+            sum
+        );
     }
 
     #[test]
