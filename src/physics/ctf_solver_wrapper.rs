@@ -26,6 +26,7 @@
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::wall_properties::WallProperties;
 use crate::sim::assembly::BuildingAssembly;
 
 /// CTF solver wrapper implementing the common HeatConductionSolver trait.
@@ -75,18 +76,21 @@ impl CTFSolverWrapper {
         }
     }
 
-    /// Convert BuildingAssembly to CTF materials.
-    fn assembly_to_ctf_materials(assembly: &BuildingAssembly) -> Vec<CTFMaterial> {
-        assembly
+    /// Convert WallProperties to CTF materials.
+    ///
+    /// This hides BuildingAssembly internals from the solver. If BuildingAssembly
+    /// changes its layer structure, only WallProperties::from_assembly() needs updating.
+    fn wall_properties_to_ctf_materials(wall_props: &WallProperties) -> Vec<CTFMaterial> {
+        wall_props
             .layers
             .iter()
             .map(|layer| {
                 CTFMaterial::new(
-                    layer.name(),
-                    layer.thickness(),
-                    layer.conductivity(),
-                    layer.density(),
-                    layer.specific_heat(),
+                    &layer.name,
+                    layer.thickness_m,
+                    layer.conductivity_w_mk,
+                    layer.density_kg_m3,
+                    layer.specific_heat_j_kgk,
                 )
             })
             .collect()
@@ -113,8 +117,11 @@ impl HeatConductionSolver for CTFSolverWrapper {
     }
 
     fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
-        // Convert assembly to CTF materials
-        let materials = Self::assembly_to_ctf_materials(wall);
+        // Convert assembly to wall properties (the seam)
+        let wall_props = WallProperties::from_assembly(wall);
+
+        // Convert wall properties to CTF materials
+        let materials = Self::wall_properties_to_ctf_materials(&wall_props);
 
         if materials.is_empty() {
             return Err(SolverError::ConstructionError(
