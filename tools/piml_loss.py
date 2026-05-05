@@ -256,15 +256,17 @@ class PIMLLoss(nn.Module):
         q_solar = features[:, 3] * 50 if features.shape[1] > 3 else torch.zeros_like(t_outdoor)
         q_internal = features[:, 4] * 100 if features.shape[1] > 4 else torch.zeros_like(t_outdoor)
 
-        t_indoor_pred = 20.0 + heating_pred * 0.1 - cooling_pred * 0.1
+        heating_flat = heating_pred.view(-1)
+        cooling_flat = cooling_pred.view(-1)
+        t_indoor_pred = 20.0 + heating_flat * 0.1 - cooling_flat * 0.1
 
         rc_residual = self.compute_rc_residual(
             t_indoor_pred=t_indoor_pred,
             t_outdoor=t_outdoor,
             q_solar=q_solar,
             q_internal=q_internal,
-            q_heating=heating_pred * 1000.0,
-            q_cooling=cooling_pred * 1000.0,
+            q_heating=heating_flat * 1000.0,
+            q_cooling=cooling_flat * 1000.0,
         )
         piml_loss = torch.mean(rc_residual**2)
         loss_components["piml"] = piml_loss.item()
@@ -541,9 +543,16 @@ def train_piml_surrogate(
                 else:
                     val_heating, val_cooling = model(X_val_t)
 
-                val_loss = criterion(
-                    (val_heating, val_cooling), (y_h_val_t, y_c_val_t)
-                )[0].item()
+                if use_piml_loss:
+                    val_loss, _ = criterion(
+                        (val_heating, val_cooling), (y_h_val_t, y_c_val_t), X_val_t, physics_params_val
+                    )
+                    val_loss = val_loss.item()
+                else:
+                    val_loss, _ = criterion(
+                        (val_heating, val_cooling), (y_h_val_t, y_c_val_t)
+                    )
+                    val_loss = val_loss.item()
 
                 total_pred = val_heating + val_cooling
                 total_target = y_h_val_t + y_c_val_t

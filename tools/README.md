@@ -151,6 +151,60 @@ The generator is optimized for large-scale data generation:
 - Efficient Parquet format for fast I/O
 - Target throughput: >1000 samples/second
 
+## PIML Surrogate Training (`piml_loss.py`)
+
+Physics-Informed Machine Learning (PIML) embeds thermodynamic RC (Resistance-Capacitance) models into neural network loss functions for surrogate training. This addresses Issue #552 for improving peak load accuracy.
+
+### Key Features
+
+- **RC Thermal Network**: Embedded simplified resistance-capacitance thermal model in loss function
+- **Physics-Informed Penalty Terms**: Thermodynamic violations penalized during backpropagation
+- **Comparison Mode**: Train with PIML loss vs standard MSE for validation
+
+### Usage
+
+```bash
+# Train with PIML loss (physics-informed)
+python tools/piml_loss.py --epochs 500 --piml-weight 0.5
+
+# Train with comparison between PIML and standard loss
+python tools/piml_loss.py --compare-loss --epochs 500
+
+# Custom PIML weights
+python tools/piml_loss.py --piml-weight 0.3 --energy-balance-weight 0.5
+```
+
+### Command-Line Arguments
+
+| Argument | Default | Description |
+| :--- | :--- | :--- |
+| `--n-samples` | 5000 | Number of training samples |
+| `--epochs` | 500 | Training epochs |
+| `--batch-size` | 64 | Batch size |
+| `--learning-rate` | 1e-3 | Learning rate |
+| `--piml-weight` | 0.5 | Weight for physics-informed loss term |
+| `--compare-loss` | False | Compare PIML vs standard MSE loss |
+| `--output-dir` | models/piml | Output directory |
+
+### RC Physics Configuration
+
+The RC thermal model uses:
+- `thermal_capacity`: Thermal mass (kJ/K)
+- `h_transmission`: Transmission heat transfer coefficient (W/K)
+- `h_ventilation`: Ventilation heat transfer coefficient (W/K)
+
+The loss combines:
+- **MSE loss**: Standard mean squared error
+- **PIML loss**: RC model-based physics residual
+- **Energy balance**: Heating/cooling thermodynamic constraints
+- **Boundary loss**: Non-negative load constraints
+
+### Validation
+
+PIML-trained surrogates target:
+- CvRMSE < 30% for peak load accuracy (Issue #552 requirement)
+- Comparison with standard loss for improvement measurement
+
 ## Training Surrogate Models
 
 The `train_surrogate.py` tool automates the training of neural network surrogates that approximate the physics-based calculations of Fluxion.
