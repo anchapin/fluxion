@@ -69,6 +69,8 @@ jobs:
         run: |
           cargo test --test performance_ci_test
           cargo test --test performance_regression_test
+        env:
+          RAYON_NUM_THREADS: 2
 
       - name: Generate benchmark results
         run: |

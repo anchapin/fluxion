@@ -46,6 +46,7 @@ jobs:
         run: cargo test --lib --verbose --no-default-features
         env:
           PYO3_PYTHON: /usr/bin/python3
+          RAYON_NUM_THREADS: 2
 
   fmt:
     name: Rustfmt
