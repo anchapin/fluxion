@@ -51,6 +51,7 @@ impl ComponentSurrogate {
 #[derive(Clone, Debug)]
 pub struct CompositeSurrogate {
     components: Vec<ComponentSurrogate>,
+    weights: Vec<f64>,
     domain: SurrogateDomain,
 }
 
@@ -61,7 +62,38 @@ impl CompositeSurrogate {
             "CompositeSurrogate requires at least one component"
         );
         let domain = Self::compute_intersection_domain(&components);
-        Self { components, domain }
+        let weights = vec![1.0 / components.len() as f64; components.len()];
+        Self {
+            components,
+            weights,
+            domain,
+        }
+    }
+
+    pub fn with_weights(
+        components: Vec<ComponentSurrogate>,
+        weights: Vec<f64>,
+    ) -> Result<Self, String> {
+        if components.is_empty() {
+            return Err("CompositeSurrogate requires at least one component".to_string());
+        }
+        if components.len() != weights.len() {
+            return Err(format!(
+                "Components ({}) and weights ({}) length mismatch",
+                components.len(),
+                weights.len()
+            ));
+        }
+        let weight_sum: f64 = weights.iter().sum();
+        if (weight_sum - 1.0).abs() > 1e-9 {
+            return Err(format!("Weights must sum to 1.0, got {}", weight_sum));
+        }
+        let domain = Self::compute_intersection_domain(&components);
+        Ok(Self {
+            components,
+            weights,
+            domain,
+        })
     }
 
     fn compute_intersection_domain(components: &[ComponentSurrogate]) -> SurrogateDomain {
@@ -97,27 +129,137 @@ impl CompositeSurrogate {
     }
 
     pub fn predict_loads(&self, temps: &[f64]) -> Vec<f64> {
+        self.predict_loads_with_fallback(temps)
+            .unwrap_or_else(|_| vec![0.0; temps.len()])
+    }
+
+    pub fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
         if components_empty(&self.components) {
-            return vec![0.0; temps.len()];
+            return Ok(vec![0.0; temps.len()]);
         }
 
-        let first_pred = self.components[0].predict_loads(temps);
-        let mut sum = first_pred;
+        let predictions: Result<Vec<Vec<f64>>, String> = self
+            .components
+            .iter()
+            .map(|c| {
+                c.predict_loads_governed(
+                    temps,
+                    crate::ai::surrogate::SurrogateMode::NeuralWithFallback,
+                )
+            })
+            .collect();
 
-        for component in &self.components[1..] {
-            let pred = component.predict_loads(temps);
-            let len = std::cmp::min(sum.len(), pred.len());
-            sum.truncate(len);
-            for (s, &p) in sum.iter_mut().zip(pred.iter()) {
-                *s += p;
+        let predictions = match predictions {
+            Ok(p) => p,
+            Err(e) => {
+                log::warn!("Component failed, using analytical fallback: {}", e);
+                return self.components[0].manager.analytical_loads(temps);
+            }
+        };
+
+        let num_outputs = predictions.first().map(|p| p.len()).unwrap_or(temps.len());
+
+        let mut weighted_sum = vec![0.0; num_outputs];
+        for (pred, &weight) in predictions.iter().zip(self.weights.iter()) {
+            for (i, &val) in pred.iter().enumerate().take(num_outputs) {
+                weighted_sum[i] += val * weight;
             }
         }
 
-        if sum.len() < temps.len() {
-            sum.resize(temps.len(), 0.0);
+        Ok(weighted_sum)
+    }
+
+    pub fn component_confidence_scores(&self, temps: &[f64]) -> Vec<f64> {
+        let predictions: Vec<Vec<f64>> = self
+            .components
+            .iter()
+            .map(|c| c.predict_loads(temps))
+            .collect();
+
+        if predictions.is_empty() {
+            return vec![];
         }
 
-        sum
+        let num_outputs = predictions[0].len();
+        let n = predictions.len();
+
+        let mut means = vec![0.0; num_outputs];
+        for pred in &predictions {
+            for (i, &val) in pred.iter().enumerate().take(num_outputs) {
+                means[i] += val / n as f64;
+            }
+        }
+
+        let mut scores = vec![0.0; n];
+        for (j, pred) in predictions.iter().enumerate() {
+            let mut total_deviation = 0.0;
+            for (i, &val) in pred.iter().enumerate().take(num_outputs) {
+                let deviation = (val - means[i]).powi(2);
+                total_deviation += deviation;
+            }
+            scores[j] = (-total_deviation.sqrt()).exp();
+        }
+
+        let sum: f64 = scores.iter().sum();
+        if sum > 0.0 {
+            for score in &mut scores {
+                *score /= sum;
+            }
+        }
+
+        scores
+    }
+
+    pub fn predict_with_uncertainty(&self, temps: &[f64]) -> (Vec<f64>, Vec<f64>) {
+        if components_empty(&self.components) {
+            return (vec![0.0; temps.len()], vec![0.0; temps.len()]);
+        }
+
+        let predictions: Vec<Vec<f64>> = self
+            .components
+            .iter()
+            .map(|c| c.predict_loads(temps))
+            .collect();
+
+        let num_outputs = predictions.first().map(|p| p.len()).unwrap_or(temps.len());
+
+        let mut weighted_sum = vec![0.0; num_outputs];
+        for (pred, &weight) in predictions.iter().zip(self.weights.iter()) {
+            for (i, &val) in pred.iter().enumerate().take(num_outputs) {
+                weighted_sum[i] += val * weight;
+            }
+        }
+
+        let mut variances = vec![0.0; num_outputs];
+        if self.components.len() > 1 {
+            for pred in &predictions {
+                for (i, &val) in pred.iter().enumerate().take(num_outputs) {
+                    let diff = val - weighted_sum[i];
+                    variances[i] += diff * diff;
+                }
+            }
+            for var in &mut variances {
+                *var /= (self.components.len() - 1).max(1) as f64;
+            }
+        }
+
+        let std: Vec<f64> = variances.iter().map(|v| v.sqrt()).collect();
+        (weighted_sum, std)
+    }
+
+    pub fn predict_with_confidence(&self, temps: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+        let (mean, std) = self.predict_with_uncertainty(temps);
+        let lower: Vec<f64> = mean
+            .iter()
+            .zip(std.iter())
+            .map(|(&m, &s)| m - 2.0 * s)
+            .collect();
+        let upper: Vec<f64> = mean
+            .iter()
+            .zip(std.iter())
+            .map(|(&m, &s)| m + 2.0 * s)
+            .collect();
+        (mean, lower, upper)
     }
 
     pub fn predict_loads_governed(
