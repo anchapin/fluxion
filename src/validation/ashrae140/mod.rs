@@ -4,6 +4,7 @@
 //! for ASHRAE 140 building energy model validation.
 
 pub mod cases;
+pub mod high_mass;
 
 pub use crate::validation::ashrae_140_cases::ASHRAE140Case;
 

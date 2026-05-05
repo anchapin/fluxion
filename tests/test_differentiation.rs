@@ -1,5 +1,5 @@
 use fluxion::ai::neural_field::NeuralScalarField;
-use fluxion::sim::components::WallSurface;
+use fluxion::sim::construction::WallSurface;
 use fluxion::validation::ashrae_140_cases::Orientation;
 use num_traits::Zero;
 use std::ops::{Add, AddAssign, Mul};

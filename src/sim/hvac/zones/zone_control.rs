@@ -325,7 +325,7 @@ pub struct ZoneControl {
     pub thermal_model: Arc<ThermalModel>,
 
     /// Zone setpoints configuration
-    setpoints: crate::hvac::zone_setpoints::ZoneSetpoints,
+    setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
 
     /// Current HVAC status for each zone
     zone_status: VectorField,
@@ -345,7 +345,7 @@ impl ZoneControl {
     /// A new ZoneControl instance
     pub fn new(
         thermal_model: Arc<ThermalModel>,
-        setpoints: crate::hvac::zone_setpoints::ZoneSetpoints,
+        setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
     ) -> Self {
         let num_zones = thermal_model.num_zones;
         let layered_controllers = (0..num_zones).map(|_| LayeredController::new()).collect();
@@ -368,7 +368,7 @@ impl ZoneControl {
     /// A new ZoneControl instance
     pub fn with_layered_controllers(
         thermal_model: Arc<ThermalModel>,
-        setpoints: crate::hvac::zone_setpoints::ZoneSetpoints,
+        setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
         controller_configs: Vec<LayeredControllerConfig>,
     ) -> Self {
         let num_zones = thermal_model.num_zones;
@@ -395,7 +395,7 @@ impl ZoneControl {
     /// A new ZoneControl instance
     pub fn with_strategy(
         thermal_model: Arc<ThermalModel>,
-        setpoints: crate::hvac::zone_setpoints::ZoneSetpoints,
+        setpoints: crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints,
         default_strategy: ControlStrategy,
     ) -> Self {
         let num_zones = thermal_model.num_zones;
@@ -556,7 +556,7 @@ mod tests {
     #[test]
     fn test_zone_control_creation() {
         let thermal_model = Arc::new(ThermalModel::new(3, 20.0));
-        let setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(3);
+        let setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(3);
         let zone_control = ZoneControl::new(thermal_model, setpoints);
 
         // Initial status should be Off for all zones
@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn test_heating_control() {
         let thermal_model = Arc::new(ThermalModel::new(1, 18.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
 
@@ -584,7 +584,7 @@ mod tests {
     #[test]
     fn test_cooling_control() {
         let thermal_model = Arc::new(ThermalModel::new(1, 20.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
 
@@ -600,7 +600,7 @@ mod tests {
     #[test]
     fn test_deadband_control() {
         let thermal_model = Arc::new(ThermalModel::new(1, 20.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
         setpoints.set_deadband(0, 2.0).unwrap();
@@ -617,7 +617,7 @@ mod tests {
     #[test]
     fn test_independent_zone_control() {
         let thermal_model = Arc::new(ThermalModel::new(2, 20.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(2);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(2);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
         setpoints.set_heating_setpoint(1, 18.0).unwrap();
@@ -637,7 +637,7 @@ mod tests {
     #[test]
     fn test_energy_calculation_ideal_loads() {
         let thermal_model = Arc::new(ThermalModel::new(1, 20.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
 
@@ -659,7 +659,7 @@ mod tests {
     #[test]
     fn test_hvac_status_transitions() {
         let thermal_model = Arc::new(ThermalModel::new(1, 20.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
 
@@ -812,7 +812,7 @@ mod tests {
     #[test]
     fn test_zone_control_with_strategy() {
         let thermal_model = Arc::new(ThermalModel::new(1, 20.0));
-        let mut setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let mut setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
         setpoints.set_heating_setpoint(0, 22.0).unwrap();
         setpoints.set_cooling_setpoint(0, 26.0).unwrap();
 
@@ -831,7 +831,7 @@ mod tests {
     #[test]
     fn test_zone_control_set_zone_strategy() {
         let thermal_model = Arc::new(ThermalModel::new(1, 20.0));
-        let setpoints = crate::hvac::zone_setpoints::ZoneSetpoints::new(1);
+        let setpoints = crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints::new(1);
 
         let mut zone_control = ZoneControl::new(thermal_model.clone(), setpoints);
 

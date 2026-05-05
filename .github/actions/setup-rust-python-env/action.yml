@@ -39,12 +39,12 @@ runs:
 
     - name: Install system dependencies (Linux)
       if: runner.os == 'Linux'
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev pkg-config python3-dev libfontconfig1-dev
-      env:
-        DEBIAN_FRONTEND: noninteractive
+      uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: libssl-dev pkg-config python3-dev libfontconfig1-dev
+        version: 1.0
+        retry: 3
+        retry_wait_seconds: 10
 
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
