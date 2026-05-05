@@ -55,4 +55,5 @@ pub mod thermal_mass;
 pub mod nd_array;
 
 pub mod solver_manager;
+pub mod solver_registry;
 pub mod solver_trait;
