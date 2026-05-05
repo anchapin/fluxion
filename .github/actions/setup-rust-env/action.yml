@@ -15,7 +15,7 @@ runs:
   using: composite
   steps:
     - name: Install system dependencies (Linux)
-      if: runner.os == 'Linux' && inputs.components != ''
+      if: runner.os == 'Linux'
       shell: bash
       run: |
         sudo apt-get update
