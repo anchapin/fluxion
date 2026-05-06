@@ -62,10 +62,10 @@ pub struct CalibrationState {
     pub solar_gain_multiplier: f64,
 }
 
-// TODO-BLIND-VALIDATION: Calibration state default values represent empirical corrections
-// For blind validation: verify these defaults are not applied to validation runs
-// These values (thermal_conductivity: 0.16, specific_heat: 840.0, etc.) may need
-// to be reset to physics-based defaults when running blind validation
+/// TODO-BLIND-VALIDATION: Calibration state default values represent empirical corrections.
+/// For blind validation: verify these defaults are not applied to validation runs.
+/// These values (thermal_conductivity: 0.16, specific_heat: 840.0, etc.) may need
+/// to be reset to physics-based defaults when running blind validation.
 impl Default for CalibrationState {
     fn default() -> Self {
         Self {
