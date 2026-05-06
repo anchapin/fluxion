@@ -47,10 +47,10 @@ fn test_free_floating_hvac_is_disabled() {
 
     // After simulation, HVAC energy should be zero
     let total_hvac_energy = model.annual_heating_energy + model.annual_cooling_energy;
-println!(
-            "Total HVAC energy for 900FF: {:.6} kWh (should be 0)",
-            total_hvac_energy
-        );
+    println!(
+        "Total HVAC energy for 900FF: {:.6} kWh (should be 0)",
+        total_hvac_energy
+    );
 
     // Key assertion: HVAC energy should be ZERO for free-floating
     assert!(
