@@ -202,6 +202,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.thermal_model_type == ThermalModelType::EightRThreeC
     }
 
+    /// Reset to 5R1C thermal model (disable 6R2C and 8R3C).
+    ///
+    /// This reverts the thermal model to the default ISO 13790 5R1C configuration
+    /// with a single thermal mass node.
+    pub fn reset_to_5r1c(&mut self) {
+        self.0.thermal_model_type = ThermalModelType::FiveROneC;
+    }
+
+    /// Disable 6R2C model and revert to 5R1C with single thermal mass node.
+    pub fn disable_6r2c(&mut self) {
+        self.0.thermal_model_type = ThermalModelType::FiveROneC;
+    }
+
     /// Enable CTF (Conduction Transfer Function) solver for high-mass wall conduction.
     ///
     /// This method precomputes CTF coefficients for the wall construction and initializes
