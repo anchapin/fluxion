@@ -672,12 +672,15 @@ mod solar_constant_verification {
     fn test_solar_constant_value() {
         const EXPECTED_SOLAR_CONSTANT: f64 = 1361.0;
         let dni_day182 = extraterrestrial_irradiance(182);
+        let expected_at_aphelion = EXPECTED_SOLAR_CONSTANT * 0.967;
 
+        let deviation = (dni_day182 - expected_at_aphelion).abs();
         assert!(
-            (dni_day182 - EXPECTED_SOLAR_CONSTANT).abs() < 50.0,
-            "Solar constant at mean distance (day 182) should be ~{} W/m², got {:.1}",
-            EXPECTED_SOLAR_CONSTANT,
-            dni_day182
+            deviation < 10.0,
+            "Solar constant at aphelion (day 182) should be ~{:.0} W/m² (solar constant * 0.967), got {:.1} (deviation: {:.1})",
+            expected_at_aphelion,
+            dni_day182,
+            deviation
         );
     }
 
