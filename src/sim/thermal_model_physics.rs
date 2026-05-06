@@ -1352,10 +1352,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let rad_frac = 1.0 - conv_frac;
         let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
         let m_int_frac = rad_frac * self.0.solar_distribution_to_air;
-        // SESSION 76 FIX: Solar gain distribution was backwards in 6R2C!
-        // Proper ASHRAE 140 spec: 60% solar to mass, 40% to surface
+        // SESSION 76 FIX: Solar gain distribution
+        // ASHRAE 140 spec: 60% solar to mass, 40% to surface
         // The code uses solar_beam_to_mass_fraction to control this split
-        // With solar_beam_to_mass_fraction = 0.6 (correct):
+        // With solar_beam_to_mass_fraction = 0.6:
         //   - 60% of solar goes to mass (70% envelope + 30% internal split)
         //   - 40% of solar goes to surface
         // Additionally, solar_distribution_to_air sends some solar directly to zone air
@@ -1740,20 +1740,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 ThermalIntegrationMethod::BackwardEuler => {
                     // Use implicit backward Euler for high thermal mass
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    // Heat flux: Q_env = h_tr_em*(T_sol-air - Tm_env) + h_tr_ms*(T_s - Tm_env) + h_tr_me*(Tm_int - Tm_env) + phi_m_env
-                    // Simplified approach: treat multiple sources as combined thermal link
-                    let effective_conductance = h_tr_em + h_tr_ms + h_tr_me;
-                    let effective_temp =
-                        (h_tr_em * t_sol_air[i] + h_tr_ms * t_s + h_tr_me * tm_int)
-                            / effective_conductance;
+                    // Heat flux: Q_env = h_tr_ms*(T_s - Tm_env) + h_tr_me*(Tm_int - Tm_env) + phi_m_env
+                    // The time constant should be based ONLY on h_tr_ms + h_tr_me (not h_tr_em)
+                    // h_tr_em affects T_s via the surface network, not Tm directly
                     backward_euler_update(
                         tm_env_old,
                         dt,
                         cm_env,
-                        effective_conductance,
-                        0.0,
-                        effective_temp,
-                        0.0,
+                        h_tr_ms,
+                        h_tr_me,
+                        t_s,
+                        tm_int,
                         phi_m_env_zone,
                     )
                 }
@@ -1785,19 +1782,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    let q_env_net = h_tr_em * (t_sol_air[i] - tm_env_old)
-                        + h_tr_ms * (t_s - tm_env_old)
-                        + h_tr_me * (tm_int - tm_env_old)
-                        + phi_m_env_zone;
-                    let _old_q = q_env_net;
+                    // For envelope mass: only h_tr_ms + h_tr_me affect time constant
+                    // h_tr_em affects surface temp T_s, not directly the envelope mass node
                     crank_nicolson_update(
                         tm_env_old,
                         dt,
                         cm_env,
-                        h_tr_em + h_tr_ms + h_tr_me,
-                        0.0,
-                        t_sol_air[i],
-                        t_s + phi_m_env_zone / (h_tr_ms + h_tr_me),
+                        h_tr_ms,           // mass-to-surface conductance
+                        h_tr_me,           // mass-to-internal-mass conductance
+                        t_s,               // surface temperature (affected by sol-air via T_s)
+                        tm_int,            // internal mass temperature
                         phi_m_env_zone,
                     )
                 }
