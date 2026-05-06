@@ -13,7 +13,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
-use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::ashrae140_weather::Ashrae140ClearSkyWeather;
 use fluxion::weather::WeatherSource;
 
 /// Reference ranges for ASHRAE 140 free-floating cases
@@ -55,7 +55,7 @@ mod reference {
 fn simulate_free_float_case(case: ASHRAE140Case) -> (f64, f64) {
     let spec = case.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let weather = Ashrae140ClearSkyWeather::new();
 
     // Verify this is a free-floating case
     assert!(spec.is_free_floating(), "Case should be free-floating");
@@ -483,7 +483,7 @@ fn test_thermal_mass_lag_and_damping() {
 fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
     let spec = case.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let weather = Ashrae140ClearSkyWeather::new();
 
     // Verify this is a free-floating case
     assert!(spec.is_free_floating(), "Case should be free-floating");
@@ -512,7 +512,7 @@ fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
 /// Calculate thermal lag in hours for high-mass building
 /// Thermal lag is the time delay between outdoor temperature peak and indoor temperature peak
 fn calculate_thermal_lag(temperatures: &[f64]) -> f64 {
-    let weather = DenverTmyWeather::new();
+    let weather = Ashrae140ClearSkyWeather::new();
 
     // Find outdoor temperature peak (typically around 15:00-16:00 in summer)
     let mut outdoor_temps = Vec::with_capacity(8760);
