@@ -101,8 +101,14 @@ fn test_6r2c_correction_factors_disabled() {
     let cool_correction = model.cooling_sensitivity_correction_6r2c;
 
     println!("\n=== 6R2C Correction Factors ===");
-    println!("time_constant_sensitivity_correction_6r2c: {:.2}", tau_correction);
-    println!("cooling_sensitivity_correction_6r2c: {:.2}", cool_correction);
+    println!(
+        "time_constant_sensitivity_correction_6r2c: {:.2}",
+        tau_correction
+    );
+    println!(
+        "cooling_sensitivity_correction_6r2c: {:.2}",
+        cool_correction
+    );
 
     // The fix requires setting these to 1.0 (no empirical correction)
     assert_eq!(
@@ -143,12 +149,16 @@ fn test_time_constant_reasonable_for_mass_class() {
         assert!(
             fluxion_tau >= lower,
             "Case {} τ {:.1} should be >= {:.1}",
-            case_id, fluxion_tau, lower
+            case_id,
+            fluxion_tau,
+            lower
         );
         assert!(
             fluxion_tau <= upper,
             "Case {} τ {:.1} should be <= {:.1}",
-            case_id, fluxion_tau, upper
+            case_id,
+            fluxion_tau,
+            upper
         );
     }
 }
