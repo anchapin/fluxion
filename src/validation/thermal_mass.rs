@@ -57,11 +57,17 @@ impl Default for ThermalMassValidationResult {
 ///
 /// # Returns
 /// Correction factor in range [0.2, 1.0]
+///
+/// TODO-BLIND-VALIDATION: This correction function is used in validation tests but not in the main
+/// validation pipeline. For blind validation, ensure this function's output is not applied to
+/// simulation results. The correction uses reference_low_mass_capacitance = 2.4e6 J/K as baseline.
 pub fn calculate_thermal_mass_correction(structure_capacitance: f64) -> f64 {
     let reference_low_mass_capacitance = 2.4e6; // J/K for low-mass structure
     let cap_ratio = structure_capacitance / reference_low_mass_capacitance;
     // Apply sqrt correction: higher capacitance = lower correction factor
     // Clamp to reasonable range [0.2, 1.0]
+    // TODO-BLIND-VALIDATION: correction factor formula uses sqrt(1/cap_ratio) clamped to [0.2, 1.0]
+    // TODO-BLIND-VALIDATION: reference_low_mass_capacitance = 2.4e6 J/K is empirical baseline
     (1.0 / cap_ratio.sqrt()).clamp(0.2, 1.0)
 }
 

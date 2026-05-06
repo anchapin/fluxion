@@ -15,6 +15,27 @@ use crate::weather::WeatherSource;
 use rayon::prelude::*;
 use std::path::Path;
 
+/// Validation mode for ASHRAE 140 testing.
+///
+/// Determines whether corrections and calibrated values are applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationMode {
+    /// Informed mode (default): Uses case ID to apply known corrections and calibrated ranges.
+    /// This matches the current "informed" validation approach where corrections are applied
+    /// post-simulation to match reference values.
+    Informed,
+    /// Blind mode: No case ID exposed to validation logic, no corrections applied.
+    /// Uses only CaseSpec and raw ASHRAE 140 reference values.
+    /// Used for true blind validation per ASHRAE 140 Blind Validation Plan v1.3.
+    Blind,
+}
+
+impl Default for ValidationMode {
+    fn default() -> Self {
+        ValidationMode::Informed
+    }
+}
+
 /// Result of a single ASHRAE 140 case validation.
 ///
 /// Contains the free-floating temperature results for cases without HVAC control.
@@ -55,6 +76,8 @@ pub struct FreeFloatValidationResult {
 ///
 /// See docs/ASHRAE140_VALIDATION.md for details.
 pub struct ASHRAE140Validator {
+    /// Validation mode (informed vs blind)
+    validation_mode: ValidationMode,
     /// Diagnostic configuration
     diagnostic_config: DiagnosticConfig,
     /// Diagnostic collector for detailed output
@@ -105,8 +128,24 @@ pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
 impl ASHRAE140Validator {
     /// Creates a new ASHRAE 140 validator.
     pub fn new() -> Self {
+        Self::with_mode(ValidationMode::Informed)
+    }
+
+    /// Creates a new ASHRAE 140 validator with specified validation mode.
+    ///
+    /// # Arguments
+    /// * `mode` - Validation mode (Informed or Blind)
+    ///
+    /// # Example
+    /// ```rust
+    /// use fluxion::validation::ashrae_140_validator::{ASHRAE140Validator, ValidationMode};
+    ///
+    /// let blind_validator = ASHRAE140Validator::with_mode(ValidationMode::Blind);
+    /// ```
+    pub fn with_mode(mode: ValidationMode) -> Self {
         let config = DiagnosticConfig::from_env();
         let mut validator = Self {
+            validation_mode: mode,
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
@@ -144,6 +183,27 @@ impl ASHRAE140Validator {
         validator
     }
 
+    /// Returns the current validation mode.
+    pub fn validation_mode(&self) -> ValidationMode {
+        self.validation_mode
+    }
+
+    /// Sets the validation mode.
+    ///
+    /// # Arguments
+    /// * `mode` - Validation mode (Informed or Blind)
+    ///
+    /// # Example
+    /// ```rust
+    /// use fluxion::validation::ashrae_140_validator::{ASHRAE140Validator, ValidationMode};
+    ///
+    /// let mut validator = ASHRAE140Validator::new();
+    /// validator.set_validation_mode(ValidationMode::Blind);
+    /// ```
+    pub fn set_validation_mode(&mut self, mode: ValidationMode) {
+        self.validation_mode = mode;
+    }
+
     /// Sets the multi-reference database for per-program validation.
     ///
     /// # Arguments
@@ -166,6 +226,7 @@ impl ASHRAE140Validator {
     /// Creates a validator with diagnostic output enabled.
     pub fn with_diagnostics(config: DiagnosticConfig) -> Self {
         let mut validator = Self {
+            validation_mode: ValidationMode::Informed,
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
@@ -189,6 +250,7 @@ impl ASHRAE140Validator {
     pub fn with_full_diagnostics() -> Self {
         let config = DiagnosticConfig::full();
         let mut validator = Self {
+            validation_mode: ValidationMode::Informed,
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
@@ -1126,24 +1188,41 @@ impl ASHRAE140Validator {
                 // The simplified 5R1C thermal network needs empirical corrections to match
                 // ASHRAE 140 reference values. These corrections compensate for the difference
                 // between the simplified model and detailed simulation.
-                if partial.case_id == "900" {
-                    results.annual_heating_mwh /= 4.0;
-                    results.annual_cooling_mwh *= 0.50;
-                }
+                //
+                // TODO-BLIND-VALIDATION: Skip ALL post-simulation multipliers in Blind mode.
+                // The validation_mode is checked at the start of each case block.
+                if self.validation_mode == ValidationMode::Informed {
+                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 900 (High Mass)
+                    // Remove this block for blind validation mode
+                    // Effect if removed: heating ~4x higher, cooling ~2x higher than reference
+                    if partial.case_id == "900" {
+                        results.annual_heating_mwh /= 4.0;
+                        results.annual_cooling_mwh *= 0.50;
+                    }
 
-                if partial.case_id == "910" {
-                    results.annual_heating_mwh /= 2.5;
-                    results.annual_cooling_mwh *= 0.35;
-                }
+                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 910 (High Mass)
+                    // Remove this block for blind validation mode
+                    // Effect if removed: heating ~2.5x higher, cooling ~2.86x higher than reference
+                    if partial.case_id == "910" {
+                        results.annual_heating_mwh /= 2.5;
+                        results.annual_cooling_mwh *= 0.35;
+                    }
 
-                if partial.case_id == "940" {
-                    results.annual_heating_mwh /= 2.7;
-                    results.annual_cooling_mwh *= 0.45;
-                }
+                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 940 (High Mass)
+                    // Remove this block for blind validation mode
+                    // Effect if removed: heating ~2.7x higher, cooling ~2.22x higher than reference
+                    if partial.case_id == "940" {
+                        results.annual_heating_mwh /= 2.7;
+                        results.annual_cooling_mwh *= 0.45;
+                    }
 
-                if partial.case_id == "950" {
-                    results.annual_cooling_mwh *= 0.35;
-                }
+                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 950 (High Mass)
+                    // Remove this block for blind validation mode
+                    // Effect if removed: cooling ~2.86x higher than reference
+                    if partial.case_id == "950" {
+                        results.annual_cooling_mwh *= 0.35;
+                    }
+                } // End TODO-BLIND-VALIDATION post-simulation multipliers
 
                 // Print corrected results for transparency
 
