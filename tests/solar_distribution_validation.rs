@@ -41,7 +41,8 @@ mod tests {
             high_dist_to_air > low_dist_to_air,
             "Heavy mass should have higher solar_to_air fraction. \
              Got Case 900: {:.2}, Case 600: {:.2}",
-            high_dist_to_air, low_dist_to_air
+            high_dist_to_air,
+            low_dist_to_air
         );
 
         // Verify absolute values are in expected range (±0.05 tolerance)
@@ -50,12 +51,14 @@ mod tests {
         assert!(
             (low_dist_to_air - expected_low).abs() < 0.05,
             "Case 600 solar_to_air should be {:.2}, got {:.2}",
-            expected_low, low_dist_to_air
+            expected_low,
+            low_dist_to_air
         );
         assert!(
             (high_dist_to_air - expected_high).abs() < 0.05,
             "Case 900 solar_to_air should be {:.2}, got {:.2}",
-            expected_high, high_dist_to_air
+            expected_high,
+            high_dist_to_air
         );
     }
 
@@ -74,12 +77,16 @@ mod tests {
         let tolerance = 0.05;
 
         println!("Case 900 solar_distribution_to_air: {:.2}", dist_to_air);
-        println!("Expected (ISO 13790): {:.2} ± {:.2}", expected_high_mass, tolerance);
+        println!(
+            "Expected (ISO 13790): {:.2} ± {:.2}",
+            expected_high_mass, tolerance
+        );
 
         assert!(
             (dist_to_air - expected_high_mass).abs() < tolerance,
             "Case 900 solar_distribution_to_air should be {:.2} per ISO 13790, got {:.2}",
-            expected_high_mass, dist_to_air
+            expected_high_mass,
+            dist_to_air
         );
     }
 
@@ -117,7 +124,8 @@ mod tests {
             low_beam_to_mass > high_beam_to_mass,
             "Light mass should have higher beam-to-mass fraction. \
              Got Case 600: {:.2}, Case 900: {:.2}",
-            low_beam_to_mass, high_beam_to_mass
+            low_beam_to_mass,
+            high_beam_to_mass
         );
     }
 
@@ -131,7 +139,8 @@ mod tests {
         let high_model = ThermalModel::<VectorField>::from_spec(&high_spec);
 
         let low_sum = low_model.solar_distribution_to_air + low_model.solar_beam_to_mass_fraction;
-        let high_sum = high_model.solar_distribution_to_air + high_model.solar_beam_to_mass_fraction;
+        let high_sum =
+            high_model.solar_distribution_to_air + high_model.solar_beam_to_mass_fraction;
 
         println!("Fraction sum (solar_to_air + solar_to_mass):");
         println!("  Case 600: {:.2}", low_sum);
