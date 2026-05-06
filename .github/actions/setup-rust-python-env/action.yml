@@ -46,6 +46,12 @@ runs:
         retry: 3
         retry_wait_seconds: 10
 
+    - name: Configure PKG_CONFIG_PATH for system libraries
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
