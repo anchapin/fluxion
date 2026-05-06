@@ -385,8 +385,7 @@ mod tests {
 
         let wall = create_test_wall();
         let wall_props = WallProperties::from_assembly(&wall);
-        let materials =
-            CTFSolverWrapper::wall_properties_to_ctf_materials(&wall_props);
+        let materials = CTFSolverWrapper::wall_properties_to_ctf_materials(&wall_props);
         let timestep = 3600.0;
         let coeffs = CTFCalculator::with_defaults(&materials, timestep).compute_coefficients();
         let config = CTFSolverConfig::new(timestep, 50);
@@ -406,8 +405,14 @@ mod tests {
 
         // Verify all fluxes are finite
         assert!(wrapper_flux.is_finite(), "Wrapper flux should be finite");
-        assert!(flux_no_warmup.is_finite(), "Flux without warmup should be finite");
-        assert!(flux_with_warmup.is_finite(), "Flux with warmup should be finite");
+        assert!(
+            flux_no_warmup.is_finite(),
+            "Flux without warmup should be finite"
+        );
+        assert!(
+            flux_with_warmup.is_finite(),
+            "Flux with warmup should be finite"
+        );
 
         // Key assertion: wrapper should use warmup, not zero-init
         // Wrapper flux should match with_warmup flux, not no_warmup flux
