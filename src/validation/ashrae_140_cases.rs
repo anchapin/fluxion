@@ -79,6 +79,16 @@ impl WindowSpec {
         WindowSpec::new(3.0, 0.789, 0.86156, GlassType::DoubleClear)
     }
 
+    /// Creates a single pane clear glass window specification (ASHRAE 140 low-mass).
+    ///
+    /// - U-value: 5.8 W/m²K
+    /// - SHGC: 0.86
+    /// - Normal transmittance: 0.90
+    /// - Emissivity: 0.84 (typical for clear glass)
+    pub fn single_clear_glass() -> Self {
+        WindowSpec::new(5.8, 0.86, 0.90, GlassType::SingleClear)
+    }
+
     /// Creates a double low-e glass window specification.
     ///
     /// - U-value: 2.0 W/m²K
@@ -2260,7 +2270,7 @@ impl CaseBuilder {
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
+            .with_window_properties(WindowSpec::single_clear_glass())
             // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
@@ -2280,7 +2290,7 @@ impl CaseBuilder {
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
+            .with_window_properties(WindowSpec::single_clear_glass())
             // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())
