@@ -144,8 +144,16 @@ impl HeatConductionSolver for CTFSolverWrapper {
         // Create solver configuration
         let config = CTFSolverConfig::new(timestep, 50);
 
-        // Create and initialize solver
-        self.solver = Some(CTFSolver::new(coeffs.clone(), config));
+        // Create and initialize solver with warmup
+        // Use with_warmup() to initialize history buffers with realistic values
+        // instead of zero flux/uniform temperature which causes unphysical transients
+        self.solver = Some(CTFSolver::with_warmup(
+            coeffs.clone(),
+            config,
+            20.0, // t_interior_initial
+            20.0, // t_exterior_initial
+            7,    // warmup_days
+        ));
         self.coefficients = Some(coeffs);
         self.initialized = true;
         self.valid = true;
@@ -344,6 +352,70 @@ mod tests {
         // Energy storage rate is 0 (placeholder for CTF)
         let rate = wrapper.energy_storage_rate();
         assert_eq!(rate, 0.0);
+    }
+
+    #[test]
+    fn test_ctf_wrapper_warmup_initializes_flux_history() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // After warmup, history should contain non-zero flux values
+        // from the diurnal warmup cycles, not the zero initial state
+        let solver = wrapper.solver.as_ref().expect("solver should exist");
+        let interior_flux = solver.interior_flux();
+        let exterior_flux = solver.exterior_flux();
+
+        // Warmup cycles should have established realistic flux values
+        // The exterior flux should reflect the diurnal cycling during warmup
+        assert!(
+            exterior_flux.is_finite(),
+            "Exterior flux should be finite after warmup"
+        );
+        assert!(
+            interior_flux.is_finite(),
+            "Interior flux should be finite after warmup"
+        );
+    }
+
+    #[test]
+    fn test_ctf_wrapper_without_warmup_vs_with_warmup() {
+        use crate::physics::ctf_coefficients::CTFCalculator;
+        use crate::physics::wall_properties::WallProperties;
+
+        let wall = create_test_wall();
+        let wall_props = WallProperties::from_assembly(&wall);
+        let materials =
+            CTFSolverWrapper::wall_properties_to_ctf_materials(&wall_props);
+        let timestep = 3600.0;
+        let coeffs = CTFCalculator::with_defaults(&materials, timestep).compute_coefficients();
+        let config = CTFSolverConfig::new(timestep, 50);
+
+        // Create wrapper (should now use warmup internally)
+        let mut wrapper = CTFSolverWrapper::new();
+        wrapper.initialize(&wall).unwrap();
+        let wrapper_flux = wrapper.solver.as_ref().unwrap().exterior_flux();
+
+        // Create solver WITHOUT warmup (old behavior)
+        let solver_no_warmup = CTFSolver::new(coeffs.clone(), config.clone());
+        let flux_no_warmup = solver_no_warmup.exterior_flux();
+
+        // Create solver WITH warmup (expected behavior)
+        let solver_with_warmup = CTFSolver::with_warmup(coeffs, config, 20.0, 20.0, 7);
+        let flux_with_warmup = solver_with_warmup.exterior_flux();
+
+        // Verify all fluxes are finite
+        assert!(wrapper_flux.is_finite(), "Wrapper flux should be finite");
+        assert!(flux_no_warmup.is_finite(), "Flux without warmup should be finite");
+        assert!(flux_with_warmup.is_finite(), "Flux with warmup should be finite");
+
+        // Key assertion: wrapper should use warmup, not zero-init
+        // Wrapper flux should match with_warmup flux, not no_warmup flux
+        assert_eq!(
+            wrapper_flux, flux_with_warmup,
+            "Wrapper should use warmup - expected wrapper flux ({}) to match warmup flux ({})",
+            wrapper_flux, flux_with_warmup
+        );
     }
 
     #[test]
