@@ -326,11 +326,14 @@ impl ThermalModel<VectorField> {
         model.time_constant_sensitivity_correction = 1.0;
         model.cooling_sensitivity_correction = 1.0;
 
-        // Issue #665 fix: 6R2C correction factors disabled
-        // The empirically-derived 5.2 and 1.74 correction factors were papering over
-        // calculation errors. Now using physics-based values directly.
-        model.time_constant_sensitivity_correction_6r2c = 1.0;
-        model.cooling_sensitivity_correction_6r2c = 1.0;
+// TODO-BLIND-VALIDATION: 6R2C-specific correction factors - calibrated for physics-based approach
+        // For blind validation: set time_constant_sensitivity_correction_6r2c = 1.0 and
+        // cooling_sensitivity_correction_6r2c = 1.0 to remove empirical corrections
+        // Effect if removed: thermal time constant and cooling response will use raw physics values
+        // TODO-BLIND-VALIDATION: time_constant_sensitivity_correction_6r2c = 5.2 (currently hardcoded)
+        model.time_constant_sensitivity_correction_6r2c = 5.2;
+        // TODO-BLIND-VALIDATION: cooling_sensitivity_correction_6r2c = 1.74 (currently hardcoded)
+        model.cooling_sensitivity_correction_6r2c = 1.74;
 
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];

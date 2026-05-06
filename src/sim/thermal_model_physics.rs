@@ -1499,27 +1499,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // but CTF heat flux must STILL be included in the zone air heat balance for t_i_free calculation.
         // The net CTF contribution corrects the lumped 5R1C envelope term with CTF's accurate conduction.
         if let Some(ctf_fluxes) = &ctf_flux_w {
-            let slice = sum_term.as_mut();
-            for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
-                if i < slice.len() {
-                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
-                    let q_ctf = q_flux * area;
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self
-                        .0
-                        .envelope_mass_temperatures
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
-                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
-                    let net_ctf_flux = q_ctf - q_5r1c;
-                    slice[i] += net_ctf_flux;
-                    if net_ctf_flux > 0.0 {
-                        self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
-                    } else {
-                        self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
+            if !self.0.ctf_primary {
+                let slice = sum_term.as_mut();
+                for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
+                    if i < slice.len() {
+                        let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                        let q_ctf = q_flux * area;
+                        let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                        let t_mass = self
+                            .0
+                            .envelope_mass_temperatures
+                            .as_ref()
+                            .get(i)
+                            .copied()
+                            .unwrap_or(20.0);
+                        let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                        let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
+                        let net_ctf_flux = q_ctf - q_5r1c;
+                        slice[i] += net_ctf_flux;
+                        if net_ctf_flux > 0.0 {
+                            self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
+                        } else {
+                            self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
+                        }
                     }
                 }
             }
