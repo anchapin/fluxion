@@ -189,7 +189,7 @@ fn test_performance_smoke_test() {
     let min_throughput = if cfg!(debug_assertions) {
         20.0 // Much lower threshold for debug builds
     } else {
-        500.0 // Full performance target for release builds
+        200.0 // Aligned with release_gates.yaml benchmark.min_configs_per_sec
     };
 
     println!("Smoke test results:");
@@ -201,7 +201,7 @@ fn test_performance_smoke_test() {
     #[cfg(tarpaulin)]
     let target_latency = 200.0; // Tarpaulin is much slower
     #[cfg(not(tarpaulin))]
-    let target_latency = if cfg!(debug_assertions) { 50.0 } else { 2.0 };
+    let target_latency = if cfg!(debug_assertions) { 50.0 } else { 10.0 }; // Aligned with release_gates.yaml
 
     println!(
         "  Latency: {:.3}ms per config (target: <{}ms)",
