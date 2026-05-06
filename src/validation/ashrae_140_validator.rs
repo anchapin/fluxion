@@ -10,7 +10,6 @@ use crate::validation::diagnostic::{
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::multi_reference::MultiReferenceDB;
 use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType, ValidationStatus};
-use crate::weather::ashrae140_weather::Ashrae140ClearSkyWeather;
 use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
@@ -402,7 +401,10 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         let mut diagnostic_report = DiagnosticReport::new(self.diagnostic_config.clone());
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = Ashrae140ClearSkyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Cases to validate - all 18 ASHRAE 140 cases
         let cases = vec![
