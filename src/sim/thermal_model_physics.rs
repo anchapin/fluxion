@@ -285,15 +285,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Estimate from thermal capacitance and conductances
-        // τ = C / (h_tr_ms + h_tr_em) in seconds
-        let h_tr_sum = self
-            .0
-            .h_tr_ms
-            .as_ref()
-            .iter()
-            .zip(self.0.h_tr_em.as_ref().iter())
-            .map(|(ms, em)| ms + em)
-            .sum::<f64>();
+        // τ = C / h_tr_ms in seconds
+        // Issue 693 fix: The envelope mass time constant should be based on
+        // surface-to-mass coupling (h_tr_ms) only, not exterior conductance (h_tr_em).
+        // h_tr_em affects the surface node T_s, not the mass node T_m directly.
+        // The internal mass coupling (h_tr_me) is a separate thermal path.
+        let h_tr_sum = self.0.h_tr_ms.as_ref().iter().sum::<f64>();
 
         if h_tr_sum > 0.0 {
             let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
