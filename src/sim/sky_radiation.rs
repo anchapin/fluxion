@@ -34,7 +34,8 @@ use std::f64::consts::PI;
 pub const STEFAN_BOLTZMANN: f64 = 5.67e-8;
 
 /// Solar constant (W/m²)
-pub const SOLAR_CONSTANT: f64 = 1366.1;
+/// ASHRAE 140-2022 Appendix C specifies 1361.0 W/m²
+pub const SOLAR_CONSTANT: f64 = 1361.0;
 
 /// Default surface emissivity for building materials
 /// Most building materials have emissivity 0.85-0.95
