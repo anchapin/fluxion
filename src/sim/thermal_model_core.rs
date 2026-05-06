@@ -326,8 +326,13 @@ impl ThermalModel<VectorField> {
         model.time_constant_sensitivity_correction = 1.0;
         model.cooling_sensitivity_correction = 1.0;
 
-        // 6R2C-specific correction factors - calibrated for physics-based approach
+        // TODO-BLIND-VALIDATION: 6R2C-specific correction factors - calibrated for physics-based approach
+        // For blind validation: set time_constant_sensitivity_correction_6r2c = 1.0 and
+        // cooling_sensitivity_correction_6r2c = 1.0 to remove empirical corrections
+        // Effect if removed: thermal time constant and cooling response will use raw physics values
+        // TODO-BLIND-VALIDATION: time_constant_sensitivity_correction_6r2c = 5.2 (currently hardcoded)
         model.time_constant_sensitivity_correction_6r2c = 5.2;
+        // TODO-BLIND-VALIDATION: cooling_sensitivity_correction_6r2c = 1.74 (currently hardcoded)
         model.cooling_sensitivity_correction_6r2c = 1.74;
 
         // Access first element for single-zone cases
@@ -1208,21 +1213,27 @@ impl ThermalModel<VectorField> {
             model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
         }
 
-        // Configure 6R2C model for high-mass cases (900 series)
+        // TODO-BLIND-VALIDATION: Configure 6R2C model for high-mass cases (900 series)
+        // For blind validation: remove this block or guard with ValidationMode::Informed
+        // Effect if removed: 900 series cases will use default mass distribution instead of 75% envelope
         // SESSION 23 FIX: Enable 6R2C model for proper envelope/internal mass separation
         // SESSION 76 FIX: Solar gain distribution was REVERSED - fixed to proper 60%/40% split
         //   - Before: solar_beam_to_mass_fraction=0.4 gave ~60% to surface, ~40% to mass (BACKWARDS)
         //   - After: solar_beam_to_mass_fraction=0.6 gives ~60% to mass, ~40% to surface (CORRECT)
         // This single fix reduces heating over-prediction for high-mass cases
+        // TODO-BLIND-VALIDATION: configure_6r2c_model(0.75, 100.0, None) applies 75% envelope mass
         if spec.case_id.starts_with("9") && spec.case_id != "960" {
             // For high-mass buildings: 75% envelope mass, 25% internal mass
             // Conductance between masses: 100 W/K (typical for concrete construction)
             // h_tr_ms defaults to 40% of ISO 13790 value for 6R2C
+            // TODO-BLIND-VALIDATION: 6R2C model configuration for 900 series (guard with ValidationMode)
             model.configure_6r2c_model(0.75, 100.0, None);
         }
 
-        // SESSION 89: CTF-primary surface temperature coupling for high-mass free-floating cases.
-        // The 6R2C lumped model's τ ≈ 26h under-represents thermal mass (concrete h₁₂ = 771 W/K
+        // TODO-BLIND-VALIDATION: CTF-primary surface temperature coupling for high-mass free-floating cases
+        // For blind validation: remove this block or guard with ValidationMode::Informed
+        // Effect if removed: 900FF and 950FF free-floating temp predictions less accurate
+        // SESSION 89: The 6R2C lumped model's τ ≈ 26h under-represents thermal mass (concrete h₁₂ = 771 W/K
         // is too high). The CTF solver captures multi-layer conduction dynamics correctly (τ ≈ 120-200h).
         // Enable CTF with iterative zone coupling so T_si drives the zone air heat balance directly.
         if spec.case_id == "900FF" || spec.case_id == "950FF" {

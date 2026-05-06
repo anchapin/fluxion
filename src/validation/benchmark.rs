@@ -105,7 +105,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== Low Mass Cases (600 Series) ====================
 
     // Case 600 - Baseline (Low Mass)
-    // Note: These ranges are calibrated for the 5R1C thermal network model
+    // TODO-BLIND-VALIDATION: These ranges are calibrated for the 5R1C thermal network model
+    // For blind validation: use raw ASHRAE 140-2023 reference values instead of calibrated ranges
     // The ASHRAE 140 reference values are based on detailed hourly simulation
     // Our model uses simplified 5R1C thermal network with different solar distribution
     data.insert(
