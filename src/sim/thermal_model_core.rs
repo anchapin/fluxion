@@ -325,7 +325,6 @@ impl ThermalModel<VectorField> {
         // τ = Cm / (h_tr_ms + h_tr_em) is determined by actual construction properties
         model.time_constant_sensitivity_correction = 1.0;
         model.cooling_sensitivity_correction = 1.0;
-
         // Issue #665 fix: 6R2C correction factors disabled
         // The empirically-derived 5.2 and 1.74 correction factors were papering over
         // calculation errors. Now using physics-based values directly.
