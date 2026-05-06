@@ -186,9 +186,18 @@ fn test_mass_nodes_diverge_during_simulation() {
     // conditions because h_tr_em (exterior-to-mass path) no longer directly affects
     // the envelope's time constant.
     println!("\n=== Mass Node Divergence ===");
-    println!("Initial T_env = {:.1}, T_int = {:.1}", initial_t_env, initial_t_int);
-    println!("Final T_env = {:.1}, T_int = {:.1}", final_t_env, final_t_int);
-    println!("Delta T_env = {:.2}, Delta T_int = {:.2}", delta_t_env, delta_t_int);
+    println!(
+        "Initial T_env = {:.1}, T_int = {:.1}",
+        initial_t_env, initial_t_int
+    );
+    println!(
+        "Final T_env = {:.1}, T_int = {:.1}",
+        final_t_env, final_t_int
+    );
+    println!(
+        "Delta T_env = {:.2}, Delta T_int = {:.2}",
+        delta_t_env, delta_t_int
+    );
 
     // With corrected physics, both masses should be finite and reasonable
     assert!(
@@ -230,8 +239,14 @@ fn test_envelope_mass_time_constant_based_on_h_tr_ms() {
     println!("h_tr_ms = {:.4} W/K", h_tr_ms);
     println!("h_tr_me = {:.4} W/K", h_tr_me);
     println!("h_tr_em = {:.4} W/K", h_tr_em);
-    println!("Correct τ (based on h_tr_ms + h_tr_me) = {:.1} hours", correct_tau_hours);
-    println!("Buggy τ (based on h_tr_em + h_tr_ms + h_tr_me) = {:.1} hours", buggy_tau_hours);
+    println!(
+        "Correct τ (based on h_tr_ms + h_tr_me) = {:.1} hours",
+        correct_tau_hours
+    );
+    println!(
+        "Buggy τ (based on h_tr_em + h_tr_ms + h_tr_me) = {:.1} hours",
+        buggy_tau_hours
+    );
     println!("Reference τ for 900FF (ASHRAE 140) ≈ 47 hours");
 
     // The correct time constant should be higher (closer to reference)
@@ -239,7 +254,8 @@ fn test_envelope_mass_time_constant_based_on_h_tr_ms() {
     assert!(
         correct_tau_hours > buggy_tau_hours,
         "Correct τ {:.1}h should be > buggy τ {:.1}h",
-        correct_tau_hours, buggy_tau_hours
+        correct_tau_hours,
+        buggy_tau_hours
     );
 }
 
