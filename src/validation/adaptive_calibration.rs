@@ -62,22 +62,22 @@ pub struct CalibrationState {
     pub solar_gain_multiplier: f64,
 }
 
-// TODO-BLIND-VALIDATION: Calibration state default values represent empirical corrections
-    // For blind validation: verify these defaults are not applied to validation runs
-    // These values (thermal_conductivity: 0.16, specific_heat: 840.0, etc.) may need
-    // to be reset to physics-based defaults when running blind validation
-    impl Default for CalibrationState {
-        fn default() -> Self {
-            Self {
-                thermal_conductivity: 0.16,
-                specific_heat: 840.0,
-                density: 2400.0,
-                infiltration_rate: 0.5,
-                internal_gain_multiplier: 1.0,
-                solar_gain_multiplier: 1.0,
-            }
+/// TODO-BLIND-VALIDATION: Calibration state default values represent empirical corrections.
+/// For blind validation: verify these defaults are not applied to validation runs.
+/// These values (thermal_conductivity: 0.16, specific_heat: 840.0, etc.) may need
+/// to be reset to physics-based defaults when running blind validation.
+impl Default for CalibrationState {
+    fn default() -> Self {
+        Self {
+            thermal_conductivity: 0.16,
+            specific_heat: 840.0,
+            density: 2400.0,
+            infiltration_rate: 0.5,
+            internal_gain_multiplier: 1.0,
+            solar_gain_multiplier: 1.0,
         }
     }
+}
 
 /// Hourly observation from smart meter or sensor stream
 #[derive(Debug, Clone, Serialize, Deserialize)]
