@@ -829,8 +829,9 @@ impl ThermalModel<VectorField> {
             // No case-specific scaling - physics should be correct for all cases
 
             // Debug output for all contributions
-            if zone_idx == 0 && spec.case_id == "900" {
-                eprintln!("PHYSICS DEBUG: h_ms_physics={:.3}, h_ms_roof={:.3}, h_ms_floor={:.3}, h_ms_total={:.3}", h_ms_physics, h_ms_roof, h_ms_floor, h_ms_total);
+            if zone_idx == 0 {
+                eprintln!("PHYSICS DEBUG: Case {} - h_ms_physics={:.3}, h_ms_roof={:.3}, h_ms_floor={:.3}, h_ms_total={:.3}",
+                    spec.case_id, h_ms_physics, h_ms_roof, h_ms_floor, h_ms_total);
             }
 
             h_tr_ms_vec.push(h_ms_total);
@@ -995,6 +996,32 @@ impl ThermalModel<VectorField> {
         model.h_tr_is = VectorField::new(h_tr_is_vec);
         model.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
         model.h_tr_em = VectorField::new(h_tr_em_vec.clone());
+
+        // === Issue 692: Physics-Based h_tr_me Calculation ===
+        // h_tr_me (envelope-to-internal mass conductance) was previously hardcoded to 100.0 W/K
+        // but should be derived from construction like h_tr_ms and h_tr_em.
+        //
+        // The internal mass (furniture, partitions) couples to the envelope mass through
+        // the interior air and surfaces. The coupling is proportional to the interior
+        // surface area of the building envelope (A_int).
+        //
+        // Using h_ms = 4.5 W/(m²·K) as the coupling coefficient for furniture/partitions
+        // to interior air (similar to surface-to-air coupling in ISO 13790).
+        //
+        // A_int ≈ 2.0 × floor_area for typical buildings (walls + ceiling + floor surfaces)
+        let h_tr_me_vec: Vec<f64> = (0..num_zones)
+            .map(|zone_idx| {
+                let zone_floor_area = if zone_idx < spec.geometry.len() {
+                    spec.geometry[zone_idx].floor_area()
+                } else {
+                    spec.geometry[0].floor_area()
+                };
+                let a_int = 2.0 * zone_floor_area; // Interior surface area
+                let h_ms = 4.5; // Furniture/partitions coupling coefficient W/(m²·K)
+                h_ms * a_int
+            })
+            .collect();
+        model.h_tr_me = VectorField::new(h_tr_me_vec);
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
@@ -1436,10 +1463,8 @@ impl ThermalModel<VectorField> {
         let case_id_str: String = self.0.case_id.clone();
         let tau_seconds_pre = total_cap / (h_tr_ms_value + h_tr_em_pre).max(0.1);
         let tau_hours_pre = tau_seconds_pre / 3600.0;
-        if case_id_str.starts_with("9") && case_id_str != "195" {
-            eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours (physics-based)",
-                case_id_str, total_cap, h_tr_ms_value, h_tr_em_pre, tau_hours_pre);
-        }
+        eprintln!("PHYSICS τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours",
+            case_id_str, total_cap, h_tr_ms_value, h_tr_em_pre, tau_hours_pre);
 
         // Physics-based: No correction applied
         // τ = Cm / (h_tr_ms + h_tr_em) is determined by actual construction properties

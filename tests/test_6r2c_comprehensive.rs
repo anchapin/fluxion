@@ -25,9 +25,8 @@ fn test_thermal_model_type_default() {
 fn test_configure_6r2c_model() {
     let mut model = ThermalModel::new(1);
     let envelope_fraction = 0.75;
-    let h_tr_me_value = 100.0;
 
-    model.configure_6r2c_model(envelope_fraction, h_tr_me_value, None);
+    model.configure_6r2c_model(envelope_fraction, 100.0, None);
 
     // Check that model is now 6R2C
     assert!(model.is_6r2c_model());
@@ -42,15 +41,23 @@ fn test_configure_6r2c_model() {
     assert!((internal_cap - total_cap * (1.0 - envelope_fraction)).abs() < 0.01);
     assert!((envelope_cap + internal_cap - total_cap).abs() < 0.01);
 
-    // Check that conductance between masses is set
+    // Issue 692 fix: h_tr_me is no longer overwritten by configure_6r2c_model
+    // It comes from physics-based calculation in from_spec()
+    // For ThermalModel::new(), h_tr_me starts at 0.0 (not the hardcoded 100.0)
     let h_tr_me = model.h_tr_me.as_ref()[0];
-    assert!((h_tr_me - h_tr_me_value).abs() < 0.01);
+    // h_tr_me should NOT be 100.0 here - it's preserved from initialization
+    // This verifies the fix: configure_6r2c_model no longer hardcodes h_tr_me
+    assert!(
+        h_tr_me == 0.0,
+        "h_tr_me should be 0.0 (physics-based from from_spec), not hardcoded 100.0"
+    );
 }
 
 #[test]
 fn test_6r2c_thermal_mass_initialization() {
     let spec = ASHRAE140Case::Case900.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    // h_tr_me is now set by from_spec (physics-based), not overwritten by configure_6r2c_model
     model.configure_6r2c_model(0.75, 100.0, None);
 
     assert!(!model.envelope_mass_temperatures.as_ref().is_empty());
@@ -64,6 +71,16 @@ fn test_6r2c_thermal_mass_initialization() {
     assert_eq!(
         model.internal_mass_temperatures.as_ref()[0],
         initial_mass_temp
+    );
+
+    // Issue 692: Verify h_tr_me is physics-based (~432 W/K for 48m² Case 900)
+    // h_tr_me = h_ms * A_int = 4.5 W/(m²·K) * (2.0 * 48 m²) = 432 W/K
+    // This is the physics-based value from from_spec, preserved by configure_6r2c_model
+    let h_tr_me = model.h_tr_me.as_ref()[0];
+    assert!(
+        h_tr_me > 400.0 && h_tr_me < 500.0,
+        "h_tr_me should be physics-based (~432 W/K), got {:.1} W/K",
+        h_tr_me
     );
 }
 
@@ -134,9 +151,14 @@ fn test_thermal_lag_envelope_vs_internal() {
         .position(|&t| t >= target_int)
         .unwrap_or(0);
 
+    // Issue 692 fix: With physics-based h_tr_me ≈ 432 W/K (vs old hardcoded 100 W/K),
+    // envelope and internal masses are tightly coupled and respond together.
+    // The test now verifies they respond at similar rates (within 20 timesteps of each other).
+    let diff = (t50_int as i32 - t50_env as i32).abs();
     assert!(
-        t50_int >= t50_env,
-        "Internal mass should respond slower than envelope"
+        diff <= 20,
+        "With physics-based h_tr_me ≈ 432 W/K, masses should respond similarly (tight coupling), diff={}",
+        diff
     );
 }
 

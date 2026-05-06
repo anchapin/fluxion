@@ -164,7 +164,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn configure_6r2c_model(
         &mut self,
         envelope_mass_fraction: f64,
-        h_tr_me_value: f64,
+        _h_tr_me_value: f64,
         h_tr_ms_value: Option<f64>,
     ) {
         self.0.thermal_model_type = ThermalModelType::SixRTwoC;
@@ -176,8 +176,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.envelope_thermal_capacitance = total_cap.clone() * envelope_mass_fraction;
         self.0.internal_thermal_capacitance = total_cap * (1.0 - envelope_mass_fraction);
 
-        // Set conductance between envelope and internal mass
-        self.0.h_tr_me = self.0.zone_area.clone().map(|_| h_tr_me_value);
+        // h_tr_me is now set from physics in from_spec() - do not overwrite here
+        // Previously: self.0.h_tr_me = self.0.zone_area.clone().map(|_| h_tr_me_value);
+        // The physics-based h_tr_me (≈432 W/K for 48m² zone) provides stronger thermal
+        // coupling than the old hardcoded 100.0 W/K, addressing Issue 692.
 
         // Override h_tr_ms if provided (for 6R2C tuning)
         if let Some(h_tr_ms) = h_tr_ms_value {
