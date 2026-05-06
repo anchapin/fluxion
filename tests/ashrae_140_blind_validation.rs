@@ -30,7 +30,9 @@ struct BlindValidationResult {
     within_tolerance: bool,
 }
 
-fn simulate_case_blind(spec: &fluxion::validation::ashrae_140_cases::CaseSpec) -> CaseResultsBlinded {
+fn simulate_case_blind(
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+) -> CaseResultsBlinded {
     let mut model = ThermalModel::<VectorField>::from_spec(spec);
 
     model.reset_peak_power();
@@ -243,15 +245,23 @@ fn print_results_table(results: &[BlindValidationResult]) {
     println!("====================================================================================================");
     println!();
 
-    println!("{:>8} {:>15} {:>15} {:>15} {:>15} {:>12} {:>10}",
-             "Case", "Metric", "Simulated", "Ref Min", "Ref Max", "% Error", "Status");
+    println!(
+        "{:>8} {:>15} {:>15} {:>15} {:>15} {:>12} {:>10}",
+        "Case", "Metric", "Simulated", "Ref Min", "Ref Max", "% Error", "Status"
+    );
     println!("----------------------------------------------------------------------------------------------------");
 
     for r in results {
         let status = if r.within_tolerance { "PASS" } else { "FAIL" };
         println!(
             "{:>8} {:>15} {:>15.4} {:>15.4} {:>15.4} {:>12.2} {:>10}",
-            r.case_id, r.metric, r.simulated_value, r.reference_min, r.reference_max, r.percent_error, status
+            r.case_id,
+            r.metric,
+            r.simulated_value,
+            r.reference_min,
+            r.reference_max,
+            r.percent_error,
+            status
         );
     }
 
@@ -262,7 +272,11 @@ fn compute_summary_statistics(results: &[BlindValidationResult]) -> (usize, usiz
     let total = results.len();
     let passed = results.iter().filter(|r| r.within_tolerance).count();
     let failed = total - passed;
-    let pass_rate = if total > 0 { passed as f64 / total as f64 * 100.0 } else { 0.0 };
+    let pass_rate = if total > 0 {
+        passed as f64 / total as f64 * 100.0
+    } else {
+        0.0
+    };
 
     let mae = if !results.is_empty() {
         results.iter().map(|r| r.percent_error).sum::<f64>() / total as f64
@@ -273,8 +287,11 @@ fn compute_summary_statistics(results: &[BlindValidationResult]) -> (usize, usiz
     (passed, failed, pass_rate, mae)
 }
 
-fn categorize_failures(results: &[BlindValidationResult]) -> std::collections::HashMap<String, Vec<&BlindValidationResult>> {
-    let mut categories: std::collections::HashMap<String, Vec<&BlindValidationResult>> = std::collections::HashMap::new();
+fn categorize_failures(
+    results: &[BlindValidationResult],
+) -> std::collections::HashMap<String, Vec<&BlindValidationResult>> {
+    let mut categories: std::collections::HashMap<String, Vec<&BlindValidationResult>> =
+        std::collections::HashMap::new();
 
     for r in results.iter().filter(|r| !r.within_tolerance) {
         let category = if r.case_id.ends_with("FF") {
@@ -319,7 +336,10 @@ fn test_blind_validation_baseline() {
     for (category, failures) in &categories {
         println!("  {}: {} failures", category, failures.len());
         for f in failures.iter().take(3) {
-            println!("    - Case {} {}: {:.2}% error", f.case_id, f.metric, f.percent_error);
+            println!(
+                "    - Case {} {}: {:.2}% error",
+                f.case_id, f.metric, f.percent_error
+            );
         }
         if failures.len() > 3 {
             println!("    ... and {} more", failures.len() - 3);
