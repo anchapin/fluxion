@@ -326,7 +326,7 @@ impl ThermalModel<VectorField> {
         model.time_constant_sensitivity_correction = 1.0;
         model.cooling_sensitivity_correction = 1.0;
 
-// TODO-BLIND-VALIDATION: 6R2C-specific correction factors - calibrated for physics-based approach
+        // TODO-BLIND-VALIDATION: 6R2C-specific correction factors - calibrated for physics-based approach
         // For blind validation: set time_constant_sensitivity_correction_6r2c = 1.0 and
         // cooling_sensitivity_correction_6r2c = 1.0 to remove empirical corrections
         // Effect if removed: thermal time constant and cooling response will use raw physics values
