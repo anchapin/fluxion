@@ -15,7 +15,6 @@
 //! - **EPW Files**: External EnergyPlus Weather format files via [`epw::EpwWeatherSource`]
 //! - **Embedded TMY**: Pre-defined weather data for ASHRAE 140 via [`denver::DenverTmyWeather`]
 
-pub mod ashrae140_weather;
 pub mod ddy;
 pub mod denver;
 pub mod epw;
