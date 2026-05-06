@@ -322,7 +322,7 @@ impl ThermalModel<VectorField> {
 
         // Physics-based: No correction factors needed
         // The thermal network physics should produce correct results without empirical adjustments
-        // τ = Cm / (h_tr_ms + h_tr_em) is determined by actual construction properties
+        // τ = Cm / (h_tr_ms + h_tr_me) is determined by actual construction properties (Issue 693 fix)
         model.time_constant_sensitivity_correction = 1.0;
         model.cooling_sensitivity_correction = 1.0;
 
