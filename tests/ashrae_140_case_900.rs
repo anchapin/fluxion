@@ -961,6 +961,220 @@ fn test_case_900_hvac_demand_calculation_analysis() {
     println!("✅ HVAC demand calculation analysis complete");
 }
 
+/// Test solar gain distribution hypothesis from Issue #700
+///
+/// Hypothesis: The distribution of solar heat gains between the thermal mass node
+/// and interior air node may be incorrect for high-mass buildings, causing excessive
+/// zone heating in Case 900FF.
+///
+/// This test sweeps solar_beam_to_mass_fraction values to verify:
+/// - Higher values produce LOWER max temp (more solar to mass = stored = lower peak)
+/// - The current calibration (0.6) should produce max temp within reference range
+#[test]
+fn test_case_900ff_solar_beam_to_mass_fraction_sweep() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    use fluxion::weather::WeatherSource;
+
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+    let fractions_to_test = [0.2, 0.4, 0.6, 0.8];
+    let ref_max_min = 41.80_f64;
+    let ref_max_max = 46.40_f64;
+
+    println!("=== Issue #700: Solar Beam to Mass Fraction Sweep ===");
+    println!(
+        "Reference Range for Max Temp: [{:.2}, {:.2}]°C",
+        ref_max_min, ref_max_max
+    );
+
+    let mut results = Vec::new();
+
+    for &frac in &fractions_to_test {
+        let mut model = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900FF.spec());
+        model.solar_beam_to_mass_fraction = frac;
+
+        let mut min_temp = f64::MAX;
+        let mut max_temp = f64::MIN;
+
+        for step in 0..8760 {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(weather_data.clone());
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+            if let Some(&zone_temp) = model.temperatures.as_slice().first() {
+                min_temp = min_temp.min(zone_temp);
+                max_temp = max_temp.max(zone_temp);
+            }
+        }
+
+        let swing = max_temp - min_temp;
+        let in_range = max_temp >= ref_max_min && max_temp <= ref_max_max;
+        results.push((frac, min_temp, max_temp, swing, in_range));
+
+        println!(
+            "solar_beam_to_mass_fraction={:.1}: Min={:6.2}°C, Max={:6.2}°C {}",
+            frac,
+            min_temp,
+            max_temp,
+            if in_range {
+                "✓ IN RANGE"
+            } else {
+                "✗ OUT OF RANGE"
+            }
+        );
+    }
+
+    println!("\n=== Analysis ===");
+
+    // Verify monotonic relationship: higher frac -> lower max temp
+    let is_monotonic = results.windows(2).all(|window| {
+        let (f1, _, max1, _, _) = window[0];
+        let (f2, _, max2, _, _) = window[1];
+        f2 > f1 && max2 < max1
+    });
+    assert!(
+        is_monotonic,
+        "Temperature should decrease monotonically as fraction increases"
+    );
+    println!("✓ Temperature decreases monotonically as fraction increases");
+
+    // Current calibration (0.6) should be in range
+    let &(_, _, max_temp, _, in_range) = results.iter().find(|(f, _, _, _, _)| *f == 0.6).unwrap();
+    assert!(
+        in_range,
+        "Current calibration 0.6 produces max temp {:.2}°C outside reference",
+        max_temp
+    );
+    println!("✓ Current calibration (0.6) is within reference range");
+
+    // Find best fraction for reference center
+    let ref_center = (ref_max_min + ref_max_max) / 2.0;
+    let &(best_frac, _, best_max, _, _) = results
+        .iter()
+        .min_by(|(_, _, a, _, _), (_, _, b, _, _)| {
+            (a - ref_center)
+                .abs()
+                .partial_cmp(&(b - ref_center).abs())
+                .unwrap()
+        })
+        .unwrap();
+    println!(
+        "\nBest fraction for reference center: {:.1} (Max={:.2}°C)",
+        best_frac, best_max
+    );
+
+    println!("\n✅ Issue #700 hypothesis verified");
+}
+
+/// Test paired comparison of 600FF vs 900FF from Issue #700
+///
+/// Issue #700 stated:
+/// - 600FF: Max=54.60°C (too LOW vs reference 64.9-75.1°C)
+/// - 900FF: Max=64.47°C (too HIGH vs reference 41.8-46.4°C)
+///
+/// Both being wrong in opposite directions suggested solar distribution issue.
+/// This test verifies current state.
+#[test]
+fn test_case_600ff_vs_900ff_paired_comparison() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    use fluxion::weather::WeatherSource;
+
+    let weather = fluxion::weather::denver::DenverTmyWeather::new();
+
+    // Case 600FF
+    let mut model_600 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case600FF.spec());
+    let mut min_600 = f64::MAX;
+    let mut max_600 = f64::MIN;
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_600.weather = Some(weather_data.clone());
+        model_600.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        if let Some(&zone_temp) = model_600.temperatures.as_slice().first() {
+            min_600 = min_600.min(zone_temp);
+            max_600 = max_600.max(zone_temp);
+        }
+    }
+
+    // Case 900FF
+    let mut model_900 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900FF.spec());
+    let mut min_900 = f64::MAX;
+    let mut max_900 = f64::MIN;
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_900.weather = Some(weather_data.clone());
+        model_900.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        if let Some(&zone_temp) = model_900.temperatures.as_slice().first() {
+            min_900 = min_900.min(zone_temp);
+            max_900 = max_900.max(zone_temp);
+        }
+    }
+
+    println!("=== Issue #700: Paired Comparison ===");
+    println!("\nCase 600FF (low-mass):");
+    println!("  Result: Min={:.2}°C, Max={:.2}°C", min_600, max_600);
+    println!("  Reference: [64.9, 75.1]°C");
+    let in_range_600 = max_600 >= 64.9 && max_600 <= 75.1;
+    println!(
+        "  Status: {}",
+        if in_range_600 {
+            "✓ IN RANGE"
+        } else {
+            "✗ OUT OF RANGE"
+        }
+    );
+
+    println!("\nCase 900FF (high-mass):");
+    println!("  Result: Min={:.2}°C, Max={:.2}°C", min_900, max_900);
+    println!("  Reference: [41.8, 46.4]°C");
+    let in_range_900 = max_900 >= 41.80 && max_900 <= 46.40;
+    println!(
+        "  Status: {}",
+        if in_range_900 {
+            "✓ IN RANGE"
+        } else {
+            "✗ OUT OF RANGE"
+        }
+    );
+
+    // Verify thermal damping (high-mass should have lower swing)
+    let swing_600 = max_600 - min_600;
+    let swing_900 = max_900 - min_900;
+    let swing_reduction = (swing_600 - swing_900) / swing_600 * 100.0;
+    println!("\nTemperature Swing Comparison:");
+    println!("  600FF: {:.2}°C, 900FF: {:.2}°C", swing_600, swing_900);
+    println!("  Reduction: {:.1}% (expected ~19.6%)", swing_reduction);
+    assert!(swing_reduction > 0.0, "High-mass should have lower swing");
+    println!("✓ High-mass shows thermal damping effect");
+
+    // Parameter comparison
+    println!("\n=== Parameter Difference ===");
+    println!(
+        "600FF: solar_beam_to_mass_fraction={:.2}, solar_distribution_to_air={:.2}",
+        model_600.solar_beam_to_mass_fraction, model_600.solar_distribution_to_air
+    );
+    println!(
+        "900FF: solar_beam_to_mass_fraction={:.2}, solar_distribution_to_air={:.2}",
+        model_900.solar_beam_to_mass_fraction, model_900.solar_distribution_to_air
+    );
+
+    println!("\n=== Resolution ===");
+    println!("Issue #700 stated 900FF was producing 64.47°C (too HIGH)");
+    println!(
+        "Current model: 900FF produces {:.2}°C - SESSION 76 fix worked!",
+        max_900
+    );
+
+    assert!(
+        in_range_900,
+        "900FF max temp {:.2}°C should be in reference [41.8, 46.4]°C",
+        max_900
+    );
+    println!("\n✅ Paired comparison complete - solar distribution is functioning correctly");
+}
+
 /// 900-series sequential regression test (Phase 22 Plan 01)
 ///
 /// This test ensures that the Case 960 COP correction (heating_efficiency=0.9, cooling_cop=3.0)
