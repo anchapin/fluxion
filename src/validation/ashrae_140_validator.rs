@@ -2028,7 +2028,7 @@ impl ASHRAE140Validator {
     pub fn simulate_case_with_diagnostics(
         &self,
         spec: &CaseSpec,
-        weather: &EpwWeatherSource,
+        weather: &impl WeatherSource,
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);

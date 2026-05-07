@@ -1349,19 +1349,19 @@ mod tests {
 
     #[test]
     fn test_calculate_clearness_index_zero_ghi() {
-        let kt = calculate_clearness_index(0.0, 0.5, 1366.1);
+        let kt = calculate_clearness_index(0.0, 0.5, SOLAR_CONSTANT);
         assert!((kt - 0.0).abs() < 0.01);
     }
 
     #[test]
     fn test_calculate_clearness_index_zenith_90() {
-        let kt = calculate_clearness_index(500.0, std::f64::consts::PI / 2.0, 1366.1);
+        let kt = calculate_clearness_index(500.0, std::f64::consts::PI / 2.0, SOLAR_CONSTANT);
         assert!(kt >= 0.0 && kt <= 1.0);
     }
 
     #[test]
     fn test_calculate_clear_sky_ghi_zenith_90() {
-        let ghi = calculate_clear_sky_ghi(std::f64::consts::PI / 2.0, 1366.1);
+        let ghi = calculate_clear_sky_ghi(std::f64::consts::PI / 2.0, SOLAR_CONSTANT);
         assert!(ghi > 0.0);
     }
 

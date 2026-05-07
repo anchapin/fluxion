@@ -285,15 +285,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Estimate from thermal capacitance and conductances
-        // τ = C / (h_tr_ms + h_tr_em) in seconds
-        let h_tr_sum = self
-            .0
-            .h_tr_ms
-            .as_ref()
-            .iter()
-            .zip(self.0.h_tr_em.as_ref().iter())
-            .map(|(ms, em)| ms + em)
-            .sum::<f64>();
+        // τ = C / h_tr_ms in seconds
+        // Issue 693 fix: The envelope mass time constant should be based on
+        // surface-to-mass coupling (h_tr_ms) only, not exterior conductance (h_tr_em).
+        // h_tr_em affects the surface node T_s, not the mass node T_m directly.
+        // The internal mass coupling (h_tr_me) is a separate thermal path.
+        let h_tr_sum = self.0.h_tr_ms.as_ref().iter().sum::<f64>();
 
         if h_tr_sum > 0.0 {
             let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
@@ -1443,10 +1440,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
-        let num_tm = self
-            .0
-            .derived_h_ms_is_prod
-            .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b);
+        //
+        // CTF-driven zone air heat balance (Issue #698 fix):
+        // When ctf_primary=true, the 6R2C h_tr_ms coupling is DISABLED because
+        // CTF provides the correct multi-layer conduction dynamics directly.
+        // The CTF heat flow q_ctf (computed from T_si_ctf) replaces the 6R2C h_tr_ms * t_mass term.
+        let num_tm = if self.0.ctf_primary {
+            // Zero out the 6R2C coupling - CTF will drive the zone air heat balance
+            self.0.derived_h_ms_is_prod.constant_like(0.0)
+        } else {
+            self.0
+                .derived_h_ms_is_prod
+                .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b)
+        };
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
@@ -1700,7 +1706,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
             t_sol_air_data.push(t_sol_air_zone);
         }
-        let t_sol_air = VectorField::new(t_sol_air_data);
+        // Note: t_sol_air is used by the 5R1C model path (for mass temperature update)
+        // It is NOT used by the 6R2C envelope mass path (which uses t_s instead)
+        let _t_sol_air = VectorField::new(t_sol_air_data);
 
         // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
@@ -1730,7 +1738,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // The conductances are now calculated from first principles:
             // h_tr_em = k * A / d (thermal conductivity * area / thickness)
             // h_tr_ms = k * A / d (thermal conductivity * area / thickness)
-            let h_tr_em = h_tr_em_ref[i];
+            // Note: h_tr_em is NOT used in the 6R2C envelope mass heat balance (Issue 693)
+            // It affects T_s via the surface network, not directly Tm_env
+            let _h_tr_em = h_tr_em_ref[i];
             let h_tr_ms = h_tr_ms_ref[i];
 
             // For envelope mass, use implicit integration for high thermal capacitance
@@ -1755,10 +1765,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     )
                 }
                 ThermalIntegrationMethod::ExplicitEuler => {
-                    // Use explicit Euler for low thermal mass
-                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    let q_env_net = h_tr_em * (t_sol_air[i] - tm_env_old)
-                        + h_tr_ms * (t_s - tm_env_old)
+                    // Issue 693 fix: For 6R2C envelope mass, h_tr_em should NOT be included
+                    // in the heat balance. h_tr_em affects T_s (surface node) via the surface
+                    // network (which includes solar gains), but does not directly affect Tm.
+                    // The envelope mass receives heat from:
+                    //   - T_s via h_tr_ms (surface-to-mass conductance)
+                    //   - Tm_int via h_tr_me (mass-to-internal-mass conductance)
+                    //
+                    // This matches the comments at lines 1744-1745 and 1785-1786:
+                    // "h_tr_em affects T_s via the surface network, not Tm directly"
+                    let q_env_net = h_tr_ms * (t_s - tm_env_old)
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
 
@@ -1769,8 +1785,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             q_env_net, dt, cm_env
                         );
                         println!(
-                            "  Components: h_tr_em*({:.1}-{:.1})={:.2}, h_tr_ms*({:.1}-{:.1})={:.2}, h_tr_me*({:.1}-{:.1})={:.2}, phi_m_env={:.2}",
-                            t_sol_air[i], tm_env_old, h_tr_em * (t_sol_air[i] - tm_env_old),
+                            "  Components: h_tr_ms*({:.1}-{:.1})={:.2}, h_tr_me*({:.1}-{:.1})={:.2}, phi_m_env={:.2}",
                             t_s, tm_env_old, h_tr_ms * (t_s - tm_env_old),
                             tm_int, tm_env_old, h_tr_me * (tm_int - tm_env_old),
                             phi_m_env_zone
@@ -1788,10 +1803,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         tm_env_old,
                         dt,
                         cm_env,
-                        h_tr_ms,           // mass-to-surface conductance
-                        h_tr_me,           // mass-to-internal-mass conductance
-                        t_s,               // surface temperature (affected by sol-air via T_s)
-                        tm_int,            // internal mass temperature
+                        h_tr_ms, // mass-to-surface conductance
+                        h_tr_me, // mass-to-internal-mass conductance
+                        t_s,     // surface temperature (affected by sol-air via T_s)
+                        tm_int,  // internal mass temperature
                         phi_m_env_zone,
                     )
                 }
