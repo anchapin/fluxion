@@ -910,7 +910,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
-        if self.0.case_id == "900FF" && timestep % 24 == 0 {
+        if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
             eprintln!(
                 "DEBUG {} timestep {} t_i_free[0]={:.2}°C",
                 self.0.case_id,
@@ -1431,7 +1431,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ms_me_is_prod =
             self.0.h_tr_is.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
 
-        let mut den: T;
+        let den: T;
         let sensitivity: T;
         let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
             if self.0.num_zones > 1 {
@@ -1504,7 +1504,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Correct formula: num_rest = term_rest_1 * (phi_ia + h_ext * outdoor_temp) + h_tr_floor * t_g
         // Note: derived_ground_coeff = term_rest_1 * h_tr_floor, so we need to divide by term_rest_1
         // before multiplying, or add the ground term separately after the multiplication.
-        let h_tr_floor_ref = self.0.h_tr_floor.as_ref();
+        let _h_tr_floor_ref = self.0.h_tr_floor.as_ref();
 
         // Start with phi_ia_with_iz
         let mut sum_term = phi_ia_with_iz;
@@ -1569,7 +1569,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // DEBUG: Save values for 900FF before they're consumed
-        let debug_900ff = if self.0.case_id == "900FF" && timestep % 24 == 0 {
+        let debug_900ff = if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
             let den_vals = den.as_ref();
             let num_tm_vals = num_tm.as_ref();
             let num_rest_vals = num_rest_with_iz.as_ref();
@@ -1606,7 +1606,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
 
         // DEBUG: Print sensitivity and HVAC details for Case 900
-        if self.0.case_id == "900" && timestep % 24 == 0 {
+        if self.0.case_id == "900" && timestep.is_multiple_of(24) {
             let sens_vec = sensitivity.as_ref();
             let t_vec = t_i_free.as_ref();
             let heating_threshold =
@@ -1964,7 +1964,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             / total_cap;
 
         // DEBUG: Print t_i_act before storing
-        if self.0.case_id == "900FF" && timestep % 24 == 0 {
+        if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
             let t_i_act_vals = t_i_act.as_ref();
             eprintln!(
                 "DEBUG_900FF_STORE t={} t_i_act[0]={:.2}",
