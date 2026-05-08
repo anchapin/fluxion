@@ -9,9 +9,7 @@ mod tests {
     use super::{StepParameters, ThermalModel};
     use crate::ai::surrogate::SurrogateManager;
     use crate::physics::cta::VectorField;
-    use crate::sim::boundary::ConstantGroundTemperature;
     use crate::sim::schedule::DailySchedule;
-    use crate::validation::ashrae_140_cases::{ASHRAE140Case, GeometrySpec};
 
     #[test]
     fn test_thermal_model_creation() {

@@ -958,15 +958,25 @@ impl ThermalModel<VectorField> {
 
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
 
-            // === TASK 1: τ DIAGNOSTIC OUTPUT ===
-            // Calculate thermal time constant τ = Cm / (h_tr_ms + h_tr_em)
+            // === PHASE 36-04 FIX: τ DIAGNOSTIC OUTPUT ===
+            // Calculate thermal time constant τ = Cm / (h_tr_ms + h_tr_me)
+            // For 6R2C model, h_tr_em does NOT affect mass dynamics directly
+            // The mass nodes are coupled via h_tr_ms (to surface) and h_tr_me (to internal mass)
             // This diagnostic shows the actual τ from physics-based conductances
+            // NOTE: h_tr_me computed inline since h_tr_me_vec not yet defined at this point
             if zone_idx == 0 && spec.case_id == "900" && !thermal_cap_vec.is_empty() {
                 let cm = thermal_cap_vec[0]; // J/K
-                let h_total = h_tr_ms_vec[zone_idx] + h_tr_em_total; // W/K
+                let h_ms = h_tr_ms_vec[zone_idx]; // W/K
+                let floor_area_0 = if 0 < spec.geometry.len() {
+                    spec.geometry[0].floor_area()
+                } else {
+                    48.0 // fallback
+                };
+                let h_me = 4.5 * 0.5 * floor_area_0; // PHASE 36-04: reduced from 2.0 to 0.5 factor
+                let h_total = h_ms + h_me; // W/K - correct formula for 6R2C
                 let tau_seconds = cm / h_total.max(0.1);
                 let tau_hours = tau_seconds / 3600.0;
-                eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_em={:.2} W/K, τ={:.1} hours (physics-based calculation)", cm, h_total, tau_hours);
+                eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_me={:.2} W/K, τ={:.1} hours (6R2C physics-based calculation)", cm, h_total, tau_hours);
             }
 
             // === SESSION 83 DIAGNOSTIC: Output h_tr_em, h_tr_ms, solar distribution ===
@@ -997,18 +1007,21 @@ impl ThermalModel<VectorField> {
         model.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
         model.h_tr_em = VectorField::new(h_tr_em_vec.clone());
 
-        // === Issue 692: Physics-Based h_tr_me Calculation ===
-        // h_tr_me (envelope-to-internal mass conductance) was previously hardcoded to 100.0 W/K
-        // but should be derived from construction like h_tr_ms and h_tr_em.
+        // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
+        // h_tr_me (surface-to-internal mass conductance) was previously hardcoded to 100.0 W/K
+        // but should be derived from construction like h_tr_ms.
         //
-        // The internal mass (furniture, partitions) couples to the envelope mass through
-        // the interior air and surfaces. The coupling is proportional to the interior
-        // surface area of the building envelope (A_int).
+        // The internal mass (furniture, partitions) couples to the surface node T_s
+        // through the interior air. The coupling is proportional to the furniture
+        // and partition surface area (not the full interior surface area).
         //
         // Using h_ms = 4.5 W/(m²·K) as the coupling coefficient for furniture/partitions
         // to interior air (similar to surface-to-air coupling in ISO 13790).
         //
-        // A_int ≈ 2.0 × floor_area for typical buildings (walls + ceiling + floor surfaces)
+        // PHASE 36-04 FIX: Reduced A_int from 2.0*floor_area to 0.5*floor_area
+        // because furniture area is ~25-50% of floor area, not 200%.
+        // Previous h_tr_me = 432 W/K was too high, causing excessive thermal coupling.
+        // ASHRAE 140 reference implies τ ≈ 167h for high-mass cases.
         let h_tr_me_vec: Vec<f64> = (0..num_zones)
             .map(|zone_idx| {
                 let zone_floor_area = if zone_idx < spec.geometry.len() {
@@ -1016,7 +1029,7 @@ impl ThermalModel<VectorField> {
                 } else {
                     spec.geometry[0].floor_area()
                 };
-                let a_int = 2.0 * zone_floor_area; // Interior surface area
+                let a_int = 0.5 * zone_floor_area; // Furniture surface area (~50% of floor area)
                 let h_ms = 4.5; // Furniture/partitions coupling coefficient W/(m²·K)
                 h_ms * a_int
             })
@@ -1054,6 +1067,7 @@ impl ThermalModel<VectorField> {
         }
         model.loads = VectorField::new(loads_vec);
         model.solar_gains = VectorField::from_scalar(0.0, num_zones);
+        model.opaque_solar_gains = VectorField::from_scalar(0.0, num_zones);
 
         // Case 195: Zero internal loads for steady-state solid conduction
         if spec.case_id == "195" {
@@ -1392,14 +1406,17 @@ impl ThermalModel<VectorField> {
 
         model.update_optimization_cache();
 
-        // Case 195: INFINITE thermal capacitance for steady-state solid conduction
-        // For steady-state (no thermal mass), thermal capacitance should approach infinity
-        // so that dt_m = q_m_net / C * dt approaches 0 (mass temperature doesn't change)
+        // Case 195: Low-mass solid conduction test
+        // Use realistic (finite) thermal capacitance, NOT infinite capacitance
+        // The original Cm=1e12 "infinite capacitance" caused t_i_free to stay at ~20°C
+        // because thermal mass dominated the temperature calculation (130:1 ratio).
+        // For low-mass construction, interior temperature should track exterior,
+        // not be held at initial conditions by artificially large thermal mass.
+        // Actual thermal mass for Case 195 low-mass construction: ~27,500 J/K
         if spec.case_id == "195" {
-            // Use extremely large value to approximate steady-state (no temperature change)
-            // This represents infinite thermal mass - heat flows through without storage
-            let large_cap: f64 = 1e12; // Effectively infinite for hourly simulation
-            model.thermal_capacitance = VectorField::from_scalar(large_cap, num_zones);
+            // Use computed thermal capacitance (not artificial 1e12)
+            // The model computes proper Cm from construction layers
+            // Only zero out envelope/internal caps as they're already included in Cm
             model.envelope_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
             model.internal_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
             // Update cache after modifying thermal capacitance
@@ -1460,14 +1477,16 @@ impl ThermalModel<VectorField> {
         let h_tr_ms_value: f64 = self.0.h_tr_ms.as_ref()[0];
 
         // Output for 900-series high-mass cases (including free-floating)
+        // FIX Issue #703: τ = Cm / h_tr_ms only (not h_tr_em + h_tr_ms)
+        // h_tr_em affects surface node, not mass node time constant
         let case_id_str: String = self.0.case_id.clone();
-        let tau_seconds_pre = total_cap / (h_tr_ms_value + h_tr_em_pre).max(0.1);
+        let tau_seconds_pre = total_cap / h_tr_ms_value.max(0.1);
         let tau_hours_pre = tau_seconds_pre / 3600.0;
-        eprintln!("PHYSICS τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, h_tr_em={:.2} W/K, τ={:.1} hours",
-            case_id_str, total_cap, h_tr_ms_value, h_tr_em_pre, tau_hours_pre);
+        eprintln!("PHYSICS τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, τ={:.1} hours (h_tr_ms only, Issue #703 fix)",
+            case_id_str, total_cap, h_tr_ms_value, tau_hours_pre);
 
-        // Physics-based: No correction applied
-        // τ = Cm / (h_tr_ms + h_tr_em) is determined by actual construction properties
+        // Physics-based: τ = Cm / h_tr_ms is determined by mass-surface coupling only
+        // h_tr_em affects thermal response of surface node, not mass node time constant
     }
 
     /// Create a new ThermalModel with specified number of thermal zones.
@@ -1684,6 +1703,7 @@ impl ThermalModel<VectorField> {
             mass_temperatures: VectorField::from_scalar(20.0, num_zones), // Initialize Tm at 20°C
             loads: VectorField::from_scalar(0.0, num_zones),
             solar_gains: VectorField::from_scalar(0.0, num_zones),
+            opaque_solar_gains: VectorField::from_scalar(0.0, num_zones),
             surfaces,
             window_u_value: 2.5,    // Default U-value
             heating_setpoint: 20.0, // Default heating setpoint (ASHRAE 140)

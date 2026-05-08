@@ -70,6 +70,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             let power = match mode {
                 HVACMode::Heating => {
+                    // Temperature deficit relative to target at top of deadband
                     let target_temp =
                         self.0.heating_setpoint + self.0.hvac_controller.deadband_tolerance;
                     let temp_deficit = target_temp - t;
@@ -607,6 +608,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let loads_ref = self.0.loads.as_ref();
         let solar_ref = self.0.solar_gains.as_ref();
+        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
         let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
@@ -616,32 +618,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
+            let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
 
             // Internal gains: convective to air, radiative split between surface and mass
-            // Solar also directly heats zone air (via solar_distribution_to_air)
+            // Solar distribution must conserve energy (sum to 1.0)
             let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let remaining_sol = sol_w - sol_to_air;
             phi_ia_data.push(load_w * conv_frac + sol_to_air);
-            phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
-            phi_m_data.push(load_w * m_int_frac + sol_w * m_sol_frac);
+            phi_st_data.push(load_w * st_int_frac + remaining_sol * st_sol_frac);
+            phi_m_data.push(load_w * m_int_frac + remaining_sol * m_sol_frac + opaque_sol_w);
         }
 
         let phi_ia = T::from(VectorField::new(phi_ia_data));
         let phi_st = T::from(VectorField::new(phi_st_data));
         let phi_m = T::from(VectorField::new(phi_m_data));
 
-        // === FIX D1: Calculate sol-air temperature for exterior surface ===
-        // Per ISO 13790, exterior surface temperature is affected by solar radiation
-        // T_sol-air = T_outdoor + (α × I_sol / h_se)
-        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
-        use crate::physics::constants::thermal::ashrae_140::v2023::{
-            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
-        };
-        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
-        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
+        // Use outdoor_temp directly. Solar gains on opaque surfaces are already included in phi_m.
         let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
-        for i_sol in solar_ref.iter().take(self.0.num_zones) {
-            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
-            t_sol_air_data.push(t_sol_air_zone);
+        for _ in 0..self.0.num_zones {
+            t_sol_air_data.push(outdoor_temp);
         }
         let t_sol_air = VectorField::new(t_sol_air_data.clone());
 
@@ -904,10 +899,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             *n += g * t_g;
         }
 
+        // DEBUG: Commented out for production - uncomment when diagnosing Case 195
+        // let num_tm_val = num_tm.as_ref()[0];
+        // let num_phi_st_val = num_phi_st.as_ref()[0];
+        // let num_rest_val = num_rest_with_iz.as_ref()[0];
+        // let den_val = den.as_ref()[0];
+
         let mut t_i_free = num_tm;
         t_i_free.add_assign(&num_phi_st);
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
+
+        if self.0.case_id == "900FF" && timestep % 24 == 0 {
+            eprintln!(
+                "DEBUG {} timestep {} t_i_free[0]={:.2}°C",
+                self.0.case_id,
+                timestep,
+                t_i_free.as_ref()[0]
+            );
+        }
+
+        // DEBUG: Case 195 thermal diagnostics - uncomment to debug heating issues
+        // if self.0.case_id == "195" && timestep < 1000 {
+        //     let t_i_free_val = t_i_free.as_ref()[0];
+        //     let mass_temp = self.0.mass_temperatures.as_ref()[0];
+        //     let heating_threshold = self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
+        //     eprintln!(
+        //         "DEBUG_195 t={} t_i_free={:.2}°C heating_thresh={:.2}°C num_tm={:.1} num_phi_st={:.1} num_rest={:.1} den={:.1} T_mass={:.2}°C",
+        //         timestep, t_i_free_val, heating_threshold, num_tm_val, num_phi_st_val, num_rest_val, den_val, mass_temp
+        //     );
+        // }
 
         // 2.5. Predictive Control Calculation (Plan 15-04, 15-06)
         // Calculate temperature rate (dT/dt) for predictive control using thermal inertia
@@ -1110,18 +1131,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // For 600-series (low-mass): t_i_free responds quickly, use sensitivity-based HVAC effect
         // For 900-series (high-mass): t_i_free is heavily buffered, use ideal_loads HVAC effect
-        let use_sensitivity_hvac = self.0.case_id.starts_with("6") && self.0.case_id.len() == 3;
-
-        // Choose HVAC output for temperature calculation based on case type
-        let hvac_for_temp_calc = if use_sensitivity_hvac {
-            // For low-mass cases, sensitivity-based HVAC gives ~2824W (vs ~371W IdealLoads)
-            // This properly accounts for thermal mass buffering effect
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone())
-        } else {
-            // For high-mass cases, IdealLoads-based HVAC is appropriate
-            // The higher thermal mass means zone temp responds slower
-            hvac_output_raw.clone()
-        };
+        // ALWAYS use sensitivity-based HVAC calculation for temperature update
+        // This properly accounts for all heat gains/losses and thermal mass buffering effect
+        let hvac_for_temp_calc =
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone());
 
         // Compute temperature update using energy balance superposition
         // t_i_act = t_i_free + sensitivity * hvac_output (superposition principle)
@@ -1413,30 +1426,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             h_ext_base
         };
 
-        // Recalculate sensitivity tensor at each timestep (Issue #301, #366)
-        // For 6R2C model with variable infiltration/ventilation, sensitivity changes
-        // as h_ext changes. We recalculate at each timestep for accuracy.
-        // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
-        // Issue #351: Include inter-zone conductance in sensitivity calculation
+        // 6R2C specific terms
+        let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
+        let h_ms_me_is_prod =
+            self.0.h_tr_is.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
+
         let mut den: T;
         let sensitivity: T;
-        if let Some(ref mod_h_ext) = modified_h_ext {
-            let h_total_with_iz = if self.0.num_zones > 1 {
-                // Include both conductive and radiative inter-zone conductance
+        let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
+            if self.0.num_zones > 1 {
                 mod_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
             } else {
                 mod_h_ext.clone()
-            };
-            den = self.0.derived_h_ms_is_prod.clone();
-            let mut term = term_rest_1.clone();
-            term.mul_assign(&h_total_with_iz);
-            den.add_assign(&term);
-            den.add_assign(&self.0.derived_ground_coeff);
-            sensitivity = term_rest_1.clone() / den.clone();
+            }
         } else {
-            den = self.0.derived_den.clone();
-            sensitivity = self.0.derived_sensitivity.clone();
+            if self.0.num_zones > 1 {
+                self.0.derived_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
+            } else {
+                self.0.derived_h_ext.clone()
+            }
         };
+
+        // Issue 693 fix: ground coupling coefficient in 6R2C sensitivity
+        let ground_coeff_6r2c = h_sum.clone() * self.0.h_tr_floor.clone();
+        den = h_ms_me_is_prod.clone()
+            + h_sum.clone() * h_total_with_iz.clone()
+            + ground_coeff_6r2c.clone();
+        sensitivity = h_sum.clone() / den.clone();
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
@@ -1500,31 +1516,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Start with phi_ia_with_iz
         let mut sum_term = phi_ia_with_iz;
 
-        // Add CTF net contribution if enabled (but NOT when ctf_primary — CTF T_si drives mass update instead)
         if let Some(ctf_fluxes) = &ctf_flux_w {
-            if !self.0.ctf_primary {
-                let slice = sum_term.as_mut();
-                for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
-                    if i < slice.len() {
-                        let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
-                        let q_ctf = q_flux * area;
-                        let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                        let t_mass = self
-                            .0
-                            .envelope_mass_temperatures
-                            .as_ref()
-                            .get(i)
-                            .copied()
-                            .unwrap_or(20.0);
-                        let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
-                        let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
-                        let net_ctf_flux = q_ctf - q_5r1c;
-                        slice[i] += net_ctf_flux;
-                        if net_ctf_flux > 0.0 {
-                            self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
-                        } else {
-                            self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
-                        }
+            let slice = sum_term.as_mut();
+            for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
+                if i < slice.len() {
+                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let q_ctf = q_flux * area;
+                    slice[i] += q_ctf;
+                    if q_ctf > 0.0 {
+                        self.0.ctf_annual_heating_joules += q_ctf * dt;
+                    } else {
+                        self.0.ctf_annual_cooling_joules += (-q_ctf) * dt;
                     }
                 }
             }
@@ -1561,16 +1563,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for (s, h) in sum_term.as_mut().iter_mut().zip(h_ext.as_ref().iter()) {
             *s += h * outdoor_temp;
         }
-        let mut num_rest_with_iz = term_rest_1.clone();
+        let mut num_rest_with_iz = h_sum.clone();
         num_rest_with_iz.mul_assign(&sum_term);
-        // Add ground term separately (not multiplied by term_rest_1)
-        for (n, h_floor) in num_rest_with_iz
+        // Add ground term separately
+        let ground_coeff = ground_coeff_6r2c.as_ref();
+        for (n, g) in num_rest_with_iz
             .as_mut()
             .iter_mut()
-            .zip(h_tr_floor_ref.iter())
+            .zip(ground_coeff.iter())
         {
-            *n += h_floor * t_g;
+            *n += g * t_g;
         }
+
+        // DEBUG: Save values for 900FF before they're consumed
+        let debug_900ff = if self.0.case_id == "900FF" && timestep % 24 == 0 {
+            let den_vals = den.as_ref();
+            let num_tm_vals = num_tm.as_ref();
+            let num_rest_vals = num_rest_with_iz.as_ref();
+            let env_mass_vals = self.0.envelope_mass_temperatures.as_ref();
+            Some((
+                den_vals[0],
+                num_tm_vals[0],
+                num_rest_vals[0],
+                env_mass_vals[0],
+            ))
+        } else {
+            None
+        };
 
         // Calculate free-floating indoor temperature using standard 6R2C heat balance
         // (thermal mass buffering is critical for preventing temperature overshoot)
@@ -1579,12 +1598,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
+        // DEBUG: Print key values for 900FF after calculation
+        if let Some((den_val, num_tm_val, num_rest_val, env_mass_val)) = debug_900ff {
+            let t_i_free_val = t_i_free.as_ref()[0];
+            eprintln!("DEBUG_900FF t={} t_i_free={:.2} num_tm={:.2} num_rest={:.2} den={:.2} T_mass={:.2}",
+                timestep, t_i_free_val, num_tm_val, num_rest_val, den_val, env_mass_val);
+        }
+
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
         // Use sensitivity-based hvac_power_demand for 6R2C model
         // The thermodynamic hvac_demand_from_ideal_loads is designed for equipment-based HVAC
         // and produces incorrect results when applied to the simplified 6R2C thermal network
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
+
+        // DEBUG: Print sensitivity and HVAC details for Case 900
+        if self.0.case_id == "900" && timestep % 24 == 0 {
+            let sens_vec = sensitivity.as_ref();
+            let t_vec = t_i_free.as_ref();
+            let heating_threshold =
+                self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
+            let cooling_threshold =
+                self.0.cooling_setpoint + self.0.hvac_controller.deadband_tolerance;
+            eprintln!(
+                "DEBUG {} HVAC: timestep={}, t_i_free={:.2}°C, sens={:.6} K/W, heating_threshold={:.2}°C, cooling_threshold={:.2}°C",
+                self.0.case_id, timestep, t_vec[0], sens_vec[0], heating_threshold, cooling_threshold
+            );
+        }
 
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
@@ -1649,6 +1689,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
+        // PHASE 36-04 FIX: Include h_tr_me * Tm_int in surface temperature calculation
+        // The 6R2C model requires: T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
+        let h_tr_me_ref = self.0.h_tr_me.as_ref();
+        let int_mass_temps_ref = self.0.internal_mass_temperatures.as_ref();
         // SESSION 89: When ctf_primary is active, use CTF T_si (with HVAC offset) instead of lumped T_s
         let t_s_act: T = if self.0.ctf_primary {
             // Use CTF surface temp adjusted for HVAC effect
@@ -1668,28 +1712,44 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
                 T::from(VectorField::new(t_s_data))
             } else {
-                // Fallback to standard lumped T_s calculation
-                let mut ts_num_act = self.0.h_tr_ms.clone();
-                ts_num_act.mul_assign(&self.0.envelope_mass_temperatures);
-                let mut term2 = self.0.h_tr_is.clone();
-                term2.mul_assign(&t_i_act);
-                ts_num_act.add_assign(&term2);
-                ts_num_act.add_assign(&phi_st);
-                let mut ts = ts_num_act;
-                ts.div_assign(term_rest_1);
-                ts
+                // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
+                // T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
+                let h_tr_ms_data = self.0.h_tr_ms.as_ref();
+                let h_tr_is_data = self.0.h_tr_is.as_ref();
+                let t_i_act_data = t_i_act.as_ref();
+                let phi_st_data = phi_st.as_ref();
+                let env_mass_data = self.0.envelope_mass_temperatures.as_ref();
+                let term_rest_data = term_rest_1.as_ref();
+                let mut t_s_data = Vec::with_capacity(self.0.num_zones);
+                for i in 0..self.0.num_zones {
+                    let numerator = h_tr_ms_data[i] * env_mass_data[i]
+                        + h_tr_is_data[i] * t_i_act_data[i]
+                        + phi_st_data[i]
+                        + h_tr_me_ref[i] * int_mass_temps_ref[i];
+                    let denominator = term_rest_data[i] + h_tr_me_ref[i];
+                    t_s_data.push(numerator / denominator);
+                }
+                T::from(VectorField::new(t_s_data))
             }
         } else {
-            // Standard lumped model surface temperature
-            let mut ts_num_act = self.0.h_tr_ms.clone();
-            ts_num_act.mul_assign(&self.0.envelope_mass_temperatures);
-            let mut term2 = self.0.h_tr_is.clone();
-            term2.mul_assign(&t_i_act);
-            ts_num_act.add_assign(&term2);
-            ts_num_act.add_assign(&phi_st);
-            let mut ts = ts_num_act;
-            ts.div_assign(term_rest_1);
-            ts
+            // PHASE 36-04 FIX: 6R2C surface temperature with h_tr_me * Tm_int coupling
+            // T_s = (h_tr_is*T_i + h_tr_ms*Tm_env + h_tr_me*Tm_int + phi_st) / (h_tr_is + h_tr_ms + h_tr_me)
+            let h_tr_ms_data = self.0.h_tr_ms.as_ref();
+            let h_tr_is_data = self.0.h_tr_is.as_ref();
+            let t_i_act_data = t_i_act.as_ref();
+            let phi_st_data = phi_st.as_ref();
+            let env_mass_data = self.0.envelope_mass_temperatures.as_ref();
+            let term_rest_data = term_rest_1.as_ref();
+            let mut t_s_data = Vec::with_capacity(self.0.num_zones);
+            for i in 0..self.0.num_zones {
+                let numerator = h_tr_ms_data[i] * env_mass_data[i]
+                    + h_tr_is_data[i] * t_i_act_data[i]
+                    + phi_st_data[i]
+                    + h_tr_me_ref[i] * int_mass_temps_ref[i];
+                let denominator = term_rest_data[i] + h_tr_me_ref[i];
+                t_s_data.push(numerator / denominator);
+            }
+            T::from(VectorField::new(t_s_data))
         };
 
         // === FIX D1: Calculate sol-air temperature for exterior surface ===
@@ -1909,6 +1969,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             + self.0.internal_mass_temperatures.clone()
                 * self.0.internal_thermal_capacitance.clone())
             / total_cap;
+
+        // DEBUG: Print t_i_act before storing
+        if self.0.case_id == "900FF" && timestep % 24 == 0 {
+            let t_i_act_vals = t_i_act.as_ref();
+            eprintln!(
+                "DEBUG_900FF_STORE t={} t_i_act[0]={:.2}",
+                timestep, t_i_act_vals[0]
+            );
+        }
 
         self.0.temperatures = t_i_act;
 

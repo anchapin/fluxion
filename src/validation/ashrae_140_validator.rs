@@ -862,6 +862,13 @@ impl ASHRAE140Validator {
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                    // DEBUG: Print when max changes significantly
+                    if zone_0_temp > 30.0 || zone_0_temp < -20.0 {
+                        eprintln!(
+                            "DEBUG_900FF_VAL step={} zone_0_temp={:.2}",
+                            step, zone_0_temp
+                        );
+                    }
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                 }

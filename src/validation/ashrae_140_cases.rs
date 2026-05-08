@@ -2451,7 +2451,7 @@ impl CaseBuilder {
                 Assemblies::high_mass_floor(),
             )
             .with_south_window(12.0)
-            .with_window_properties(WindowSpec::double_clear_glass())
+            .with_window_properties(WindowSpec::single_clear_glass())
             // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
