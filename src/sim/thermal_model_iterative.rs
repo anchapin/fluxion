@@ -166,7 +166,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         zone_idx: usize,
         timestep: usize,
         weather: &HourlyWeatherData,
-    ) -> f64 {
+    ) -> (f64, f64) {
         // Get window properties for this zone
         let window_props = if zone_idx < self.0.window_properties.len() {
             &self.0.window_properties[zone_idx]
@@ -179,7 +179,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let (year, month, day, hour) = Self::timestep_to_date(timestep);
 
         // Calculate solar gain for each surface in the zone
-        let mut total_solar_gain = 0.0;
+        let mut total_window_gain = 0.0;
+        let mut total_opaque_gain = 0.0;
         let alpha = 0.6; // Default absorptance for ASHRAE 140
         let re = 0.034; // Exterior film resistance (m²K/W)
 
@@ -296,7 +297,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     if win_area > 0.0 && total_win_area > 0.0 {
                         let area_ratio = win_area / total_win_area;
                         let window_gain = solar_gain.total_gain_w * area_ratio;
-                        total_solar_gain += window_gain;
+                        total_window_gain += window_gain;
                     }
 
                     // 2. Opaque Solar Gain (Wall/Roof)
@@ -305,7 +306,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // Q = alpha * I * Re * U * A
                         // Scale by ratio of per-surface opaque area to total orientation opaque area
                         let area_ratio = opaque_area / total_opaque_area;
-                        total_solar_gain += opaque_area
+                        total_opaque_gain += opaque_area
                             * surface.u_value
                             * irradiance.total_wm2
                             * alpha
@@ -316,7 +317,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
-        total_solar_gain
+        (total_window_gain, total_opaque_gain)
     }
 
     /// Calculate area-weighted radiative gain distribution for a zone.
@@ -516,12 +517,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if let Some(ref weather) = self.0.weather {
                 // Calculate solar gain for each zone using weather data
                 let mut zone_solar_gains = Vec::with_capacity(self.0.num_zones);
+                let mut zone_opaque_gains = Vec::with_capacity(self.0.num_zones);
 
                 for zone_idx in 0..self.0.num_zones {
-                    let solar_gain_watts =
+                    let (window_gain_watts, opaque_gain_watts) =
                         self.calculate_zone_solar_gain(zone_idx, timestep, weather);
                     let floor_area = self.0.zone_area.as_ref()[zone_idx];
-                    zone_solar_gains.push(solar_gain_watts / floor_area);
+                    zone_solar_gains.push(window_gain_watts / floor_area);
+                    zone_opaque_gains.push(opaque_gain_watts / floor_area);
                 }
 
                 // SESSION 79: For free-floating cases, DO NOT reduce solar gains
@@ -531,12 +534,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                 // Apply zone-specific solar gains
                 self.0.solar_gains = T::from(VectorField::new(zone_solar_gains));
+                self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains));
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
                 let daily_cycle = get_daily_cycle()[hour_of_day];
                 let total_gain = (50.0 * daily_cycle).max(0.0);
                 self.0.solar_gains = self.0.temperatures.constant_like(total_gain);
+                self.0.opaque_solar_gains = self.0.temperatures.constant_like(0.0);
             }
         } else {
             self.0.loads = self.0.temperatures.constant_like(0.0);
