@@ -899,12 +899,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             *n += g * t_g;
         }
 
+        // DEBUG: Commented out for production - uncomment when diagnosing Case 195
+        // let num_tm_val = num_tm.as_ref()[0];
+        // let num_phi_st_val = num_phi_st.as_ref()[0];
+        // let num_rest_val = num_rest_with_iz.as_ref()[0];
+        // let den_val = den.as_ref()[0];
+
         let mut t_i_free = num_tm;
         t_i_free.add_assign(&num_phi_st);
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
-        // DEBUG: Print t_i_free for Case 900FF first timestep of each day
         if self.0.case_id == "900FF" && timestep % 24 == 0 {
             eprintln!(
                 "DEBUG {} timestep {} t_i_free[0]={:.2}°C",
@@ -913,6 +918,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 t_i_free.as_ref()[0]
             );
         }
+
+        // DEBUG: Case 195 thermal diagnostics - uncomment to debug heating issues
+        // if self.0.case_id == "195" && timestep < 1000 {
+        //     let t_i_free_val = t_i_free.as_ref()[0];
+        //     let mass_temp = self.0.mass_temperatures.as_ref()[0];
+        //     let heating_threshold = self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
+        //     eprintln!(
+        //         "DEBUG_195 t={} t_i_free={:.2}°C heating_thresh={:.2}°C num_tm={:.1} num_phi_st={:.1} num_rest={:.1} den={:.1} T_mass={:.2}°C",
+        //         timestep, t_i_free_val, heating_threshold, num_tm_val, num_phi_st_val, num_rest_val, den_val, mass_temp
+        //     );
+        // }
 
         // 2.5. Predictive Control Calculation (Plan 15-04, 15-06)
         // Calculate temperature rate (dT/dt) for predictive control using thermal inertia
