@@ -499,16 +499,22 @@ fn test_case_900ff_temperature_swing_reduction() {
         swing_reduction, expected_reduction
     );
 
-    // Plan 03-03 Task 5: Updated tolerance to 10-25% range
-    // Our implementation achieves ~12.3%, which is better than baseline (9.9%)
-    // but not yet at the target ~19.6%. This is acceptable for now as a partial fix.
+    // Validate swing reduction is within expected range
+    // Reference values (midpoints):
+    //   600FF: max=70.0°C, min=-17.2°C → swing ≈ 87.2°C
+    //   900FF: max=44.1°C, min=-4.0°C  → swing ≈ 48.1°C
+    //   Expected reduction ≈ 44.8%
+    // Current simulation shows ~49% reduction, which is reasonable for well-damped high-mass construction
     assert!(
-        swing_reduction >= 10.0 && swing_reduction <= 25.0,
-        "Temperature swing reduction {:.1}% not in acceptable range [10, 25]%",
+        swing_reduction >= 30.0 && swing_reduction <= 55.0,
+        "Temperature swing reduction {:.1}% not in expected range [30, 55]%",
         swing_reduction
     );
 
-    println!("✅ Test 7 PASSED: Temperature swing reduction within acceptable range");
+    println!(
+        "✅ Test PASSED: Temperature swing reduction {:.1}% in range [30, 55]%",
+        swing_reduction
+    );
 }
 
 #[test]

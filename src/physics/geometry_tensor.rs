@@ -429,7 +429,7 @@ mod tests {
     fn test_zones_adjacent_symmetry() {
         let mut tensor = GeometryTensor::new();
         // Set adjacency for zone 0 -> 1
-        let idx_01 = 0 * MAX_ZONES + 1;
+        let idx_01 = 1;
         tensor.adjacency_matrix[idx_01] = 1.0;
         // Also set reverse
         let idx_10 = 1 * MAX_ZONES + 0;
@@ -485,7 +485,7 @@ mod tests {
     fn test_validate_adjacency_asymmetry() {
         let mut tensor = GeometryTensor::new();
         // Set zone 0 -> 1 adjacency but not 1 -> 0
-        let idx_01 = 0 * MAX_ZONES + 1;
+        let idx_01 = 1;
         tensor.adjacency_matrix[idx_01] = 1.0;
         let issues = tensor.validate();
         assert!(issues.iter().any(|s| s.contains("asymmetry")));

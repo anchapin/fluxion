@@ -1472,8 +1472,7 @@ impl ThermalModel<VectorField> {
             return;
         }
 
-        // Store h_tr_em for τ calculation
-        let h_tr_em_pre: f64 = self.0.h_tr_em.as_ref()[0];
+        // Store h_tr_ms for τ calculation
         let h_tr_ms_value: f64 = self.0.h_tr_ms.as_ref()[0];
 
         // Output for 900-series high-mass cases (including free-floating)
