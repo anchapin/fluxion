@@ -1650,10 +1650,10 @@ mod tests {
         let wall = Assemblies::high_mass_wall();
         assert_eq!(wall.layer_count(), 3);
 
-        // Check layer properties
-        assert_eq!(wall.layers[0].thickness, 0.100); // Concrete
-        assert_eq!(wall.layers[1].thickness, 0.0615); // Foam (ASHRAE 140: thickness=0.0615m)
-        assert_eq!(wall.layers[2].thickness, 0.009); // Siding
+        // Check layer properties - ordered INTERIOR to EXTERIOR per ASHRAE 140 Table 7-27
+        assert_eq!(wall.layers[0].thickness, 0.009); // Wood siding (interior)
+        assert_eq!(wall.layers[1].thickness, 0.0615); // Foam (insulation)
+        assert_eq!(wall.layers[2].thickness, 0.100); // Concrete block (exterior)
     }
 
     #[test]

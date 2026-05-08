@@ -803,11 +803,8 @@ fn test_cycling_losses_startup_penalty() {
     // Verify that cycling tracker was active
     // (Note: May not have startup events in 100 timesteps depending on conditions)
     let startup_count = model.cycling_tracker.startup_count;
-    // Allow for minimal cycling in short simulation
-    assert!(startup_count >= 0, "startup_count should be non-negative");
-    // Remove useless comparison that always evaluates to true
-    #[allow(clippy::absurd_extreme_comparisons)]
-    let _ = startup_count >= 0;
+    // startup_count is a usize, always >= 0, just verify it's tracked
+    let _ = startup_count;
 
     // Verify cumulative runtime was tracked
     let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;
