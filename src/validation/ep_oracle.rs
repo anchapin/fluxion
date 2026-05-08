@@ -789,7 +789,6 @@ mod tests {
     fn test_energy_validation_very_small_reference() {
         let oracle = EPOracle::new().unwrap();
         let details = oracle.validate_energy(0.001, 0.0005);
-        assert!(details.passed || !details.passed);
         assert!(details.max_abs_error.is_finite());
     }
 

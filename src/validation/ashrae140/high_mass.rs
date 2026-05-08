@@ -235,7 +235,7 @@ mod tests {
         let simulated = vec![105.0, 115.0, 125.0];
 
         let result = validate_case(&case, &simulated);
-        // These should pass with 10% tolerance
-        assert!(result.passes || !result.passes); // Either result is valid
+        // Basic validation that result is well-formed
+        assert!(result.nmbe.is_finite() && result.cv_rmse.is_finite());
     }
 }
