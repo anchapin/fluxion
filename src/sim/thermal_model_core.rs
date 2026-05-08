@@ -1406,14 +1406,17 @@ impl ThermalModel<VectorField> {
 
         model.update_optimization_cache();
 
-        // Case 195: INFINITE thermal capacitance for steady-state solid conduction
-        // For steady-state (no thermal mass), thermal capacitance should approach infinity
-        // so that dt_m = q_m_net / C * dt approaches 0 (mass temperature doesn't change)
+        // Case 195: Low-mass solid conduction test
+        // Use realistic (finite) thermal capacitance, NOT infinite capacitance
+        // The original Cm=1e12 "infinite capacitance" caused t_i_free to stay at ~20°C
+        // because thermal mass dominated the temperature calculation (130:1 ratio).
+        // For low-mass construction, interior temperature should track exterior,
+        // not be held at initial conditions by artificially large thermal mass.
+        // Actual thermal mass for Case 195 low-mass construction: ~27,500 J/K
         if spec.case_id == "195" {
-            // Use extremely large value to approximate steady-state (no temperature change)
-            // This represents infinite thermal mass - heat flows through without storage
-            let large_cap: f64 = 1e12; // Effectively infinite for hourly simulation
-            model.thermal_capacitance = VectorField::from_scalar(large_cap, num_zones);
+            // Use computed thermal capacitance (not artificial 1e12)
+            // The model computes proper Cm from construction layers
+            // Only zero out envelope/internal caps as they're already included in Cm
             model.envelope_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
             model.internal_thermal_capacitance = VectorField::from_scalar(0.0, num_zones);
             // Update cache after modifying thermal capacitance
