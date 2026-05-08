@@ -87,7 +87,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // h_ext = h_tr_em + h_tr_w + h_ve
         // Include: opaque envelope (int air -> ext), windows (int air -> ext), ventilation
         // Note: Using h_tr_em directly instead of series calculation to avoid double-counting
-        self.0.derived_h_ext = self.0.h_tr_em.clone() + self.0.h_tr_w.clone() + self.0.h_ve.clone();
+        self.0.derived_h_ext = self.0.h_tr_w.clone() + self.0.h_ve.clone();
 
         // term_rest_1 = h_tr_ms + h_tr_is
         self.0.derived_term_rest_1 = self.0.h_tr_ms.clone() + self.0.h_tr_is.clone();
@@ -134,7 +134,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // The series combination of these paths gives the total thermal resistance
         // that the HVAC system "sees" when trying to control air temperature.
-        self.0.derived_sensitivity = self.0.temperatures.constant_like(1.0) / h_total.clone();
+        self.0.derived_sensitivity =
+            self.0.derived_term_rest_1.clone() / self.0.derived_den.clone();
 
         // Debug: Print sensitivity calculation for Case 600
         if self.0.case_id == "600" {

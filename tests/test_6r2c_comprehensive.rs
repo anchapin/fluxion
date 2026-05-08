@@ -73,13 +73,14 @@ fn test_6r2c_thermal_mass_initialization() {
         initial_mass_temp
     );
 
-    // Issue 692: Verify h_tr_me is physics-based (~432 W/K for 48m² Case 900)
-    // h_tr_me = h_ms * A_int = 4.5 W/(m²·K) * (2.0 * 48 m²) = 432 W/K
+    // Issue 692: Verify h_tr_me is physics-based (~216 W/K for 48m² Case 900)
+    // h_tr_me = h_ms * A_int = 4.5 W/(m²·K) * (0.5 * 48 m²) = 108 W/K
     // This is the physics-based value from from_spec, preserved by configure_6r2c_model
+    // PHASE 36-04: Reduced from 432 W/K (2.0*floor_area) to 108 W/K (0.5*floor_area)
     let h_tr_me = model.h_tr_me.as_ref()[0];
     assert!(
-        h_tr_me > 400.0 && h_tr_me < 500.0,
-        "h_tr_me should be physics-based (~432 W/K), got {:.1} W/K",
+        h_tr_me > 100.0 && h_tr_me < 120.0,
+        "h_tr_me should be physics-based (~108 W/K), got {:.1} W/K",
         h_tr_me
     );
 }
