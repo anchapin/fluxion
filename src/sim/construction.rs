@@ -976,12 +976,20 @@ impl Assemblies {
         ])
     }
 
-    /// High mass wall construction (ASHRAE 140 Case 900).
+    /// High mass wall construction (ASHRAE 140 Table 7-27).
+    ///
+    /// Layers ordered from INTERIOR to EXTERIOR per ASHRAE 140:
+    /// - Interior: wood_siding (12mm)
+    /// - Middle: foam insulation (61.5mm)
+    /// - Exterior: concrete block (100mm)
+    ///
+    /// The 200mm air gap in Table 7-27 refers to the cavity created by the
+    /// concrete block construction method (stacked blocks with mortar).
     pub fn high_mass_wall() -> Construction {
         Construction::new(vec![
-            Materials::concrete_block(0.100), // ASHRAE 140: k=0.51 W/mK
-            Materials::foam(0.0615),          // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m
-            Materials::wood_siding(0.009),    // ASHRAE 140: k=0.16 W/mK
+            Materials::wood_siding(0.009), // ASHRAE 140: k=0.16 W/mK (interior layer)
+            Materials::foam(0.0615), // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m (insulation)
+            Materials::concrete_block(0.100), // ASHRAE 140: k=0.51 W/mK (exterior layer)
         ])
     }
 
