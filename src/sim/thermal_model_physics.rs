@@ -1447,20 +1447,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         };
 
+        // Issue 693 fix: ground coupling coefficient in 6R2C sensitivity
         let ground_coeff_6r2c = h_sum.clone() * self.0.h_tr_floor.clone();
         den = h_ms_me_is_prod.clone()
             + h_sum.clone() * h_total_with_iz.clone()
             + ground_coeff_6r2c.clone();
         sensitivity = h_sum.clone() / den.clone();
 
+        // Use envelope mass temperature instead of single mass temperature
+        // Optimized: use zip_with to avoid double clones
+        //
+        // CTF-driven zone air heat balance (Issue #698 fix):
+        // When ctf_primary=true, the 6R2C h_tr_ms coupling is DISABLED because
+        // CTF provides the correct multi-layer conduction dynamics directly.
+        // The CTF heat flow q_ctf (computed from T_si_ctf) replaces the 6R2C h_tr_ms * t_mass term.
         let num_tm = if self.0.ctf_primary {
+            // Zero out the 6R2C coupling - CTF will drive the zone air heat balance
             self.0.derived_h_ms_is_prod.constant_like(0.0)
         } else {
-            let env_term = (self.0.h_tr_is.clone() * self.0.h_tr_ms.clone())
-                .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b);
-            let int_term = (self.0.h_tr_is.clone() * self.0.h_tr_me.clone())
-                .zip_with(&self.0.internal_mass_temperatures, |a, b| a * b);
-            env_term + int_term
+            self.0
+                .derived_h_ms_is_prod
+                .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b)
         };
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
