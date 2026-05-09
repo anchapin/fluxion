@@ -103,7 +103,6 @@ fn run_with_threads(num_threads: usize) -> Result<(), String> {
 /// =========================================================================
 /// Test Suite 1: Individual Test Execution
 /// =========================================================================
-
 /// Test 1.1: Verify ThermalModel creation passes in isolation
 #[test]
 fn test_individual_thermal_model_creation() {
@@ -188,7 +187,6 @@ fn test_individual_surrogate_manager() {
 /// =========================================================================
 /// Test Suite 2: Random Order Execution (Different Thread Counts)
 /// =========================================================================
-
 /// Test 2.1: Verify tests can run with single thread
 #[test]
 fn test_single_threaded_execution() {
@@ -465,7 +463,6 @@ fn test_multiple_tempfile_isolation() {
 /// =========================================================================
 /// Test Suite 5: ThermalModel Instance Isolation
 /// =========================================================================
-
 /// Test 5.1: Verify clone doesn't share state
 #[test]
 fn test_thermal_model_clone_isolation() {
@@ -544,7 +541,6 @@ fn test_model_state_reset() {
 /// =========================================================================
 /// Summary and Diagnostic Output
 /// =========================================================================
-
 /// Print summary of isolation verification
 #[test]
 fn test_isolation_summary() {

@@ -1129,7 +1129,7 @@ mod tests {
     #[test]
     fn test_validate_statistical_flag_accepted() {
         // Test that --statistical flag is accepted
-        let args = vec!["fluxion", "validate", "--statistical"];
+        let args = ["fluxion", "validate", "--statistical"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --statistical flag");
     }
@@ -1137,7 +1137,7 @@ mod tests {
     #[test]
     fn test_validate_alpha_flag_accepted() {
         // Test that --alpha flag is accepted
-        let args = vec!["fluxion", "validate", "--statistical", "--alpha", "0.01"];
+        let args = ["fluxion", "validate", "--statistical", "--alpha", "0.01"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --alpha flag");
     }
@@ -1145,7 +1145,7 @@ mod tests {
     #[test]
     fn test_validate_default_behavior_unchanged() {
         // Test that default behavior (no --statistical) works
-        let args = vec!["fluxion", "validate"];
+        let args = ["fluxion", "validate"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should work without --statistical flag");
 
@@ -1157,7 +1157,7 @@ mod tests {
     #[test]
     fn test_validate_statistical_flag_sets_true() {
         // Test that --statistical flag sets statistical to true
-        let args = vec!["fluxion", "validate", "--statistical"];
+        let args = ["fluxion", "validate", "--statistical"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --statistical flag");
 
@@ -1169,7 +1169,7 @@ mod tests {
     #[test]
     fn test_validate_alpha_default_value() {
         // Test that --alpha has default value of 0.05
-        let args = vec!["fluxion", "validate", "--statistical"];
+        let args = ["fluxion", "validate", "--statistical"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --statistical flag");
 
@@ -1181,7 +1181,7 @@ mod tests {
     #[test]
     fn test_validate_alpha_custom_value() {
         // Test that --alpha accepts custom values
-        let args = vec!["fluxion", "validate", "--statistical", "--alpha", "0.01"];
+        let args = ["fluxion", "validate", "--statistical", "--alpha", "0.01"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --alpha flag");
 
@@ -1194,7 +1194,7 @@ mod tests {
     fn test_validate_alpha_boundary_values() {
         // Test that --alpha accepts boundary values 0.0 and 1.0
         for alpha_val in ["0.0", "1.0"] {
-            let args = vec!["fluxion", "validate", "--statistical", "--alpha", alpha_val];
+            let args = ["fluxion", "validate", "--statistical", "--alpha", alpha_val];
             let cli = Cli::try_parse_from(args.iter());
             assert!(cli.is_ok(), "CLI should accept alpha={}", alpha_val);
 
@@ -1208,7 +1208,7 @@ mod tests {
     #[test]
     fn test_validate_alpha_too_large_rejected() {
         // Test that alpha > 1.0 is rejected
-        let args = vec!["fluxion", "validate", "--statistical", "--alpha", "1.5"];
+        let args = ["fluxion", "validate", "--statistical", "--alpha", "1.5"];
         let cli = Cli::try_parse_from(args.iter());
         // This test verifies CLI parsing only; runtime validation is separate
         assert!(
@@ -1220,7 +1220,7 @@ mod tests {
     #[test]
     fn test_validate_statistical_flag_integration() {
         // Test that --statistical flag integrates with other flags
-        let args = vec![
+        let args = [
             "fluxion",
             "validate",
             "--statistical",
@@ -1251,7 +1251,7 @@ mod tests {
     #[test]
     fn test_validate_without_statistical_backward_compatible() {
         // Test that validation works without --statistical flag
-        let args = vec!["fluxion", "validate", "--format", "csv"];
+        let args = ["fluxion", "validate", "--format", "csv"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should work without --statistical");
 

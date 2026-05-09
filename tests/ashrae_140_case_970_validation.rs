@@ -23,6 +23,7 @@ mod reference {
     // Constants removed as they were unused
 }
 
+#[allow(dead_code)]
 /// Validates energy values against reference ranges
 fn validate_energy_against_reference(
     actual: f64,

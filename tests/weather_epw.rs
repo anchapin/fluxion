@@ -22,7 +22,7 @@ fn test_epw_version_debug() {
 #[test]
 fn test_epw_version_clone() {
     let v2 = EpwVersion::V2;
-    let cloned = v2.clone();
+    let cloned = v2; // Copy trait, no clone needed
     assert_eq!(v2, cloned);
 }
 

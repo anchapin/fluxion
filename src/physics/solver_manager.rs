@@ -413,6 +413,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_step() {
         let mut manager = SolverManager::with_threshold(10.0); // Force 5R1C
 
@@ -482,6 +483,7 @@ mod tests {
     // === Phase 3: Additional coverage tests ===
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_get_solver_mut() {
         let mut manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
@@ -498,6 +500,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_get_solver() {
         let _manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
@@ -513,6 +516,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_get_solver_not_found() {
         let manager = SolverManager::default();
 
@@ -525,6 +529,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_energy_storage_rate() {
         let mut manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
@@ -540,6 +545,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_energy_storage_rate_not_found() {
         let manager = SolverManager::default();
 
@@ -615,6 +621,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_step_invalid_wall() {
         let mut manager = SolverManager::default();
 

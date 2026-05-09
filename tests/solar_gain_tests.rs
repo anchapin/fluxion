@@ -16,9 +16,8 @@
 // which doesn't match the expected assertions
 
 use fluxion::weather::denver::DenverTmyWeather;
-use serde_json;
 
-const SQRT_2: f64 = std::f64::consts::SQRT_2;
+const _SQRT_2: f64 = std::f64::consts::SQRT_2;
 
 #[derive(Debug)]
 struct EnergyPlusReference {
@@ -69,13 +68,14 @@ impl EnergyPlusReference {
         self.cooling_energy_wh.iter().sum::<f64>() / 1000.0
     }
 
-    fn annual_solar_mwh(&self) -> f64 {
+    fn _annual_solar_mwh(&self) -> f64 {
         self.solar_rate_total_w.iter().sum::<f64>() / 1000.0 / 8760.0 // W -> Wh -> kWh -> MWh
     }
 }
 
 /// Load Denver TMY weather data for solar calculations
-fn load_weather() -> DenverTmyWeather {
+#[allow(dead_code)]
+fn _load_weather() -> DenverTmyWeather {
     // This would load the actual weather file
     // For now, we'll create a minimal test weather object
     DenverTmyWeather::new()
@@ -85,8 +85,8 @@ fn load_weather() -> DenverTmyWeather {
 mod tests {
     use super::*;
 
-    const SOLAR_TOLERANCE: f64 = 0.01; // 1% tolerance
-    const ENERGY_TOLERANCE: f64 = 0.05; // 5% tolerance
+    const _SOLAR_TOLERANCE: f64 = 0.01; // 1% tolerance
+    const _ENERGY_TOLERANCE: f64 = 0.05; // 5% tolerance
 
     // Test 1: Verify EnergyPlus reference data validity
     #[test]
@@ -123,12 +123,12 @@ mod tests {
         // EnergyPlus reference from energyplus_reference_data.json:
         // Heating: 1.661 MWh, Cooling: 2.497 MWh
         assert!(
-            heating_mwh >= 1.6 && heating_mwh <= 1.7,
+            (1.6..=1.7).contains(&heating_mwh),
             "Heating should be ~1.66 MWh, got {:.3} MWh",
             heating_mwh
         );
         assert!(
-            cooling_mwh >= 2.4 && cooling_mwh <= 2.6,
+            (2.4..=2.6).contains(&cooling_mwh),
             "Cooling should be ~2.50 MWh, got {:.3} MWh",
             cooling_mwh
         );
@@ -172,14 +172,14 @@ mod tests {
         // Note: EnergyPlus uses UTC, so adjust for Denver time zone (-7 hours)
         // Hour 18 in UTC = 11 AM MST
         assert!(
-            max_hour >= 17 && max_hour <= 19,
+            (17..=19).contains(&max_hour),
             "Max solar should occur around noon UTC (hours 17-19), got hour {}",
             max_hour
         );
 
         // Max solar should be reasonable (500-600 W for Denver)
         assert!(
-            max_solar > 400.0 && max_solar < 700.0,
+            (400.0..=700.0).contains(&max_solar),
             "Max solar should be 400-700 W, got {:.2} W",
             max_solar
         );
@@ -391,12 +391,12 @@ mod tests {
             .collect();
 
         // Night (hours 0-5): should be zero
-        for i in 0..6 {
+        for (i, &val) in day_hours.iter().take(6).enumerate() {
             assert!(
-                day_hours[i] < 10.0,
+                val < 10.0,
                 "Solar should be near zero at night hour {}, got {:.2} W",
                 i,
-                day_hours[i]
+                val
             );
         }
 

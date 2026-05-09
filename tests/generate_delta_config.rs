@@ -13,7 +13,7 @@ fn generate_delta_yaml() {
         ),
         (
             serde_yaml::Value::String("patch".into()),
-            serde_yaml::to_value(&serde_yaml::Mapping::from_iter([(
+            serde_yaml::to_value(serde_yaml::Mapping::from_iter([(
                 serde_yaml::Value::String("infiltration_ach".into()),
                 serde_yaml::to_value(1.5).unwrap(),
             )]))
@@ -32,7 +32,7 @@ fn generate_delta_yaml() {
         ),
         (
             serde_yaml::Value::String("patch".into()),
-            serde_yaml::to_value(&serde_yaml::Mapping::from_iter([(
+            serde_yaml::to_value(serde_yaml::Mapping::from_iter([(
                 serde_yaml::Value::String("infiltration_ach".into()),
                 serde_yaml::to_value(0.5).unwrap(),
             )]))
@@ -55,7 +55,7 @@ fn generate_delta_yaml() {
         ),
         (
             serde_yaml::Value::String("sweep".into()),
-            serde_yaml::to_value(&serde_yaml::Mapping::from_iter([(
+            serde_yaml::to_value(serde_yaml::Mapping::from_iter([(
                 serde_yaml::Value::String("window_u_value".into()),
                 serde_yaml::to_value(vec![2.0, 3.0, 4.0]).unwrap(),
             )]))

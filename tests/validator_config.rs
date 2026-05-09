@@ -111,7 +111,7 @@ fn test_reference_program_enum() {
 fn test_reference_program_clone() {
     use fluxion::validation::report::ReferenceProgram;
     let p1 = ReferenceProgram::EnergyPlus;
-    let p2 = p1.clone();
+    let p2 = p1;
     assert_eq!(p1, p2);
 }
 
@@ -136,7 +136,7 @@ fn test_window_spec_factories() {
 fn test_window_spec_clone() {
     use fluxion::validation::ashrae_140_cases::WindowSpec;
     let spec = WindowSpec::double_clear_glass();
-    let cloned = spec.clone();
+    let cloned = spec;
     assert!((spec.u_value - cloned.u_value).abs() < 0.01);
 }
 

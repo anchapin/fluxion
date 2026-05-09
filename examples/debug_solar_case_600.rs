@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 use fluxion::sim::engine::ThermalModel;
-use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, Orientation};
+use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
 use fluxion::weather::WeatherSource;
 
@@ -40,7 +40,7 @@ fn main() {
     );
 
     // Check surfaces
-    if let Some(surfaces) = model.surfaces.get(0) {
+    if let Some(surfaces) = model.surfaces.first() {
         for (i, s) in surfaces.iter().enumerate() {
             println!(
                 "Surface {}: Orient={:?}, Area={:.1}, Window={:.1}",

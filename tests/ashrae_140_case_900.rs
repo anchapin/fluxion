@@ -36,8 +36,7 @@ use fluxion::weather::WeatherSource;
 /// - Peak Cooling: 2.10 - 3.50 kW
 /// - Free-Floating Min: -6.40 to -1.60°C
 /// - Free-Floating Max: 41.80 to 46.40°C
-
-/// Reference ranges for Case 900 (ASHRAE 140)
+///   Reference ranges for Case 900 (ASHRAE 140)
 #[derive(Debug, Clone)]
 struct Case900Reference {
     /// Annual heating energy (MWh)
@@ -76,9 +75,6 @@ const CASE_900_REFERENCE: Case900Reference = Case900Reference {
 /// Tolerance for annual energy validation (±15% as per ASHRAE 140)
 const ANNUAL_ENERGY_TOLERANCE: f64 = 0.15;
 
-/// Tolerance for monthly energy validation (±10% as per ASHRAE 140)
-const MONTHLY_ENERGY_TOLERANCE: f64 = 0.10;
-
 /// Tolerance for peak loads (±10% as per ASHRAE 140)
 const PEAK_LOAD_TOLERANCE: f64 = 0.10;
 
@@ -87,9 +83,6 @@ const TEMP_TOLERANCE: f64 = 0.05;
 
 /// Convert energy from J to MWh (1 MWh = 3.6e9 J)
 const J_TO_MWH: f64 = 1.0 / 3.6e9;
-
-/// Convert power from W to kW (1 kW = 1000 W)
-const W_TO_KW: f64 = 1.0 / 1000.0;
 
 /// Simulate Case 900 for 1 year with HVAC
 /// Returns: (annual_heating_J, annual_cooling_J, peak_heating_W, peak_cooling_W)
@@ -155,7 +148,7 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
 
         // Track summer solar gains (June-August)
         let month = fluxion::sim::engine::ThermalModel::<VectorField>::timestep_to_date(step).1;
-        if month >= 6 && month <= 8 {
+        if (6..=8).contains(&month) {
             summer_solar_gain += solar_gain_watts;
             summer_hours += 1;
         }
@@ -164,7 +157,7 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         if let Some(&zone_temp) = model.temperatures.as_slice().first() {
             min_zone_temp = min_zone_temp.min(zone_temp);
             max_zone_temp = max_zone_temp.max(zone_temp);
-            if month >= 6 && month <= 8 {
+            if (6..=8).contains(&month) {
                 summer_min_zone_temp = summer_min_zone_temp.min(zone_temp);
                 summer_max_zone_temp = summer_max_zone_temp.max(zone_temp);
             }
@@ -506,7 +499,7 @@ fn test_case_900ff_temperature_swing_reduction() {
     //   Expected reduction ≈ 44.8%
     // Current simulation shows ~49% reduction, which is reasonable for well-damped high-mass construction
     assert!(
-        swing_reduction >= 30.0 && swing_reduction <= 55.0,
+        (30.0..=55.0).contains(&swing_reduction),
         "Temperature swing reduction {:.1}% not in expected range [30, 55]%",
         swing_reduction
     );
@@ -549,7 +542,7 @@ fn test_case_900_annual_cooling_energy_with_correction() {
 
     // Verify annual cooling energy is within reference range
     assert!(
-        cooling_mwh >= 2.13 && cooling_mwh <= 3.67,
+        (2.13..=3.67).contains(&cooling_mwh),
         "Annual cooling energy {:.2} MWh not in reference range [2.13, 3.67] MWh",
         cooling_mwh
     );
@@ -1122,7 +1115,7 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     println!("\nCase 600FF (low-mass):");
     println!("  Result: Min={:.2}°C, Max={:.2}°C", min_600, max_600);
     println!("  Reference: [64.9, 75.1]°C");
-    let in_range_600 = max_600 >= 64.9 && max_600 <= 75.1;
+    let in_range_600 = (64.9..=75.1).contains(&max_600);
     println!(
         "  Status: {}",
         if in_range_600 {
@@ -1135,7 +1128,7 @@ fn test_case_600ff_vs_900ff_paired_comparison() {
     println!("\nCase 900FF (high-mass):");
     println!("  Result: Min={:.2}°C, Max={:.2}°C", min_900, max_900);
     println!("  Reference: [41.8, 46.4]°C");
-    let in_range_900 = max_900 >= 41.80 && max_900 <= 46.40;
+    let in_range_900 = (41.80..=46.40).contains(&max_900);
     println!(
         "  Status: {}",
         if in_range_900 {
@@ -1233,7 +1226,7 @@ fn test_900_series_regression() {
 
         // Get benchmark data for this case
         let benchmark_data = benchmark::get_benchmark_data(case_id)
-            .expect(&format!("No benchmark data for case {}", case_id));
+            .unwrap_or_else(|| panic!("No benchmark data for case {}", case_id));
 
         // Check if this is a free-floating case
         let is_free_floating = spec.is_free_floating();

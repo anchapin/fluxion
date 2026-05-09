@@ -117,7 +117,7 @@ mod tests {
         if let Some(&first) = all_names.first() {
             let construction = lib
                 .get(first)
-                .expect(&format!("Assembly '{}' should be retrievable", first));
+                .expect("should be able to retrieve known assembly");
             // Validate construction has at least one layer
             assert!(!construction.layers.is_empty());
         }

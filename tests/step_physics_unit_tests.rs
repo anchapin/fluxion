@@ -62,7 +62,7 @@ fn test_step_physics_reasonable_range_case_600() {
         // HVAC demand should be within ±100 kWh per hour for a small building
         // (equivalent to ±100 kW, which is very generous for a 20m² zone)
         assert!(
-            hvac_kwh >= -100.0 && hvac_kwh <= 100.0,
+            (-100.0..=100.0).contains(&hvac_kwh),
             "Case 600 step_physics returned extreme value {:.2} kWh at outdoor_temp {:.1}°C",
             hvac_kwh,
             outdoor_temp
@@ -82,7 +82,7 @@ fn test_step_physics_reasonable_range_case_900() {
 
         // HVAC demand should be within ±100 kWh per hour
         assert!(
-            hvac_kwh >= -100.0 && hvac_kwh <= 100.0,
+            (-100.0..=100.0).contains(&hvac_kwh),
             "Case 900 step_physics returned extreme value {:.2} kWh at outdoor_temp {:.1}°C",
             hvac_kwh,
             outdoor_temp

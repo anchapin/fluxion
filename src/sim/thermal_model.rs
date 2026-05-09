@@ -817,9 +817,9 @@ mod tests {
     #[test]
     fn test_builder_mode_sets_use_surrogates() {
         let builder = ThermalModelBuilder::new().mode(ThermalModelMode::Surrogate);
-        assert_eq!(builder.use_surrogates, true);
+        assert!(builder.use_surrogates);
         let builder = ThermalModelBuilder::new().mode(ThermalModelMode::Physics);
-        assert_eq!(builder.use_surrogates, false);
+        assert!(!builder.use_surrogates);
     }
 
     #[test]
@@ -850,7 +850,10 @@ mod tests {
     #[test]
     fn test_thermal_model_result_type() {
         let result: ThermalModelResult<i32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert!(result.is_ok());
+        if let Ok(val) = result {
+            assert_eq!(val, 42);
+        }
         let err: ThermalModelResult<i32> = Err("test error".into());
         assert!(err.is_err());
     }
