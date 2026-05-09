@@ -84,10 +84,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _h_tr_is_ms_series = (self.0.h_tr_is.clone() * self.0.h_tr_ms.clone())
             / (self.0.h_tr_is.clone() + self.0.h_tr_ms.clone());
 
-        // h_ext = h_tr_em + h_tr_w + h_ve
-        // Include: opaque envelope (int air -> ext), windows (int air -> ext), ventilation
-        // Note: Using h_tr_em directly instead of series calculation to avoid double-counting
-        self.0.derived_h_ext = self.0.h_tr_em.clone() + self.0.h_tr_w.clone() + self.0.h_ve.clone();
+// h_ext = h_tr_w + h_ve + south wall series + non-south opaque envelope
+        // Issue #715: South wall has insulation creating a series thermal path.
+        // Instead of adding h_tr_em directly, we use the series combination:
+        // h_south_series = 1 / (1/h_tr_is_south + 1/h_tr_em_south)
+        // This properly models the south wall's insulated path through the mass node.
+        //
+        // For non-south walls: h_tr_em is the direct envelope conductance (no bypass issue).
+        // We compute it as: h_tr_em_non_south = h_tr_em - h_tr_em_south
+        let h_tr_em_non_south = self.0.h_tr_em.clone() - self.0.h_tr_em_south.clone();
+
+        // South wall series: 1 / (1/h_tr_is_south + 1/h_tr_em_south)
+        // = h_tr_is_south * h_tr_em_south / (h_tr_is_south + h_tr_em_south)
+        // We compute h_tr_is_south from: h_tr_is_total = h_tr_is_no_south + h_tr_is_south
+        // => h_tr_is_south = h_tr_is_total - h_tr_is_no_south
+        let h_tr_is_south = self.0.h_tr_is.clone() - self.0.h_tr_is_no_south.clone();
+        let h_south_series = (h_tr_is_south.clone() * self.0.h_tr_em_south.clone())
+            / (h_tr_is_south.clone() + self.0.h_tr_em_south.clone());
+
+        self.0.derived_h_ext =
+            self.0.h_tr_w.clone() + h_south_series + h_tr_em_non_south + self.0.h_ve.clone();
 
         // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
         // Note: h_tr_me is 0 for 5R1C, non-zero for 6R2C (envelope↔internal mass coupling)
