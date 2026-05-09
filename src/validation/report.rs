@@ -3247,7 +3247,7 @@ mod tests {
         assert!(report.statistical_p_values.is_some());
         assert_eq!(report.statistical_p_values.as_ref().unwrap().len(), 3);
         assert!(report.statistical_corrected.is_some());
-        assert_eq!(report.statistical_corrected.as_ref().unwrap()[0], true);
+        assert!(report.statistical_corrected.as_ref().unwrap()[0]);
 
         // Test 3: BenchmarkReport can hold group validation results
         let mut group_results = std::collections::HashMap::new();

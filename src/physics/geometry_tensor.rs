@@ -432,7 +432,7 @@ mod tests {
         let idx_01 = 1;
         tensor.adjacency_matrix[idx_01] = 1.0;
         // Also set reverse
-        let idx_10 = 1 * MAX_ZONES + 0;
+        let idx_10 = MAX_ZONES;
         tensor.adjacency_matrix[idx_10] = 1.0;
 
         assert!(tensor.zones_adjacent(0, 1));

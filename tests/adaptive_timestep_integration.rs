@@ -147,9 +147,9 @@ fn test_time_constant_classification() {
     let low_mass_cases = vec!["600", "610", "620", "630", "640", "650"];
     for case_id in low_mass_cases {
         let tau = TimeConstantAnalyzer::for_case(case_id)
-            .expect(&format!("Case {} should have time constant", case_id));
+            .unwrap_or_else(|| panic!("Case {} should have time constant", case_id));
         let classification = TimeConstantAnalyzer::classify_case(case_id)
-            .expect(&format!("Case {} should have classification", case_id));
+            .unwrap_or_else(|| panic!("Case {} should have classification", case_id));
 
         assert_eq!(
             classification, "low-mass",
@@ -168,9 +168,9 @@ fn test_time_constant_classification() {
     let high_mass_cases = vec!["900", "910", "920", "930", "940", "950", "960"];
     for case_id in high_mass_cases {
         let tau = TimeConstantAnalyzer::for_case(case_id)
-            .expect(&format!("Case {} should have time constant", case_id));
+            .unwrap_or_else(|| panic!("Case {} should have time constant", case_id));
         let classification = TimeConstantAnalyzer::classify_case(case_id)
-            .expect(&format!("Case {} should have classification", case_id));
+            .unwrap_or_else(|| panic!("Case {} should have classification", case_id));
 
         assert_eq!(
             classification, "high-mass",
@@ -337,7 +337,7 @@ fn test_thermal_model_time_constant_estimation() {
 
     // Unknown case - estimated from thermal parameters, not case_id
     // Default model has thermal_capacitance and conductances, so it returns calculated value
-    let mut model_unknown = ThermalModel::<VectorField>::new(1);
+    let model_unknown = ThermalModel::<VectorField>::new(1);
     let tau_unknown = model_unknown.estimate_time_constant_hours();
     // Value is estimated from thermal_capacitance / (h_tr_ms + h_tr_em)
     assert!(

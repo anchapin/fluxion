@@ -274,7 +274,7 @@ fn test_conductance_values_are_finite_and_positive() {
     // Test 7: Conductance values are finite and positive (no NaN, no negative values)
     // Note: Some edge cases may produce NaN for h_tr_em, which indicates an invalid configuration
 
-    let configs = vec![
+    let configs = [
         MassAirCouplingConfig {
             cm: 1_000_000.0,
             h_ms: 9.1,

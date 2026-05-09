@@ -111,7 +111,7 @@ fn test_ashrae_140_comprehensive_regression() {
     let mae = report.mae();
     assert!(!mae.is_nan(), "MAE should be a valid number, got NaN");
     assert!(
-        mae >= 0.0 && mae <= 300.0,
+        (0.0..=300.0).contains(&mae),
         "MAE should be between 0% and 300%, got {:.2}%",
         mae
     );

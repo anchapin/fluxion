@@ -33,7 +33,7 @@ fn bench_parallel_scaling(c: &mut Criterion) {
         group.bench_with_input(
             criterion::BenchmarkId::new("scaling", threads),
             &threads,
-            |b, &t| {
+            |b, &_t| {
                 b.iter(|| {
                     let executor = fluxion::validation::performance::ParallelValidationExecutor::new();
                     let high_mass_cases = fluxion::validation::high_mass::test_cases::create_high_mass_validation_cases();
@@ -107,16 +107,8 @@ fn bench_perf_01_compliance(c: &mut Criterion) {
                 fluxion::validation::high_mass::test_cases::create_high_mass_validation_cases();
 
             // Measure and enforce PERF-01: <50ms/timestep
-            let results = executor.run_parallel(high_mass_cases);
 
-            // Verify PERF-01 compliance
-            for result in &results {
-                // This would be calculated from actual timing data in real implementation
-                // For benchmark purposes, we just ensure the code path works
-                assert!(true, "PERF-01 compliance check placeholder");
-            }
-
-            results
+            executor.run_parallel(high_mass_cases)
         });
     });
 

@@ -343,7 +343,7 @@ mod interpolation_integration_tests {
     #[test]
     fn test_temperature_interpolation_through_day() {
         // Simulate temperature interpolation through a day
-        let temps = vec![10.0, 12.0, 15.0, 18.0, 20.0, 18.0, 15.0, 12.0];
+        let temps = [10.0, 12.0, 15.0, 18.0, 20.0, 18.0, 15.0, 12.0];
 
         for i in 0..temps.len() - 1 {
             let t1 = temps[i];

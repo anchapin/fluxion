@@ -640,6 +640,7 @@ mod tests {
         assert!(data_900.annual_heating_max < data_600.annual_heating_min);
     }
 
+    #[allow(clippy::items_after_test_module)]
     #[cfg(test)]
     mod case_960_tests {
         use super::*;

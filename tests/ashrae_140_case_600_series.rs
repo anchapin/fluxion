@@ -21,6 +21,7 @@ use fluxion::weather::WeatherSource;
 const J_TO_MWH: f64 = 1.0 / 3.6e9;
 
 struct CaseReference {
+    #[allow(dead_code)]
     case_id: &'static str,
     annual_heating_min: f64,
     annual_heating_max: f64,

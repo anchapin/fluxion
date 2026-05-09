@@ -8,6 +8,7 @@ use fluxion::validation::reporter::{BaselineMetrics, SystematicIssue, Validation
 use std::path::PathBuf;
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod reporter_unit_tests {
     use super::*;
 
@@ -182,7 +183,7 @@ mod reporter_unit_tests {
 
     #[test]
     fn test_systematic_issue_all_variants() {
-        let issues = vec![
+        let issues = [
             SystematicIssue::SolarGains,
             SystematicIssue::ThermalMass,
             SystematicIssue::InterZoneTransfer,

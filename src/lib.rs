@@ -1606,7 +1606,7 @@ pub use validation::ashrae140::high_mass;
 mod tests {
     use super::*;
     use crate::ai::surrogate::SurrogateManager;
-    use crate::physics::cta::{ContinuousTensor, VectorField};
+    use crate::physics::cta::VectorField;
     use crate::sim::engine::ThermalModel;
 
     #[cfg(feature = "python-bindings")]
@@ -1806,7 +1806,7 @@ mod tests {
         let base_model = ThermalModel::<VectorField>::new(10);
 
         let model_path = "tests_tmp_dummy.onnx";
-        let (surrogates, use_real_model) = if Path::new(model_path).exists() {
+        let (surrogates, _use_real_model) = if Path::new(model_path).exists() {
             match SurrogateManager::load_onnx(model_path) {
                 Ok(s) => (s, true),
                 Err(e) => {

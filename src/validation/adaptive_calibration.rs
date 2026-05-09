@@ -585,7 +585,7 @@ mod tests {
 
         // Create strong seasonal pattern: bias varies significantly with day_of_year
         for i in 0..24 * 14 {
-            let day_of_year = (i / 24) as u32 + 1;
+            let day_of_year = (i / 24) + 1;
             // Strong sinusoidal seasonal with amplitude 10
             let seasonal_factor = ((day_of_year as f64 - 180.0) / 90.0).sin() * 10.0;
 

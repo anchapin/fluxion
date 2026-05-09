@@ -323,12 +323,12 @@ mod tests {
             outdoor_temps.push(10.0 + 10.0 * daily_cycle);
         }
 
-        let (max_outdoor_hour_steady, max_outdoor_temp) = outdoor_temps[24..]
+        let (max_outdoor_hour_steady, _max_outdoor_temp) = outdoor_temps[24..]
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
             .unwrap();
-        let (max_indoor_hour_steady, max_indoor_temp) = indoor_temps[24..]
+        let (max_indoor_hour_steady, _max_indoor_temp) = indoor_temps[24..]
             .iter()
             .enumerate()
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
@@ -342,8 +342,6 @@ mod tests {
         use super::*;
         use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
-        use crate::sim::schedule::DailySchedule;
-        use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
         #[test]
         fn steady_state_heat_transfer_matches_analytical() {
@@ -494,7 +492,6 @@ mod tests {
         use crate::ai::surrogate::SurrogateManager;
         use crate::physics::cta::VectorField;
         use crate::sim::boundary::ConstantGroundTemperature;
-        use crate::sim::schedule::DailySchedule;
         use crate::sim::timestep_solver::StepParameters;
 
         #[test]
@@ -661,8 +658,7 @@ mod tests {
 mod inter_zone_tests {
     use super::*;
     use crate::physics::cta::VectorField;
-    use crate::validation::ashrae_140_cases::ASHRAE140Case;
-    use crate::validation::ashrae_140_cases::GeometrySpec;
+    use crate::validation::ASHRAE140Case;
 
     #[test]
     fn test_inter_zone_heat_transfer_basic() {
@@ -754,7 +750,6 @@ mod inter_zone_tests {
 mod hvac_controller_tests {
     use super::*;
     use crate::physics::cta::VectorField;
-    use crate::validation::ashrae_140_cases::ASHRAE140Case;
 
     #[test]
     fn test_ideal_hvac_controller_creation() {

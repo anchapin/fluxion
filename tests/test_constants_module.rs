@@ -1,4 +1,5 @@
 //! Unit tests for constants module.
+#![allow(clippy::assertions_on_constants)]
 
 use fluxion::physics::constants::atmospheric as atm;
 use fluxion::physics::constants::solar::ashrae_140 as solar;
@@ -24,14 +25,6 @@ fn test_ashrae_140_exterior_film_coeff() {
 #[test]
 fn test_ashrae_140_solar_absorptance() {
     assert_eq!(SOLAR_ABSORPTANCE_DEFAULT, 0.7);
-}
-
-#[test]
-fn test_ashrae_140_constants_are_positive() {
-    assert!(INTERIOR_FILM_COEFF > 0.0);
-    assert!(EXTERIOR_FILM_COEFF > 0.0);
-    assert!(SOLAR_ABSORPTANCE_DEFAULT > 0.0);
-    assert!(SOLAR_ABSORPTANCE_DEFAULT <= 1.0);
 }
 
 #[test]

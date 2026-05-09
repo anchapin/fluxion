@@ -57,13 +57,13 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
     println!("Cooling target: [8.00, 10.50] MWh");
 
     println!("\n=== Analysis ===");
-    if heating_total_mwh >= 1.17 - 0.5 && heating_total_mwh <= 2.04 + 0.5 {
+    if (0.67..=2.54).contains(&heating_total_mwh) {
         println!("✅ Heating within tolerance");
     } else {
         println!("❌ Heating out of tolerance!");
     }
 
-    if cooling_total_mwh >= 8.00 - 0.5 && cooling_total_mwh <= 10.50 + 0.5 {
+    if (7.50..=11.00).contains(&cooling_total_mwh) {
         println!("✅ Cooling within tolerance");
     } else {
         println!("❌ Cooling out of tolerance!");

@@ -1,7 +1,6 @@
 // Solar Gain Unit Tests for ASHRAE 140 Case 900
 // Standalone test binary to verify solar gain calculations against EnergyPlus reference
 
-use serde_json;
 use std::fs;
 
 fn main() {
@@ -171,13 +170,13 @@ fn test_energyplus_reference_validity(ep: &EnergyPlusReference) -> TestResult {
 
     // EnergyPlus reference from energyplus_reference_data.json:
     // Heating: 1.661 MWh, Cooling: 2.497 MWh
-    if heating_mwh < 1.6 || heating_mwh > 1.7 {
+    if !(1.6..=1.7).contains(&heating_mwh) {
         return TestResult::Fail(format!(
             "Heating should be ~1.66 MWh, got {:.3} MWh",
             heating_mwh
         ));
     }
-    if cooling_mwh < 2.4 || cooling_mwh > 2.6 {
+    if !(2.4..=2.6).contains(&cooling_mwh) {
         return TestResult::Fail(format!(
             "Cooling should be ~2.50 MWh, got {:.3} MWh",
             cooling_mwh
@@ -222,7 +221,7 @@ fn test_solar_gain_peaks_at_noon(ep: &EnergyPlusReference) -> TestResult {
     // Max solar should be around noon (hour 11-13 for local time)
     // Note: EnergyPlus uses UTC, so adjust for Denver time zone (-7 hours)
     // Hour 18 in UTC = 11 AM MST
-    if max_hour < 17 || max_hour > 19 {
+    if !(17..=19).contains(&max_hour) {
         return TestResult::Fail(format!(
             "Max solar should occur around noon UTC (hours 17-19), got hour {}",
             max_hour
@@ -230,7 +229,7 @@ fn test_solar_gain_peaks_at_noon(ep: &EnergyPlusReference) -> TestResult {
     }
 
     // Max solar should be reasonable (500-600 W for Denver)
-    if max_solar < 400.0 || max_solar > 700.0 {
+    if !(400.0..=700.0).contains(&max_solar) {
         return TestResult::Fail(format!(
             "Max solar should be 400-700 W, got {:.2} W",
             max_solar
@@ -298,22 +297,18 @@ fn test_solar_gain_temperature_correlation(ep: &EnergyPlusReference) -> TestResu
         };
 
         // With high solar, temperature should be rising
-        if solar_hour >= 3 {
-            if temp_at_solar <= temp_before {
-                return TestResult::Fail(format!(
-                    "Temperature should rise with solar: before ({:.2} C) -> at solar ({:.2} C)",
-                    temp_before, temp_at_solar
-                ));
-            }
+        if solar_hour >= 3 && temp_at_solar <= temp_before {
+            return TestResult::Fail(format!(
+                "Temperature should rise with solar: before ({:.2} C) -> at solar ({:.2} C)",
+                temp_before, temp_at_solar
+            ));
         }
 
-        if solar_hour < 8760 - 3 {
-            if temp_after <= temp_at_solar {
-                return TestResult::Fail(format!(
-                    "Temperature should continue rising: at solar ({:.2} C) -> after ({:.2} C)",
-                    temp_at_solar, temp_after
-                ));
-            }
+        if solar_hour < 8760 - 3 && temp_after <= temp_at_solar {
+            return TestResult::Fail(format!(
+                "Temperature should continue rising: at solar ({:.2} C) -> after ({:.2} C)",
+                temp_at_solar, temp_after
+            ));
         }
     }
 
@@ -337,8 +332,8 @@ fn test_solar_energy_conservation(ep: &EnergyPlusReference) -> TestResult {
     // Estimated annual: ~20,400 kWh = ~20 MWh
     let estimated_annual_mwh = total_solar_energy / 1000.0 / 8760.0;
 
-    // Should be in reasonable range (5-30 MWh depending on assumptions)
-    if estimated_annual_mwh < 5.0 || estimated_annual_mwh > 50.0 {
+    // Should be in reasonable range (5-50 MWh depending on assumptions)
+    if !(5.0..=50.0).contains(&estimated_annual_mwh) {
         return TestResult::Fail(format!(
             "Estimated annual solar should be 5-50 MWh, got {:.2} MWh",
             estimated_annual_mwh
@@ -368,7 +363,7 @@ fn test_solar_gain_cloudy_days(ep: &EnergyPlusReference) -> TestResult {
     let low_solar_fraction = low_solar_hours as f64 / total_hours_checked as f64;
 
     // Denver should have some cloudy periods
-    if low_solar_fraction < 0.05 || low_solar_fraction > 0.5 {
+    if !(0.05..=0.5).contains(&low_solar_fraction) {
         return TestResult::Fail(format!(
             "Cloudy period fraction should be 5-50%, got {:.1}%",
             low_solar_fraction * 100.0
@@ -443,11 +438,11 @@ fn test_solar_daily_pattern(ep: &EnergyPlusReference) -> TestResult {
         .collect();
 
     // Night (hours 0-5): should be zero
-    for i in 0..6 {
-        if day_hours[i] >= 10.0 {
+    for (i, &hour_value) in day_hours.iter().enumerate().take(6) {
+        if hour_value >= 10.0 {
             return TestResult::Fail(format!(
                 "Solar should be near zero at night hour {}, got {:.2} W",
-                i, day_hours[i]
+                i, hour_value
             ));
         }
     }

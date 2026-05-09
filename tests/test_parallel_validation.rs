@@ -76,7 +76,7 @@ fn test_parallel_validation_execution() {
     // Verify that pass rate is a valid percentage
     let pass_rate = report.pass_rate();
     assert!(
-        pass_rate >= 0.0 && pass_rate <= 100.0,
+        (0.0..=100.0).contains(&pass_rate),
         "Pass rate should be 0-100%"
     );
 

@@ -70,7 +70,7 @@ mod tests {
     fn test_piecewise_hermite_midpoint() {
         let value = piecewise_hermite_interpolate(10.0, 20.0, 0.5);
         assert!(
-            value >= 10.0 && value <= 20.0,
+            (10.0..=20.0).contains(&value),
             "Hermite interpolation out of range: {}",
             value
         );
@@ -84,7 +84,7 @@ mod tests {
     #[test]
     fn test_piecewise_hermite_negative() {
         let value = piecewise_hermite_interpolate(-10.0, 10.0, 0.5);
-        assert!(value >= -10.0 && value <= 10.0);
+        assert!((-10.0..=10.0).contains(&value));
     }
 
     #[test]
@@ -96,7 +96,7 @@ mod tests {
     #[test]
     fn test_cubic_spline_midpoint() {
         let value = cubic_spline_interpolate(10.0, 20.0, 0.5);
-        assert!(value >= 10.0 && value <= 20.0);
+        assert!((10.0..=20.0).contains(&value));
     }
 
     #[test]
@@ -213,7 +213,7 @@ mod tests {
             0.5,
             InterpolationMethod::PiecewiseHermite,
         );
-        assert!(value >= 100.0 && value <= 200.0);
+        assert!((100.0..=200.0).contains(&value));
     }
 
     #[test]
