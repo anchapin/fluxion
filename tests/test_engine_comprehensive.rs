@@ -69,7 +69,7 @@ fn test_multi_zone_initialization() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let _energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
     assert!(energy.is_finite());
 }
 

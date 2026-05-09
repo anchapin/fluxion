@@ -109,7 +109,7 @@ mod dr_event_tests {
     #[test]
     fn test_dr_event_all_event_types() {
         // Test all event types can be created
-        let types = vec![
+        let types = [
             DREventType::Emergency,
             DREventType::Voluntary,
             DREventType::AncillaryServices,

@@ -111,7 +111,7 @@ fn test_coupling_ratio_bounds() {
 
         if h_tr_ms > 0.0 {
             let ratio = h_tr_em / h_tr_ms;
-            assert!(ratio >= 0.0 && ratio <= 1.0);
+            assert!((0.0..=1.0).contains(&ratio));
         }
     }
 }

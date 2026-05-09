@@ -181,7 +181,7 @@ fn test_case_900ff_free_floating_high_mass() {
     //   Expected reduction ≈ 44.8%
     // Current simulation shows ~49% reduction, which is reasonable for well-damped high-mass construction
     assert!(
-        swing_reduction >= 30.0 && swing_reduction <= 55.0,
+        (30.0..=55.0).contains(&swing_reduction),
         "Temperature swing reduction {:.1}% not in expected range [30, 55]%",
         swing_reduction
     );
@@ -502,7 +502,7 @@ fn test_thermal_mass_lag_and_damping() {
     );
 
     assert!(
-        reduction >= 30.0 && reduction <= 55.0,
+        (30.0..=55.0).contains(&reduction),
         "Thermal mass reduction {:.1}% not in expected range [30, 55]%",
         reduction
     );
@@ -524,7 +524,7 @@ fn test_thermal_mass_lag_and_damping() {
 
     // Note: Thermal lag measurement is sensitive to peak detection and summer period selection
     // Temperature swing reduction is the more robust metric for thermal mass validation
-    if lag_hours >= 2.0 && lag_hours <= 6.0 {
+    if (2.0..=6.0).contains(&lag_hours) {
         println!("  Thermal lag within expected range ✅");
     } else {
         println!(
@@ -748,6 +748,7 @@ fn test_600ff_with_900ff_thermal_model() {
 /// This shows if high-mass materials behave correctly with simple 5R1C model
 #[test]
 fn test_900ff_with_5r1c_model() {
+    #[allow(unused_imports)]
     use fluxion::physics::ctf_coefficients::CTFMaterial;
 
     // Case A: Standard 900FF (high-mass materials + 6R2C + CTF)
@@ -857,6 +858,7 @@ fn test_900ff_with_5r1c_model() {
 /// This isolates whether CTF is causing the overheating issue (Max=73°C vs reference 41-46°C)
 #[test]
 fn test_900ff_without_ctf() {
+    #[allow(unused_imports)]
     use fluxion::physics::ctf_coefficients::CTFMaterial;
 
     let spec_900ff = ASHRAE140Case::Case900FF.spec();

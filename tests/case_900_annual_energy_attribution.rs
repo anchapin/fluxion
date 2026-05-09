@@ -197,7 +197,7 @@ pub fn calculate_annual_energy_attribution_for_case(
     let diag = model
         .get_diagnostics()
         .expect("Diagnostics should be attached");
-    calculate_annual_energy_attribution(&diag)
+    calculate_annual_energy_attribution(diag)
 }
 
 #[test]

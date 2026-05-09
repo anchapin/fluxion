@@ -167,10 +167,12 @@ mod tests {
 
     #[test]
     fn test_thermal_mass_thresholds_ordering() {
-        assert!(THERMAL_MASS_VERY_LIGHT <= THERMAL_MASS_LIGHT_UPPER);
-        assert!(THERMAL_MASS_LIGHT_UPPER <= THERMAL_MASS_MEDIUM_UPPER);
-        assert!(THERMAL_MASS_MEDIUM_UPPER <= THERMAL_MASS_HEAVY_UPPER);
-        assert!(THERMAL_MASS_HEAVY_UPPER <= THERMAL_MASS_VERY_HEAVY);
+        const {
+            assert!(THERMAL_MASS_VERY_LIGHT <= THERMAL_MASS_LIGHT_UPPER);
+            assert!(THERMAL_MASS_LIGHT_UPPER <= THERMAL_MASS_MEDIUM_UPPER);
+            assert!(THERMAL_MASS_MEDIUM_UPPER <= THERMAL_MASS_HEAVY_UPPER);
+            assert!(THERMAL_MASS_HEAVY_UPPER <= THERMAL_MASS_VERY_HEAVY);
+        }
     }
 
     #[test]

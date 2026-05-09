@@ -92,7 +92,7 @@ mod tests {
         );
         // Note: ESP-r and TRNSYS data may not be available for all cases
         // Only verify they exist if the reference file includes them
-        for (_, range) in ah {
+        for range in ah.values() {
             assert!(range.min < range.max, "min must be less than max");
         }
 

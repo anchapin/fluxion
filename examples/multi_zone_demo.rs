@@ -18,9 +18,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::validation::case_960::{
-    run_complete_case_960_validation, Case960ReferenceImplementation,
-};
+use fluxion::validation::case_960::run_complete_case_960_validation;
 use fluxion::validation::energy_balance::EnergyBalanceValidator;
 use std::time::Instant;
 
@@ -74,7 +72,7 @@ fn demonstrate_inter_zone_heat_transfer() {
 
     // Create model with different zone temperatures to show heat transfer
     let spec = ASHRAE140Case::Case960.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
+    let _model = ThermalModel::<VectorField>::from_spec(&spec);
 
     // Simulate a temperature difference between zones
     let zone1_temp = 22.0; // Living space

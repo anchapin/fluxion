@@ -14,8 +14,7 @@ fn test_shared_batch_service_single_request() {
     };
     let service = SharedBatchInferenceService::new(surrogate, config, 4);
 
-    let temps = vec![vec![20.0, 21.0, 22.0]];
-    let rx = service.submit(temps[0].clone());
+    let rx = service.submit(vec![20.0, 21.0, 22.0]);
     let result = rx.recv().expect("No result received from service");
     assert_eq!(result.len(), 3);
     // Mock SurrogateManager returns 1.2 for each load.
@@ -43,8 +42,7 @@ fn test_shared_batch_service_concurrent_requests() {
         let handle = thread::spawn(move || {
             let input = vec![20.0 + i as f64, 21.0 + i as f64];
             let rx = service.submit(input);
-            let output = rx.recv().expect("Failed to receive output from service");
-            output
+            rx.recv().expect("Failed to receive output from service")
         });
         handles.push(handle);
     }

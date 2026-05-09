@@ -453,6 +453,7 @@ impl Case970Reference {
     }
 }
 
+#[allow(clippy::items_after_test_module, clippy::redundant_closure)]
 #[cfg(test)]
 mod tests {
     use super::*;

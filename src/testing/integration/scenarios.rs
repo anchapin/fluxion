@@ -160,7 +160,7 @@ mod tests {
         for (name, scenario) in scenarios {
             let built = scenario
                 .build()
-                .expect(&format!("{} scenario failed to build", name));
+                .unwrap_or_else(|_| panic!("{} scenario failed to build", name));
             let model = built.create_model();
             assert!(
                 model.window_u_value > 0.0,

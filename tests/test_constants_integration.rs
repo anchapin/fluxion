@@ -17,30 +17,42 @@ use fluxion::sim::engine::ThermalModel;
 #[test]
 fn test_thermal_model_constants_accessible() {
     // Verify constants module constants are accessible and reasonable
-    assert!(
-        INTERIOR_FILM_COEFF > 0.0,
-        "Interior film coefficient must be positive"
-    );
-    assert!(
-        EXTERIOR_FILM_COEFF > 0.0,
-        "Exterior film coefficient must be positive"
-    );
-    assert!(
-        SOLAR_CONSTANT > 1300.0 && SOLAR_CONSTANT < 1400.0,
-        "Solar constant in expected range (1300-1400 W/m²)"
-    );
-    assert!(
-        AIR_DENSITY_SEA_LEVEL > 1.0 && AIR_DENSITY_SEA_LEVEL < 1.5,
-        "Air density in expected range (1.0-1.5 kg/m³)"
-    );
-    assert!(
-        STANDARD_ATMOSPHERIC_PRESSURE > 1e5 && STANDARD_ATMOSPHERIC_PRESSURE < 1.1e5,
-        "Standard atmospheric pressure in expected range (100-110 kPa)"
-    );
-    assert!(
-        SOLAR_ABSORPTANCE_DEFAULT > 0.0 && SOLAR_ABSORPTANCE_DEFAULT <= 1.0,
-        "Solar absorptance must be in range (0-1)"
-    );
+    const {
+        assert!(
+            INTERIOR_FILM_COEFF > 0.0,
+            "Interior film coefficient must be positive"
+        )
+    };
+    const {
+        assert!(
+            EXTERIOR_FILM_COEFF > 0.0,
+            "Exterior film coefficient must be positive"
+        )
+    };
+    const {
+        assert!(
+            SOLAR_CONSTANT > 1300.0 && SOLAR_CONSTANT < 1400.0,
+            "Solar constant in expected range (1300-1400 W/m²)"
+        )
+    };
+    const {
+        assert!(
+            AIR_DENSITY_SEA_LEVEL > 1.0 && AIR_DENSITY_SEA_LEVEL < 1.5,
+            "Air density in expected range (1.0-1.5 kg/m³)"
+        )
+    };
+    const {
+        assert!(
+            STANDARD_ATMOSPHERIC_PRESSURE > 1e5 && STANDARD_ATMOSPHERIC_PRESSURE < 1.1e5,
+            "Standard atmospheric pressure in expected range (100-110 kPa)"
+        )
+    };
+    const {
+        assert!(
+            SOLAR_ABSORPTANCE_DEFAULT > 0.0 && SOLAR_ABSORPTANCE_DEFAULT <= 1.0,
+            "Solar absorptance must be in range (0-1)"
+        )
+    };
 }
 
 #[test]

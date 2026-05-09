@@ -461,10 +461,7 @@ mod tests {
         // assert!(final_mass_temp > -50.0 && final_mass_temp < 100.0);
 
         // Placeholder assertion to keep test passing
-        assert!(
-            true,
-            "Test skipped due to Session 84 physics changes - see TODO comment"
-        );
+        // Test skipped due to Session 84 physics changes - see TODO comment
     }
 
     #[test]

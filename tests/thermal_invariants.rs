@@ -50,8 +50,7 @@ proptest! {
     }
 }
 
-/// Property 2: Temperature bounds remain physical
-///
+// Property 2: Temperature bounds remain physical
 proptest! {
     #[test]
     fn prop_temperature_bounds(
@@ -59,8 +58,6 @@ proptest! {
         initial_temp_low in -50.0..100.0_f64,
         load_low in -1000.0..1000.0_f64,
     ) {
-        let num_zones = num_zones;
-
         // Use a reasonable initial temperature
         let initial_temp = initial_temp_low.clamp(-50.0, 100.0);
 
@@ -79,14 +76,14 @@ proptest! {
         // Absolute zero is -273.15°C, 5000K is ~4727°C
         for i in 0..num_zones {
             let temp = model.temperatures[i];
-            prop_assert!(temp >= -273.15 && temp <= 5000.0,
+            prop_assert!((-273.15..=5000.0).contains(&temp),
                 "Temperature {} out of bounds [-273.15, 5000] at zone {}",
                 temp, i);
         }
     }
 }
 
-/// Property 3: Conductance consistency
+// Property 3: Conductance consistency
 proptest! {
     #[test]
     fn prop_conductance_consistency(

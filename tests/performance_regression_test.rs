@@ -30,6 +30,7 @@ fn load_baseline() -> Option<BaselineMetrics> {
 }
 
 /// Baseline metrics structure
+#[allow(dead_code)]
 struct BaselineMetrics {
     timestamp: String,
     throughput_analytical: f64,

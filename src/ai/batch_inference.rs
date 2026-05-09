@@ -408,8 +408,7 @@ mod tests {
         let processor = BatchProcessor::new(config);
 
         let inputs: Vec<Vec<f64>> = vec![vec![1.0, 2.0]];
-        let result =
-            processor.process_batch(&inputs, |batch| batch.iter().map(|v| v.clone()).collect());
+        let result = processor.process_batch(&inputs, |batch| batch.to_vec());
 
         assert!(result.len() >= 4);
         assert_eq!(result[0], vec![1.0, 2.0]);
@@ -420,8 +419,7 @@ mod tests {
         let config = DynamicBatchConfig::default();
         let processor = BatchProcessor::new(config);
 
-        let mock_inference =
-            |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.iter().map(|v| v.clone()).collect() };
+        let mock_inference = |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.to_vec() };
 
         let inputs = vec![vec![1.0], vec![2.0], vec![3.0]];
         processor.process_batch(&inputs, mock_inference);
@@ -468,8 +466,7 @@ mod tests {
 
     #[test]
     fn test_batch_benchmark_large_sizes() {
-        let mock_inference =
-            |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.iter().map(|v| v.clone()).collect() };
+        let mock_inference = |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.to_vec() };
 
         let results = benchmark_batch_inference(mock_inference, 1024);
         assert!(!results.is_empty());

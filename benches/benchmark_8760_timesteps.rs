@@ -63,7 +63,7 @@ fn bench_batch_oracle_8760(c: &mut Criterion) {
         let population = generate_population(size);
 
         // Analytical mode
-        let mut group = c.benchmark_group(&format!("batch_oracle_8760_analytical_{}", size));
+        let mut group = c.benchmark_group(format!("batch_oracle_8760_analytical_{}", size));
         group.throughput(Throughput::Elements(size as u64));
         group.sample_size(10);
 
@@ -74,7 +74,7 @@ fn bench_batch_oracle_8760(c: &mut Criterion) {
         group.bench_function(&name, |b| {
             b.iter(|| {
                 let pop = population.clone();
-                black_box(oracle.evaluate_population(pop, false));
+                let _ = black_box(oracle.evaluate_population(pop, false));
             })
         });
         group.finish();
@@ -87,7 +87,7 @@ fn bench_multizone_8760(c: &mut Criterion) {
     let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
 
     for &zones in &zone_counts {
-        let mut group = c.benchmark_group(&format!("multizone_8760_{}zones", zones));
+        let mut group = c.benchmark_group(format!("multizone_8760_{}zones", zones));
         group.sample_size(10);
 
         let name = format!("{}zones", zones);
