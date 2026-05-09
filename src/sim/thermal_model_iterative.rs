@@ -219,6 +219,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .or_insert((win_area, opaque_area));
             }
 
+            // DEBUG: Trace solar calculation for key timesteps (noon in summer/winter)
+            let debug_timesteps = [12, 288, 576]; // Jan 1 noon, Jan 12 noon, Feb 1 noon
+            if debug_timesteps.contains(&timestep) || timestep == 312 {
+                eprintln!("DEBUG_ZONE_SOLAR: timestep={}, zone_idx={}, lat={:.2}, lon={:.2}, year={}, month={}, day={}, hour={:.1}, dni={:.2}, dhi={:.2}",
+                        timestep, zone_idx, self.0.latitude_deg, self.0.longitude_deg, year, month, day, hour, weather.dni, weather.dhi);
+                eprintln!(
+                    "  window_props: area={:.2}, shgc={:.3}, norm_trans={:.3}",
+                    window_props.area, window_props.shgc, window_props.normal_transmittance
+                );
+                eprintln!(
+                    "  surfaces_by_orientation count={}",
+                    surfaces_by_orientation.len()
+                );
+            }
+
             // Now calculate solar gain once per unique orientation
             for (orientation, (total_win_area, total_opaque_area)) in surfaces_by_orientation {
                 // Create temporary window properties with the combined window area for this orientation
@@ -258,7 +273,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 };
 
                 // Use solar module to calculate irradiance for this orientation
-                let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
+                let (sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.0.latitude_deg,
                     self.0.longitude_deg,
                     year,
@@ -275,11 +290,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     Some(0.2), // Ground reflectance
                 );
 
-                // SESSION 83 DEBUG: Log intermediate solar values
-                if timestep == 312 {
+                // DEBUG: Log EVERY calculate_hourly_solar call for key timesteps
+                if timestep == 12 || timestep == 312 {
+                    eprintln!("DEBUG_HOURLY_SOLAR: timestep={}, orient={:?}, sun_above={}, dni={:.2}, dhi={:.2}",
+                        timestep, orientation, sun_pos.is_above_horizon(), weather.dni, weather.dhi);
                     eprintln!(
-                        "SESSION 83 solar_calc: timestep={}, orient={:?}, window_area={:.1}m2, opaque={:.1}m2, solar_gain_window={:.0}W",
-                        timestep, orientation, total_win_area, total_opaque_area, solar_gain.total_gain_w
+                        "  irradiance: beam={:.2}, diff={:.2}, refl={:.2}, total={:.2} W/m2",
+                        irradiance.beam_wm2,
+                        irradiance.diffuse_wm2,
+                        irradiance.ground_reflected_wm2,
+                        irradiance.total_wm2
+                    );
+                    eprintln!(
+                        "  solar_gain: beam={:.2}W, diff={:.2}W, ground={:.2}W, total={:.2}W",
+                        solar_gain.beam_gain_w,
+                        solar_gain.diffuse_gain_w,
+                        solar_gain.ground_reflected_gain_w,
+                        solar_gain.total_gain_w
                     );
                 }
 
@@ -321,9 +348,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     }
 
     /// Calculate area-weighted radiative gain distribution for a zone.
-    ///
-    /// This is a public method for testing and verification purposes.
-    ///
     /// This method distributes radiative gains (internal + solar) among zone surfaces
     /// based on their relative surface areas and thermal mass. This implements Issue #303:
     /// Detailed Internal Radiation Network by using the ISO 13790 compliant
@@ -533,8 +557,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // The thermal capacitance reduction (0.5x) is sufficient for FF behavior
 
                 // Apply zone-specific solar gains
-                self.0.solar_gains = T::from(VectorField::new(zone_solar_gains));
-                self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains));
+                self.0.solar_gains = T::from(VectorField::new(zone_solar_gains.clone()));
+                self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains.clone()));
+
+                // DEBUG: Log the actual gains stored
+                if timestep == 12 || timestep == 312 {
+                    eprintln!("DEBUG_CALC_ANALYTICAL: t={}, zone_solar_gains[0]={:.2}, opaque_gains[0]={:.2}",
+                        timestep, zone_solar_gains[0], zone_opaque_gains[0]);
+                    eprintln!(
+                        "DEBUG_CALC_ANALYTICAL: solar_gains tensor[0]={:.2}",
+                        self.0.solar_gains.as_ref()[0]
+                    );
+                }
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
