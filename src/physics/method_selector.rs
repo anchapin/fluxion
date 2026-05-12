@@ -330,6 +330,13 @@ impl ThermalMethodSelector {
     pub fn select_method(&self, wall: &BuildingAssembly) -> ThermalMethod {
         // Check for manual override
         if let Some(method) = self.override_method {
+            tracing::info!(
+                decision_type = "solver_selection",
+                chosen = method.name(),
+                reason = "manual_override",
+                wall = %wall.name,
+                "Solver selection decision"
+            );
             return method;
         }
 
@@ -337,11 +344,22 @@ impl ThermalMethodSelector {
         let tau = self.calculate_time_constant(wall);
 
         // Select method based on thermal mass
-        if tau < self.threshold_hours {
+        let method = if tau < self.threshold_hours {
             ThermalMethod::FiveR1C // Low mass: use fast 5R1C
         } else {
-            ThermalMethod::CTF // High mass: use accurate CTF
-        }
+            ThermalMethod::CTF // High mass: use accurate CTF (Issue #726: should be FD for heavy-mass)
+        };
+
+        tracing::info!(
+            decision_type = "solver_selection",
+            chosen = method.name(),
+            tau_hours = tau,
+            threshold_hours = self.threshold_hours,
+            wall = %wall.name,
+            "Solver selection decision"
+        );
+
+        method
     }
 
     /// Select method with CTF → FD fallback.
