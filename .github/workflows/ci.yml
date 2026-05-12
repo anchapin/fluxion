@@ -1,6 +1,9 @@
 name: CI
 
-on: pull_request
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -61,6 +64,8 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - name: Run integration tests
         run: |
           cargo test --test integration-wiring --features wiring-tracing
@@ -73,7 +78,7 @@ jobs:
         with:
           name: integration-test-results
           path: target/debug/
-          retention-days: 30
+          retention-days: 14
 
   rust-tests:
     name: Rust Tests & Linting
@@ -90,32 +95,7 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-          cache: 'false'
       - name: Run tests
         run: cargo test --lib --verbose --no-default-features
         env:
           PYO3_PYTHON: /usr/bin/python3
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust and rustfmt
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt
-      - run: cargo fmt -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          rust-components: clippy
-          python-version: '3.10'
-          cache: 'false'
-      - run: cargo clippy --lib -- -D warnings

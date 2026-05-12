@@ -13,13 +13,17 @@ env:
 
 jobs:
   test:
-    name: Test Suite
+    name: Test (${{ matrix.os }}, ${{ matrix.feature_set.name }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         rust: [stable]
+        feature_set:
+          - {name: "no-default",       flags: "--no-default-features"}
+          - {name: "wiring-tracing",   flags: "--features wiring-tracing"}
+          - {name: "multi-zone",       flags: "--features wiring-tracing,multi-zone"}
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies (Linux)
@@ -30,7 +34,6 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-          cache: 'false'
 
       - name: Cache ONNX Runtime binaries
         if: runner.os == 'macOS'
@@ -43,7 +46,7 @@ jobs:
             ort-binaries-aarch64-apple-darwin-
 
       - name: Run tests
-        run: cargo test --lib --verbose --no-default-features
+        run: cargo test --lib --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
@@ -66,7 +69,6 @@ jobs:
         with:
           rust-components: clippy
           python-version: '3.10'
-          cache: 'false'
       - run: cargo clippy --lib -- -D warnings
 
   build-release:
@@ -77,5 +79,4 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-          cache: 'false'
       - run: cargo build --release --verbose
