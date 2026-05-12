@@ -1086,6 +1086,9 @@ impl ThermalModel<VectorField> {
         model.h_tr_is = VectorField::new(h_tr_is_vec);
         model.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
         model.h_tr_em = VectorField::new(h_tr_em_vec.clone());
+        // === Issue 715 FIX: Assign south-wall bypass vectors ===
+        model.h_tr_is_no_south = VectorField::new(h_tr_is_no_south_vec);
+        model.h_tr_em_south = VectorField::new(h_tr_em_south_vec.clone());
 
         // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
         // h_tr_me (surface-to-internal mass conductance) was previously hardcoded to 100.0 W/K
