@@ -720,8 +720,8 @@ mod tests {
         assert_eq!(selector.threshold_hours, 2.0);
         assert!(selector.override_method.is_none());
         assert!(selector.enable_fallback);
-        assert_eq!(selector.h_interior, 8.0);
-        assert_eq!(selector.h_exterior, 25.0);
+        assert_eq!(selector.h_interior, 8.29); // ASHRAE 140 Section 5.2
+        assert_eq!(selector.h_exterior, 29.3);  // ASHRAE 140 Section 5.2
     }
 
     #[test]
