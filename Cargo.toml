@@ -166,6 +166,11 @@ harness = false
 name = "parallel_validation"
 harness = false
 
+[[bench]]
+name = "orchestration_decisions"
+path = "benches/orchestration_decisions/benchmark_runner.rs"
+harness = false
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
