@@ -1,0 +1,1161 @@
+{
+  "_schema": {
+    "version": "1.0",
+    "generated": "2026-05-12",
+    "source": {
+      "standard": "ASHRAE 140-2023",
+      "section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "programs": [
+        "BSIMAC 9.0.74",
+        "CSE 0.861.1",
+        "DeST 2.0",
+        "EnergyPlus 9.0.1",
+        "ESP-r 13.3",
+        "TRNSYS 18.01.0001"
+      ],
+      "results_file": "Std140_TF_Results.pdf (TESS, 19-Aug-2024)",
+      "tables": {
+        "annual_heating_MWh": "Table B8-1 Annual Heating Loads",
+        "annual_cooling_MWh": "Table B8-2 Annual Sensible Cooling Loads",
+        "peak_heating_kW": "Table B8-3 Annual Hourly Integrated Peak Heating Loads",
+        "peak_cooling_kW": "Table B8-4 Annual Hourly Integrated Peak Sensible Cooling Loads",
+        "ff_max_zone_temp_C": "Table B8-5 Free-Float Maximum Annual Zone Temperature",
+        "ff_min_zone_temp_C": "Table B8-5 Free-Float Minimum Annual Zone Temperature",
+        "ff_mean_zone_temp_C": "Table B8-5 Free-Float Mean Annual Zone Temperature"
+      },
+      "units": {
+        "annual_heating_MWh": "MWh",
+        "annual_cooling_MWh": "MWh",
+        "peak_heating_kW": "kW",
+        "peak_cooling_kW": "kW",
+        "ff_max_zone_temp_C": "\u00b0C",
+        "ff_min_zone_temp_C": "\u00b0C",
+        "ff_mean_zone_temp_C": "\u00b0C"
+      }
+    },
+    "description": "True ASHRAE 140-2023 inter-program comparison reference ranges for all Section 7 cases. Each metric has min/max/mean across the 6 approved reference programs. Replaces the synthetic/calibrated benchmark values previously in benchmark.rs.",
+    "total_cases": 52,
+    "note": "All values sourced from TRNSYS 18.06.0002 results vs. Annex B8 example results (TESS, 19-Aug-2024). This is the latest ASHRAE-published inter-program comparison for ASHRAE 140-2023."
+  },
+  "cases": {
+    "195": {
+      "annual_heating_MWh": {
+        "min": 3.951,
+        "max": 4.217,
+        "mean": 4.08
+      },
+      "annual_cooling_MWh": {
+        "min": 0.592,
+        "max": 0.712,
+        "mean": 0.627
+      },
+      "peak_heating_kW": {
+        "min": 1.791,
+        "max": 1.802,
+        "mean": 1.797
+      },
+      "peak_cooling_kW": {
+        "min": 0.944,
+        "max": 1.118,
+        "mean": 1.011
+      }
+    },
+    "200": {
+      "annual_heating_MWh": {
+        "min": 4.813,
+        "max": 5.226,
+        "mean": 5.042
+      },
+      "annual_cooling_MWh": {
+        "min": 0.788,
+        "max": 0.839,
+        "mean": 0.813
+      },
+      "peak_heating_kW": {
+        "min": 2.226,
+        "max": 2.353,
+        "mean": 2.296
+      },
+      "peak_cooling_kW": {
+        "min": 1.198,
+        "max": 1.307,
+        "mean": 1.248
+      }
+    },
+    "210": {
+      "annual_heating_MWh": {
+        "min": 5.627,
+        "max": 6.531,
+        "mean": 6.153
+      },
+      "annual_cooling_MWh": {
+        "min": 0.459,
+        "max": 0.688,
+        "mean": 0.537
+      },
+      "peak_heating_kW": {
+        "min": 2.374,
+        "max": 2.75,
+        "mean": 2.599
+      },
+      "peak_cooling_kW": {
+        "min": 0.877,
+        "max": 1.193,
+        "mean": 0.987
+      }
+    },
+    "215": {
+      "annual_heating_MWh": {
+        "min": 5.181,
+        "max": 5.697,
+        "mean": 5.448
+      },
+      "annual_cooling_MWh": {
+        "min": 0.85,
+        "max": 0.952,
+        "mean": 0.907
+      },
+      "peak_heating_kW": {
+        "min": 2.39,
+        "max": 2.521,
+        "mean": 2.47
+      },
+      "peak_cooling_kW": {
+        "min": 1.352,
+        "max": 1.4,
+        "mean": 1.378
+      }
+    },
+    "220": {
+      "annual_heating_MWh": {
+        "min": 6.377,
+        "max": 7.178,
+        "mean": 6.712
+      },
+      "annual_cooling_MWh": {
+        "min": 0.498,
+        "max": 0.803,
+        "mean": 0.608
+      },
+      "peak_heating_kW": {
+        "min": 2.631,
+        "max": 2.879,
+        "mean": 2.782
+      },
+      "peak_cooling_kW": {
+        "min": 0.968,
+        "max": 1.336,
+        "mean": 1.108
+      }
+    },
+    "230": {
+      "annual_heating_MWh": {
+        "min": 9.812,
+        "max": 10.417,
+        "mean": 10.031
+      },
+      "annual_cooling_MWh": {
+        "min": 0.897,
+        "max": 1.184,
+        "mean": 0.991
+      },
+      "peak_heating_kW": {
+        "min": 4.133,
+        "max": 4.316,
+        "mean": 4.228
+      },
+      "peak_cooling_kW": {
+        "min": 1.694,
+        "max": 1.994,
+        "mean": 1.782
+      }
+    },
+    "240": {
+      "annual_heating_MWh": {
+        "min": 5.116,
+        "max": 5.944,
+        "mean": 5.496
+      },
+      "annual_cooling_MWh": {
+        "min": 0.834,
+        "max": 1.287,
+        "mean": 0.98
+      },
+      "peak_heating_kW": {
+        "min": 2.431,
+        "max": 2.693,
+        "mean": 2.595
+      },
+      "peak_cooling_kW": {
+        "min": 1.15,
+        "max": 1.534,
+        "mean": 1.292
+      }
+    },
+    "250": {
+      "annual_heating_MWh": {
+        "min": 4.733,
+        "max": 5.373,
+        "mean": 5.015
+      },
+      "annual_cooling_MWh": {
+        "min": 2.904,
+        "max": 3.612,
+        "mean": 3.344
+      },
+      "peak_heating_kW": {
+        "min": 2.631,
+        "max": 2.874,
+        "mean": 2.777
+      },
+      "peak_cooling_kW": {
+        "min": 2.688,
+        "max": 3.034,
+        "mean": 2.84
+      }
+    },
+    "270": {
+      "annual_heating_MWh": {
+        "min": 4.273,
+        "max": 4.631,
+        "mean": 4.442
+      },
+      "annual_cooling_MWh": {
+        "min": 6.698,
+        "max": 7.522,
+        "mean": 7.217
+      },
+      "peak_heating_kW": {
+        "min": 2.56,
+        "max": 2.843,
+        "mean": 2.672
+      },
+      "peak_cooling_kW": {
+        "min": 5.832,
+        "max": 7.011,
+        "mean": 6.586
+      }
+    },
+    "280": {
+      "annual_heating_MWh": {
+        "min": 4.525,
+        "max": 4.87,
+        "mean": 4.664
+      },
+      "annual_cooling_MWh": {
+        "min": 4.215,
+        "max": 5.206,
+        "mean": 4.882
+      },
+      "peak_heating_kW": {
+        "min": 2.568,
+        "max": 2.849,
+        "mean": 2.677
+      },
+      "peak_cooling_kW": {
+        "min": 3.768,
+        "max": 4.765,
+        "mean": 4.467
+      }
+    },
+    "290": {
+      "annual_heating_MWh": {
+        "min": 4.381,
+        "max": 4.745,
+        "mean": 4.54
+      },
+      "annual_cooling_MWh": {
+        "min": 5.31,
+        "max": 5.743,
+        "mean": 5.489
+      },
+      "peak_heating_kW": {
+        "min": 2.561,
+        "max": 2.843,
+        "mean": 2.67
+      },
+      "peak_cooling_kW": {
+        "min": 5.739,
+        "max": 6.872,
+        "mean": 6.404
+      }
+    },
+    "300": {
+      "annual_heating_MWh": {
+        "min": 4.318,
+        "max": 4.726,
+        "mean": 4.519
+      },
+      "annual_cooling_MWh": {
+        "min": 4.805,
+        "max": 5.152,
+        "mean": 4.993
+      },
+      "peak_heating_kW": {
+        "min": 2.589,
+        "max": 2.854,
+        "mean": 2.685
+      },
+      "peak_cooling_kW": {
+        "min": 3.695,
+        "max": 4.475,
+        "mean": 4.167
+      }
+    },
+    "310": {
+      "annual_heating_MWh": {
+        "min": 4.58,
+        "max": 5.24,
+        "mean": 4.904
+      },
+      "annual_cooling_MWh": {
+        "min": 3.128,
+        "max": 3.752,
+        "mean": 3.455
+      },
+      "peak_heating_kW": {
+        "min": 2.58,
+        "max": 2.856,
+        "mean": 2.683
+      },
+      "peak_cooling_kW": {
+        "min": 3.252,
+        "max": 3.97,
+        "mean": 3.667
+      }
+    },
+    "320": {
+      "annual_heating_MWh": {
+        "min": 3.599,
+        "max": 4.031,
+        "mean": 3.81
+      },
+      "annual_cooling_MWh": {
+        "min": 4.42,
+        "max": 4.986,
+        "mean": 4.793
+      },
+      "peak_heating_kW": {
+        "min": 2.546,
+        "max": 2.834,
+        "mean": 2.659
+      },
+      "peak_cooling_kW": {
+        "min": 5.304,
+        "max": 6.473,
+        "mean": 5.986
+      }
+    },
+    "395": {
+      "annual_heating_MWh": {
+        "min": 4.565,
+        "max": 5.145,
+        "mean": 4.83
+      },
+      "annual_cooling_MWh": {
+        "min": 0.004,
+        "max": 0.021,
+        "mean": 0.009
+      },
+      "peak_heating_kW": {
+        "min": 1.948,
+        "max": 2.161,
+        "mean": 2.066
+      },
+      "peak_cooling_kW": {
+        "min": 0.265,
+        "max": 0.547,
+        "mean": 0.358
+      }
+    },
+    "400": {
+      "annual_heating_MWh": {
+        "min": 5.906,
+        "max": 7.047,
+        "mean": 6.536
+      },
+      "annual_cooling_MWh": {
+        "min": 0.013,
+        "max": 0.063,
+        "mean": 0.028
+      },
+      "peak_heating_kW": {
+        "min": 2.559,
+        "max": 2.879,
+        "mean": 2.77
+      },
+      "peak_cooling_kW": {
+        "min": 0.372,
+        "max": 0.798,
+        "mean": 0.531
+      }
+    },
+    "410": {
+      "annual_heating_MWh": {
+        "min": 7.63,
+        "max": 8.661,
+        "mean": 8.179
+      },
+      "annual_cooling_MWh": {
+        "min": 0.035,
+        "max": 0.096,
+        "mean": 0.055
+      },
+      "peak_heating_kW": {
+        "min": 3.338,
+        "max": 3.597,
+        "mean": 3.483
+      },
+      "peak_cooling_kW": {
+        "min": 0.604,
+        "max": 1.011,
+        "mean": 0.746
+      }
+    },
+    "420": {
+      "annual_heating_MWh": {
+        "min": 6.399,
+        "max": 7.433,
+        "mean": 6.973
+      },
+      "annual_cooling_MWh": {
+        "min": 0.109,
+        "max": 0.228,
+        "mean": 0.149
+      },
+      "peak_heating_kW": {
+        "min": 3.138,
+        "max": 3.411,
+        "mean": 3.297
+      },
+      "peak_cooling_kW": {
+        "min": 0.814,
+        "max": 1.208,
+        "mean": 0.953
+      }
+    },
+    "430": {
+      "annual_heating_MWh": {
+        "min": 5.171,
+        "max": 5.954,
+        "mean": 5.599
+      },
+      "annual_cooling_MWh": {
+        "min": 0.739,
+        "max": 1.084,
+        "mean": 0.914
+      },
+      "peak_heating_kW": {
+        "min": 3.254,
+        "max": 3.409,
+        "mean": 3.321
+      },
+      "peak_cooling_kW": {
+        "min": 1.704,
+        "max": 2.167,
+        "mean": 1.892
+      }
+    },
+    "440": {
+      "annual_heating_MWh": {
+        "min": 4.156,
+        "max": 4.721,
+        "mean": 4.442
+      },
+      "annual_cooling_MWh": {
+        "min": 3.458,
+        "max": 4.414,
+        "mean": 3.937
+      },
+      "peak_heating_kW": {
+        "min": 3.027,
+        "max": 3.374,
+        "mean": 3.183
+      },
+      "peak_cooling_kW": {
+        "min": 3.766,
+        "max": 4.686,
+        "mean": 4.421
+      }
+    },
+    "450": {
+      "annual_heating_MWh": {
+        "min": 3.375,
+        "max": 3.99,
+        "mean": 3.799
+      },
+      "annual_cooling_MWh": {
+        "min": 5.689,
+        "max": 6.613,
+        "mean": 6.279
+      },
+      "peak_heating_kW": {
+        "min": 2.753,
+        "max": 3.1,
+        "mean": 2.983
+      },
+      "peak_cooling_kW": {
+        "min": 5.812,
+        "max": 6.501,
+        "mean": 6.223
+      }
+    },
+    "460": {
+      "annual_heating_MWh": {
+        "min": 3.828,
+        "max": 4.29,
+        "mean": 4.084
+      },
+      "annual_cooling_MWh": {
+        "min": 5.929,
+        "max": 6.729,
+        "mean": 6.263
+      },
+      "peak_heating_kW": {
+        "min": 2.971,
+        "max": 3.16,
+        "mean": 3.06
+      },
+      "peak_cooling_kW": {
+        "min": 5.804,
+        "max": 6.374,
+        "mean": 6.116
+      }
+    },
+    "470": {
+      "annual_heating_MWh": {
+        "min": 3.54,
+        "max": 4.094,
+        "mean": 3.935
+      },
+      "annual_cooling_MWh": {
+        "min": 5.644,
+        "max": 6.056,
+        "mean": 5.895
+      },
+      "peak_heating_kW": {
+        "min": 2.807,
+        "max": 3.231,
+        "mean": 3.089
+      },
+      "peak_cooling_kW": {
+        "min": 5.57,
+        "max": 6.444,
+        "mean": 6.137
+      }
+    },
+    "600": {
+      "annual_heating_MWh": {
+        "min": 3.993,
+        "max": 4.504,
+        "mean": 4.213
+      },
+      "annual_cooling_MWh": {
+        "min": 5.432,
+        "max": 6.162,
+        "mean": 5.856
+      },
+      "peak_heating_kW": {
+        "min": 3.02,
+        "max": 3.359,
+        "mean": 3.184
+      },
+      "peak_cooling_kW": {
+        "min": 5.422,
+        "max": 6.481,
+        "mean": 6.024
+      }
+    },
+    "600FF": {
+      "ff_max_zone_temp_C": {
+        "min": 62.4,
+        "max": 68.4,
+        "mean": 64.6
+      },
+      "ff_min_zone_temp_C": {
+        "min": -13.8,
+        "max": -9.9,
+        "mean": -11.8
+      },
+      "ff_mean_zone_temp_C": {
+        "min": 24.3,
+        "max": 26.1,
+        "mean": 25.2
+      }
+    },
+    "610": {
+      "annual_heating_MWh": {
+        "min": 4.066,
+        "max": 4.592,
+        "mean": 4.311
+      },
+      "annual_cooling_MWh": {
+        "min": 4.117,
+        "max": 4.382,
+        "mean": 4.256
+      },
+      "peak_heating_kW": {
+        "min": 3.021,
+        "max": 3.36,
+        "mean": 3.168
+      },
+      "peak_cooling_kW": {
+        "min": 5.331,
+        "max": 6.432,
+        "mean": 5.861
+      }
+    },
+    "620": {
+      "annual_heating_MWh": {
+        "min": 4.094,
+        "max": 4.719,
+        "mean": 4.413
+      },
+      "annual_cooling_MWh": {
+        "min": 3.841,
+        "max": 4.404,
+        "mean": 4.09
+      },
+      "peak_heating_kW": {
+        "min": 3.038,
+        "max": 3.385,
+        "mean": 3.186
+      },
+      "peak_cooling_kW": {
+        "min": 3.955,
+        "max": 4.797,
+        "mean": 4.527
+      }
+    },
+    "630": {
+      "annual_heating_MWh": {
+        "min": 4.356,
+        "max": 5.139,
+        "mean": 4.821
+      },
+      "annual_cooling_MWh": {
+        "min": 2.573,
+        "max": 3.074,
+        "mean": 2.814
+      },
+      "peak_heating_kW": {
+        "min": 3.039,
+        "max": 3.388,
+        "mean": 3.203
+      },
+      "peak_cooling_kW": {
+        "min": 3.526,
+        "max": 4.212,
+        "mean": 3.963
+      }
+    },
+    "640": {
+      "annual_heating_MWh": {
+        "min": 2.403,
+        "max": 2.682,
+        "mean": 2.612
+      },
+      "annual_cooling_MWh": {
+        "min": 5.237,
+        "max": 5.893,
+        "mean": 5.636
+      },
+      "peak_heating_kW": {
+        "min": 4.039,
+        "max": 4.658,
+        "mean": 4.369
+      },
+      "peak_cooling_kW": {
+        "min": 5.365,
+        "max": 6.429,
+        "mean": 5.973
+      }
+    },
+    "650": {
+      "annual_heating_MWh": {
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0
+      },
+      "annual_cooling_MWh": {
+        "min": 4.186,
+        "max": 4.945,
+        "mean": 4.644
+      },
+      "peak_heating_kW": {
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0
+      },
+      "peak_cooling_kW": {
+        "min": 5.045,
+        "max": 6.29,
+        "mean": 5.813
+      }
+    },
+    "650FF": {
+      "ff_max_zone_temp_C": {
+        "min": 61.1,
+        "max": 66.8,
+        "mean": 63.1
+      },
+      "ff_min_zone_temp_C": {
+        "min": -17.8,
+        "max": -16.7,
+        "mean": -17.3
+      },
+      "ff_mean_zone_temp_C": {
+        "min": 17.6,
+        "max": 18.9,
+        "mean": 18.3
+      }
+    },
+    "660": {
+      "annual_heating_MWh": {
+        "min": 3.574,
+        "max": 3.821,
+        "mean": 3.713
+      },
+      "annual_cooling_MWh": {
+        "min": 2.966,
+        "max": 3.34,
+        "mean": 3.172
+      },
+      "peak_heating_kW": {
+        "min": 2.62,
+        "max": 2.955,
+        "mean": 2.801
+      },
+      "peak_cooling_kW": {
+        "min": 3.343,
+        "max": 3.933,
+        "mean": 3.565
+      }
+    },
+    "670": {
+      "annual_heating_MWh": {
+        "min": 5.3,
+        "max": 6.14,
+        "mean": 5.681
+      },
+      "annual_cooling_MWh": {
+        "min": 5.954,
+        "max": 6.623,
+        "mean": 6.402
+      },
+      "peak_heating_kW": {
+        "min": 3.655,
+        "max": 4.221,
+        "mean": 3.943
+      },
+      "peak_cooling_kW": {
+        "min": 5.839,
+        "max": 6.925,
+        "mean": 6.445
+      }
+    },
+    "680": {
+      "annual_heating_MWh": {
+        "min": 1.732,
+        "max": 2.286,
+        "mean": 2.056
+      },
+      "annual_cooling_MWh": {
+        "min": 5.932,
+        "max": 6.529,
+        "mean": 6.264
+      },
+      "peak_heating_kW": {
+        "min": 1.778,
+        "max": 2.126,
+        "mean": 1.984
+      },
+      "peak_cooling_kW": {
+        "min": 5.761,
+        "max": 7.051,
+        "mean": 6.446
+      }
+    },
+    "680FF": {
+      "ff_max_zone_temp_C": {
+        "min": 69.8,
+        "max": 78.5,
+        "mean": 73.0
+      },
+      "ff_min_zone_temp_C": {
+        "min": -8.1,
+        "max": -5.7,
+        "mean": -6.9
+      },
+      "ff_mean_zone_temp_C": {
+        "min": 30.2,
+        "max": 33.3,
+        "mean": 31.8
+      }
+    },
+    "685": {
+      "annual_heating_MWh": {
+        "min": 4.532,
+        "max": 5.042,
+        "mean": 4.763
+      },
+      "annual_cooling_MWh": {
+        "min": 8.238,
+        "max": 9.13,
+        "mean": 8.886
+      },
+      "peak_heating_kW": {
+        "min": 3.032,
+        "max": 3.374,
+        "mean": 3.183
+      },
+      "peak_cooling_kW": {
+        "min": 6.071,
+        "max": 7.159,
+        "mean": 6.743
+      }
+    },
+    "695": {
+      "annual_heating_MWh": {
+        "min": 2.385,
+        "max": 2.892,
+        "mean": 2.656
+      },
+      "annual_cooling_MWh": {
+        "min": 8.386,
+        "max": 9.172,
+        "mean": 8.912
+      },
+      "peak_heating_kW": {
+        "min": 1.795,
+        "max": 2.138,
+        "mean": 2.0
+      },
+      "peak_cooling_kW": {
+        "min": 6.232,
+        "max": 7.541,
+        "mean": 6.979
+      }
+    },
+    "800": {
+      "annual_heating_MWh": {
+        "min": 4.906,
+        "max": 5.403,
+        "mean": 5.152
+      },
+      "annual_cooling_MWh": {
+        "min": 0.282,
+        "max": 0.473,
+        "mean": 0.377
+      },
+      "peak_heating_kW": {
+        "min": 2.778,
+        "max": 2.967,
+        "mean": 2.888
+      },
+      "peak_cooling_kW": {
+        "min": 0.936,
+        "max": 1.286,
+        "mean": 1.096
+      }
+    },
+    "810": {
+      "annual_heating_MWh": {
+        "min": 2.038,
+        "max": 2.61,
+        "mean": 2.326
+      },
+      "annual_cooling_MWh": {
+        "min": 1.295,
+        "max": 1.606,
+        "mean": 1.449
+      },
+      "peak_heating_kW": {
+        "min": 2.5,
+        "max": 2.845,
+        "mean": 2.66
+      },
+      "peak_cooling_kW": {
+        "min": 1.94,
+        "max": 2.41,
+        "mean": 2.183
+      }
+    },
+    "900": {
+      "annual_heating_MWh": {
+        "min": 1.379,
+        "max": 1.814,
+        "mean": 1.626
+      },
+      "annual_cooling_MWh": {
+        "min": 2.267,
+        "max": 2.714,
+        "mean": 2.467
+      },
+      "peak_heating_kW": {
+        "min": 2.443,
+        "max": 2.778,
+        "mean": 2.591
+      },
+      "peak_cooling_kW": {
+        "min": 2.556,
+        "max": 3.376,
+        "mean": 2.975
+      }
+    },
+    "900FF": {
+      "ff_max_zone_temp_C": {
+        "min": 43.3,
+        "max": 46.0,
+        "mean": 44.6
+      },
+      "ff_min_zone_temp_C": {
+        "min": 0.6,
+        "max": 2.2,
+        "mean": 1.4
+      },
+      "ff_mean_zone_temp_C": {
+        "min": 24.5,
+        "max": 25.7,
+        "mean": 25.2
+      }
+    },
+    "910": {
+      "annual_heating_MWh": {
+        "min": 1.648,
+        "max": 2.163,
+        "mean": 1.971
+      },
+      "annual_cooling_MWh": {
+        "min": 1.191,
+        "max": 1.49,
+        "mean": 1.374
+      },
+      "peak_heating_kW": {
+        "min": 2.469,
+        "max": 2.799,
+        "mean": 2.648
+      },
+      "peak_cooling_kW": {
+        "min": 2.081,
+        "max": 2.722,
+        "mean": 2.306
+      }
+    },
+    "920": {
+      "annual_heating_MWh": {
+        "min": 2.956,
+        "max": 3.607,
+        "mean": 3.326
+      },
+      "annual_cooling_MWh": {
+        "min": 2.549,
+        "max": 3.128,
+        "mean": 2.786
+      },
+      "peak_heating_kW": {
+        "min": 2.512,
+        "max": 2.895,
+        "mean": 2.71
+      },
+      "peak_cooling_kW": {
+        "min": 2.71,
+        "max": 3.481,
+        "mean": 3.127
+      }
+    },
+    "930": {
+      "annual_heating_MWh": {
+        "min": 3.524,
+        "max": 4.384,
+        "mean": 4.064
+      },
+      "annual_cooling_MWh": {
+        "min": 1.654,
+        "max": 2.161,
+        "mean": 1.898
+      },
+      "peak_heating_kW": {
+        "min": 2.537,
+        "max": 2.968,
+        "mean": 2.751
+      },
+      "peak_cooling_kW": {
+        "min": 2.335,
+        "max": 3.052,
+        "mean": 2.656
+      }
+    },
+    "940": {
+      "annual_heating_MWh": {
+        "min": 0.863,
+        "max": 1.389,
+        "mean": 1.109
+      },
+      "annual_cooling_MWh": {
+        "min": 2.203,
+        "max": 2.613,
+        "mean": 2.401
+      },
+      "peak_heating_kW": {
+        "min": 3.052,
+        "max": 3.882,
+        "mean": 3.377
+      },
+      "peak_cooling_kW": {
+        "min": 2.556,
+        "max": 3.376,
+        "mean": 2.993
+      }
+    },
+    "950": {
+      "annual_heating_MWh": {
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0
+      },
+      "annual_cooling_MWh": {
+        "min": 0.586,
+        "max": 0.707,
+        "mean": 0.634
+      },
+      "peak_heating_kW": {
+        "min": 0.0,
+        "max": 0.0,
+        "mean": 0.0
+      },
+      "peak_cooling_kW": {
+        "min": 2.054,
+        "max": 2.388,
+        "mean": 2.268
+      }
+    },
+    "950FF": {
+      "ff_max_zone_temp_C": {
+        "min": 36.1,
+        "max": 37.1,
+        "mean": 36.6
+      },
+      "ff_min_zone_temp_C": {
+        "min": -13.4,
+        "max": -12.5,
+        "mean": -13.0
+      },
+      "ff_mean_zone_temp_C": {
+        "min": 14.4,
+        "max": 15.0,
+        "mean": 14.7
+      }
+    },
+    "960": {
+      "annual_heating_MWh": {
+        "min": 2.522,
+        "max": 2.86,
+        "mean": 2.693
+      },
+      "annual_cooling_MWh": {
+        "min": 0.789,
+        "max": 0.95,
+        "mean": 0.896
+      },
+      "peak_heating_kW": {
+        "min": 2.085,
+        "max": 2.3,
+        "mean": 2.196
+      },
+      "peak_cooling_kW": {
+        "min": 1.338,
+        "max": 1.48,
+        "mean": 1.393
+      },
+      "ff_max_zone_temp_C": {
+        "min": 48.1,
+        "max": 53.2,
+        "mean": 49.9
+      }
+    },
+    "980": {
+      "annual_heating_MWh": {
+        "min": 0.246,
+        "max": 0.72,
+        "mean": 0.407
+      },
+      "annual_cooling_MWh": {
+        "min": 3.501,
+        "max": 3.995,
+        "mean": 3.71
+      },
+      "peak_heating_kW": {
+        "min": 1.254,
+        "max": 1.693,
+        "mean": 1.489
+      },
+      "peak_cooling_kW": {
+        "min": 2.93,
+        "max": 3.668,
+        "mean": 3.348
+      }
+    },
+    "980FF": {
+      "ff_max_zone_temp_C": {
+        "min": 48.5,
+        "max": 52.8,
+        "mean": 50.5
+      },
+      "ff_min_zone_temp_C": {
+        "min": -3.7,
+        "max": -1.5,
+        "mean": -2.7
+      },
+      "ff_mean_zone_temp_C": {
+        "min": 30.5,
+        "max": 33.3,
+        "mean": 31.8
+      }
+    },
+    "985": {
+      "annual_heating_MWh": {
+        "min": 2.12,
+        "max": 2.801,
+        "mean": 2.398
+      },
+      "annual_cooling_MWh": {
+        "min": 5.88,
+        "max": 7.273,
+        "mean": 6.351
+      },
+      "peak_heating_kW": {
+        "min": 2.452,
+        "max": 2.785,
+        "mean": 2.631
+      },
+      "peak_cooling_kW": {
+        "min": 3.208,
+        "max": 4.225,
+        "mean": 3.824
+      }
+    },
+    "995": {
+      "annual_heating_MWh": {
+        "min": 0.755,
+        "max": 1.33,
+        "mean": 0.974
+      },
+      "annual_cooling_MWh": {
+        "min": 6.771,
+        "max": 7.482,
+        "mean": 7.145
+      },
+      "peak_heating_kW": {
+        "min": 1.37,
+        "max": 1.711,
+        "mean": 1.564
+      },
+      "peak_cooling_kW": {
+        "min": 3.315,
+        "max": 4.224,
+        "mean": 3.986
+      }
+    }
+  }
+}
