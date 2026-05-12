@@ -152,10 +152,8 @@ const CASE_650FF: CaseReference = CaseReference {
 fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
     let spec = case_enum.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-    )
-    .expect("Failed to load EPW weather data");
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+        .expect("Failed to load EPW weather data");
 
     let mut total_heating = 0.0_f64;
     let mut total_cooling = 0.0_f64;
@@ -194,10 +192,8 @@ fn run_annual_simulation(case_enum: ASHRAE140Case) -> (f64, f64, f64, f64) {
 fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
     let spec = case_enum.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(
-        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
-    )
-    .expect("Failed to load EPW weather data");
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+        .expect("Failed to load EPW weather data");
 
     let mut min_temp = f64::MAX;
     let mut max_temp = f64::MIN;

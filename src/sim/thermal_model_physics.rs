@@ -740,7 +740,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let num_zones = self.0.num_zones;
 
         // Start with phi_ia; we will add inter-zone heat directly to its buffer if needed.
-        let mut phi_ia_with_iz = phi_ia;
+        // Clone so phi_ia remains available for the Case 610 debug print below (line 914).
+        let mut phi_ia_with_iz = phi_ia.clone();
 
         if num_zones > 1 {
             let temps = self.0.temperatures.as_ref();
@@ -910,12 +911,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
-        if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
+        if self.0.case_id == "610" && timestep == 0 {
+            let phi_ia_0 = phi_ia.as_ref()[0];
             eprintln!(
-                "DEBUG {} timestep {} t_i_free[0]={:.2}°C",
-                self.0.case_id,
-                timestep,
-                t_i_free.as_ref()[0]
+                "DEBUG_610 t=0: t_i_free={:.2}°C, phi_ia={:.2}W, solar={:.2}W, loads={:.2}W/m²",
+                t_i_free.as_ref()[0],
+                phi_ia_0,
+                solar_ref[0] * area_ref[0],
+                loads_ref[0]
             );
         }
 
