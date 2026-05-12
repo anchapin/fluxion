@@ -205,7 +205,7 @@ impl ConcreteMaterial {
     /// *  - Layer thickness in meters
     pub fn ashrae_140_heavyweight(thickness: f64) -> Self {
         use crate::physics::constants::thermal::ashrae_140::materials::{
-            HW_CONCRETE_K, HW_CONCRETE_RHO, HW_CONCRETE_CP, EXTERIOR_SURFACE_ABSORPTANCE,
+            EXTERIOR_SURFACE_ABSORPTANCE, HW_CONCRETE_CP, HW_CONCRETE_K, HW_CONCRETE_RHO,
         };
         Self {
             thickness,
@@ -337,7 +337,7 @@ impl InsulationMaterial {
     /// *  - Layer thickness in meters (0.0615 m for ASHRAE 140 standard)
     pub fn ashrae_140_foam_board(thickness: f64) -> Self {
         use crate::physics::constants::thermal::ashrae_140::materials::{
-            FOAM_BOARD_K, FOAM_BOARD_RHO, FOAM_BOARD_CP,
+            FOAM_BOARD_CP, FOAM_BOARD_K, FOAM_BOARD_RHO,
         };
         Self {
             thickness,
@@ -469,7 +469,7 @@ impl GypsumMaterial {
     /// *  - Layer thickness in meters (0.012 m for standard board)
     pub fn ashrae_140(thickness: f64) -> Self {
         use crate::physics::constants::thermal::ashrae_140::materials::{
-            GYPSUM_K, GYPSUM_RHO, GYPSUM_CP,
+            GYPSUM_CP, GYPSUM_K, GYPSUM_RHO,
         };
         Self {
             thickness,
