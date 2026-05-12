@@ -1,0 +1,2375 @@
+{
+  "_schema_version": "1",
+  "_generated_by": "generate_dataset.py",
+  "_note": "ASHRAE 140 retrospective replay dataset. Update by running: python3 benches/orchestration_decisions/dataset/generate_dataset.py",
+  "summary": {
+    "total_decisions": 195,
+    "correct": 162,
+    "accuracy": 0.8308,
+    "by_type": {
+      "solver_selection": {
+        "correct": 26,
+        "total": 39
+      },
+      "adaptive_timestep": {
+        "correct": 39,
+        "total": 39
+      },
+      "surrogate_routing": {
+        "correct": 26,
+        "total": 39
+      },
+      "constraint_warning": {
+        "correct": 39,
+        "total": 39
+      },
+      "hvac_horizon": {
+        "correct": 32,
+        "total": 39
+      }
+    },
+    "note": "Baseline dataset from ASHRAE 140 retrospective replay. 900-series solver_selection decisions are currently WRONG (Issue #726 \u2014 CTF used instead of FD)."
+  },
+  "decisions": [
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_600",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_600",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.2,
+        "solar_delta_w_m2": 80.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_600",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_600",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 35.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_600",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_610",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_610",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 0.8,
+        "solar_delta_w_m2": 60.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_610",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_610",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 16.0,
+        "t_zone_max_c": 34.0,
+        "energy_balance_error": 0.001
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_610",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_620",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_620",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.0,
+        "solar_delta_w_m2": 70.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_620",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_620",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 14.0,
+        "t_zone_max_c": 36.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_620",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_630",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_630",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.1,
+        "solar_delta_w_m2": 65.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_630",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_630",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 33.0,
+        "energy_balance_error": 0.001
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_630",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_640",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_640",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 0.9,
+        "solar_delta_w_m2": 55.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_640",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_640",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 16.0,
+        "t_zone_max_c": 35.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_640",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_650",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_650",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.3,
+        "solar_delta_w_m2": 75.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_650",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_650",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 14.0,
+        "t_zone_max_c": 37.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_650",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_900",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_900",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.8,
+        "solar_delta_w_m2": 200.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_900",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.2
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_900",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 12.0,
+        "t_zone_max_c": 42.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_900",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_910",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_910",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.5,
+        "solar_delta_w_m2": 190.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_910",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.3
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_910",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 13.0,
+        "t_zone_max_c": 41.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_910",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_920",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_920",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 5.0,
+        "solar_delta_w_m2": 210.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_920",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.2
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_920",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 11.0,
+        "t_zone_max_c": 43.0,
+        "energy_balance_error": 0.006
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_920",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_930",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_930",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.2,
+        "solar_delta_w_m2": 185.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_930",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.4
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_930",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 13.0,
+        "t_zone_max_c": 40.0,
+        "energy_balance_error": 0.004
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_930",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_940",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_940",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.7,
+        "solar_delta_w_m2": 195.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_940",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.1
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_940",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 12.0,
+        "t_zone_max_c": 42.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_940",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_950",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_950",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 5.2,
+        "solar_delta_w_m2": 215.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_950",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.0
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_950",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 11.0,
+        "t_zone_max_c": 44.0,
+        "energy_balance_error": 0.006
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_950",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_900ff",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_900ff",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.6,
+        "solar_delta_w_m2": 205.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_900ff",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.2
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_900ff",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 10.0,
+        "t_zone_max_c": 45.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_900ff",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_950ff",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_950ff",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 5.1,
+        "solar_delta_w_m2": 220.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_950ff",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.1
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_950ff",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 10.0,
+        "t_zone_max_c": 46.0,
+        "energy_balance_error": 0.006
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_950ff",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_960a",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1200.0,
+        "thickness_m": 0.1
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_960a",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 5.5,
+        "solar_delta_w_m2": 350.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_960a",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_960a",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 14.0,
+        "t_zone_max_c": 48.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_960a",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.6,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_960b",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1200.0,
+        "thickness_m": 0.1
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_960b",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.9,
+        "solar_delta_w_m2": 310.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_960b",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_960b",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 46.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_960b",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.6,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_195",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_195",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 0.5,
+        "solar_delta_w_m2": 20.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_195",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.8
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_195",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 18.0,
+        "t_zone_max_c": 28.0,
+        "energy_balance_error": 0.001
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_195",
+      "ground_truth": "72h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.85,
+        "dr_event_probability_72h": 0.05
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_470",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_470",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 0.6,
+        "solar_delta_w_m2": 25.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_470",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.9
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_470",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 17.0,
+        "t_zone_max_c": 29.0,
+        "energy_balance_error": 0.001
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_470",
+      "ground_truth": "72h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.85,
+        "dr_event_probability_72h": 0.05
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_800",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1000.0,
+        "thickness_m": 0.15
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_800",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 2.0,
+        "solar_delta_w_m2": 120.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_800",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.8
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_800",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 14.0,
+        "t_zone_max_c": 38.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_800",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_810",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1000.0,
+        "thickness_m": 0.15
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_810",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.9,
+        "solar_delta_w_m2": 110.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_810",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.9
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_810",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 37.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_810",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_setback_1",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_setback_1",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 3.8,
+        "solar_delta_w_m2": 50.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_setback_1",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_setback_1",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 16.0,
+        "t_zone_max_c": 34.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_setback_1",
+      "ground_truth": "6h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.45,
+        "dr_event_probability_72h": 0.7
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_setback_2",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_setback_2",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 3.5,
+        "solar_delta_w_m2": 45.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_setback_2",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_setback_2",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 17.0,
+        "t_zone_max_c": 33.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_setback_2",
+      "ground_truth": "6h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.45,
+        "dr_event_probability_72h": 0.7
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_ventilation_1",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_ventilation_1",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 2.5,
+        "solar_delta_w_m2": 60.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_ventilation_1",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_ventilation_1",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 35.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_ventilation_1",
+      "ground_truth": "6h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.45,
+        "dr_event_probability_72h": 0.65
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_ventilation_2",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_ventilation_2",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 2.2,
+        "solar_delta_w_m2": 55.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_ventilation_2",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_ventilation_2",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 16.0,
+        "t_zone_max_c": 34.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_ventilation_2",
+      "ground_truth": "6h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.45,
+        "dr_event_probability_72h": 0.65
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_600ff",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_600ff",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.0,
+        "solar_delta_w_m2": 70.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_600ff",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_600ff",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 10.0,
+        "t_zone_max_c": 45.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_600ff",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_650ff",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 800.0,
+        "thickness_m": 0.09
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_650ff",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.1,
+        "solar_delta_w_m2": 75.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_650ff",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_650ff",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 12.0,
+        "t_zone_max_c": 43.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_650ff",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_nr_1",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1100.0,
+        "thickness_m": 0.12
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_nr_1",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.8,
+        "solar_delta_w_m2": 100.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_nr_1",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.6
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_nr_1",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 18.0,
+        "t_zone_max_c": 30.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_nr_1",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.15
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_nr_2",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1100.0,
+        "thickness_m": 0.12
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_nr_2",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 2.1,
+        "solar_delta_w_m2": 110.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_nr_2",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.7
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_nr_2",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 17.0,
+        "t_zone_max_c": 31.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_nr_2",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.15
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_nr_3",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1100.0,
+        "thickness_m": 0.12
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_nr_3",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.5,
+        "solar_delta_w_m2": 95.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_nr_3",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.8
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_nr_3",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 19.0,
+        "t_zone_max_c": 29.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_nr_3",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.15
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "blind_case_a",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 900.0,
+        "thickness_m": 0.095
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "blind_case_a",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.4,
+        "solar_delta_w_m2": 85.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "blind_case_a",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.2
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "blind_case_a",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 14.0,
+        "t_zone_max_c": 36.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "blind_case_a",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "blind_case_b",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1900.0,
+        "thickness_m": 0.22
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "blind_case_b",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.3,
+        "solar_delta_w_m2": 185.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "blind_case_b",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "blind_case_b",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 12.0,
+        "t_zone_max_c": 41.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "blind_case_b",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "blind_case_c",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1300.0,
+        "thickness_m": 0.14
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "blind_case_c",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 2.3,
+        "solar_delta_w_m2": 130.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "blind_case_c",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.4
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "blind_case_c",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 37.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "blind_case_c",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.6,
+        "dr_event_probability_72h": 0.2
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "blind_case_d",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 750.0,
+        "thickness_m": 0.085
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "blind_case_d",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 0.7,
+        "solar_delta_w_m2": 40.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "blind_case_d",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.9
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "blind_case_d",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 16.0,
+        "t_zone_max_c": 32.0,
+        "energy_balance_error": 0.001
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "blind_case_d",
+      "ground_truth": "72h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.8,
+        "dr_event_probability_72h": 0.05
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_915",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_915",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.6,
+        "solar_delta_w_m2": 205.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_915",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.2
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_915",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 11.0,
+        "t_zone_max_c": 43.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_915",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_925",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_925",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.9,
+        "solar_delta_w_m2": 212.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_925",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.1
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_925",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 11.0,
+        "t_zone_max_c": 44.0,
+        "energy_balance_error": 0.006
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_925",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_955",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 2000.0,
+        "thickness_m": 0.25
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_955",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 5.0,
+        "solar_delta_w_m2": 218.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_955",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.0
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_955",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 10.0,
+        "t_zone_max_c": 45.0,
+        "energy_balance_error": 0.006
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_955",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_int_1",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 820.0,
+        "thickness_m": 0.092
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_int_1",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 1.3,
+        "solar_delta_w_m2": 78.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_int_1",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 3.4
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_int_1",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 35.0,
+        "energy_balance_error": 0.002
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_int_1",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.5,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_int_2",
+      "ground_truth": "fd",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1950.0,
+        "thickness_m": 0.23
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_int_2",
+      "ground_truth": "trigger",
+      "actual": "trigger",
+      "features": {
+        "t_slope_k_per_h": 4.4,
+        "solar_delta_w_m2": 195.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": false,
+      "cost_avoided_s": 0.0,
+      "source_case": "case_int_2",
+      "ground_truth": "surrogate",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 1.3
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_int_2",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 12.0,
+        "t_zone_max_c": 42.0,
+        "energy_balance_error": 0.005
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_int_2",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.55,
+        "dr_event_probability_72h": 0.1
+      }
+    },
+    {
+      "decision_type": "solver_selection",
+      "correct": true,
+      "cost_avoided_s": 300.0,
+      "source_case": "case_int_3",
+      "ground_truth": "ctf",
+      "actual": "ctf",
+      "features": {
+        "density_kg_m3": 1250.0,
+        "thickness_m": 0.13
+      }
+    },
+    {
+      "decision_type": "adaptive_timestep",
+      "correct": true,
+      "cost_avoided_s": 45.0,
+      "source_case": "case_int_3",
+      "ground_truth": "no_trigger",
+      "actual": "no_trigger",
+      "features": {
+        "t_slope_k_per_h": 2.0,
+        "solar_delta_w_m2": 115.0
+      }
+    },
+    {
+      "decision_type": "surrogate_routing",
+      "correct": true,
+      "cost_avoided_s": 2.0,
+      "source_case": "case_int_3",
+      "ground_truth": "physics",
+      "actual": "physics",
+      "features": {
+        "mahalanobis_dist": 2.5
+      }
+    },
+    {
+      "decision_type": "constraint_warning",
+      "correct": true,
+      "cost_avoided_s": 30.0,
+      "source_case": "case_int_3",
+      "ground_truth": "ok",
+      "actual": "ok",
+      "features": {
+        "t_zone_min_c": 15.0,
+        "t_zone_max_c": 37.0,
+        "energy_balance_error": 0.003
+      }
+    },
+    {
+      "decision_type": "hvac_horizon",
+      "correct": true,
+      "cost_avoided_s": 10.0,
+      "source_case": "case_int_3",
+      "ground_truth": "24h",
+      "actual": "24h",
+      "features": {
+        "weather_forecast_confidence": 0.6,
+        "dr_event_probability_72h": 0.2
+      }
+    }
+  ]
+}
