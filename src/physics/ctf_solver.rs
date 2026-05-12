@@ -68,8 +68,8 @@ impl CTFSolverConfig {
             timestep,
             history_size,
             surface_area: 1.0,
-            h_interior: 8.0,
-            h_exterior: 25.0,
+            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
             alpha_solar: 0.7,
         }
     }
@@ -79,9 +79,9 @@ impl CTFSolverConfig {
         Self {
             timestep,
             history_size: 50,
-            surface_area: 97.2, // 4 walls × 8m × 2.7m - windows
-            h_interior: 8.0,
-            h_exterior: 25.0,
+            surface_area: 63.6, // m² (corrected: 2(8+6)×2.7 - 12m² window = 63.6, was 97.2)
+            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
             alpha_solar: 0.7,
         }
     }
@@ -501,7 +501,7 @@ mod tests {
 
         assert_eq!(config.timestep, 3600.0);
         assert_eq!(config.history_size, 50);
-        assert!((config.surface_area - 97.2).abs() < 0.1);
+        assert!((config.surface_area - 63.6).abs() < 0.1);
         assert_eq!(config.h_interior, 8.0);
         assert_eq!(config.h_exterior, 25.0);
     }
@@ -700,7 +700,7 @@ mod tests {
 
         assert_eq!(solver.config.timestep, 3600.0);
         assert_eq!(solver.config.history_size, 50);
-        assert!((solver.config.surface_area - 97.2).abs() < 0.1);
+        assert!((solver.config.surface_area - 63.6).abs() < 0.1);
     }
 
     #[test]
