@@ -14,20 +14,30 @@ permissions:
   pull-requests: write
 
 # Job execution policy
-# ──────────────────────────────────────────────────────────────────────────────
-# PR branch push  →  NO jobs in this file run (fast gate is in rust-tests.yml).
-#                    Python and integration jobs are too slow for per-commit
-#                    feedback; failures will surface before the next release.
-# Main merge      →  All jobs here run to catch anything that slipped through.
-# ──────────────────────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# PR branch push  ->  NO jobs in this file run (fast gate is in rust-tests.yml).
+#                     Python and integration jobs are too slow for per-commit
+#                     feedback; failures will surface before the next release.
+# Main merge      ->  All jobs here run to catch anything that slipped through.
+# ---------------------------------------------------------------------------
+#
+# Runner routing (Linux jobs)
+# ---------------------------------------------------------------------------
+# Set the repository variable FLUXION_LINUX_RUNNER to route heavy Linux jobs
+# to self-hosted Hetzner runners for more parallelism at lower cost:
+#   gh variable set FLUXION_LINUX_RUNNER --body "fluxion-ci" \
+#     --repo anchapin/fluxion
+# When unset or empty, jobs fall back to GitHub-hosted ubuntu-latest (free).
+# See docs/self-hosted-runners.md for provisioning instructions.
+# ---------------------------------------------------------------------------
 
 jobs:
-  # Maturin release build + pytest — takes 5-10 min on a cold cache.
+  # Maturin release build + pytest -- takes 5-10 min on a cold cache.
   # Not suitable as a per-commit gate; failures are caught on merge.
   python-examples:
     name: Python Bindings & pytest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-python-env
@@ -54,12 +64,12 @@ jobs:
           source venv/bin/activate
           pytest -q
 
-  # Integration test suite (wiring, e2e, batch-oracle, CLI) — slow compile
+  # Integration test suite (wiring, e2e, batch-oracle, CLI) -- slow compile
   # plus multi-feature builds; only run on main.
   integration-tests:
     name: Integration Tests
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
