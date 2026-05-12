@@ -87,15 +87,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // h_ext = h_tr_em + h_tr_w + h_ve
         // Include: opaque envelope (int air -> ext), windows (int air -> ext), ventilation
         // Note: Using h_tr_em directly instead of series calculation to avoid double-counting
-        self.0.derived_h_ext = self.0.h_tr_em.clone() + self.0.h_tr_w.clone() + self.0.h_ve.clone();
+        self.0.derived_h_ext = self.0.h_tr_w.clone() + self.0.h_ve.clone();
 
-        // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
-        // Issue #XXX: Include h_tr_me (internal mass coupling) in sensitivity calculation
-        // h_tr_me affects how heat flows between envelope mass and internal mass (furniture/partitions)
-        // This is important for low-mass buildings where internal mass represents a significant fraction
-        // of total thermal coupling. Without h_tr_me, the sensitivity is underestimated.
-        self.0.derived_term_rest_1 =
-            self.0.h_tr_ms.clone() + self.0.h_tr_is.clone() + self.0.h_tr_me.clone();
+        // term_rest_1 = h_tr_ms + h_tr_is
+        self.0.derived_term_rest_1 = self.0.h_tr_ms.clone() + self.0.h_tr_is.clone();
 
         // h_ms_is_prod = h_tr_ms * h_tr_is
         self.0.derived_h_ms_is_prod = self.0.h_tr_ms.clone() * self.0.h_tr_is.clone();
@@ -142,13 +137,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.derived_sensitivity =
             self.0.derived_term_rest_1.clone() / self.0.derived_den.clone();
 
-        // Debug: Print sensitivity calculation for Case 610 and 600
-        if self.0.case_id == "610" || self.0.case_id == "600" {
-            eprintln!(
-                "DEBUG SENS Case {}: term_rest_1={:.2} W/K, den={:.2e}, sensitivity={:.6} K/W",
-                self.0.case_id,
-                self.0.derived_term_rest_1.as_ref()[0],
-                self.0.derived_den.as_ref()[0],
+        // Debug: Print sensitivity calculation for Case 600
+        if self.0.case_id == "600" {
+            println!(
+                "DEBUG SENS Case 600: h_ext={:.2} W/K, sensitivity={:.6} K/W (1/h_total)",
+                h_total.as_ref()[0],
                 self.0.derived_sensitivity.as_ref()[0]
             );
         }

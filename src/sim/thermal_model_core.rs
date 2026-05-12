@@ -1029,7 +1029,7 @@ impl ThermalModel<VectorField> {
                 } else {
                     spec.geometry[0].floor_area()
                 };
-                let a_int = 0.1 * zone_floor_area; // Furniture surface area (~10% of floor area)
+                let a_int = 0.5 * zone_floor_area; // Furniture surface area (~50% of floor area)
                 let h_ms = 4.5; // Furniture/partitions coupling coefficient W/(m²·K)
                 h_ms * a_int
             })
