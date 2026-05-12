@@ -1215,7 +1215,7 @@ mod tests {
     fn test_window_properties_double_clear() {
         let wp = WindowProperties::double_clear(10.0);
         assert_eq!(wp.area, 10.0);
-        assert!((wp.shgc - 0.787).abs() < 1e-6 // ASHRAE 140 Table B1-5 corrected value);
+        assert!((wp.shgc - 0.787).abs() < 1e-6); // ASHRAE 140 Table B1-5: corrected 0.789->0.787
         assert!((wp.normal_transmittance - 0.86156).abs() < 1e-6);
     }
 
