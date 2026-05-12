@@ -94,9 +94,25 @@ impl TimestepMode {
             } => {
                 if tau_hours >= *threshold_tau {
                     // High-mass: use base timestep (e.g., 6 minutes)
+                    tracing::info!(
+                        decision_type = "adaptive_timestep",
+                        chosen = "adaptive",
+                        tau_hours = tau_hours,
+                        threshold_tau = threshold_tau,
+                        timestep_secs = base_dt.as_secs(),
+                        "Adaptive timestep decision: high-mass → sub-hourly step"
+                    );
                     *base_dt
                 } else {
                     // Low-mass: use 1 hour
+                    tracing::info!(
+                        decision_type = "adaptive_timestep",
+                        chosen = "fixed_1h",
+                        tau_hours = tau_hours,
+                        threshold_tau = threshold_tau,
+                        timestep_secs = 3600u64,
+                        "Adaptive timestep decision: low-mass → 1-hour step"
+                    );
                     Duration::from_secs(3600)
                 }
             }
