@@ -188,8 +188,8 @@ impl SolverSelectionResult {
 /// * `threshold_hours` - Time constant threshold for method selection (default: 2.0 hours)
 /// * `override_method` - Manual override (None = auto, Some = force method)
 /// * `enable_fallback` - Enable CTF → FD fallback (default: true)
-/// * `h_interior` - Interior convective coefficient [W/m²·K] (default: 8.0)
-/// * `h_exterior` - Exterior convective coefficient [W/m²·K] (default: 25.0)
+/// * `h_interior` - Interior convective coefficient [W/m²·K] (default: 8.29 per ASHRAE 140 Sec. 5.2)
+/// * `h_exterior` - Exterior convective coefficient [W/m²·K] (default: 29.3 per ASHRAE 140 Sec. 5.2)
 #[derive(Debug, Clone)]
 pub struct ThermalMethodSelector {
     /// Selection threshold: τ > threshold → CTF/FD (default: 2.0 hours)
@@ -218,8 +218,8 @@ impl ThermalMethodSelector {
             threshold_hours: config.threshold_hours,
             override_method: config.override_method,
             enable_fallback: config.enable_fallback,
-            h_interior: 8.0,
-            h_exterior: 25.0,
+            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
             selection_config: if config.per_surface_selection {
                 SolverSelectionConfig::PerSurface(vec![])
             } else if config.enable_automatic_selection {
@@ -540,8 +540,8 @@ impl Default for ThermalMethodSelector {
             threshold_hours: 2.0, // ISO 13790 guidance
             override_method: None,
             enable_fallback: true,
-            h_interior: 8.0,  // Typical interior film coefficient
-            h_exterior: 25.0, // Typical exterior film coefficient
+            h_interior: 8.29, // ASHRAE 140 Section 5.2: h_int = 8.29 W/m²K
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2: h_ext = 29.3 W/m²K at 6.7 m/s wind speed
             selection_config: SolverSelectionConfig::Automatic,
         }
     }
