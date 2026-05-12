@@ -502,8 +502,8 @@ mod tests {
         assert_eq!(config.timestep, 3600.0);
         assert_eq!(config.history_size, 50);
         assert!((config.surface_area - 63.6).abs() < 0.1);
-        assert_eq!(config.h_interior, 8.29); // ASHRAE 140 Section 5.2
-        assert_eq!(config.h_exterior, 29.3);  // ASHRAE 140 Section 5.2
+        assert_eq!(config.h_interior, 8.29);
+        assert_eq!(config.h_exterior, 29.3);
     }
 
     #[test]
@@ -673,8 +673,8 @@ mod tests {
         assert_eq!(cloned.timestep, 3600.0);
         assert_eq!(cloned.history_size, 50);
         assert_eq!(cloned.surface_area, 1.0);
-        assert_eq!(cloned.h_interior, 8.29); // ASHRAE 140 Section 5.2
-        assert_eq!(cloned.h_exterior, 29.3);  // ASHRAE 140 Section 5.2
+        assert_eq!(cloned.h_interior, 8.29);
+        assert_eq!(cloned.h_exterior, 29.3);
     }
 
     #[test]
