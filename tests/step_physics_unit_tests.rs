@@ -286,12 +286,20 @@ fn test_hvac_cooling_mode_detection() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Hot outdoor temperature should trigger cooling
-    let hvac_kwh = model.step_physics(0, 35.0, 3600.0);
+    // Warm up the zone for several hours before checking cooling activation.
+    // With corrected h_ext=29.3 W/m²K (ASHRAE 140 Sec. 5.2), the model
+    // initialises at a lower equilibrium temperature than with the old h=25.0,
+    // so a single step at 35°C is insufficient to push the zone above the
+    // cooling setpoint.  Running 6 hours of warm-up ensures steady-state
+    // hot-weather operation before the assertion.
+    for ts in 0..6 {
+        model.step_physics(ts, 35.0, 3600.0);
+    }
+    let hvac_kwh = model.step_physics(6, 35.0, 3600.0);
 
     assert!(
         hvac_kwh < 0.0,
-        "Expected cooling (negative hvac_kwh) at 35°C, got {:.4} kWh",
+        "Expected cooling (negative hvac_kwh) at 35°C after warm-up, got {:.4} kWh",
         hvac_kwh
     );
 }
