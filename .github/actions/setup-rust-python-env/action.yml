@@ -1,5 +1,11 @@
 name: Rust + Python Environment
-description: Complete Rust and Python environment setup with all dependencies
+description: |
+  Rust + Python environment setup. Delegates all Rust setup to
+  setup-rust-env (toolchain, sccache, cargo cache, sys deps), then
+  adds Python and pip caching on top.
+
+  Migration note: `cache: 'false'` is no longer needed — caching is
+  always enabled and is safe to remove from all callers.
 
 inputs:
   python-version:
@@ -10,42 +16,32 @@ inputs:
     description: 'Rust components to install (e.g., rustfmt,clippy)'
     required: false
     default: ''
-  cache:
-    description: 'Enable pip caching'
+  sccache:
+    description: 'Enable sccache compiler caching (passed through to setup-rust-env)'
     required: false
     default: 'true'
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
-
-    - name: Create pip cache directory
-      if: inputs.cache == 'true'
-      shell: bash
-      run: |
-        if [ "$RUNNER_OS" == "Windows" ]; then
-          mkdir -p ~/AppData/Local/pip/Cache
-        else
-          mkdir -p ~/.cache/pip
-        fi
+    # Rust toolchain, sccache, cargo registry cache, and Linux base deps
+    # (libssl-dev, pkg-config, libfontconfig1-dev, fontconfig, python3-dev)
+    - name: Setup Rust environment
+      uses: ./.github/actions/setup-rust-env
+      with:
+        components: ${{ inputs.rust-components }}
+        sccache: ${{ inputs.sccache }}
+        extra-apt-packages: python3-dev
 
     - name: Set up Python ${{ inputs.python-version }}
       uses: actions/setup-python@v4
       with:
         python-version: ${{ inputs.python-version }}
-        cache: ${{ inputs.cache == 'true' && 'pip' || '' }}
+        cache: 'pip'
         cache-dependency-path: 'requirements-dev.txt'
 
-    - name: Install system dependencies (Linux)
+    - name: Export PKG_CONFIG_PATH for Python bindings (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev pkg-config python3-dev libfontconfig1-dev fontconfig
-        echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH" >> $GITHUB_ENV
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: ${{ inputs.rust-components }}
+        echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"

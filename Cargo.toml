@@ -195,6 +195,26 @@ lto = true
 codegen-units = 1
 strip = true
 
+# Fast CI build profile — use with `cargo test --profile ci`
+# Balances compile speed against runtime speed:
+#   opt-level=1   — significantly faster to compile than release (3), yet exercises
+#                   more code paths than pure debug (0); avoids misoptimisation bugs
+#   debug=0       — no debug info → smaller artifacts, faster linker invocation
+#   codegen-units — maximum parallelism to saturate CI runner cores
+#   incremental   — disabled: clean CI builds don't reuse incremental state
+[profile.ci]
+inherits = "dev"
+opt-level = 1
+debug = 0
+codegen-units = 256
+incremental = false
+
+# Compile proc-macro crates (serde, clap, pyo3-derive, etc.) at opt-level=3
+# even in dev/ci builds. Proc-macros run at compile time, so optimising them
+# speeds up every downstream incremental build.
+[profile.dev.build-override]
+opt-level = 3
+
 # Explicitly include Phase 6 performance optimization test targets
 [[test]]
 name = "test_parallel_validation"
