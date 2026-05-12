@@ -1,14 +1,14 @@
 //! ASHRAE 140 thermal constants.
 //!
-//! This module provides ASHRAE Standard 140 constants for surface heat transfer
-//! coefficients and building surface properties. Constants are versioned to
-//! support different ASHRAE 140 editions (2021, 2023, etc.).
+//! [`materials`] is the single source of truth for all material properties.
+//! Import from there, not from any other location in the codebase.
 
+pub mod materials;
 pub mod v2021;
 pub mod v2023;
 
-// Select version via feature flag (if needed in future)
-// Default to latest (v2023)
+/// Re-export material constants at module level for convenience.
+pub use materials::*;
 
 #[cfg(feature = "ashrae_140_v2021")]
 pub use v2021::*;
