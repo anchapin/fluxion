@@ -18,11 +18,17 @@
 //! current TDQS against the stored baseline.  A > 5 pp drop on any decision type
 //! fails the CI job (`tdqs_regression.yml`).
 //!
-//! # Building Scientist handoff
+//! # Building Scientist integration (PR #776)
 //!
-//! Mock decision functions in `decision_recorder.rs` will be replaced with real
-//! engine calls once `src/orchestration/decision_types.rs` exists.  See
-//! instructions in that module for the required trait interface.
+//! `src/orchestration/decision_types.rs` now exists with `OrchestrationDecisionKind`
+//! and `OrchestrationDecision`.  `decision_recorder.rs` imports those types and:
+//! - Validates label-string consistency via `assert_label_consistency()` at bench start.
+//! - Provides `engine_decision_*` helpers that return typed `OrchestrationDecision`.
+//! - Provides `record_engine_decision()` and `timed_record_engine()` for direct recording.
+//!
+//! The 4 active tracing spans (solver_selection, adaptive_timestep, constraint_warning,
+//! hvac_horizon) are wired in the engine.  surrogate_routing is a documented stub
+//! pending the ONNX batch-oracle path (ML & Surrogate Modeling Engineer, v2.1+).
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion};
 use std::time::Duration;
@@ -35,6 +41,7 @@ mod tdqs;
 mod decision_recorder;
 
 use decision_recorder::{
+    assert_label_consistency,
     current_adaptive_timestep_decision, current_constraint_warning_decision,
     current_hvac_horizon_decision, current_solver_decision, current_surrogate_routing_decision,
     ground_truth_adaptive_timestep, ground_truth_constraint_warning, ground_truth_hvac_horizon,
@@ -286,6 +293,9 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
 // ---------------------------------------------------------------------------
 
 fn bench_tdqs_computation(c: &mut Criterion) {
+    // Verify OrchestrationDecisionKind label strings match harness labels (fails fast if drift).
+    assert_label_consistency();
+
     let dataset = load_labeled_dataset();
     let n = dataset.len();
 
