@@ -1,8 +1,8 @@
 # Fluxion
 
-**A fast, open-source Building Energy Modeling (BEM) engine** — written in Rust, with Python and Node.js bindings. Evaluates 800–1,000+ building configurations per second. ASHRAE 140-validated.
+**A fast, open-source Building Energy Modeling (BEM) engine** — written in Rust, with Python and Node.js bindings. Evaluates 800–1,000+ building configurations per second. ASHRAE 140 validation in progress.
 
-[![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.8.0-brightgreen)](docs/ASHRAE140_RESULTS_v0.8.0.md)
+[![ASHRAE 140](https://img.shields.io/badge/ASHRAE140-v0.8.0--in--progress-yellow)](docs/ASHRAE140_RESULTS_v0.8.0.md)
 [![Version](https://img.shields.io/badge/version-0.8.0-blue)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
@@ -16,7 +16,7 @@ Fluxion solves this with a **hybrid neuro-symbolic architecture**: a rigorous fi
 
 **Use Fluxion when you need to:**
 - Evaluate thousands of building design variants in an optimization loop (genetic algorithms, Bayesian optimization, quantum annealing)
-- Run ASHRAE 140 / BESTEST compliance validation
+- Develop and test against ASHRAE 140 / BESTEST — validation is active and improving each release
 - Build a fast physics oracle for surrogate ML model training
 - Embed BEM simulation in a Python or Node.js application
 
@@ -29,6 +29,7 @@ Fluxion solves this with a **hybrid neuro-symbolic architecture**: a rigorous fi
 | Throughput (BatchOracle, release mode) | **800–1,000+ configs/sec** |
 | Single annual simulation (surrogate mode) | **< 100 ms** |
 | ASHRAE 140 case coverage | 600-series + high-mass + free-float |
+| ASHRAE 140 pass rate (v0.8.0) | ~36% (physics fixes in progress; target 100% at v1.0) |
 | Platforms | macOS (x64, ARM), Linux, Windows |
 
 ---
@@ -130,7 +131,8 @@ fluxion serve   # REST API server
 | [`docs/SCHEMA.md`](docs/SCHEMA.md) | Config JSON schema and field definitions |
 | [`docs/EXAMPLES.md`](docs/EXAMPLES.md) | Worked examples: optimization loops, multi-zone, surrogates |
 | [`docs/CONTRIBUTING.md`](docs/CONTRIBUTING.md) | How to contribute (Rust dev setup, PR process) |
-| [`docs/ASHRAE140_VALIDATION.md`](docs/ASHRAE140_VALIDATION.md) | ASHRAE 140 compliance methodology and results |
+| [`docs/compliance/`](docs/compliance/) | ASHRAE 140 compliance docs: SQT report, deviations register, standards roadmap |
+| [`docs/ASHRAE140_VALIDATION.md`](docs/ASHRAE140_VALIDATION.md) | ASHRAE 140 validation methodology and current results |
 | [`docs/KNOWN_ISSUES.md`](docs/KNOWN_ISSUES.md) | Current limitations and workarounds |
 | [`npm/README.md`](npm/README.md) | Node.js / TypeScript bindings |
 | [`docs/USER_PERSONAS.md`](docs/USER_PERSONAS.md) | Who uses Fluxion and why |
@@ -145,16 +147,22 @@ fluxion serve   # REST API server
 
 ---
 
-## ASHRAE 140 Validation
+## ASHRAE 140 Validation Status
 
-Fluxion v0.8.0 passes the ASHRAE 140-2023 annual energy test suite for the 600-series cases, including high-mass buildings and free-floating temperature scenarios.
+> **v0.8.0 is not yet ready for a compliance submission.** Validation is actively in progress — physics fixes are landing in Waves 1–5, targeting full compliance in v1.0.
 
-**Current status:**
-- ✅ Annual heating/cooling energy — within reference ranges (±15–30% for high-mass cases)
-- ✅ Free-floating temperature profiles — ±1–2°C deviation (within tolerance)
-- ⚠️ Peak loads (high-mass) — ~76–100% overestimation; known CTF solver limitation, targeted for v1.0 finite volume solver
+**Current pass rate: ~36% of test cases within reference ranges.**
 
-Full results: [`docs/ASHRAE140_RESULTS_v0.8.0.md`](docs/ASHRAE140_RESULTS_v0.8.0.md) | Scorecard: [`SCORECARD.md`](SCORECARD.md)
+| Area | Status | Notes |
+|------|--------|-------|
+| Annual heating/cooling energy (low-mass) | ⚠️ Partial | Some cases within range; others outside |
+| Annual heating/cooling energy (high-mass) | ⚠️ Outside range | ±15–30%+ deviation; CTF thermal mass limitations |
+| Free-floating temperature profiles | ⚠️ Partial | ±1–2°C deviations; within some tolerances |
+| Peak loads (all cases) | 🔴 Significant deviation | ~76–100%+ overestimation; CTF solver limitation |
+| Section 8 output format | 🔴 Incomplete | Units, timestamps, hourly profiles not yet compliant |
+| Weather data | 🔴 Non-normative | Synthetic data in use; normative Annex C file pending (#732) |
+
+Full results: [`docs/ASHRAE140_RESULTS_v0.8.0.md`](docs/ASHRAE140_RESULTS_v0.8.0.md) | Scorecard: [`SCORECARD.md`](SCORECARD.md) | Known deviations: [`docs/compliance/deviations-register.md`](docs/compliance/deviations-register.md)
 
 ---
 
