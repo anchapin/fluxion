@@ -290,7 +290,7 @@ impl WindowProperties {
     pub fn double_clear(area: f64) -> Self {
         WindowProperties {
             area,
-            shgc: 0.789,
+            shgc: 0.787, // ASHRAE 140 Table B1-5 corrected value (#741)
             normal_transmittance: 0.86156,
         }
     }
