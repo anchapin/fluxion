@@ -1320,52 +1320,52 @@ impl ThermalModel<VectorField> {
                 .cm_wall
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let cm_roof_vals: Vec<f64> = model
                 .cm_roof
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let cm_floor_vals: Vec<f64> = model
                 .cm_floor
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let cm_internal_vals: Vec<f64> = model
                 .cm_internal
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let h_tr_ms_wall_vals: Vec<f64> = model
                 .h_tr_ms_wall
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let h_tr_ms_roof_vals: Vec<f64> = model
                 .h_tr_ms_roof
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let h_tr_ms_floor_vals: Vec<f64> = model
                 .h_tr_ms_floor
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let h_tr_em_wall_vals: Vec<f64> = model
                 .h_tr_em_wall
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let h_tr_em_roof_vals: Vec<f64> = model
                 .h_tr_em_roof
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
             let h_tr_em_floor_vals: Vec<f64> = model
                 .h_tr_em_floor
                 .as_ref()
                 .map(|v| v.as_ref().to_vec())
-                .unwrap_or_else(Vec::new);
+                .unwrap_or_default();
 
             let mut solvers = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
