@@ -597,6 +597,10 @@ impl ThermalModel<VectorField> {
             // else: cool_start == cool_end (e.g., 0, 24) means all-day operation, keep constant
         }
 
+        // Issue #738: Set free_float flag based on spec to ensure HVAC is disabled
+        // This flag is checked in step_physics_* functions before computing HVAC output
+        model.free_float = spec.is_free_floating();
+
         // SESSION 73: For free-floating cases, set extreme setpoints to disable HVAC
         // This matches the behavior in ashrae_140_validator.rs
         if spec.is_free_floating() {
@@ -2187,6 +2191,7 @@ impl ThermalModel<VectorField> {
             envelope_mass_energy_change_cumulative: 0.0, // Envelope mass energy change (J)
             internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
             ideal_air_loads_mode: false,        // Disable ideal air loads by default (Issue #382)
+            free_float: false,                  // Free-floating mode disabled by default
 
             // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
             ctf_coefficients: None, // Will be set during initialization if CTF enabled

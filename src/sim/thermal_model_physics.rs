@@ -866,6 +866,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
+        // DEBUG: Case 900FF free-float temperature tracking
+        if self.0.case_id == "900FF" && timestep < 5 {
+            eprintln!(
+                "DEBUG_900FF_ti_free t={}: t_i_free={:.2}°C, phi_ia={:.2}W, solar={:.2}W/m², loads={:.2}W/m², den={:.2}",
+                timestep,
+                t_i_free.as_ref()[0],
+                phi_ia.as_ref()[0],
+                solar_ref[0],
+                loads_ref[0],
+                den.as_ref()[0]
+            );
+        }
+
+        if self.0.case_id == "900FF" && timestep == 0 {
+            eprintln!("DEBUG_900FF_INIT: hvac_enabled={:.1}, heating_setpoint={:.1}, cooling_setpoint={:.1}",
+                self.0.hvac_enabled.as_ref()[0],
+                self.0.heating_setpoint,
+                self.0.cooling_setpoint);
+        }
+
         if self.0.case_id == "610" && timestep == 0 {
             let phi_ia_0 = phi_ia.as_ref()[0];
             eprintln!(
@@ -910,8 +930,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let hour_of_day_idx = timestep % 24;
 
-        // Calculate HVAC thermal demand using variable capacity equipment (Plan 15-06)
-        let hvac_output_raw = if let Some(ref mut equipment) = self.0.hvac_equipment {
+        // Issue #738: Free-float mode must completely disable HVAC output
+        // This is a safety check that goes beyond hvac_enabled, which may not be
+        // properly set for all code paths. Free-float cases (900FF, etc.) should
+        // have zero HVAC output regardless of other settings.
+        let hvac_output_raw = if self.0.free_float {
+            T::from(VectorField::new(vec![0.0; self.0.num_zones]))
+        } else if let Some(ref mut equipment) = self.0.hvac_equipment {
             // Use scalar setpoints instead of hourly schedules (Issue #???: HVAC schedule fix)
             // This ensures per-hour setpoint changes from validation loop are respected
             let heating_setpoint = self.0.heating_setpoint;
@@ -1091,8 +1116,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // For 900-series (high-mass): t_i_free is heavily buffered, use ideal_loads HVAC effect
         // ALWAYS use sensitivity-based HVAC calculation for temperature update
         // This properly accounts for all heat gains/losses and thermal mass buffering effect
-        let hvac_for_temp_calc =
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone());
+        //
+        // Issue #738: Check free_float BEFORE calling hvac_power_demand to ensure zero output
+        let hvac_for_temp_calc = if self.0.free_float {
+            T::from(VectorField::new(vec![0.0; self.0.num_zones]))
+        } else {
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone())
+        };
 
         let hvac_for_temp_calc_cloned = hvac_for_temp_calc.clone();
         let product = sensitivity_val * hvac_for_temp_calc_cloned;
@@ -1116,6 +1146,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Compute energy (uncorrected for physics)
         let heating_energy_joules = heating_sum * dt;
         let cooling_energy_joules = cooling_sum * dt;
+
+        // Issue #738: Debug assertion - free_float mode should have zero HVAC output
+        if self.0.free_float {
+            debug_assert!(
+                total_signed.abs() < 1e-6,
+                "Free-float mode should have zero HVAC output, got {} W",
+                total_signed
+            );
+        }
 
         // Physics-based: No correction factors - use raw energy values
         self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
@@ -1578,6 +1617,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // HVAC calculation
         let hour_of_day_idx = timestep % 24;
+
+        // Issue #738: Free-float mode must completely disable HVAC output
+        if self.0.free_float {
+            return 0.0;
+        }
+
         // Use sensitivity-based hvac_power_demand for 6R2C model
         // The thermodynamic hvac_demand_from_ideal_loads is designed for equipment-based HVAC
         // and produces incorrect results when applied to the simplified 6R2C thermal network
@@ -1637,6 +1682,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Compute energy (uncorrected for physics)
         let heating_energy_joules = heating_sum * dt;
         let cooling_energy_joules = cooling_sum * dt;
+
+        // Issue #738: Debug assertion - free_float mode should have zero HVAC output
+        if self.0.free_float {
+            debug_assert!(
+                total_signed.abs() < 1e-6,
+                "Free-float mode should have zero HVAC output, got {} W",
+                total_signed
+            );
+        }
 
         // Physics-based: No correction factors - use raw energy values
         self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
@@ -2318,6 +2372,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             temp_rate,
         );
         let _hvac_mode: EquipmentHVACMode = hvac_mode;
+
+        // Issue #738: Free-float mode must completely disable HVAC output
+        // but still update temperatures with t_i_free (no HVAC correction)
+        if self.0.free_float {
+            // For free-float cases, t_i_act = t_i_free (no HVAC power)
+            let t_i_act = t_i_free.clone();
+            // No HVAC correction since free_float has zero HVAC output
+
+            // Update zone temperatures
+            let temps_slice = self.0.temperatures.as_mut();
+            for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
+                if i < temps_slice.len() {
+                    temps_slice[i] = *t_val;
+                }
+            }
+            return 0.0;
+        }
 
         let sensitivity_val = sensitivity;
         let hvac_for_temp_calc =
