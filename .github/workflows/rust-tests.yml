@@ -30,7 +30,6 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-          cache: 'false'
 
       - name: Cache ONNX Runtime binaries
         if: runner.os == 'macOS'
@@ -66,7 +65,6 @@ jobs:
         with:
           rust-components: clippy
           python-version: '3.10'
-          cache: 'false'
       - run: cargo clippy --lib -- -D warnings
 
   build-release:
@@ -77,5 +75,4 @@ jobs:
       - uses: ./.github/actions/setup-rust-python-env
         with:
           python-version: '3.10'
-          cache: 'false'
       - run: cargo build --release --verbose

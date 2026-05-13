@@ -4,8 +4,9 @@ description: |
   setup-rust-env (toolchain, sccache, cargo cache, sys deps), then
   adds Python and pip caching on top.
 
-  Migration note: `cache: 'false'` is no longer needed — caching is
-  always enabled and is safe to remove from all callers.
+  Migration note: `cache: 'false'` callers can be cleaned up at your
+  convenience — the input is now deprecated (no-op) and caching is
+  always-on.
 
 inputs:
   python-version:
@@ -18,6 +19,13 @@ inputs:
     default: ''
   sccache:
     description: 'Enable sccache compiler caching (passed through to setup-rust-env)'
+    required: false
+    default: 'true'
+  cache:
+    description: >
+      Deprecated — pip caching is now always-on. Accepted for backward
+      compatibility only; has no effect. Remove from callers at your
+      convenience.
     required: false
     default: 'true'
 
@@ -33,8 +41,22 @@ runs:
         sccache: ${{ inputs.sccache }}
         extra-apt-packages: python3-dev
 
+    # setup-python cache: 'pip' registers a post-run cache-save step at
+    # job startup. That post-step fails if ~/.cache/pip (Linux) or
+    # ~/AppData/Local/pip/Cache (Windows) doesn't exist yet — which is
+    # always true on a fresh runner before any pip install has run.
+    # Pre-create the directory here so the post-run step never errors.
+    - name: Create pip cache directory
+      shell: bash
+      run: |
+        if [ "$RUNNER_OS" == "Windows" ]; then
+          mkdir -p ~/AppData/Local/pip/Cache
+        else
+          mkdir -p ~/.cache/pip
+        fi
+
     - name: Set up Python ${{ inputs.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
         cache: 'pip'
