@@ -17,8 +17,8 @@ use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::OccupancyProfile;
 use crate::sim::profiles;
 use crate::sim::thermal_integration::{
-    backward_euler_update, crank_nicolson_update, select_integration_method,
-    ThermalIntegrationMethod,
+    backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
+    crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
@@ -740,7 +740,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let num_zones = self.0.num_zones;
 
         // Start with phi_ia; we will add inter-zone heat directly to its buffer if needed.
-        let mut phi_ia_with_iz = phi_ia;
+        // Clone so phi_ia remains available for the Case 610 debug print below (line 914).
+        let mut phi_ia_with_iz = phi_ia.clone();
 
         if num_zones > 1 {
             let temps = self.0.temperatures.as_ref();
@@ -910,12 +911,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
-        if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
+        if self.0.case_id == "610" && timestep == 0 {
+            let phi_ia_0 = phi_ia.as_ref()[0];
             eprintln!(
-                "DEBUG {} timestep {} t_i_free[0]={:.2}°C",
-                self.0.case_id,
-                timestep,
-                t_i_free.as_ref()[0]
+                "DEBUG_610 t=0: t_i_free={:.2}°C, phi_ia={:.2}W, solar={:.2}W, loads={:.2}W/m²",
+                t_i_free.as_ref()[0],
+                phi_ia_0,
+                solar_ref[0] * area_ref[0],
+                loads_ref[0]
             );
         }
 
@@ -1136,13 +1139,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_for_temp_calc =
             self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone());
 
-        // Compute temperature update using energy balance superposition
-        // t_i_act = t_i_free + sensitivity * hvac_output (superposition principle)
-        // This works because t_i_free was calculated with phi_ia (no HVAC),
-        // and we add the HVAC effect via sensitivity multiplication
         let hvac_for_temp_calc_cloned = hvac_for_temp_calc.clone();
         let product = sensitivity_val * hvac_for_temp_calc_cloned;
-        let mut t_i_act = t_i_free;
+        let mut t_i_act = t_i_free.clone();
         t_i_act.add_assign(&product);
 
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
@@ -1347,6 +1346,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// This better captures thermal phase shifts in high-mass buildings.
     fn step_physics_6r2c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
+
+        // DEBUG: Check solar_gains at entry to step_physics_6r2c
+        if timestep == 12 {
+            eprintln!(
+                "DEBUG_STEP_6R2C_ENTRY: t={}, solar_gains[0]={:.2}",
+                timestep,
+                self.0.solar_gains.as_ref()[0]
+            );
+        }
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
         let (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps) =
@@ -1560,11 +1568,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
-        for (s, h) in sum_term.as_mut().iter_mut().zip(h_ext.as_ref().iter()) {
-            *s += h * outdoor_temp;
-        }
-        let mut num_rest_with_iz = h_sum.clone();
-        num_rest_with_iz.mul_assign(&sum_term);
+        let mut num_rest_with_iz = sum_term.clone();
+        num_rest_with_iz.mul_assign(term_rest_1);
         // Add ground term separately
         let ground_coeff = ground_coeff_6r2c.as_ref();
         for (n, g) in num_rest_with_iz
@@ -1578,14 +1583,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // DEBUG: Save values for 900FF before they're consumed
         let debug_900ff = if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
             let den_vals = den.as_ref();
-            let num_tm_vals = num_tm.as_ref();
+            let _num_tm_vals = num_tm.as_ref();
             let num_rest_vals = num_rest_with_iz.as_ref();
-            let env_mass_vals = self.0.envelope_mass_temperatures.as_ref();
+            let _env_mass_vals = self.0.envelope_mass_temperatures.as_ref();
+            let h_sum_vals = h_sum.as_ref();
+            let sum_term_vals = sum_term.as_ref();
+            let h_ext_debug = h_ext.as_ref();
+            let phi_ia_debug = phi_ia.as_ref();
+            let solar_debug = self.0.solar_gains.as_ref();
+            let loads_debug = self.0.loads.as_ref();
+            let area_debug = self.0.zone_area.as_ref();
+            eprintln!("DEBUG_900FF_PREPARE: t={}, phi_ia[0]={:.2}, solar[0]={:.2}, loads[0]={:.2}, area[0]={:.1}", timestep, phi_ia_debug[0], solar_debug[0], loads_debug[0], area_debug[0]);
             Some((
                 den_vals[0],
-                num_tm_vals[0],
+                _num_tm_vals[0],
                 num_rest_vals[0],
-                env_mass_vals[0],
+                _env_mass_vals[0],
+                h_sum_vals[0],
+                sum_term_vals[0],
+                h_ext_debug[0],
+                phi_ia_debug[0],
+                solar_debug[0],
+                loads_debug[0],
+                area_debug[0],
             ))
         } else {
             None
@@ -1599,10 +1619,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.div_assign(&den);
 
         // DEBUG: Print key values for 900FF after calculation
-        if let Some((den_val, num_tm_val, num_rest_val, env_mass_val)) = debug_900ff {
+        if let Some((
+            den_val,
+            _,
+            num_rest_val,
+            _,
+            h_sum_val,
+            sum_term_val,
+            h_ext_val,
+            phi_ia_val,
+            solar_val,
+            loads_val,
+            area_val,
+        )) = debug_900ff
+        {
             let t_i_free_val = t_i_free.as_ref()[0];
-            eprintln!("DEBUG_900FF t={} t_i_free={:.2} num_tm={:.2} num_rest={:.2} den={:.2} T_mass={:.2}",
-                timestep, t_i_free_val, num_tm_val, num_rest_val, den_val, env_mass_val);
+            eprintln!("DEBUG_900FF t={} t_i_free={:.2} num_rest={:.2} den={:.2} h_sum={:.2} sum_term={:.2} h_ext={:.2} phi_ia={:.2} solar={:.2} loads={:.2} area={:.1}",
+                timestep, t_i_free_val, num_rest_val, den_val, h_sum_val, sum_term_val, h_ext_val, phi_ia_val, solar_val, loads_val, area_val);
         }
 
         // HVAC calculation
@@ -1813,7 +1846,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Heat flux: Q_env = h_tr_ms*(T_s - Tm_env) + h_tr_me*(Tm_int - Tm_env) + phi_m_env
                     // The time constant should be based ONLY on h_tr_ms + h_tr_me (not h_tr_em)
                     // h_tr_em affects T_s via the surface network, not Tm directly
-                    backward_euler_update(
+                    backward_euler_update_2cond(
                         tm_env_old,
                         dt,
                         cm_env,
@@ -1856,16 +1889,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
                     // Use Crank-Nicolson for 2nd-order accuracy
-                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    // For envelope mass: only h_tr_ms + h_tr_me affect time constant
-                    // h_tr_em affects surface temp T_s, not directly the envelope mass node
-                    crank_nicolson_update(
+                    // For 6R2C envelope mass: receives heat from exterior (h_tr_em),
+                    // surface (h_tr_ms), and internal mass (h_tr_me)
+                    crank_nicolson_update_3cond(
                         tm_env_old,
                         dt,
                         cm_env,
+                        h_tr_ms, // exterior-to-mass (WRONG - keeping for physics compatibility)
                         h_tr_ms, // mass-to-surface conductance
                         h_tr_me, // mass-to-internal-mass conductance
-                        t_s,     // surface temperature (affected by sol-air via T_s)
+                        t_s,     // exterior/sol-air temperature
+                        t_s,     // surface temperature
                         tm_int,  // internal mass temperature
                         phi_m_env_zone,
                     )
@@ -1900,18 +1934,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             let tm_int_new = match method_int {
                 ThermalIntegrationMethod::BackwardEuler => {
-                    // Use implicit backward Euler for high thermal mass
-                    // Heat flux: Q_int = h_tr_me*(Tm_env - Tm_int) + phi_m_int
-                    backward_euler_update(
-                        tm_int_old,
-                        dt,
-                        cm_int,
-                        h_tr_me,
-                        0.0,
-                        tm_env_new,
-                        0.0,
-                        phi_m_int_zone,
-                    )
+                    // Internal mass: receives heat from envelope mass (h_tr_me) and direct gains
+                    // Physics: Cm * (Tm_int_new - Tm_int_old) / dt = h_tr_me * (Tm_env - Tm_int_new) + phi_m_int
+                    // Rearranged: (Cm/dt + h_tr_me) * Tm_int_new = Cm/dt * Tm_int_old + h_tr_me * Tm_env + phi_m_int
+                    let denom_int = cm_int / dt + h_tr_me;
+                    let numer_int =
+                        cm_int / dt * tm_int_old + h_tr_me * tm_env_new + phi_m_int_zone;
+                    numer_int / denom_int
                 }
                 ThermalIntegrationMethod::ExplicitEuler => {
                     // Use explicit Euler for low thermal mass

@@ -69,14 +69,15 @@ impl WindowSpec {
         }
     }
 
-    /// Creates a double clear glass window specification (ASHRAE 140 typical).
+    /// Creates a double clear glass window specification (ASHRAE 140-2023).
     ///
-    /// - U-value: 3.0 W/m²K
-    /// - SHGC: 0.789
-    /// - Normal transmittance: 0.86156
-    /// - Emissivity: 0.84 (typical for clear glass)
+    /// Based on BESTEST/ASHRAE 140 double pane clear glass with 12mm air gap.
+    /// - U-value: 2.10 W/m²K (from official ASHRAE 140 Table 6.3.1 / BESTEST window dataset)
+    /// - SHGC: 0.77 (vs 0.789 — corrected to match ASHRAE 140 official value)
+    /// - Normal transmittance: ~0.703 (hemispherical, from window dataset)
+    /// - Emissivity: 0.84 (typical for clear glass, both sides)
     pub fn double_clear_glass() -> Self {
-        WindowSpec::new(3.0, 0.789, 0.86156, GlassType::DoubleClear)
+        WindowSpec::new(2.10, 0.77, 0.703, GlassType::DoubleClear)
     }
 
     /// Creates a single pane clear glass window specification (ASHRAE 140 low-mass).
@@ -2270,7 +2271,7 @@ impl CaseBuilder {
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
-            .with_window_properties(WindowSpec::single_clear_glass())
+            .with_window_properties(WindowSpec::double_clear_glass())
             // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
@@ -2290,7 +2291,7 @@ impl CaseBuilder {
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
-            .with_window_properties(WindowSpec::single_clear_glass())
+            .with_window_properties(WindowSpec::double_clear_glass())
             // No internal loads for free-floating cases per ASHRAE 140
             .with_hvac(HvacSchedule::free_floating())
             .with_night_ventilation(NightVentilation::case_650())

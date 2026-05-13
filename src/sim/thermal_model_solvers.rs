@@ -87,10 +87,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // h_ext = h_tr_em + h_tr_w + h_ve
         // Include: opaque envelope (int air -> ext), windows (int air -> ext), ventilation
         // Note: Using h_tr_em directly instead of series calculation to avoid double-counting
-        self.0.derived_h_ext = self.0.h_tr_w.clone() + self.0.h_ve.clone();
+        self.0.derived_h_ext = self.0.h_tr_em.clone() + self.0.h_tr_w.clone() + self.0.h_ve.clone();
 
-        // term_rest_1 = h_tr_ms + h_tr_is
-        self.0.derived_term_rest_1 = self.0.h_tr_ms.clone() + self.0.h_tr_is.clone();
+        // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
+        // Note: h_tr_me is 0 for 5R1C, non-zero for 6R2C (envelope↔internal mass coupling)
+        self.0.derived_term_rest_1 =
+            self.0.h_tr_ms.clone() + self.0.h_tr_is.clone() + self.0.h_tr_me.clone();
 
         // h_ms_is_prod = h_tr_ms * h_tr_is
         self.0.derived_h_ms_is_prod = self.0.h_tr_ms.clone() * self.0.h_tr_is.clone();

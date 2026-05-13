@@ -135,6 +135,60 @@ pub fn backward_euler_update(
     numer / denom
 }
 
+/// Backward Euler solver for thermal mass with 2 conductances (no exterior path).
+///
+/// For 6R2C envelope mass: h_tr_em is NOT included in the heat balance.
+/// The envelope mass receives heat from:
+///   - T_s via h_tr_ms (surface-to-mass conductance)
+///   - Tm_int via h_tr_me (internal-to-envelope-mass conductance)
+///
+/// Heat balance:
+/// Cm * (Tm_new - Tm_old) / dt = h_tr_ms * (T_s - Tm_new) + h_tr_me * (Tm_int - Tm_new) + phi_m
+///
+/// Rearranged:
+/// (Cm/dt + h_tr_ms + h_tr_me) * Tm_new = Cm/dt * Tm_old + h_tr_ms * T_s + h_tr_me * Tm_int + phi_m
+///
+/// # Arguments
+/// * `tm_old` - Previous mass temperature (°C)
+/// * `dt` - Time step (seconds)
+/// * `cm` - Thermal capacitance (J/K)
+/// * `h_tr_ms` - Surface-to-mass conductance (W/K)
+/// * `h_tr_me` - Internal-mass-to-envelope-mass conductance (W/K)
+/// * `t_surface` - Surface temperature (°C)
+/// * `t_int` - Internal mass temperature (°C)
+/// * `phi_m` - Direct gains to thermal mass (W)
+///
+/// # Returns
+/// * New mass temperature (°C)
+#[allow(clippy::too_many_arguments)]
+pub fn backward_euler_update_2cond(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_ms: f64,
+    h_tr_me: f64,
+    t_surface: f64,
+    t_int: f64,
+    phi_m: f64,
+) -> f64 {
+    // Check for invalid inputs
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    // Calculate denominator: (Cm/dt + h_tr_ms + h_tr_me)
+    let denom = cm / dt + h_tr_ms + h_tr_me;
+
+    // Calculate numerator: Cm/dt * Tm_old + h_tr_ms * t_surface + h_tr_me * t_int + phi_m
+    let numer = cm / dt * tm_old + h_tr_ms * t_surface + h_tr_me * t_int + phi_m;
+
+    // Return new temperature
+    numer / denom
+}
+
 /// Crank-Nicolson solver for semi-implicit thermal mass update.
 ///
 /// Uses average of old and new heat fluxes for 2nd-order accuracy:
@@ -208,6 +262,75 @@ pub fn crank_nicolson_update(
 
     // Calculate constant term (independent of Tm_new)
     let b = h_tr_em * t_ext + h_tr_ms * t_surface + phi_m;
+
+    // Calculate denominator: (Cm/dt + 0.5 * a)
+    let denom = cm / dt + 0.5 * a;
+
+    // Calculate numerator: Cm/dt * Tm_old + 0.5 * q_old + 0.5 * b
+    let numer = cm / dt * tm_old + 0.5 * q_old + 0.5 * b;
+
+    // Return new temperature
+    numer / denom
+}
+
+/// Crank-Nicolson solver for semi-implicit thermal mass update with THREE conductances.
+///
+/// For 6R2C model, the envelope mass receives heat from:
+/// - Exterior (h_tr_em, t_ext = sol-air temperature)
+/// - Surface (h_tr_ms, t_surface = surface temperature)
+/// - Internal mass (h_tr_me, t_int = internal mass temperature)
+///
+/// Uses average of old and new heat fluxes for 2nd-order accuracy:
+/// Cm * (Tm_new - Tm_old) / dt = 0.5 * (Q_old + Q_new)
+///
+/// Where Q_old = h_tr_em*(t_ext-Tm_old) + h_tr_ms*(t_surface-Tm_old) + h_tr_me*(t_int-Tm_old) + phi_m
+///
+/// # Arguments
+/// * `tm_old` - Previous mass temperature (°C)
+/// * `dt` - Time step (seconds)
+/// * `cm` - Thermal capacitance (J/K)
+/// * `h_tr_em` - Exterior-to-mass conductance (W/K)
+/// * `h_tr_ms` - Mass-to-surface conductance (W/K)
+/// * `h_tr_me` - Mass-to-internal-mass conductance (W/K)
+/// * `t_ext` - Exterior temperature/sol-air (°C)
+/// * `t_surface` - Surface temperature (°C)
+/// * `t_int` - Internal mass temperature (°C)
+/// * `phi_m` - Direct gains to thermal mass (W)
+///
+/// # Returns
+/// * New mass temperature (°C)
+#[allow(clippy::too_many_arguments)]
+pub fn crank_nicolson_update_3cond(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_em: f64,
+    h_tr_ms: f64,
+    h_tr_me: f64,
+    t_ext: f64,
+    t_surface: f64,
+    t_int: f64,
+    phi_m: f64,
+) -> f64 {
+    // Check for invalid inputs
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    // Calculate old heat flux from all three paths
+    let q_old = h_tr_em * (t_ext - tm_old)
+        + h_tr_ms * (t_surface - tm_old)
+        + h_tr_me * (t_int - tm_old)
+        + phi_m;
+
+    // Calculate total conductance
+    let a = h_tr_em + h_tr_ms + h_tr_me;
+
+    // Calculate constant term (independent of Tm_new)
+    let b = h_tr_em * t_ext + h_tr_ms * t_surface + h_tr_me * t_int + phi_m;
 
     // Calculate denominator: (Cm/dt + 0.5 * a)
     let denom = cm / dt + 0.5 * a;
