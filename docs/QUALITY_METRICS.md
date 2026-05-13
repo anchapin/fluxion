@@ -47,6 +47,8 @@
 | 950 | Peak Cooling Load (kW) | 21.47 | 0.70-0.90 | 254.9% | Unknown |
 | 630 | Annual Cooling Energy (MWh) | 9.32 | 2.13-3.70 | 219.8% | Unknown |
 | 640 | Peak Cooling Load (kW) | 10.15 | 2.80-3.70 | 212.4% | SolarGains |
+| 920 | Peak Cooling Load (kW) | 11.75 | 1.40-1.90 | 210.8% | Unknown |
+| 900FF | Minimum Free-Floating Temperature (°C) | -12.05 | -6.40--1.60 | 201.3% | ThermalMass |
 | 620 | Annual Cooling Energy (MWh) | 12.05 | 3.20-5.00 | 194.0% | Unknown |
 | 620 | Peak Cooling Load (kW) | 8.68 | 2.50-3.50 | 189.5% | SolarGains |
 | 610 | Peak Cooling Load (kW) | 7.23 | 2.20-2.90 | 183.4% | SolarGains |
