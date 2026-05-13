@@ -1,6 +1,9 @@
 name: Rust Tests & Linting
 
-on: [pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -11,40 +14,25 @@ env:
   RUST_BACKTRACE: 1
   PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
 
+# Job execution policy
+# ---------------------------------------------------------------------------
+# PR branch push  ->  fmt + clippy + test-pr (ubuntu-latest, unit tests only).
+#                     Target wall time: < 5 minutes.
+# Main merge      ->  All of the above + test-full (3-platform matrix) +
+#                     build-release.
+# ---------------------------------------------------------------------------
+#
+# Runner routing (Linux jobs)
+# ---------------------------------------------------------------------------
+# FLUXION_LINUX_RUNNER repo variable controls where heavy Linux jobs run.
+# Set to "fluxion-ci" to use self-hosted Hetzner runners; leave unset to
+# use GitHub-hosted ubuntu-latest (free for public repos).
+# macOS and Windows jobs always use GitHub-hosted runners.
+# See docs/self-hosted-runners.md for provisioning instructions.
+# ---------------------------------------------------------------------------
+
 jobs:
-  test:
-    name: Test Suite
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-        rust: [stable]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-
-      - name: Cache ONNX Runtime binaries
-        if: runner.os == 'macOS'
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/ort.pyke.io
-          key: ort-binaries-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ort-binaries-aarch64-apple-darwin-
-
-      - name: Run tests
-        run: cargo test --lib --verbose --no-default-features
-        env:
-          PYO3_PYTHON: /usr/bin/python3
+  # -- Always: fast gate (both PR and main) ----------------------------------
 
   fmt:
     name: Rustfmt
@@ -67,9 +55,73 @@ jobs:
           python-version: '3.10'
       - run: cargo clippy --lib -- -D warnings
 
+  # -- PR only: single-platform unit tests -----------------------------------
+  # Gives fast signal (< 3 min) without spending 3x runner-minutes on the
+  # cross-platform matrix for every commit pushed to a branch.
+
+  test-pr:
+    name: Unit Tests (Ubuntu / PR gate)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run tests
+        run: cargo test --lib --verbose --no-default-features
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+
+  # -- Main only: cross-platform matrix --------------------------------------
+  # Validates that nothing is accidentally Linux/x86-specific before changes
+  # land on main. Linux slot uses FLUXION_LINUX_RUNNER if set (self-hosted
+  # Hetzner), falling back to GitHub-hosted ubuntu-latest. macOS and Windows
+  # always use GitHub-hosted runners.
+
+  test-full:
+    name: Test Suite (${{ matrix.os }})
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ (matrix.os == 'ubuntu-latest' && vars.FLUXION_LINUX_RUNNER) || matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Cache ONNX Runtime binaries
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/ort.pyke.io
+          key: ort-binaries-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ort-binaries-aarch64-apple-darwin-
+      - name: Run tests
+        run: cargo test --lib --verbose --no-default-features
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+
+  # -- Main only: release build verification ---------------------------------
+
   build-release:
     name: Build Release
-    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-python-env
