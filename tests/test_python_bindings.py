@@ -204,7 +204,7 @@ class TestConstruction:
         r_layer1 = 0.1 / 1.0
         r_layer2 = 0.05 / 0.5
         r_film_int = 1.0 / 8.29  # Default interior film coefficient
-        r_film_ext = 1.0 / 25.0  # Default exterior film coefficient (Rust uses 25.0)
+        r_film_ext = 1.0 / 29.3  # Default exterior film coefficient per ASHRAE 140 (h_ext=29.3 W/m²K)
         expected = r_film_int + r_layer1 + r_layer2 + r_film_ext
         assert abs(r_total - expected) < 1e-6
 
@@ -221,7 +221,7 @@ class TestConstruction:
 
         r_materials = 0.1 / 1.0
         r_film_int = 1.0 / 8.29  # Default interior film coefficient
-        r_film_ext = 1.0 / 25.0  # Default exterior film coefficient (Rust uses 25.0)
+        r_film_ext = 1.0 / 29.3  # Default exterior film coefficient per ASHRAE 140 (h_ext=29.3 W/m²K)
         r_total = r_film_int + r_materials + r_film_ext
         expected = 1.0 / r_total
         assert abs(u_value - expected) < 1e-6

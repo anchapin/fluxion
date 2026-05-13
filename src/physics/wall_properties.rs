@@ -100,15 +100,15 @@ pub struct WallProperties {
 }
 
 impl WallProperties {
-    /// Surface resistance for interior (convective) [m²K/W]
+    /// Surface resistance for interior per ASHRAE 140 Section 5.2 [m²K/W]
     ///
-    /// Corresponds to h = 8.0 W/m²K → R = 1/h = 0.125 m²K/W
-    pub const R_INT: f64 = 0.125;
+    /// h_int = 8.29 W/m²K → R = 1/8.29 ≈ 0.12063 m²K/W
+    pub const R_INT: f64 = 1.0 / 8.29; // ASHRAE 140 Section 5.2: h_int = 8.29 W/m²K
 
-    /// Surface resistance for exterior (convective) [m²K/W]
+    /// Surface resistance for exterior per ASHRAE 140 Section 5.2 [m²K/W]
     ///
-    /// Corresponds to h = 25.0 W/m²K → R = 1/h = 0.04 m²K/W
-    pub const R_EXT: f64 = 0.04;
+    /// h_ext = 29.3 W/m²K at 6.7 m/s wind speed → R = 1/29.3 ≈ 0.03413 m²K/W
+    pub const R_EXT: f64 = 1.0 / 29.3; // ASHRAE 140 Section 5.2: h_ext = 29.3 W/m²K
 
     /// Create wall properties from a building assembly.
     ///
@@ -172,8 +172,8 @@ mod tests {
 
         assert_eq!(props.layers.len(), 1);
         assert_eq!(props.layers[0].name, "Concrete");
-        assert!((props.surface_resistance_inside - 0.125).abs() < 1e-10);
-        assert!((props.surface_resistance_outside - 0.04).abs() < 1e-10);
+        assert!((props.surface_resistance_inside - 1.0 / 8.29).abs() < 1e-10);
+        assert!((props.surface_resistance_outside - 1.0 / 29.3).abs() < 1e-10);
 
         let expected_total: f64 = props.layers.iter().map(|l| l.thermal_mass_kj_m2).sum();
         assert!((props.total_thermal_mass_kj_m2 - expected_total).abs() < 0.01);
@@ -208,8 +208,8 @@ mod tests {
 
         let props = WallProperties::from_assembly(&assembly);
 
-        assert!((props.surface_resistance_inside - 0.125).abs() < 1e-10);
-        assert!((props.surface_resistance_outside - 0.04).abs() < 1e-10);
+        assert!((props.surface_resistance_inside - 1.0 / 8.29).abs() < 1e-10);
+        assert!((props.surface_resistance_outside - 1.0 / 29.3).abs() < 1e-10);
     }
 
     #[test]
