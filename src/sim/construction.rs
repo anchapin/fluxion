@@ -900,7 +900,7 @@ pub struct Materials;
 impl Materials {
     /// Plasterboard (gypsum board)
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
+        ConstructionLayer::new("Plasterboard", 0.16, 784.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
@@ -910,7 +910,7 @@ impl Materials {
 
     /// Wood siding
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
+        ConstructionLayer::new("Wood Siding", 0.14, 530.0, 900.0, thickness)
     }
 
     /// Concrete (normal weight)
@@ -923,12 +923,12 @@ impl Materials {
     /// Concrete blocks have lower thermal conductivity (k=0.51 W/mK) than normal concrete (k=1.13 W/mK).
     /// This is specified in ASHRAE 140 Table 7-27 for high-mass construction.
     pub fn concrete_block(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 840.0, thickness)
     }
 
     /// Foam insulation
     pub fn foam(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Foam", 0.04, 14.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing
@@ -948,7 +948,7 @@ impl Materials {
 
     /// Insulation for floor/walls
     pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Insulation", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Insulation", 0.04, 14.0, 1400.0, thickness)
     }
 }
 
@@ -1687,7 +1687,7 @@ mod tests {
         // Fiberglass: 12 × 0.066 × 840 = 665.28
         // Siding: 500 × 0.009 × 1300 = 5850
         // Total: 9576 + 665.28 + 5850 = 16091.28 J/m²K
-        let expected_c = 950.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected_c = 784.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((c_per_area - expected_c).abs() < EPSILON);
     }
 
@@ -1803,7 +1803,7 @@ mod tests {
     fn test_iso_13790_effective_capacitance() {
         let wall = Assemblies::low_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 950.0 * 0.012 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected = 784.0 * 0.012 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1811,7 +1811,7 @@ mod tests {
     fn test_iso_13790_effective_capacitance_high_mass() {
         let wall = Assemblies::high_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 1400.0 * 0.100 * 1000.0 + 500.0 * 0.009 * 1300.0;
+        let expected = 1400.0 * 0.100 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1974,7 +1974,7 @@ mod tests {
         let layer = Materials::concrete_block(0.1);
         assert_eq!(layer.conductivity, 0.51);
         assert_eq!(layer.density, 1400.0);
-        assert_eq!(layer.specific_heat, 1000.0);
+        assert_eq!(layer.specific_heat, 840.0);
     }
 
     #[test]
