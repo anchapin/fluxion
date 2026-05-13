@@ -582,8 +582,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
+        // Calculate sky temperature for proper sol-air calculation with longwave radiation
+        let sky_temp = self
+            .0
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
         let (_t_sol_air_data, ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
-            self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
 
         // Get ground temperature at this timestep
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
@@ -1357,8 +1364,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
+        // Calculate sky temperature for proper sol-air calculation with longwave radiation
+        let sky_temp = self
+            .0
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
         let (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps) =
-            self.prepare_solvers_and_sol_air(timestep, outdoor_temp);
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
 
         // Get ground temperature at this timestep
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
