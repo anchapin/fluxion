@@ -1,6 +1,9 @@
 name: CI
 
-on: pull_request
+on:
+  push:
+    branches: [main]
+  pull_request:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -10,9 +13,31 @@ permissions:
   contents: read
   pull-requests: write
 
+# Job execution policy
+# ---------------------------------------------------------------------------
+# PR branch push  ->  NO jobs in this file run (fast gate is in rust-tests.yml).
+#                     Python and integration jobs are too slow for per-commit
+#                     feedback; failures will surface before the next release.
+# Main merge      ->  All jobs here run to catch anything that slipped through.
+# ---------------------------------------------------------------------------
+#
+# Runner routing (Linux jobs)
+# ---------------------------------------------------------------------------
+# Set the repository variable FLUXION_LINUX_RUNNER to route heavy Linux jobs
+# to self-hosted Hetzner runners for more parallelism at lower cost:
+#   gh variable set FLUXION_LINUX_RUNNER --body "fluxion-ci" \
+#     --repo anchapin/fluxion
+# When unset or empty, jobs fall back to GitHub-hosted ubuntu-latest (free).
+# See docs/self-hosted-runners.md for provisioning instructions.
+# ---------------------------------------------------------------------------
+
 jobs:
+  # Maturin release build + pytest -- takes 5-10 min on a cold cache.
+  # Not suitable as a per-commit gate; failures are caught on merge.
   python-examples:
-    runs-on: ubuntu-latest
+    name: Python Bindings & pytest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-python-env
@@ -39,9 +64,12 @@ jobs:
           source venv/bin/activate
           pytest -q
 
+  # Integration test suite (wiring, e2e, batch-oracle, CLI) -- slow compile
+  # plus multi-feature builds; only run on main.
   integration-tests:
-    name: Run Integration Tests
-    runs-on: ubuntu-latest
+    name: Integration Tests
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install system dependencies
@@ -57,10 +85,12 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
       - name: Run integration tests
         run: |
           cargo test --test integration-wiring --features wiring-tracing
@@ -73,49 +103,4 @@ jobs:
         with:
           name: integration-test-results
           path: target/debug/
-          retention-days: 30
-
-  rust-tests:
-    name: Rust Tests & Linting
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        uses: awalsh128/cache-apt-pkgs-action@latest
-        with:
-          packages: libssl-dev pkg-config libfontconfig1-dev
-          version: 1.0
-          retry: 3
-          retry_wait_seconds: 10
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-          cache: 'false'
-      - name: Run tests
-        run: cargo test --lib --verbose --no-default-features
-        env:
-          PYO3_PYTHON: /usr/bin/python3
-
-  fmt:
-    name: Rustfmt
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust and rustfmt
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          toolchain: stable
-          components: rustfmt
-      - run: cargo fmt -- --check
-
-  clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          rust-components: clippy
-          python-version: '3.10'
-          cache: 'false'
-      - run: cargo clippy --lib -- -D warnings
+          retention-days: 14
