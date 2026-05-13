@@ -237,9 +237,7 @@ impl BatchOracle {
                 let (result_tx, result_rx) = crossbeam::channel::unbounded();
 
                 // Move models and channels into workers
-                for ((idx, mut model), (tx, rx)) in
-                    valid_configs.drain(..).zip(worker_channels)
-                {
+                for ((idx, mut model), (tx, rx)) in valid_configs.drain(..).zip(worker_channels) {
                     let res_tx = result_tx.clone();
                     s.spawn(move |_| {
                         let energy = model.solve_timesteps_batched(8760, tx, rx);

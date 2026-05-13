@@ -193,10 +193,12 @@ impl ASHRAE140Validator {
 
             // Apply dynamic setpoints based on HVAC schedule (for setback cases)
             if let Some(hvac_schedule) = spec.hvac.first() {
-                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8) {
+                if let Some(heating_sp) = hvac_schedule.heating_setpoint_at_hour(hour_of_day as u8)
+                {
                     model.heating_setpoint = heating_sp;
                 }
-                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8) {
+                if let Some(cooling_sp) = hvac_schedule.cooling_setpoint_at_hour(hour_of_day as u8)
+                {
                     model.cooling_setpoint = cooling_sp;
                 }
             }
@@ -361,7 +363,7 @@ impl ASHRAE140Validator {
             // Track min/max temperatures for free-floating cases
             if is_free_floating {
                 // Get zone 0 air temperature (primary zone)
-                if let Some(&zone_0_temp) = model.temperatures.first() {
+                if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                 }
