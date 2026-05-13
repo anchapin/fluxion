@@ -1,0 +1,53 @@
+{
+  "_meta": {
+    "description": "ASHRAE 140 Section 7 inter-program comparison ranges [min, max] for building thermal envelope tests",
+    "primary_source": "Judkoff & Neymark (1995), NREL/TP-472-6231, Building Energy Simulation Test (BESTEST) and Diagnostic Method",
+    "primary_source_url": "https://www.nrel.gov/docs/legosti/old/6231.pdf",
+    "reference_programs_1995": ["DOE-2.1D", "BLAST 3.0 Level 193", "TRNSYS 13.1", "ESP 8.9", "SRES/SUN", "SRES-BRE", "S3PAS", "TASE"],
+    "target_source": "ASHRAE Standard 140-2023 Tables 7-2 through 7-8, 8-2",
+    "target_reference_programs": ["EnergyPlus 23.x", "TRNSYS 18", "ESP-r", "IDA-ICE"],
+    "units": {
+      "annual_heating_mrh": "Mh (annual delivered heating energy)",
+      "annual_cooling_mwh": "Mwh (annual delivered cooling energy)",
+      "peak_heating_kw": "kW (maximum hourly heating power)",
+      "peak_cooling_kw": "kW (maximum hourly cooling power)"
+    },
+    "provisional_note": "Values extracted from NREL/TP-472-6231 (1995 BESTEST). Must be superseded by ASHRAE 140-2023 Tables 7-2 to 8-2 before compliance submission. Items marked provisional=true are derived estimates requiring verification.",
+    "created": "2026-05-12",
+    "sha256_verification": null
+  },
+  "cases": {
+    "Case195": {
+      "description": "Part I diagnostic: no windows, no internal gains, adiabatic floor",
+      "series": "part1_diagnostic",
+      "annual_heating_mwh": { "min": 4.167, "max": 5.871, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "annual_cooling_mwh": { "min": 0.264, "max": 0.510, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "peak_heating_kw": { "min": null, "max": null, "provisional": true, "source_table": null },
+      "peak_cooling_kw": { "min": null, "max": null, "provisional": true, "source_table": null }
+    },
+    "Case200": {
+      "description": "Part I diagnostic: no windows, with internal gains",
+      "series": "part1_diagnostic",
+      "annual_heating_mwh": { "min": 5.252, "max": 6.683, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "annual_cooling_mwh": { "min": 0.162, "max": 0.681, "provisional": false, "source_table": "NREL/TP-4020-6231 Table 3-2" },
+      "peak_heating_kw": { "min": null, "max": null, "provisional": true, "source_table": null },
+      "peak_cooling_kw": { "min": null, "max": null, "provisional": true, "source_table": null }
+    },
+    "Case600": {
+      "description": "Low-mass base case: lightweight construction, south windows, Denver climate",
+      "series": "section7_qualification",
+      "annual_heating_mwh": { "min": 4.296, "max": 5.709, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "annual_cooling_mwh": { "min": 6.137, "max": 7.964, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "peak_heating_kw": { "min": 3.437, "max": 4.354, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-3" },
+      "peak_cooling_kw": { "min": 5.965, "max": 6.812, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-4" }
+    },
+    "Case900": {
+      "description": "High-mass base case: 200mm concrete walls, 200mm concrete floor, south windows, Denver climate",
+      "series": "section7_qualification",
+      "annual_heating_mwh": { "min": 1.170, "max": 2.041, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "annual_cooling_mwh": { "min": 2.132, "max": 3.415, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-2" },
+      "peak_heating_kw": { "min": 2.850, "max": 3.797, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-3" },
+      "peak_cooling_kw": { "min": 2.888, "max": 3.567, "provisional": false, "source_table": "NREL/TP-472-6231 Table 3-4" }
+    }
+  }
+}
