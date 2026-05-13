@@ -150,7 +150,7 @@ mod tests {
 
     #[test]
     fn test_hw_concrete_is_not_normal_weight() {
-        assert!(HW_CONCRETE_K < 1.0, "k=0.51 not 1.4");
-        assert!(HW_CONCRETE_RHO < 2000.0, "rho=1400 not 2300");
+        const { assert!(HW_CONCRETE_K < 1.0, "k=0.51 not 1.4") };
+        const { assert!(HW_CONCRETE_RHO < 2000.0, "rho=1400 not 2300") };
     }
 }
