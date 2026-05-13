@@ -77,11 +77,11 @@ impl DecisionType {
     /// Importance weight for this decision type (1.0 – 3.0).
     pub const fn weight(self) -> f64 {
         match self {
-            Self::SolverSelection   => 3.0,
-            Self::AdaptiveTimestep  => 1.5,
-            Self::SurrogateRouting  => 2.0,
+            Self::SolverSelection => 3.0,
+            Self::AdaptiveTimestep => 1.5,
+            Self::SurrogateRouting => 2.0,
             Self::ConstraintWarning => 1.0,
-            Self::HvacHorizon       => 1.5,
+            Self::HvacHorizon => 1.5,
         }
     }
 
@@ -89,22 +89,22 @@ impl DecisionType {
     /// Used as `cost_available` in the TDQS denominator.
     pub const fn max_cost_available_s(self) -> f64 {
         match self {
-            Self::SolverSelection   => 300.0, // 5 min FD run avoided on lightweight case
-            Self::AdaptiveTimestep  => 45.0,  // fine-timestep step avoided on stable period
-            Self::SurrogateRouting  => 2.0,   // physics solver avoided per query
-            Self::ConstraintWarning => 30.0,  // failed simulation avoided
-            Self::HvacHorizon       => 10.0,  // ~1 kWh energy delta mapped to ≈10 s equivalent
+            Self::SolverSelection => 300.0, // 5 min FD run avoided on lightweight case
+            Self::AdaptiveTimestep => 45.0, // fine-timestep step avoided on stable period
+            Self::SurrogateRouting => 2.0,  // physics solver avoided per query
+            Self::ConstraintWarning => 30.0, // failed simulation avoided
+            Self::HvacHorizon => 10.0,      // ~1 kWh energy delta mapped to ≈10 s equivalent
         }
     }
 
     /// Short string key used in JSON serialisation.
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::SolverSelection   => "solver_selection",
-            Self::AdaptiveTimestep  => "adaptive_timestep",
-            Self::SurrogateRouting  => "surrogate_routing",
+            Self::SolverSelection => "solver_selection",
+            Self::AdaptiveTimestep => "adaptive_timestep",
+            Self::SurrogateRouting => "surrogate_routing",
             Self::ConstraintWarning => "constraint_warning",
-            Self::HvacHorizon       => "hvac_horizon",
+            Self::HvacHorizon => "hvac_horizon",
         }
     }
 }
@@ -264,16 +264,11 @@ pub fn compute_tdqs_breakdown(decisions: &[DecisionInstance]) -> TdqsBreakdown {
 }
 
 /// Compute per-case TDQS scores, keyed by `source_case`.
-pub fn compute_tdqs_per_case(
-    decisions: &[DecisionInstance],
-) -> HashMap<String, f64> {
+pub fn compute_tdqs_per_case(decisions: &[DecisionInstance]) -> HashMap<String, f64> {
     let mut case_decisions: HashMap<String, Vec<DecisionInstance>> = HashMap::new();
 
     for d in decisions {
-        let key = d
-            .source_case
-            .clone()
-            .unwrap_or_else(|| "unknown".into());
+        let key = d.source_case.clone().unwrap_or_else(|| "unknown".into());
         case_decisions.entry(key).or_default().push(d.clone());
     }
 
@@ -361,7 +356,7 @@ mod tests {
 
     #[test]
     fn regression_gate_fires_above_threshold() {
-        assert!(regression_detected(0.65, 0.72, 0.05));  // 0.07 drop > 0.05
+        assert!(regression_detected(0.65, 0.72, 0.05)); // 0.07 drop > 0.05
         assert!(!regression_detected(0.68, 0.72, 0.05)); // 0.04 drop < 0.05
         assert!(!regression_detected(0.72, 0.72, 0.05)); // no change
     }
@@ -390,10 +385,8 @@ mod tests {
     #[test]
     fn per_case_tdqs() {
         let d = vec![
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0)
-                .with_source("case_600"),
-            DecisionInstance::incorrect(DecisionType::SolverSelection)
-                .with_source("case_900"),
+            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source("case_600"),
+            DecisionInstance::incorrect(DecisionType::SolverSelection).with_source("case_900"),
         ];
         let per_case = compute_tdqs_per_case(&d);
         assert_eq!(per_case["case_600"], 1.0);

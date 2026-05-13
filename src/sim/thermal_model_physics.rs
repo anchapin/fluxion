@@ -566,7 +566,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Branch based on thermal model type
-        if self.is_8r3c_model() {
+        if self.is_nine_r4c_model() {
+            self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
+        } else if self.is_8r3c_model() {
             self.step_physics_8r3c(timestep, outdoor_temp, dt_seconds)
         } else if self.is_6r2c_model() {
             self.step_physics_6r2c(timestep, outdoor_temp, dt_seconds)
@@ -653,52 +655,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext_base = &self.0.derived_h_ext;
         let term_rest_1 = &self.0.derived_term_rest_1;
 
-        // Optimization: Avoid cloning h_ve unconditionally.
-        // Also avoid cloning and adding h_tr_w + current_h_ve if night vent is active.
-        // Instead use derived_h_ext + h_ve_vent.
-        let mut modified_h_ext: Option<T> = None;
+        // Night ventilation is modeled as a separate heat term in the zone energy balance,
+        // NOT as a modification to h_ext (which represents building envelope conductance).
+        // Q_vent = ρ·Cp·ACH·V·(T_outdoor - T_zone) is applied directly to phi_ia.
+        // h_ext modification was incorrect: night ventilation cools zone through direct air supply,
+        // not by making the building envelope more conductive.
 
-        // If h_ve changed, we need to adjust h_ext
-        let h_ext = if let Some(night_vent) = &self.0.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                // Calculate h_ve for night ventilation
-                // h_ve_vent = (Capacity * rho * cp) / 3600
-                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
-                let h_ve_vent = air_cap_vent / 3600.0;
-
-                // Debug: Print night ventilation for Case 650/950
-                if (self.0.case_id == "650" || self.0.case_id == "950")
-                    && hour_of_day.is_multiple_of(6)
-                {
-                    println!(
-                        "DEBUG NIGHT VENT Case {} hour {}: night_vent ACTIVE, h_ve_vent={:.2} W/K",
-                        self.0.case_id, hour_of_day, h_ve_vent
-                    );
-                }
-
-                // h_ext = derived_h_ext + h_ve_vent
-                // This saves one large vector addition compared to (h_tr_w + h_ve + vent)
-                let mut new_h_ext = h_ext_base.clone();
-                for x in new_h_ext.as_mut() {
-                    *x += h_ve_vent;
-                }
-                modified_h_ext = Some(new_h_ext);
-                modified_h_ext.as_ref().unwrap()
-            } else {
-                // Debug: Print night ventilation inactive for Case 650/950
-                if (self.0.case_id == "650" || self.0.case_id == "950")
-                    && hour_of_day.is_multiple_of(6)
-                {
-                    println!(
-                        "DEBUG NIGHT VENT Case {} hour {}: night_vent INACTIVE",
-                        self.0.case_id, hour_of_day
-                    );
-                }
-                h_ext_base
-            }
-        } else {
-            h_ext_base
-        };
+        // Night ventilation no longer modifies h_ext.
+        // The h_ext variable is always derived_h_ext (base exterior conductance).
+        let h_ext = h_ext_base;
 
         // Recalculate sensitivity tensor at each timestep (Issue #301, #366)
         // When ventilation (h_ve) changes, zone temperature sensitivity to HVAC changes
@@ -706,25 +671,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // at each timestep to maintain accuracy (non-linear system behavior)
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
         // Issue #351: Include inter-zone conductance in sensitivity calculation
-        let mut den: T;
-        let sensitivity: T;
-        if let Some(ref mod_h_ext) = modified_h_ext {
-            let h_total_with_iz = if self.0.num_zones > 1 {
-                // Include both conductive and radiative inter-zone conductance
-                mod_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
-            } else {
-                mod_h_ext.clone()
-            };
-            den = self.0.derived_h_ms_is_prod.clone();
-            let mut term = term_rest_1.clone();
-            term.mul_assign(&h_total_with_iz);
-            den.add_assign(&term);
-            den.add_assign(&self.0.derived_ground_coeff);
-            sensitivity = term_rest_1.clone() / den.clone();
-        } else {
-            den = self.0.derived_den.clone();
-            sensitivity = self.0.derived_sensitivity.clone();
-        };
+        let den = self.0.derived_den.clone();
+        let sensitivity = self.0.derived_sensitivity.clone();
 
         // Optimized: use zip_with to avoid double clones; num_tm allocates 1 vector instead of 2
         let num_tm = self
@@ -1377,7 +1325,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Get ground temperature at this timestep
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
 
-        let hour_of_day = (timestep % 24) as u8;
+        let _hour_of_day = (timestep % 24) as u8;
 
         // Combine fractions to avoid multiple intermediate VectorField allocations
         let conv_frac = self.0.convective_fraction;
@@ -1427,26 +1375,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext_base = &self.0.derived_h_ext;
         let term_rest_1 = &self.0.derived_term_rest_1;
 
-        // Handle night ventilation
-        let modified_h_ext: Option<T>;
-        let h_ext = if let Some(night_vent) = &self.0.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
-                let h_ve_vent = air_cap_vent / 3600.0;
-                let mut new_h_ext = h_ext_base.clone();
-                for x in new_h_ext.as_mut() {
-                    *x += h_ve_vent;
-                }
-                modified_h_ext = Some(new_h_ext);
-                modified_h_ext.as_ref().unwrap()
-            } else {
-                modified_h_ext = None;
-                h_ext_base
-            }
-        } else {
-            modified_h_ext = None;
-            h_ext_base
-        };
+        // Night ventilation no longer modifies h_ext (same fix as 5R1C path).
+        let modified_h_ext: Option<T> = None;
+        let h_ext = h_ext_base;
 
         // 6R2C specific terms
         let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
@@ -2133,5 +2064,307 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         energy
+    }
+
+    /// Solve physics for one timestep using the 9R4C (multi-node) model.
+    ///
+    /// Phase 6D: The 9R4C model uses 4 thermal mass nodes (wall, roof, floor, internal)
+    /// to properly capture thermal inertia in high-mass buildings (Case 900+).
+    ///
+    /// The solver computes free-floating temperature using 5R1C network, then updates
+    /// the multi-node thermal mass state. Zone temperatures are calculated using the
+    /// 5R1C sensitivity, and the multi-node solver tracks per-surface temperatures.
+    fn step_physics_9r4c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+        let dt = dt_seconds;
+
+        // Get ground temperature at this timestep
+        let t_g = self.0.ground_temperature.ground_temperature(timestep);
+
+        // Calculate sky temperature for sol-air calculation
+        let sky_temp = self
+            .0
+            .weather
+            .as_ref()
+            .map(|w| w.sky_temperature())
+            .unwrap_or(outdoor_temp - 15.0);
+
+        // Prepare sol-air temperatures and fluxes
+        let (_t_sol_air_data, ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
+            self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
+
+        // Combine fractions
+        let conv_frac = self.0.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+
+        // Solar gain distribution fractions
+        let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
+        let m_int_frac = rad_frac * self.0.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
+        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
+
+        let loads_ref = self.0.loads.as_ref();
+        let solar_ref = self.0.solar_gains.as_ref();
+        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
+        let area_ref = self.0.zone_area.as_ref();
+
+        let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
+        let mut phi_st_data = Vec::with_capacity(self.0.num_zones);
+        let mut phi_m_data = Vec::with_capacity(self.0.num_zones);
+
+        for i in 0..self.0.num_zones {
+            let load_w = loads_ref[i] * area_ref[i];
+            let sol_w = solar_ref[i] * area_ref[i];
+            let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
+
+            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let remaining_sol = sol_w - sol_to_air;
+            phi_ia_data.push(load_w * conv_frac + sol_to_air);
+            phi_st_data.push(load_w * st_int_frac + remaining_sol * st_sol_frac);
+            phi_m_data.push(load_w * m_int_frac + remaining_sol * m_sol_frac + opaque_sol_w);
+        }
+
+        let phi_ia = T::from(VectorField::new(phi_ia_data));
+        let phi_st = T::from(VectorField::new(phi_st_data));
+        let _phi_m = T::from(VectorField::new(phi_m_data));
+
+        let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
+        for _ in 0..self.0.num_zones {
+            t_sol_air_data.push(outdoor_temp);
+        }
+
+        // Use 5R1C network for free-floating temperature (same as original)
+        let h_ext_base = &self.0.derived_h_ext;
+        let term_rest_1 = &self.0.derived_term_rest_1;
+
+        let den = self.0.derived_den.clone();
+        let sensitivity = self.0.derived_sensitivity.clone();
+
+        let num_tm = self
+            .0
+            .derived_h_ms_is_prod
+            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
+        let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+
+        let mut phi_ia_with_iz = phi_ia.clone();
+
+        // Inter-zone heat transfer (if multi-zone)
+        if self.0.num_zones > 1 {
+            let temps = self.0.temperatures.as_ref();
+            let h_iz_vec = self.0.h_tr_iz.as_ref();
+            if self.0.num_zones >= 2 && h_iz_vec[0] > 0.0 {
+                let delta_t_cond = temps[1] - temps[0];
+                let q_cond = h_iz_vec[0] * delta_t_cond;
+                let q_rad = 0.0;
+                let zone_volume = self.0.zone_volume.as_ref();
+                let ach_iz = calculate_stack_effect_ach(
+                    temps[0],
+                    temps[1],
+                    self.0.door_geometry.height,
+                    self.0.door_geometry.area,
+                    zone_volume[0],
+                );
+                let q_vent =
+                    calculate_ventilation_heat_transfer(ach_iz, temps[1], temps[0], zone_volume[0]);
+                let q_iz_total = q_cond + q_rad + q_vent;
+                let slice = phi_ia_with_iz.as_mut();
+                if slice.len() >= 2 {
+                    slice[0] += -q_iz_total;
+                    slice[1] += q_iz_total;
+                }
+            }
+        }
+
+        // Add CTF flux contributions (if enabled)
+        if let Some(ctf_fluxes) = &ctf_flux_w {
+            let slice = phi_ia_with_iz.as_mut();
+            for (i, &q_flux) in ctf_fluxes.iter().enumerate() {
+                if i < slice.len() {
+                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let q_ctf = q_flux * area;
+                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_mass = self
+                        .0
+                        .mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
+                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
+                    let net_ctf_flux = q_ctf - q_5r1c;
+                    slice[i] += net_ctf_flux;
+                    if net_ctf_flux > 0.0 {
+                        self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
+                    } else {
+                        self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
+                    }
+                }
+            }
+        }
+
+        // Add FD flux contributions (if enabled)
+        if let Some(fd_fluxes) = &fd_flux_w {
+            let slice = phi_ia_with_iz.as_mut();
+            for (i, &q_flux) in fd_fluxes.iter().enumerate() {
+                if i < slice.len() {
+                    let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
+                    let q_fd = q_flux * area;
+                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_mass = self
+                        .0
+                        .mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
+                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
+                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
+                    let net_fd_flux = q_fd - q_5r1c;
+                    slice[i] += net_fd_flux;
+                    if net_fd_flux > 0.0 {
+                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
+                    } else {
+                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
+                    }
+                }
+            }
+        }
+
+        // Build numerator with envelope and ground contributions
+        let mut num_rest_with_iz = phi_ia_with_iz;
+        for (n, h) in num_rest_with_iz
+            .as_mut()
+            .iter_mut()
+            .zip(h_ext_base.as_ref().iter())
+        {
+            *n += h * outdoor_temp;
+        }
+        num_rest_with_iz.mul_assign(term_rest_1);
+        let ground_coeff = self.0.derived_ground_coeff.as_ref();
+        for (n, g) in num_rest_with_iz
+            .as_mut()
+            .iter_mut()
+            .zip(ground_coeff.iter())
+        {
+            *n += g * t_g;
+        }
+
+        // Calculate free-floating temperature using 5R1C sensitivity
+        let mut t_i_free = num_tm;
+        t_i_free.add_assign(&num_phi_st);
+        t_i_free.add_assign(&num_rest_with_iz);
+        t_i_free.div_assign(&den);
+
+        // === Update Multi-Node Thermal Mass (9R4C) ===
+        // Update each zone's multi-node solver with current temperatures
+        for zone_idx in 0..self.0.num_zones {
+            if zone_idx >= self.0.multi_node_solvers.len() {
+                continue;
+            }
+
+            let solver = &mut self.0.multi_node_solvers[zone_idx];
+            let t_zone = t_i_free.as_ref()[zone_idx];
+            let t_ext = t_sol_air_data
+                .get(zone_idx)
+                .copied()
+                .unwrap_or(outdoor_temp);
+
+            // Average interior surface temperature as proxy for T_surface
+            // In a full 9R4C implementation, this would come from the surface heat balance
+            let t_surface = t_zone - 0.5;
+
+            solver.set_zone_temperature(t_zone);
+            solver.set_surface_temperature(t_surface);
+            solver.set_exterior_temperature(t_ext);
+
+            // Advance solver by one timestep
+            solver.step(dt);
+        }
+
+        // Update mass temperatures from multi-node solver results
+        if !self.0.multi_node_solvers.is_empty() {
+            let mut wall_temps = Vec::with_capacity(self.0.num_zones);
+            let mut roof_temps = Vec::with_capacity(self.0.num_zones);
+            let mut floor_temps = Vec::with_capacity(self.0.num_zones);
+            let mut internal_temps = Vec::with_capacity(self.0.num_zones);
+
+            for solver in &self.0.multi_node_solvers {
+                wall_temps.push(solver.wall_temperature());
+                roof_temps.push(solver.roof_temperature());
+                floor_temps.push(solver.floor_temperature());
+                internal_temps.push(solver.internal_temperature());
+            }
+
+            // Update envelope mass temperatures
+            let wall_temps_vf = VectorField::new(wall_temps);
+            let roof_temps_vf = VectorField::new(roof_temps);
+            let floor_temps_vf = VectorField::new(floor_temps);
+            let internal_temps_vf = VectorField::new(internal_temps);
+
+            self.0.envelope_mass_temperatures = T::from(
+                (wall_temps_vf.clone() + roof_temps_vf.clone() + floor_temps_vf.clone()) / 3.0,
+            );
+            self.0.internal_mass_temperatures = T::from(internal_temps_vf.clone());
+
+            // Average envelope temp for overall mass temperature
+            self.0.mass_temperatures =
+                T::from((wall_temps_vf + roof_temps_vf + floor_temps_vf + internal_temps_vf) / 4.0);
+        }
+
+        // Calculate HVAC demand using sensitivity-based approach
+        let hour_of_day_idx = timestep % 24;
+        let temp_rate = if timestep > 0 {
+            (self.0.temperatures.as_ref()[0] - self.0.previous_temperatures.as_ref()[0]) / dt
+        } else {
+            0.0
+        };
+
+        let (hvac_mode, _modulation) = self.0.predictive_controller.calculate_modulation(
+            self.0.temperatures.as_ref()[0],
+            self.0.mass_temperatures.as_ref()[0],
+            temp_rate,
+        );
+        let _hvac_mode: EquipmentHVACMode = hvac_mode;
+
+        let sensitivity_val = sensitivity;
+        let hvac_for_temp_calc =
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone());
+
+        let hvac_for_temp_calc_cloned = hvac_for_temp_calc.clone();
+        let product = sensitivity_val.clone() * hvac_for_temp_calc_cloned;
+        let mut t_i_act = t_i_free.clone();
+        t_i_act.add_assign(&product);
+
+        // Update zone temperatures
+        let temps_slice = self.0.temperatures.as_mut();
+        for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
+            if i < temps_slice.len() {
+                temps_slice[i] = *t_val;
+            }
+        }
+
+        // Calculate and return total HVAC output (energy)
+        let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+        let hvac_cloned = hvac_output.clone();
+        let hvac_power_watts = hvac_cloned
+            .as_ref()
+            .iter()
+            .zip(self.0.hvac_enabled.as_ref().iter())
+            .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
+            .sum::<f64>();
+
+        // Diagnostics recording (if enabled)
+        if self.0.diagnostics.is_some() {
+            // Store current HVAC output for this timestep (per zone, Watts)
+            self.0.current_hvac_output = Some(hvac_output.clone());
+            // Temporarily take diagnostics out to avoid borrow conflicts
+            let mut diag = self.0.diagnostics.take().unwrap();
+            diag.record_timestep(timestep, self, outdoor_temp, t_g);
+            self.0.diagnostics = Some(diag);
+            // Clear the buffer after use
+            self.0.current_hvac_output = None;
+        }
+
+        hvac_power_watts * dt
     }
 }
