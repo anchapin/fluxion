@@ -1348,7 +1348,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .as_ref()
             .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
-        let (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps) =
+        let (_t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
 
         // Get ground temperature at this timestep
