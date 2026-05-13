@@ -597,37 +597,33 @@ impl FaultDetector {
 
         // Check for setpoint violation
         match hvac_mode {
-            "heating" => {
-                if current_temp > heating_setpoint + 1.0 {
-                    detected_faults.push(Fault::new(
-                        FaultType::SetpointViolation,
-                        FaultSeverity::Warning,
-                        format!(
-                            "Zone {} heating: temp {:.1}°C above setpoint {:.1}°C",
-                            zone_id, current_temp, heating_setpoint
-                        ),
-                        zone_id.to_string(),
-                        hour,
-                        0.8,
-                        "Check thermostat settings and HVAC operation".to_string(),
-                    ));
-                }
+            "heating" if current_temp > heating_setpoint + 1.0 => {
+                detected_faults.push(Fault::new(
+                    FaultType::SetpointViolation,
+                    FaultSeverity::Warning,
+                    format!(
+                        "Zone {} heating: temp {:.1}°C above setpoint {:.1}°C",
+                        zone_id, current_temp, heating_setpoint
+                    ),
+                    zone_id.to_string(),
+                    hour,
+                    0.8,
+                    "Check thermostat settings and HVAC operation".to_string(),
+                ));
             }
-            "cooling" => {
-                if current_temp < cooling_setpoint - 1.0 {
-                    detected_faults.push(Fault::new(
-                        FaultType::SetpointViolation,
-                        FaultSeverity::Warning,
-                        format!(
-                            "Zone {} cooling: temp {:.1}°C below setpoint {:.1}°C",
-                            zone_id, current_temp, cooling_setpoint
-                        ),
-                        zone_id.to_string(),
-                        hour,
-                        0.8,
-                        "Check thermostat settings and HVAC operation".to_string(),
-                    ));
-                }
+            "cooling" if current_temp < cooling_setpoint - 1.0 => {
+                detected_faults.push(Fault::new(
+                    FaultType::SetpointViolation,
+                    FaultSeverity::Warning,
+                    format!(
+                        "Zone {} cooling: temp {:.1}°C below setpoint {:.1}°C",
+                        zone_id, current_temp, cooling_setpoint
+                    ),
+                    zone_id.to_string(),
+                    hour,
+                    0.8,
+                    "Check thermostat settings and HVAC operation".to_string(),
+                ));
             }
             _ => {}
         }

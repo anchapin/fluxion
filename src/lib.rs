@@ -48,6 +48,7 @@ struct Model {
 }
 
 #[cfg(feature = "python-bindings")]
+#[allow(clippy::useless_conversion)] // pyo3 generates PyErr->PyErr in method wrappers
 #[pymethods]
 impl Model {
     /// Create a new Model instance.
@@ -153,6 +154,7 @@ impl BatchOracle {
 }
 
 #[cfg(feature = "python-bindings")]
+#[allow(clippy::useless_conversion)] // pyo3 generates PyErr->PyErr in method wrappers
 #[pymethods]
 impl BatchOracle {
     /// Create a new BatchOracle instance.
@@ -236,7 +238,7 @@ impl BatchOracle {
 
                 // Move models and channels into workers
                 for ((idx, mut model), (tx, rx)) in
-                    valid_configs.drain(..).zip(worker_channels.into_iter())
+                    valid_configs.drain(..).zip(worker_channels)
                 {
                     let res_tx = result_tx.clone();
                     s.spawn(move |_| {
