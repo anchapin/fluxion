@@ -707,7 +707,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
 
         // --- Dynamic Ventilation (Night Ventilation) ---
-        let hour_of_day = (timestep % 24) as u8;
+        let _hour_of_day = (timestep % 24) as u8;
 
         // Combine fractions to avoid multiple intermediate VectorField allocations
         let conv_frac = self.0.convective_fraction;
@@ -738,47 +738,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Use pre-computed cached values to avoid redundant allocations
         let h_ext_base = &self.0.derived_h_ext;
 
-        let mut modified_h_ext: Option<T> = None;
-
-        // If h_ve changed, we need to adjust h_ext
-        let h_ext = if let Some(night_vent) = &self.0.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                // Calculate h_ve for night ventilation
-                // h_ve_vent = (Capacity * rho * cp) / 3600
-                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
-                let h_ve_vent = air_cap_vent / 3600.0;
-
-                // h_ext = derived_h_ext + h_ve_vent
-                let mut new_h_ext = h_ext_base.clone();
-                for x in new_h_ext.as_mut() {
-                    *x += h_ve_vent;
-                }
-                modified_h_ext = Some(new_h_ext);
-                modified_h_ext.as_ref().unwrap()
-            } else {
-                h_ext_base
-            }
-        } else {
-            h_ext_base
-        };
+        // Night ventilation is modeled as a separate heat term in the zone energy balance,
+        // NOT as a modification to h_ext (which represents building envelope conductance).
+        // Q_vent = ρ·Cp·ACH·V·(T_outdoor - T_zone) is applied directly to phi_ia.
+        // h_ext modification was incorrect: night ventilation cools zone through direct air supply.
+        let h_ext = h_ext_base;
 
         let term_rest_1 = &self.0.derived_term_rest_1;
 
         // Dynamic den must include derived_ground_coeff
         // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor + h_tr_iz)
         // Issue #351: Include inter-zone conductance
-        let den = if let Some(ref mod_h_ext) = modified_h_ext {
-            let h_total_with_iz = if self.0.num_zones > 1 {
-                mod_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
-            } else {
-                mod_h_ext.clone()
-            };
-            self.0.derived_h_ms_is_prod.clone()
-                + term_rest_1.clone() * h_total_with_iz
-                + self.0.derived_ground_coeff.clone()
-        } else {
-            self.0.derived_den.clone()
-        };
+        // Night ventilation no longer modifies h_ext, so we always use the cached denominator.
+        let den = self.0.derived_den.clone();
 
         // Use envelope_mass_temperatures to match step_physics_6r2c
         // Optimized: use zip_with to avoid double clones

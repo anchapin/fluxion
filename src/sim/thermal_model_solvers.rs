@@ -221,12 +221,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.thermal_model_type == ThermalModelType::EightRThreeC
     }
 
+    /// Check if this is a 9R4C thermal model (Phase 6, Issue #715).
+    pub fn is_nine_r4c_model(&self) -> bool {
+        self.0.thermal_model_type == ThermalModelType::NineRFourC
+    }
+
     /// Reset to 5R1C thermal model (disable 6R2C and 8R3C).
     ///
     /// This reverts the thermal model to the default ISO 13790 5R1C configuration
     /// with a single thermal mass node.
     pub fn reset_to_5r1c(&mut self) {
         self.0.thermal_model_type = ThermalModelType::FiveROneC;
+    }
+
+    /// Enable 9R4C thermal model for high-mass buildings (Phase 6).
+    ///
+    /// The 9R4C model uses 4 thermal mass nodes (wall, roof, floor, internal)
+    /// to properly capture thermal inertia in heavy-mass buildings (Case 900+ series).
+    ///
+    /// This method should be called during model construction for high-mass buildings.
+    /// The per-surface conductances and MultiNodeSolver instances must already be
+    /// initialized in `from_spec()` via the `is_9r4c_model` path.
+    pub fn enable_9r4c_model(&mut self) {
+        self.0.thermal_model_type = ThermalModelType::NineRFourC;
     }
 
     /// Disable 6R2C model and revert to 5R1C with single thermal mass node.
