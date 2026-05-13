@@ -270,12 +270,14 @@ fn test_hvac_heating_mode_detection() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Cold outdoor temperature should trigger heating
+    model.temperatures = VectorField::from_scalar(10.0, model.num_zones);
+    model.mass_temperatures = VectorField::from_scalar(10.0, model.num_zones);
+
     let hvac_kwh = model.step_physics(0, -10.0, 3600.0);
 
     assert!(
         hvac_kwh > 0.0,
-        "Expected heating (positive hvac_kwh) at -10°C, got {:.4} kWh",
+        "Expected heating (positive hvac_kwh) at -10°C with 10°C zone, got {:.4} kWh",
         hvac_kwh
     );
 }
@@ -286,12 +288,14 @@ fn test_hvac_cooling_mode_detection() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Hot outdoor temperature should trigger cooling
+    model.temperatures = VectorField::from_scalar(30.0, model.num_zones);
+    model.mass_temperatures = VectorField::from_scalar(30.0, model.num_zones);
+
     let hvac_kwh = model.step_physics(0, 35.0, 3600.0);
 
     assert!(
         hvac_kwh < 0.0,
-        "Expected cooling (negative hvac_kwh) at 35°C, got {:.4} kWh",
+        "Expected cooling (negative hvac_kwh) at 35°C with 30°C zone, got {:.4} kWh",
         hvac_kwh
     );
 }
