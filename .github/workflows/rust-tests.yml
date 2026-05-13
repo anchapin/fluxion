@@ -34,6 +34,44 @@ env:
 jobs:
   # -- Always: fast gate (both PR and main) ----------------------------------
 
+  test:
+    name: Test (${{ matrix.os }}, ${{ matrix.feature_set.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        rust: [stable]
+        feature_set:
+          - {name: "no-default",       flags: "--no-default-features"}
+          - {name: "wiring-tracing",   flags: "--features wiring-tracing"}
+          - {name: "multi-zone",       flags: "--features wiring-tracing,multi-zone"}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Cache ONNX Runtime binaries
+        if: runner.os == 'macOS'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/ort.pyke.io
+          key: ort-binaries-aarch64-apple-darwin-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ort-binaries-aarch64-apple-darwin-
+
+      - name: Run tests
+        run: cargo test --lib --verbose ${{ matrix.feature_set.flags }}
+        env:
+          PYO3_PYTHON: /usr/bin/python3
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
