@@ -76,18 +76,33 @@ impl From<OrchestrationDecisionKind> for DecisionType {
 /// canonical label strings.  Called once from `benchmark_runner.rs` at startup.
 pub fn assert_label_consistency() {
     let pairs: &[(OrchestrationDecisionKind, &str)] = &[
-        (OrchestrationDecisionKind::SolverSelection,  "solver_selection"),
-        (OrchestrationDecisionKind::AdaptiveTimestep, "adaptive_timestep"),
-        (OrchestrationDecisionKind::SurrogateRouting, "surrogate_routing"),
-        (OrchestrationDecisionKind::ConstraintWarning,"constraint_warning"),
-        (OrchestrationDecisionKind::HvacHorizon,      "hvac_horizon"),
+        (
+            OrchestrationDecisionKind::SolverSelection,
+            "solver_selection",
+        ),
+        (
+            OrchestrationDecisionKind::AdaptiveTimestep,
+            "adaptive_timestep",
+        ),
+        (
+            OrchestrationDecisionKind::SurrogateRouting,
+            "surrogate_routing",
+        ),
+        (
+            OrchestrationDecisionKind::ConstraintWarning,
+            "constraint_warning",
+        ),
+        (OrchestrationDecisionKind::HvacHorizon, "hvac_horizon"),
     ];
     for (kind, expected) in pairs {
         assert_eq!(
-            kind.as_str(), *expected,
+            kind.as_str(),
+            *expected,
             "OrchestrationDecisionKind::{:?} label mismatch (engine: {:?}, harness: {:?}). \
              Update either decision_recorder.rs or decision_types.rs.",
-            kind, kind.as_str(), expected,
+            kind,
+            kind.as_str(),
+            expected,
         );
     }
 }
@@ -138,11 +153,9 @@ impl DecisionRecorder {
         timestep_index: Option<usize>,
     ) {
         let instance = if correct {
-            DecisionInstance::correct(decision_type, cost_avoided_s)
-                .with_source(sim_case.into())
+            DecisionInstance::correct(decision_type, cost_avoided_s).with_source(sim_case.into())
         } else {
-            DecisionInstance::incorrect(decision_type)
-                .with_source(sim_case.into())
+            DecisionInstance::incorrect(decision_type).with_source(sim_case.into())
         };
         self.records.push(RecordedDecision {
             instance,
@@ -188,11 +201,9 @@ impl DecisionRecorder {
 
         let case_str: String = sim_case.into();
         let instance = if correct {
-            DecisionInstance::correct(decision_type, cost_avoided_s)
-                .with_source(case_str.clone())
+            DecisionInstance::correct(decision_type, cost_avoided_s).with_source(case_str.clone())
         } else {
-            DecisionInstance::incorrect(decision_type)
-                .with_source(case_str.clone())
+            DecisionInstance::incorrect(decision_type).with_source(case_str.clone())
         };
         let instance = if let Some(ts) = timestep_index {
             instance.with_timestep(ts)
@@ -233,11 +244,9 @@ impl DecisionRecorder {
         let case_str: String = sim_case.into();
 
         let instance = if correct {
-            DecisionInstance::correct(dt, cost_avoided_s)
-                .with_source(case_str.clone())
+            DecisionInstance::correct(dt, cost_avoided_s).with_source(case_str.clone())
         } else {
-            DecisionInstance::incorrect(dt)
-                .with_source(case_str.clone())
+            DecisionInstance::incorrect(dt).with_source(case_str.clone())
         };
         let instance = if let Some(ts) = timestep_index {
             instance.with_timestep(ts)
@@ -325,10 +334,7 @@ pub fn ground_truth_adaptive_timestep(
 
 /// Ground-truth: should this query go to surrogate (true) or physics (false)?
 /// Currently always false (surrogate not yet deployed).
-pub fn ground_truth_surrogate_routing(
-    mahalanobis_dist: f64,
-    _required_accuracy_rmse: f64,
-) -> bool {
+pub fn ground_truth_surrogate_routing(mahalanobis_dist: f64, _required_accuracy_rmse: f64) -> bool {
     mahalanobis_dist < 2.0 // within training distribution
 }
 
@@ -338,9 +344,7 @@ pub fn ground_truth_constraint_warning(
     t_zone_max_c: f64,
     energy_balance_error: f64,
 ) -> bool {
-    t_zone_min_c < -50.0
-        || t_zone_max_c > 100.0
-        || energy_balance_error > 0.01
+    t_zone_min_c < -50.0 || t_zone_max_c > 100.0 || energy_balance_error > 0.01
 }
 
 /// Ground-truth: optimal HVAC horizon in hours.
