@@ -69,8 +69,8 @@ pub mod api;
 pub mod cli;
 pub mod interop;
 pub mod napi;
-pub mod performance;
 pub mod orchestration;
+pub mod performance;
 pub mod physics;
 #[cfg(feature = "python-bindings")]
 pub mod python;
