@@ -119,11 +119,7 @@ impl OrchestrationDecision {
 
     /// Convenience: construct with an empty feature map.
     pub fn simple(kind: OrchestrationDecisionKind, chosen: impl Into<String>) -> Self {
-        Self::new(
-            kind,
-            chosen,
-            Value::Object(serde_json::Map::new()),
-        )
+        Self::new(kind, chosen, Value::Object(serde_json::Map::new()))
     }
 }
 
@@ -134,11 +130,26 @@ mod tests {
 
     #[test]
     fn test_kind_as_str() {
-        assert_eq!(OrchestrationDecisionKind::SolverSelection.as_str(), "solver_selection");
-        assert_eq!(OrchestrationDecisionKind::AdaptiveTimestep.as_str(), "adaptive_timestep");
-        assert_eq!(OrchestrationDecisionKind::SurrogateRouting.as_str(), "surrogate_routing");
-        assert_eq!(OrchestrationDecisionKind::ConstraintWarning.as_str(), "constraint_warning");
-        assert_eq!(OrchestrationDecisionKind::HvacHorizon.as_str(), "hvac_horizon");
+        assert_eq!(
+            OrchestrationDecisionKind::SolverSelection.as_str(),
+            "solver_selection"
+        );
+        assert_eq!(
+            OrchestrationDecisionKind::AdaptiveTimestep.as_str(),
+            "adaptive_timestep"
+        );
+        assert_eq!(
+            OrchestrationDecisionKind::SurrogateRouting.as_str(),
+            "surrogate_routing"
+        );
+        assert_eq!(
+            OrchestrationDecisionKind::ConstraintWarning.as_str(),
+            "constraint_warning"
+        );
+        assert_eq!(
+            OrchestrationDecisionKind::HvacHorizon.as_str(),
+            "hvac_horizon"
+        );
     }
 
     #[test]

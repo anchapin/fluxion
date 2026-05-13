@@ -11,10 +11,10 @@ fn main() {
     // Check winter hours (hours 0-100)
     println!("=== Winter Weather Check (Hours 0-100) ===");
     for hour in [0, 1, 2, 3, 24, 25, 48, 72, 96] {
-        if let Some(data) = weather.get_hourly_data(hour) {
+        if let Ok(data) = weather.get_hourly_data(hour) {
             let t_sky = data.sky_temperature();
             println!(
-                "Hour {:3}: dry_bulb={:6.1f}°C, t_sky={:7.2f}°C, GHI={:6.1f}, DNI={:6.1f}, DHI={:6.1f}, IR={:.1f}",
+                "Hour {:3}: dry_bulb={:6.1}°C, t_sky={:7.2}°C, GHI={:6.1}, DNI={:6.1}, DHI={:6.1}, IR={:.1}",
                 hour, data.dry_bulb_temp, t_sky, data.ghi, data.dni, data.dhi, data.horizontal_infrared
             );
         }
@@ -23,10 +23,10 @@ fn main() {
     // Check summer hours (hours 4000-4100)
     println!("\n=== Summer Weather Check (Hours 4000-4100) ===");
     for hour in [4000, 4020, 4040, 4060, 4080] {
-        if let Some(data) = weather.get_hourly_data(hour) {
+        if let Ok(data) = weather.get_hourly_data(hour) {
             let t_sky = data.sky_temperature();
             println!(
-                "Hour {:4}: dry_bulb={:6.1f}°C, t_sky={:7.2f}°C, GHI={:6.1f}, DNI={:6.1f}, DHI={:6.1f}, IR={:.1f}",
+                "Hour {:4}: dry_bulb={:6.1}°C, t_sky={:7.2}°C, GHI={:6.1}, DNI={:6.1}, DHI={:6.1}, IR={:.1}",
                 hour, data.dry_bulb_temp, t_sky, data.ghi, data.dni, data.dhi, data.horizontal_infrared
             );
         }
