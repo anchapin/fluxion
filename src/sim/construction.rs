@@ -900,7 +900,7 @@ pub struct Materials;
 impl Materials {
     /// Plasterboard (gypsum board)
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
+        ConstructionLayer::new("Plasterboard", 0.16, 784.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
@@ -910,7 +910,7 @@ impl Materials {
 
     /// Wood siding
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
+        ConstructionLayer::new("Wood Siding", 0.14, 530.0, 900.0, thickness)
     }
 
     /// Concrete (normal weight)
@@ -923,12 +923,12 @@ impl Materials {
     /// Concrete blocks have lower thermal conductivity (k=0.51 W/mK) than normal concrete (k=1.13 W/mK).
     /// This is specified in ASHRAE 140 Table 7-27 for high-mass construction.
     pub fn concrete_block(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 840.0, thickness)
     }
 
     /// Foam insulation
     pub fn foam(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Foam", 0.04, 14.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing

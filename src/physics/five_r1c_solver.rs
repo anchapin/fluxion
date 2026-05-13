@@ -57,8 +57,8 @@ impl FiveR1CSolver {
         Self {
             R_total: 0.0,
             C_total: 0.0,
-            R_si: 1.0 / 8.0,  // Default interior film coefficient
-            R_se: 1.0 / 25.0, // Default exterior film coefficient
+            R_si: 1.0 / 8.29, // ASHRAE 140 Table B1-6: h_int = 8.29 W/m²K
+            R_se: 1.0 / 29.3, // ASHRAE 140 Table B1-6: h_ext = 29.3 W/m²K
             T_mass: 20.0,
             q_flux: 0.0,
             initialized: false,
@@ -91,8 +91,8 @@ impl HeatConductionSolver for FiveR1CSolver {
         self.C_total = wall.thermal_mass() * 1000.0;
 
         // Set surface resistances (default values)
-        self.R_si = 1.0 / 8.0; // h_interior = 8 W/m²·K
-        self.R_se = 1.0 / 25.0; // h_exterior = 25 W/m²·K
+        self.R_si = 1.0 / 8.29; // ASHRAE 140 Table B1-6: h_int = 8.29 W/m²K
+        self.R_se = 1.0 / 29.3; // ASHRAE 140 Table B1-6: h_ext = 29.3 W/m²K
 
         // Initialize mass node temperature to average of expected temperatures
         self.T_mass = 20.0;
@@ -212,8 +212,8 @@ mod tests {
         assert_eq!(solver.C_total, 0.0);
         assert_eq!(solver.T_mass, 20.0);
         assert_eq!(solver.q_flux, 0.0);
-        assert_eq!(solver.R_si, 1.0 / 8.0);
-        assert_eq!(solver.R_se, 1.0 / 25.0);
+        assert_eq!(solver.R_si, 1.0 / 8.29);
+        assert_eq!(solver.R_se, 1.0 / 29.3);
     }
 
     #[test]
@@ -224,8 +224,8 @@ mod tests {
         assert_eq!(solver.C_total, 0.0);
         assert_eq!(solver.T_mass, 20.0);
         assert_eq!(solver.q_flux, 0.0);
-        assert_eq!(solver.R_si, 1.0 / 8.0);
-        assert_eq!(solver.R_se, 1.0 / 25.0);
+        assert_eq!(solver.R_si, 1.0 / 8.29);
+        assert_eq!(solver.R_se, 1.0 / 29.3);
     }
 
     #[test]

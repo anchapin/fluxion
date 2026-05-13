@@ -78,9 +78,9 @@ impl SurfaceCoefficients {
 
     /// Create coefficients for ASHRAE 140 standard.
     pub fn ashrae_140() -> Self {
-        // ASHRAE 140 uses h_i = 8.0 W/m²·K
+        // ASHRAE 140 Table B1-6 uses h_i = 8.29 W/m²·K (combined convective + radiative)
         let h_ci = 3.0;
-        let h_ri = 5.0;
+        let h_ri = 5.29;
         Self {
             h_ci,
             h_ri,

@@ -1651,7 +1651,7 @@ mod tests {
         let t_outdoor = 30.0;
         let solar_flux = 800.0;
         let alpha_solar = 0.7;
-        let h_exterior = 25.0;
+        let h_exterior = 29.3; // ASHRAE 140 Table B1-6
 
         let t_solair = sol_air_temperature(t_outdoor, solar_flux, alpha_solar, h_exterior);
 
