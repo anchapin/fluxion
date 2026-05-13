@@ -1599,6 +1599,28 @@ impl ThermalModel<VectorField> {
             ));
         }
 
+        // All constraint checks passed — emit decision spans for TDQS harness (Issue #708)
+        tracing::info!(
+            decision_type = "constraint_warning",
+            chosen = "passed",
+            h_tr_em = h_tr_em,
+            h_tr_ms = h_tr_ms,
+            h_tr_is = h_tr_is,
+            h_tr_w = h_tr_w,
+            h_ve = h_ve,
+            hvac_setpoint = hvac_setpoint,
+            window_u_value = window_u_value,
+            "Constraint validation decision"
+        );
+        // HVAC prediction horizon is fixed at 24 h (PredictiveController default).
+        // This span is the catalogue hook; adaptive horizon selection is future work.
+        tracing::info!(
+            decision_type = "hvac_horizon",
+            chosen = "24h_fixed",
+            hvac_setpoint = hvac_setpoint,
+            "HVAC horizon selection decision (fixed 24h)"
+        );
+
         // Create ThermalModel if all validations pass
         let mut model = ThermalModel::new(num_zones);
         model.window_u_value = window_u_value;
