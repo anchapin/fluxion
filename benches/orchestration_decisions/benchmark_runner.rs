@@ -226,15 +226,25 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         } else {
             DecisionInstance::incorrect(DecisionType::AdaptiveTimestep).with_source(case)
         });
-        decisions.push(DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case));
-        decisions.push(DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case));
+        decisions.push(
+            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+        );
+        decisions.push(
+            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case),
+        );
     }
 
     // --- Cases 195, 470 (analytical) ---
     for &case in &["case_195", "case_470"] {
-        decisions.push(DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case));
-        decisions.push(DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case));
-        decisions.push(DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case));
+        decisions.push(
+            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case),
+        );
+        decisions.push(
+            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case),
+        );
+        decisions.push(
+            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+        );
         // HVAC horizon with DR event: 72h horizon should be used
         let gt_hh = ground_truth_hvac_horizon(0.85, 0.05);
         let act_hh = current_hvac_horizon_decision(0.85, 0.05);
@@ -256,14 +266,22 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         } else {
             DecisionInstance::incorrect(DecisionType::SolverSelection).with_source(case)
         });
-        decisions.push(DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case));
-        decisions.push(DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case));
-        decisions.push(DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case));
+        decisions.push(
+            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case),
+        );
+        decisions.push(
+            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+        );
+        decisions.push(
+            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case),
+        );
     }
 
     // --- Setback / Ventilation variants ---
     for &case in &["case_setback_1", "case_setback_2", "case_ventilation_1", "case_ventilation_2"] {
-        decisions.push(DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case));
+        decisions.push(
+            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case),
+        );
         // Setback changes → rapid temperature slope → timestep trigger
         let slope = 3.8f64;
         let solar_delta = 50.0f64;
@@ -282,7 +300,9 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         } else {
             DecisionInstance::incorrect(DecisionType::HvacHorizon).with_source(case)
         });
-        decisions.push(DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case));
+        decisions.push(
+            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+        );
     }
 
     decisions
