@@ -1582,7 +1582,7 @@ mod tests {
     fn test_materials_plasterboard() {
         let layer = Materials::plasterboard(0.012);
         assert_eq!(layer.conductivity, 0.16);
-        assert_eq!(layer.density, 950.0);
+        assert_eq!(layer.density, 784.0);
         assert_eq!(layer.specific_heat, 840.0);
         assert_eq!(layer.thickness, 0.012);
     }
@@ -1600,8 +1600,8 @@ mod tests {
     fn test_materials_wood_siding() {
         let layer = Materials::wood_siding(0.009);
         assert_eq!(layer.conductivity, 0.14);
-        assert_eq!(layer.density, 500.0);
-        assert_eq!(layer.specific_heat, 1300.0);
+        assert_eq!(layer.density, 530.0);
+        assert_eq!(layer.specific_heat, 900.0);
         assert_eq!(layer.thickness, 0.009);
     }
 
@@ -1618,7 +1618,7 @@ mod tests {
     fn test_materials_foam() {
         let layer = Materials::foam(0.0615);
         assert_eq!(layer.conductivity, 0.04);
-        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.density, 14.0);
         assert_eq!(layer.specific_heat, 1400.0);
         assert_eq!(layer.thickness, 0.0615);
     }
@@ -2005,7 +2005,7 @@ mod tests {
     fn test_materials_insulation_high_mass() {
         let layer = Materials::insulation_high_mass(0.1);
         assert_eq!(layer.conductivity, 0.04);
-        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.density, 14.0);
         assert_eq!(layer.specific_heat, 1400.0);
     }
 

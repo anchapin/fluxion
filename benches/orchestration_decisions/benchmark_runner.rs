@@ -41,15 +41,14 @@ mod tdqs;
 mod decision_recorder;
 
 use decision_recorder::{
-    assert_label_consistency,
-    current_adaptive_timestep_decision, current_constraint_warning_decision,
-    current_hvac_horizon_decision, current_solver_decision, current_surrogate_routing_decision,
-    ground_truth_adaptive_timestep, ground_truth_constraint_warning, ground_truth_hvac_horizon,
-    ground_truth_solver_is_fd, ground_truth_surrogate_routing, DecisionRecorder, DecisionType,
+    assert_label_consistency, current_adaptive_timestep_decision,
+    current_constraint_warning_decision, current_hvac_horizon_decision, current_solver_decision,
+    current_surrogate_routing_decision, ground_truth_adaptive_timestep,
+    ground_truth_constraint_warning, ground_truth_hvac_horizon, ground_truth_solver_is_fd,
+    ground_truth_surrogate_routing, DecisionRecorder, DecisionType,
 };
 use tdqs::{
-    compute_tdqs, compute_tdqs_breakdown, regression_detected, DecisionInstance,
-    TdqsBreakdown,
+    compute_tdqs, compute_tdqs_breakdown, regression_detected, DecisionInstance, TdqsBreakdown,
 };
 
 // ---------------------------------------------------------------------------
@@ -94,9 +93,11 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
 
     // --- Case 600 series (lightweight construction, 600 / 610 / 620 / 630 / 640 / 650) ---
     // CTF is correct for lightweight; current engine uses CTF → all correct
-    let case_600_series = ["case_600", "case_610", "case_620", "case_630", "case_640", "case_650"];
+    let case_600_series = [
+        "case_600", "case_610", "case_620", "case_630", "case_640", "case_650",
+    ];
     for &case in &case_600_series {
-        let density = 800.0f64;  // lightweight
+        let density = 800.0f64; // lightweight
         let thickness = 0.090f64;
         let gt = ground_truth_solver_is_fd(density, thickness);
         let actual = current_solver_decision(density, thickness);
@@ -150,13 +151,19 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
     // --- Case 900 series (HEAVY mass, 900–950 + FF variants) ---
     // CTF is WRONG here; FD is required (Issue #726)
     let case_900_series = [
-        "case_900", "case_910", "case_920", "case_930", "case_940", "case_950",
-        "case_900ff", "case_950ff",
+        "case_900",
+        "case_910",
+        "case_920",
+        "case_930",
+        "case_940",
+        "case_950",
+        "case_900ff",
+        "case_950ff",
     ];
     for &case in &case_900_series {
-        let density = 2000.0f64;  // concrete
+        let density = 2000.0f64; // concrete
         let thickness = 0.250f64;
-        let gt = ground_truth_solver_is_fd(density, thickness);  // true
+        let gt = ground_truth_solver_is_fd(density, thickness); // true
         let actual = current_solver_decision(density, thickness); // false (CTF bug)
         let correct = gt == actual; // false — known regression
         decisions.push(if correct {
@@ -229,9 +236,8 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         decisions.push(
             DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
         );
-        decisions.push(
-            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case),
-        );
+        decisions
+            .push(DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case));
     }
 
     // --- Cases 195, 470 (analytical) ---
@@ -272,13 +278,17 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         decisions.push(
             DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
         );
-        decisions.push(
-            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case),
-        );
+        decisions
+            .push(DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case));
     }
 
     // --- Setback / Ventilation variants ---
-    for &case in &["case_setback_1", "case_setback_2", "case_ventilation_1", "case_ventilation_2"] {
+    for &case in &[
+        "case_setback_1",
+        "case_setback_2",
+        "case_ventilation_1",
+        "case_ventilation_2",
+    ] {
         decisions.push(
             DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case),
         );
@@ -319,35 +329,27 @@ fn bench_tdqs_computation(c: &mut Criterion) {
     let dataset = load_labeled_dataset();
     let n = dataset.len();
 
-    c.bench_with_input(
-        BenchmarkId::new("tdqs_computation", n),
-        &dataset,
-        |b, d| {
-            b.iter(|| compute_tdqs(black_box(d)))
-        },
-    );
+    c.bench_with_input(BenchmarkId::new("tdqs_computation", n), &dataset, |b, d| {
+        b.iter(|| compute_tdqs(black_box(d)))
+    });
 }
 
 fn bench_tdqs_breakdown(c: &mut Criterion) {
     let dataset = load_labeled_dataset();
     let n = dataset.len();
 
-    c.bench_with_input(
-        BenchmarkId::new("tdqs_breakdown", n),
-        &dataset,
-        |b, d| {
-            b.iter(|| compute_tdqs_breakdown(black_box(d)))
-        },
-    );
+    c.bench_with_input(BenchmarkId::new("tdqs_breakdown", n), &dataset, |b, d| {
+        b.iter(|| compute_tdqs_breakdown(black_box(d)))
+    });
 }
 
 fn bench_solver_selection(c: &mut Criterion) {
     // Representative input range: vary density and thickness
     let inputs: Vec<(f64, f64)> = vec![
-        (800.0, 0.09),   // lightweight → CTF
-        (1200.0, 0.10),  // medium mass
-        (2000.0, 0.25),  // concrete → FD required
-        (1800.0, 0.20),  // boundary case
+        (800.0, 0.09),  // lightweight → CTF
+        (1200.0, 0.10), // medium mass
+        (2000.0, 0.25), // concrete → FD required
+        (1800.0, 0.20), // boundary case
     ];
 
     let mut group = c.benchmark_group("solver_selection");
@@ -370,10 +372,10 @@ fn bench_solver_selection(c: &mut Criterion) {
 
 fn bench_adaptive_timestep(c: &mut Criterion) {
     let inputs: Vec<(f64, f64)> = vec![
-        (0.5, 30.0),    // stable — no trigger
-        (1.5, 80.0),    // moderate
-        (4.0, 160.0),   // trigger expected
-        (6.0, 400.0),   // strong transient
+        (0.5, 30.0),  // stable — no trigger
+        (1.5, 80.0),  // moderate
+        (4.0, 160.0), // trigger expected
+        (6.0, 400.0), // strong transient
     ];
 
     let mut group = c.benchmark_group("adaptive_timestep");
@@ -391,10 +393,10 @@ fn bench_adaptive_timestep(c: &mut Criterion) {
 
 fn bench_surrogate_routing(c: &mut Criterion) {
     let inputs: Vec<(f64, f64)> = vec![
-        (0.5, 0.3),   // in-distribution → surrogate valid
-        (1.9, 0.5),   // near boundary
-        (2.1, 0.5),   // OOD → physics required
-        (5.0, 0.8),   // far OOD
+        (0.5, 0.3), // in-distribution → surrogate valid
+        (1.9, 0.5), // near boundary
+        (2.1, 0.5), // OOD → physics required
+        (5.0, 0.8), // far OOD
     ];
 
     let mut group = c.benchmark_group("surrogate_routing");
@@ -439,9 +441,9 @@ fn bench_constraint_warning(c: &mut Criterion) {
 
 fn bench_hvac_horizon(c: &mut Criterion) {
     let inputs: Vec<(f64, f64)> = vec![
-        (0.4, 0.1),  // low confidence → 24h
-        (0.8, 0.1),  // high confidence → 72h
-        (0.4, 0.7),  // DR event → 6h
+        (0.4, 0.1), // low confidence → 24h
+        (0.8, 0.1), // high confidence → 72h
+        (0.4, 0.7), // DR event → 6h
     ];
 
     let mut group = c.benchmark_group("hvac_horizon");
@@ -487,7 +489,10 @@ fn print_tdqs_report(c: &mut Criterion) {
     println!("Overall TDQS : {:.4}", breakdown.overall);
     println!("Dataset size : {} decisions", dataset.len());
     println!();
-    println!("{:<22} {:>8} {:>8} {:>8}", "Decision Type", "TDQS", "Correct", "Total");
+    println!(
+        "{:<22} {:>8} {:>8} {:>8}",
+        "Decision Type", "TDQS", "Correct", "Total"
+    );
     println!("{}", "-".repeat(52));
     for (dt, score, correct, total) in &breakdown.per_type {
         println!(
