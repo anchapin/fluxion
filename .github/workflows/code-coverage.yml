@@ -28,38 +28,32 @@ jobs:
         run: |
           set -o pipefail
 
-          # Debug info
           echo "=== DEBUG INFO ==="
-          echo "tarpaulin version:"
           cargo tarpaulin --version 2>&1 || echo "tarpaulin not installed yet"
-          echo ""
-          echo "rustc version:"
           rustc --version
-          echo ""
-          echo "cargo version:"
           cargo --version
-          echo ""
           echo "Starting tarpaulin at $(date -Iseconds)"
           echo "===================="
 
-          # Run tarpaulin with verbose output
-          # ASHRAE 140 tests are excluded - they are already validated in dedicated CI job
-          # Performance tests use cfg!(tarpaulin) guards for lenient thresholds
-          # Run physics unit tests that exercise thermal calculation code
+          # Run tarpaulin over the library crate to measure coverage of
+          # src/physics/ and other source modules.
+          # NOTE: We use --lib (inline #[test] functions) rather than an
+          # integration test binary name because integration test names can
+          # change during refactors.  If a named binary is needed in future,
+          # verify it exists in Cargo.toml [[test]] before adding --test.
           cargo tarpaulin \
             --timeout 600 \
+            --lib \
             --out Xml \
             --output-dir ./ \
             --ignore-panics \
             --features wiring-tracing \
-            --test step_physics_unit_tests \
             2>&1 | tee tarpaulin.log
           TARPAULIN_EXIT=${PIPESTATUS[0]}
 
           echo ""
           echo "=== tarpaulin finished at $(date -Iseconds) with exit code $TARPAULIN_EXIT ==="
 
-          # Debug: show what was created
           echo ""
           echo "=== Files in current directory ==="
           ls -la *.xml *.log 2>/dev/null || echo "No xml/log files found"
@@ -70,11 +64,10 @@ jobs:
             tail -50 tarpaulin.log
             exit $TARPAULIN_EXIT
           fi
+
       - name: Extract Physics Coverage
         if: success()
         run: |
-          # Extract physics coverage from tarpaulin XML
-          # Parse cobertura.xml for physics files only
           python3 << 'EOF'
           import xml.etree.ElementTree as ET
           import os
@@ -91,9 +84,10 @@ jobs:
               if 'src/physics/' in filename:
                   physics_files.append(filename)
                   line_rate = float(cls.get('line-rate', '0'))
-                  lines = int(cls.get('lines-covered', '0')) + int(cls.get('lines-valid', '0')) / 2
-                  total_lines += lines
-                  covered_lines += lines * line_rate
+                  lines_valid = int(cls.get('lines-valid', '0'))
+                  lines_covered = int(cls.get('lines-covered', '0'))
+                  total_lines += lines_valid
+                  covered_lines += lines_covered
 
           if total_lines > 0:
               physics_coverage = (covered_lines / total_lines) * 100
@@ -103,11 +97,11 @@ jobs:
                   f.write(f"PHYSICS_COVERAGE={physics_coverage:.2f}\n")
                   f.write(f"PHYSICS_FILE_COUNT={len(physics_files)}\n")
           else:
-              print("Warning: No physics files found in coverage report")
+              print("Warning: No physics files found matching src/physics/ in coverage report")
               with open(os.environ['GITHUB_ENV'], 'a') as f:
                   f.write("PHYSICS_COVERAGE=0.00\n")
+                  f.write("PHYSICS_FILE_COUNT=0\n")
 
-          # List all physics files for debugging
           print("")
           print("Physics files covered:")
           for f in physics_files:
@@ -117,15 +111,17 @@ jobs:
       - name: Check Physics Coverage Threshold
         if: success()
         run: |
-          # Physics coverage threshold - temporarily lowered to 0% for debugging
-          # TODO: Re-enable threshold once coverage issues are resolved
-          echo "Checking physics coverage threshold (target: 0%)"
+          # TODO: Re-enable the 70% threshold once baseline coverage is
+          # established.  For now, threshold is 0 (never fail) so we can
+          # measure without blocking PRs.
+          THRESHOLD=0
+          echo "Checking physics coverage threshold (target: ${THRESHOLD}%)"
 
-          if (( $(echo "$PHYSICS_COVERAGE < 0" | bc -l) )); then
-            echo "::error::Physics coverage ${PHYSICS_COVERAGE}% is below 0% threshold"
+          if (( $(echo "$PHYSICS_COVERAGE < $THRESHOLD" | bc -l) )); then
+            echo "::error::Physics coverage ${PHYSICS_COVERAGE}% is below ${THRESHOLD}% threshold"
             exit 1
           else
-            echo "::notice::Physics coverage ${PHYSICS_COVERAGE}% meets 0% threshold ✅"
+            echo "::notice::Physics coverage ${PHYSICS_COVERAGE}% meets ${THRESHOLD}% threshold"
           fi
 
       - name: Generate Physics Coverage Summary
@@ -133,8 +129,8 @@ jobs:
         run: |
           echo "## Physics Coverage Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Coverage**: ${PHYSICS_COVERAGE}% (Target: 70%)" >> $GITHUB_STEP_SUMMARY
-          echo "- **Status**: $(if (( $(echo "$PHYSICS_COVERAGE >= 70" | bc -l) )); then echo "✅ PASS"; else echo "❌ FAIL"; fi)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Coverage**: ${PHYSICS_COVERAGE}% (Target: 70% — currently unenforced)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Status**: $(if (( $(echo \"$PHYSICS_COVERAGE >= 70\" | bc -l) )); then echo \"✅ PASS\"; else echo \"⚠️  Below 70% target\"; fi)" >> $GITHUB_STEP_SUMMARY
           echo "- **Files Analyzed**: ${PHYSICS_FILE_COUNT}" >> $GITHUB_STEP_SUMMARY
 
       - name: Upload to codecov
