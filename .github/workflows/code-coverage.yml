@@ -13,6 +13,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: ./.github/actions/setup-rust-env
+        with:
+          # sccache sets RUSTC_WRAPPER=sccache which intercepts the compiler
+          # and breaks tarpaulin's instrumentation. Disable it for coverage runs.
+          sccache: 'false'
 
       - name: Install tarpaulin
         uses: baptiste0928/cargo-install@v3
