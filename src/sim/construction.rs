@@ -900,7 +900,7 @@ pub struct Materials;
 impl Materials {
     /// Plasterboard (gypsum board)
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Plasterboard", 0.16, 784.0, 840.0, thickness)
+        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
@@ -910,7 +910,7 @@ impl Materials {
 
     /// Wood siding
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Wood Siding", 0.14, 530.0, 900.0, thickness)
+        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
     }
 
     /// Concrete (normal weight)
@@ -928,7 +928,7 @@ impl Materials {
 
     /// Foam insulation
     pub fn foam(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Foam", 0.04, 14.0, 1400.0, thickness)
+        ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing
@@ -948,7 +948,7 @@ impl Materials {
 
     /// Insulation for floor/walls
     pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Insulation", 0.04, 14.0, 1400.0, thickness)
+        ConstructionLayer::new("Insulation", 0.04, 10.0, 1400.0, thickness)
     }
 }
 
