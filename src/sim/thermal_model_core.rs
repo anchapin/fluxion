@@ -118,7 +118,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
-        _sky_temp: f64,  // placeholder until issue #732 wires WeatherData sky_temp
+        _sky_temp: f64, // placeholder until issue #732 wires WeatherData sky_temp
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
