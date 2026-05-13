@@ -84,7 +84,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _h_tr_is_ms_series = (self.0.h_tr_is.clone() * self.0.h_tr_ms.clone())
             / (self.0.h_tr_is.clone() + self.0.h_tr_ms.clone());
 
-// h_ext = h_tr_w + h_ve + south wall series + non-south opaque envelope
+        // h_ext = h_tr_w + h_ve + south wall series + non-south opaque envelope
         // Issue #715: South wall has insulation creating a series thermal path.
         // Instead of adding h_tr_em directly, we use the series combination:
         // h_south_series = 1 / (1/h_tr_is_south + 1/h_tr_em_south)
