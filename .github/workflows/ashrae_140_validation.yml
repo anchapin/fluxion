@@ -164,6 +164,7 @@ jobs:
 
       - name: Check Validation Results
         id: check
+        continue-on-error: true  # advisory on PRs; hard gate on push/schedule
         run: |
           # Run centralized release gate checker for validation gates
           python3 scripts/release_gate_checker.py \
@@ -216,7 +217,7 @@ jobs:
         continue-on-error: true
 
       - name: Fail if validation gate failed
-        if: failure() || steps.check.outcome == 'failure'
+        if: (failure() || steps.check.outcome == 'failure') && github.event_name != 'pull_request'
         run: |
           echo "❌ Release gate check failed"
           echo ""
