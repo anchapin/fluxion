@@ -86,7 +86,7 @@ impl Model {
                 self.surrogates = manager;
                 Ok(())
             }
-            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
+            Err(e) => Err(e),
         }
     }
 }
@@ -317,7 +317,7 @@ impl BatchOracle {
                 self.surrogates = manager;
                 Ok(())
             }
-            Err(e) => Err(pyo3::exceptions::PyRuntimeError::new_err(e)),
+            Err(e) => Err(e),
         }
     }
 }
