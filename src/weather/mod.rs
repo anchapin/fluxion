@@ -500,15 +500,12 @@ mod tests {
         }
 
         let source = ErrorSource;
-        let mut count = 0;
-
-        for result in source.iter_hours().take(15) {
+        for (count, result) in source.iter_hours().take(15).enumerate() {
             if count <= 10 {
                 assert!(result.is_ok());
             } else {
                 assert!(result.is_err());
             }
-            count += 1;
         }
     }
 }

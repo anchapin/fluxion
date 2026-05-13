@@ -498,14 +498,14 @@ mod tests {
     #[test]
     fn test_disagreement_calculation() {
         // Create mock predictions
-        let predictions = vec![
+        let predictions = [
             vec![1.0, 2.0, 3.0],
             vec![1.1, 2.1, 3.1],
             vec![0.9, 1.9, 2.9],
         ];
 
         // Calculate disagreement manually
-        let mut expected_disagreement = vec![0.0; 3];
+        let mut expected_disagreement = [0.0; 3];
         for i in 0..3 {
             let mean = (predictions[0][i] + predictions[1][i] + predictions[2][i]) / 3.0;
             let diff0: f64 = predictions[0][i] - mean;
@@ -521,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_aggregation_methods() {
-        let predictions = vec![vec![1.0, 2.0], vec![2.0, 3.0], vec![3.0, 4.0]];
+        let predictions = [vec![1.0, 2.0], vec![2.0, 3.0], vec![3.0, 4.0]];
 
         // Test mean
         let mean_result: Vec<f64> = predictions

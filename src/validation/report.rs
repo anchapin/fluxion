@@ -1418,7 +1418,7 @@ mod tests {
         suite.add_result_simple("600", MetricType::AnnualCooling, 7.5, 6.14, 8.45); // ~5%
 
         let mae = suite.calculate_mae();
-        assert!(mae >= 0.0 && mae <= 10.0);
+        assert!((0.0..=10.0).contains(&mae));
     }
 
     #[test]
