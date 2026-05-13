@@ -117,6 +117,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
+        sky_temp: f64,
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
@@ -124,10 +125,20 @@ where
         let solar_ref = self.0.solar_gains.as_ref();
         let alpha = SOLAR_ABSORPTANCE_DEFAULT;
         let h_se = EXTERIOR_FILM_COEFF_DEFAULT;
+        let emissivity = 0.9; // Surface emissivity for longwave
 
         let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
         for &i_sol in solar_ref.iter().take(self.0.num_zones) {
-            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
+            // ASHRAE sol-air temperature formula:
+            // T_sol_air = T_outdoor + (α × I / h_o) - (ε × ΔR / h_o)
+            // where ΔR = σ(T_sky⁴ - T_outdoor⁴)
+            let solar_term = alpha * i_sol / h_se;
+            let t_sky_k = sky_temp + 273.15;
+            let t_out_k = outdoor_temp + 273.15;
+            let stefan_boltzmann = 5.67e-8;
+            let delta_r = stefan_boltzmann * (t_sky_k.powi(4) - t_out_k.powi(4));
+            let longwave_term = emissivity * delta_r / h_se;
+            let t_sol_air_zone = outdoor_temp + solar_term - longwave_term;
             t_sol_air_data.push(t_sol_air_zone);
         }
 
