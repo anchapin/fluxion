@@ -790,7 +790,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // === Add FD envelope conduction heat flux (if enabled) ===
-        // FD flux replaces standard 5R1C envelope conduction calculation
+        // FD flux already represents the correct zone-wall coupling computed from
+        // actual interior surface temperature: q_fd = h_int * (T_surface_FD - T_zone)
+        // For FD-active walls, use q_fd directly WITHOUT subtracting 5R1C term.
+        // The h_tr_em parameter is meaningless for FD-solved walls (ISO 13790 lumped
+        // parameter loses validity when explicit layer-by-layer FD is used).
         // Positive flux = heat into zone, Negative flux = heat out of zone
         if let Some(fd_fluxes) = &fd_flux_w {
             let slice = phi_ia_with_iz.as_mut();
@@ -800,28 +804,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_fd = q_flux * area;
 
-                    // Subtract standard 5R1C envelope conduction to avoid double-counting
-                    // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self
-                        .0
-                        .mass_temperatures
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
-                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
-
-                    // Add net FD flux (FD - 5R1C)
-                    let net_fd_flux = q_fd - q_5r1c;
-                    slice[i] += net_fd_flux;
+                    // Add FD flux directly to zone energy balance (no 5R1C subtraction)
+                    slice[i] += q_fd;
 
                     // Track FD energy for thermal mass correction
-                    if net_fd_flux > 0.0 {
-                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
+                    if q_fd > 0.0 {
+                        self.0.fd_annual_heating_joules += q_fd * dt;
                     } else {
-                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
+                        self.0.fd_annual_cooling_joules += (-q_fd) * dt;
                     }
                 }
             }
@@ -1525,28 +1515,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Add FD net contribution if enabled
+        // For FD-active walls, use q_fd directly (same justification as 5R1C)
         if let Some(fd_fluxes) = &fd_flux_w {
             let slice = sum_term.as_mut();
             for (i, &q_flux) in fd_fluxes.iter().enumerate() {
                 if i < slice.len() {
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_fd = q_flux * area;
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self
-                        .0
-                        .envelope_mass_temperatures
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
-                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
-                    let net_fd_flux = q_fd - q_5r1c;
-                    slice[i] += net_fd_flux;
-                    if net_fd_flux > 0.0 {
-                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
+                    slice[i] += q_fd;
+                    if q_fd > 0.0 {
+                        self.0.fd_annual_heating_joules += q_fd * dt;
                     } else {
-                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
+                        self.0.fd_annual_cooling_joules += (-q_fd) * dt;
                     }
                 }
             }
@@ -2257,28 +2237,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Add FD flux contributions (if enabled)
+        // For FD-active walls, use q_fd directly (same justification as 5R1C)
         if let Some(fd_fluxes) = &fd_flux_w {
             let slice = phi_ia_with_iz.as_mut();
             for (i, &q_flux) in fd_fluxes.iter().enumerate() {
                 if i < slice.len() {
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_fd = q_flux * area;
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                    let t_mass = self
-                        .0
-                        .mass_temperatures
-                        .as_ref()
-                        .get(i)
-                        .copied()
-                        .unwrap_or(20.0);
-                    let h_tr_em_i = self.0.h_tr_em.as_ref().get(i).copied().unwrap_or(0.0);
-                    let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
-                    let net_fd_flux = q_fd - q_5r1c;
-                    slice[i] += net_fd_flux;
-                    if net_fd_flux > 0.0 {
-                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
+                    slice[i] += q_fd;
+                    if q_fd > 0.0 {
+                        self.0.fd_annual_heating_joules += q_fd * dt;
                     } else {
-                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
+                        self.0.fd_annual_cooling_joules += (-q_fd) * dt;
                     }
                 }
             }

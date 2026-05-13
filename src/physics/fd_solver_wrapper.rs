@@ -106,22 +106,22 @@ impl FDSolverWrapper {
             .collect()
     }
 
+    /// Get interior surface temperature from the FD solver.
+    pub fn interior_surface_temperature(&self) -> f64 {
+        self.solver
+            .as_ref()
+            .map(|s| s.interior_surface_temp())
+            .unwrap_or(20.0)
+    }
+
     /// Calculate surface heat flux from temperature profile.
     fn calculate_surface_flux(
-        _solver: &ImplicitFDSolver,
+        solver: &ImplicitFDSolver,
         _discretization: &WallDiscretization,
         T_interior: f64,
         h_interior: f64,
     ) -> f64 {
-        // Get surface temperature (first node)
-        // Note: ImplicitFDSolver doesn't expose temperatures directly
-        // We'll use a simplified approach - assume surface temp is close to interior temp
-        // In a real implementation, we'd need to query the solver for surface temperature
-        let T_surface = 20.0; // Placeholder - would need proper access to solver state
-
-        // Calculate convective flux at interior surface
-        // q = h * (T_zone - T_surface)
-        // Positive flux = heat flowing into zone
+        let T_surface = solver.interior_surface_temp();
         h_interior * (T_interior - T_surface)
     }
 }
