@@ -220,8 +220,8 @@ fn test_case_900ff_free_floating_high_mass() {
 
     // Physical sanity: high mass should reduce swing by at least 20%
     assert!(
-        (20.0..=75.0).contains(&swing_reduction),
-        "Temperature swing reduction {:.1}% not physically plausible [20, 75]%",
+        (30.0..=55.0).contains(&swing_reduction),
+        "Temperature swing reduction {:.1}% not in expected range [30, 55]%",
         swing_reduction
     );
 
@@ -541,8 +541,8 @@ fn test_thermal_mass_lag_and_damping() {
     );
 
     assert!(
-        (15.0..=75.0).contains(&reduction),
-        "Thermal mass reduction {:.1}% not in physically plausible range [15, 75]%",
+        (30.0..=55.0).contains(&reduction),
+        "Thermal mass reduction {:.1}% not in expected range [30, 55]%",
         reduction
     );
 

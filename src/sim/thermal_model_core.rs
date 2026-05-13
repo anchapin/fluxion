@@ -647,6 +647,8 @@ impl ThermalModel<VectorField> {
         let mut h_tr_is_vec = Vec::with_capacity(num_zones);
         let mut h_tr_ms_vec = Vec::with_capacity(num_zones);
         let mut h_tr_em_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_is_no_south_vec = Vec::with_capacity(num_zones);
+        let mut h_tr_em_south_vec = Vec::with_capacity(num_zones);
         let mut thermal_cap_vec = Vec::with_capacity(num_zones);
 
         // Mode-specific factors removed - will use physics-based h_tr_ms calculation
@@ -969,6 +971,73 @@ impl ThermalModel<VectorField> {
 
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
 
+            // === Issue #715 FIX: South Wall Thermal Bypass ===
+            // The south wall has insulation in the middle, creating a series thermal path
+            // from interior air → interior film → insulation → exterior film → exterior.
+            // This path was bypassed when h_tr_em was added directly to derived_h_ext.
+            // Fix: Compute h_tr_is_south and h_tr_em_south separately, and use the
+            // series combination 1/(1/h_tr_is_south + 1/h_tr_em_south) in derived_h_ext.
+            let south_opaque_area = if zone_idx < model.surfaces.len() {
+                model.surfaces[zone_idx]
+                    .iter()
+                    .find(|s| {
+                        s.orientation == crate::validation::ashrae_140_cases::Orientation::South
+                    })
+                    .map(|s| (s.area - s.window_area).max(0.0))
+                    .unwrap_or(0.0)
+            } else {
+                0.0
+            };
+
+            // Interior film coefficient for south wall (ASHRAE 140 Table 3)
+            let h_tr_is_south_coeff =
+                crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
+            let h_tr_is_south = south_opaque_area * h_tr_is_south_coeff;
+
+            // Compute R_exterior_to_mass for south wall (layers exterior to mass node)
+            // Mass node is at the dominant insulation layer (ISO 13790 half-insulation rule)
+            let wall_construction = &spec.construction.wall;
+            let ins_idx = wall_construction.find_dominant_insulation_layer_index();
+            let r_ext_film_south =
+                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
+            let mut r_exterior_to_mass_south = r_ext_film_south;
+            let layers = &wall_construction.layers;
+            let num_layers = layers.len();
+            for (idx, layer) in layers.iter().enumerate() {
+                let reverse_idx = num_layers - 1 - idx;
+                let layer_r = layer.r_value();
+                if reverse_idx > ins_idx {
+                    r_exterior_to_mass_south += layer_r;
+                } else if reverse_idx == ins_idx {
+                    r_exterior_to_mass_south += layer_r / 2.0;
+                    break;
+                } else {
+                    break;
+                }
+            }
+            let h_tr_em_south = south_opaque_area / r_exterior_to_mass_south.max(0.001);
+
+            // Series combination: 1/(1/h_tr_is_south + 1/h_tr_em_south)
+            let h_south_series = if h_tr_is_south > 0.0 && h_tr_em_south > 0.0 {
+                1.0 / (1.0 / h_tr_is_south + 1.0 / h_tr_em_south)
+            } else {
+                0.0
+            };
+
+            if zone_idx == 0 && spec.case_id == "900" {
+                eprintln!(
+                    "ISSUE715 SOUTH WALL: opaque_area={:.3}m², h_tr_is_south={:.3}W/K, h_tr_em_south={:.3}W/K, series={:.3}W/K, R_ext_to_mass={:.3}",
+                    south_opaque_area, h_tr_is_south, h_tr_em_south, h_south_series, r_exterior_to_mass_south
+                );
+            }
+
+            // h_tr_is_no_south = total_h_tr_is - south wall's contribution
+            let total_h_tr_is = wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is;
+            let h_tr_is_no_south = (total_h_tr_is - h_tr_is_south).max(0.0);
+
+            h_tr_is_no_south_vec.push(h_tr_is_no_south);
+            h_tr_em_south_vec.push(h_tr_em_south);
+
             // === PHASE 36-04 FIX: τ DIAGNOSTIC OUTPUT ===
             // Calculate thermal time constant τ = Cm / (h_tr_ms + h_tr_me)
             // For 6R2C model, h_tr_em does NOT affect mass dynamics directly
@@ -1017,6 +1086,9 @@ impl ThermalModel<VectorField> {
         model.h_tr_is = VectorField::new(h_tr_is_vec);
         model.h_tr_ms = VectorField::new(h_tr_ms_vec.clone());
         model.h_tr_em = VectorField::new(h_tr_em_vec.clone());
+        // === Issue 715 FIX: Assign south-wall bypass vectors ===
+        model.h_tr_is_no_south = VectorField::new(h_tr_is_no_south_vec);
+        model.h_tr_em_south = VectorField::new(h_tr_em_south_vec.clone());
 
         // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
         // h_tr_me (surface-to-internal mass conductance) was previously hardcoded to 100.0 W/K
@@ -1799,6 +1871,8 @@ impl ThermalModel<VectorField> {
             h_tr_em: VectorField::from_scalar(0.0, num_zones),
             h_tr_ms: VectorField::from_scalar(1000.0, num_zones), // Will be set from physics
             h_tr_is: VectorField::from_scalar(1658.0, num_zones), // ~7.97 W/m²K * 208 m² for default zone
+            h_tr_is_no_south: VectorField::from_scalar(0.0, num_zones), // Will be calculated in conductance setup
+            h_tr_em_south: VectorField::from_scalar(0.0, num_zones), // Will be calculated in conductance setup
             h_ve: VectorField::from_scalar(0.0, num_zones),
             h_tr_floor: VectorField::from_scalar(0.0, num_zones), // Will be calculated
             ground_temperature: Box::new(crate::sim::boundary::ConstantGroundTemperature::new(

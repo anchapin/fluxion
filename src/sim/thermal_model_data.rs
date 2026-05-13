@@ -83,6 +83,10 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub h_tr_em: T,
     pub h_tr_ms: T,
     pub h_tr_is: T,
+    /// h_tr_is excluding south wall contribution (for south wall bypass fix, Issue #715)
+    pub h_tr_is_no_south: T,
+    /// South wall's h_tr_em for series path computation (Issue #715)
+    pub h_tr_em_south: T,
     pub h_tr_w: T,
     pub h_ve: T,
     pub h_tr_floor: T,
@@ -205,6 +209,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             h_tr_em: self.h_tr_em.clone(),
             h_tr_ms: self.h_tr_ms.clone(),
             h_tr_is: self.h_tr_is.clone(),
+            h_tr_is_no_south: self.h_tr_is_no_south.clone(),
+            h_tr_em_south: self.h_tr_em_south.clone(),
             h_tr_w: self.h_tr_w.clone(),
             h_ve: self.h_ve.clone(),
             h_tr_floor: self.h_tr_floor.clone(),
