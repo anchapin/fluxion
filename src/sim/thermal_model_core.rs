@@ -118,7 +118,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
-        sky_temp: f64,
+        _sky_temp: f64,  // placeholder until issue #732 wires WeatherData sky_temp
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
@@ -136,7 +136,7 @@ where
             // sky temperature data is wired in (#732).
             let sky_temp = outdoor_temp - 20.0;
             // ε = 0.9 per ASHRAE 140 Table B1-2 (standard opaque surface emissivity)
-            let sol_air_calc = SolAirTemperature::new(alpha, 0.9, h_se);
+            let sol_air_calc = SolAirTemperature::new(alpha, emissivity, h_se);
             let t_sol_air_zone = sol_air_calc.for_roof(outdoor_temp, i_sol, sky_temp);
             t_sol_air_data.push(t_sol_air_zone);
         }
