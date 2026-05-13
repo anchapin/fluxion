@@ -14,6 +14,7 @@ use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
+use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::WindowProperties;
 use crate::sim::thermal_model_data::ThermalModelData;
 use crate::sim::view_factors;
@@ -117,7 +118,7 @@ where
         &mut self,
         _timestep: usize,
         outdoor_temp: f64,
-        sky_temp: f64,
+        _sky_temp: f64, // placeholder until issue #732 wires WeatherData sky_temp
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
             EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
@@ -129,16 +130,14 @@ where
 
         let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
         for &i_sol in solar_ref.iter().take(self.0.num_zones) {
-            // ASHRAE sol-air temperature formula:
-            // T_sol_air = T_outdoor + (α × I / h_o) - (ε × ΔR / h_o)
-            // where ΔR = σ(T_sky⁴ - T_outdoor⁴)
-            let solar_term = alpha * i_sol / h_se;
-            let t_sky_k = sky_temp + 273.15;
-            let t_out_k = outdoor_temp + 273.15;
-            let stefan_boltzmann = 5.67e-8;
-            let delta_r = stefan_boltzmann * (t_sky_k.powi(4) - t_out_k.powi(4));
-            let longwave_term = emissivity * delta_r / h_se;
-            let t_sol_air_zone = outdoor_temp + solar_term - longwave_term;
+            // ASHRAE 140 Sec. 5.2: include LW correction ε·ΔR/h_ext for roof (#741)
+            // sky_temp = outdoor_temp - 20°C is the standard ASHRAE 140 clear-sky
+            // approximation; replace with actual sky_temp from WeatherData once
+            // sky temperature data is wired in (#732).
+            let sky_temp = outdoor_temp - 20.0;
+            // ε = 0.9 per ASHRAE 140 Table B1-2 (standard opaque surface emissivity)
+            let sol_air_calc = SolAirTemperature::new(alpha, emissivity, h_se);
+            let t_sol_air_zone = sol_air_calc.for_roof(outdoor_temp, i_sol, sky_temp);
             t_sol_air_data.push(t_sol_air_zone);
         }
 
@@ -194,12 +193,13 @@ where
             for (i, solver) in self.0.fd_solvers.iter_mut().enumerate() {
                 let t_zone = temps.get(i).copied().unwrap_or(20.0);
                 let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-                let interior_bc = SurfaceBC::new_interior(8.0, t_zone);
-                let exterior_bc = SurfaceBC::new_exterior(25.0, t_ext, 0.0);
+                // h_int = 8.29, h_ext = 29.3 per ASHRAE 140 Sec. 5.2 (#736)
+                let interior_bc = SurfaceBC::new_interior(8.29, t_zone);
+                let exterior_bc = SurfaceBC::new_exterior(29.3, t_ext, 0.0);
 
                 // Step FD solver and get interior surface heat flux
                 solver.step(3600.0, &interior_bc, &exterior_bc);
-                let q_flux = solver.interior_heat_flux(8.0, t_zone);
+                let q_flux = solver.interior_heat_flux(8.29, t_zone);
                 fd_fluxes.push(q_flux);
             }
             Some(fd_fluxes)
