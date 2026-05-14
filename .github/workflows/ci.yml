@@ -103,5 +103,4 @@ jobs:
         with:
           name: integration-test-results
           path: target/debug/
-<<<<<<< HEAD
-retention-days: 14
+          retention-days: 14
