@@ -151,7 +151,7 @@
 **Description:** `validate_energy_against_reference()` uses `midpoint ± (half_range × 1.15)` instead of direct `[ref_min, ref_max]` comparison. This artificially widens the acceptance band and passes results that should fail. `validate_peak_load_against_reference()` correctly uses `[min, max]` — energy must be made consistent.  
 **Fix:** Replace energy comparator with same pattern as peak load comparator; remove ±15%/±10% tolerance constants.  
 **Impact:** Systematic false-pass rate. Pass rate will initially drop when fixed (correctly exposing true failures).  
-**Status:** IN PROGRESS (exact fix spec posted to #723)  
+**Status:** CLOSED (fix applied — `validate_energy_against_reference()` now uses `[ref_min, ref_max]` direct range check, matching `validate_peak_load_against_reference()`)  
 **Priority:** P1 (Wave 3 gate)
 
 ---
