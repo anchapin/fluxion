@@ -707,31 +707,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let t_g = self.0.ground_temperature.ground_temperature(timestep);
 
         // --- Dynamic Ventilation (Night Ventilation) ---
-        let _hour_of_day = (timestep % 24) as u8;
+        let hour_of_day = (timestep % 24) as u8;
 
         // Combine fractions to avoid multiple intermediate VectorField allocations
         let conv_frac = self.0.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
         let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
-        let st_sol_frac = (1.0 - self.0.solar_beam_to_mass_fraction) * 0.6;
+        let m_int_frac = rad_frac * self.0.solar_distribution_to_air;
+        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
+        let m_sol_frac = self.0.solar_beam_to_mass_fraction;
 
         let loads_ref = self.0.loads.as_ref();
         let solar_ref = self.0.solar_gains.as_ref();
+        let opaque_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
         let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
         let mut phi_st_data = Vec::with_capacity(self.0.num_zones);
+        let mut phi_m_data = Vec::with_capacity(self.0.num_zones);
 
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
+            let opaque_sol_w = opaque_ref[i] * area_ref[i];
 
-            phi_ia_data.push(load_w * conv_frac);
-            phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
+            let sol_to_air = sol_w * self.0.solar_distribution_to_air;
+            let remaining_sol = sol_w - sol_to_air;
+
+            phi_ia_data.push(load_w * conv_frac + sol_to_air);
+            phi_st_data.push(load_w * st_int_frac + remaining_sol * st_sol_frac);
+            phi_m_data.push(load_w * m_int_frac + remaining_sol * m_sol_frac + opaque_sol_w);
         }
 
         let phi_ia = T::from(VectorField::new(phi_ia_data));
         let phi_st = T::from(VectorField::new(phi_st_data));
+        let phi_m = T::from(VectorField::new(phi_m_data));
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -750,15 +760,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // den = h_ms_is_prod + term_rest_1 * (h_ext + h_tr_floor + h_tr_iz)
         // Issue #351: Include inter-zone conductance
         // Night ventilation no longer modifies h_ext, so we always use the cached denominator.
+        // Night ventilation directly cools thermal mass (critical for Cases 650, 950)
+        // This effect is captured by modifying phi_m during night ventilation hours
+        let mut phi_m_with_vent = phi_m.clone();
+        if let Some(ref night_vent) = self.0.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
+                let h_ve_vent = air_cap_vent / 3600.0;
+                let h_vent_mass = h_ve_vent * 0.3; // 30% of ventilation cools mass directly
+                for (i, phi) in phi_m_with_vent.as_mut().iter_mut().enumerate() {
+                    let q_vent_mass =
+                        h_vent_mass * (outdoor_temp - self.0.mass_temperatures.as_ref()[i]);
+                    *phi += q_vent_mass;
+                }
+            }
+        }
+
         let den = self.0.derived_den.clone();
 
-        // Use envelope_mass_temperatures to match step_physics_6r2c
-        // Optimized: use zip_with to avoid double clones
+        // Use mass_temperatures to match step_physics_5r1c
         let num_tm = self
             .0
             .derived_h_ms_is_prod
-            .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b);
+            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+        let num_phi_m = self.0.h_tr_ms.zip_with(&phi_m_with_vent, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
         // Optimized: eliminate Vec allocation by adding directly to phi_ia buffer
@@ -789,6 +815,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Add this to numerator per ISO 13790 5R1C heat balance equation
         // Re-enabled with correct formula: num_rest = term_rest_1 * (phi_ia + h_ext * T_ext + h_tr_floor * T_ground)
         let num_rest = term_rest_1.clone() * (h_ext.clone() * outdoor_temp + phi_ia_with_iz)
+            + num_phi_m
             + self.0.h_tr_floor.clone() * t_g;
 
         let t_i_free = (num_tm + num_phi_st + num_rest) / den;
