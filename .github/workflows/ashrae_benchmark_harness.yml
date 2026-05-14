@@ -27,6 +27,10 @@ concurrency:
   group: ashrae-benchmark-harness-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  issues: write  # Required for posting PR comments
+  contents: write  # Required for committing baseline updates
+
 env:
   BASELINE_PATH: benches/baseline/ashrae_benchmark_baseline.json
   RESULTS_FILE: ashrae_benchmark_results.json

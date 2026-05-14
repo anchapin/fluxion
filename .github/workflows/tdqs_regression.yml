@@ -24,6 +24,10 @@ concurrency:
   group: tdqs-regression-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  issues: write  # Required for posting PR comments
+  contents: write  # Required for committing baseline updates
+
 jobs:
   tdqs-check:
     name: TDQS Regression Gate
