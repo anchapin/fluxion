@@ -1473,30 +1473,27 @@ impl ThermalModel<VectorField> {
             _total_floor_area += zone_floor_area;
         }
 
-        // Solar gain distribution per ISO 13790 Section C.2 (Issue #664, #586)
-        // Fraction solar to air = 0.5 * f_ms
-        // Where f_ms ≈ 0.8 for heavy mass, ~0.4 for light mass
-        // This gives:
-        //   Light mass (f_ms=0.4): 0.5*0.4 = 0.20 → 20% to air, 80% to mass
-        //   Heavy mass (f_ms=0.8): 0.5*0.8 = 0.40 → 40% to air, 60% to mass
-        // Note: Heavy mass has MORE thermal mass to absorb solar, so proportionally
-        // less goes directly to air. The old formula was backwards.
-        let f_ms = match spec.construction_type {
-            crate::validation::ashrae_140_cases::ConstructionType::HighMass => 0.8,
-            crate::validation::ashrae_140_cases::ConstructionType::LowMass => 0.4,
-            crate::validation::ashrae_140_cases::ConstructionType::Special => 0.6,
-        };
-        let solar_to_air_frac = 0.5 * f_ms;
-        let solar_to_mass_frac = 1.0 - solar_to_air_frac;
+        // ASHRAE 140-2023 Section 5.2.2: Solar Distribution
+        // Transmitted solar radiation shall be distributed to all interior opaque surfaces
+        // proportional to their area × solar absorptance:
+        //   φᵢ = (Aᵢ × αᵢ) / Σⱼ(Aⱼ × αⱼ)
+        //
+        // For Section 7 cases (all αᵢ = 0.6), α cancels so distribution is simply area-weighted:
+        //   φᵢ = Aᵢ / Σ Aⱼ   (sum over opaque interior surfaces only)
+        //
+        // Key rules per ASHRAE 140:
+        //   - 100% of transmitted solar goes to opaque interior surfaces
+        //   - ZERO fraction goes to the air node directly (solar_distribution_to_air = 0.0)
+        //   - Windows (α ≈ 0 for ASHRAE 140 simplified model) are excluded from receiving surfaces
+        //
+        // Issue #745: This corrects the previous ISO 13790 approach which used different
+        // thermal model assumptions and was not compliant with ASHRAE 140.
+        model.solar_distribution_to_air = 0.0; // ASHRAE 140: zero to air node
 
-        // Internal radiative gains: 100% to surface, 0% directly to air (ASHRAE 140)
-        // This decouples from solar_beam_to_mass_fraction
-        model.solar_distribution_to_air = solar_to_air_frac;
-
-        // Solar beam (direct) radiation split between mass and surface
-        // Based on ISO 13790 geometric distribution - most beam reaches floor (thermal mass)
-        // The remaining fraction goes to interior surfaces
-        model.solar_beam_to_mass_fraction = solar_to_mass_frac; // Fraction to thermal mass
+        // Solar beam (direct) radiation fraction to thermal mass
+        // Per ASHRAE 140 Section 5.2.2, all transmitted solar is distributed to opaque surfaces
+        // For ASHRAE 140 simplified model, 100% to mass (opaque surfaces absorb solar)
+        model.solar_beam_to_mass_fraction = 1.0;
 
         // Physics-based: Thermal mass effects are captured through Cm in the thermal network
         // No correction factor is applied - the 5R1C/6R2C model handles this naturally
