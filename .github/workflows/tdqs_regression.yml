@@ -183,22 +183,24 @@ jobs:
             }).join('\n');
 
             const sign = delta >= 0 ? '+' : '';
-            const body = `## ${icon} TDQS Regression Check
-
-**Overall TDQS**: ${curOverall.toFixed(4)} (baseline: ${baseOverall.toFixed(4)}, delta: \`${sign}${delta.toFixed(4)}\`)
-
-| Decision Type | Baseline | Current | Delta | Status |
-|---------------|----------|---------|-------|--------|
-${rows}
-
-${regression
-  ? '> ⚠️ **Regression detected** — TDQS dropped > 5 pp on one or more decision types.'
-  : delta > 0
-    ? `> ✅ **Improvement** — TDQS increased by +${delta.toFixed(4)}.`
-    : '> ➡️ No significant change in TDQS.'
-}
-
-_Threshold: 5 pp | Dataset: 195 ASHRAE 140 decisions | [Spec](https://github.com/anchapin/fluxion/issues/708#issuecomment-4434794603)_`;
+            const body = [
+              `## \${icon} TDQS Regression Check`,
+              '',
+              `**Overall TDQS**: \${curOverall.toFixed(4)} (baseline: \${baseOverall.toFixed(4)}, delta: \\\`\${sign}\${delta.toFixed(4)}\\\`)`,
+              '',
+              '| Decision Type | Baseline | Current | Delta | Status |',
+              '|---------------|----------|---------|-------|--------|',
+              '\${rows}',
+              '',
+              '\${regression',
+              '  ? \'> ⚠️ **Regression detected** — TDQS dropped > 5 pp on one or more decision types.\'',
+              '  : delta > 0',
+              '    ? \`> ✅ **Improvement** — TDQS increased by +\${delta.toFixed(4)}.\`',
+              '    : \'> ➡️ No significant change in TDQS.\'',
+              '}',
+              '',
+              '_Threshold: 5 pp | Dataset: 195 ASHRAE 140 decisions | [Spec](https://github.com/anchapin/fluxion/issues/708#issuecomment-4434794603)_',
+            ].join('\n');
 
             const {data: comments} = await github.rest.issues.listComments({
               owner: context.repo.owner,
