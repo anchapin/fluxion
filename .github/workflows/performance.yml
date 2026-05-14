@@ -3,9 +3,15 @@ name: Performance Validation
 on:
   push:
     branches: [ main, dev ]
-  pull_request:
-    branches: [ main, dev ]
   workflow_dispatch:
+    inputs:
+      trigger-reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'manual'
+
+# PRs: manual trigger only (workflow_dispatch) to save runner minutes.
+# Main/dev push + manual dispatch: run full benchmark suite.
 
 jobs:
   thermal-model-bench:
