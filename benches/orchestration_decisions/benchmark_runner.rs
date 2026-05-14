@@ -45,10 +45,11 @@ use decision_recorder::{
     current_constraint_warning_decision, current_hvac_horizon_decision, current_solver_decision,
     current_surrogate_routing_decision, ground_truth_adaptive_timestep,
     ground_truth_constraint_warning, ground_truth_hvac_horizon, ground_truth_solver_is_fd,
-    ground_truth_surrogate_routing, DecisionRecorder, DecisionType,
+    ground_truth_surrogate_routing, DecisionRecorder,
 };
 use tdqs::{
-    compute_tdqs, compute_tdqs_breakdown, regression_detected, DecisionInstance, TdqsBreakdown,
+    compute_tdqs, compute_tdqs_breakdown, regression_detected, DecisionInstance, DecisionType,
+    TdqsBreakdown,
 };
 
 // ---------------------------------------------------------------------------
@@ -480,7 +481,7 @@ fn bench_full_ashrae140_replay(c: &mut Criterion) {
 // TDQS regression gate (runs at benchmark exit via custom Criterion finaliser)
 // ---------------------------------------------------------------------------
 
-fn print_tdqs_report(c: &mut Criterion) {
+fn print_tdqs_report(_c: &mut Criterion) {
     let dataset = load_labeled_dataset();
     let breakdown = compute_tdqs_breakdown(&dataset);
 
