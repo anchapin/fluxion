@@ -20,6 +20,7 @@ pub mod multi_reference;
 pub mod performance;
 pub mod reference;
 pub mod reference_data;
+pub mod reference_loader;
 pub mod reporting;
 pub mod tolerance;
 
