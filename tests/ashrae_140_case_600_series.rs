@@ -195,13 +195,12 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
         .expect("Failed to load EPW weather data");
 
-    // Issue #806: Enable ctf_primary for free-floating cases to properly capture
-    // thermal mass dynamics. This is the same approach used in ashrae_140_free_floating.rs.
-    // Without this, the 5R1C model under-predicts max temperatures for low-mass buildings.
-    let is_free_floating = spec.is_free_floating();
-    if is_free_floating {
-        model.ctf_primary = true;
-    }
+    // Issue #806 fix: For low-mass cases (600FF, 650FF), DO NOT enable ctf_primary.
+    // The 5R1C model provides correct free-floating temperatures.
+    // ctf_primary=true was incorrectly added here and DISABLES the mass coupling
+    // in the 6R2C path, causing temperatures to be damped incorrectly.
+    // For 600FF/650FF, the standard 5R1C path should be used.
+    // Note: 900FF/950FF have CTF solvers initialized in from_spec and correctly use ctf_primary.
 
     let mut min_temp = f64::MAX;
     let mut max_temp = f64::MIN;
