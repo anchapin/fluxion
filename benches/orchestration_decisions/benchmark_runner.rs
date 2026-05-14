@@ -45,12 +45,9 @@ use decision_recorder::{
     current_constraint_warning_decision, current_hvac_horizon_decision, current_solver_decision,
     current_surrogate_routing_decision, ground_truth_adaptive_timestep,
     ground_truth_constraint_warning, ground_truth_hvac_horizon, ground_truth_solver_is_fd,
-    ground_truth_surrogate_routing, DecisionRecorder,
+    ground_truth_surrogate_routing,
 };
-use tdqs::{
-    compute_tdqs, compute_tdqs_breakdown, regression_detected, DecisionInstance, DecisionType,
-    TdqsBreakdown,
-};
+use tdqs::{compute_tdqs, compute_tdqs_breakdown};
 
 // ---------------------------------------------------------------------------
 // Dataset loader
@@ -60,7 +57,7 @@ use tdqs::{
 ///
 /// Reads `benches/orchestration_decisions/dataset/labeled_decisions.json`.
 /// Falls back to the programmatic dataset if the file is missing (CI friendly).
-fn load_labeled_dataset() -> Vec<DecisionInstance> {
+fn load_labeled_dataset() -> Vec<tdqs::DecisionInstance> {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("benches/orchestration_decisions/dataset/labeled_decisions.json");
 
@@ -77,7 +74,7 @@ fn load_labeled_dataset() -> Vec<DecisionInstance> {
 }
 
 /// Minimal JSON parser for the labeled decisions format.
-fn parse_labeled_json(json: &str) -> Result<Vec<DecisionInstance>, String> {
+fn parse_labeled_json(json: &str) -> Result<Vec<tdqs::DecisionInstance>, String> {
     // Lightweight parsing without pulling in serde — just scan for arrays.
     // A full serde integration can be added once the engine serde feature is stable.
     // For now, return empty to trigger the programmatic fallback.
@@ -89,7 +86,7 @@ fn parse_labeled_json(json: &str) -> Result<Vec<DecisionInstance>, String> {
 ///
 /// Covers 39 ASHRAE 140 cases × ~5 decisions ≈ 195 labeled decisions.
 /// Ground-truth labels derived from known correct behavior for each case series.
-fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
+fn build_ashrae140_dataset() -> Vec<tdqs::DecisionInstance> {
     let mut decisions = Vec::with_capacity(200);
 
     // --- Case 600 series (lightweight construction, 600 / 610 / 620 / 630 / 640 / 650) ---
@@ -104,9 +101,10 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let actual = current_solver_decision(density, thickness);
         let correct = gt == actual;
         decisions.push(if correct {
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SolverSelection, 300.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::SolverSelection).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::SolverSelection).with_source(case)
         });
 
         // Adaptive timestep: all 600-series are stable → no trigger expected
@@ -115,9 +113,11 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt_ts = ground_truth_adaptive_timestep(slope, solar_delta);
         let act_ts = current_adaptive_timestep_decision(slope, solar_delta);
         decisions.push(if gt_ts == act_ts {
-            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::AdaptiveTimestep, 45.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::AdaptiveTimestep).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::AdaptiveTimestep)
+                .with_source(case)
         });
 
         // Surrogate routing: always physics currently → correct only if OOD
@@ -125,27 +125,31 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt_sr = ground_truth_surrogate_routing(mah, 0.5);
         let act_sr = current_surrogate_routing_decision(mah, 0.5);
         decisions.push(if gt_sr == act_sr {
-            DecisionInstance::correct(DecisionType::SurrogateRouting, 0.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SurrogateRouting, 0.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::SurrogateRouting).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::SurrogateRouting)
+                .with_source(case)
         });
 
         // Constraint warning: 600-series produces valid results
         let gt_cw = ground_truth_constraint_warning(15.0, 35.0, 0.002);
         let act_cw = current_constraint_warning_decision(15.0, 35.0, 0.002);
         decisions.push(if gt_cw == act_cw {
-            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::ConstraintWarning, 30.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::ConstraintWarning).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::ConstraintWarning)
+                .with_source(case)
         });
 
         // HVAC horizon: default 24h correct under normal weather confidence
         let gt_hh = ground_truth_hvac_horizon(0.50, 0.1);
         let act_hh = current_hvac_horizon_decision(0.50, 0.1);
         decisions.push(if gt_hh == act_hh {
-            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::HvacHorizon, 10.0).with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::HvacHorizon).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::HvacHorizon).with_source(case)
         });
     }
 
@@ -168,9 +172,10 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let actual = current_solver_decision(density, thickness); // false (CTF bug)
         let correct = gt == actual; // false — known regression
         decisions.push(if correct {
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SolverSelection, 300.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::SolverSelection).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::SolverSelection).with_source(case)
         });
 
         // Adaptive timestep: 900-series has rapid morning heat-up → trigger expected
@@ -179,9 +184,11 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt_ts = ground_truth_adaptive_timestep(slope, solar_delta);
         let act_ts = current_adaptive_timestep_decision(slope, solar_delta);
         decisions.push(if gt_ts == act_ts {
-            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::AdaptiveTimestep, 45.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::AdaptiveTimestep).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::AdaptiveTimestep)
+                .with_source(case)
         });
 
         // Surrogate routing: OOD for high-mass (outside training distribution)
@@ -189,27 +196,31 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt_sr = ground_truth_surrogate_routing(mah, 0.5);
         let act_sr = current_surrogate_routing_decision(mah, 0.5);
         decisions.push(if gt_sr == act_sr {
-            DecisionInstance::correct(DecisionType::SurrogateRouting, 0.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SurrogateRouting, 0.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::SurrogateRouting).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::SurrogateRouting)
+                .with_source(case)
         });
 
         // Constraint warning: high-mass can produce large energy balance error
         let gt_cw = ground_truth_constraint_warning(12.0, 42.0, 0.005);
         let act_cw = current_constraint_warning_decision(12.0, 42.0, 0.005);
         decisions.push(if gt_cw == act_cw {
-            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::ConstraintWarning, 30.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::ConstraintWarning).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::ConstraintWarning)
+                .with_source(case)
         });
 
         // HVAC horizon: 24h correct
         let gt_hh = ground_truth_hvac_horizon(0.55, 0.1);
         let act_hh = current_hvac_horizon_decision(0.55, 0.1);
         decisions.push(if gt_hh == act_hh {
-            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::HvacHorizon, 10.0).with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::HvacHorizon).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::HvacHorizon).with_source(case)
         });
     }
 
@@ -220,9 +231,10 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt = ground_truth_solver_is_fd(density, thickness);
         let actual = current_solver_decision(density, thickness);
         decisions.push(if gt == actual {
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SolverSelection, 300.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::SolverSelection).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::SolverSelection).with_source(case)
         });
         // Sunspace: high solar gains → adaptive timestep needed
         let slope = 5.5f64;
@@ -230,35 +242,43 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt_ts = ground_truth_adaptive_timestep(slope, solar_delta);
         let act_ts = current_adaptive_timestep_decision(slope, solar_delta);
         decisions.push(if gt_ts == act_ts {
-            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::AdaptiveTimestep, 45.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::AdaptiveTimestep).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::AdaptiveTimestep)
+                .with_source(case)
         });
         decisions.push(
-            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::ConstraintWarning, 30.0)
+                .with_source(case),
         );
-        decisions
-            .push(DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case));
+        decisions.push(
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::HvacHorizon, 10.0)
+                .with_source(case),
+        );
     }
 
     // --- Cases 195, 470 (analytical) ---
     for &case in &["case_195", "case_470"] {
         decisions.push(
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SolverSelection, 300.0)
+                .with_source(case),
         );
         decisions.push(
-            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::AdaptiveTimestep, 45.0)
+                .with_source(case),
         );
         decisions.push(
-            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::ConstraintWarning, 30.0)
+                .with_source(case),
         );
         // HVAC horizon with DR event: 72h horizon should be used
         let gt_hh = ground_truth_hvac_horizon(0.85, 0.05);
         let act_hh = current_hvac_horizon_decision(0.85, 0.05);
         decisions.push(if gt_hh == act_hh {
-            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::HvacHorizon, 10.0).with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::HvacHorizon).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::HvacHorizon).with_source(case)
         });
     }
 
@@ -269,18 +289,23 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt = ground_truth_solver_is_fd(density, thickness);
         let actual = current_solver_decision(density, thickness);
         decisions.push(if gt == actual {
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SolverSelection, 300.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::SolverSelection).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::SolverSelection).with_source(case)
         });
         decisions.push(
-            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::AdaptiveTimestep, 45.0)
+                .with_source(case),
         );
         decisions.push(
-            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::ConstraintWarning, 30.0)
+                .with_source(case),
         );
-        decisions
-            .push(DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case));
+        decisions.push(
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::HvacHorizon, 10.0)
+                .with_source(case),
+        );
     }
 
     // --- Setback / Ventilation variants ---
@@ -291,7 +316,8 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         "case_ventilation_2",
     ] {
         decisions.push(
-            DecisionInstance::correct(DecisionType::SolverSelection, 300.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::SolverSelection, 300.0)
+                .with_source(case),
         );
         // Setback changes → rapid temperature slope → timestep trigger
         let slope = 3.8f64;
@@ -299,20 +325,23 @@ fn build_ashrae140_dataset() -> Vec<DecisionInstance> {
         let gt_ts = ground_truth_adaptive_timestep(slope, solar_delta);
         let act_ts = current_adaptive_timestep_decision(slope, solar_delta);
         decisions.push(if gt_ts == act_ts {
-            DecisionInstance::correct(DecisionType::AdaptiveTimestep, 45.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::AdaptiveTimestep, 45.0)
+                .with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::AdaptiveTimestep).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::AdaptiveTimestep)
+                .with_source(case)
         });
         // HVAC horizon: DR event → 6h horizon
         let gt_hh = ground_truth_hvac_horizon(0.45, 0.70);
         let act_hh = current_hvac_horizon_decision(0.45, 0.70);
         decisions.push(if gt_hh == act_hh {
-            DecisionInstance::correct(DecisionType::HvacHorizon, 10.0).with_source(case)
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::HvacHorizon, 10.0).with_source(case)
         } else {
-            DecisionInstance::incorrect(DecisionType::HvacHorizon).with_source(case)
+            tdqs::DecisionInstance::incorrect(tdqs::DecisionType::HvacHorizon).with_source(case)
         });
         decisions.push(
-            DecisionInstance::correct(DecisionType::ConstraintWarning, 30.0).with_source(case),
+            tdqs::DecisionInstance::correct(tdqs::DecisionType::ConstraintWarning, 30.0)
+                .with_source(case),
         );
     }
 
