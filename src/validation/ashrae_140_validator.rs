@@ -2532,14 +2532,16 @@ impl ASHRAE140Validator {
         actual: f64,
         ref_min: f64,
         ref_max: f64,
-        tolerance: f64,
+        _tolerance: f64,
     ) -> ValidationResult {
+        // ASHRAE 140: pass if result falls within actual min-max range of reference ensemble
+        let in_range = (actual >= ref_min) && (actual <= ref_max);
         let ref_mid = (ref_min + ref_max) / 2.0;
-        let ref_half_range = (ref_max - ref_min) / 2.0;
-        let tolerance_range = ref_half_range * (1.0 + tolerance);
-        let in_range =
-            (actual >= ref_mid - tolerance_range) && (actual <= ref_mid + tolerance_range);
-        let error_pct = ((actual - ref_mid).abs() / ref_mid) * 100.0;
+        let error_pct = if ref_mid > 0.0 {
+            ((actual - ref_mid).abs() / ref_mid) * 100.0
+        } else {
+            0.0
+        };
 
         ValidationResult {
             in_range,
