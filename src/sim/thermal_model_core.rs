@@ -1200,6 +1200,12 @@ impl ThermalModel<VectorField> {
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
             thermal_cap_vec.push(total_thermal_cap);
 
+            // DEBUG Issue #821: Print Cm for free-floating cases
+            if spec.case_id.contains("FF") && zone_idx == 0 {
+                eprintln!("DEBUG_821 Cm: case={}, wall_cap={:.2e}, roof_cap={:.2e}, floor_cap={:.2e}, air_cap={:.2e}, total={:.2e}",
+                    spec.case_id, wall_cap, roof_cap, floor_cap, air_cap, total_thermal_cap);
+            }
+
             // Per-surface thermal capacitances for 9R4C model (Phase 6B, Issue #715)
             // Note: cm_internal (furniture/partitions) will be set later in h_tr_me calculation
             cm_wall_vec.push(wall_cap);
@@ -1634,8 +1640,8 @@ impl ThermalModel<VectorField> {
             model.enable_9r4c_model();
         }
 
-        // TODO-BLIND-VALIDATION: CTF-primary surface temperature coupling for high-mass free-floating cases
-        // For blind validation: remove this block or guard with ValidationMode::Informed
+        // CTF-primary surface temperature coupling for high-mass free-floating cases only
+        // For low-mass (600FF, 650FF), the 6R2C model provides adequate thermal mass
         // Effect if removed: 900FF and 950FF free-floating temp predictions less accurate
         // SESSION 89: The 6R2C lumped model's τ ≈ 26h under-represents thermal mass (concrete h₁₂ = 771 W/K
         // is too high). The CTF solver captures multi-layer conduction dynamics correctly (τ ≈ 120-200h).

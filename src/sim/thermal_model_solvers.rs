@@ -65,11 +65,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let air_cap = volume * self.0.air_density.clone() * self.0.heat_capacity.clone();
         self.0.h_ve = (air_cap.clone() * self.0.infiltration_rate.clone()) / 3600.0;
 
-        // Issue #585 FIX: Thermal capacitance is now calculated from construction layers in from_spec()
-        // using iso_13790_effective_capacitance_per_area() for walls, roof, and floor.
-        // ADD: Calculate proper thermal capacitance (air + structure approximation)
-        let structure_cap = self.0.zone_area.clone() * 200_000.0;
-        self.0.thermal_capacitance = air_cap + structure_cap;
+        // DEBUG Issue #821: Print thermal_capacitance in update()
+        // Access via as_ref() which works for any ContinuousTensor
+        let cap_ref = self.0.thermal_capacitance.as_ref();
+        if !cap_ref.is_empty() {
+            eprintln!("DEBUG_821_UPDATE thermal_capacitance[0]={:.2e}, air_cap[0]={:.2e}, zone_area={:.2}",
+                cap_ref[0], air_cap.as_ref()[0], self.0.zone_area.as_ref()[0]);
+        }
+
+        // REMOVED Issue #821 FIX: thermal_capacitance was being overwritten with wrong value
+        // The correct thermal_capacitance is calculated in from_spec() using actual construction layers.
+        // This overwrite (200,000 J/m²K hardcoded) was causing 15x overestimate of thermal mass,
+        // leading to time constants 15x too long and temperatures 10-20°C too low for FF cases.
+        // let structure_cap = self.0.zone_area.clone() * 200_000.0;
+        // self.0.thermal_capacitance = air_cap + structure_cap;
 
         // Update optimization cache
         self.update_optimization_cache();
