@@ -778,6 +778,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let den = self.0.derived_den.clone();
 
+        // Store values for diagnostic before they're moved
+        let den_val = den.as_ref()[0];
+        let phi_ia_val = phi_ia.as_ref()[0];
+        let phi_st_val = phi_st.as_ref()[0];
+        let phi_m_val = phi_m.as_ref()[0];
+
+        // Store case_id for diagnostics (before any moves)
+        let case_id_str = self.0.case_id.clone();
+
         // Use mass_temperatures to match step_physics_5r1c
         let num_tm = self
             .0
@@ -819,6 +828,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             + self.0.h_tr_floor.clone() * t_g;
 
         let t_i_free = (num_tm + num_phi_st + num_rest) / den;
+
+        // === DIAGNOSTIC: Case 650FF free-float temperature tracing ===
+        if case_id_str == "650FF" && timestep % 24 == 12 {
+            eprintln!(
+                "DEBUG_650FF t={} (hour {}) T_free={:.2}°C T_mass={:.2}°C phi_ia={:.2}W phi_st={:.2}W phi_m={:.2}W den={:.2}",
+                timestep,
+                hour_of_day,
+                t_i_free.as_ref()[0],
+                self.0.mass_temperatures.as_ref()[0],
+                phi_ia_val,
+                phi_st_val,
+                phi_m_val,
+                den_val
+            );
+        }
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]

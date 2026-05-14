@@ -879,6 +879,80 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             );
         }
 
+        // DEBUG: Case 600FF/650FF max temperature tracking
+        // DEBUG: Case 600FF/650FF max temperature tracking - detailed at specific timesteps
+        if self.0.case_id == "600FF" || self.0.case_id == "650FF" {
+            let current_temp = self.0.temperatures.as_ref()[0];
+            // Only print when temperature exceeds 50°C or at key peak timesteps
+            if current_temp > 50.0 || timestep == 5129 {
+                let solar_val = solar_ref[0] * area_ref[0];
+                let load_val = loads_ref[0] * area_ref[0];
+                let sensitivity = self.0.derived_sensitivity.as_ref()[0];
+                let den = den.as_ref()[0];
+                let h_ext = self.0.derived_h_ext.as_ref()[0];
+                let h_tr_ms = self.0.h_tr_ms.as_ref()[0];
+                let h_tr_is = self.0.h_tr_is.as_ref()[0];
+                let h_tr_floor = self.0.h_tr_floor.as_ref()[0];
+                let t_g = self.0.ground_temperature.ground_temperature(timestep);
+                eprintln!(
+                    "DEBUG_MAX t={} (hour {}) T_air={:.2}°C T_mass={:.2}°C t_i_free={:.2}°C den={:.4} h_ext={:.4} h_tr_ms={:.4} h_tr_is={:.4} h_tr_floor={:.4} t_g={:.2} phi_ia={:.2}W phi_st={:.2}W phi_m={:.2}W solar={:.2}W outdoor={:.2}°C",
+                    timestep,
+                    hour_of_day,
+                    current_temp,
+                    self.0.mass_temperatures.as_ref()[0],
+                    t_i_free.as_ref()[0],
+                    den,
+                    h_ext,
+                    h_tr_ms,
+                    h_tr_is,
+                    h_tr_floor,
+                    t_g,
+                    phi_ia.as_ref()[0],
+                    phi_st.as_ref()[0],
+                    phi_m.as_ref()[0],
+                    solar_val,
+                    outdoor_temp
+                );
+            }
+        }
+
+        // DEBUG: Case 650FF temperature tracking
+        if self.0.case_id == "650FF" && timestep % 24 == 12 {
+            let solar_val = solar_ref[0] * area_ref[0];
+            let t_i = self.0.temperatures.as_ref()[0];
+            let t_mass = self.0.mass_temperatures.as_ref()[0];
+            eprintln!(
+                "DEBUG_650FF_FULL t={} (hour {}) T_air_prev={:.2}°C T_mass={:.2}°C t_i_free={:.2}°C phi_m={:.2}W solar={:.2}W outdoor={:.2}°C",
+                timestep,
+                hour_of_day,
+                t_i,
+                t_mass,
+                t_i_free.as_ref()[0],
+                phi_m.as_ref()[0],
+                solar_val,
+                outdoor_temp
+            );
+        }
+
+        // DEBUG: Case 650FF temperature tracking
+        if self.0.case_id == "650FF" && timestep % 24 == 12 {
+            let solar_val = solar_ref[0] * area_ref[0];
+            let load_val = loads_ref[0] * area_ref[0];
+            let t_i = self.0.temperatures.as_ref()[0];
+            let t_mass = self.0.mass_temperatures.as_ref()[0];
+            eprintln!(
+                "DEBUG_650FF_FULL t={} (hour {}) T_air={:.2}°C T_mass={:.2}°C t_i_free={:.2}°C phi_m={:.2}W solar={:.2}W outdoor={:.2}°C",
+                timestep,
+                hour_of_day,
+                t_i,
+                t_mass,
+                t_i_free.as_ref()[0],
+                phi_m.as_ref()[0],
+                solar_val,
+                outdoor_temp
+            );
+        }
+
         if self.0.case_id == "900FF" && timestep == 0 {
             eprintln!("DEBUG_900FF_INIT: hvac_enabled={:.1}, heating_setpoint={:.1}, cooling_setpoint={:.1}",
                 self.0.hvac_enabled.as_ref()[0],

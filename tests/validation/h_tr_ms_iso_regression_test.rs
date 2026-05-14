@@ -71,7 +71,7 @@ fn calculate_thermal_time_constant(model: &ThermalModel<VectorField>) -> f64 {
     let h_tr_ms = model.h_tr_ms.as_ref()[0];
     let h_tr_em = model.h_tr_em.as_ref()[0];
 
-    let structure_cap = model.structure_thermal_cap.as_ref()[0];
+    let structure_cap = model.thermal_capacitance.as_ref()[0];
 
     let tau_seconds = structure_cap / (h_tr_ms + h_tr_em).max(0.1);
     tau_seconds / 3600.0
@@ -161,7 +161,7 @@ fn test_h_tr_ms_iso_calculation_formula() {
 
     let h_tr_ms = model.h_tr_ms.as_ref()[0];
     let h_tr_is = model.h_tr_is.as_ref()[0];
-    let structure_cap = model.structure_thermal_cap.as_ref()[0];
+    let structure_cap = model.thermal_capacitance.as_ref()[0];
 
     let target_tau_hours = 150.0;
     let target_tau_seconds = target_tau_hours * 3600.0;
