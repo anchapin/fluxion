@@ -33,14 +33,22 @@ env:
 
 jobs:
   # -- Always: fast gate (both PR and main) ----------------------------------
+  # PRs: single-platform (ubuntu only) for fast signal.
+  # Main: full 3-platform matrix for cross-platform validation.
 
   test:
     name: Test (${{ matrix.os }}, ${{ matrix.feature_set.name }})
     runs-on: ${{ matrix.os }}
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: |
+          ${{ github.event_name == 'pull_request'
+              && fromJSON('["ubuntu-latest"]')
+              || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
         rust: [stable]
         feature_set:
           - {name: "no-default",       flags: "--no-default-features"}
@@ -92,28 +100,6 @@ jobs:
           rust-components: clippy
           python-version: '3.10'
       - run: cargo clippy --lib -- -D warnings
-
-  # -- PR only: single-platform unit tests -----------------------------------
-  # Gives fast signal (< 3 min) without spending 3x runner-minutes on the
-  # cross-platform matrix for every commit pushed to a branch.
-
-  test-pr:
-    name: Unit Tests (Ubuntu / PR gate)
-    if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
-      - uses: ./.github/actions/setup-rust-python-env
-        with:
-          python-version: '3.10'
-      - name: Run tests
-        run: cargo test --lib --verbose --no-default-features
-        env:
-          PYO3_PYTHON: /usr/bin/python3
 
   # -- Main only: cross-platform matrix --------------------------------------
   # Validates that nothing is accidentally Linux/x86-specific before changes
