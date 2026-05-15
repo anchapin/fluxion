@@ -65,20 +65,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let air_cap = volume * self.0.air_density.clone() * self.0.heat_capacity.clone();
         self.0.h_ve = (air_cap.clone() * self.0.infiltration_rate.clone()) / 3600.0;
 
-        // DEBUG Issue #821: Print thermal_capacitance in update()
-        // Access via as_ref() which works for any ContinuousTensor
-        let cap_ref = self.0.thermal_capacitance.as_ref();
-        if !cap_ref.is_empty() {
-            eprintln!("DEBUG_821_UPDATE thermal_capacitance[0]={:.2e}, air_cap[0]={:.2e}, zone_area={:.2}",
-                cap_ref[0], air_cap.as_ref()[0], self.0.zone_area.as_ref()[0]);
-        }
-
-        // REMOVED Issue #821 FIX: thermal_capacitance was being overwritten with wrong value
-        // The correct thermal_capacitance is calculated in from_spec() using actual construction layers.
-        // This overwrite (200,000 J/m²K hardcoded) was causing 15x overestimate of thermal mass,
-        // leading to time constants 15x too long and temperatures 10-20°C too low for FF cases.
-        // let structure_cap = self.0.zone_area.clone() * 200_000.0;
-        // self.0.thermal_capacitance = air_cap + structure_cap;
+        // Issue #821: thermal_capacitance is set in `from_spec()` using actual construction
+        // layers (Issue #585) and must NOT be overwritten here. The previous hardcoded
+        // overwrite (200,000 J/m²K × zone_area) was a ~15× overestimate for low-mass
+        // construction and biased peak air temperatures 10-20 °C low for FF cases.
 
         // Update optimization cache
         self.update_optimization_cache();
@@ -93,26 +83,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _h_tr_is_ms_series = (self.0.h_tr_is.clone() * self.0.h_tr_ms.clone())
             / (self.0.h_tr_is.clone() + self.0.h_tr_ms.clone());
 
-        // h_ext = h_tr_w + h_ve + south wall series + non-south opaque envelope
-        // Issue #715: South wall has insulation creating a series thermal path.
-        // Instead of adding h_tr_em directly, we use the series combination:
-        // h_south_series = 1 / (1/h_tr_is_south + 1/h_tr_em_south)
-        // This properly models the south wall's insulated path through the mass node.
+        // h_ext = h_tr_w + h_ve + non-south opaque envelope
         //
-        // For non-south walls: h_tr_em is the direct envelope conductance (no bypass issue).
-        // We compute it as: h_tr_em_non_south = h_tr_em - h_tr_em_south
+        // Issue #715: The south wall has insulation creating a series thermal path
+        // bypassing the mass node. We previously also injected
+        // `h_south_series = h_is_south × h_em_south / (h_is_south + h_em_south)`
+        // here as an additional parallel path between air and outdoor. That term
+        // double-counted the south wall (already in `h_tr_em` on the mass side and
+        // `h_tr_is` on the air side), and for Case 600/650 it added ~9 W/K of
+        // spurious air-to-outdoor conductance, suppressing peak free-float air
+        // temperature. With the ISO 13790 lumped h_ms (Issue #821), the south wall
+        // is now correctly coupled through the mass node and does not need a
+        // bypass path. We drop `h_south_series` from `derived_h_ext`. The
+        // dedicated south-wall vectors (`h_tr_is_south`, `h_tr_em_south`,
+        // `h_tr_is_no_south`) are kept on the model for the 9R4C / CTF paths
+        // owned by Issues #715 / #730.
         let h_tr_em_non_south = self.0.h_tr_em.clone() - self.0.h_tr_em_south.clone();
 
-        // South wall series: 1 / (1/h_tr_is_south + 1/h_tr_em_south)
-        // = h_tr_is_south * h_tr_em_south / (h_tr_is_south + h_tr_em_south)
-        // We compute h_tr_is_south from: h_tr_is_total = h_tr_is_no_south + h_tr_is_south
-        // => h_tr_is_south = h_tr_is_total - h_tr_is_no_south
-        let h_tr_is_south = self.0.h_tr_is.clone() - self.0.h_tr_is_no_south.clone();
-        let h_south_series = (h_tr_is_south.clone() * self.0.h_tr_em_south.clone())
-            / (h_tr_is_south.clone() + self.0.h_tr_em_south.clone());
-
-        self.0.derived_h_ext =
-            self.0.h_tr_w.clone() + h_south_series + h_tr_em_non_south + self.0.h_ve.clone();
+        self.0.derived_h_ext = self.0.h_tr_w.clone() + h_tr_em_non_south + self.0.h_ve.clone();
 
         // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
         // Note: h_tr_me is 0 for 5R1C, non-zero for 6R2C (envelope↔internal mass coupling)

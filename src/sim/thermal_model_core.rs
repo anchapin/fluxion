@@ -872,7 +872,7 @@ impl ThermalModel<VectorField> {
             let floor_cap =
                 spec.construction.floor.thermal_capacitance_per_area() * zone_floor_area;
             let air_cap = zone_volume * 1.2 * 1005.0;
-            let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
+            let _total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
             // === Physics-Based h_tr_ms Calculation ===
             // h_tr_ms represents the conductance between the thermal mass node
@@ -941,19 +941,45 @@ impl ThermalModel<VectorField> {
             }
 
             let h_ms_floor = zone_floor_area / r_interior_to_mass_floor.max(0.001);
-            let h_ms_total = h_ms_physics + h_ms_roof + h_ms_floor;
 
-            // Physics-based: τ = Cm / h_tr_ms determined by actual construction
-            // No case-specific scaling - physics should be correct for all cases
+            // === Issue #821 / Probe A: ISO 13790 5R1C `h_ms` for the lumped mass node ===
+            //
+            // Replaces the previous half-insulation-rule sum
+            //     h_ms_total = h_ms_wall + h_ms_roof + h_ms_floor   (~120 W/K for Case 600)
+            // with the ISO 13790:2008 §7.2.2.2 + Annex C lumped form:
+            //
+            //     h_ms = h_ms_coeff × A_m,        h_ms_coeff = 9.1 W/(m²·K)
+            //     A_m  = (Σ_j A_j κ_j)² / (Σ_j A_j κ_j²)     (effective mass area)
+            //
+            // where j indexes mass-bearing opaque elements (walls, roof, floor) and κ_j is
+            // the construction's specific thermal capacitance per area (J/m²K). κ_j here
+            // is `thermal_capacitance_per_area()` — consistent with how `wall_cap`/etc.
+            // are summed into C_m in this same block (Issue #585).
+            //
+            // The half-insulation conduction values h_ms_wall/roof/floor are kept and
+            // stored on the per-surface vectors below — they feed the 9R4C multi-node
+            // solver (Issue #715), where each surface has its own mass node.
+            const ISO_13790_H_MS_COEFF: f64 = 9.1; // W/(m²·K) per ISO 13790 §7.2.2.2
 
-            // Debug output for all contributions
-            if zone_idx == 0 {
-                eprintln!("PHYSICS DEBUG: Case {} - h_ms_physics={:.3}, h_ms_roof={:.3}, h_ms_floor={:.3}, h_ms_total={:.3}",
-                    spec.case_id, h_ms_physics, h_ms_roof, h_ms_floor, h_ms_total);
-            }
+            let kappa_wall = spec.construction.wall.thermal_capacitance_per_area();
+            let kappa_roof = spec.construction.roof.thermal_capacitance_per_area();
+            let kappa_floor = spec.construction.floor.thermal_capacitance_per_area();
 
-            h_tr_ms_vec.push(h_ms_total);
-            // Store per-surface h_tr_ms for 9R4C model (Phase 6B, Issue #715)
+            let a_kappa_sum =
+                opaque_area * kappa_wall + zone_floor_area * (kappa_roof + kappa_floor);
+            let a_kappa_sq_sum = opaque_area * kappa_wall * kappa_wall
+                + zone_floor_area * (kappa_roof * kappa_roof + kappa_floor * kappa_floor);
+
+            let a_m = if a_kappa_sq_sum > 0.0 {
+                (a_kappa_sum * a_kappa_sum) / a_kappa_sq_sum
+            } else {
+                2.5 * zone_floor_area
+            };
+            let h_ms_iso_13790 = ISO_13790_H_MS_COEFF * a_m;
+
+            h_tr_ms_vec.push(h_ms_iso_13790);
+            // Per-surface h_tr_ms for 9R4C model (Phase 6B, Issue #715) — keep the
+            // half-insulation conduction values; do NOT switch them to ISO 13790 here.
             h_tr_ms_wall_vec.push(h_ms_physics);
             h_tr_ms_roof_vec.push(h_ms_roof);
             h_tr_ms_floor_vec.push(h_ms_floor);
@@ -1068,16 +1094,25 @@ impl ThermalModel<VectorField> {
             // Fix: Use h_tr_em_base directly (no scaling) - the physics-based
             // calculation from layer resistances is sufficient.
             let h_tr_em_physics = h_tr_em_base;
-            let h_tr_em_total = h_tr_em_physics + h_tr_em_roof + h_tr_em_floor;
 
-            // Physics-based: No case-specific scaling
-            // τ = Cm / (h_tr_ms + h_tr_em) determined by actual construction properties
+            // === Issue #821 / Probe A+B: drop floor from lumped 5R1C h_em ===
+            //
+            // The floor's heat path to its boundary (ground) is already captured by
+            // `h_tr_floor` (a separate node connected to T_ground in the heat balance).
+            // The legacy code ALSO summed `h_tr_em_floor` (= floor_U × A_floor) into the
+            // lumped `h_tr_em`, which `update_optimization_cache` then partially injects
+            // into `derived_h_ext` as part of `h_tr_em_non_south`. The floor's
+            // conductance therefore appeared twice — once correctly as ground coupling,
+            // and once spuriously as part of the air↔outdoor parallel path. For
+            // Case 600 this added ~9 W/K of bogus loss and depressed peak free-float
+            // air temperature by ~3 °C.
+            //
+            // The 9R4C per-surface vectors below still receive the per-surface floor
+            // value, since that solver topology has a dedicated floor mass node and
+            // does not consume the lumped `h_tr_em`.
+            let h_tr_em_total = h_tr_em_physics + h_tr_em_roof;
 
             // Debug output for all contributions
-            if zone_idx == 0 && spec.case_id == "900" {
-                eprintln!("PHASE 34-02 DEBUG: h_tr_em_physics={:.3}, h_tr_em_roof={:.3}, h_tr_em_floor={:.3}, h_tr_em_total={:.3}", h_tr_em_physics, h_tr_em_roof, h_tr_em_floor, h_tr_em_total);
-            }
-
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
             // Store per-surface h_tr_em for 9R4C model (Phase 6B, Issue #715)
             h_tr_em_wall_vec.push(h_tr_em_physics);
@@ -1181,30 +1216,12 @@ impl ThermalModel<VectorField> {
             }
 
             // === SESSION 83 DIAGNOSTIC: Output h_tr_em, h_tr_ms, solar distribution ===
-            // SESSION 84: Debug output for h_tr_em calculation
-            if zone_idx == 0
-                && (spec.case_id == "900"
-                    || spec.case_id == "920"
-                    || spec.case_id == "930"
-                    || spec.case_id == "910")
-            {
-                eprintln!("SESSION 84 DIAG Case {}: zone_idx={}, h_tr_em_base={:.3}, h_tr_em_physics={:.3}, h_ms_physics={:.3}, h_tr_em_total={:.3}, h_ms_total={:.3}",
-                spec.case_id, zone_idx, h_tr_em_base, h_tr_em_physics, h_ms_physics, h_tr_em_total, h_ms_total);
-                eprintln!("  total_thermal_cap={:.2e}", total_thermal_cap);
-            }
-
             // Thermal capacitance using ISO 13790 effective specific capacitances
             // PHASE 34 FIX: Include ALL envelope mass (walls + roof + floor) in Cm
             // Previously only wall_cap was used, excluding ~60% of thermal mass
             // Issue #585 FIX: Include air thermal capacitance (previously not added)
             let total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
             thermal_cap_vec.push(total_thermal_cap);
-
-            // DEBUG Issue #821: Print Cm for free-floating cases
-            if spec.case_id.contains("FF") && zone_idx == 0 {
-                eprintln!("DEBUG_821 Cm: case={}, wall_cap={:.2e}, roof_cap={:.2e}, floor_cap={:.2e}, air_cap={:.2e}, total={:.2e}",
-                    spec.case_id, wall_cap, roof_cap, floor_cap, air_cap, total_thermal_cap);
-            }
 
             // Per-surface thermal capacitances for 9R4C model (Phase 6B, Issue #715)
             // Note: cm_internal (furniture/partitions) will be set later in h_tr_me calculation
@@ -1843,20 +1860,11 @@ impl ThermalModel<VectorField> {
             return;
         }
 
-        // Store h_tr_ms for τ calculation
-        let h_tr_ms_value: f64 = self.0.h_tr_ms.as_ref()[0];
-
-        // Output for 900-series high-mass cases (including free-floating)
-        // FIX Issue #703: τ = Cm / h_tr_ms only (not h_tr_em + h_tr_ms)
-        // h_tr_em affects surface node, not mass node time constant
-        let case_id_str: String = self.0.case_id.clone();
-        let tau_seconds_pre = total_cap / h_tr_ms_value.max(0.1);
-        let tau_hours_pre = tau_seconds_pre / 3600.0;
-        eprintln!("PHYSICS τ: Case {} - Cm={:.0e} J/K, h_tr_ms={:.2} W/K, τ={:.1} hours (h_tr_ms only, Issue #703 fix)",
-            case_id_str, total_cap, h_tr_ms_value, tau_hours_pre);
-
-        // Physics-based: τ = Cm / h_tr_ms is determined by mass-surface coupling only
-        // h_tr_em affects thermal response of surface node, not mass node time constant
+        // Physics-based: τ = Cm / h_tr_ms is determined by mass-surface coupling only.
+        // h_tr_em affects thermal response of surface node, not mass node time constant.
+        // No further correction is applied here — capacitance is already physics-derived
+        // from construction layers in `from_spec` (Issues #585, #693, #703).
+        let _ = total_cap; // suppress unused warning when feature gates strip diagnostic
     }
 
     /// Create a new ThermalModel with specified number of thermal zones.

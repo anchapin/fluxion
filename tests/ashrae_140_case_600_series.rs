@@ -202,18 +202,62 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
     // For 600FF/650FF, the standard 5R1C path should be used.
     // Note: 900FF/950FF have CTF solvers initialized in from_spec and correctly use ctf_primary.
 
+    #[cfg(feature = "pr821-diag")]
+    let mut diag = fluxion::sim::pr821_diag::DiagCollector::new(spec.case_id.clone());
+
     let mut min_temp = f64::MAX;
     let mut max_temp = f64::MIN;
 
     for step in 0..8760 {
         let weather_data = weather.get_hourly_data(step).unwrap();
         model.weather = Some(weather_data.clone());
-        model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        let outdoor_temp = weather_data.dry_bulb_temp;
+        model.step_physics(step, outdoor_temp, 3600.0);
 
         if let Some(&zone_temp) = model.temperatures.as_slice().first() {
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
         }
+
+        #[cfg(feature = "pr821-diag")]
+        {
+            // The model exposes solar_gains as W/m² of zone floor area; convert to
+            // total window-attributable W for the diagnostic CSV.
+            let solar_w_per_m2 = model.solar_gains.as_slice().first().copied().unwrap_or(0.0);
+            let zone_area = model.zone_area.as_slice().first().copied().unwrap_or(1.0);
+            let solar_window_w = solar_w_per_m2 * zone_area;
+
+            let hour = (step % 24) as u8;
+            let night_vent_active = spec
+                .night_ventilation
+                .as_ref()
+                .is_some_and(|nv| nv.is_active_at_hour(hour));
+
+            diag.record(
+                step,
+                &model,
+                outdoor_temp,
+                solar_window_w,
+                0.0, // phi_ia (not exposed for FF)
+                0.0, // phi_st
+                0.0, // phi_m  (computed inside step_physics; left at 0 here)
+                night_vent_active,
+                0.0, // hvac_out_w (always 0 for FF — guarded by free_float assert)
+            );
+        }
+    }
+
+    #[cfg(feature = "pr821-diag")]
+    {
+        let path = diag
+            .flush_to_csv()
+            .expect("PR #821 diagnostic CSV write failed");
+        eprintln!(
+            "[pr821-diag] case={} rows={} -> {}",
+            spec.case_id,
+            diag.len(),
+            path.display()
+        );
     }
 
     (min_temp, max_temp)
@@ -523,5 +567,80 @@ mod case_650ff {
             max_temp, r.max_free_float_min, r.max_free_float_max
         );
         assert!(max_temp >= r.max_free_float_min && max_temp <= r.max_free_float_max);
+    }
+}
+
+// ===== Issue #821 / Issue #738 — Free-Float HVAC Zero-Output Regression Test =====
+// Any case where `is_free_floating()` is true must report exactly zero annual
+// heating energy and zero annual cooling energy. This guards against regressions
+// where a hidden HVAC code path leaks into FF cases (the historical root cause
+// of #725 / #738). It is paired with a hard `assert!` inside `step_physics_5r1c`
+// and `step_physics_6r2c` (gated under `cfg(test)`) so the moment any code path
+// produces non-zero HVAC under FF, this test panics with an actionable message.
+mod free_float_hvac_guard {
+    use super::*;
+    use fluxion::validation::ashrae_140_cases::CaseBuilder;
+
+    fn run_and_check_ff_zero(case_enum: ASHRAE140Case) {
+        let spec = case_enum.spec();
+        assert!(
+            spec.is_free_floating(),
+            "Case {} is not classified as free-floating; test misconfigured",
+            spec.case_id
+        );
+
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let weather =
+            fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+                .expect("Failed to load EPW weather data");
+
+        for step in 0..8760 {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(weather_data.clone());
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        }
+
+        // Both annual energy counters must be exactly zero (in the model's
+        // internal kWh-equivalent accumulator). A non-zero value indicates an
+        // HVAC code path bypassing the free_float guard.
+        assert!(
+            model.annual_heating_energy.abs() < 1e-9,
+            "Free-float case {} produced non-zero annual heating energy: {} kWh",
+            spec.case_id,
+            model.annual_heating_energy
+        );
+        assert!(
+            model.annual_cooling_energy.abs() < 1e-9,
+            "Free-float case {} produced non-zero annual cooling energy: {} kWh",
+            spec.case_id,
+            model.annual_cooling_energy
+        );
+    }
+
+    #[test]
+    fn case_600ff_zero_hvac_energy() {
+        run_and_check_ff_zero(ASHRAE140Case::Case600FF);
+    }
+
+    #[test]
+    fn case_650ff_zero_hvac_energy() {
+        run_and_check_ff_zero(ASHRAE140Case::Case650FF);
+    }
+
+    #[test]
+    fn builders_match_free_float_classification() {
+        // Sanity check the builder API agrees with the case enum mapping for
+        // 600FF and 650FF. Catches future builder edits that could silently
+        // turn an FF case into a setpoint case.
+        let s_600 = CaseBuilder::case_600ff();
+        assert!(
+            s_600.is_free_floating(),
+            "case_600ff() must be free-floating"
+        );
+        let s_650 = CaseBuilder::case_650ff();
+        assert!(
+            s_650.is_free_floating(),
+            "case_650ff() must be free-floating"
+        );
     }
 }

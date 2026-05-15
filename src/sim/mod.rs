@@ -31,3 +31,6 @@ pub mod timestep_solver;
 pub mod thermal_integration;
 pub mod ventilation;
 pub mod view_factors;
+
+#[cfg(feature = "pr821-diag")]
+pub mod pr821_diag;
