@@ -1080,11 +1080,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone())
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
         };
 
-        let hvac_for_temp_calc_cloned = hvac_for_temp_calc.clone();
-        let product = sensitivity_val * hvac_for_temp_calc_cloned;
+        let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
         let mut t_i_act = t_i_free.clone();
         t_i_act.add_assign(&product);
 
@@ -2357,10 +2356,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let sensitivity_val = sensitivity;
         let hvac_for_temp_calc =
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val.clone());
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
 
-        let hvac_for_temp_calc_cloned = hvac_for_temp_calc.clone();
-        let product = sensitivity_val.clone() * hvac_for_temp_calc_cloned;
+        let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
         let mut t_i_act = t_i_free.clone();
         t_i_act.add_assign(&product);
 
