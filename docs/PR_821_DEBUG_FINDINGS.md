@@ -121,6 +121,7 @@ The shipped fix is **A + B (floor de-count) + topology fix (south bypass) + nigh
 | `src/sim/mod.rs` | Conditionally export `pr821_diag` under feature `pr821-diag`. |
 | `Cargo.toml` | New `pr821-diag` feature flag. |
 | `tests/ashrae_140_case_600_series.rs` | New `free_float_hvac_guard` test module (3 tests). FF helper opts into the diagnostic CSV under `pr821-diag`. |
+| `src/sim/thermal_model_data.rs`, `thermal_model_core.rs`, `thermal_model_physics.rs` | Issue #825: cfg-gated `last_phi_ia / last_phi_st / last_phi_m` on `ThermalModelData`, populated each call to `step_physics_5r1c`; the `pr821-diag` CSV writer now reads these instead of hard-coded `0.0`. |
 
 The 9R4C per-surface vectors (`h_tr_ms_wall_vec`, `h_tr_em_wall_vec`, etc.) are
 **unchanged** — they continue to use the half-insulation conduction values
@@ -166,3 +167,33 @@ cargo test --test ashrae_140_case_900 -- --test-threads=1
 - **Empirical correction factors (#724/#739):** stay disabled throughout.
 - **Reference values:** `tests/ashrae_140_case_600_series.rs:120-149` is the
   source of truth; it is consistent with the prose in #806.
+
+
+## Issue #825 — diagnostic CSV phi_* columns now real (post PR #821)
+
+Before #825 the `phi_ia`, `phi_st`, `phi_m` columns of `target/diag/pr821_<case>.csv`
+were placeholders (`0.0`) because those values were local temporaries inside
+`step_physics_5r1c`. This PR adds three cfg-gated `f64` fields to
+`ThermalModelData<T>` (`last_phi_ia / last_phi_st / last_phi_m`) that are
+written each timestep when the `pr821-diag` feature is enabled, with **zero
+overhead** and zero new fields when the feature is off (conditional
+compilation, not runtime branching).
+
+Schema is unchanged; the contents are now the actual zone-0 W values used in
+the 5R1C heat balance:
+
+- `phi_ia` — `load·conv_frac + sol·solar_distribution_to_air`
+- `phi_st` — `load·st_int_frac + remaining_sol·st_sol_frac`
+- `phi_m`  — `load·m_int_frac + remaining_sol·m_sol_frac + opaque_sol`
+
+For Cases 600FF / 650FF the routing reduces to:
+
+| column   | typical value | why                                                        |
+|----------|---------------|------------------------------------------------------------|
+| `phi_ia` | 0 W           | zero internal loads, `solar_distribution_to_air = 0`       |
+| `phi_st` | 0 W           | same — surface fraction also collapses                     |
+| `phi_m`  | up to ~10.6 kW (mid-day Jul 17) | solar + opaque-surface gain routed entirely to mass node |
+
+The 600/650FF FF helper now also asserts at least one daytime row (10:00–16:00)
+has non-zero `phi_m`, so a future regression that re-zeros the field would
+fail-fast inside the test loop instead of producing a silently-empty CSV.
