@@ -45,6 +45,12 @@ pub struct FreeFloatValidationResult {
     pub free_float_min_temp: f64,
     /// Maximum zone temperature (°C) for free-floating cases
     pub free_float_max_temp: f64,
+    /// Issue #827: opt-in hourly zone-0 air temperature profile (°C),
+    /// one entry per simulated step (8760 for an annual run).
+    /// Populated only for free-floating cases (case_id ending in `FF`);
+    /// `None` for HVAC-controlled cases. Allocated once per FF case
+    /// (~70 KB), so non-FF cases pay no allocation cost.
+    pub hourly_temperatures: Option<Vec<f64>>,
 }
 
 /// ASHRAE Standard 140 validation for building energy programs.
@@ -768,6 +774,13 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -871,6 +884,10 @@ impl ASHRAE140Validator {
                     }
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
         }
@@ -896,6 +913,8 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
         }
     }
 
@@ -1573,6 +1592,13 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         // SESSION 32: Run simulation loop and accumulate energy manually
         // Reset model's internal energy tracking to avoid interference with raw accumulation
@@ -1709,6 +1735,10 @@ impl ASHRAE140Validator {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
         }
@@ -1735,6 +1765,8 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
         }
     }
 
@@ -1780,6 +1812,13 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -1881,6 +1920,10 @@ impl ASHRAE140Validator {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
 
@@ -1940,6 +1983,8 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
         }
     }
 }
@@ -1958,6 +2003,12 @@ pub struct CaseResults {
     pub min_temp_celsius: Option<f64>,
     /// Maximum zone temperature (°C) for free-floating cases
     pub max_temp_celsius: Option<f64>,
+    /// Issue #827: opt-in hourly zone-0 air temperature profile (°C),
+    /// one entry per simulated step (8760 for an annual run).
+    /// Populated only for free-floating cases; `None` for HVAC-controlled
+    /// cases. Allocated once per FF case (~70 KB), so non-FF cases pay no
+    /// allocation cost.
+    pub hourly_temperatures: Option<Vec<f64>>,
 }
 
 /// Diagnostic data collected during case simulation.
@@ -2068,6 +2119,13 @@ impl ASHRAE140Validator {
         let mut annual_cooling_joules = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         // Track energy components
         let mut total_solar_gains_joules = 0.0;
@@ -2220,6 +2278,10 @@ impl ASHRAE140Validator {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                     diagnostic.temp_profile.update(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
 
@@ -2306,6 +2368,8 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
         };
 
         (results, diagnostic)
@@ -2358,6 +2422,13 @@ impl ASHRAE140Validator {
         // Run simulation for one year (8760 hours)
         let mut min_temp = f64::INFINITY;
         let mut max_temp = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
         let num_zones = model.num_zones;
 
         for step in 0..8760 {
@@ -2397,11 +2468,16 @@ impl ASHRAE140Validator {
             let zone_temp = model.get_temperatures()[0];
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
+            // Issue #827: also push to the opt-in hourly profile when allocated
+            if let Some(v) = &mut hourly_temperatures {
+                v.push(zone_temp);
+            }
         }
 
         FreeFloatValidationResult {
             free_float_min_temp: min_temp,
             free_float_max_temp: max_temp,
+            hourly_temperatures,
         }
     }
 
