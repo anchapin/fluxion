@@ -2329,6 +2329,16 @@ impl ThermalModel<VectorField> {
             cm_internal: None,
             multi_node_thermal_mass: None,
 
+            // PR #821 / Issue #825 — diagnostic-only zone-0 heat-balance terms.
+            // Initialized to 0.0; overwritten each call to `step_physics_5r1c`
+            // when the `pr821-diag` feature is enabled.
+            #[cfg(feature = "pr821-diag")]
+            last_phi_ia: 0.0,
+            #[cfg(feature = "pr821-diag")]
+            last_phi_st: 0.0,
+            #[cfg(feature = "pr821-diag")]
+            last_phi_m: 0.0,
+
             // Wiring tracer for test-only integration validation (Plan 21-10)
             tracer: None,
         });

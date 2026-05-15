@@ -209,6 +209,13 @@ impl DiagCollector {
         Ok(path)
     }
 
+    /// Borrow the accumulated diagnostic rows. Used by the 600/650FF
+    /// regression assertion in `tests/ashrae_140_case_600_series.rs` to verify
+    /// the heat-balance phi_* terms are non-zero when expected (Issue #825).
+    pub fn rows(&self) -> &[DiagRow] {
+        &self.rows
+    }
+
     pub fn len(&self) -> usize {
         self.rows.len()
     }
