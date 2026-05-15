@@ -279,6 +279,9 @@ pub struct SimulationOutput {
     pub heating_energy: f64,
     pub cooling_energy: f64,
     pub zone_temperatures: Option<Vec<f64>>,
+    /// Issue #763 — full hourly zone temperature profiles.
+    /// Format: [num_zones][8760] hourly temperatures in °C.
+    pub hourly_zone_temperatures: Option<Vec<Vec<f64>>>,
 }
 
 impl Default for SimulationOutput {
@@ -291,6 +294,7 @@ impl Default for SimulationOutput {
             heating_energy: 0.0,
             cooling_energy: 0.0,
             zone_temperatures: None,
+            hourly_zone_temperatures: None,
         }
     }
 }

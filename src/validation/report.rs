@@ -4,7 +4,7 @@
 //! validation reports, including pass/fail determination, delta analysis,
 //! and multiple export formats (Markdown, HTML, CSV).
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -25,9 +25,9 @@ use crate::validation::statistical::{StatisticalMetrics, ValidationGroup};
 /// Types of validation metrics for ASHRAE 140.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetricType {
-    /// Annual heating energy consumption (MWh)
+    /// Annual heating energy consumption (kWh)
     AnnualHeating,
-    /// Annual cooling energy consumption (MWh)
+    /// Annual cooling energy consumption (kWh)
     AnnualCooling,
     /// Peak heating load (kW)
     PeakHeating,
@@ -357,6 +357,7 @@ impl Default for Case960Report {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_timestamp: None,
         };
 
         Self {
@@ -381,6 +382,7 @@ impl Default for Case970Report {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_timestamp: None,
         };
 
         Self {
@@ -428,6 +430,9 @@ pub struct ValidationResult {
     /// Per-program validation statuses for multi-reference comparison
     #[serde(skip_serializing_if = "Option::is_none")]
     pub per_program: Option<HashMap<String, ValidationStatus>>,
+    /// Timestamp of peak value occurrence (for peak metrics)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_timestamp: Option<DateTime<Utc>>,
 }
 
 impl ValidationResult {
@@ -479,6 +484,7 @@ impl ValidationResult {
             percent_error,
             status,
             per_program: None,
+            peak_timestamp: None,
         }
     }
 
@@ -742,6 +748,7 @@ impl BenchmarkReport {
             percent_error,
             status: overall_status,
             per_program: Some(per_program),
+            peak_timestamp: None,
         };
         self.add_result(result);
     }
@@ -1613,6 +1620,7 @@ impl BenchmarkReport {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_timestamp: None,
         };
 
         Case960Report {
@@ -1656,6 +1664,7 @@ impl BenchmarkReport {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_timestamp: None,
         };
 
         Case970Report {
@@ -2547,6 +2556,7 @@ impl ValidationSuite {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_timestamp: None,
         }
     }
 

@@ -647,6 +647,50 @@ let loads = surrogates.predict_loads(&temperatures);
 
 ---
 
+## Output Data
+
+### Hourly Zone Temperature Profiles (Issue #763)
+
+After running a simulation with `solve_timesteps()` or `solve_timesteps_with_dt()`, the full hourly temperature profiles are available:
+
+```python
+# Get hourly temperatures after simulation
+hourly_temps = model.get_hourly_temperatures()
+if hourly_temps is not None:
+    # hourly_temps[zone_idx][timestep] -> temperature in °C
+    for zone_idx, zone_temps in enumerate(hourly_temps):
+        print(f"Zone {zone_idx}: {len(zone_temps)} timesteps, "
+              f"min={min(zone_temps):.1f}°C, max={max(zone_temps):.1f}°C")
+```
+
+**Data Format:** `Option<Vec<Vec<f64>>>` — `[num_zones][8760]` values in °C.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `hourly_zone_temperatures` | `Option<Vec<Vec<f64>>>` | `[zone][timestep]` zone temperatures (°C), indexed by zone then timestep |
+
+**Python Example:**
+```python
+model = Model(num_zones=2)
+model.simulate(years=1, use_surrogates=False)
+hourly = model.get_hourly_temperatures()
+if hourly:
+    zone0_temps = hourly[0]  # 8760 hourly values for zone 0
+    zone1_temps = hourly[1]  # 8760 hourly values for zone 1
+```
+
+**Rust Example:**
+```rust
+let hourly = model.get_hourly_temperatures();
+if let Some(temps) = hourly {
+    for (zone_idx, zone_temps) in temps.iter().enumerate() {
+        println!("Zone {}: {} timesteps", zone_idx, zone_temps.len());
+    }
+}
+```
+
+---
+
 ## Error Handling
 
 All methods may raise exceptions:

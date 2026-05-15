@@ -397,6 +397,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             });
         let _equipment_ref = equipment_converted.as_deref().or(equipment);
 
+        // Issue #763 — initialize hourly temperature storage before timestep loop
+        self.0.hourly_temperatures = Some(vec![Vec::with_capacity(steps); self.0.num_zones]);
+
         let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
@@ -414,7 +417,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     equipment: None, // Can't clone dyn Equipment, so pass None
                     occupancy: occupancy_ref.cloned(),
                 };
-                self.solve_single_step(t, outdoor_temp, step_params, dt_seconds)
+                let energy = self.solve_single_step(t, outdoor_temp, step_params, dt_seconds);
+
+                // Issue #763 — capture zone temperatures after each timestep
+                if let Some(ref mut hourly) = self.0.hourly_temperatures {
+                    for (zone_idx, &temp) in self.0.temperatures.as_ref().iter().enumerate() {
+                        if zone_idx < hourly.len() {
+                            hourly[zone_idx].push(temp);
+                        }
+                    }
+                }
+
+                energy
             })
             .sum();
 
@@ -436,6 +450,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// Vector of current zone temperatures in degrees Celsius.
     pub fn get_temperatures(&self) -> Vec<f64> {
         self.0.temperatures.as_ref().to_vec()
+    }
+
+    /// Get the full hourly zone temperature profiles (Issue #763).
+    ///
+    /// # Returns
+    /// `Some([[T00, T01, ...], [T10, T11, ...], ...])` where outer index is zone,
+    /// inner index is timestep (0..steps-1), or `None` if the simulation has not
+    /// been run through `solve_timesteps_with_dt`.
+    pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
+        self.0.hourly_temperatures.clone()
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
