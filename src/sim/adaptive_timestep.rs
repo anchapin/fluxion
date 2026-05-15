@@ -324,6 +324,37 @@ pub struct TimeConstantAnalyzer;
 
 #[allow(deprecated)]
 impl TimeConstantAnalyzer {
+    /// Calculate time constant from physical parameters (ISO 13790 §7.2.1.4).
+    ///
+    /// Derives τ directly from thermal capacitance and coupling
+    /// conductance — no case-id lookup required. Consistent with the
+    /// physics-based computation in
+    /// [`ThermalModel::estimate_time_constant_hours`].
+    ///
+    /// # Arguments
+    /// * `cm_j_k`  - Sum of zone thermal capacitances (J/K)
+    /// * `sigma_h` - Sum of zone coupling conductances (W/K) = Σ h_tr_ms
+    ///
+    /// # Returns
+    /// Time constant in hours.
+    ///
+    /// # Formula (ISO 13790 §7.2.1.4)
+    /// τ = Cm / H   where H = Σ h_tr_ms
+    ///
+    /// # Example
+    /// ```
+    /// // Case 900: Cm ≈ 1.2e7 J/K, h_tr_ms ≈ 650 W/K
+    /// let tau = TimeConstantAnalyzer::for_physics(1.2e7, 650.0);
+    /// assert!(tau > 2.0); // high-mass
+    /// ```
+    pub fn for_physics(cm_j_k: f64, sigma_h: f64) -> f64 {
+        if sigma_h > 0.0 {
+            cm_j_k / sigma_h / 3600.0 // τ in hours
+        } else {
+            2.0 // Default: boundary between low/high mass (ISO 13790)
+        }
+    }
+
     /// Calculate time constant for ASHRAE 140 case
     ///
     /// # Arguments
@@ -331,6 +362,11 @@ impl TimeConstantAnalyzer {
     ///
     /// # Returns
     /// Time constant in hours, or None if case not found
+    ///
+    /// # Deprecated
+    /// Use [`TimeConstantAnalyzer::for_physics`] with actual Cm and Σ h_tr_ms
+    /// values instead. This lookup uses pre-PR #821 conductances and is
+    /// inconsistent with current physics. See Issue #740.
     pub fn for_case(case_id: &str) -> Option<f64> {
         // Approximate values from ISO 13790 5R1C parameters
         // C = thermal capacitance (J/K)
@@ -517,6 +553,32 @@ mod tests {
             TimeConstantAnalyzer::classify_case("900"),
             Some("high-mass")
         );
+    }
+
+    #[test]
+    fn test_time_constant_analyzer_for_physics() {
+        // Verify for_physics implements ISO 13790 §7.2.1.4:
+        // τ = Cm / H  where H = Σ h_tr_ms
+
+        // Low-mass: Case 600-like (Cm=2.4e6 J/K, current h_tr_ms ≈ 1340 W/K)
+        let tau_low = TimeConstantAnalyzer::for_physics(2.4e6, 1340.0);
+        assert!(
+            tau_low < 2.0,
+            "Low-mass tau should be < 2h, got {}",
+            tau_low
+        );
+
+        // High-mass: Case 900-like (Cm=1.2e7 J/K, current h_tr_ms ≈ 650 W/K)
+        let tau_high = TimeConstantAnalyzer::for_physics(1.2e7, 650.0);
+        assert!(
+            tau_high >= 2.0,
+            "High-mass tau should be >= 2h, got {}",
+            tau_high
+        );
+
+        // Degenerate: sigma_h = 0 → default 2.0 hours (ISO 13790 boundary)
+        let tau_zero = TimeConstantAnalyzer::for_physics(1.0e6, 0.0);
+        assert_eq!(tau_zero, 2.0, "Zero conductance → default 2.0h");
     }
 
     #[test]
