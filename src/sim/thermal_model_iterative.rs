@@ -217,7 +217,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                                                    // DEBUG: DEBUG_ZONE_SOLAR removed (PR #821)
 
             // Now calculate solar gain once per unique orientation
-            for (orientation, (total_win_area, total_opaque_area)) in surfaces_by_orientation {
+            for (orientation, (total_win_area, _total_opaque_area)) in surfaces_by_orientation {
                 // Create temporary window properties with the combined window area for this orientation
                 let oriented_window_props = WindowProperties {
                     area: total_win_area,
