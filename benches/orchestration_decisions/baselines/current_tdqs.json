@@ -1,0 +1,1 @@
+{"overall":0.698391,"decisions":110,"per_type":{"solver_selection": {"tdqs":0.666667,"correct":16,"total":24},"adaptive_timestep": {"tdqs":1.000000,"correct":24,"total":24},"surrogate_routing": {"tdqs":0.000000,"correct":6,"total":14},"constraint_warning": {"tdqs":1.000000,"correct":24,"total":24},"hvac_horizon": {"tdqs":0.750000,"correct":18,"total":24}}}

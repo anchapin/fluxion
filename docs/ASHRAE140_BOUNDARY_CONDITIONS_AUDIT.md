@@ -275,3 +275,79 @@ ASHRAE 140 Table B1-3 specifies double clear glass:
 - #672 — [Epic] v1.3 ASHRAE 140 Blind Validation
 - #734 — Exterior film coefficient correction (6.7 m/s wind speed)
 - #754 — Gypsum board density correction
+
+
+---
+
+## 9. Thermal Network Conductance Derivation (PR #821)
+
+### 9.1 Surface-to-Mass Conductance `h_tr_ms`
+
+**Standard:** ISO 13790:2008 §7.2.2.2 + Annex C.
+
+The 5R1C lumped surface-to-mass coupling is computed as:
+
+```
+h_tr_ms = h_ms × A_m,    h_ms = 9.1 W/(m²·K)
+A_m     = (Σ_j A_j κ_j)² / (Σ_j A_j κ_j²)
+C_m     = Σ_j A_j κ_j
+```
+
+Where j indexes mass-bearing opaque elements (walls, roof, floor) and κ_j is
+the construction's specific thermal capacitance per area (J/m²K) — taken from
+`Construction::thermal_capacitance_per_area()` for consistency with how
+`wall_cap`/`roof_cap`/`floor_cap` feed `C_m` in the same code block (Issue #585).
+
+**Code:** `src/sim/thermal_model_core.rs:880-955` (lumped path used by 5R1C/6R2C).
+
+The per-surface `h_tr_ms_wall` / `h_tr_ms_roof` / `h_tr_ms_floor` vectors
+**continue to use the half-insulation-rule conduction values** because the
+9R4C topology (Issue #715) dedicates one mass node per surface and would
+double-count the ISO 13790 lumped correction.
+
+### 9.2 Lumped `h_tr_em` — Floor Excluded
+
+The floor's heat path to its boundary (ground) is captured by the dedicated
+`h_tr_floor` node in the heat balance. The legacy code *also* summed
+`h_tr_em_floor` (= `floor_U × A_floor`) into the lumped `h_tr_em`, which
+`update_optimization_cache` then partially injects into `derived_h_ext`.
+
+That double-counted ~9 W/K of phantom air-to-outdoor conductance for Case 600
+and biased peak free-float air temperature low by ~3 °C. PR #821 removes the
+floor from the lumped `h_tr_em`:
+
+```rust
+// src/sim/thermal_model_core.rs (Probe A+B)
+let h_tr_em_total = h_tr_em_physics + h_tr_em_roof;  // floor lives in h_tr_floor
+```
+
+The 9R4C per-surface `h_tr_em_floor` value is preserved.
+
+### 9.3 South-Wall Bypass (`h_south_series`)
+
+The Issue #715 "south wall thermal bypass" added
+`h_south_series = h_is_south × h_em_south / (h_is_south + h_em_south)` to
+`derived_h_ext` as an extra parallel air↔outdoor path for the south wall.
+With the legacy small `h_tr_ms` (~120 W/K) this was a partial compensation,
+but the south wall was already in `h_tr_em` (mass side) and `h_tr_is` (air
+side). Once `h_tr_ms` is restored to its ISO 13790 value (~1340 W/K), the
+bypass becomes a 9 W/K double-count. PR #821 drops it from `derived_h_ext`.
+
+The dedicated south-wall vectors (`h_tr_em_south`, `h_tr_is_no_south`) are
+**kept** on the model so the 9R4C / CTF code paths owned by Issues #715 and
+#730 continue to function unchanged.
+
+### 9.4 Time Constant Derivation (Probe H)
+
+`estimate_time_constant_hours` previously consulted a hard-coded τ table per
+ASHRAE 140 case identifier (`TimeConstantAnalyzer::for_case(&case_id)`).
+That breaks blind validation (the solver must not key off `case_id`) and can
+disagree with the actual `Cm / h_tr_ms` after PR #821's conductance change.
+PR #821 restores the physical derivation:
+
+```
+τ_hours = (Σ_zones C_m) / (3600 × Σ_zones h_tr_ms)
+```
+
+`TimeConstantAnalyzer::for_case` is still in the codebase for callers that
+explicitly want the legacy table, but it is no longer consulted by the solver.

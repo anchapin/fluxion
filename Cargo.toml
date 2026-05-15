@@ -45,6 +45,8 @@ wiring-tracing = []
 multi-zone = []
 # Feature flag for ASHRAE 140 v2021 support
 ashrae_140_v2021 = []
+# Feature flag for PR #821 diagnostics (writes hourly CSVs for 600FF/650FF debugging)
+pr821-diag = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }

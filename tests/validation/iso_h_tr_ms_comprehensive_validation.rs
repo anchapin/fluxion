@@ -452,7 +452,7 @@ fn test_thermal_time_constants_by_mass_class() {
 
         let h_tr_ms = model.h_tr_ms.as_ref()[0];
         let h_tr_em = model.h_tr_em.as_ref()[0];
-        let structure_cap = model.structure_thermal_cap.as_ref()[0];
+        let structure_cap = model.thermal_capacitance.as_ref()[0];
 
         let tau_seconds = structure_cap / (h_tr_ms + h_tr_em).max(0.1);
         let tau_hours = tau_seconds / 3600.0;
