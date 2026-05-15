@@ -22,6 +22,62 @@ use plotters::style::colors::WHITE;
 use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
 use crate::validation::statistical::{StatisticalMetrics, ValidationGroup};
 
+/// ASHRAE 140-2023 Section 8.1 compliance report header.
+///
+/// Required fields as specified by ASHRAE 140-2023 Section 8.1 for
+/// compliance reporting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportHeader {
+    /// Program name (e.g., "fluxion")
+    pub program_name: String,
+    /// Program version (e.g., "1.0.0")
+    pub program_version: String,
+    /// Developer name/organization (configurable)
+    pub developer: String,
+    /// Simulation run timestamp
+    pub run_date: DateTime<Utc>,
+    /// ASHRAE 140 standard edition (e.g., "ASHRAE 140-2023")
+    pub ashrae_edition: String,
+    /// Weather file identification (from EPW header)
+    pub weather_file_id: String,
+}
+
+impl ReportHeader {
+    /// Creates a new report header with current timestamp.
+    ///
+    /// Uses the crate version from Cargo.toml and the default developer "Fluxion Development Team".
+    /// Weather file ID is extracted from the EPW header for ASHRAE 140 validation.
+    pub fn new(weather_file_id: String) -> Self {
+        Self {
+            program_name: "fluxion".to_string(),
+            program_version: env!("CARGO_PKG_VERSION").to_string(),
+            developer: "Fluxion Development Team".to_string(),
+            run_date: Utc::now(),
+            ashrae_edition: "ASHRAE 140-2023".to_string(),
+            weather_file_id,
+        }
+    }
+
+    /// Creates a report header with custom developer name.
+    pub fn with_developer(mut self, developer: &str) -> Self {
+        self.developer = developer.to_string();
+        self
+    }
+}
+
+impl Default for ReportHeader {
+    fn default() -> Self {
+        Self {
+            program_name: "fluxion".to_string(),
+            program_version: env!("CARGO_PKG_VERSION").to_string(),
+            developer: "Fluxion Development Team".to_string(),
+            run_date: Utc::now(),
+            ashrae_edition: "ASHRAE 140-2023".to_string(),
+            weather_file_id: "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY".to_string(),
+        }
+    }
+}
+
 /// Types of validation metrics for ASHRAE 140.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetricType {
@@ -564,6 +620,9 @@ impl Default for Interpretation {
 /// Comprehensive validation report for ASHRAE 140 test cases.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BenchmarkReport {
+    /// Section 8.1 compliance report header
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_header: Option<ReportHeader>,
     /// All validation results
     pub results: Vec<ValidationResult>,
     /// Benchmark data for each case
@@ -622,7 +681,18 @@ pub struct SensitivityResult {
 impl BenchmarkReport {
     /// Creates a new empty validation report.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            report_header: None,
+            results: Vec::new(),
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        }
     }
 
     /// Generates a JSON report.
@@ -917,8 +987,29 @@ impl BenchmarkReport {
     pub fn to_markdown(&self) -> String {
         let mut output = String::new();
 
-        // Title
-        output.push_str("# ASHRAE 140 Validation Report\n\n");
+        // Section 8.1 Compliance Header
+        if let Some(ref header) = self.report_header {
+            output.push_str("# ASHRAE 140 Validation Report\n\n");
+            output.push_str("## Section 8.1 Compliance Information\n\n");
+            output.push_str("| Field | Value |\n");
+            output.push_str("|-------|-------|\n");
+            output.push_str(&format!("| Program Name | {} |\n", header.program_name));
+            output.push_str(&format!(
+                "| Program Version | {} |\n",
+                header.program_version
+            ));
+            output.push_str(&format!("| Developer | {} |\n", header.developer));
+            output.push_str(&format!(
+                "| Run Date | {} |\n",
+                header.run_date.format("%Y-%m-%d %H:%M UTC")
+            ));
+            output.push_str(&format!("| ASHRAE Edition | {} |\n", header.ashrae_edition));
+            output.push_str(&format!("| Weather File | {} |\n", header.weather_file_id));
+            output.push_str("\n---\n\n");
+        } else {
+            // Fallback header when no report_header is set
+            output.push_str("# ASHRAE 140 Validation Report\n\n");
+        }
 
         // Summary statistics
         output.push_str("## Summary\n\n");

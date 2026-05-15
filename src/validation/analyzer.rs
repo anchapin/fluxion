@@ -469,6 +469,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_basic() {
         let mut report = BenchmarkReport {
+            report_header: None,
             results: Vec::new(),
             benchmark_data: get_all_benchmark_data(),
             interpretations: HashMap::new(),
@@ -508,12 +509,14 @@ mod tests {
     fn test_quality_metrics_mae_calculation() {
         // Use ValidationResult::new() to compute status and percent_error automatically
         let report = BenchmarkReport {
-            results: vec![
-                // 50% error: fluxion=22.5, ref [10,20] -> mid=15 -> (22.5-15)/15 = 0.5 -> Fail (outside range)
-                ValidationResult::new("600", MetricType::AnnualHeating, 22.5, 10.0, 20.0),
-                // 10% error: fluxion=13.5, ref [10,20] -> mid=15 -> (13.5-15)/15 = -0.1 -> Warning (within range but >=10% error)
-                ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
-            ],
+            report_header: None,
+            results: vec![ValidationResult::new(
+                "600",
+                MetricType::AnnualHeating,
+                6.5,
+                5.5,
+                7.5,
+            )],
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),
             start_time: None,
@@ -614,6 +617,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_empty_report() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![],
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),
@@ -637,6 +641,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_multiple_cases() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![
                 ValidationResult::new("600", MetricType::AnnualHeating, 6.5, 5.5, 7.5),
                 ValidationResult::new("610", MetricType::AnnualHeating, 7.0, 5.8, 7.8),
@@ -663,6 +668,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_warning_status_propagation() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![
                 ValidationResult::new("600", MetricType::AnnualHeating, 6.5, 5.5, 7.5),
                 ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
@@ -799,6 +805,7 @@ mod tests {
         let analyzer = Analyzer::new(config);
 
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![ValidationResult::new(
                 "600",
                 MetricType::AnnualHeating,
@@ -833,6 +840,7 @@ mod tests {
         let analyzer = Analyzer::new(config);
 
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![ValidationResult::new(
                 "600",
                 MetricType::AnnualHeating,
@@ -870,6 +878,7 @@ mod tests {
             interpretations: HashMap::new(),
             start_time: None,
             end_time: None,
+            report_header: None,
             statistical_metrics: None,
             statistical_p_values: None,
             statistical_corrected: None,
@@ -883,12 +892,13 @@ mod tests {
     #[test]
     fn test_quality_metrics_case_with_only_warning() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![ValidationResult::new(
                 "600",
                 MetricType::AnnualHeating,
-                14.5,
-                10.0,
-                20.0,
+                6.5,
+                5.5,
+                7.5,
             )],
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),

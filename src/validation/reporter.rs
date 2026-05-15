@@ -144,12 +144,33 @@ impl ValidationReportGenerator {
     ) -> Result<String, String> {
         let mut output = String::new();
 
-        // Header
-        output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
-        output.push_str(&format!(
-            "*Generated: {}*\n\n",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-        ));
+        // Section 8.1 Compliance Header
+        if let Some(ref header) = report.report_header {
+            output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+            output.push_str("## Section 8.1 Compliance Information\n\n");
+            output.push_str("| Field | Value |\n");
+            output.push_str("|-------|-------|\n");
+            output.push_str(&format!("| Program Name | {} |\n", header.program_name));
+            output.push_str(&format!(
+                "| Program Version | {} |\n",
+                header.program_version
+            ));
+            output.push_str(&format!("| Developer | {} |\n", header.developer));
+            output.push_str(&format!(
+                "| Run Date | {} |\n",
+                header.run_date.format("%Y-%m-%d %H:%M UTC")
+            ));
+            output.push_str(&format!("| ASHRAE Edition | {} |\n", header.ashrae_edition));
+            output.push_str(&format!("| Weather File | {} |\n", header.weather_file_id));
+            output.push_str("\n---\n\n");
+        } else {
+            // Fallback header when no report_header is set
+            output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+            output.push_str(&format!(
+                "*Generated: {}*\n\n",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+            ));
+        }
 
         // Summary Card
         output.push_str("## Summary\n\n");
