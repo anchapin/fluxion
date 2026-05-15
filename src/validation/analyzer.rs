@@ -140,7 +140,7 @@ impl QualityMetrics {
 
                 metrics.deviations.push(MetricDeviation {
                     case_id: result.case_id.clone(),
-                    metric: result.metric,
+                    metric: result.metric.clone(),
                     actual: result.fluxion_value,
                     reference: ref_mid,
                     error_pct,
@@ -366,7 +366,7 @@ impl Analyzer {
             // Show top 30 worst errors
             let ref_range = if let Some(data) = crate::validation::get_benchmark_data(&dev.case_id)
             {
-                if let Some((min, max)) = data.get_range(dev.metric) {
+                if let Some((min, max)) = data.get_range(dev.metric.clone()) {
                     format!("{:.2}-{:.2}", min, max)
                 } else {
                     "N/A".to_string()
@@ -376,7 +376,7 @@ impl Analyzer {
             };
 
             // Determine issue category (simple heuristic)
-            let issue = classify_deviation_issue(&dev.case_id, dev.metric);
+            let issue = classify_deviation_issue(&dev.case_id, dev.metric.clone());
 
             output.push_str(&format!(
                 "| {} | {} | {:.2} | {} | {:.1}% | {} |\n",
