@@ -293,3 +293,8 @@ harness = true
 name = "validation_case_900_peak_attribution"
 path = "tests/validation/case_900_peak_attribution.rs"
 harness = true
+
+[[test]]
+name = "validation_hourly_ff_profile"
+path = "tests/validation/hourly_ff_profile.rs"
+harness = true
