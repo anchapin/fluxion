@@ -291,11 +291,38 @@ impl AdaptiveTimestepScheduler {
     }
 }
 
-/// Time constant analyzer for ASHRAE 140 cases
+/// Time constant analyzer for ASHRAE 140 cases (DEPRECATED).
 ///
-/// Calculates thermal time constants for standard test cases.
+/// **Deprecated as of Issue #828.** This analyzer keys off ASHRAE 140 case
+/// identifiers (e.g. `"600"`, `"900FF"`) and returns hard-coded time-constant
+/// values from a lookup table. After PR #821 / Probe H, the solver derives
+/// τ directly from physics:
+///
+/// ```text
+/// τ_seconds = Σ Cm  /  Σ h_tr_ms
+/// ```
+///
+/// via [`crate::sim::engine::ThermalModel::estimate_time_constant_hours`],
+/// which is independent of `case_id` and consistent with the ISO 13790
+/// `h_ms = 9.1 × A_m` formulation introduced by PR #821. The lookup table
+/// here was last updated against pre-PR #821 conductances and disagrees
+/// with current physics (e.g. the table says `h = 800 W/K` for Case 600
+/// while the simulator now produces `h_tr_ms ≈ 1340 W/K`).
+///
+/// The struct and its methods are retained for downstream callers (and
+/// integration tests in `tests/adaptive_timestep_integration.rs`) but
+/// emit deprecation warnings. New code should call
+/// `model.estimate_time_constant_hours()` instead.
+///
+/// Issue #740 separately tracks removing the case-id keying from the
+/// solver path entirely; this deprecation is the precursor cleanup.
+#[deprecated(
+    since = "1.0.0",
+    note = "Keys off ASHRAE 140 case_id and uses pre-PR #821 conductances.             Use `ThermalModel::estimate_time_constant_hours()` instead,             which derives τ from Cm/h_tr_ms directly. See Issue #828."
+)]
 pub struct TimeConstantAnalyzer;
 
+#[allow(deprecated)]
 impl TimeConstantAnalyzer {
     /// Calculate time constant for ASHRAE 140 case
     ///
@@ -427,6 +454,7 @@ pub struct CaseTimeConstant {
 }
 
 #[cfg(test)]
+#[allow(deprecated)]
 mod tests {
     use super::*;
 
