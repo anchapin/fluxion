@@ -200,12 +200,19 @@ mod tests {
 
     #[test]
     fn test_has_case() {
-        let has_195 = has_case("195");
-        let has_600 = has_case("600");
-        let has_invalid = has_case("INVALID");
-        assert!(has_195 || !has_195);
-        assert!(has_600 || !has_600);
-        assert!(!has_invalid || !has_invalid);
+        // Issue #837: An identifier that does not exist in the reference DB
+        // (or any identifier when the DB is missing entirely) must report `false`.
+        // This is the only environment-independent invariant of `has_case`.
+        assert!(
+            !has_case("INVALID"),
+            "has_case must return false for an identifier not in the reference DB"
+        );
+
+        // The reference file may or may not be bundled in this environment;
+        // call the function on a few real case IDs only to exercise the lookup
+        // path without panicking. The return value is intentionally not asserted.
+        let _ = has_case("195");
+        let _ = has_case("600");
     }
 
     #[test]

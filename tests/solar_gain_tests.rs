@@ -17,6 +17,11 @@
 
 #[derive(Debug)]
 struct EnergyPlusReference {
+    /// Issue #837: Loaded from the reference JSON for completeness but not
+    /// currently consumed by any test in this file (solar-specific assertions
+    /// only exercise heating/cooling/solar fields). Allowing dead_code to keep
+    /// the JSON deserialization shape stable for future tests.
+    #[allow(dead_code)]
     zone_air_temp_c: Vec<f64>,
     heating_energy_wh: Vec<f64>,
     cooling_energy_wh: Vec<f64>,
