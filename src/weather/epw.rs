@@ -390,11 +390,13 @@ impl EpwWeatherSource {
                 minute: fields[4].parse::<u8>().unwrap_or(0),
                 dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
                 humidity: fields[8].parse::<f64>().unwrap_or(50.0),
-                dni: fields[10].parse::<f64>().unwrap_or(0.0),
-                dhi: fields[11].parse::<f64>().unwrap_or(0.0),
-                ghi: fields[12].parse::<f64>().unwrap_or(0.0),
+                // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
+                ghi: fields[13].parse::<f64>().unwrap_or(0.0),
+                dni: fields[14].parse::<f64>().unwrap_or(0.0),
+                dhi: fields[15].parse::<f64>().unwrap_or(0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
-                horizontal_infrared: parse_optional_field(fields[15], 0.0),
+                // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
+                horizontal_infrared: parse_optional_field(fields[12], 0.0),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -454,11 +456,13 @@ impl EpwWeatherSource {
                 minute: fields[4].parse::<u8>().unwrap_or(0),
                 dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
                 humidity: fields[8].parse::<f64>().unwrap_or(50.0),
-                dni: fields[10].parse::<f64>().unwrap_or(0.0),
-                dhi: fields[11].parse::<f64>().unwrap_or(0.0),
-                ghi: fields[12].parse::<f64>().unwrap_or(0.0),
+                // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
+                ghi: fields[13].parse::<f64>().unwrap_or(0.0),
+                dni: fields[14].parse::<f64>().unwrap_or(0.0),
+                dhi: fields[15].parse::<f64>().unwrap_or(0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
-                horizontal_infrared: parse_optional_field(fields[15], 0.0),
+                // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
+                horizontal_infrared: parse_optional_field(fields[12], 0.0),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -520,11 +524,13 @@ impl EpwWeatherSource {
                 minute: fields[4].parse::<u8>().unwrap_or(0),
                 dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
                 humidity: fields[8].parse::<f64>().unwrap_or(50.0),
-                dni: fields[10].parse::<f64>().unwrap_or(0.0),
-                dhi: fields[11].parse::<f64>().unwrap_or(0.0),
-                ghi: fields[12].parse::<f64>().unwrap_or(0.0),
+                // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
+                ghi: fields[13].parse::<f64>().unwrap_or(0.0),
+                dni: fields[14].parse::<f64>().unwrap_or(0.0),
+                dhi: fields[15].parse::<f64>().unwrap_or(0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
-                horizontal_infrared: parse_optional_field(fields[15], 0.0),
+                // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
+                horizontal_infrared: parse_optional_field(fields[12], 0.0),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -589,29 +595,30 @@ impl EpwWeatherSource {
             })
         }
 
-        // Parse temperature (field 7 in 0-indexed array)
-        let dry_bulb_temp = parse_field(fields[7], "dry bulb temperature")?;
-
-        // Parse relative humidity (field 8 in 0-indexed array)
+        // === Issue #829 FIX: correct EPW v3 field indices ===
+        // Standard EPW v3 columns (1-indexed in spec → 0-indexed in `fields[]`):
+        //   col 7  fields[6]  = Dry Bulb Temperature (°C)
+        //   col 8  fields[7]  = Dew Point Temperature (°C)        ← previously misread as dry bulb
+        //   col 9  fields[8]  = Relative Humidity (%)
+        //   col 13 fields[12] = Horizontal Infrared Radiation Intensity (W/m²)
+        //   col 14 fields[13] = Global Horizontal Radiation (Wh/m²)
+        //   col 15 fields[14] = Direct Normal Radiation (Wh/m²)
+        //   col 16 fields[15] = Diffuse Horizontal Radiation (Wh/m²)
+        //   col 22 fields[21] = Wind Speed (m/s)
+        //
+        // Previously this function read dry-bulb from the dew-point column, and
+        // DNI/DHI/GHI/HIR from the extraterrestrial-radiation and horizontal-IR
+        // columns. That caused winter outdoor temps to be ~7 °C colder than
+        // reality and the Perez sky model to receive ~1232 W/m² (Extraterrestrial
+        // Direct Normal) labelled as Diffuse Horizontal, which the circumsolar
+        // term then amplified to ~286 kW/m² on horizontal roof surfaces.
+        let dry_bulb_temp = parse_field(fields[6], "dry bulb temperature")?;
         let humidity = parse_field(fields[8], "relative humidity")?;
-
-        // Parse solar radiation values
-        // Field 10 = Direct Normal Irradiance (Wh/m²)
-        let dni = parse_optional_field(fields[10], 0.0); // Already W/m² in modern EPW
-
-        // Field 11 = Diffuse Horizontal Irradiance (Wh/m²)
-        let dhi = parse_optional_field(fields[11], 0.0);
-
-        // Field 12 = Global Horizontal Irradiance (Wh/m²)
-        let ghi = parse_optional_field(fields[12], 0.0);
-
-        // Parse wind speed (field 21 in 0-indexed array)
+        let ghi = parse_optional_field(fields[13], 0.0);
+        let dni = parse_optional_field(fields[14], 0.0);
+        let dhi = parse_optional_field(fields[15], 0.0);
         let wind_speed = parse_field(fields[21], "wind speed")?;
-
-        // Parse horizontal infrared radiation (field 15 in 0-indexed array)
-        // This is the "Horizontal Infrared Radiation Intensity from Sky" in W/m²
-        // Used for calculating sky temperature for longwave radiation exchange
-        let horizontal_infrared = parse_optional_field(fields[15], 0.0);
+        let horizontal_infrared = parse_optional_field(fields[12], 0.0);
 
         // Parse optional fields (may be missing in some EPW files)
         // Ground temperature (field 23 in 0-indexed array, if available)
@@ -796,11 +803,12 @@ mod tests {
         let comments1 = "COMMENTS 1,Generated by Fluxion tests";
         let comments2 = "COMMENTS 2,Test data";
 
-        // Create 3 sample data hours
+        // Issue #829: rewritten to match canonical EPW v3 column layout
+        // (col 7 = dry bulb, col 14 = GHI, col 15 = DNI, col 16 = DHI, etc.)
         let data_lines = [
-            "1991,1,1,1,0,0,99,0.0,50,1,0,0,0,0,0,0,0,0,0,0,0,3.5,180,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
-            "1991,1,1,2,0,0,99,-2.0,45,1,0,0,0,0,0,0,0,0,0,0,0,3.2,170,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0",
-            "1991,7,15,12,0,0,99,32.0,20,1,800,100,900,0,0,0,0,0,0,0,0,2.5,200,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0"
+            "1991,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,0.0,-5.0,50,101325,0,0,300,0,0,0,0,0,0,0,0,3.5,180,0,0,0,0,0,0,0,0,0,0,0,0",
+            "1991,1,1,2,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-2.0,-7.0,45,101325,0,0,300,0,0,0,0,0,0,0,0,3.2,180,0,0,0,0,0,0,0,0,0,0,0,0",
+            "1991,7,15,12,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,32.0,12.0,20,101325,0,0,400,900,800,100,0,0,0,0,0,2.5,180,0,0,0,0,0,0,0,0,0,0,0,0"
         ];
 
         format!(
@@ -836,7 +844,7 @@ mod tests {
 
     #[test]
     fn test_parse_data_line() {
-        let line = "1991,1,1,1,0,0,99,0.0,50,1,800,100,900,0,0,0,0,0,0,0,0,3.5,180,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0";
+        let line = "1991,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,0.0,-5.0,50,101325,0,0,300,900,800,100,0,0,0,0,0,3.5,180,0,0,0,0,0,0,0,0,0,0,0,0";
 
         let result = EpwWeatherSource::parse_data_line(line, 0).unwrap();
 
@@ -1072,7 +1080,7 @@ mod tests {
     fn test_parse_epw_v3() {
         // EPW v3/AMY/IWEC parsers use fields[6] for temperature, fields[8] for humidity
         // Must have at least 35 fields to be parsed
-        let content = "LOCATION,Denver,CO,USA,TMY3\nDATA PERIODS,1,1,Data,Monday,1,1,12,31,15\n1991,1,1,1,0,0,0,0.0,50,1,800,100,900,0,0,0,0,0,0,0,0,3.5,180,9999,9999,0,0,0,0,0,0,0,0,0,0,0,0\n";
+        let content = "LOCATION,Denver,CO,USA,TMY3\nDATA PERIODS,1,1,Data,Monday,1,1,12,31,15\n1991,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,0.0,-5.0,50,101325,0,0,300,900,800,100,0,0,0,0,0,3.5,180,0,0,0,0,0,0,0,0,0,0,0,0\n";
         let cursor = Cursor::new(content);
         let records = EpwWeatherSource::parse_epw_v3(cursor).unwrap();
         assert_eq!(records.len(), 1);
@@ -1105,7 +1113,7 @@ mod tests {
 
     #[test]
     fn test_parse_data_line_negative_temp() {
-        let line = "1991,1,1,1,0,0,99,-25.0,80,1,0,0,0,0,0,0,0,0,0,0,0,0,0,5.0,100,9999,9999,0,0,0,0,0,0,0,0,0,0";
+        let line = "1991,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,-25.0,-30.0,80,101325,0,0,300,0,0,0,0,0,0,0,0,5.0,180,0,0,0,0,0,0,0,0,0,0,0,0";
         let result = EpwWeatherSource::parse_data_line(line, 0).unwrap();
         assert_eq!(result.dry_bulb_temp, -25.0);
         assert_eq!(result.humidity, 80.0);
@@ -1113,7 +1121,7 @@ mod tests {
 
     #[test]
     fn test_parse_data_line_high_solar() {
-        let line = "1991,7,15,12,0,0,99,35.0,20,1,1000,150,1150,0,0,0,0,0,0,0,0,0,0,1.0,300,9999,9999,0,0,0,0,0,0,0,0,0,0";
+        let line = "1991,7,15,12,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,35.0,12.0,20,101325,0,0,400,1150,1000,150,0,0,0,0,0,1.0,180,0,0,0,0,0,0,0,0,0,0,0,0";
         let result = EpwWeatherSource::parse_data_line(line, 0).unwrap();
         assert_eq!(result.dni, 1000.0);
         assert_eq!(result.dhi, 150.0);
