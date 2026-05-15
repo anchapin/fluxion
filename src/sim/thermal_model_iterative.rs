@@ -667,6 +667,25 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Combine fractions to avoid multiple intermediate VectorField allocations
         let conv_frac = self.0.convective_fraction;
         let rad_frac = 1.0 - conv_frac;
+        // Internal radiative gains split per ISO 13790 Section C.4 Eq. C.5/C.6:
+        // Eq. C.5 (radiative-to-surface): phi_st = (1 - F_sup) * phi_int_rad
+        //   where F_sup = H_ms / (H_ms + H_is) — fraction to surface node
+        //   st_int_frac = rad_frac * (1 - solar_distribution_to_air) = rad_frac * F_sup
+        //   Note: F_sup is the fraction from internal radiative gains going to surface
+        //   per ISO 13790 C.4 Eq. C.5 (internal radiative → surface node).
+        //
+        // Eq. C.6 (radiative-to-mass): phi_m = F_m * phi_int_rad
+        //   where F_m = H_is / (H_ms + H_is) — fraction to mass/air node
+        //   m_int_frac = rad_frac * solar_distribution_to_air = rad_frac * F_m
+        //   Note: F_m is the fraction from internal radiative gains going to mass node
+        //   per ISO 13790 C.4 Eq. C.6 (internal radiative → mass/air node).
+        //
+        // The naming reflects ISO 13790 Section C.4:
+        //   st_int_frac = fraction of internal radiative gains to SURFACE node (phi_st)
+        //   m_int_frac  = fraction of internal radiative gains to MASS node (phi_m)
+        //
+        // st_sol_frac: Solar gains to surface (fraction of solar that goes to surface)
+        // m_sol_frac: Solar gains to mass (fraction of solar that goes to mass)
         let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
         let m_int_frac = rad_frac * self.0.solar_distribution_to_air;
         let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction;
