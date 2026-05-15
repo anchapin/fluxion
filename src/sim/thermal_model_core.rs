@@ -1095,22 +1095,47 @@ impl ThermalModel<VectorField> {
             // calculation from layer resistances is sufficient.
             let h_tr_em_physics = h_tr_em_base;
 
-            // === Issue #821 / Probe A+B: drop floor from lumped 5R1C h_em ===
+            // === Issue #831: ISO 13790 §7.2.2.2 Eq. 64 — series-consistent lumped h_em ===
             //
-            // The floor's heat path to its boundary (ground) is already captured by
-            // `h_tr_floor` (a separate node connected to T_ground in the heat balance).
-            // The legacy code ALSO summed `h_tr_em_floor` (= floor_U × A_floor) into the
-            // lumped `h_tr_em`, which `update_optimization_cache` then partially injects
-            // into `derived_h_ext` as part of `h_tr_em_non_south`. The floor's
-            // conductance therefore appeared twice — once correctly as ground coupling,
-            // and once spuriously as part of the air↔outdoor parallel path. For
-            // Case 600 this added ~9 W/K of bogus loss and depressed peak free-float
-            // air temperature by ~3 °C.
+            // After PR #821 corrected `h_ms` to the ISO 13790 lumped form
+            // `h_ms = 9.1 × A_m` and PR #830 fixed the EPW parser, the legacy
+            // half-insulation `h_em_physics + h_em_roof` value (~100 W/K for
+            // Case 600) is inconsistent with the ISO 13790 5R1C topology:
+            // `h_em` and `h_ms` in series must equal the overall opaque
+            // transmittance `h_op = Σ U·A`. The half-insulation formulation
+            // produces ~85 W/K for the wall element while `U_wall × A_wall`
+            // is ~39 W/K — a 2.2× over-coupling that lets the mass node dump
+            // its accumulated solar back to the outdoor sink too quickly.
             //
-            // The 9R4C per-surface vectors below still receive the per-surface floor
-            // value, since that solver topology has a dedicated floor mass node and
-            // does not consume the lumped `h_tr_em`.
-            let h_tr_em_total = h_tr_em_physics + h_tr_em_roof;
+            // ISO 13790:2008 Eq. 64 specifies:
+            //
+            //     h_em = 1 / (1/h_op  -  1/h_ms)
+            //
+            // where h_op is summed over opaque mass-bearing elements
+            // (walls + roof; floor is excluded — it has its own ground node
+            // via h_tr_floor, and including it here double-counts as in
+            // PR #821's Probe A+B).
+            //
+            // The opaque-solar-to-mass term `phi_m += A_op × U × α × I × R_ext`
+            // (computed in `calculate_zone_solar_gain` and stored in
+            // `opaque_solar_gains`) is mathematically equivalent to the
+            // sol-air boost `h_em × (α × I / h_ext)` when h_em equals U × A,
+            // so this change makes the two paths self-consistent. No change
+            // to phi_m is needed.
+            //
+            // The per-surface 9R4C vectors below continue to use the
+            // half-insulation values because the 9R4C topology has a
+            // dedicated mass node per surface and does NOT consume the
+            // lumped `h_tr_em`.
+            let h_op_walls_roof = spec.construction.wall.u_value(None, None) * opaque_area
+                + spec.construction.roof.u_value(None, None) * zone_floor_area;
+
+            let h_tr_em_total = if h_op_walls_roof > 0.0 && h_op_walls_roof < h_ms_iso_13790 {
+                1.0 / (1.0 / h_op_walls_roof - 1.0 / h_ms_iso_13790)
+            } else {
+                // Fallback: degenerate construction — use legacy half-insulation total.
+                h_tr_em_physics + h_tr_em_roof
+            };
 
             // Debug output for all contributions
             h_tr_em_vec.push(h_tr_em_total.max(0.1));
