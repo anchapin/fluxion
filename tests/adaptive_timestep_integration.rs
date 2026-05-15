@@ -2,6 +2,7 @@
 //!
 //! This module contains integration tests for the adaptive timestep feature,
 //! validating accuracy improvements for high-mass buildings (Case 900 series).
+#![allow(deprecated)] // Issue #828: TimeConstantAnalyzer is deprecated; tests retained until full removal.
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
