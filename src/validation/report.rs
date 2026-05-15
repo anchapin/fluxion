@@ -23,7 +23,7 @@ use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
 use crate::validation::statistical::{StatisticalMetrics, ValidationGroup};
 
 /// Types of validation metrics for ASHRAE 140.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetricType {
     /// Annual heating energy consumption (MWh)
     AnnualHeating,
@@ -37,6 +37,56 @@ pub enum MetricType {
     MinFreeFloat,
     /// Maximum free-floating temperature (°C)
     MaxFreeFloat,
+    /// Incident solar radiation per surface orientation (kWh/m²).
+    /// Per ASHRAE 140-2023 Section 8.2.3, outputs annual and peak solar per orientation.
+    IncidentSolar {
+        /// Surface identifier (e.g., "roof", "N", "S", "E", "W")
+        surface_id: String,
+        /// Surface orientation
+        orientation: crate::validation::ashrae_140_cases::Orientation,
+    },
+}
+
+impl PartialOrd for MetricType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetricType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Explicit ordering: base variants alphabetically, IncidentSolar last
+        match (self, other) {
+            (MetricType::AnnualHeating, MetricType::AnnualHeating) => std::cmp::Ordering::Equal,
+            (MetricType::AnnualHeating, _) => std::cmp::Ordering::Less,
+            (_, MetricType::AnnualHeating) => std::cmp::Ordering::Greater,
+            (MetricType::AnnualCooling, MetricType::AnnualCooling) => std::cmp::Ordering::Equal,
+            (MetricType::AnnualCooling, _) => std::cmp::Ordering::Less,
+            (_, MetricType::AnnualCooling) => std::cmp::Ordering::Greater,
+            (MetricType::PeakHeating, MetricType::PeakHeating) => std::cmp::Ordering::Equal,
+            (MetricType::PeakHeating, _) => std::cmp::Ordering::Less,
+            (_, MetricType::PeakHeating) => std::cmp::Ordering::Greater,
+            (MetricType::PeakCooling, MetricType::PeakCooling) => std::cmp::Ordering::Equal,
+            (MetricType::PeakCooling, _) => std::cmp::Ordering::Less,
+            (_, MetricType::PeakCooling) => std::cmp::Ordering::Greater,
+            (MetricType::MinFreeFloat, MetricType::MinFreeFloat) => std::cmp::Ordering::Equal,
+            (MetricType::MinFreeFloat, _) => std::cmp::Ordering::Less,
+            (_, MetricType::MinFreeFloat) => std::cmp::Ordering::Greater,
+            (MetricType::MaxFreeFloat, MetricType::MaxFreeFloat) => std::cmp::Ordering::Equal,
+            (MetricType::MaxFreeFloat, _) => std::cmp::Ordering::Less,
+            (_, MetricType::MaxFreeFloat) => std::cmp::Ordering::Greater,
+            (
+                MetricType::IncidentSolar {
+                    surface_id: a_sid,
+                    orientation: a_ori,
+                },
+                MetricType::IncidentSolar {
+                    surface_id: b_sid,
+                    orientation: b_ori,
+                },
+            ) => a_sid.cmp(b_sid).then_with(|| a_ori.cmp(b_ori)),
+        }
+    }
 }
 
 impl MetricType {
@@ -49,6 +99,7 @@ impl MetricType {
             MetricType::PeakCooling => "Peak Cooling Load (kW)",
             MetricType::MinFreeFloat => "Minimum Free-Floating Temperature (°C)",
             MetricType::MaxFreeFloat => "Maximum Free-Floating Temperature (°C)",
+            MetricType::IncidentSolar { .. } => "Incident Solar Radiation (kWh/m²)",
         }
     }
 
@@ -58,6 +109,7 @@ impl MetricType {
             MetricType::AnnualHeating | MetricType::AnnualCooling => "MWh",
             MetricType::PeakHeating | MetricType::PeakCooling => "kW",
             MetricType::MinFreeFloat | MetricType::MaxFreeFloat => "°C",
+            MetricType::IncidentSolar { .. } => "kWh/m²",
         }
     }
 }
@@ -267,6 +319,7 @@ impl BenchmarkData {
                     None
                 }
             }
+            MetricType::IncidentSolar { .. } => None,
         }
     }
 
@@ -732,7 +785,7 @@ impl BenchmarkReport {
                 let mut temp_report = BenchmarkReport::new();
                 temp_report.add_result_with_multi(
                     &result.case_id,
-                    result.metric,
+                    result.metric.clone(),
                     result.fluxion_value,
                     db,
                 );
@@ -1515,14 +1568,14 @@ impl BenchmarkReport {
             .results
             .iter()
             .filter(|r| r.case_id == "960")
-            .map(|r| r.metric)
+            .map(|r| r.metric.clone())
             .collect();
 
         let case_970_metrics: std::collections::HashSet<_> = self
             .results
             .iter()
             .filter(|r| r.case_id == "970")
-            .map(|r| r.metric)
+            .map(|r| r.metric.clone())
             .collect();
 
         let common_metrics: Vec<_> = case_960_metrics.intersection(&case_970_metrics).collect();
@@ -2064,7 +2117,7 @@ impl ValidationSuite {
         let mut summary: HashMap<MetricType, (usize, usize, usize)> = HashMap::new();
 
         for result in &self.results {
-            let entry = summary.entry(result.metric).or_insert((0, 0, 0));
+            let entry = summary.entry(result.metric.clone()).or_insert((0, 0, 0));
 
             if result.passed() {
                 entry.0 += 1;
@@ -2166,6 +2219,10 @@ impl ValidationSuite {
                         {
                             benchmark.max_free_float_max = result.ref_max;
                         }
+                    }
+                    MetricType::IncidentSolar { .. } => {
+                        // Incident solar metrics are not aggregated into benchmark data
+                        // They are per-orientation and handled separately
                     }
                 }
             }

@@ -953,7 +953,7 @@ pub enum ConstructionType {
 }
 
 /// Orientation of a surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Orientation {
     North,
     East,

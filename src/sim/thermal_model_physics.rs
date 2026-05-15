@@ -40,14 +40,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ///
     /// # Returns
     /// A tensor representing the HVAC power (heating is positive, cooling is negative).
-    fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        // Apply deadband tolerance to setpoints (consistent with IdealHVACController::calculate_power)
+    fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, _sensitivity: &T) -> T {
+        // Ventilation-based HVAC demand: Q = ρ × V̇ × cp × ΔT
+        // where V̇ = zone_volume × ACH / 3600
+        //
+        // This replaces the sensitivity-based formula: power = ΔT / sensitivity
+        // which was physically incorrect superposition, not a real energy balance.
         let heating_threshold = self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
         let cooling_threshold = self.0.cooling_setpoint + self.0.hvac_controller.deadband_tolerance;
 
         let t_vec = t_i_free.as_ref();
-        let sens_vec = sensitivity.as_ref();
+        let zone_vol_vec = self.0.zone_volume.as_ref();
+        let inf_rate_vec = self.0.infiltration_rate.as_ref();
         let enabled_vec = self.0.hvac_enabled.as_ref();
+
+        let rho = 1.2;
+        let cp = 1005.0;
+        let supply_heating_temp = 40.0;
+        let supply_cooling_temp = 13.0;
 
         let mut demand_vec = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
@@ -59,7 +69,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             let t = t_vec[i];
-            // Use free_float temp for mode determination (consistent with controller)
+            let zone_vol = zone_vol_vec[i];
+            let ach = inf_rate_vec[i];
+            let airflow_m3s = zone_vol * ach / 3600.0;
+            let mass_flow = airflow_m3s * rho;
+
             let mode = if t < heating_threshold {
                 HVACMode::Heating
             } else if t > cooling_threshold {
@@ -70,17 +84,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             let power = match mode {
                 HVACMode::Heating => {
-                    // Temperature deficit relative to target at top of deadband
-                    let target_temp =
-                        self.0.heating_setpoint + self.0.hvac_controller.deadband_tolerance;
-                    let temp_deficit = target_temp - t;
-                    (temp_deficit / sens_vec[i]).clamp(0.0, self.0.hvac_heating_capacity)
+                    if t < self.0.heating_setpoint {
+                        let delta_t = supply_heating_temp - t;
+                        (mass_flow * cp * delta_t).min(self.0.hvac_heating_capacity)
+                    } else {
+                        0.0
+                    }
                 }
                 HVACMode::Cooling => {
-                    let target_temp =
-                        self.0.cooling_setpoint - self.0.hvac_controller.deadband_tolerance;
-                    let temp_excess = t - target_temp;
-                    (-temp_excess / sens_vec[i]).clamp(-self.0.hvac_cooling_capacity, 0.0)
+                    if t > self.0.cooling_setpoint {
+                        let delta_t = t - supply_cooling_temp;
+                        -(mass_flow * cp * delta_t).min(self.0.hvac_cooling_capacity)
+                    } else {
+                        0.0
+                    }
                 }
                 HVACMode::Off => 0.0,
             };
@@ -1132,17 +1149,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
             };
 
-            // Issue #533: For 600-series cases, ideal_loads produces ~217W (too low for peak).
-            // Use hvac_power_demand (sensitivity-based) for peak tracking instead.
-            // hvac_power_demand gives ~6.6kW raw, 0.5 calibration brings to ~3.3kW (within 2.8-3.8kW ref).
-            let hvac_power_for_peak =
-                if self.0.case_id.starts_with("6") && self.0.case_id.len() == 3 {
-                    self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
-                } else {
-                    hvac_output_raw.clone()
-                };
+            // Use hvac_output_raw for peak tracking (ventilation-based IdealLoadsSystem
+            // produces correct peak demands; the 600-series calibration workaround is no longer needed)
+            let hvac_power_for_peak = hvac_output_raw.clone();
 
-            // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
+            // Track peak heating/cooling based on actual HVAC demand
             if self.0.hvac_equipment.is_none() {
                 // Note: hvac_power_for_peak is positive for heating, negative for cooling
                 // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
@@ -1176,29 +1187,56 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Therefore, NO multiplicative correction factor should be applied
 
         // 4. Update Temperatures using Energy Balance
-        // The superposition formula t_i_act = t_i_free + sensitivity * hvac_output
-        // only gives ~2.5°C rise from 420W demand, not the ~22°C needed for setpoint.
         //
-        // Physics-based approach: Solve energy balance for actual zone air temperature
-        // phi_ia = hvac_demand + h_tr_is*(t_i - t_s) + h_tr_iz*(t_i - t_adj)
+        // The old approach used t_i_act = t_i_free + sensitivity * hvac_output,
+        // where sensitivity ≈ 1/(h_tr_is + h_ve). This incorrectly combines surface
+        // conductance (h_tr_is, ~1250 W/K) with infiltration ventilation (h_ve, ~22 W/K),
+        // giving only ~0.4°C rise from 540W demand — physically wrong.
         //
-        // For 600-series (low-mass): t_i_free responds quickly, use sensitivity-based HVAC effect
-        // For 900-series (high-mass): t_i_free is heavily buffered, use ideal_loads HVAC effect
-        // ALWAYS use sensitivity-based HVAC calculation for temperature update
-        // This properly accounts for all heat gains/losses and thermal mass buffering effect
+        // Physics-based approach:
+        // Zone air energy balance: C_zone_air × dT/dt = Q_hvac + Q_infiltration
+        // where:
+        //   C_zone_air = zone_volume × ρ × cp [J/K]
+        //   Q_infiltration = h_ve × (T_outdoor - T_zone) [W]
+        //   h_ve = ventilation conductance [W/K]
         //
-        // Issue #738: Check free_float BEFORE calling hvac_power_demand to ensure zero output
+        // For explicit Euler (one timestep):
+        //   ΔT = (Q_hvac + h_ve × (T_outdoor - T_zone_old)) × dt / C_zone_air
+        //
+        // This is consistent with how t_i_free is calculated (without HVAC but with
+        // infiltration already included in the heat balance via h_ext * outdoor_temp).
+        let rho = 1.2;
+        let cp = 1005.0;
+        let zone_vol_vec = self.0.zone_volume.as_ref();
+        let h_ve_vec = self.0.h_ve.as_ref();
+
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
+            hvac_output_raw.clone()
         };
 
-        let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
         let mut t_i_act = t_i_free.clone();
-        t_i_act.add_assign(&product);
+        for i in 0..self.0.num_zones {
+            let hvac = hvac_for_temp_calc.as_ref()[i];
+            let zone_vol = zone_vol_vec[i];
+            let h_ve = h_ve_vec[i];
+            let c_zone_air = zone_vol * rho * cp; // J/K
 
-        // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
+            if c_zone_air > 0.0 {
+                // Infiltration heat transfer: Q_ve = h_ve × (T_outdoor - T_zone)
+                // When T_outdoor < T_zone, this is a heat loss (negative contribution)
+                let q_infiltration = h_ve * (outdoor_temp - t_i_free.as_ref()[i]);
+
+                // Total heat flow to zone air
+                let total_heat = hvac + q_infiltration;
+
+                let delta_t = total_heat * dt / c_zone_air;
+                t_i_act.as_mut()[i] += delta_t;
+            }
+        }
+
+        // Use hvac_for_temp_calc (which equals hvac_output_raw) for energy
         // This ensures energy calculation is consistent with temperature physics
         let mut heating_sum = 0.0;
         let mut cooling_sum = 0.0;
