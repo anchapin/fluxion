@@ -197,3 +197,37 @@ For Cases 600FF / 650FF the routing reduces to:
 The 600/650FF FF helper now also asserts at least one daytime row (10:00–16:00)
 has non-zero `phi_m`, so a future regression that re-zeros the field would
 fail-fast inside the test loop instead of producing a silently-empty CSV.
+
+
+## Issue #827 — hourly FF temperature profile via ValidationResult API (post #825)
+
+The `pr821-diag` cargo feature writes `target/diag/pr821_<case>.csv` for offline
+analysis. PR for #827 adds a programmatic counterpart on the public Rust API
+so downstream consumers (validation reports, peer-review tooling, blind-validation
+harnesses) can read the same hourly zone-0 temperature trace **without** the
+feature flag and **without** touching the filesystem.
+
+### Surface
+
+- `FreeFloatValidationResult.hourly_temperatures: Option<Vec<f64>>` —
+  populated only for FF cases (case_id ending in `FF`). For non-FF cases the
+  field stays `None` and no `Vec` is allocated.
+- `CaseResults.hourly_temperatures: Option<Vec<f64>>` — same semantics on
+  the larger validator-result struct used by `simulate_case` and
+  `simulate_case_with_diagnostics`.
+
+### Cost
+
+| case kind | per-hour vector | allocation per simulate call |
+|-----------|-----------------|------------------------------|
+| FF        | `Some(Vec<f64>)` of length 8760 | one `Vec::with_capacity(8760)` (~70 KB) |
+| non-FF    | `None`                          | zero                                    |
+
+### Regression test
+
+`tests/validation/hourly_ff_profile.rs` (registered as the
+`validation_hourly_ff_profile` target) consumes the in-memory profile and
+asserts on length, min/max consistency, and diurnal-swing presence for
+600FF / 650FF / 900FF, plus the `None` invariant for the non-FF Case 600.
+The test does no filesystem I/O, so it can run in any CI shape regardless
+of the `pr821-diag` cargo feature.
