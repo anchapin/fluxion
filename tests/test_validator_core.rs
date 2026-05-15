@@ -3,6 +3,7 @@
 //! Tests validation status computation, tolerance calculations,
 //! multi-reference enrichment, and edge cases.
 
+use fluxion::validation::ashrae_140_cases::Orientation;
 use fluxion::validation::report::{
     BenchmarkData, BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
 };
