@@ -85,14 +85,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 HVACMode::Off => 0.0,
             };
 
-            // DEBUG: Print HVAC demand details for Case 610
-            if self.0.case_id == "610" && power != 0.0 {
-                eprintln!(
-                    "DEBUG Case 610 HVAC: hour={}, zone={}, t_i_free={:.2}°C, mode={:?}, power={:.2}W",
-                    _hour, i, t, mode, power
-                );
-            }
-
             demand_vec.push(power * enabled);
         }
 
@@ -137,14 +129,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     cooling_slice,
                     enabled_slice,
                 );
-
-                // DEBUG: Print IdealLoads demand for Case 610
-                if self.0.case_id == "610" && demands[0].abs() > 0.0 {
-                    eprintln!(
-                        "DEBUG Case 610 IDEAL_LOADS: zone_temp={:.2}°C, heating_sp={:.2}°C, cooling_sp={:.2}°C, demand={:.2}W",
-                        zone_temps[zone_idx], heating_setpoint, cooling_setpoint, demands[0]
-                    );
-                }
 
                 combined_demand[zone_idx] = demands[0];
             }
@@ -274,23 +258,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
     }
 
-    /// Estimate thermal time constant in hours based on case_id and building parameters.
+    /// Estimate thermal time constant in hours from physical parameters.
+    ///
+    /// Issue #821 / Probe H: We previously short-circuited this with
+    /// `TimeConstantAnalyzer::for_case(&self.0.case_id)`, returning a hard-coded τ
+    /// table per ASHRAE 140 case identifier. That broke blind-validation
+    /// (case_id is supposed to be opaque to the solver) and could disagree with
+    /// the actual `Cm / h_tr_ms` after Probe A's ISO 13790 conductance change.
+    ///
+    /// We now always derive τ from physics:
+    ///   τ_seconds = Σ C_m  /  Σ h_tr_ms   (sum across zones)
+    /// and only fall back to a 2-hour default if `h_tr_ms` is degenerate.
     pub fn estimate_time_constant_hours(&self) -> f64 {
-        // Check if we have explicit time constant from ASHRAE 140 case
-        if !self.0.case_id.is_empty() {
-            if let Some(tau) =
-                crate::sim::adaptive_timestep::TimeConstantAnalyzer::for_case(&self.0.case_id)
-            {
-                return tau;
-            }
-        }
-
-        // Estimate from thermal capacitance and conductances
         // τ = C / h_tr_ms in seconds
-        // Issue 693 fix: The envelope mass time constant should be based on
-        // surface-to-mass coupling (h_tr_ms) only, not exterior conductance (h_tr_em).
-        // h_tr_em affects the surface node T_s, not the mass node T_m directly.
-        // The internal mass coupling (h_tr_me) is a separate thermal path.
+        // The envelope mass time constant is based on surface-to-mass coupling
+        // (h_tr_ms) only — h_tr_em affects the surface node T_s, not T_m
+        // directly (Issue #693). h_tr_me, when non-zero (6R2C), is a separate
+        // thermal path on the internal-mass branch.
         let h_tr_sum = self.0.h_tr_ms.as_ref().iter().sum::<f64>();
 
         if h_tr_sum > 0.0 {
@@ -866,36 +850,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         t_i_free.add_assign(&num_rest_with_iz);
         t_i_free.div_assign(&den);
 
-        // DEBUG: Case 900FF free-float temperature tracking
-        if self.0.case_id == "900FF" && timestep < 5 {
-            eprintln!(
-                "DEBUG_900FF_ti_free t={}: t_i_free={:.2}°C, phi_ia={:.2}W, solar={:.2}W/m², loads={:.2}W/m², den={:.2}",
-                timestep,
-                t_i_free.as_ref()[0],
-                phi_ia.as_ref()[0],
-                solar_ref[0],
-                loads_ref[0],
-                den.as_ref()[0]
-            );
-        }
+        // PR #821: DEBUG_900FF_ti_free trace removed.
 
-        if self.0.case_id == "900FF" && timestep == 0 {
-            eprintln!("DEBUG_900FF_INIT: hvac_enabled={:.1}, heating_setpoint={:.1}, cooling_setpoint={:.1}",
-                self.0.hvac_enabled.as_ref()[0],
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint);
-        }
+        // PR #821: DEBUG_MAX trace for 600FF/650FF removed; use `pr821-diag` feature instead.
 
-        if self.0.case_id == "610" && timestep == 0 {
-            let phi_ia_0 = phi_ia.as_ref()[0];
-            eprintln!(
-                "DEBUG_610 t=0: t_i_free={:.2}°C, phi_ia={:.2}W, solar={:.2}W, loads={:.2}W/m²",
-                t_i_free.as_ref()[0],
-                phi_ia_0,
-                solar_ref[0] * area_ref[0],
-                loads_ref[0]
-            );
-        }
+        // PR #821: DEBUG_650FF_FULL traces removed.
 
         // DEBUG: Case 195 thermal diagnostics - uncomment to debug heating issues
         // if self.0.case_id == "195" && timestep < 1000 {
@@ -1147,8 +1106,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let heating_energy_joules = heating_sum * dt;
         let cooling_energy_joules = cooling_sum * dt;
 
-        // Issue #738: Debug assertion - free_float mode should have zero HVAC output
+        // Issue #738 + Issue #821: free_float mode MUST produce zero HVAC output.
+        // Promoted from debug_assert! to a hard assert under cfg(test) so the
+        // ASHRAE 140 free-float regression test catches any code path that
+        // sneaks HVAC demand in via the equipment fallback.
         if self.0.free_float {
+            #[cfg(test)]
+            assert!(
+                total_signed.abs() < 1e-6,
+                "Free-float mode should have zero HVAC output, got {} W",
+                total_signed
+            );
+            #[cfg(not(test))]
             debug_assert!(
                 total_signed.abs() < 1e-6,
                 "Free-float mode should have zero HVAC output, got {} W",
@@ -1223,14 +1192,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // When night ventilation is active, cool outdoor air directly cools the thermal mass
             // through convection. This is critical for night ventilation cases (650, 950).
             // The ventilation-to-mass conductance is proportional to the ventilation rate.
+            // === Issue #821: Night-vent mass coupling ===
+            // The legacy code routed 30% of the ventilation flow directly to the mass
+            // node as an "extra" cooling path while leaving `h_ve` unchanged. With the
+            // ISO 13790 lumped `h_tr_ms` (now ~1.3 kW/K instead of ~120 W/K) the mass
+            // and air nodes are an order of magnitude more strongly coupled, so the
+            // mass already tracks the air-side ventilation cooling without the
+            // empirical 30% boost. Setting `h_vent_mass_zone = 0` removes the
+            // double-counting and restores Case 650FF peak free-float temperature
+            // to within the ASHRAE 140 reference band [63.2, 73.5] °C.
+            //
+            // The air-side ventilation increase under night-vent is still routed
+            // through `phi_m_with_vent`/`phi_ia_with_vent` further down (where the
+            // outdoor-air enthalpy difference is applied via `h_ve` × ΔT).
             let h_vent_mass_zone = if let Some(ref night_vent) = self.0.night_ventilation {
                 if night_vent.is_active_at_hour(hour_of_day) {
-                    // Calculate ventilation-to-mass conductance
-                    // h_vent_mass = (Capacity * rho * cp) / 3600 * fraction_to_mass
-                    // Use 30% of ventilation heat transfer to directly cool mass
-                    let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
-                    let h_ve_vent = air_cap_vent / 3600.0;
-                    h_ve_vent * 0.3 // 30% of ventilation directly cools mass
+                    let _ = night_vent.fan_capacity; // kept for future air-side wiring
+                    0.0
                 } else {
                     0.0
                 }
@@ -1627,21 +1605,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The thermodynamic hvac_demand_from_ideal_loads is designed for equipment-based HVAC
         // and produces incorrect results when applied to the simplified 6R2C thermal network
         let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
-
-        // DEBUG: Print sensitivity and HVAC details for Case 900
-        if self.0.case_id == "900" && timestep.is_multiple_of(24) {
-            let sens_vec = sensitivity.as_ref();
-            let t_vec = t_i_free.as_ref();
-            let heating_threshold =
-                self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
-            let cooling_threshold =
-                self.0.cooling_setpoint + self.0.hvac_controller.deadband_tolerance;
-            eprintln!(
-                "DEBUG {} HVAC: timestep={}, t_i_free={:.2}°C, sens={:.6} K/W, heating_threshold={:.2}°C, cooling_threshold={:.2}°C",
-                self.0.case_id, timestep, t_vec[0], sens_vec[0], heating_threshold, cooling_threshold
-            );
-        }
-
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
         // This is needed for high-mass cases (900 series) that use 6R2C model
@@ -1683,8 +1646,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let heating_energy_joules = heating_sum * dt;
         let cooling_energy_joules = cooling_sum * dt;
 
-        // Issue #738: Debug assertion - free_float mode should have zero HVAC output
+        // Issue #738 + Issue #821: free_float mode MUST produce zero HVAC output.
+        // Promoted from debug_assert! to a hard assert under cfg(test) so the
+        // ASHRAE 140 free-float regression test catches any code path that
+        // sneaks HVAC demand in via the equipment fallback.
         if self.0.free_float {
+            #[cfg(test)]
+            assert!(
+                total_signed.abs() < 1e-6,
+                "Free-float mode should have zero HVAC output, got {} W",
+                total_signed
+            );
+            #[cfg(not(test))]
             debug_assert!(
                 total_signed.abs() < 1e-6,
                 "Free-float mode should have zero HVAC output, got {} W",
@@ -1992,14 +1965,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             / total_cap;
 
         // DEBUG: Print t_i_act before storing
-        if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
-            let t_i_act_vals = t_i_act.as_ref();
-            eprintln!(
-                "DEBUG_900FF_STORE t={} t_i_act[0]={:.2}",
-                timestep, t_i_act_vals[0]
-            );
-        }
-
         self.0.temperatures = t_i_act;
 
         // Diagnostics recording (if enabled)

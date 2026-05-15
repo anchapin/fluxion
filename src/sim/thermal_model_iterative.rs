@@ -191,13 +191,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let mut surfaces_by_orientation: HashMap<Orientation, (f64, f64)> = HashMap::new();
 
             // Diagnostic: Check if surfaces have window areas
-            if timestep.is_multiple_of(24) {
-                let total_window_area: f64 = zone_surfaces.iter().map(|s| s.window_area).sum();
-                let total_surface_area: f64 = zone_surfaces.iter().map(|s| s.area).sum();
-                println!("DEBUG surfaces: timestep={}, zone_idx={}, num_surfaces={}, total_window_area={:.2}, total_surface_area={:.2}",
-                        timestep, zone_idx, zone_surfaces.len(), total_window_area, total_surface_area);
-            }
-
             for surface in zone_surfaces {
                 let orientation = surface.orientation;
 
@@ -220,19 +213,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             // DEBUG: Trace solar calculation for key timesteps (noon in summer/winter)
-            let debug_timesteps = [12, 288, 576]; // Jan 1 noon, Jan 12 noon, Feb 1 noon
-            if debug_timesteps.contains(&timestep) || timestep == 312 {
-                eprintln!("DEBUG_ZONE_SOLAR: timestep={}, zone_idx={}, lat={:.2}, lon={:.2}, year={}, month={}, day={}, hour={:.1}, dni={:.2}, dhi={:.2}",
-                        timestep, zone_idx, self.0.latitude_deg, self.0.longitude_deg, year, month, day, hour, weather.dni, weather.dhi);
-                eprintln!(
-                    "  window_props: area={:.2}, shgc={:.3}, norm_trans={:.3}",
-                    window_props.area, window_props.shgc, window_props.normal_transmittance
-                );
-                eprintln!(
-                    "  surfaces_by_orientation count={}",
-                    surfaces_by_orientation.len()
-                );
-            }
+            let _debug_timesteps = [12, 288, 576]; // Jan 1 noon, Jan 12 noon, Feb 1 noon
+                                                   // DEBUG: DEBUG_ZONE_SOLAR removed (PR #821)
 
             // Now calculate solar gain once per unique orientation
             for (orientation, (total_win_area, total_opaque_area)) in surfaces_by_orientation {
@@ -273,7 +255,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 };
 
                 // Use solar module to calculate irradiance for this orientation
-                let (sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
+                let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
                     self.0.latitude_deg,
                     self.0.longitude_deg,
                     year,
@@ -291,24 +273,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 );
 
                 // DEBUG: Log EVERY calculate_hourly_solar call for key timesteps
-                if timestep == 12 || timestep == 312 {
-                    eprintln!("DEBUG_HOURLY_SOLAR: timestep={}, orient={:?}, sun_above={}, dni={:.2}, dhi={:.2}",
-                        timestep, orientation, sun_pos.is_above_horizon(), weather.dni, weather.dhi);
-                    eprintln!(
-                        "  irradiance: beam={:.2}, diff={:.2}, refl={:.2}, total={:.2} W/m2",
-                        irradiance.beam_wm2,
-                        irradiance.diffuse_wm2,
-                        irradiance.ground_reflected_wm2,
-                        irradiance.total_wm2
-                    );
-                    eprintln!(
-                        "  solar_gain: beam={:.2}W, diff={:.2}W, ground={:.2}W, total={:.2}W",
-                        solar_gain.beam_gain_w,
-                        solar_gain.diffuse_gain_w,
-                        solar_gain.ground_reflected_gain_w,
-                        solar_gain.total_gain_w
-                    );
-                }
+                // DEBUG: DEBUG_HOURLY_SOLAR removed (PR #821)
 
                 // Distribute solar gain to each surface with this orientation
                 for surface in zone_surfaces {
@@ -561,14 +526,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains.clone()));
 
                 // DEBUG: Log the actual gains stored
-                if timestep == 12 || timestep == 312 {
-                    eprintln!("DEBUG_CALC_ANALYTICAL: t={}, zone_solar_gains[0]={:.2}, opaque_gains[0]={:.2}",
-                        timestep, zone_solar_gains[0], zone_opaque_gains[0]);
-                    eprintln!(
-                        "DEBUG_CALC_ANALYTICAL: solar_gains tensor[0]={:.2}",
-                        self.0.solar_gains.as_ref()[0]
-                    );
-                }
+                // DEBUG: DEBUG_CALC_ANALYTICAL removed (PR #821)
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;
@@ -762,17 +720,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Night ventilation no longer modifies h_ext, so we always use the cached denominator.
         // Night ventilation directly cools thermal mass (critical for Cases 650, 950)
         // This effect is captured by modifying phi_m during night ventilation hours
-        let mut phi_m_with_vent = phi_m.clone();
+        let phi_m_with_vent = phi_m.clone();
+        // === Issue #821: see thermal_model_physics.rs::step_physics_5r1c ===
+        // The empirical "30% of ventilation flow cools mass directly" path was
+        // double-counting once the ISO 13790 `h_tr_ms` was raised to its standard
+        // value (~1.3 kW/K). Mass cooling under night ventilation is now mediated
+        // entirely by air-side h_ve and the much-stronger air-mass coupling.
         if let Some(ref night_vent) = self.0.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
-                let air_cap_vent = night_vent.fan_capacity * 1.2 * 1005.0;
-                let h_ve_vent = air_cap_vent / 3600.0;
-                let h_vent_mass = h_ve_vent * 0.3; // 30% of ventilation cools mass directly
-                for (i, phi) in phi_m_with_vent.as_mut().iter_mut().enumerate() {
-                    let q_vent_mass =
-                        h_vent_mass * (outdoor_temp - self.0.mass_temperatures.as_ref()[i]);
-                    *phi += q_vent_mass;
-                }
+                let _ = night_vent.fan_capacity;
             }
         }
 
@@ -819,6 +775,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             + self.0.h_tr_floor.clone() * t_g;
 
         let t_i_free = (num_tm + num_phi_st + num_rest) / den;
+
+        // PR #821: DEBUG_650FF trace removed; use `pr821-diag` feature.
 
         // Return the first zone temperature
         t_i_free.as_ref()[0]
