@@ -915,6 +915,9 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         }
     }
 
@@ -1767,6 +1770,9 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         }
     }
 
@@ -1985,6 +1991,9 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         }
     }
 }
@@ -2009,6 +2018,10 @@ pub struct CaseResults {
     /// cases. Allocated once per FF case (~70 KB), so non-FF cases pay no
     /// allocation cost.
     pub hourly_temperatures: Option<Vec<f64>>,
+    /// Issue #761: Peak heating timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
+    pub peak_heating_timestamp: Option<(u32, u32, u32)>,
+    /// Issue #761: Peak cooling timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
+    pub peak_cooling_timestamp: Option<(u32, u32, u32)>,
 }
 
 /// Diagnostic data collected during case simulation.
@@ -2370,6 +2383,9 @@ impl ASHRAE140Validator {
             },
             // Issue #827
             hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         };
 
         (results, diagnostic)

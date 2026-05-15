@@ -407,7 +407,7 @@ impl ValidationReportGenerator {
 
         for result in &case_results {
             // Use benchmark data for reference values if available
-            let (ref_min, ref_max) = match (result.metric, benchmark) {
+            let (ref_min, ref_max) = match (result.metric.clone(), benchmark) {
                 (MetricType::AnnualHeating, Some(b)) => {
                     (b.annual_heating_min, b.annual_heating_max)
                 }
@@ -419,7 +419,7 @@ impl ValidationReportGenerator {
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
 
-            match result.metric {
+            match &result.metric {
                 MetricType::AnnualHeating => {
                     heating_str = format!(
                         "{:.2} MWh (Ref: {:.2}-{:.2})",
@@ -494,13 +494,13 @@ impl ValidationReportGenerator {
 
         for result in &case_results {
             // Use benchmark data for reference values if available
-            let (ref_min, ref_max) = match (result.metric, benchmark) {
+            let (ref_min, ref_max) = match (result.metric.clone(), benchmark) {
                 (MetricType::MinFreeFloat, Some(b)) => (b.min_free_float_min, b.min_free_float_max),
                 (MetricType::MaxFreeFloat, Some(b)) => (b.max_free_float_min, b.max_free_float_max),
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
 
-            match result.metric {
+            match &result.metric {
                 MetricType::MinFreeFloat => {
                     min_str = format!(
                         "{:.2}°C (Ref: {:.2}-{:.2})",
@@ -546,7 +546,7 @@ impl ValidationReportGenerator {
         for result in &report.results {
             if result.failed() {
                 let key = format!("{} - {}", result.case_id, result.metric);
-                let issue = classify_issue(result.case_id.as_str(), result.metric);
+                let issue = classify_issue(result.case_id.as_str(), result.metric.clone());
                 map.insert(key, issue);
             }
         }

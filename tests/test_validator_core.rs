@@ -58,6 +58,15 @@ mod validator_unit_tests {
             MetricType::PeakCooling.display_name(),
             "Peak Cooling Load (kW)"
         );
+        // IncidentSolar per ASHRAE 140-2023 Section 8.2.3
+        assert_eq!(
+            MetricType::IncidentSolar {
+                surface_id: "S".to_string(),
+                orientation: Orientation::South,
+            }
+            .display_name(),
+            "Incident Solar Radiation (kWh/m²)"
+        );
     }
 
     #[test]
@@ -66,6 +75,15 @@ mod validator_unit_tests {
         assert_eq!(MetricType::AnnualCooling.units(), "MWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
         assert_eq!(MetricType::PeakCooling.units(), "kW");
+        // IncidentSolar per ASHRAE 140-2023 Section 8.2.3
+        assert_eq!(
+            MetricType::IncidentSolar {
+                surface_id: "roof".to_string(),
+                orientation: Orientation::Up,
+            }
+            .units(),
+            "kWh/m²"
+        );
     }
 
     // ========================================================================
