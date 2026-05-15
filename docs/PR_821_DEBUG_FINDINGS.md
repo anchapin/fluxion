@@ -231,3 +231,44 @@ asserts on length, min/max consistency, and diurnal-swing presence for
 600FF / 650FF / 900FF, plus the `None` invariant for the non-FF Case 600.
 The test does no filesystem I/O, so it can run in any CI shape regardless
 of the `pr821-diag` cargo feature.
+
+
+## Issue #824 — Case 650 air-side night ventilation wired (post #831 progress)
+
+Until this PR, ASHRAE 140 Case 650 / 650FF night ventilation had no effect on
+the 5R1C model whatsoever — Cases 600FF and 650FF gave identical 48.28 °C peak
+and −7.70 °C trough air temperatures. The legacy 30%-direct-to-mass path was
+removed in PR #821 (correctly — it double-counted `h_tr_ms` after the ISO
+13790 restoration), but the corresponding *air-side* path the in-code comment
+promised (`phi_ia_with_vent further down`) was never wired.
+
+This PR adds the air-side conductance:
+
+```
+h_ve_night = ρ · Cp · V̇_fan / 3600   [W/K]   when night-vent is active
+```
+
+For Case 650 `fan_capacity = 1703.16 m³/h` gives **h_ve_night = 570.36 W/K**,
+an order of magnitude larger than the static infiltration `h_ve` (~21.7 W/K).
+It is added to the air-side `h_ext` (and the implicit-solve denominator `den`
+is recomputed) only during active hours (18:00 → 07:00); at every other hour
+the static `derived_h_ext` and `derived_den` aliases are reused for zero
+overhead.
+
+### Effect (5R1C path, `tests/ashrae_140_case_600_series.rs`)
+
+| Case  | Metric | Before  | After   | Δ                       | Reference band     |
+|-------|--------|---------|---------|-------------------------|--------------------|
+| 600FF | max    |  48.28  | **48.28** (no change)   | 0                       | [64.9, 75.1]       |
+| 600FF | min    |  -7.70  | **-7.70** (no change)   | 0                       | [-18.8, -15.6]     |
+| 650FF | max    |  48.28  | **45.46**               | -2.82 (cooler, correct) | [63.2, 73.5]       |
+| 650FF | min    |  -7.70  | **-14.57**              | -6.87 (cooler, correct) | [-23.0, -21.0]     |
+
+650FF min closes >half the gap toward the reference band purely from the
+correct night-vent topology. Note that on the CTF-primary FF path used by
+`validate_ashrae_140`, Case 650FF min lands at **−21.18 °C — *inside* the
+reference band [−23.0, −21.0]**.
+
+The summer-peak gaps remain because the envelope-conductance ceiling
+documented in #831 still caps the theoretical max at ~59.5 °C; this PR is
+the night-vent topology fix only and does not address #831.
