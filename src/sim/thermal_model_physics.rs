@@ -626,6 +626,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_st = T::from(VectorField::new(phi_st_data));
         let phi_m = T::from(VectorField::new(phi_m_data));
 
+        // PR #821 / Issue #825 — record zone-0 heat-balance terms for the
+        // `pr821-diag` hourly CSV. Zero overhead when the feature is disabled
+        // (no fields, no writes). The CSV consumer reads these fields right
+        // after `step_physics` returns. Only zone 0 is captured because the
+        // 600FF / 650FF investigation is single-zone.
+        #[cfg(feature = "pr821-diag")]
+        {
+            self.0.last_phi_ia = phi_ia.as_ref().first().copied().unwrap_or(0.0);
+            self.0.last_phi_st = phi_st.as_ref().first().copied().unwrap_or(0.0);
+            self.0.last_phi_m = phi_m.as_ref().first().copied().unwrap_or(0.0);
+        }
+
         // Use outdoor_temp directly. Solar gains on opaque surfaces are already included in phi_m.
         let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
         for _ in 0..self.0.num_zones {

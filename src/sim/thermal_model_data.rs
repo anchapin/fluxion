@@ -165,6 +165,18 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub cm_internal: Option<T>,
     // Multi-node thermal mass state for 9R4C model
     pub multi_node_thermal_mass: Option<crate::sim::multi_node_thermal::MultiNodeThermalMass>,
+    /// PR #821 / Issue #825 — most recent zone-0 phi_ia (W to air node) computed
+    /// inside `step_physics_5r1c`. Captured for the `pr821-diag` CSV writer so
+    /// the heat-balance terms can be inspected hour by hour. Always 0.0 when
+    /// the `pr821-diag` feature is disabled (and the field does not exist).
+    #[cfg(feature = "pr821-diag")]
+    pub last_phi_ia: f64,
+    /// PR #821 / Issue #825 — most recent zone-0 phi_st (W to surface node).
+    #[cfg(feature = "pr821-diag")]
+    pub last_phi_st: f64,
+    /// PR #821 / Issue #825 — most recent zone-0 phi_m (W to mass node).
+    #[cfg(feature = "pr821-diag")]
+    pub last_phi_m: f64,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -303,6 +315,12 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             cm_floor: self.cm_floor.clone(),
             cm_internal: self.cm_internal.clone(),
             multi_node_thermal_mass: self.multi_node_thermal_mass.clone(),
+            #[cfg(feature = "pr821-diag")]
+            last_phi_ia: self.last_phi_ia,
+            #[cfg(feature = "pr821-diag")]
+            last_phi_st: self.last_phi_st,
+            #[cfg(feature = "pr821-diag")]
+            last_phi_m: self.last_phi_m,
         }
     }
 }

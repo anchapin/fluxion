@@ -233,14 +233,19 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
                 .as_ref()
                 .is_some_and(|nv| nv.is_active_at_hour(hour));
 
+            // Issue #825: phi_ia / phi_st / phi_m are now captured inside
+            // `step_physics_5r1c` and exposed on `model.0` when the
+            // `pr821-diag` feature is enabled. Read the most-recent zone-0
+            // values directly from the model so the CSV row matches the same
+            // timestep as the recorded temperatures.
             diag.record(
                 step,
                 &model,
                 outdoor_temp,
                 solar_window_w,
-                0.0, // phi_ia (not exposed for FF)
-                0.0, // phi_st
-                0.0, // phi_m  (computed inside step_physics; left at 0 here)
+                model.0.last_phi_ia,
+                model.0.last_phi_st,
+                model.0.last_phi_m,
                 night_vent_active,
                 0.0, // hvac_out_w (always 0 for FF — guarded by free_float assert)
             );
@@ -249,6 +254,21 @@ fn run_free_floating_simulation(case_enum: ASHRAE140Case) -> (f64, f64) {
 
     #[cfg(feature = "pr821-diag")]
     {
+        // Issue #825 acceptance: at least one daytime row (10:00–16:00 local
+        // hour) must have a non-zero phi_m (W to mass node) for cases that
+        // see daylight solar gains (600FF, 650FF). A non-zero value proves
+        // the solar/internal-gain routing is being captured in the diagnostic
+        // CSV — a previous iteration left these as placeholder zeros.
+        let any_daytime_phi_m = diag
+            .rows()
+            .iter()
+            .any(|r| (10..=16).contains(&r.hour) && r.phi_m.abs() > f64::EPSILON);
+        assert!(
+            any_daytime_phi_m,
+            "[pr821-diag] case={} has no daytime row with non-zero phi_m;              phi_* capture in step_physics_5r1c may have regressed (see #825)",
+            spec.case_id
+        );
+
         let path = diag
             .flush_to_csv()
             .expect("PR #821 diagnostic CSV write failed");
