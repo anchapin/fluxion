@@ -651,15 +651,77 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext_base = &self.0.derived_h_ext;
         let term_rest_1 = &self.0.derived_term_rest_1;
 
-        // Night ventilation is modeled as a separate heat term in the zone energy balance,
-        // NOT as a modification to h_ext (which represents building envelope conductance).
-        // Q_vent = ρ·Cp·ACH·V·(T_outdoor - T_zone) is applied directly to phi_ia.
-        // h_ext modification was incorrect: night ventilation cools zone through direct air supply,
-        // not by making the building envelope more conductive.
+        // === Issue #824: Night-ventilation air-side coupling (was missing entirely) ===
+        //
+        // For ASHRAE 140 Case 650 / 650FF the spec defines a night-ventilation
+        // fan that runs 18:00 → 07:00 at 1703.16 m³/h, supplying outside air
+        // directly to the zone. Per ASHRAE 140 §5.4 (Case 650 description), this
+        // is an *air-side* path: the fan moves outdoor air through the zone
+        // and removes heat at rate
+        //     Q_night_vent = ρ·Cp·V̇_fan · (T_zone − T_outdoor)
+        //
+        // Equivalently, it adds an additional air-to-outdoor conductance
+        //     h_ve_night = ρ · Cp · V̇_fan / 3600   [W/K]
+        // (the /3600 converts m³/h → m³/s; ρ=1.2 kg/m³, Cp=1005 J/(kg·K) match
+        // the existing infiltration h_ve calculation in
+        // src/sim/thermal_model_core.rs::update_derived_parameters).
+        //
+        // Issue #821 history: the *legacy* implementation routed 30 % of the
+        // night-vent flow directly to the *mass* node (via h_vent_mass_zone in
+        // the mass integrator below), which double-counted air-side cooling
+        // once h_tr_ms was restored to the ISO 13790 lumped value. Issue #821
+        // disabled that mass-side path (h_vent_mass_zone = 0). However the
+        // *air-side* path was never actually wired in step_physics_5r1c — the
+        // comment "phi_ia_with_vent further down" referenced a variable that
+        // does not exist, leaving 600FF and 650FF behaviourally identical
+        // (both peak at 48.28 °C / trough at -7.70 °C on main).
+        //
+        // Issue #824 fix: add h_ve_night to the air-to-outdoor conductance
+        // (h_ext) during active hours, *without* restoring the legacy 30 %
+        // mass-side path. This makes night ventilation a true air-side
+        // ventilation conductance (analogous to infiltration h_ve, which is
+        // already in derived_h_ext) and is consistent with ISO 13790 §C.4
+        // Eq. C.10 where ventilation appears only on the air node.
+        //
+        // The cached derived_h_ext / derived_den are computed at-build-time
+        // from the static h_ve only; we recompute h_ext and den per-step when
+        // night-vent is active. Static cache is reused unchanged at every
+        // other hour to keep the hot path cheap.
+        let mut h_ve_night_zone = vec![0.0_f64; self.0.num_zones];
+        let mut night_vent_active_now = false;
+        if let Some(ref night_vent) = self.0.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                night_vent_active_now = true;
+                // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
+                // (the conditioned zone). Multi-zone night-vent (Case 960
+                // sunspace etc.) is out of scope for this issue.
+                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let cp = self
+                    .0
+                    .heat_capacity
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1005.0);
+                let h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
+                h_ve_night_zone[0] = h_ve_night;
+            }
+        }
 
-        // Night ventilation no longer modifies h_ext.
-        // The h_ext variable is always derived_h_ext (base exterior conductance).
-        let h_ext = h_ext_base;
+        // Build per-zone h_ext that includes the night-vent contribution when
+        // active. When inactive (the common case) this is just an alloc-free
+        // alias to the cached vector via Vec::clone — see below.
+        let h_ext_owned: T = if night_vent_active_now {
+            let base = h_ext_base.as_ref();
+            let mut v = Vec::with_capacity(base.len());
+            for (i, &b) in base.iter().enumerate() {
+                v.push(b + h_ve_night_zone[i]);
+            }
+            T::from(VectorField::new(v))
+        } else {
+            T::from(VectorField::new(h_ext_base.as_ref().to_vec()))
+        };
+        let h_ext: &T = &h_ext_owned;
 
         // Recalculate sensitivity tensor at each timestep (Issue #301, #366)
         // When ventilation (h_ve) changes, zone temperature sensitivity to HVAC changes
@@ -667,7 +729,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // at each timestep to maintain accuracy (non-linear system behavior)
         // Fix: Include derived_ground_coeff in denominator to match update_optimization_cache
         // Issue #351: Include inter-zone conductance in sensitivity calculation
-        let den = self.0.derived_den.clone();
+        // Issue #824: when night-vent is active we must rebuild den from
+        // h_ext_dynamic (not the cached static derived_den).
+        let den: T = if night_vent_active_now {
+            // den = h_ms_is_prod + term_rest_1 * (h_ext + h_iz + h_iz_rad) + ground_coeff
+            // (mirrors update_optimization_cache in
+            // src/sim/thermal_model_solvers.rs, with h_ext now per-zone vector)
+            let h_ms_is_prod = self.0.derived_h_ms_is_prod.as_ref();
+            let term_rest_1 = self.0.derived_term_rest_1.as_ref();
+            let ground_coeff = self.0.derived_ground_coeff.as_ref();
+            let h_iz = self.0.h_tr_iz.as_ref();
+            let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
+            let h_ext_slice = h_ext.as_ref();
+            let mut v = Vec::with_capacity(h_ext_slice.len());
+            for i in 0..h_ext_slice.len() {
+                let h_total = if self.0.num_zones > 1 {
+                    h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
+                } else {
+                    h_ext_slice[i]
+                };
+                v.push(h_ms_is_prod[i] + term_rest_1[i] * h_total + ground_coeff[i]);
+            }
+            T::from(VectorField::new(v))
+        } else {
+            self.0.derived_den.clone()
+        };
         let sensitivity = self.0.derived_sensitivity.clone();
 
         // Optimized: use zip_with to avoid double clones; num_tm allocates 1 vector instead of 2
