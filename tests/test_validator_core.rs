@@ -44,11 +44,11 @@ mod validator_unit_tests {
     fn test_metric_type_display_names() {
         assert_eq!(
             MetricType::AnnualHeating.display_name(),
-            "Annual Heating Energy (MWh)"
+            "Annual Heating Energy (kWh)"
         );
         assert_eq!(
             MetricType::AnnualCooling.display_name(),
-            "Annual Cooling Energy (MWh)"
+            "Annual Cooling Energy (kWh)"
         );
         assert_eq!(
             MetricType::PeakHeating.display_name(),
@@ -71,8 +71,8 @@ mod validator_unit_tests {
 
     #[test]
     fn test_metric_type_units() {
-        assert_eq!(MetricType::AnnualHeating.units(), "MWh");
-        assert_eq!(MetricType::AnnualCooling.units(), "MWh");
+        assert_eq!(MetricType::AnnualHeating.units(), "kWh");
+        assert_eq!(MetricType::AnnualCooling.units(), "kWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
         assert_eq!(MetricType::PeakCooling.units(), "kW");
         // IncidentSolar per ASHRAE 140-2023 Section 8.2.3

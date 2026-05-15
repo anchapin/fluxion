@@ -1103,6 +1103,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             ),
+            peak_timestamp: None,
         };
         report.add_result(result);
 

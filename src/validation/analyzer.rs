@@ -490,6 +490,7 @@ mod tests {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_timestamp: None,
         });
 
         let metrics = QualityMetrics::from_benchmark_report(&report);

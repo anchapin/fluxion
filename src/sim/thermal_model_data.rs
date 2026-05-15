@@ -177,6 +177,9 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// PR #821 / Issue #825 — most recent zone-0 phi_m (W to mass node).
     #[cfg(feature = "pr821-diag")]
     pub last_phi_m: f64,
+    /// Issue #763 — full hourly zone temperature profiles for post-processing and reporting.
+    /// Format: [num_zones][8760] hourly temperatures in °C.
+    pub hourly_temperatures: Option<Vec<Vec<f64>>>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -321,6 +324,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             last_phi_st: self.last_phi_st,
             #[cfg(feature = "pr821-diag")]
             last_phi_m: self.last_phi_m,
+            hourly_temperatures: None,
         }
     }
 }
