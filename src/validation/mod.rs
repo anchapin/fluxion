@@ -118,7 +118,7 @@ pub use reference_data::{
     within_tolerance, ReferenceData,
 };
 pub use report::{
-    BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ValidationResult,
+    BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ReportHeader, ValidationResult,
     ValidationStatus, ValidationSuite,
 };
 

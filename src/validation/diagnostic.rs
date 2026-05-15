@@ -562,6 +562,11 @@ pub struct DiagnosticReport {
     pub temperature_profiles: HashMap<String, TemperatureProfile>,
     /// Comparison table rows
     pub comparison_rows: Vec<ComparisonRow>,
+    /// Issue #763: Hourly zone temperature profiles for free-floating cases.
+    /// Key = case_id (e.g. "600FF"), Value = 8760 hourly temperatures (°C).
+    /// Populated only for FF cases; empty HashMap for non-FF runs.
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub hourly_temperature_profiles: HashMap<String, Vec<f64>>,
 }
 
 impl DiagnosticReport {
@@ -598,6 +603,15 @@ impl DiagnosticReport {
     /// Add comparison row
     pub fn add_comparison_row(&mut self, row: ComparisonRow) {
         self.comparison_rows.push(row);
+    }
+
+    /// Issue #763: Add hourly zone temperature profile for a free-floating case.
+    /// Only call this for FF cases; the Vec must contain exactly 8760 values.
+    pub fn add_hourly_temperature_profile(&mut self, case_id: &str, profile: Vec<f64>) {
+        if case_id.ends_with("FF") && !profile.is_empty() {
+            self.hourly_temperature_profiles
+                .insert(case_id.to_string(), profile);
+        }
     }
 
     /// Generate full Markdown report
@@ -666,6 +680,43 @@ impl DiagnosticReport {
             csv.push_str(&data.to_csv_row());
         }
         std::fs::write(path, csv)
+    }
+
+    /// Issue #763: Export hourly zone temperature profiles for all free-floating cases
+    /// as a multi-section CSV file. Each section is preceded by a header comment.
+    /// Format: # CASE: 600FF
+    ///         Hour,Temperature_C
+    ///         0,20.50
+    ///         ...
+    pub fn export_hourly_temperature_profiles_csv<P: AsRef<Path>>(
+        &self,
+        path: P,
+    ) -> std::io::Result<()> {
+        if self.hourly_temperature_profiles.is_empty() {
+            return Ok(());
+        }
+
+        let mut csv_lines = Vec::new();
+        // Write column header once at the top
+        csv_lines.push("# Hourly Zone Temperature Profiles (°C)".to_string());
+        csv_lines.push("# ASHRAE 140-2023 Section 8.2.4 Compliance Data".to_string());
+        csv_lines.push("# Case ID, Hour, Temperature_C".to_string());
+
+        let mut case_ids: Vec<_> = self.hourly_temperature_profiles.keys().collect();
+        case_ids.sort();
+
+        for case_id in case_ids {
+            if let Some(temps) = self.hourly_temperature_profiles.get(case_id) {
+                csv_lines.push(format!("# Case: {}", case_id));
+                csv_lines.push("Hour,Temperature_C".to_string());
+                for (hour, &temp) in temps.iter().enumerate() {
+                    csv_lines.push(format!("{},{:.2}", hour, temp));
+                }
+                csv_lines.push(String::new());
+            }
+        }
+
+        std::fs::write(path, csv_lines.join("\n"))
     }
 
     /// Save report to file
@@ -1433,6 +1484,44 @@ mod tests {
         assert!(report.export_hourly_csv(&path).is_ok());
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("Hour,Month,Day"));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn test_diagnostic_report_export_hourly_temperature_profiles_csv() {
+        // Issue #763: test export of 8760-hour zone temperature profiles for FF cases
+        let config = DiagnosticConfig::full();
+        let mut report = DiagnosticReport::new(config);
+
+        // Add 24-sample profile for 600FF (simulating a short year for test)
+        let temps_600ff: Vec<f64> = (0..24).map(|i| 20.0 + (i as f64) * 0.5).collect();
+        report.add_hourly_temperature_profile("600FF", temps_600ff);
+
+        // Add profile for 900FF
+        let temps_900ff: Vec<f64> = (0..24).map(|i| 15.0 + (i as f64) * 0.3).collect();
+        report.add_hourly_temperature_profile("900FF", temps_900ff);
+
+        // Non-FF case should be ignored
+        let temps_600: Vec<f64> = (0..24_i32).map(|i| i as f64).collect();
+        report.add_hourly_temperature_profile("600", temps_600);
+
+        let temp_dir = std::env::temp_dir();
+        let path = temp_dir.join("test_ff_temps_export.csv");
+        assert!(report.export_hourly_temperature_profiles_csv(&path).is_ok());
+        let content = std::fs::read_to_string(&path).unwrap();
+
+        // Should contain section headers
+        assert!(content.contains("# Case: 600FF"));
+        assert!(content.contains("# Case: 900FF"));
+        assert!(content.contains("Hour,Temperature_C"));
+
+        // Should contain temperature values
+        assert!(content.contains("0,20.00"));
+        assert!(content.contains("23,31.50"));
+
+        // Non-FF case should not appear
+        assert!(!content.contains("# Case: 600\n"));
+
         let _ = std::fs::remove_file(&path);
     }
 
