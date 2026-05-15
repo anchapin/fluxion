@@ -93,8 +93,8 @@ impl MetricType {
     /// Returns the display name for this metric type (ASHRAE 140 compliant).
     pub fn display_name(&self) -> &str {
         match self {
-            MetricType::AnnualHeating => "Annual Heating Energy (kWh)",
-            MetricType::AnnualCooling => "Annual Cooling Energy (kWh)",
+            MetricType::AnnualHeating => "Annual Heating Energy (MWh)",
+            MetricType::AnnualCooling => "Annual Cooling Energy (MWh)",
             MetricType::PeakHeating => "Peak Heating Load (kW)",
             MetricType::PeakCooling => "Peak Cooling Load (kW)",
             MetricType::MinFreeFloat => "Minimum Free-Floating Temperature (°C)",
@@ -106,7 +106,7 @@ impl MetricType {
     /// Returns the units for this metric type.
     pub fn units(&self) -> &str {
         match self {
-            MetricType::AnnualHeating | MetricType::AnnualCooling => "kWh",
+            MetricType::AnnualHeating | MetricType::AnnualCooling => "MWh",
             MetricType::PeakHeating | MetricType::PeakCooling => "kW",
             MetricType::MinFreeFloat | MetricType::MaxFreeFloat => "°C",
             MetricType::IncidentSolar { .. } => "kWh/m²",
