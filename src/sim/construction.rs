@@ -942,8 +942,38 @@ impl Materials {
     }
 
     /// Concrete slab (heavy mass)
+    ///
+    /// **Note:** these are normal-weight slab properties (k=1.13, ρ=1400, cp=1000).
+    /// For ASHRAE 140-2023 Case 900-series construction, use
+    /// [`Materials::concrete_heavyweight`] instead, which carries the medium-density
+    /// values from Table B1-3 (Issue #730).
     pub fn concrete_slab(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Concrete Slab", 1.13, 1400.0, 1000.0, thickness)
+    }
+
+    /// Heavyweight (medium-density) concrete per ASHRAE 140-2023 Table B1-3.
+    ///
+    /// Used for the 900-series high-mass floor slab and (eventually) other
+    /// BESTEST heavyweight constructions. Values are the BESTEST medium-density
+    /// concrete spec — NOT normal-weight structural concrete.
+    ///
+    /// | Property | Value | Source |
+    /// |----------|-------|--------|
+    /// | k        | 0.51 W/m·K | ASHRAE 140-2023 Table B1-3 |
+    /// | ρ        | 1400 kg/m³ | ASHRAE 140-2023 Table B1-3 |
+    /// | cp       | 840 J/kg·K | ASHRAE 140-2023 Table B1-3 |
+    ///
+    /// Reference: Judkoff & Neymark (1995), NREL/TP-472-6231, §4.2.2.
+    /// Closes Issue #730 (medium-density vs normal-weight concrete confusion).
+    pub fn concrete_heavyweight(thickness: f64) -> ConstructionLayer {
+        // ASHRAE 140-2023 Table B1-3, BESTEST heavyweight (medium-density) concrete.
+        ConstructionLayer::new(
+            "Concrete (ASHRAE 140 heavyweight)",
+            0.51,
+            1400.0,
+            840.0,
+            thickness,
+        )
     }
 
     /// Insulation for floor/walls
@@ -1021,9 +1051,12 @@ impl Assemblies {
     }
 
     /// High mass floor construction (ASHRAE 140 Case 900).
+    ///
+    /// Slab uses [`Materials::concrete_heavyweight`] per ASHRAE 140-2023 Table B1-3
+    /// (k=0.51, ρ=1400, cp=840). Closes Issue #730.
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
-            Materials::concrete_slab(0.080),
+            Materials::concrete_heavyweight(0.080),
             Materials::insulation_high_mass(0.201), // Adjusted for U=0.190
         ])
     }
@@ -1950,7 +1983,8 @@ mod tests {
     fn test_high_mass_floor() {
         let floor = Assemblies::high_mass_floor();
         assert_eq!(floor.layer_count(), 2);
-        assert_eq!(floor.layers[0].name, "Concrete Slab");
+        // Issue #730: ASHRAE 140-2023 Table B1-3 heavyweight (medium-density) concrete.
+        assert_eq!(floor.layers[0].name, "Concrete (ASHRAE 140 heavyweight)");
         assert_eq!(floor.layers[1].name, "Insulation");
     }
 
@@ -1999,6 +2033,43 @@ mod tests {
         assert_eq!(layer.conductivity, 1.13);
         assert_eq!(layer.density, 1400.0);
         assert_eq!(layer.specific_heat, 1000.0);
+    }
+
+    #[test]
+    fn test_materials_concrete_heavyweight_matches_ashrae_140_table_b1_3() {
+        // ASHRAE 140-2023 Table B1-3 — BESTEST heavyweight (medium-density) concrete.
+        // Reference: Judkoff & Neymark (1995), NREL/TP-472-6231, §4.2.2.
+        let layer = Materials::concrete_heavyweight(0.200);
+        assert_eq!(layer.conductivity, 0.51, "k must match Table B1-3");
+        assert_eq!(layer.density, 1400.0, "rho must match Table B1-3");
+        assert_eq!(layer.specific_heat, 840.0, "cp must match Table B1-3");
+        assert_eq!(layer.thickness, 0.200);
+        // Areal heat capacity per Table B1-3: kappa = rho * cp * d = 1400 * 840 * 0.200
+        let kappa = layer.density * layer.specific_heat * layer.thickness;
+        assert!(
+            (kappa - 235_200.0).abs() < 1.0,
+            "kappa must be 235.2 kJ/m^2K"
+        );
+    }
+
+    #[test]
+    fn test_high_mass_floor_uses_ashrae_140_heavyweight_concrete() {
+        // Issue #730: high_mass_floor() must source its slab from
+        // Materials::concrete_heavyweight, not normal-weight Materials::concrete_slab.
+        let floor = Assemblies::high_mass_floor();
+        let slab = &floor.layers[0];
+        assert_eq!(
+            slab.conductivity, 0.51,
+            "slab k must be ASHRAE 140 Table B1-3 value"
+        );
+        assert_eq!(
+            slab.density, 1400.0,
+            "slab rho must be ASHRAE 140 Table B1-3 value"
+        );
+        assert_eq!(
+            slab.specific_heat, 840.0,
+            "slab cp must be ASHRAE 140 Table B1-3 value"
+        );
     }
 
     #[test]
