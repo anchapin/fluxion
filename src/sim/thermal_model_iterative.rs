@@ -293,17 +293,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     }
 
                     // 2. Opaque Solar Gain (Wall/Roof)
-                    if opaque_area > 0.0 && total_opaque_area > 0.0 {
-                        // Sol-air temperature method for opaque surfaces
-                        // Q = alpha * I * Re * U * A
-                        // Scale by ratio of per-surface opaque area to total orientation opaque area
-                        let area_ratio = opaque_area / total_opaque_area;
-                        total_opaque_gain += opaque_area
-                            * surface.u_value
-                            * irradiance.total_wm2
-                            * alpha
-                            * re
-                            * area_ratio;
+                    // Issue #831: Sol-air method  q = α × I × R_ext × U × A
+                    // Previously this multiplied by an extra `area_ratio = opaque_area / total_opaque_area`,
+                    // which double-attenuated the gain by `1/N` per orientation. With one wall surface per
+                    // orientation in Case 600 (N=1) the bug had no effect, but with multiple orientations
+                    // sharing surfaces (e.g. roof spans the floor footprint) the gain was halved.
+                    if opaque_area > 0.0 {
+                        total_opaque_gain +=
+                            opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
                     }
                 }
             }
