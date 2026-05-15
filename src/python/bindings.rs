@@ -204,6 +204,16 @@ impl PyMultiZoneThermalModel {
         })
     }
 
+    /// Get the full hourly zone temperature profiles (Issue #763).
+    ///
+    /// # Returns
+    /// `Some([[T00, T01, ...], [T10, T11, ...], ...])` where outer index is zone,
+    /// inner index is timestep (0..steps-1), or `None` if the simulation has not
+    /// been run yet.
+    pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
+        self.inner.get_hourly_temperatures()
+    }
+
     /// Run energy balance validation for multi-zone model
     pub fn validate_energy_balance(&self) -> PyResult<bool> {
         // TODO: Implement energy balance validation once ThermalModel API is updated

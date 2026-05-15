@@ -2341,6 +2341,9 @@ impl ThermalModel<VectorField> {
 
             // Wiring tracer for test-only integration validation (Plan 21-10)
             tracer: None,
+
+            // Issue #763 — hourly zone temperature profiles
+            hourly_temperatures: None,
         });
 
         model.update_derived_parameters();
