@@ -970,9 +970,23 @@ impl ThermalModel<VectorField> {
             let a_kappa_sq_sum = opaque_area * kappa_wall * kappa_wall
                 + zone_floor_area * (kappa_roof * kappa_roof + kappa_floor * kappa_floor);
 
-            let a_m = if a_kappa_sq_sum > 0.0 {
+            // Issue #803: Use ISO 13790 Table C.2 simplified formula for low-mass constructions.
+            //
+            // For κ < 165,000 J/m²K (VeryLight/Light mass class), the weighted A_m formula
+            // produces values too high, making thermal mass as tightly coupled to interior air
+            // as the building envelope — physically wrong for low-mass constructions.
+            //
+            // Per ISO 13790 Annex C Table C.2:
+            // - VeryLight/Light (κ < 165,000): A_m = 2.5 × floor_area
+            // - Medium+ (κ ≥ 165,000): use full weighted formula A_m = (ΣAκ)²/(ΣAκ²)
+            let a_m = if kappa_wall < 165_000.0 {
+                // For low-mass: use simplified Table C.2 formula via a_m_factor
+                spec.construction.wall.iso_13790_mass_class().a_m_factor() * zone_floor_area
+            } else if a_kappa_sq_sum > 0.0 {
+                // For medium+ mass: use full weighted formula (ISO 13790 §7.2.2.2)
                 (a_kappa_sum * a_kappa_sum) / a_kappa_sq_sum
             } else {
+                // Fallback: simplified formula
                 2.5 * zone_floor_area
             };
             let h_ms_iso_13790 = ISO_13790_H_MS_COEFF * a_m;

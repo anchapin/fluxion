@@ -9,7 +9,9 @@ use crate::validation::diagnostic::{
 };
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::multi_reference::MultiReferenceDB;
-use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType, ValidationStatus};
+use crate::validation::report::{
+    BenchmarkData, BenchmarkReport, MetricType, ReportHeader, ValidationStatus,
+};
 use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
@@ -412,6 +414,13 @@ impl ASHRAE140Validator {
         )
         .expect("Failed to load EPW weather data");
 
+        // Populate Section 8.1 compliance report header
+        let weather_file_id = weather
+            .location()
+            .unwrap_or_else(|| "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY".to_string());
+        report.report_header =
+            Some(ReportHeader::new(weather_file_id).with_developer("Fluxion Development Team"));
+
         // Cases to validate - all 18 ASHRAE 140 cases
         let cases = vec![
             // Low mass cases (600 series)
@@ -498,6 +507,10 @@ impl ASHRAE140Validator {
                     // Add temperature profile for free-floating cases
                     if self.diagnostic_config.output_temperature_profiles {
                         diagnostic_report.add_temperature_profile(case_diagnostic.temp_profile);
+                    }
+                    // Issue #763: Store 8760-hour zone temperature profile for FF cases
+                    if let Some(ref temps) = results.hourly_temperatures {
+                        diagnostic_report.add_hourly_temperature_profile(&case_id, temps.clone());
                     }
                 } else {
                     if self.diagnostic_config.verbose {
@@ -605,6 +618,17 @@ impl ASHRAE140Validator {
             if let Some(ref path) = self.diagnostic_config.hourly_output_path {
                 if let Err(e) = diagnostic_report.export_hourly_csv(path) {
                     eprintln!("Failed to export hourly data: {}", e);
+                }
+            }
+        }
+
+        // Issue #763: Export hourly zone temperature profiles for FF cases
+        // ASHRAE 140-2023 Section 8.2.4 requires 8760-hour profiles for free-float cases
+        if self.diagnostic_config.output_temperature_profiles {
+            if let Some(ref path) = self.diagnostic_config.hourly_output_path {
+                let ff_path = path.replace(".csv", "_ff_temps.csv");
+                if let Err(e) = diagnostic_report.export_hourly_temperature_profiles_csv(&ff_path) {
+                    eprintln!("Failed to export FF temperature profiles: {}", e);
                 }
             }
         }

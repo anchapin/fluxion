@@ -9,6 +9,7 @@ use fluxion::validation::report::{
 fn test_pass_rate_empty() {
     // Edge case: empty results should return 100% pass rate
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![],
         benchmark_data: std::collections::HashMap::new(),
         interpretations: std::collections::HashMap::new(),
@@ -26,6 +27,7 @@ fn test_pass_rate_empty() {
 fn test_pass_rate_all_passed() {
     // All results passed
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -36,6 +38,7 @@ fn test_pass_rate_all_passed() {
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -46,6 +49,7 @@ fn test_pass_rate_all_passed() {
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -64,6 +68,7 @@ fn test_pass_rate_all_passed() {
 fn test_pass_rate_all_failed() {
     // All results failed
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -74,6 +79,7 @@ fn test_pass_rate_all_failed() {
                 percent_error: 200.0,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -84,6 +90,7 @@ fn test_pass_rate_all_failed() {
                 percent_error: 250.0,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -102,6 +109,7 @@ fn test_pass_rate_all_failed() {
 fn test_pass_rate_mixed() {
     // Mixed pass/fail/warning
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -112,6 +120,7 @@ fn test_pass_rate_mixed() {
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -122,6 +131,7 @@ fn test_pass_rate_mixed() {
                 percent_error: 0.0,
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -132,6 +142,7 @@ fn test_pass_rate_mixed() {
                 percent_error: 500.0,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -150,6 +161,7 @@ fn test_pass_rate_mixed() {
 #[test]
 fn test_mae_empty() {
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![],
         benchmark_data: std::collections::HashMap::new(),
         interpretations: std::collections::HashMap::new(),
@@ -167,6 +179,7 @@ fn test_mae_empty() {
 fn test_mae_simple() {
     // Test MAE calculation with known values
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -177,6 +190,7 @@ fn test_mae_simple() {
                 percent_error: ((5.0 - 7.5) / 7.5) * 100.0, // -33.33%
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -187,6 +201,7 @@ fn test_mae_simple() {
                 percent_error: ((12.0 - 12.5) / 12.5) * 100.0, // -4.0%
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -206,6 +221,7 @@ fn test_mae_simple() {
 #[test]
 fn test_max_deviation_empty() {
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![],
         benchmark_data: std::collections::HashMap::new(),
         interpretations: std::collections::HashMap::new(),
@@ -223,6 +239,7 @@ fn test_max_deviation_empty() {
 #[test]
 fn test_max_deviation_simple() {
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -233,6 +250,7 @@ fn test_max_deviation_simple() {
                 percent_error: -33.33,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -243,6 +261,7 @@ fn test_max_deviation_simple() {
                 percent_error: -4.0,
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -253,6 +272,7 @@ fn test_max_deviation_simple() {
                 percent_error: 15.0, // positive
                 status: ValidationStatus::Warning,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -272,6 +292,7 @@ fn test_max_deviation_simple() {
 #[test]
 fn test_fail_count() {
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -282,6 +303,7 @@ fn test_fail_count() {
                 percent_error: 200.0,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -292,6 +314,7 @@ fn test_fail_count() {
                 percent_error: -5.0,
                 status: ValidationStatus::Pass,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -302,6 +325,7 @@ fn test_fail_count() {
                 percent_error: 10.0,
                 status: ValidationStatus::Warning,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -322,6 +346,7 @@ fn test_fail_count() {
 #[test]
 fn test_worst_cases() {
     let report = BenchmarkReport {
+        report_header: None,
         results: vec![
             ValidationResult {
                 case_id: "600".to_string(),
@@ -332,6 +357,7 @@ fn test_worst_cases() {
                 percent_error: 200.0,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "900".to_string(),
@@ -342,6 +368,7 @@ fn test_worst_cases() {
                 percent_error: -15.0,
                 status: ValidationStatus::Warning,
                 per_program: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "195".to_string(),
@@ -352,6 +379,7 @@ fn test_worst_cases() {
                 percent_error: 50.0,
                 status: ValidationStatus::Fail,
                 per_program: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
