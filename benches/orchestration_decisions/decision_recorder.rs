@@ -47,14 +47,9 @@ use std::time::{Duration, Instant};
 use fluxion::orchestration::decision_types::{OrchestrationDecision, OrchestrationDecisionKind};
 
 #[path = "tdqs.rs"]
-mod tdqs_mod;
+pub mod tdqs_mod;
 pub use tdqs_mod::DecisionInstance;
-
-// ---------------------------------------------------------------------------
-// Type alignment: OrchestrationDecisionKind ↔ DecisionType
-// ---------------------------------------------------------------------------
-
-use tdqs_mod::DecisionType;
+pub use tdqs_mod::DecisionType;
 
 /// Bridge from the engine's canonical enum to the harness's TDQS `DecisionType`.
 ///
