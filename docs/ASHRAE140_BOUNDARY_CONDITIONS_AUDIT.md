@@ -351,3 +351,34 @@ PR #821 restores the physical derivation:
 
 `TimeConstantAnalyzer::for_case` is still in the codebase for callers that
 explicitly want the legacy table, but it is no longer consulted by the solver.
+
+### 9.5 Orphaned ISO `h_tr_ms` Validation Files (Removed in #823)
+
+PR #818 (issue #583) added two validation files to `tests/validation/`:
+
+- `h_tr_ms_iso_regression_test.rs`
+- `iso_h_tr_ms_comprehensive_validation.rs`
+
+These files were **never compiled**: Cargo's integration-test discovery
+only scans `tests/*.rs` (top-level), not subdirectories, and no parent
+file declared them as modules. Wiring them in (via a top-level proxy)
+revealed 16 syntactically invalid format strings (`{:.4f}` instead of
+Rust's `{:.4}`), confirming they had never been built.
+
+Their docstrings encoded a different formula than the one used by the
+simulator:
+
+```text
+h_tr_ms = C_m / τ      with target τ = 15 h (light) / 150 h (heavy)
+```
+
+Those numbers correspond to ISO 13790 Table 9's *building* time
+constant `τ = C_m / H_tr` (envelope total), not the surface-to-mass
+coupling `h_ms` defined in §7.2.2.2 Eq. 65. Keeping the contradictory
+text in-tree was a maintenance hazard for any future agent or
+contributor reading the directory.
+
+PR #823 removed both files. The canonical formula `h_ms = 9.1 × A_m`
+(documented above in §9.1) is enforced by the live ASHRAE 140
+free-float regression tests in `tests/ashrae_140_case_600_series.rs`,
+which actually run in CI.
