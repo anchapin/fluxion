@@ -1165,7 +1165,7 @@ mod tests {
                 max_conservation_error = max_conservation_error.max(error);
 
                 println!(
-                    "  Step {:3}: phi_ia={:8.3f} W, phi_st={:8.3f} W, phi_m={:8.3f} W, sum={:8.3f} W, load={:8.3f} W, error={:.4}%",
+                    "  Step {:3}: phi_ia={:8.3} W, phi_st={:8.3} W, phi_m={:8.3} W, sum={:8.3} W, load={:8.3} W, error={:.4}%",
                     step, phi_ia, phi_st, phi_m, computed_sum, total_load, error * 100.0
                 );
             }
@@ -1253,20 +1253,20 @@ mod tests {
             #[cfg(feature = "pr821-diag")]
             {
                 println!(
-                    "  {}: max_phi_ia={:.3f} W, max_phi_st={:.3f} W, max_phi_m={:.3f} W",
+                    "  {}: max_phi_ia={:.3} W, max_phi_st={:.3} W, max_phi_m={:.3} W",
                     case_id, max_phi_ia, max_phi_st, max_phi_m
                 );
 
                 // Assert phi_ia and phi_st are effectively zero (< 1W threshold)
                 assert!(
                     max_phi_ia < 1.0,
-                    "Case {} FAILED: phi_ia={:.3f} W (expected < 1 W for free-floating)",
+                    "Case {} FAILED: phi_ia={:.3} W (expected < 1 W for free-floating)",
                     case_id,
                     max_phi_ia
                 );
                 assert!(
                     max_phi_st < 1.0,
-                    "Case {} FAILED: phi_st={:.3f} W (expected < 1 W for free-floating)",
+                    "Case {} FAILED: phi_st={:.3} W (expected < 1 W for free-floating)",
                     case_id,
                     max_phi_st
                 );
