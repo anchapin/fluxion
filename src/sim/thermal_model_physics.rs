@@ -1156,15 +1156,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
             };
 
-            // Issue #533: For 600-series cases, ideal_loads produces ~217W (too low for peak).
-            // Use hvac_power_demand (sensitivity-based) for peak tracking instead.
-            // hvac_power_demand gives ~6.6kW raw, 0.5 calibration brings to ~3.3kW (within 2.8-3.8kW ref).
-            let hvac_power_for_peak =
-                if self.0.case_id.starts_with("6") && self.0.case_id.len() == 3 {
-                    self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
-                } else {
-                    hvac_output_raw.clone()
-                };
+            // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
+            let hvac_power_for_peak = hvac_output_raw.clone();
 
             // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
             if self.0.hvac_equipment.is_none() {
@@ -1200,27 +1193,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Therefore, NO multiplicative correction factor should be applied
 
         // 4. Update Temperatures using Energy Balance
-        // The superposition formula t_i_act = t_i_free + sensitivity * hvac_output
-        // only gives ~2.5°C rise from 420W demand, not the ~22°C needed for setpoint.
+        // Root Cause Fix (Case 600): Replace sensitivity superposition with ideal loads.
+        // The sensitivity formula t_i_act = t_i_free + sensitivity * hvac_output assumes
+        // mass temperature is static — invalid when HVAC heat flows through the high-conductance
+        // mass path (h_is_ms_series = 583 W/K for Case 600, creating 6.1x conductance overestimate).
         //
-        // Physics-based approach: Solve energy balance for actual zone air temperature
-        // phi_ia = hvac_demand + h_tr_is*(t_i - t_s) + h_tr_iz*(t_i - t_adj)
+        // Fix: Use hvac_demand_from_ideal_loads() (mass_flow × cp × ΔT) when available.
+        // Temperature change: t_i_act = t_i_free + hvac_power / h_tr_is (physically correct).
+        // Fallback: sensitivity superposition for bare ThermalModel::new() instances.
         //
-        // For 600-series (low-mass): t_i_free responds quickly, use sensitivity-based HVAC effect
-        // For 900-series (high-mass): t_i_free is heavily buffered, use ideal_loads HVAC effect
-        // ALWAYS use sensitivity-based HVAC calculation for temperature update
-        // This properly accounts for all heat gains/losses and thermal mass buffering effect
-        //
-        // Issue #738: Check free_float BEFORE calling hvac_power_demand to ensure zero output
+        // Issue #738: Check free_float BEFORE calling HVAC to ensure zero output
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
+        } else if self.0.ideal_loads_system.iter().any(|opt| opt.is_some()) {
+            self.hvac_demand_from_ideal_loads(
+                t_i_free.as_ref(),
+                self.0.heating_setpoint,
+                self.0.cooling_setpoint,
+            )
         } else {
             self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
         };
 
-        let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
-        let mut t_i_act = t_i_free.clone();
-        t_i_act.add_assign(&product);
+        // Temperature update: ideal loads uses P/h_tr_is, sensitivity uses superposition
+        let uses_ideal_loads = self.0.ideal_loads_system.iter().any(|opt| opt.is_some());
+        let t_i_act = if uses_ideal_loads {
+            let h_tr_is_vec = self.0.h_tr_is.as_ref();
+            let t_free = t_i_free.as_ref();
+            let hvac = hvac_for_temp_calc.as_ref();
+            let mut data = Vec::with_capacity(self.0.num_zones);
+            for i in 0..self.0.num_zones {
+                let h_is = h_tr_is_vec[i];
+                if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                    data.push(t_free[i] + hvac[i] / h_is);
+                } else {
+                    data.push(t_free[i]);
+                }
+            }
+            T::from(VectorField::new(data))
+        } else {
+            let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
+            let mut result = t_i_free.clone();
+            result.add_assign(&product);
+            result
+        };
 
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
@@ -1757,10 +1773,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return 0.0;
         }
 
-        // Use sensitivity-based hvac_power_demand for 6R2C model
-        // The thermodynamic hvac_demand_from_ideal_loads is designed for equipment-based HVAC
-        // and produces incorrect results when applied to the simplified 6R2C thermal network
-        let hvac_output_raw = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity);
+        // Root Cause Fix (Case 600): Use thermodynamic ideal loads when available.
+        let uses_ideal_loads_6r2c = self.0.ideal_loads_system.iter().any(|opt| opt.is_some());
+        let hvac_output_raw = if uses_ideal_loads_6r2c {
+            self.hvac_demand_from_ideal_loads(
+                t_i_free.as_ref(),
+                self.0.heating_setpoint,
+                self.0.cooling_setpoint,
+            )
+        } else {
+            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity)
+        };
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
         // This is needed for high-mass cases (900 series) that use 6R2C model
@@ -1834,12 +1857,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // DON'T apply correction here - it would break temperature calculations
         let hvac_energy_for_step = total_signed * dt;
 
-        // Update indoor temperature with superposition
-        // Issue #351: For multi-zone systems, the superposition principle applies to each zone independently
-        // The inter-zone heat transfer is already included in t_i_free, so we just need to add HVAC effect
-        let product = sensitivity * hvac_output_raw.clone();
-        let mut t_i_act = t_i_free.clone();
-        t_i_act.add_assign(&product);
+        // Root Cause Fix: Physics-based temperature update when ideal loads is available.
+        let t_i_act = if uses_ideal_loads_6r2c {
+            let h_tr_is_vec = self.0.h_tr_is.as_ref();
+            let t_free = t_i_free.as_ref();
+            let hvac = hvac_output_raw.as_ref();
+            let mut data = Vec::with_capacity(self.0.num_zones);
+            for i in 0..self.0.num_zones {
+                let h_is = h_tr_is_vec[i];
+                if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                    data.push(t_free[i] + hvac[i] / h_is);
+                } else {
+                    data.push(t_free[i]);
+                }
+            }
+            T::from(VectorField::new(data))
+        } else {
+            // Legacy: sensitivity superposition for bare models
+            let product = sensitivity * hvac_output_raw.clone();
+            let mut result = t_i_free.clone();
+            result.add_assign(&product);
+            result
+        };
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
