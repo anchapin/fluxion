@@ -11,7 +11,6 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::equipment::Equipment;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
-use crate::sim::hvac_controller::HVACMode;
 use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::OccupancyProfile;
@@ -25,72 +24,6 @@ use crate::sim::timestep_solver::StepParameters;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    ///
-    /// This function implements the core logic for HVAC power calculation using CTA,
-    /// making it reusable and simplifying the main simulation loop.
-    ///
-    /// # Deadband Control
-    /// - If T_air < heating_setpoint: Enable heating (positive power)
-    /// - If T_air > cooling_setpoint: Enable cooling (negative power)
-    /// - Otherwise: HVAC off (deadband zone, zero power)
-    ///
-    /// # Arguments
-    /// * `t_i_free` - The free-floating indoor temperature tensor (i.e., without HVAC).
-    /// * `sensitivity` - A tensor representing how much 1W of HVAC power changes the indoor temperature.
-    ///
-    /// # Returns
-    /// A tensor representing the HVAC power (heating is positive, cooling is negative).
-    fn hvac_power_demand(&self, _hour: usize, t_i_free: &T, sensitivity: &T) -> T {
-        // Apply deadband tolerance to setpoints (consistent with IdealHVACController::calculate_power)
-        let heating_threshold = self.0.heating_setpoint - self.0.hvac_controller.deadband_tolerance;
-        let cooling_threshold = self.0.cooling_setpoint + self.0.hvac_controller.deadband_tolerance;
-
-        let t_vec = t_i_free.as_ref();
-        let sens_vec = sensitivity.as_ref();
-        let enabled_vec = self.0.hvac_enabled.as_ref();
-
-        let mut demand_vec = Vec::with_capacity(self.0.num_zones);
-        for i in 0..self.0.num_zones {
-            let enabled = enabled_vec[i];
-
-            if enabled == 0.0 {
-                demand_vec.push(0.0);
-                continue;
-            }
-
-            let t = t_vec[i];
-            // Use free_float temp for mode determination (consistent with controller)
-            let mode = if t < heating_threshold {
-                HVACMode::Heating
-            } else if t > cooling_threshold {
-                HVACMode::Cooling
-            } else {
-                HVACMode::Off
-            };
-
-            let power = match mode {
-                HVACMode::Heating => {
-                    // Temperature deficit relative to target at top of deadband
-                    let target_temp =
-                        self.0.heating_setpoint + self.0.hvac_controller.deadband_tolerance;
-                    let temp_deficit = target_temp - t;
-                    (temp_deficit / sens_vec[i]).clamp(0.0, self.0.hvac_heating_capacity)
-                }
-                HVACMode::Cooling => {
-                    let target_temp =
-                        self.0.cooling_setpoint - self.0.hvac_controller.deadband_tolerance;
-                    let temp_excess = t - target_temp;
-                    (-temp_excess / sens_vec[i]).clamp(-self.0.hvac_cooling_capacity, 0.0)
-                }
-                HVACMode::Off => 0.0,
-            };
-
-            demand_vec.push(power * enabled);
-        }
-
-        T::from(VectorField::new(demand_vec))
-    }
-
     /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
     ///
     /// This replaces the sensitivity-based `(setpoint - temp) / sensitivity` formula
@@ -115,6 +48,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let heating_vec = vec![heating_setpoint; self.0.num_zones];
         let cooling_vec = vec![cooling_setpoint; self.0.num_zones];
 
+        let heat_cap = self.0.hvac_heating_capacity;
+        let cool_cap = self.0.hvac_cooling_capacity;
+
         let mut combined_demand = vec![0.0; self.0.num_zones];
         for (zone_idx, opt_system) in self.0.ideal_loads_system.iter().enumerate() {
             if let Some(ref system) = opt_system {
@@ -130,7 +66,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     enabled_slice,
                 );
 
-                combined_demand[zone_idx] = demands[0];
+                // Clamp to HVAC capacity limits to prevent numerical explosion
+                // when zone temperatures are extreme (e.g., bare models without
+                // update_derived_parameters). Matches the .clamp() in the old
+                // hvac_power_demand method.
+                combined_demand[zone_idx] = demands[0].clamp(-cool_cap, heat_cap);
             }
         }
 
@@ -1142,19 +1082,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // so it needs to be returned for both branches
             hvac_output
         } else {
-            // Fallback: Use IdealLoadsSystem thermodynamic formulas if available,
-            // otherwise use sensitivity-based hvac_power_demand
-            let hvac_output_raw = if self.0.ideal_loads_system.iter().any(|opt| opt.is_some()) {
-                // ideal_loads_system is initialized - use thermodynamic formulas for energy
-                self.hvac_demand_from_ideal_loads(
-                    t_i_free.as_ref(),
-                    self.0.heating_setpoint,
-                    self.0.cooling_setpoint,
-                )
-            } else {
-                // ideal_loads_system not initialized - fall back to sensitivity-based
-                self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
-            };
+            // Use IdealLoadsSystem thermodynamic formulas for energy
+            let hvac_output_raw = self.hvac_demand_from_ideal_loads(
+                t_i_free.as_ref(),
+                self.0.heating_setpoint,
+                self.0.cooling_setpoint,
+            );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
             let hvac_power_for_peak = hvac_output_raw.clone();
@@ -1198,45 +1131,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // mass temperature is static — invalid when HVAC heat flows through the high-conductance
         // mass path (h_is_ms_series = 583 W/K for Case 600, creating 6.1x conductance overestimate).
         //
-        // Fix: Use hvac_demand_from_ideal_loads() (mass_flow × cp × ΔT) when available.
+        // Fix: Use hvac_demand_from_ideal_loads() (mass_flow × cp × ΔT) unconditionally.
         // Temperature change: t_i_act = t_i_free + hvac_power / h_tr_is (physically correct).
-        // Fallback: sensitivity superposition for bare ThermalModel::new() instances.
         //
         // Issue #738: Check free_float BEFORE calling HVAC to ensure zero output
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
-        } else if self.0.ideal_loads_system.iter().any(|opt| opt.is_some()) {
+        } else {
             self.hvac_demand_from_ideal_loads(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
             )
-        } else {
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val)
         };
 
-        // Temperature update: ideal loads uses P/h_tr_is, sensitivity uses superposition
-        let uses_ideal_loads = self.0.ideal_loads_system.iter().any(|opt| opt.is_some());
-        let t_i_act = if uses_ideal_loads {
-            let h_tr_is_vec = self.0.h_tr_is.as_ref();
-            let t_free = t_i_free.as_ref();
-            let hvac = hvac_for_temp_calc.as_ref();
-            let mut data = Vec::with_capacity(self.0.num_zones);
-            for i in 0..self.0.num_zones {
-                let h_is = h_tr_is_vec[i];
-                if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                    data.push(t_free[i] + hvac[i] / h_is);
-                } else {
-                    data.push(t_free[i]);
-                }
+        // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
+        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        let t_free = t_i_free.as_ref();
+        let hvac = hvac_for_temp_calc.as_ref();
+        let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
+        for i in 0..self.0.num_zones {
+            let h_is = h_tr_is_vec[i];
+            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+            } else {
+                t_i_act_data.push(t_free[i]);
             }
-            T::from(VectorField::new(data))
-        } else {
-            let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
-            let mut result = t_i_free.clone();
-            result.add_assign(&product);
-            result
-        };
+        }
+        let t_i_act = T::from(VectorField::new(t_i_act_data));
 
         // Use hvac_for_temp_calc for energy (matches what was used for temperature update)
         // This ensures energy calculation is consistent with temperature physics
@@ -1567,7 +1489,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.h_tr_is.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
 
         let den: T;
-        let sensitivity: T;
+        let _sensitivity: T;
         let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
             if self.0.num_zones > 1 {
                 mod_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
@@ -1587,7 +1509,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         den = h_ms_me_is_prod.clone()
             + h_sum.clone() * h_total_with_iz.clone()
             + ground_coeff_6r2c.clone();
-        sensitivity = h_sum.clone() / den.clone();
+        _sensitivity = h_sum.clone() / den.clone();
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
@@ -1766,24 +1688,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // HVAC calculation
-        let hour_of_day_idx = timestep % 24;
+        let _hour_of_day_idx = timestep % 24;
 
         // Issue #738: Free-float mode must completely disable HVAC output
         if self.0.free_float {
             return 0.0;
         }
 
-        // Root Cause Fix (Case 600): Use thermodynamic ideal loads when available.
-        let uses_ideal_loads_6r2c = self.0.ideal_loads_system.iter().any(|opt| opt.is_some());
-        let hvac_output_raw = if uses_ideal_loads_6r2c {
-            self.hvac_demand_from_ideal_loads(
-                t_i_free.as_ref(),
-                self.0.heating_setpoint,
-                self.0.cooling_setpoint,
-            )
-        } else {
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity)
-        };
+        // Root Cause Fix (Case 600): Use thermodynamic ideal loads unconditionally.
+        let hvac_output_raw = self.hvac_demand_from_ideal_loads(
+            t_i_free.as_ref(),
+            self.0.heating_setpoint,
+            self.0.cooling_setpoint,
+        );
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
         // This is needed for high-mass cases (900 series) that use 6R2C model
@@ -1857,28 +1774,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // DON'T apply correction here - it would break temperature calculations
         let hvac_energy_for_step = total_signed * dt;
 
-        // Root Cause Fix: Physics-based temperature update when ideal loads is available.
-        let t_i_act = if uses_ideal_loads_6r2c {
-            let h_tr_is_vec = self.0.h_tr_is.as_ref();
-            let t_free = t_i_free.as_ref();
-            let hvac = hvac_output_raw.as_ref();
-            let mut data = Vec::with_capacity(self.0.num_zones);
-            for i in 0..self.0.num_zones {
-                let h_is = h_tr_is_vec[i];
-                if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                    data.push(t_free[i] + hvac[i] / h_is);
-                } else {
-                    data.push(t_free[i]);
-                }
+        // Root Cause Fix: Physics-based temperature update.
+        // t_i_act = t_i_free + hvac_power / h_tr_is
+        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        let t_free = t_i_free.as_ref();
+        let hvac = hvac_output_raw.as_ref();
+        let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
+        for i in 0..self.0.num_zones {
+            let h_is = h_tr_is_vec[i];
+            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+            } else {
+                t_i_act_data.push(t_free[i]);
             }
-            T::from(VectorField::new(data))
-        } else {
-            // Legacy: sensitivity superposition for bare models
-            let product = sensitivity * hvac_output_raw.clone();
-            let mut result = t_i_free.clone();
-            result.add_assign(&product);
-            result
-        };
+        }
+        let t_i_act = T::from(VectorField::new(t_i_act_data));
 
         // Calculate surface temperature for mass update (including HVAC effect)
         // === 6R2C: Update two mass nodes ===
@@ -2536,8 +2446,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 T::from((wall_temps_vf + roof_temps_vf + floor_temps_vf + internal_temps_vf) / 4.0);
         }
 
-        // Calculate HVAC demand using sensitivity-based approach
-        let hour_of_day_idx = timestep % 24;
+        // Calculate HVAC demand
+        let _hour_of_day_idx = timestep % 24;
         let temp_rate = if timestep > 0 {
             (self.0.temperatures.as_ref()[0] - self.0.previous_temperatures.as_ref()[0]) / dt
         } else {
@@ -2568,13 +2478,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return 0.0;
         }
 
-        let sensitivity_val = sensitivity;
-        let hvac_for_temp_calc =
-            self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+        let _sensitivity_val = sensitivity;
+        let hvac_for_temp_calc = self.hvac_demand_from_ideal_loads(
+            t_i_free.as_ref(),
+            self.0.heating_setpoint,
+            self.0.cooling_setpoint,
+        );
 
-        let product = sensitivity_val.zip_with(&hvac_for_temp_calc, |s, h| s * h);
-        let mut t_i_act = t_i_free.clone();
-        t_i_act.add_assign(&product);
+        // Physics-based temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
+        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        let t_free = t_i_free.as_ref();
+        let hvac = hvac_for_temp_calc.as_ref();
+        let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
+        for i in 0..self.0.num_zones {
+            let h_is = h_tr_is_vec[i];
+            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+            } else {
+                t_i_act_data.push(t_free[i]);
+            }
+        }
+        let t_i_act = T::from(VectorField::new(t_i_act_data));
 
         // Update zone temperatures
         let temps_slice = self.0.temperatures.as_mut();
@@ -2585,7 +2509,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Calculate and return total HVAC output (energy)
-        let hvac_output = self.hvac_power_demand(hour_of_day_idx, &t_i_free, &sensitivity_val);
+        let hvac_output = hvac_for_temp_calc;
         let hvac_cloned = hvac_output.clone();
         let hvac_power_watts = hvac_cloned
             .as_ref()
