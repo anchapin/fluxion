@@ -508,15 +508,13 @@ mod tests {
     #[test]
     fn test_quality_metrics_mae_calculation() {
         // Use ValidationResult::new() to compute status and percent_error automatically
+        // Two metrics for case 600: one fails (22.5 outside tolerance), one warns (13.5 inside range but >=10% error)
         let report = BenchmarkReport {
             report_header: None,
-            results: vec![ValidationResult::new(
-                "600",
-                MetricType::AnnualHeating,
-                6.5,
-                5.5,
-                7.5,
-            )],
+            results: vec![
+                ValidationResult::new("600", MetricType::AnnualHeating, 22.5, 10.0, 20.0),
+                ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
+            ],
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),
             start_time: None,
@@ -529,10 +527,10 @@ mod tests {
 
         let metrics = QualityMetrics::from_benchmark_report(&report);
 
-        // MAE should be (|50%| + |10%|) / 2 = 30%
-        // Note: The exact values depend on ref_min/ref_max. We used [10,20] giving midpoint 15.
-        // For 22.5: error = (22.5-15)/15 *100 = 50%
-        // For 13.5: error = (13.5-15)/15 *100 = -10%
+        // MAE = (|50%| + |10%|) / 2 = 30%
+        // ref [10,20] → midpoint=15
+        // 22.5: error = |22.5-15|/15 * 100 = 50% → outside tolerance [9.5,21] → Fail
+        // 13.5: error = |13.5-15|/15 * 100 = 10% → inside ref range but >=10% error → Warning
         assert!((metrics.mae - 30.0).abs() < 0.01);
         assert_eq!(metrics.max_deviation, 50.0);
         // Case 600 fails (one metric fails, one warns) => case fails overall

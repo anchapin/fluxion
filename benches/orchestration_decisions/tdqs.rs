@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Temporal Decision Quality Score (TDQS) — Formal Implementation
 //!
 //! # Formula

@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 //! Decision recording middleware.
 //!
 //! Wraps each orchestration decision call site to:
