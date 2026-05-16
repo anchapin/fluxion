@@ -2310,9 +2310,12 @@ impl ThermalModel<VectorField> {
             // Variable capacity HVAC equipment (Plan 15-06)
             hvac_equipment: None, // Default to no equipment (uses IdealHVACController)
 
-            // IdealLoadsSystem for proper thermodynamic HVAC load calculation (Issue #521)
-            // Initialized with zone properties from geometry when setting up from spec
-            ideal_loads_system: vec![], // Will be populated by from_spec() with one per zone
+            // IdealLoadsSystem for thermodynamic HVAC load calculation (mass_flow × cp × ΔT).
+            // Initialized for every zone — the sensitivity-based approach was removed because
+            // it produces incorrect results for low-mass buildings (6.1× conductance overestimate).
+            ideal_loads_system: (0..num_zones)
+                .map(|_| Some(IdealLoadsSystem::new(zone_area * ceiling_height, 0.5)))
+                .collect(),
 
             // Door geometry for temperature-dependent inter-zone air exchange (stack effect)
             door_geometry: DoorGeometry::default(),
