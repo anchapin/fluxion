@@ -36,6 +36,34 @@
 
 use crate::sim::multi_node_thermal::{MultiNodeThermalMass, ThermalMassNode};
 
+/// Per-surface exterior boundary temperatures for the multi-node solver.
+///
+/// Each envelope node (wall, roof, floor) can have its own exterior boundary
+/// temperature, computed from sol-air temperature calculations.
+///
+/// - Wall/Roof: sol-air temperature (accounts for solar irradiance, longwave radiation)
+/// - Floor: ground temperature (ground-coupled)
+#[derive(Debug, Clone)]
+pub struct SurfaceExteriorTemperatures {
+    /// Sol-air temperature for the wall exterior boundary (°C)
+    pub t_ext_wall: f64,
+    /// Sol-air temperature for the roof exterior boundary (°C)
+    pub t_ext_roof: f64,
+    /// Ground temperature for the floor exterior boundary (°C)
+    pub t_ext_floor: f64,
+}
+
+impl SurfaceExteriorTemperatures {
+    /// Create with a uniform exterior temperature (legacy fallback).
+    pub fn uniform(t: f64) -> Self {
+        Self {
+            t_ext_wall: t,
+            t_ext_roof: t,
+            t_ext_floor: t,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct MultiNodeSolver {
     pub mass: MultiNodeThermalMass,
@@ -43,6 +71,10 @@ pub struct MultiNodeSolver {
     pub zone_temperature: f64,
     pub surface_temperature: f64,
     pub exterior_temperature: f64,
+    /// Per-surface exterior boundary temperatures (Issue #863).
+    /// When set, each envelope node uses its respective boundary temp
+    /// instead of the uniform `exterior_temperature`.
+    pub exterior_temperatures: Option<SurfaceExteriorTemperatures>,
     pub timestep_seconds: f64,
 }
 
@@ -60,6 +92,7 @@ impl MultiNodeSolver {
             zone_temperature: 20.0,
             surface_temperature: 20.0,
             exterior_temperature: 10.0,
+            exterior_temperatures: None,
             timestep_seconds: 3600.0,
         }
     }
@@ -81,6 +114,23 @@ impl MultiNodeSolver {
         let t_ext = self.exterior_temperature;
         let h_is = self.h_tr_is;
 
+        // Per-surface exterior temperatures (Issue #863).
+        // When available, each envelope node uses its own boundary temp
+        // (sol-air for wall/roof, ground for floor) instead of the uniform
+        // `exterior_temperature` average.
+        let t_ext_wall = self
+            .exterior_temperatures
+            .as_ref()
+            .map_or(t_ext, |et| et.t_ext_wall);
+        let t_ext_roof = self
+            .exterior_temperatures
+            .as_ref()
+            .map_or(t_ext, |et| et.t_ext_roof);
+        let t_ext_floor = self
+            .exterior_temperatures
+            .as_ref()
+            .map_or(t_ext, |et| et.t_ext_floor);
+
         let m = &mut self.mass;
 
         // Update wall node (envelope mass)
@@ -92,7 +142,7 @@ impl MultiNodeSolver {
             // Backward Euler: (Cm/dt + h_em + h_ms) * T_new = Cm/dt * T_old + h_em * T_ext + h_ms * T_s
             let denom = node.capacitance / dt + h_em + h_ms;
             let numer = node.capacitance / dt * node.temperature
-                + h_em * t_ext
+                + h_em * t_ext_wall
                 + h_ms * self.surface_temperature;
             node.temperature = numer / denom;
         }
@@ -105,7 +155,7 @@ impl MultiNodeSolver {
 
             let denom = node.capacitance / dt + h_em + h_ms;
             let numer = node.capacitance / dt * node.temperature
-                + h_em * t_ext
+                + h_em * t_ext_roof
                 + h_ms * self.surface_temperature;
             node.temperature = numer / denom;
         }
@@ -118,7 +168,7 @@ impl MultiNodeSolver {
 
             let denom = node.capacitance / dt + h_em + h_ms;
             let numer = node.capacitance / dt * node.temperature
-                + h_em * t_ext
+                + h_em * t_ext_floor
                 + h_ms * self.surface_temperature;
             node.temperature = numer / denom;
         }
@@ -172,6 +222,16 @@ impl MultiNodeSolver {
 
     pub fn set_exterior_temperature(&mut self, t: f64) {
         self.exterior_temperature = t;
+    }
+
+    /// Set per-surface exterior boundary temperatures (Issue #863).
+    ///
+    /// Stores per-surface sol-air/ground temperatures and updates the
+    /// legacy `exterior_temperature` field to the average for backward
+    /// compatibility with code that reads it directly.
+    pub fn set_surface_exterior_temperatures(&mut self, temps: SurfaceExteriorTemperatures) {
+        self.exterior_temperature = (temps.t_ext_wall + temps.t_ext_roof + temps.t_ext_floor) / 3.0;
+        self.exterior_temperatures = Some(temps);
     }
 
     pub fn set_wall_conductances(&mut self, h_tr_em: f64, h_tr_ms: f64) {
