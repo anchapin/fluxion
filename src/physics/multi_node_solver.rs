@@ -172,6 +172,209 @@ impl MultiNodeSolver {
         }
     }
 
+    // ── Issue #871: Air Balance API Methods ───────────────────────────
+
+    /// Compute zone air temperature from the multi-node thermal balance.
+    ///
+    /// Must be called AFTER `step()` (or `step_with_gains()`) has updated
+    /// mass node temperatures. Uses the air node energy balance:
+    ///
+    /// ```text
+    /// T_s = Σ(h_tr_ms_k × T_k) / Σ(h_tr_ms_k)   for k ∈ {wall, roof, floor}
+    /// T_air = (h_tr_is × T_s + h_ve × T_out + φ_ia) / (h_tr_is + h_ve)
+    /// ```
+    ///
+    /// # Arguments
+    /// * `t_outdoor` — Outdoor air temperature [°C]
+    /// * `h_ve` — Ventilation/infiltration conductance [W/K]
+    /// * `phi_ia` — Internal convective + solar-to-air gains [W]
+    ///
+    /// # Returns
+    /// Free-floating zone air temperature [°C]
+    pub fn compute_zone_air_temperature(&self, t_outdoor: f64, h_ve: f64, phi_ia: f64) -> f64 {
+        // Conductance-weighted surface temperature from envelope nodes
+        let h_ms_w = self.mass.wall.h_tr_ms;
+        let h_ms_r = self.mass.roof.h_tr_ms;
+        let h_ms_f = self.mass.floor.h_tr_ms;
+        let h_ms_total = h_ms_w + h_ms_r + h_ms_f;
+
+        let t_surface = if h_ms_total > 1e-6 {
+            (h_ms_w * self.mass.wall.temperature
+                + h_ms_r * self.mass.roof.temperature
+                + h_ms_f * self.mass.floor.temperature)
+                / h_ms_total
+        } else {
+            // Fallback: simple average if no conductances
+            self.envelope_temperature()
+        };
+
+        // Air node energy balance
+        let denom = self.h_tr_is + h_ve;
+        if denom < 1e-6 {
+            // Near-zero ventilation + interior film — return surface temp as best estimate
+            return t_surface;
+        }
+
+        (self.h_tr_is * t_surface + h_ve * t_outdoor + phi_ia) / denom
+    }
+
+    /// Compute ideal HVAC power demand to maintain setpoints.
+    ///
+    /// Uses the air node energy balance to determine how much heating or
+    /// cooling power is needed to bring the free-floating zone air temperature
+    /// to the setpoint:
+    ///
+    /// ```text
+    /// Q_hvac = (h_tr_is + h_ve) × (T_setpoint - T_air_free)   [when outside deadband]
+    /// ```
+    ///
+    /// # Arguments
+    /// * `t_air_free` — Free-floating zone air temperature [°C]
+    /// * `heating_setpoint` — Heating setpoint temperature [°C]
+    /// * `cooling_setpoint` — Cooling setpoint temperature [°C]
+    ///
+    /// # Returns
+    /// HVAC power demand [W]. Positive = heating, negative = cooling, zero = deadband.
+    pub fn compute_hvac_demand(
+        &self,
+        t_air_free: f64,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+    ) -> f64 {
+        let h_total = self.h_tr_is; // Base conductance; caller should add h_ve if needed
+
+        if t_air_free < heating_setpoint {
+            // Heating required
+            h_total * (heating_setpoint - t_air_free)
+        } else if t_air_free > cooling_setpoint {
+            // Cooling required
+            h_total * (cooling_setpoint - t_air_free) // negative
+        } else {
+            0.0 // Within deadband
+        }
+    }
+
+    /// Step the solver with per-node heat gains injected into the backward Euler.
+    ///
+    /// Each envelope node receives its share of radiative gains directly in the
+    /// numerator of the backward Euler equation, in addition to conduction fluxes:
+    ///
+    /// ```text
+    /// T_k^new = (C_k/dt × T_k^old + h_em × T_ext_k + h_ms × T_s + gains_k)
+    ///           / (C_k/dt + h_em + h_ms)
+    /// ```
+    ///
+    /// # Arguments
+    /// * `dt` — Timestep duration [s]
+    /// * `gains_wall` — Radiative/solar gains to wall mass node [W]
+    /// * `gains_roof` — Radiative/solar gains to roof mass node [W]
+    /// * `gains_floor` — Radiative/solar gains to floor mass node [W]
+    /// * `gains_internal` — Internal radiative gains to internal mass node [W]
+    ///
+    /// # Returns
+    /// Reference to the updated `MultiNodeThermalMass`
+    pub fn step_with_gains(
+        &mut self,
+        dt: f64,
+        gains_wall: f64,
+        gains_roof: f64,
+        gains_floor: f64,
+        gains_internal: f64,
+    ) -> &MultiNodeThermalMass {
+        self.timestep_seconds = dt;
+        self.step_backward_euler_with_gains(gains_wall, gains_roof, gains_floor, gains_internal);
+        &self.mass
+    }
+
+    /// Backward Euler step with per-node gain injection.
+    ///
+    /// Same as `step_backward_euler()` but adds gain terms [W] to each node's
+    /// numerator. This allows solar/radiative gains to properly heat envelope
+    /// surfaces rather than only relying on conduction.
+    fn step_backward_euler_with_gains(
+        &mut self,
+        gains_wall: f64,
+        gains_roof: f64,
+        gains_floor: f64,
+        gains_internal: f64,
+    ) {
+        let dt = self.timestep_seconds;
+        let t_i = self.zone_temperature;
+        let h_is = self.h_tr_is;
+
+        let t_ext_wall = self.exterior_temperatures.t_ext_wall;
+        let t_ext_roof = self.exterior_temperatures.t_ext_roof;
+        let t_ext_floor = self.exterior_temperatures.t_ext_floor;
+
+        let m = &mut self.mass;
+
+        // Update wall node — with gains
+        {
+            let node = &mut m.wall;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_wall
+                    + h_ms * self.surface_temperature
+                    + gains_wall;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Update roof node — with gains
+        {
+            let node = &mut m.roof;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_roof
+                    + h_ms * self.surface_temperature
+                    + gains_roof;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Update floor node — with gains
+        {
+            let node = &mut m.floor;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_floor
+                    + h_ms * self.surface_temperature
+                    + gains_floor;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Update internal node — with gains
+        {
+            let node = &mut m.internal;
+            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
+            let h_me = node.h_tr_me;
+
+            let denom = node.capacitance / dt + h_is + h_me;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_is * t_i
+                    + h_me * t_env_avg
+                    + gains_internal;
+                node.temperature = numer / denom;
+            }
+        }
+    }
+
+    // ── Temperature Accessors ────────────────────────────────────────
+
     pub fn wall_temperature(&self) -> f64 {
         self.mass.wall.temperature
     }
@@ -484,6 +687,107 @@ mod tests {
         assert!(
             solver.floor_temperature() < 20.0,
             "Floor should cool from ground"
+        );
+    }
+
+    // ── Issue #871: Air Balance API Tests ────────────────────────────
+
+    #[test]
+    fn test_compute_zone_air_temperature_steady_state() {
+        let solver = create_test_solver();
+        // All nodes at 20°C, outdoor at 20°C → T_air ≈ 20°C
+        let t_air = solver.compute_zone_air_temperature(20.0, 5.0, 0.0);
+        assert!(
+            (t_air - 20.0).abs() < 0.5,
+            "Steady-state T_air should be ~20°C, got {t_air}"
+        );
+    }
+
+    #[test]
+    fn test_compute_zone_air_temperature_solar_gain() {
+        let solver = create_test_solver();
+        // phi_ia > 0 → T_air > T_outdoor
+        let t_air_no_gain = solver.compute_zone_air_temperature(10.0, 5.0, 0.0);
+        let t_air_with_gain = solver.compute_zone_air_temperature(10.0, 5.0, 2000.0);
+        assert!(
+            t_air_with_gain > t_air_no_gain,
+            "Solar gain should raise T_air: {t_air_with_gain} should be > {t_air_no_gain}"
+        );
+        assert!(
+            t_air_with_gain > 10.0,
+            "T_air with gains should be above outdoor: {t_air_with_gain} > 10.0"
+        );
+    }
+
+    #[test]
+    fn test_compute_hvac_demand_heating() {
+        let solver = create_test_solver();
+        // T_air_free < heating setpoint → positive Q (heating needed)
+        let q = solver.compute_hvac_demand(15.0, 20.0, 26.0);
+        assert!(
+            q > 0.0,
+            "Heating demand should be positive when T_air < heating setpoint, got {q}"
+        );
+        // Q = h_tr_is × (20 - 15) = 10 × 5 = 50 W
+        assert!((q - 50.0).abs() < 1.0, "Expected ~50W heating, got {q}");
+    }
+
+    #[test]
+    fn test_compute_hvac_demand_cooling() {
+        let solver = create_test_solver();
+        // T_air_free > cooling setpoint → negative Q (cooling needed)
+        let q = solver.compute_hvac_demand(30.0, 20.0, 26.0);
+        assert!(
+            q < 0.0,
+            "Cooling demand should be negative when T_air > cooling setpoint, got {q}"
+        );
+        // Q = h_tr_is × (26 - 30) = 10 × (-4) = -40 W
+        assert!((q - (-40.0)).abs() < 1.0, "Expected ~-40W cooling, got {q}");
+    }
+
+    #[test]
+    fn test_compute_hvac_demand_deadband() {
+        let solver = create_test_solver();
+        // T_air_free within [heat_sp, cool_sp] → zero Q
+        let q = solver.compute_hvac_demand(22.0, 20.0, 26.0);
+        assert!(
+            q.abs() < 1e-10,
+            "Demand should be zero within deadband, got {q}"
+        );
+    }
+
+    #[test]
+    fn test_step_with_gains_increases_temp() {
+        let mut solver = create_test_solver();
+        solver.set_zone_temperature(20.0);
+        solver.set_exterior_temperature(10.0);
+        solver.set_surface_temperature(18.0);
+
+        // Step without gains
+        let mut solver_no_gains = solver.clone();
+        solver_no_gains.step(3600.0);
+        let t_wall_no_gains = solver_no_gains.wall_temperature();
+        let t_roof_no_gains = solver_no_gains.roof_temperature();
+
+        // Step with gains (1000W to wall, 500W to roof)
+        solver.step_with_gains(3600.0, 1000.0, 500.0, 0.0, 0.0);
+        let t_wall_with_gains = solver.wall_temperature();
+        let t_roof_with_gains = solver.roof_temperature();
+
+        assert!(
+            t_wall_with_gains > t_wall_no_gains,
+            "Wall with gains ({t_wall_with_gains}) should be > without ({t_wall_no_gains})"
+        );
+        assert!(
+            t_roof_with_gains > t_roof_no_gains,
+            "Roof with gains ({t_roof_with_gains}) should be > without ({t_roof_no_gains})"
+        );
+        // Wall gets more gains than roof → should be hotter
+        let wall_delta = t_wall_with_gains - t_wall_no_gains;
+        let roof_delta = t_roof_with_gains - t_roof_no_gains;
+        assert!(
+            wall_delta > roof_delta,
+            "Wall delta ({wall_delta}) should exceed roof delta ({roof_delta})"
         );
     }
 }
