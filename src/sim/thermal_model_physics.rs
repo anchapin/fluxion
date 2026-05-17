@@ -2593,6 +2593,41 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
             .sum::<f64>();
 
+        // Issue #866: Accumulate annual energy and track peak power for the
+        // 9R4C physics path. This mirrors the accumulation logic in
+        // step_physics_5r1c (lines ~1170–1206) and step_physics_5r1c_v2
+        // (lines ~1746–1770), but without the CTF/FD sub-accounting that
+        // only the 5R1C solvers maintain.
+        {
+            let mut heating_sum = 0.0_f64;
+            let mut cooling_sum = 0.0_f64;
+            for (&output, &enabled) in hvac_output
+                .as_ref()
+                .iter()
+                .zip(self.0.hvac_enabled.as_ref().iter())
+            {
+                let val = if enabled > 0.5 { output } else { 0.0 };
+                if val > 0.0 {
+                    heating_sum += val;
+                } else if val < 0.0 {
+                    cooling_sum += -val;
+                }
+            }
+
+            let heating_energy_joules = heating_sum * dt;
+            let cooling_energy_joules = cooling_sum * dt;
+
+            self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
+            self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+
+            // Peak power tracking (same logic as 5R1C path)
+            if hvac_power_watts > 0.0 {
+                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts);
+            } else if hvac_power_watts < 0.0 {
+                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_power_watts);
+            }
+        }
+
         // Diagnostics recording (if enabled)
         if self.0.diagnostics.is_some() {
             // Store current HVAC output for this timestep (per zone, Watts)
@@ -2605,6 +2640,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.current_hvac_output = None;
         }
 
-        hvac_power_watts * dt
+        // Issue #866: Return kWh (consistent with step_physics_5r1c and other paths).
+        // hvac_power_watts * dt gives Joules; divide by 3.6e6 for kWh.
+        hvac_power_watts * dt / 3.6e6
     }
 }
