@@ -346,6 +346,79 @@ impl GroundTemperature for DynamicGroundTemperature {
     }
 }
 
+// === Issue #864: Per-surface solar and internal gain distribution ===
+
+/// Per-surface solar gain distribution result (Issue #864).
+///
+/// Contains the portion of total opaque solar gains distributed to each
+/// envelope surface mass node (wall, roof, floor) in Watts.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct SurfaceSolarGains {
+    /// Opaque solar gain to wall mass node [W]
+    pub phi_m_wall: f64,
+    /// Opaque solar gain to roof mass node [W]
+    pub phi_m_roof: f64,
+    /// Opaque solar gain to floor mass node [W]
+    pub phi_m_floor: f64,
+}
+
+/// Distribute total opaque solar gains to per-surface mass nodes (Issue #864).
+///
+/// Gains are distributed proportional to irradiance-weighted area fraction.
+/// If all irradiance values are zero, distributes by area fraction alone.
+pub fn distribute_opaque_solar_gains(
+    total_opaque_solar: f64,
+    wall_area: f64,
+    roof_area: f64,
+    floor_area: f64,
+    wall_irradiance: f64,
+    roof_irradiance: f64,
+    floor_irradiance: f64,
+) -> SurfaceSolarGains {
+    let wall_weight = wall_area * wall_irradiance;
+    let roof_weight = roof_area * roof_irradiance;
+    let floor_weight = floor_area * floor_irradiance;
+    let total_weight = wall_weight + roof_weight + floor_weight;
+
+    if total_weight > 1e-10 {
+        SurfaceSolarGains {
+            phi_m_wall: total_opaque_solar * wall_weight / total_weight,
+            phi_m_roof: total_opaque_solar * roof_weight / total_weight,
+            phi_m_floor: total_opaque_solar * floor_weight / total_weight,
+        }
+    } else if wall_area + roof_area + floor_area > 1e-10 {
+        let total_area = wall_area + roof_area + floor_area;
+        SurfaceSolarGains {
+            phi_m_wall: total_opaque_solar * wall_area / total_area,
+            phi_m_roof: total_opaque_solar * roof_area / total_area,
+            phi_m_floor: total_opaque_solar * floor_area / total_area,
+        }
+    } else {
+        SurfaceSolarGains::default()
+    }
+}
+
+/// Distribute radiative internal gains across surfaces by area fraction (Issue #864).
+///
+/// Returns a tuple `(wall_share, roof_share, floor_share)` in Watts.
+pub fn distribute_radiative_gains(
+    radiative_gains: f64,
+    wall_area: f64,
+    roof_area: f64,
+    floor_area: f64,
+) -> (f64, f64, f64) {
+    let total_area = wall_area + roof_area + floor_area;
+    if total_area > 1e-10 {
+        (
+            radiative_gains * wall_area / total_area,
+            radiative_gains * roof_area / total_area,
+            radiative_gains * floor_area / total_area,
+        )
+    } else {
+        (0.0, 0.0, 0.0)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -550,5 +623,63 @@ mod tests {
             ground1.ground_temperature(1000),
             ground2.ground_temperature(1000)
         );
+    }
+
+    // === Issue #864: Distribution function tests ===
+
+    #[test]
+    fn test_distribute_opaque_solar_equal_irradiance() {
+        let result = distribute_opaque_solar_gains(300.0, 10.0, 10.0, 10.0, 100.0, 100.0, 100.0);
+        assert!((result.phi_m_wall - 100.0).abs() < 1e-10);
+        assert!((result.phi_m_roof - 100.0).abs() < 1e-10);
+        assert!((result.phi_m_floor - 100.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_distribute_opaque_solar_weighted() {
+        let result = distribute_opaque_solar_gains(600.0, 20.0, 20.0, 10.0, 50.0, 200.0, 0.0);
+        assert!((result.phi_m_wall - 120.0).abs() < 1e-10);
+        assert!((result.phi_m_roof - 480.0).abs() < 1e-10);
+        assert!(result.phi_m_floor.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_distribute_opaque_solar_zero_irradiance_fallback() {
+        let result = distribute_opaque_solar_gains(300.0, 20.0, 10.0, 10.0, 0.0, 0.0, 0.0);
+        assert!((result.phi_m_wall - 150.0).abs() < 1e-10);
+        assert!((result.phi_m_roof - 75.0).abs() < 1e-10);
+        assert!((result.phi_m_floor - 75.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_distribute_opaque_solar_zero_total() {
+        let result = distribute_opaque_solar_gains(0.0, 10.0, 10.0, 10.0, 100.0, 100.0, 100.0);
+        assert!(result.phi_m_wall.abs() < 1e-10);
+        assert!(result.phi_m_roof.abs() < 1e-10);
+        assert!(result.phi_m_floor.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_distribute_radiative_gains_by_area() {
+        let (w, r, f) = distribute_radiative_gains(400.0, 30.0, 10.0, 10.0);
+        assert!((w - 240.0).abs() < 1e-10);
+        assert!((r - 80.0).abs() < 1e-10);
+        assert!((f - 80.0).abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_distribute_radiative_gains_zero() {
+        let (w, r, f) = distribute_radiative_gains(0.0, 10.0, 10.0, 10.0);
+        assert!(w.abs() < 1e-10);
+        assert!(r.abs() < 1e-10);
+        assert!(f.abs() < 1e-10);
+    }
+
+    #[test]
+    fn test_distribute_radiative_gains_zero_area() {
+        let (w, r, f) = distribute_radiative_gains(400.0, 0.0, 0.0, 0.0);
+        assert!(w.abs() < 1e-10);
+        assert!(r.abs() < 1e-10);
+        assert!(f.abs() < 1e-10);
     }
 }

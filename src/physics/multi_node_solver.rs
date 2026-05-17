@@ -36,7 +36,7 @@
 
 use crate::sim::multi_node_thermal::{MultiNodeThermalMass, ThermalMassNode};
 
-/// Per-surface exterior boundary temperatures for the multi-node solver.
+/// Per-surface exterior boundary temperatures for the multi-node solver (Issue #863).
 ///
 /// Each envelope node (wall, roof, floor) can have its own exterior boundary
 /// temperature, computed from sol-air temperature calculations.
@@ -70,11 +70,12 @@ pub struct MultiNodeSolver {
     pub h_tr_is: f64,
     pub zone_temperature: f64,
     pub surface_temperature: f64,
+    /// Legacy single exterior temperature — kept for backward compatibility.
     pub exterior_temperature: f64,
     /// Per-surface exterior boundary temperatures (Issue #863).
-    /// When set, each envelope node uses its respective boundary temp
+    /// Each envelope node uses its respective boundary temp
     /// instead of the uniform `exterior_temperature`.
-    pub exterior_temperatures: Option<SurfaceExteriorTemperatures>,
+    pub exterior_temperatures: SurfaceExteriorTemperatures,
     pub timestep_seconds: f64,
 }
 
@@ -92,7 +93,7 @@ impl MultiNodeSolver {
             zone_temperature: 20.0,
             surface_temperature: 20.0,
             exterior_temperature: 10.0,
-            exterior_temperatures: None,
+            exterior_temperatures: SurfaceExteriorTemperatures::uniform(10.0),
             timestep_seconds: 3600.0,
         }
     }
@@ -111,35 +112,21 @@ impl MultiNodeSolver {
     fn step_backward_euler(&mut self) {
         let dt = self.timestep_seconds;
         let t_i = self.zone_temperature;
-        let t_ext = self.exterior_temperature;
         let h_is = self.h_tr_is;
 
-        // Per-surface exterior temperatures (Issue #863).
-        // When available, each envelope node uses its own boundary temp
-        // (sol-air for wall/roof, ground for floor) instead of the uniform
-        // `exterior_temperature` average.
-        let t_ext_wall = self
-            .exterior_temperatures
-            .as_ref()
-            .map_or(t_ext, |et| et.t_ext_wall);
-        let t_ext_roof = self
-            .exterior_temperatures
-            .as_ref()
-            .map_or(t_ext, |et| et.t_ext_roof);
-        let t_ext_floor = self
-            .exterior_temperatures
-            .as_ref()
-            .map_or(t_ext, |et| et.t_ext_floor);
+        // Issue #863: Per-surface exterior temperatures
+        let t_ext_wall = self.exterior_temperatures.t_ext_wall;
+        let t_ext_roof = self.exterior_temperatures.t_ext_roof;
+        let t_ext_floor = self.exterior_temperatures.t_ext_floor;
 
         let m = &mut self.mass;
 
-        // Update wall node (envelope mass)
+        // Update wall node — uses wall sol-air temperature
         {
             let node = &mut m.wall;
             let h_em = node.h_tr_em;
             let h_ms = node.h_tr_ms;
 
-            // Backward Euler: (Cm/dt + h_em + h_ms) * T_new = Cm/dt * T_old + h_em * T_ext + h_ms * T_s
             let denom = node.capacitance / dt + h_em + h_ms;
             let numer = node.capacitance / dt * node.temperature
                 + h_em * t_ext_wall
@@ -147,7 +134,7 @@ impl MultiNodeSolver {
             node.temperature = numer / denom;
         }
 
-        // Update roof node (envelope mass)
+        // Update roof node — uses roof sol-air temperature
         {
             let node = &mut m.roof;
             let h_em = node.h_tr_em;
@@ -160,7 +147,7 @@ impl MultiNodeSolver {
             node.temperature = numer / denom;
         }
 
-        // Update floor node (envelope mass)
+        // Update floor node — uses ground temperature
         {
             let node = &mut m.floor;
             let h_em = node.h_tr_em;
@@ -174,15 +161,9 @@ impl MultiNodeSolver {
         }
 
         // Update internal node
-        // Internal mass receives heat from zone air via h_tr_is and from envelope mass via h_tr_me
         {
             let node = &mut m.internal;
-            // h_tr_me connects internal mass to envelope mass (approximated as average of envelope temps)
             let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
-
-            // For internal mass: h_tr_me is the coupling to envelope mass
-            // Simplified: internal mass exchanges with zone air directly via h_tr_is
-            // and with envelope mass via a coupling conductance
             let h_me = node.h_tr_me;
 
             let denom = node.capacitance / dt + h_is + h_me;
@@ -222,6 +203,7 @@ impl MultiNodeSolver {
 
     pub fn set_exterior_temperature(&mut self, t: f64) {
         self.exterior_temperature = t;
+        self.exterior_temperatures = SurfaceExteriorTemperatures::uniform(t);
     }
 
     /// Set per-surface exterior boundary temperatures (Issue #863).
@@ -231,7 +213,7 @@ impl MultiNodeSolver {
     /// compatibility with code that reads it directly.
     pub fn set_surface_exterior_temperatures(&mut self, temps: SurfaceExteriorTemperatures) {
         self.exterior_temperature = (temps.t_ext_wall + temps.t_ext_roof + temps.t_ext_floor) / 3.0;
-        self.exterior_temperatures = Some(temps);
+        self.exterior_temperatures = temps;
     }
 
     pub fn set_wall_conductances(&mut self, h_tr_em: f64, h_tr_ms: f64) {
@@ -474,5 +456,34 @@ mod tests {
         assert_eq!(solver.internal_temperature(), 15.0);
         assert_eq!(solver.zone_temperature, 15.0);
         assert_eq!(solver.surface_temperature, 15.0);
+    }
+
+    #[test]
+    fn test_per_surface_exterior_temps() {
+        let mut solver = create_test_solver();
+        solver.initialize_temperatures(20.0);
+        solver.set_zone_temperature(20.0);
+        solver.set_surface_temperature(20.0);
+
+        let temps = SurfaceExteriorTemperatures {
+            t_ext_wall: 30.0,
+            t_ext_roof: 35.0,
+            t_ext_floor: 15.0,
+        };
+        solver.set_surface_exterior_temperatures(temps);
+        solver.step(3600.0);
+
+        assert!(
+            solver.wall_temperature() > 20.0,
+            "Wall should warm from sol-air"
+        );
+        assert!(
+            solver.roof_temperature() > solver.wall_temperature(),
+            "Roof > wall"
+        );
+        assert!(
+            solver.floor_temperature() < 20.0,
+            "Floor should cool from ground"
+        );
     }
 }
