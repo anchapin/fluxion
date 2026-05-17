@@ -149,17 +149,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // The series combination of these paths gives the total thermal resistance
         // that the HVAC system "sees" when trying to control air temperature.
-        self.0.derived_sensitivity =
-            self.0.derived_term_rest_1.clone() / self.0.derived_den.clone();
-
-        // Debug: Print sensitivity calculation for Case 600
-        if self.0.case_id == "600" {
-            println!(
-                "DEBUG SENS Case 600: h_ext={:.2} W/K, sensitivity={:.6} K/W (1/h_total)",
-                h_total.as_ref()[0],
-                self.0.derived_sensitivity.as_ref()[0]
-            );
-        }
+        // Note (#872): derived_sensitivity has been removed. HVAC demand now uses
+        // the physics-based h_loss × (T_sp - T_free) formula in step_physics_9r4c,
+        // and ideal loads formula in step_physics_5r1c.
     }
 
     /// Configures the model to use the 6R2C thermal network with two mass nodes.
