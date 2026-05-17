@@ -8,6 +8,7 @@ use log::{error, info, warn};
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::equipment::Equipment;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
@@ -15,12 +16,15 @@ use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_he
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::OccupancyProfile;
 use crate::sim::profiles;
+use crate::sim::sky_radiation::SolAirTemperature;
+use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
     backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
     crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
+use crate::validation::ashrae_140_cases::Orientation;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
@@ -2410,7 +2414,78 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             solver.set_zone_temperature(t_zone);
             solver.set_surface_temperature(t_surface);
-            solver.set_exterior_temperature(t_ext);
+
+            // Issue #863: Compute per-surface sol-air temperatures from weather data.
+            // Each envelope node (wall, roof, floor) receives its own exterior boundary
+            // temperature based on solar irradiance and longwave radiation exchange,
+            // rather than using a uniform outdoor air temperature for all surfaces.
+            let surface_ext_temps = if let Some(ref weather) = self.0.weather {
+                // Derive date/time from timestep for solar position calculation
+                let hour_of_year = timestep % 8760;
+                let month_days: [usize; 12] =
+                    [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+                let day_of_year = hour_of_year / 24;
+                let hour = (hour_of_year % 24) as f64 + 0.5;
+                let month = month_days
+                    .iter()
+                    .position(|&d| d > day_of_year)
+                    .unwrap_or(12)
+                    .saturating_sub(1)
+                    .max(0) as u32;
+                let day =
+                    (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+
+                let sun_pos = calculate_solar_position(
+                    self.0.latitude_deg,
+                    self.0.longitude_deg,
+                    2024, // Reference year for solar position (leap year)
+                    month,
+                    day.min(28), // Clamp to avoid invalid day-of-month
+                    hour,
+                );
+
+                // Compute irradiance for wall (south-facing, vertical) and roof (horizontal)
+                let ground_reflectance = 0.2; // Standard ground reflectance
+                let wall_irr = calculate_surface_irradiance(
+                    &sun_pos,
+                    weather.dni,
+                    weather.dhi,
+                    Some(weather.ghi),
+                    Orientation::South,
+                    ground_reflectance,
+                    day_of_year + 1,
+                );
+                let roof_irr = calculate_surface_irradiance(
+                    &sun_pos,
+                    weather.dni,
+                    weather.dhi,
+                    Some(weather.ghi),
+                    Orientation::Up,
+                    ground_reflectance,
+                    day_of_year + 1,
+                );
+
+                // Compute sol-air temperatures using ASHRAE 140 default surface properties
+                let sol_air = SolAirTemperature::ashrae_140_default();
+                SurfaceExteriorTemperatures {
+                    t_ext_wall: sol_air.for_wall(
+                        outdoor_temp,
+                        wall_irr.total_wm2,
+                        wall_irr.ground_reflected_wm2,
+                    ),
+                    t_ext_roof: sol_air.for_roof(outdoor_temp, roof_irr.total_wm2, sky_temp),
+                    t_ext_floor: t_g,
+                }
+            } else {
+                // Fallback: use uniform exterior temperature when no weather data available
+                SurfaceExteriorTemperatures {
+                    t_ext_wall: t_ext,
+                    t_ext_roof: t_ext,
+                    t_ext_floor: t_g,
+                }
+            };
+
+            solver.set_surface_exterior_temperatures(surface_ext_temps);
 
             // Advance solver by one timestep
             solver.step(dt);
