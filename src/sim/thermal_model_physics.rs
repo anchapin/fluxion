@@ -25,10 +25,19 @@ use crate::sim::timestep_solver::StepParameters;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
+    /// Calculate HVAC power demand using ISO 13790 building demand formula.
+    ///
+    /// Uses the total building conductance (H_total) to compute thermal power
+    /// required to maintain setpoints from the free-floating temperature:
+    ///   Q_HC = H_total × (T_setpoint - T_free)
+    ///
+    /// H_total = H_opaque + H_window + H_ve, where:
+    ///   H_opaque = 1 / (1/H_is + 1/H_ms + 1/H_em)  (series through envelope)
+    ///   H_window = direct window conductance
+    ///   H_ve     = ventilation conductance (ρ × cp × V_dot)
     ///
     /// # Arguments
-    /// * `zone_temps` - Current zone temperatures (°C)
+    /// * `zone_temps` - Free-floating zone air temperatures (°C)
     /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
     /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
     fn hvac_demand_from_ideal_loads(
