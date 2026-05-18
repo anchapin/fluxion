@@ -1457,6 +1457,10 @@ pub struct CaseSpec {
     pub epw_path: Option<PathBuf>,
     /// HVAC equipment (for Cases 800-810)
     pub hvac_equipment: Option<crate::sim::hvac::AnyEquipment>,
+    /// Ground temperature boundary condition (°C) for floor slab.
+    /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
+    /// When `None`, the model default (10.0°C) is used for backward compatibility.
+    pub ground_temperature_c: Option<f64>,
 }
 
 /// Geometry specification for a building zone.
@@ -1753,6 +1757,9 @@ pub struct CaseBuilder {
     door_area: Option<f64>,
     /// Custom EPW weather file path (if using non-default weather)
     epw_path: Option<PathBuf>,
+    /// Ground temperature boundary condition (°C) for floor slab (Issue #746).
+    /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C.
+    ground_temperature_c: Option<f64>,
 }
 
 impl Default for CaseBuilder {
@@ -1783,6 +1790,7 @@ impl CaseBuilder {
             door_height: None,
             door_area: None,
             epw_path: None,
+            ground_temperature_c: None,
         }
     }
 
@@ -2060,6 +2068,18 @@ impl CaseBuilder {
         self
     }
 
+    /// Sets the ground temperature boundary condition for the floor slab (°C).
+    ///
+    /// Per ASHRAE 140-2023 Annex B §B3.3, T_ground = 9.4°C (annual mean Denver
+    /// air temperature) applies to all cases with a floor slab (600, 610–650,
+    /// 900–950, and their free-float variants).
+    ///
+    /// When not set, the model default ground temperature (10.0°C) is used.
+    pub fn with_ground_temperature(mut self, temp_c: f64) -> Self {
+        self.ground_temperature_c = Some(temp_c);
+        self
+    }
+
     /// Builds and validates the case specification.
     pub fn build(mut self) -> Result<CaseSpec, String> {
         // Ensure vectors have correct length for num_zones
@@ -2126,6 +2146,7 @@ impl CaseBuilder {
             door_area: self.door_area,
             epw_path: self.epw_path.clone(),
             hvac_equipment: None,
+            ground_temperature_c: self.ground_temperature_c,
         };
 
         // spec.validate()?; // Skip detailed validation for now to save time
@@ -2170,6 +2191,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 600 should validate")
     }
@@ -2191,6 +2215,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 610 should validate")
     }
@@ -2208,6 +2235,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 620 should validate")
     }
@@ -2226,6 +2256,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 630 should validate")
     }
@@ -2243,6 +2276,9 @@ impl CaseBuilder {
             .with_hvac_setback(20.0, 27.0, 10.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 640 should validate")
     }
@@ -2261,6 +2297,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 650 should validate")
     }
@@ -2279,6 +2318,9 @@ impl CaseBuilder {
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 600FF should validate")
     }
@@ -2300,6 +2342,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 650FF should validate")
     }
@@ -2324,6 +2369,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 900 should validate")
     }
@@ -2347,6 +2395,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 910 should validate")
     }
@@ -2369,6 +2420,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 920 should validate")
     }
@@ -2392,6 +2446,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 930 should validate")
     }
@@ -2414,6 +2471,9 @@ impl CaseBuilder {
             .with_hvac_setback(20.0, 27.0, 10.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 940 should validate")
     }
@@ -2437,6 +2497,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 950 should validate")
     }
@@ -2460,6 +2523,9 @@ impl CaseBuilder {
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 900FF should validate")
     }
@@ -2486,6 +2552,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 950FF should validate")
     }
@@ -2515,6 +2584,9 @@ impl CaseBuilder {
             .with_infiltration(0.5)
             .with_door_geometry(2.0, 1.5) // Door opening: height=2.0m, area=1.5m² (Plan 04-04)
             .with_num_zones(2)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 960 should validate")
     }
