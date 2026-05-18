@@ -25,17 +25,18 @@ use crate::sim::timestep_solver::StepParameters;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
+    /// Calculate HVAC power demand using ISO 13790 building demand formula.
     ///
-    /// This replaces the sensitivity-based `(setpoint - temp) / sensitivity` formula
-    /// with proper ideal loads physics: `mass_flow * cp * delta_t`.
+    /// Uses the total building conductance (H_tr_is) to compute the thermal
+    /// power required to maintain setpoints from the free-floating temperature:
+    ///   Q_HC = H_tr_is × (T_setpoint - T_free)
     ///
-    /// Returns a VectorField of power values:
-    /// - Positive = heating demand (W)
-    /// - Negative = cooling demand (W)
+    /// This replaces the previous air-capacity formula (mass_flow × cp × ΔT)
+    /// which incorrectly used supply air temperature rather than building
+    /// thermal demand per ISO 13790 §7.2.
     ///
     /// # Arguments
-    /// * `zone_temps` - Current zone temperatures (°C)
+    /// * `zone_temps` - Free-floating zone air temperatures (°C)
     /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
     /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
     fn hvac_demand_from_ideal_loads(
@@ -47,50 +48,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         use crate::sim::hvac::ideal_loads::ZoneIdealLoads;
 
         let enabled_vec = self.0.hvac_enabled.as_ref();
-        let heat_cap = self.0.hvac_heating_capacity;
-        let cool_cap = self.0.hvac_cooling_capacity;
 
-        let mut combined_demand = Vec::with_capacity(self.0.num_zones);
-        for (zone_idx, opt_system) in self.0.ideal_loads_system.iter().enumerate() {
-            let demand = if let Some(ref system) = opt_system {
-                let enabled = enabled_vec.get(zone_idx).copied().unwrap_or(1.0);
-                if enabled < 0.5 {
-                    0.0
-                } else {
-                    let zone_temp = zone_temps.get(zone_idx).copied().unwrap_or(20.0);
-
-                    let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
-                        zone_temp,
-                        cooling_setpoint,
-                        system.supply_cooling_temp,
-                        system.zone_volume,
-                        system.air_changes_per_hour,
-                    );
-                    let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
-                        zone_temp,
-                        heating_setpoint,
-                        system.supply_heating_temp,
-                        system.zone_volume,
-                        system.air_changes_per_hour,
-                    );
-
-                    let thermal_load = if cooling_load > 0.0 && cooling_load >= heating_load {
-                        -cooling_load
-                    } else if heating_load > 0.0 {
-                        heating_load
-                    } else {
-                        0.0
-                    };
-
-                    // Clamp to HVAC capacity limits to prevent numerical explosion
-                    // when zone temperatures are extreme. Matches the .clamp() in the old
-                    // hvac_power_demand method.
-                    thermal_load.clamp(-cool_cap, heat_cap)
-                }
-            } else {
-                0.0
-            };
-            combined_demand.push(demand);
         }
 
         T::from(VectorField::new(combined_demand))

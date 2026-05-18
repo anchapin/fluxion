@@ -45,7 +45,7 @@ impl SolarPosition {
     /// Calculate cosine of incidence angle on a surface.
     ///
     /// Uses the standard formula for solar incidence on a tilted surface:
-    /// cos(θ) = sin(β)sin(α) + cos(β)cos(α)cos(φ - γ)
+    /// cos(θ) = sin(α)cos(β) + cos(α)sin(β)cos(φ - γ)
     ///
     /// Where:
     /// - β = surface tilt (0° = horizontal, 90° = vertical)
@@ -64,9 +64,9 @@ impl SolarPosition {
         let beta = surface_tilt_deg.to_radians();
         let gamma = surface_azimuth_deg.to_radians();
 
-        // Correct incidence angle formula for tilted surface
-        // cos(θ) = sin(β)sin(α) + cos(β)cos(α)cos(φ - γ)
-        let cos_theta_i = beta.sin() * alpha.sin() + beta.cos() * alpha.cos() * (phi - gamma).cos();
+        // Correct incidence angle formula for tilted surface (Duffie & Beckman):
+        // cos(θ) = sin(α)cos(β) + cos(α)sin(β)cos(φ - γ)
+        let cos_theta_i = alpha.sin() * beta.cos() + alpha.cos() * beta.sin() * (phi - gamma).cos();
 
         cos_theta_i.clamp(0.0, 1.0)
     }
