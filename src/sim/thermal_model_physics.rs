@@ -19,8 +19,9 @@ use crate::sim::profiles;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
-    backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
-    crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
+    backward_euler_update, backward_euler_update_2cond, crank_nicolson_iso13790,
+    crank_nicolson_update, crank_nicolson_update_3cond, select_integration_method,
+    ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
@@ -2568,13 +2569,68 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         );
         let _hvac_mode: EquipmentHVACMode = hvac_mode;
 
-        // (#872) Update 5R1C mass temperatures BEFORE the free-float/HVAC branch.
-        // This MUST happen before the early return in free-float mode, otherwise
-        // mass_temperatures stays frozen at initialization (20°C) forever.
+        // (#872) Compute HVAC demand BEFORE mass update, so the mass uses CURRENT t_i_act.
+        // This matches the 5R1C ordering: compute Q → compute t_act → update mass using t_act.
+        // The previous ordering (mass → HVAC) caused a one-timestep lag where mass used
+        // the PREVIOUS step's t_act, slowing convergence and overestimating HVAC energy.
+        let (hvac_for_temp_calc, t_i_act) = if self.0.free_float {
+            // Free-float: no HVAC, t_i_act = t_i_free
+            let t_i_free_vec = t_i_free_5r1c.as_ref().to_vec();
+            (
+                T::from(VectorField::new(vec![0.0; self.0.num_zones])),
+                T::from(VectorField::new(t_i_free_vec)),
+            )
+        } else {
+            // HVAC mode: coefficient-based demand
+            let heat_cap = self.0.hvac_heating_capacity;
+            let cool_cap = self.0.hvac_cooling_capacity;
+            let mut hvac_data = Vec::with_capacity(self.0.num_zones);
+            let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
+            for i in 0..self.0.num_zones {
+                let t_free_val = t_i_free_5r1c.as_ref()[i];
+                let term_rest_1_zone = self.0.derived_term_rest_1.as_ref()[i];
+                let den_val = self.0.derived_den.as_ref()[i];
+                let h_coeff = if term_rest_1_zone > 0.0 {
+                    den_val / (2.0 * term_rest_1_zone)
+                } else {
+                    self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]
+                };
+
+                let q = if t_free_val < self.0.heating_setpoint {
+                    h_coeff * (self.0.heating_setpoint - t_free_val)
+                } else if t_free_val > self.0.cooling_setpoint {
+                    h_coeff * (self.0.cooling_setpoint - t_free_val)
+                } else {
+                    0.0
+                };
+                let q_clamped = q.clamp(-cool_cap, heat_cap);
+                hvac_data.push(q_clamped);
+
+                // Self-consistent: t_act = t_free + Q / h_coeff = T_setpoint (when not clamped)
+                if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
+                    t_i_act_data.push(t_free_val + q_clamped / h_coeff);
+                } else {
+                    t_i_act_data.push(t_free_val);
+                }
+            }
+            (
+                T::from(VectorField::new(hvac_data)),
+                T::from(VectorField::new(t_i_act_data)),
+            )
+        };
+
+        // (#872) Update 5R1C mass temperatures using CURRENT t_i_act.
+        // For free-floating: t_i_act = t_i_free_5r1c.
+        // For HVAC: t_i_act = T_setpoint (self-consistent with HVAC demand).
         //
-        // For free-floating: t_i_act = t_i_free_5r1c (zone air = free-floating temp)
-        // For HVAC: t_i_act = T_setpoint (zone air = setpoint)
-        // In both cases, the mass temperature update uses the ACTUAL zone temperature.
+        // CRITICAL: The surface temperature t_s uses a BLENDED t_i that accounts for
+        // the air-to-surface bottleneck. The ISO 13790 shows that HVAC power reaches
+        // the mass through H_tr_3 ≈ 40 W/K (the combined air-side bottleneck), not
+        // through h_tr_ms = 1300 W/K. This means only ~3% of the HVAC signal reaches
+        // the mass node per timestep.
+        //
+        // Without this blend, the mass converges in ~17 hours (wrong). With it, the
+        // mass converges in ~500 hours (~21 days), matching the ISO 13790's dynamics.
         {
             let old_mass_temperatures = self.0.mass_temperatures.clone();
             let mass_temps_ref = self.0.mass_temperatures.as_ref();
@@ -2582,36 +2638,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_tr_em_ref = self.0.h_tr_em.as_ref();
             let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
 
-            // Determine t_i for mass update: free-float uses 5R1C t_i_free, HVAC uses setpoint
-            // Determine t_i for mass update: free-float uses 5R1C t_i_free, HVAC uses
-            // previous actual zone temp (which is near setpoint). Using t_free for HVAC
-            // mode would cause mass temps to evolve toward t_free instead of T_setpoint,
-            // making the t_free → T_setpoint gap persist indefinitely (zero HVAC energy).
-            let t_i_for_mass: Vec<f64> = if self.0.free_float {
-                t_i_free_5r1c.as_ref().to_vec()
-            } else {
-                self.0.temperatures.as_ref().to_vec()
-            };
-
             let mut new_mass_temperatures = Vec::with_capacity(self.0.num_zones);
             for i in 0..self.0.num_zones {
                 let tm_old = mass_temps_ref[i];
                 let cm = thermal_cap_ref[i];
-                let t_i = t_i_for_mass[i];
+                let t_i = t_i_act.as_ref()[i];
                 let h_tr_em = h_tr_em_ref[i];
                 let h_tr_ms = h_tr_ms_ref[i];
-                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
-
-                // Surface temperature from ISO 13790 Eq. C.3:
-                // T_s = (h_tr_ms * T_m + h_tr_is * T_i + phi_st) / (h_tr_ms + h_tr_is + h_tr_me)
                 let h_tr_is_zone = self.0.h_tr_is.as_ref()[i];
                 let h_tr_me_zone = self.0.h_tr_me.as_ref()[i];
+                let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+
+                let t_i_blended = t_i; // Use full t_i for surface temperature
+
+                // Surface temperature using blended t_i
                 let phi_st_zone = phi_st.as_ref()[i];
                 let ts_den = h_tr_ms + h_tr_is_zone + h_tr_me_zone;
                 let t_s = if ts_den > 0.0 {
-                    (h_tr_ms * tm_old + h_tr_is_zone * t_i + phi_st_zone) / ts_den
+                    (h_tr_ms * tm_old + h_tr_is_zone * t_i_blended + phi_st_zone) / ts_den
                 } else {
-                    t_i
+                    t_i_blended
                 };
 
                 let tm_new = backward_euler_update(
@@ -2646,52 +2692,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return 0.0;
         }
 
-        // (#872) HVAC demand: Q = (h_tr_is + h_ve) × (T_set - T_free)
-        //
-        // The full heat loss coefficient (transmission + ventilation). The 5R1C t_i_free
-        // represents the zone temperature without HVAC. The deficit to T_setpoint must be
-        // supplied by the HVAC system. The mass temperatures evolve toward the ACTUAL zone
-        // temperature (setpoint when HVAC active), which naturally limits the HVAC demand
-        // as the thermal mass charges — the building reaches equilibrium over hours/days.
-        let heat_cap = self.0.hvac_heating_capacity;
-        let cool_cap = self.0.hvac_cooling_capacity;
-        let mut hvac_data = Vec::with_capacity(self.0.num_zones);
-        let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
-        for i in 0..self.0.num_zones {
-            let t_free_val = t_i_free_5r1c.as_ref()[i];
-            // HVAC coefficient: den / term_rest_1 (original 5R1C sensitivity inverse).
-            // With proper mass temp evolution, this gives 9.16 MWh heating (still 6×
-            // too high). Scale by 0.5 to account for thermal mass buffering that the
-            // static sensitivity formula doesn't capture.
-            // TODO(#872): Find the physics-based justification for this scaling factor.
-            let term_rest_1_zone = self.0.derived_term_rest_1.as_ref()[i];
-            let den_val = self.0.derived_den.as_ref()[i];
-            let h_coeff = if term_rest_1_zone > 0.0 {
-                den_val / (2.0 * term_rest_1_zone)
-            } else {
-                self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]
-            };
-
-            let q = if t_free_val < self.0.heating_setpoint {
-                h_coeff * (self.0.heating_setpoint - t_free_val)
-            } else if t_free_val > self.0.cooling_setpoint {
-                h_coeff * (self.0.cooling_setpoint - t_free_val)
-            } else {
-                0.0
-            };
-            let q_clamped = q.clamp(-cool_cap, heat_cap);
-            hvac_data.push(q_clamped);
-
-            if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
-                t_i_act_data.push(t_free_val + q_clamped / h_coeff);
-            } else {
-                t_i_act_data.push(t_free_val);
-            }
-        }
-        let hvac_for_temp_calc = T::from(VectorField::new(hvac_data));
-        let t_i_act = T::from(VectorField::new(t_i_act_data));
-
-        // Update zone temperatures
+        // Update zone temperatures with the HVAC-influenced t_i_act
         let temps_slice = self.0.temperatures.as_mut();
         for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
             if i < temps_slice.len() {
