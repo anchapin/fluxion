@@ -2326,6 +2326,9 @@ impl ThermalModel<VectorField> {
             derived_h_ms_is_prod: VectorField::from_scalar(0.0, num_zones),
             derived_den: VectorField::from_scalar(0.0, num_zones),
             derived_ground_coeff: VectorField::from_scalar(0.0, num_zones),
+            derived_h_tr_1: VectorField::from_scalar(0.0, num_zones),
+            derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
+            derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
             diagnostics: None,
             current_hvac_output: None,
 

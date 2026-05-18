@@ -137,6 +137,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             + self.0.derived_term_rest_1.clone() * h_total.clone()
             + self.0.derived_ground_coeff.clone();
 
+        // ISO 13790 §C.6-C.8: Combined conductances for Crank-Nicolson mass update
+        // H_tr_1 = 1 / (1/h_ve + 1/h_tr_is) = h_ve * h_tr_is / (h_ve + h_tr_is)
+        self.0.derived_h_tr_1 = (self.0.h_ve.clone() * self.0.h_tr_is.clone())
+            / (self.0.h_ve.clone() + self.0.h_tr_is.clone());
+
+        // H_tr_2 = H_tr_1 + h_tr_w
+        self.0.derived_h_tr_2 = self.0.derived_h_tr_1.clone() + self.0.h_tr_w.clone();
+
+        // H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms) = H_tr_2 * h_tr_ms / (H_tr_2 + h_tr_ms)
+        self.0.derived_h_tr_3 = (self.0.derived_h_tr_2.clone() * self.0.h_tr_ms.clone())
+            / (self.0.derived_h_tr_2.clone() + self.0.h_tr_ms.clone());
+
         // sensitivity = 1 / h_total (thermal resistance in K/W)
         // This represents the temperature change per Watt of HVAC power
         // HVAC power formula: P = (T_sp - T_free) / sensitivity
