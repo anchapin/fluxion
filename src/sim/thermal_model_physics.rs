@@ -25,16 +25,19 @@ use crate::sim::timestep_solver::StepParameters;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    /// Calculate HVAC power demand using ISO 13790 building demand formula.
+    /// Calculate HVAC power demand using ISO 13790 steady-state building conductance.
     ///
-    /// Uses the total building conductance (H_total) to compute thermal power
-    /// required to maintain setpoints from the free-floating temperature:
+    /// Uses the total building conductance (H_total) from the 5R1C network to compute
+    /// the steady-state thermal power required to maintain setpoints:
     ///   Q_HC = H_total × (T_setpoint - T_free)
     ///
     /// H_total = H_opaque + H_window + H_ve, where:
-    ///   H_opaque = 1 / (1/H_is + 1/H_ms + 1/H_em)  (series through envelope)
+    ///   H_opaque = 1/(1/H_is + 1/H_ms + 1/H_em)  (series through envelope)
     ///   H_window = direct window conductance
     ///   H_ve     = ventilation conductance (ρ × cp × V_dot)
+    ///
+    /// This gives the correct ANNUAL ENERGY for HVAC. The temperature update
+    /// (elsewhere) uses H_eff (CRANK sensitivity) for correct temperature propagation.
     ///
     /// # Arguments
     /// * `zone_temps` - Free-floating zone air temperatures (°C)
@@ -1126,15 +1129,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             )
         };
 
-        // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        // Temperature update: t_i_act = t_i_free + hvac_power / H_eff
+        // H_eff = derived_den / derived_term_rest_1 is the CRANK model sensitivity
+        // (how much T_air changes per watt of HVAC input through the 5R1C network).
+        // Using h_tr_is (≈1251 W/K) as divisor only accounts for air↔surface conductance,
+        // ignoring the mass node coupling. H_eff (≈700 W/K for Case 600) is the correct
+        // divisor because it captures the full network response.
+        let term_rest_1_slice = self.0.derived_term_rest_1.as_ref();
+        let den_slice = self.0.derived_den.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
         let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
-            let h_is = h_tr_is_vec[i];
-            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+            let tr1 = term_rest_1_slice[i];
+            let d = den_slice[i];
+            let h_eff = if tr1 > 0.0 { d / tr1 } else { 0.0 };
+            if h_eff > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_data.push(t_free[i] + hvac[i] / h_eff);
             } else {
                 t_i_act_data.push(t_free[i]);
             }
