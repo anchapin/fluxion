@@ -2430,8 +2430,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .iter()
                     .position(|&d| d > day_of_year)
                     .unwrap_or(12)
-                    .saturating_sub(1)
-                    .max(0) as u32;
+                    .saturating_sub(1) as u32;
                 let day =
                     (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
 
