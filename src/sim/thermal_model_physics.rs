@@ -1224,11 +1224,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate actual surface temperature for mass update (including HVAC effect)
         // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
-        let mut ts_num_act = self.0.h_tr_ms.clone();
-        ts_num_act.mul_assign(&self.0.mass_temperatures);
-        let mut term2 = self.0.h_tr_is.clone();
-        term2.mul_assign(&t_i_act);
-        ts_num_act.add_assign(&term2);
+        let mut ts_num_act = self
+            .0
+            .h_tr_ms
+            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
+        ts_num_act.add_assign(&self.0.h_tr_is.zip_with(&t_i_act, |a, b| a * b));
         ts_num_act.add_assign(&phi_st);
         // Denominator is term_rest_1
         let mut t_s_act = ts_num_act;
