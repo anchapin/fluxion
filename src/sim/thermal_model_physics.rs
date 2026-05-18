@@ -16,9 +16,8 @@ use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::OccupancyProfile;
 use crate::sim::profiles;
 use crate::sim::thermal_integration::{
-    backward_euler_update, backward_euler_update_2cond, crank_nicolson_iso13790,
-    crank_nicolson_update, crank_nicolson_update_3cond, select_integration_method,
-    ThermalIntegrationMethod,
+    backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
+    crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
@@ -2390,6 +2389,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 1. Free-floating zone temperature (validated at 42.87°C for 900FF)
         let t_i_free_5r1c = t_i_free.clone();
 
+        #[allow(clippy::needless_range_loop)]
         for zone_idx in 0..self.0.num_zones {
             if zone_idx >= self.0.multi_node_solvers.len() {
                 continue;
@@ -2412,6 +2412,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             solver.set_zone_temperature(t_zone_prev);
             solver.set_surface_temperature(t_surface);
+
 
 
             // (#872) Step solver with gains: internal radiative loads to internal mass node.
