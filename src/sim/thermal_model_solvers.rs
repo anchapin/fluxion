@@ -137,6 +137,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             + self.0.derived_term_rest_1.clone() * h_total.clone()
             + self.0.derived_ground_coeff.clone();
 
+        // ISO 13790 §C.6-C.8: Combined conductances for Crank-Nicolson mass update
+        // H_tr_1 = 1 / (1/h_ve + 1/h_tr_is) = h_ve * h_tr_is / (h_ve + h_tr_is)
+        self.0.derived_h_tr_1 = (self.0.h_ve.clone() * self.0.h_tr_is.clone())
+            / (self.0.h_ve.clone() + self.0.h_tr_is.clone());
+
+        // H_tr_2 = H_tr_1 + h_tr_w
+        self.0.derived_h_tr_2 = self.0.derived_h_tr_1.clone() + self.0.h_tr_w.clone();
+
+        // H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms) = H_tr_2 * h_tr_ms / (H_tr_2 + h_tr_ms)
+        self.0.derived_h_tr_3 = (self.0.derived_h_tr_2.clone() * self.0.h_tr_ms.clone())
+            / (self.0.derived_h_tr_2.clone() + self.0.h_tr_ms.clone());
+
         // sensitivity = 1 / h_total (thermal resistance in K/W)
         // This represents the temperature change per Watt of HVAC power
         // HVAC power formula: P = (T_sp - T_free) / sensitivity
@@ -149,17 +161,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // The series combination of these paths gives the total thermal resistance
         // that the HVAC system "sees" when trying to control air temperature.
-        self.0.derived_sensitivity =
-            self.0.derived_term_rest_1.clone() / self.0.derived_den.clone();
-
-        // Debug: Print sensitivity calculation for Case 600
-        if self.0.case_id == "600" {
-            println!(
-                "DEBUG SENS Case 600: h_ext={:.2} W/K, sensitivity={:.6} K/W (1/h_total)",
-                h_total.as_ref()[0],
-                self.0.derived_sensitivity.as_ref()[0]
-            );
-        }
+        // Note (#872): derived_sensitivity has been removed. HVAC demand now uses
+        // the physics-based h_loss × (T_sp - T_free) formula in step_physics_9r4c,
+        // and ideal loads formula in step_physics_5r1c.
     }
 
     /// Configures the model to use the 6R2C thermal network with two mass nodes.

@@ -28,6 +28,7 @@ pub mod thermal_model_iterative;
 pub mod thermal_model_physics;
 pub mod thermal_model_solvers;
 pub mod timestep_solver;
+pub mod warmup;
 
 pub mod thermal_integration;
 pub mod ventilation;

@@ -146,8 +146,13 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub derived_term_rest_1: T,
     pub derived_h_ms_is_prod: T,
     pub derived_den: T,
-    pub derived_sensitivity: T,
     pub derived_ground_coeff: T,
+    /// ISO 13790 §C.6: H_tr_1 = 1/(1/H_ve_adj + 1/H_tr_is) — combined ventilation + surface-to-air
+    pub derived_h_tr_1: T,
+    /// ISO 13790 §C.7: H_tr_2 = H_tr_1 + H_tr_w — adds window conductance
+    pub derived_h_tr_2: T,
+    /// ISO 13790 §C.8: H_tr_3 = 1/(1/H_tr_2 + 1/H_tr_ms) — combined air-to-mass (~40 W/K for Case 900)
+    pub derived_h_tr_3: T,
     pub diagnostics: Option<SimulationDiagnostics>,
     pub current_hvac_output: Option<T>,
     pub internal_radiative_to_mass: f64,
@@ -302,8 +307,10 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             derived_term_rest_1: self.derived_term_rest_1.clone(),
             derived_h_ms_is_prod: self.derived_h_ms_is_prod.clone(),
             derived_den: self.derived_den.clone(),
-            derived_sensitivity: self.derived_sensitivity.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
+            derived_h_tr_1: self.derived_h_tr_1.clone(),
+            derived_h_tr_2: self.derived_h_tr_2.clone(),
+            derived_h_tr_3: self.derived_h_tr_3.clone(),
             diagnostics: None,
             current_hvac_output: self.current_hvac_output.clone(),
             internal_radiative_to_mass: self.internal_radiative_to_mass,

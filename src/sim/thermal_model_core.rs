@@ -466,6 +466,14 @@ impl ThermalModel<VectorField> {
                 .u_value(Some(crate::sim::construction::SurfaceType::Floor), None);
         }
 
+        // Issue #746: Apply ground temperature boundary condition per ASHRAE 140-2023 Annex B §B3.3.
+        // T_ground = 9.4°C (annual mean Denver air temperature) for all cases with floor slab.
+        if let Some(ground_temp) = spec.ground_temperature_c {
+            model.ground_temperature = Box::new(
+                crate::sim::boundary::ConstantGroundTemperature::new(ground_temp),
+            );
+        }
+
         // Access first HVAC schedule
         let hvac = &spec.hvac[0];
 
@@ -2325,8 +2333,10 @@ impl ThermalModel<VectorField> {
             derived_term_rest_1: VectorField::from_scalar(0.0, num_zones),
             derived_h_ms_is_prod: VectorField::from_scalar(0.0, num_zones),
             derived_den: VectorField::from_scalar(0.0, num_zones),
-            derived_sensitivity: VectorField::from_scalar(0.0, num_zones),
             derived_ground_coeff: VectorField::from_scalar(0.0, num_zones),
+            derived_h_tr_1: VectorField::from_scalar(0.0, num_zones),
+            derived_h_tr_2: VectorField::from_scalar(0.0, num_zones),
+            derived_h_tr_3: VectorField::from_scalar(0.0, num_zones),
             diagnostics: None,
             current_hvac_output: None,
 

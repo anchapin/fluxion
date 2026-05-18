@@ -1185,99 +1185,12 @@ impl ASHRAE140Validator {
 
         // Sequential post-processing: print results and accumulate into report
         for partial in partials {
-            if let (Some(data), Some(mut results)) = (partial.data, partial.results) {
-                // === SESSION 81: TDD Empirical Correction Factors ===
-                // These factors compensate for known model formulation gaps while
-                // physics-based fixes are being implemented. Each factor is documented
-                // with its physical basis and target for removal.
-                //
-                // Root causes being addressed:
-                // 1. Thermal mass coupling conductances need calibration
-                // 2. Solar gain distribution to thermal mass incomplete
-                // 3. CTF zone air coupling solver integration pending
-                // 4. Night ventilation modeling incomplete
-                //
-                // Target: Gradually reduce factors to 1.0 as physics improvements land.
+            if let (Some(data), Some(results)) = (partial.data, partial.results) {
+                // Raw simulation results — no post-simulation correction factors applied.
+                // Issue #724: Removed all empirical correction factors. Raw outputs are
+                // compared directly against ASHRAE 140 reference values.
 
-                // Session 78/79: Heating overprediction correction
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                let heating_correction = 1.0;
-
-                // Session 78/79: Cooling underprediction correction
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                let cooling_correction = 1.0;
-
-                // Apply corrections
-                if heating_correction != 1.0 && results.annual_heating_mwh > 0.0 {
-                    results.annual_heating_mwh /= heating_correction;
-                }
-                if cooling_correction != 1.0 && results.annual_cooling_mwh > 0.0 {
-                    results.annual_cooling_mwh *= cooling_correction;
-                }
-
-                // Session 69: Peak load corrections
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                let peak_cooling_correction = 1.0;
-
-                let peak_heating_correction = 1.0;
-
-                if peak_cooling_correction != 1.0 {
-                    results.peak_cooling_kw *= peak_cooling_correction;
-                }
-                if peak_heating_correction != 1.0 {
-                    results.peak_heating_kw *= peak_heating_correction;
-                }
-
-                // Session 70: Case 960 sunspace COP correction
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                if partial.case_id == "960" {
-                    let cooling_cop = 1.0;
-                    let heating_efficiency = 1.0;
-                    results.annual_heating_mwh /= heating_efficiency;
-                    results.annual_cooling_mwh /= cooling_cop;
-                }
-
-                // Session 91/93: Apply sensitivity correction for high-mass cases
-                // The simplified 5R1C thermal network needs empirical corrections to match
-                // ASHRAE 140 reference values. These corrections compensate for the difference
-                // between the simplified model and detailed simulation.
-                //
-                // TODO-BLIND-VALIDATION: Skip ALL post-simulation multipliers in Blind mode.
-                // The validation_mode is checked at the start of each case block.
-                if self.validation_mode == ValidationMode::Informed {
-                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 900 (High Mass)
-                    // Remove this block for blind validation mode
-                    // Effect if removed: heating ~4x higher, cooling ~2x higher than reference
-                    if partial.case_id == "900" {
-                        results.annual_heating_mwh /= 4.0;
-                        results.annual_cooling_mwh *= 0.50;
-                    }
-
-                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 910 (High Mass)
-                    // Remove this block for blind validation mode
-                    // Effect if removed: heating ~2.5x higher, cooling ~2.86x higher than reference
-                    if partial.case_id == "910" {
-                        results.annual_heating_mwh /= 2.5;
-                        results.annual_cooling_mwh *= 0.35;
-                    }
-
-                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 940 (High Mass)
-                    // Remove this block for blind validation mode
-                    // Effect if removed: heating ~2.7x higher, cooling ~2.22x higher than reference
-                    if partial.case_id == "940" {
-                        results.annual_heating_mwh /= 2.7;
-                        results.annual_cooling_mwh *= 0.45;
-                    }
-
-                    // TODO-BLIND-VALIDATION: Post-simulation multiplier for Case 950 (High Mass)
-                    // Remove this block for blind validation mode
-                    // Effect if removed: cooling ~2.86x higher than reference
-                    if partial.case_id == "950" {
-                        results.annual_cooling_mwh *= 0.35;
-                    }
-                } // End TODO-BLIND-VALIDATION post-simulation multipliers
-
-                // Print corrected results for transparency
+                // Print results for transparency
 
                 if partial.is_free_floating {
                     println!(
