@@ -815,6 +815,7 @@ mod tests {
                     }),
                 },
             ],
+            warm_up_years: 2,
         };
         // Serialize to YAML and write to a temporary file
         let yaml = serde_yaml::to_string(&config).expect("Failed to serialize config to YAML");
@@ -857,6 +858,7 @@ mod tests {
                 }),
                 sweep: None,
             }],
+            warm_up_years: 2,
         };
         let expanded = expand_variants(&config).unwrap();
         assert_eq!(expanded.len(), 1);
@@ -879,6 +881,7 @@ mod tests {
                     map
                 }),
             }],
+            warm_up_years: 2,
         };
         let expanded = expand_variants(&config).unwrap();
         assert_eq!(expanded.len(), 3);
