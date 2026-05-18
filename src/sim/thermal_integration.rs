@@ -135,6 +135,58 @@ pub fn backward_euler_update(
     numer / denom
 }
 
+/// ISO 13790 Crank-Nicolson mass temperature update (§C.4).
+///
+/// Uses the combined phi_m_tot which includes HVAC power propagated through
+/// the thermal network via H_tr_1, H_tr_2, H_tr_3.
+///
+/// The Crank-Nicolson scheme averages the conductance terms between old and new
+/// time steps for 2nd-order accuracy:
+///   Tm_next = [Tm_prev × (Cm/dt - 0.5×(H_tr_3 + H_tr_em)) + phi_m_tot]
+///             / [Cm/dt + 0.5×(H_tr_3 + H_tr_em)]
+///
+/// The key difference from backward_euler_update:
+/// - Uses H_tr_3 (combined conductance ≈ 40 W/K) instead of h_tr_ms (≈ 1300 W/K)
+/// - This gives the mass a much longer time constant (days, not hours)
+/// - Creating the correct seasonal mass temperature swing for HVAC energy
+///
+/// # Arguments
+/// * `tm_prev` - Previous mass temperature (K or °C)
+/// * `dt` - Time step in seconds
+/// * `cm` - Thermal capacitance of mass (J/K)
+/// * `h_tr_3` - ISO 13790 combined conductance H_tr_3 (W/K)
+/// * `h_tr_em` - Mass-to-exterior conductance (W/K)
+/// * `phi_m_tot` - Total heat flow to mass node (W), includes HVAC via network
+pub fn crank_nicolson_iso13790(
+    tm_prev: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_3: f64,
+    h_tr_em: f64,
+    phi_m_tot: f64,
+) -> f64 {
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    let cm_dt = cm / dt;
+    let half_cond = 0.5 * (h_tr_3 + h_tr_em);
+
+    let denom = cm_dt + half_cond;
+    let numer = tm_prev * (cm_dt - half_cond) + phi_m_tot;
+
+    // Check for negative denominator (can happen if conductances > Cm/dt)
+    if denom <= 0.0 {
+        // Fall back to forward Euler to avoid instability
+        return tm_prev + dt / cm * phi_m_tot;
+    }
+
+    numer / denom
+}
+
 /// Backward Euler solver for thermal mass with 2 conductances (no exterior path).
 ///
 /// For 6R2C envelope mass: h_tr_em is NOT included in the heat balance.
