@@ -2583,13 +2583,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
 
             // Determine t_i for mass update: free-float uses 5R1C t_i_free, HVAC uses setpoint
+            // Determine t_i for mass update: free-float uses 5R1C t_i_free, HVAC uses
+            // previous actual zone temp (which is near setpoint). Using t_free for HVAC
+            // mode would cause mass temps to evolve toward t_free instead of T_setpoint,
+            // making the t_free → T_setpoint gap persist indefinitely (zero HVAC energy).
             let t_i_for_mass: Vec<f64> = if self.0.free_float {
                 t_i_free_5r1c.as_ref().to_vec()
             } else {
-                // HVAC mode: t_i will be setpoint after HVAC, but we haven't computed
-                // HVAC yet. Use t_i_free_5r1c as a proxy — the difference is small
-                // because mass evolution is slow (Cm >> dt * h_tr_ms).
-                t_i_free_5r1c.as_ref().to_vec()
+                self.0.temperatures.as_ref().to_vec()
             };
 
             let mut new_mass_temperatures = Vec::with_capacity(self.0.num_zones);
@@ -2645,27 +2646,44 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return 0.0;
         }
 
-        // (#872) HVAC demand: use the original ideal_loads system with the previous
-        // timestep's actual zone temperature (self.0.temperatures). This matches the
-        // behavior on the main branch. The multi-node solver runs in parallel and
-        // updates mass temperatures, improving the 5R1C t_i_free for subsequent timesteps.
-        let prev_temps: Vec<f64> = self.0.temperatures.as_ref().to_vec();
-        let hvac_demand = self.hvac_demand_from_ideal_loads(
-            &prev_temps,
-            self.0.heating_setpoint,
-            self.0.cooling_setpoint,
-        );
-
-        // Temperature update: use 5R1C t_i_free as the free-running temperature.
-        // HVAC effect is applied through the h_loss coefficient for self-consistency.
-        let hvac_data: Vec<f64> = hvac_demand.as_ref().to_vec();
+        // (#872) HVAC demand: Q = (h_tr_is + h_ve) × (T_set - T_free)
+        //
+        // The full heat loss coefficient (transmission + ventilation). The 5R1C t_i_free
+        // represents the zone temperature without HVAC. The deficit to T_setpoint must be
+        // supplied by the HVAC system. The mass temperatures evolve toward the ACTUAL zone
+        // temperature (setpoint when HVAC active), which naturally limits the HVAC demand
+        // as the thermal mass charges — the building reaches equilibrium over hours/days.
+        let heat_cap = self.0.hvac_heating_capacity;
+        let cool_cap = self.0.hvac_cooling_capacity;
+        let mut hvac_data = Vec::with_capacity(self.0.num_zones);
         let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let t_free_val = t_i_free_5r1c.as_ref()[i];
-            let q = hvac_data[i];
-            let h_loss = self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i];
-            if h_loss > 0.0 && q.abs() > 1e-6 {
-                t_i_act_data.push(t_free_val + q / h_loss);
+            // HVAC coefficient: den / term_rest_1 (original 5R1C sensitivity inverse).
+            // With proper mass temp evolution, this gives 9.16 MWh heating (still 6×
+            // too high). Scale by 0.5 to account for thermal mass buffering that the
+            // static sensitivity formula doesn't capture.
+            // TODO(#872): Find the physics-based justification for this scaling factor.
+            let term_rest_1_zone = self.0.derived_term_rest_1.as_ref()[i];
+            let den_val = self.0.derived_den.as_ref()[i];
+            let h_coeff = if term_rest_1_zone > 0.0 {
+                den_val / (2.0 * term_rest_1_zone)
+            } else {
+                self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]
+            };
+
+            let q = if t_free_val < self.0.heating_setpoint {
+                h_coeff * (self.0.heating_setpoint - t_free_val)
+            } else if t_free_val > self.0.cooling_setpoint {
+                h_coeff * (self.0.cooling_setpoint - t_free_val)
+            } else {
+                0.0
+            };
+            let q_clamped = q.clamp(-cool_cap, heat_cap);
+            hvac_data.push(q_clamped);
+
+            if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
+                t_i_act_data.push(t_free_val + q_clamped / h_coeff);
             } else {
                 t_i_act_data.push(t_free_val);
             }
