@@ -29,18 +29,10 @@ use crate::validation::ashrae_140_cases::Orientation;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    /// Calculate HVAC power demand using ISO 13790 building demand formula.
-    ///
-    /// Uses the total building conductance (H_tr_is) to compute the thermal
-    /// power required to maintain setpoints from the free-floating temperature:
-    ///   Q_HC = H_tr_is × (T_setpoint - T_free)
-    ///
-    /// This replaces the previous air-capacity formula (mass_flow × cp × ΔT)
-    /// which incorrectly used supply air temperature rather than building
-    /// thermal demand per ISO 13790 §7.2.
+    /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
     ///
     /// # Arguments
-    /// * `zone_temps` - Free-floating zone air temperatures (°C)
+    /// * `zone_temps` - Current zone temperatures (°C)
     /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
     /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
     fn hvac_demand_from_ideal_loads(
@@ -50,32 +42,34 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         cooling_setpoint: f64,
     ) -> T {
         let enabled_vec = self.0.hvac_enabled.as_ref();
-        let h_tr_is = self.0.h_tr_is.as_ref();
+
+        let heating_vec = vec![heating_setpoint; self.0.num_zones];
+        let cooling_vec = vec![cooling_setpoint; self.0.num_zones];
 
         let heat_cap = self.0.hvac_heating_capacity;
         let cool_cap = self.0.hvac_cooling_capacity;
 
         let mut combined_demand = vec![0.0; self.0.num_zones];
-        for zone_idx in 0..self.0.num_zones {
-            let enabled = enabled_vec.get(zone_idx).copied().unwrap_or(1.0);
-            if enabled < 0.5 {
-                continue;
+        for (zone_idx, opt_system) in self.0.ideal_loads_system.iter().enumerate() {
+            if let Some(ref system) = opt_system {
+                let zone_temps_slice = &zone_temps[zone_idx..zone_idx + 1];
+                let heating_slice = &heating_vec[zone_idx..zone_idx + 1];
+                let cooling_slice = &cooling_vec[zone_idx..zone_idx + 1];
+                let enabled_slice = &enabled_vec[zone_idx..zone_idx + 1];
+
+                let demands = system.calculate_power_demand_vector(
+                    zone_temps_slice,
+                    heating_slice,
+                    cooling_slice,
+                    enabled_slice,
+                );
+
+                // Clamp to HVAC capacity limits to prevent numerical explosion
+                // when zone temperatures are extreme (e.g., bare models without
+                // update_derived_parameters). Matches the .clamp() in the old
+                // hvac_power_demand method.
+                combined_demand[zone_idx] = demands[0].clamp(-cool_cap, heat_cap);
             }
-
-            let t_free = zone_temps[zone_idx];
-            let h_total = h_tr_is.get(zone_idx).copied().unwrap_or(0.0);
-
-            // ISO 13790 §7.2: Q_HC = H_tr_is × (T_setpoint - T_free)
-            let demand = if t_free < heating_setpoint {
-                h_total * (heating_setpoint - t_free) // positive = heating
-            } else if t_free > cooling_setpoint {
-                h_total * (cooling_setpoint - t_free) // negative = cooling
-            } else {
-                0.0
-            };
-
-            // Clamp to HVAC capacity limits to prevent numerical explosion
-            combined_demand[zone_idx] = demand.clamp(-cool_cap, heat_cap);
         }
 
         T::from(VectorField::new(combined_demand))
