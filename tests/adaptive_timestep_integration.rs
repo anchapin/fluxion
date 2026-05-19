@@ -256,7 +256,9 @@ fn test_thermal_model_timestep_mode_configuration() {
     use fluxion::sim::engine::ThermalModel;
     use std::time::Duration;
 
-    let mut model = ThermalModel::<VectorField>::new(1);
+    // High-mass case - use from_spec() for proper thermal parameters
+    let spec_900 = ASHRAE140Case::Case900.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec_900);
     model.case_id = "900".to_string(); // High-mass case
 
     // Test 1: Default mode (fixed 1-hour)
@@ -279,7 +281,8 @@ fn test_thermal_model_timestep_mode_configuration() {
     );
 
     // Test 3: Low-mass case with adaptive mode
-    let mut model_low = ThermalModel::<VectorField>::new(1);
+    let spec_600 = ASHRAE140Case::Case600.spec();
+    let mut model_low = ThermalModel::<VectorField>::from_spec(&spec_600);
     model_low.case_id = "600".to_string();
     model_low.set_timestep_mode(TimestepMode::adaptive(
         Duration::from_secs(360),
@@ -316,8 +319,9 @@ fn test_thermal_model_time_constant_estimation() {
     use fluxion::physics::cta::VectorField;
     use fluxion::sim::engine::ThermalModel;
 
-    // High-mass case
-    let mut model_900 = ThermalModel::<VectorField>::new(1);
+    // High-mass case - use from_spec() for proper thermal parameters
+    let spec_900 = ASHRAE140Case::Case900.spec();
+    let mut model_900 = ThermalModel::<VectorField>::from_spec(&spec_900);
     model_900.case_id = "900".to_string();
     let tau_900 = model_900.estimate_time_constant_hours();
     assert!(
@@ -326,8 +330,9 @@ fn test_thermal_model_time_constant_estimation() {
         tau_900
     );
 
-    // Low-mass case
-    let mut model_600 = ThermalModel::<VectorField>::new(1);
+    // Low-mass case - use from_spec() for proper thermal parameters
+    let spec_600 = ASHRAE140Case::Case600.spec();
+    let mut model_600 = ThermalModel::<VectorField>::from_spec(&spec_600);
     model_600.case_id = "600".to_string();
     let tau_600 = model_600.estimate_time_constant_hours();
     assert!(
@@ -337,8 +342,9 @@ fn test_thermal_model_time_constant_estimation() {
     );
 
     // Unknown case - estimated from thermal parameters, not case_id
-    // Default model has thermal_capacitance and conductances, so it returns calculated value
-    let model_unknown = ThermalModel::<VectorField>::new(1);
+    // Use from_spec() to get proper initialization, then verify τ is calculated
+    let spec_custom = ASHRAE140Case::Case600.spec(); // Use 600 as base
+    let model_unknown = ThermalModel::<VectorField>::from_spec(&spec_custom);
     let tau_unknown = model_unknown.estimate_time_constant_hours();
     // Value is estimated from thermal_capacitance / (h_tr_ms + h_tr_em)
     assert!(

@@ -309,21 +309,37 @@ fn test_internal_mass_time_constant_invariant() {
 
 #[test]
 fn test_6r2c_model_energy_conservation() {
-    let mut model = ThermalModel::new(1);
+    // Use from_spec() to properly initialize h_tr_me (Issue 692 fix)
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     model.configure_6r2c_model(0.75, 100.0, None);
 
     for t in 0..100 {
         let energy = model.step_physics(t, 20.0, 3600.0);
-        assert!(energy.is_finite());
-        assert!(model.temperatures.as_ref()[0].is_finite());
-        assert!(model.envelope_mass_temperatures.as_ref()[0].is_finite());
-        assert!(model.internal_mass_temperatures.as_ref()[0].is_finite());
+        assert!(energy.is_finite(), "Energy should be finite at t={}", t);
+        assert!(
+            model.temperatures.as_ref()[0].is_finite(),
+            "Zone temp should be finite at t={}",
+            t
+        );
+        assert!(
+            model.envelope_mass_temperatures.as_ref()[0].is_finite(),
+            "Envelope mass temp should be finite at t={}",
+            t
+        );
+        assert!(
+            model.internal_mass_temperatures.as_ref()[0].is_finite(),
+            "Internal mass temp should be finite at t={}",
+            t
+        );
     }
 }
 
 #[test]
 fn test_warm_start_continuity() {
-    let mut model = ThermalModel::new(1);
+    // Use from_spec() to properly initialize h_tr_me (Issue 692 fix)
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     model.configure_6r2c_model(0.75, 100.0, None);
 
     for timestep in 0..24 {
@@ -336,7 +352,10 @@ fn test_warm_start_continuity() {
 
     assert!(
         (t_env_next - t_env_final).abs() < 5.0,
-        "Large temperature jump detected"
+        "Large temperature jump detected: ΔT = {:.2}°C (from {:.1} to {:.1})",
+        (t_env_next - t_env_final).abs(),
+        t_env_final,
+        t_env_next
     );
 }
 

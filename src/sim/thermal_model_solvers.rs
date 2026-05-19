@@ -198,8 +198,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // h_tr_me is now set from physics in from_spec() - do not overwrite here
         // Previously: self.0.h_tr_me = self.0.zone_area.clone().map(|_| h_tr_me_value);
-        // The physics-based h_tr_me (≈432 W/K for 48m² zone) provides stronger thermal
-        // coupling than the old hardcoded 100.0 W/K, addressing Issue 692.
+        // The physics-based h_tr_me provides stronger thermal coupling than the old
+        // hardcoded 100.0 W/K, addressing Issue 692.
 
         // Override h_tr_ms if provided (for 6R2C tuning)
         if let Some(h_tr_ms) = h_tr_ms_value {

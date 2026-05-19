@@ -2403,6 +2403,7 @@ impl CaseBuilder {
             )
             .with_dimensions(8.0, 6.0, 2.7)
             .high_mass_construction()
+            .with_building_type(BuildingType::Commercial) // Issue #2: High-mass = heavier furniture
             .with_construction(
                 Assemblies::high_mass_wall_standard(),
                 Assemblies::high_mass_roof(),
