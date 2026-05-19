@@ -37,6 +37,7 @@ use std::time::Duration;
 #[path = "decision_recorder.rs"]
 mod decision_recorder;
 
+use decision_recorder::tdqs_mod as tdqs;
 use decision_recorder::{
     assert_label_consistency, current_adaptive_timestep_decision,
     current_constraint_warning_decision, current_hvac_horizon_decision, current_solver_decision,
@@ -44,7 +45,6 @@ use decision_recorder::{
     ground_truth_constraint_warning, ground_truth_hvac_horizon, ground_truth_solver_is_fd,
     ground_truth_surrogate_routing,
 };
-use decision_recorder::tdqs_mod as tdqs;
 use tdqs::{compute_tdqs, compute_tdqs_breakdown};
 
 // ---------------------------------------------------------------------------
