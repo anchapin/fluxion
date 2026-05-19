@@ -11,7 +11,7 @@ use crate::sim::assembly::BuildingAssembly;
 use crate::sim::construction::{SurfaceType, WallSurface};
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
-use crate::sim::occupancy::BuildingType;
+use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
@@ -1335,15 +1335,16 @@ impl ThermalModel<VectorField> {
         //
         // PHASE 36-04 FIX: Reduced A_int from 2.0*floor_area to 0.5*floor_area
         // because furniture area is ~25-50% of floor area, not 200%.
-        // Previous h_tr_me = 432 W/K was too high, causing excessive thermal coupling.
-        // ASHRAE 140 reference implies τ ≈ 167h for high-mass cases.
-        //
-        // PHASE 6B FIX: Increased A_int from 0.1 to 0.4 * floor_area
-        // Per research, furniture/partition thermal mass has τ ≈ 3-4 hours.
-        // With ρ = 800 kg/m³, c = 1000 J/(kg·K), and furniture area ≈ 40% of floor area:
-        // Cm_internal = 0.4 * floor_area * 0.1m * 800 * 1000 ≈ 32,000 * floor_area J/K
-        // h_tr_me = 0.4 * floor_area * 4.5 ≈ 1.8 * floor_area W/K
-        // τ = Cm/h_tr_me ≈ (32,000 * floor_area) / (1.8 * floor_area) ≈ 17,800 s ≈ 4.9 h (close to 3-4h target)
+        // === Issue #1: Furniture factor-based C_me and h_tr_me calculation ===
+        // Per ISO 13790 research and ASHRAE 140 validation:
+        // - C_me = A_floor × 55,000 × f_furniture (J/K)
+        // - f_furniture varies by building type: Residential=0.3, Commercial/Institutional=0.5
+        // This gives τ_me ≈ 3-4 hours (correct for furniture thermal mass)
+        let furniture_factor = match spec.building_type {
+            crate::validation::ashrae_140_cases::BuildingType::Residential => 0.3,
+            crate::validation::ashrae_140_cases::BuildingType::Commercial => 0.5,
+            crate::validation::ashrae_140_cases::BuildingType::Institutional => 0.5,
+        };
         let h_tr_me_vec: Vec<f64> = (0..num_zones)
             .map(|zone_idx| {
                 let zone_floor_area = if zone_idx < spec.geometry.len() {
@@ -1351,20 +1352,19 @@ impl ThermalModel<VectorField> {
                 } else {
                     spec.geometry[0].floor_area()
                 };
-                let a_int = 0.4 * zone_floor_area; // Furniture surface area (~40% of floor area)
+                // Use furniture factor for internal mass area (furniture/partition surface area)
+                let a_int = furniture_factor * zone_floor_area;
                 let h_ms = 4.5; // Furniture/partitions coupling coefficient W/(m²·K)
                 let h_tr_me = h_ms * a_int;
 
                 // Also update cm_internal for 9R4C model (Phase 6B)
-                // Cm = ρ * c * V where V = a_int * thickness (0.1m furniture thickness)
-                let furniture_thickness = 0.1; // m
-                let furniture_density = 800.0; // kg/m³
-                let furniture_cp = 1000.0; // J/(kg·K)
-                let cm_internal = a_int * furniture_thickness * furniture_density * furniture_cp;
+                // Per issue #1 formula: C_me = A_floor × 55,000 × f_furniture (J/K)
+                // This replaces the previous ρ*c*V calculation with the furniture factor formula
+                let c_me = zone_floor_area * 55_000.0 * furniture_factor;
 
                 // Push to cm_internal_vec if 9R4C model
                 if is_9r4c_model {
-                    cm_internal_vec.push(cm_internal);
+                    cm_internal_vec.push(c_me);
                 }
 
                 h_tr_me
@@ -1829,7 +1829,7 @@ impl ThermalModel<VectorField> {
         model.case_id = spec.case_id.clone();
 
         // Set building type for auto-loading internal load profiles (Plan 17-04)
-        model.building_type = BuildingType::Office;
+        model.building_type = OccupancyBuildingType::Office;
 
         // Configure door geometry for temperature-dependent inter-zone air exchange (stack effect)
         // Used for sunspace buildings (Case 960)
@@ -2181,7 +2181,7 @@ impl ThermalModel<VectorField> {
             case_id: String::new(),
 
             // Building type for auto-loading internal load profiles (Plan 17-04)
-            building_type: BuildingType::Office,
+            building_type: OccupancyBuildingType::Office,
 
             // Thermal model type
             thermal_model_type: ThermalModelType::FiveROneC,

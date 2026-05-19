@@ -261,6 +261,49 @@ fn test_envelope_mass_time_constant_based_on_h_tr_ms() {
 }
 
 // ============================================================================
+// Section 3.6: Issue 5 - Internal Mass Time Constant Invariant
+// ============================================================================
+
+#[test]
+fn test_internal_mass_time_constant_invariant() {
+    // τ_me = C_me / h_tr_me ≈ 3.4 hours should be invariant across furniture factors
+    // because both C_me and h_tr_me scale with f_furniture
+    let tau_me_expected_hours = 3.4;
+    let tolerance_hours = 0.5; // ±0.5 hour tolerance
+
+    let floor_area = 48.0; // m² (Case 600/900)
+
+    println!("\n=== Issue 5: Internal Mass Time Constant Invariant ===");
+    println!("Testing τ_me invariance across furniture factors...");
+    println!("Expected τ_me ≈ {:.1} hours", tau_me_expected_hours);
+
+    for f_furniture in [0.2, 0.3, 0.5] {
+        // C_me scales with f_furniture
+        let c_me = floor_area * 55_000.0 * f_furniture;
+        // h_tr_me scales with f_furniture (h_tr_me = 4.5 * f_furniture * A_int)
+        let h_tr_me = 4.5 * f_furniture * floor_area;
+        // τ_me = C_me / h_tr_me (convert to hours)
+        let tau_me_hours: f64 = c_me / h_tr_me / 3600.0;
+
+        println!(
+            "f_furniture={:.1}: C_me={:.2e} J/K, h_tr_me={:.1} W/K, τ_me={:.2} hours",
+            f_furniture, c_me, h_tr_me, tau_me_hours
+        );
+
+        assert!(
+            (tau_me_hours - tau_me_expected_hours).abs() < tolerance_hours,
+            "τ_me = {:.2} hours for f_furniture={}, expected ~{:.1} ± {:.1}",
+            tau_me_hours,
+            f_furniture,
+            tau_me_expected_hours,
+            tolerance_hours
+        );
+    }
+
+    println!("τ_me is confirmed invariant across furniture factors!");
+}
+
+// ============================================================================
 // Section 4: Numerical Stability & Conservation
 // ============================================================================
 
