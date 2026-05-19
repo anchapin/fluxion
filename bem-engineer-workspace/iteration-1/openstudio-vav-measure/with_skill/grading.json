@@ -1,0 +1,10 @@
+{
+  "grading": [
+    {"text": "ruby_measure_complete: Ruby file includes name, description, arguments, and run methods following OpenStudio ModelMeasure pattern", "passed": true, "evidence": "Class extends OpenStudio::Measure::ModelMeasure with name, description, modeler_description, arguments, and run methods"},
+    {"text": "cv_to_vav_conversion: Correctly identifies CV terminals and creates VAV replacements", "passed": true, "evidence": "Uses model.getAirTerminalSingleDuctUncontrolleds to find CV terminals and creates AirTerminalSingleDuctVAVReheat replacements"},
+    {"text": "min_airflow_fraction: Sets minimum airflow fraction to 0.3 (or configurable with 0.3 default)", "passed": true, "evidence": "arg.setDefaultValue(0.3) and vav.setMinimumAirFlowFraction(min_fraction); user-configurable"},
+    {"text": "python_sql_parser: Python script connects to EnergyPlus SQLite database and queries airflow tables", "passed": true, "evidence": "Uses sqlite3.connect and queries ZoneSizes, ComponentSizes, and TabularDataWithStrings tables"},
+    {"text": "before_after_comparison: Script compares airflow rates between baseline and post-measure runs", "passed": true, "evidence": "compare_zone_airflows() merges before/after DataFrames, computes cooling_diff, heating_diff, and pct_change"},
+    {"text": "error_handling_ruby: Ruby measure uses registerError/registerWarning/registerInfo properly", "passed": true, "evidence": "registerError, registerWarning, registerInfo, registerAsNotApplicable, registerInitialCondition, registerFinalCondition all used"}
+  ]
+}

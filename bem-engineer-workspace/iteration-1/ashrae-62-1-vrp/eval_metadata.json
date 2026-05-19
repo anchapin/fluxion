@@ -1,0 +1,6 @@
+{
+  "eval_id": 1,
+  "eval_name": "ashrae-62-1-vrp",
+  "prompt": "I need the minimum outdoor air rate for a 3,000 sq ft conference room with a default occupant density per ASHRAE 62.1-2022. Give me the table citation, the VRP math, and a Python function that computes V_oz for any zone given area, population, and zone category.",
+  "assertions": []
+}

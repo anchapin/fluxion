@@ -14,6 +14,8 @@
 //! Running 14 days of warm-up (336 hourly timesteps) lets mass temperatures
 //! converge before energy accumulation begins.
 
+#![allow(deprecated)]
+
 use crate::physics::multi_node_solver::MultiNodeSolver;
 use crate::sim::multi_node_thermal::ThermalMassNode;
 

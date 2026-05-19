@@ -1,0 +1,11 @@
+{
+  "grading": [
+    {"text": "enthalpy_value_correct: Enthalpy at 25°C/50%RH is approximately 50.3 kJ/kg_da (within 2%)", "passed": true, "evidence": "reference_values.md lists h = 50.3233 kJ/kg_da; test asserts |h - 50.32| < 0.1"},
+    {"text": "dewpoint_value_correct: Dew point at 25°C/50%RH is approximately 13.9°C (within 1°C)", "passed": true, "evidence": "T_dp = 13.8640 °C; test asserts |T_dp - 13.86| < 0.1"},
+    {"text": "specific_volume_correct: Specific volume at 25°C/50%RH is approximately 0.858 m³/kg_da (within 2%)", "passed": true, "evidence": "v = 0.858088 m³/kg_da; test asserts |v - 0.858| < 0.005"},
+    {"text": "rust_struct_provided: Output includes a Rust struct with multiple psychrometric fields", "passed": true, "evidence": "PsychrometricResult struct with 11 fields: t_dry, pressure, rh, p_sat, p_vapor, humidity_ratio, enthalpy, specific_volume, dew_point, wet_bulb, density"},
+    {"text": "unit_tests_present: Rust code includes #[test] functions validating reference values", "passed": true, "evidence": "13 #[test] functions including test_enthalpy, test_dew_point, test_specific_volume, etc."},
+    {"text": "physics_constraints: Tests validate physical constraints (dew point < dry bulb, etc.)", "passed": true, "evidence": "Tests check dew_point < t_dry, wet_bulb < t_dry and > dew_point, mass balance v*rho = 1+W"},
+    {"text": "ashrae_citation: References ASHRAE Handbook of Fundamentals or Hyland-Wexler correlations", "passed": true, "evidence": "Doc comment cites 'ASHRAE Handbook of Fundamentals, Chapter 1 (Psychrometrics). All correlations follow the Hyland-Wexler formulations.'"}
+  ]
+}
