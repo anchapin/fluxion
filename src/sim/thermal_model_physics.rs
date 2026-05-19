@@ -8,6 +8,7 @@ use log::{error, info, warn};
 
 use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::equipment::Equipment;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
@@ -15,31 +16,29 @@ use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_he
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::OccupancyProfile;
 use crate::sim::profiles;
+use crate::sim::sky_radiation::SolAirTemperature;
+use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
     backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
     crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
+use crate::validation::ashrae_140_cases::Orientation;
 use crate::weather::HourlyWeatherData;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    /// Calculate HVAC power demand using ISO 13790 steady-state building conductance.
+    /// Calculate HVAC power demand using IdealLoadsSystem thermodynamic formulas.
     ///
-    /// Uses the total building conductance (H_total) from the 5R1C network to compute
-    /// the steady-state thermal power required to maintain setpoints:
-    ///   Q_HC = H_total × (T_setpoint - T_free)
+    /// This replaces the sensitivity-based `(setpoint - temp) / sensitivity` formula
+    /// with proper ideal loads physics: `mass_flow * cp * delta_t`.
     ///
-    /// H_total = H_opaque + H_window + H_ve, where:
-    ///   H_opaque = 1/(1/H_is + 1/H_ms + 1/H_em)  (series through envelope)
-    ///   H_window = direct window conductance
-    ///   H_ve     = ventilation conductance (ρ × cp × V_dot)
-    ///
-    /// This gives the correct ANNUAL ENERGY for HVAC. The temperature update
-    /// (elsewhere) uses H_eff (CRANK sensitivity) for correct temperature propagation.
+    /// Returns a VectorField of power values:
+    /// - Positive = heating demand (W)
+    /// - Negative = cooling demand (W)
     ///
     /// # Arguments
-    /// * `zone_temps` - Free-floating zone air temperatures (°C)
+    /// * `zone_temps` - Current zone temperatures (°C)
     /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
     /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
     fn hvac_demand_from_ideal_loads(
@@ -48,53 +47,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         heating_setpoint: f64,
         cooling_setpoint: f64,
     ) -> T {
-        use crate::sim::hvac::ideal_loads::ZoneIdealLoads;
-
         let enabled_vec = self.0.hvac_enabled.as_ref();
+
+        let heating_vec = vec![heating_setpoint; self.0.num_zones];
+        let cooling_vec = vec![cooling_setpoint; self.0.num_zones];
+
         let heat_cap = self.0.hvac_heating_capacity;
         let cool_cap = self.0.hvac_cooling_capacity;
 
-        let mut combined_demand = Vec::with_capacity(self.0.num_zones);
+        let mut combined_demand = vec![0.0; self.0.num_zones];
         for (zone_idx, opt_system) in self.0.ideal_loads_system.iter().enumerate() {
-            let demand = if let Some(ref system) = opt_system {
-                let enabled = enabled_vec.get(zone_idx).copied().unwrap_or(1.0);
-                if enabled < 0.5 {
-                    0.0
-                } else {
-                    let zone_temp = zone_temps.get(zone_idx).copied().unwrap_or(20.0);
+            if let Some(ref system) = opt_system {
+                let zone_temps_slice = &zone_temps[zone_idx..zone_idx + 1];
+                let heating_slice = &heating_vec[zone_idx..zone_idx + 1];
+                let cooling_slice = &cooling_vec[zone_idx..zone_idx + 1];
+                let enabled_slice = &enabled_vec[zone_idx..zone_idx + 1];
 
-                    let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
-                        zone_temp,
-                        cooling_setpoint,
-                        system.supply_cooling_temp,
-                        system.zone_volume,
-                        system.air_changes_per_hour,
-                    );
-                    let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
-                        zone_temp,
-                        heating_setpoint,
-                        system.supply_heating_temp,
-                        system.zone_volume,
-                        system.air_changes_per_hour,
-                    );
+                let demands = system.calculate_power_demand_vector(
+                    zone_temps_slice,
+                    heating_slice,
+                    cooling_slice,
+                    enabled_slice,
+                );
 
-                    let thermal_load = if cooling_load > 0.0 && cooling_load >= heating_load {
-                        -cooling_load
-                    } else if heating_load > 0.0 {
-                        heating_load
-                    } else {
-                        0.0
-                    };
-
-                    // Clamp to HVAC capacity limits to prevent numerical explosion
-                    // when zone temperatures are extreme. Matches the .clamp() in the old
-                    // hvac_power_demand method.
-                    thermal_load.clamp(-cool_cap, heat_cap)
-                }
-            } else {
-                0.0
-            };
-            combined_demand.push(demand);
+                // Clamp to HVAC capacity limits to prevent numerical explosion
+                // when zone temperatures are extreme (e.g., bare models without
+                // update_derived_parameters). Matches the .clamp() in the old
+                // hvac_power_demand method.
+                combined_demand[zone_idx] = demands[0].clamp(-cool_cap, heat_cap);
+            }
         }
 
         T::from(VectorField::new(combined_demand))
@@ -1171,23 +1152,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             )
         };
 
-        // Temperature update: t_i_act = t_i_free + hvac_power / H_eff
-        // H_eff = derived_den / derived_term_rest_1 is the CRANK model sensitivity
-        // (how much T_air changes per watt of HVAC input through the 5R1C network).
-        // Using h_tr_is (≈1251 W/K) as divisor only accounts for air↔surface conductance,
-        // ignoring the mass node coupling. H_eff (≈700 W/K for Case 600) is the correct
-        // divisor because it captures the full network response.
-        let term_rest_1_slice = self.0.derived_term_rest_1.as_ref();
-        let den_slice = self.0.derived_den.as_ref();
+        // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
+        let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
         let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
-            let tr1 = term_rest_1_slice[i];
-            let d = den_slice[i];
-            let h_eff = if tr1 > 0.0 { d / tr1 } else { 0.0 };
-            if h_eff > 0.0 && hvac[i].abs() > 1e-6 {
-                t_i_act_data.push(t_free[i] + hvac[i] / h_eff);
+            let h_is = h_tr_is_vec[i];
+            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
             } else {
                 t_i_act_data.push(t_free[i]);
             }
@@ -2444,7 +2417,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // the solver's boundary condition. The solver will compute its own
             // zone air temperature from the multi-node balance.
             let t_zone_prev = self.0.temperatures.as_ref()[zone_idx];
-            let _t_ext = t_sol_air_data
+            #[allow(unused_variables)]
+            let t_ext = t_sol_air_data
                 .get(zone_idx)
                 .copied()
                 .unwrap_or(outdoor_temp);
@@ -2455,6 +2429,69 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             solver.set_zone_temperature(t_zone_prev);
             solver.set_surface_temperature(t_surface);
+
+            let surface_ext_temps = if let Some(ref weather) = self.0.weather {
+                let hour_of_year = timestep % 8760;
+                let month_days: [usize; 12] =
+                    [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+                let day_of_year = hour_of_year / 24;
+                let hour = (hour_of_year % 24) as f64 + 0.5;
+                let month = month_days
+                    .iter()
+                    .position(|&d| d > day_of_year)
+                    .unwrap_or(12)
+                    .saturating_sub(1) as u32;
+                let day =
+                    (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+
+                let sun_pos = calculate_solar_position(
+                    self.0.latitude_deg,
+                    self.0.longitude_deg,
+                    2024,
+                    month,
+                    day.min(28),
+                    hour,
+                );
+
+                let ground_reflectance = 0.2;
+                let wall_irr = calculate_surface_irradiance(
+                    &sun_pos,
+                    weather.dni,
+                    weather.dhi,
+                    Some(weather.ghi),
+                    Orientation::South,
+                    ground_reflectance,
+                    day_of_year + 1,
+                );
+                let roof_irr = calculate_surface_irradiance(
+                    &sun_pos,
+                    weather.dni,
+                    weather.dhi,
+                    Some(weather.ghi),
+                    Orientation::Up,
+                    ground_reflectance,
+                    day_of_year + 1,
+                );
+
+                let sol_air = SolAirTemperature::ashrae_140_default();
+                SurfaceExteriorTemperatures {
+                    t_ext_wall: sol_air.for_wall(
+                        outdoor_temp,
+                        wall_irr.total_wm2,
+                        wall_irr.ground_reflected_wm2,
+                    ),
+                    t_ext_roof: sol_air.for_roof(outdoor_temp, roof_irr.total_wm2, sky_temp),
+                    t_ext_floor: t_g,
+                }
+            } else {
+                SurfaceExteriorTemperatures {
+                    t_ext_wall: t_ext,
+                    t_ext_roof: t_ext,
+                    t_ext_floor: t_g,
+                }
+            };
+
+            solver.set_surface_exterior_temperatures(surface_ext_temps);
 
             // (#872) Step solver with gains: internal radiative loads to internal mass node.
             // Window solar is NOT injected here to avoid thermal runaway — it's
@@ -2662,6 +2699,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return 0.0;
         }
 
+        // Update zone temperatures with the HVAC-influenced t_i_act
         let temps_slice = self.0.temperatures.as_mut();
         for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
             if i < temps_slice.len() {
@@ -2679,6 +2717,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
             .sum::<f64>();
 
+        // Accumulate annual energy and track peak power
+        {
+            let mut heating_sum = 0.0_f64;
+            let mut cooling_sum = 0.0_f64;
+            for (&output, &enabled) in hvac_output
+                .as_ref()
+                .iter()
+                .zip(self.0.hvac_enabled.as_ref().iter())
+            {
+                let val = if enabled > 0.5 { output } else { 0.0 };
+                if val > 0.0 {
+                    heating_sum += val;
+                } else if val < 0.0 {
+                    cooling_sum += -val;
+                }
+            }
+
+            let heating_energy_joules = heating_sum * dt;
+            let cooling_energy_joules = cooling_sum * dt;
+
+            self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
+            self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+
+            if hvac_power_watts > 0.0 {
+                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts);
+            } else if hvac_power_watts < 0.0 {
+                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_power_watts);
+            }
+        }
+
         // Diagnostics recording (if enabled)
         if self.0.diagnostics.is_some() {
             self.0.current_hvac_output = Some(hvac_output.clone());
@@ -2688,6 +2756,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.current_hvac_output = None;
         }
 
-        hvac_power_watts * dt
+        // Return kWh
+        hvac_power_watts * dt / 3.6e6
     }
 }
