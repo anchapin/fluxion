@@ -1391,6 +1391,32 @@ impl CommonWall {
     }
 }
 
+/// Building usage type for thermal mass calculations.
+///
+/// Used to select appropriate furniture factor (f_furniture) for thermal mass
+/// calculations based on building usage type:
+///
+/// | Building Type   | f_furniture | C_me factor       | h_tr_me factor    |
+/// |-----------------|-------------|-------------------|-------------------|
+/// | Residential     | 0.3         | 0.3 × A_floor     | 0.3 × A_floor     |
+/// | Commercial      | 0.5         | 0.5 × A_floor     | 0.5 × A_floor     |
+/// | Institutional   | 0.5         | 0.5 × A_floor     | 0.5 × A_floor     |
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum BuildingType {
+    /// Residential buildings - lighter furniture, f_furniture = 0.3
+    Residential,
+    /// Commercial buildings - heavier furniture, f_furniture = 0.5
+    Commercial,
+    /// Institutional buildings (schools, hospitals) - f_furniture = 0.5
+    Institutional,
+}
+
+impl Default for BuildingType {
+    fn default() -> Self {
+        BuildingType::Residential
+    }
+}
+
 /// Complete case specification for an ASHRAE 140 test case.
 ///
 /// This struct contains all the information needed to configure a ThermalModel
@@ -1457,10 +1483,12 @@ pub struct CaseSpec {
     pub epw_path: Option<PathBuf>,
     /// HVAC equipment (for Cases 800-810)
     pub hvac_equipment: Option<crate::sim::hvac::AnyEquipment>,
-    /// Ground temperature boundary condition (°C) for floor slab.
+/// Ground temperature boundary condition (°C) for floor slab.
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
     /// When `None`, the model default (10.0°C) is used for backward compatibility.
     pub ground_temperature_c: Option<f64>,
+    /// Building usage type for thermal mass calculations (default: Residential)
+    pub building_type: BuildingType,
 }
 
 /// Geometry specification for a building zone.
@@ -1760,6 +1788,8 @@ pub struct CaseBuilder {
     /// Ground temperature boundary condition (°C) for floor slab (Issue #746).
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C.
     ground_temperature_c: Option<f64>,
+    /// Building usage type for thermal mass calculations
+    building_type: BuildingType,
 }
 
 impl Default for CaseBuilder {
@@ -1791,6 +1821,7 @@ impl CaseBuilder {
             door_area: None,
             epw_path: None,
             ground_temperature_c: None,
+            building_type: BuildingType::default(),
         }
     }
 
@@ -2054,6 +2085,19 @@ impl CaseBuilder {
         self
     }
 
+    /// Sets the building type for thermal mass calculations.
+    ///
+    /// Determines the furniture factor (f_furniture) used in thermal mass calculations:
+    /// - `Residential`: f_furniture = 0.3 (lighter furniture)
+    /// - `Commercial`: f_furniture = 0.5 (heavier furniture)
+    /// - `Institutional`: f_furniture = 0.5 (heavier furniture, e.g., schools, hospitals)
+    ///
+    /// Default is `Residential` for backward compatibility.
+    pub fn with_building_type(mut self, building_type: BuildingType) -> Self {
+        self.building_type = building_type;
+        self
+    }
+
     /// Configures door geometry for temperature-dependent air exchange (stack effect).
     ///
     /// Used for sunspace buildings (Case 960) where door openings between
@@ -2147,6 +2191,7 @@ impl CaseBuilder {
             epw_path: self.epw_path.clone(),
             hvac_equipment: None,
             ground_temperature_c: self.ground_temperature_c,
+            building_type: self.building_type,
         };
 
         // spec.validate()?; // Skip detailed validation for now to save time
