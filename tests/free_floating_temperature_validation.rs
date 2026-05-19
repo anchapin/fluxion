@@ -5,7 +5,7 @@
 //! 2. Internal gains = 0 (ASHRAE 140 specifies no internal loads for FF cases)
 //! 3. Physically reasonable temperatures (10-50°C range, not 125°C)
 //!
-//! Root cause: hvac_demand_from_ideal_loads() doesn't check hvac_enabled flag
+//! Root cause: compute_zone_hvac_load() doesn't check hvac_enabled flag
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;

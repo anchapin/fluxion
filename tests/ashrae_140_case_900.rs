@@ -91,6 +91,18 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = fluxion::weather::denver::DenverTmyWeather::new();
 
+    let warmup_days = 14;
+    let warmup_steps = warmup_days * 24;
+
+    {
+        let weather = fluxion::weather::denver::DenverTmyWeather::new();
+        for step in 0..warmup_steps {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(weather_data.clone());
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+        }
+    }
+
     // Simulate 1 year (8760 hours)
     let steps = 8760;
 
@@ -113,12 +125,12 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
     let mut summer_max_zone_temp = f64::MIN;
 
     // Run simulation
-    for step in 0..steps {
-        let weather_data = weather.get_hourly_data(step).unwrap();
+    for step in warmup_steps..warmup_steps + steps {
+        let weather_data = weather.get_hourly_data(step % 8760).unwrap();
         // Set weather data on model for solar gain calculation
         model.weather = Some(weather_data.clone());
 
-        // Get zone temperature before HVAC to determine if heating or cooling is needed
+        // Get zone temperature before HVAC
         let zone_temp_before = model
             .temperatures
             .as_slice()
@@ -130,12 +142,69 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
         let energy_kwh = model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
         let energy_joules = energy_kwh * 3.6e6; // Convert kWh to Joules
 
+        // Print config on first step
+        if step == warmup_steps {
+            println!("=== Model Config ===");
+            println!("thermal_model_type: {:?}", model.thermal_model_type);
+            println!("heating_setpoint: {:.1}", model.heating_setpoint);
+            println!("cooling_setpoint: {:.1}", model.cooling_setpoint);
+            println!(
+                "hvac_heating_capacity: {:.0} kW",
+                model.hvac_heating_capacity / 1000.0
+            );
+            println!(
+                "zone_area: {:.1} m²",
+                model.zone_area.as_slice().first().copied().unwrap_or(0.0)
+            );
+            println!(
+                "h_tr_is: {:.2} W/K",
+                model.h_tr_is.as_slice().first().copied().unwrap_or(0.0)
+            );
+            println!(
+                "h_ve: {:.2} W/K",
+                model.h_ve.as_slice().first().copied().unwrap_or(0.0)
+            );
+        }
+
+        // Print detailed HVAC info on day 14
+        if step == warmup_steps + 1 {
+            let term_rest_1 = model
+                .derived_term_rest_1
+                .as_slice()
+                .first()
+                .copied()
+                .unwrap_or(0.0);
+            let den = model.derived_den.as_slice().first().copied().unwrap_or(0.0);
+            let h_coeff = if term_rest_1 > 0.0 {
+                den / (2.0 * term_rest_1)
+            } else {
+                0.0
+            };
+            let t_free_val = model
+                .temperatures
+                .as_slice()
+                .first()
+                .copied()
+                .unwrap_or(0.0);
+            println!("=== Day 14 HVAC Debug ===");
+            println!("term_rest_1: {:.4}", term_rest_1);
+            println!("den: {:.4}", den);
+            println!("h_coeff: {:.4}", h_coeff);
+            println!("t_free_val: {:.2}", t_free_val);
+            println!("heating_setpoint: {:.1}", model.heating_setpoint);
+            println!(
+                "q_needed: {:.4}",
+                h_coeff * (model.heating_setpoint - t_free_val)
+            );
+        }
+
         // Diagnostic output for HVAC energy (Plan 03-04)
         if step % 24 == 0 {
             println!(
-                "Day {}: energy_kwh={:.6}, mass_energy_change_cumulative={:.2} Wh",
+                "Day {}: energy_kwh={:.6}, zone_temp={:.1}, mass_energy_change_cumulative={:.2} Wh",
                 step / 24,
                 energy_kwh,
+                zone_temp_before,
                 model.mass_energy_change_cumulative
             );
         }
@@ -163,16 +232,15 @@ fn simulate_case_900() -> (f64, f64, f64, f64) {
             }
         }
 
-        // Separate heating and cooling based on energy sign and zone temperature
-        // Heating: energy > 0 or zone temp below heating setpoint
-        // Cooling: energy < 0 or zone temp above cooling setpoint
-        if energy_kwh > 0.0 || zone_temp_before < model.heating_setpoint {
+        // Separate heating and cooling based on HVAC energy sign
+        // Positive = heating energy, Negative = cooling energy
+        if energy_kwh > 0.0 {
             total_heating += energy_joules;
-            let power_watts = energy_joules / 3600.0; // Convert J/h to W
+            let power_watts = energy_joules / 3600.0;
             peak_heating = peak_heating.max(power_watts);
-        } else if energy_kwh < 0.0 || zone_temp_before > model.cooling_setpoint {
-            total_cooling += -energy_joules; // Cooling energy is negative
-            let power_watts = -energy_joules / 3600.0; // Convert J/h to W
+        } else if energy_kwh < 0.0 {
+            total_cooling += -energy_joules;
+            let power_watts = -energy_joules / 3600.0;
             peak_cooling = peak_cooling.max(power_watts);
         }
     }
