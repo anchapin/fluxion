@@ -19,9 +19,8 @@ use crate::sim::profiles;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
-    backward_euler_update, backward_euler_update_2cond, crank_nicolson_iso13790,
-    crank_nicolson_update, crank_nicolson_update_3cond, select_integration_method,
-    ThermalIntegrationMethod,
+    backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
+    crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
@@ -2406,6 +2405,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 1. Free-floating zone temperature (validated at 42.87°C for 900FF)
         let t_i_free_5r1c = t_i_free.clone();
 
+        #[allow(clippy::needless_range_loop)]
         for zone_idx in 0..self.0.num_zones {
             if zone_idx >= self.0.multi_node_solvers.len() {
                 continue;
@@ -2417,6 +2417,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // the solver's boundary condition. The solver will compute its own
             // zone air temperature from the multi-node balance.
             let t_zone_prev = self.0.temperatures.as_ref()[zone_idx];
+            #[allow(unused_variables)]
             let t_ext = t_sol_air_data
                 .get(zone_idx)
                 .copied()
@@ -2439,8 +2440,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .iter()
                     .position(|&d| d > day_of_year)
                     .unwrap_or(12)
-                    .saturating_sub(1)
-                    .max(0) as u32;
+                    .saturating_sub(1) as u32;
                 let day =
                     (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
 
