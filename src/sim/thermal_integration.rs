@@ -507,23 +507,23 @@ mod tests {
 
     #[test]
     fn test_select_integration_method_high_mass() {
-        // High thermal mass: use implicit method
+        // High thermal mass: use CrankNicolson (ISO 13790 compliant)
         assert_eq!(
             select_integration_method(1000.0),
-            ThermalIntegrationMethod::BackwardEuler
+            ThermalIntegrationMethod::CrankNicolson
         );
     }
 
     #[test]
     fn test_select_integration_method_threshold() {
-        // At threshold: use implicit for safety
+        // At threshold: explicit Euler for low mass, CrankNicolson for high mass (ISO 13790)
         assert_eq!(
             select_integration_method(500.0),
             ThermalIntegrationMethod::ExplicitEuler
         );
         assert_eq!(
             select_integration_method(501.0),
-            ThermalIntegrationMethod::BackwardEuler
+            ThermalIntegrationMethod::CrankNicolson
         );
     }
 
