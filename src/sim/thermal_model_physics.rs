@@ -51,7 +51,50 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         use crate::sim::hvac::ideal_loads::ZoneIdealLoads;
 
         let enabled_vec = self.0.hvac_enabled.as_ref();
+        let heat_cap = self.0.hvac_heating_capacity;
+        let cool_cap = self.0.hvac_cooling_capacity;
 
+        let mut combined_demand = Vec::with_capacity(self.0.num_zones);
+        for (zone_idx, opt_system) in self.0.ideal_loads_system.iter().enumerate() {
+            let demand = if let Some(ref system) = opt_system {
+                let enabled = enabled_vec.get(zone_idx).copied().unwrap_or(1.0);
+                if enabled < 0.5 {
+                    0.0
+                } else {
+                    let zone_temp = zone_temps.get(zone_idx).copied().unwrap_or(20.0);
+
+                    let cooling_load = ZoneIdealLoads::calculate_sensible_cooling_load(
+                        zone_temp,
+                        cooling_setpoint,
+                        system.supply_cooling_temp,
+                        system.zone_volume,
+                        system.air_changes_per_hour,
+                    );
+                    let heating_load = ZoneIdealLoads::calculate_sensible_heating_load(
+                        zone_temp,
+                        heating_setpoint,
+                        system.supply_heating_temp,
+                        system.zone_volume,
+                        system.air_changes_per_hour,
+                    );
+
+                    let thermal_load = if cooling_load > 0.0 && cooling_load >= heating_load {
+                        -cooling_load
+                    } else if heating_load > 0.0 {
+                        heating_load
+                    } else {
+                        0.0
+                    };
+
+                    // Clamp to HVAC capacity limits to prevent numerical explosion
+                    // when zone temperatures are extreme. Matches the .clamp() in the old
+                    // hvac_power_demand method.
+                    thermal_load.clamp(-cool_cap, heat_cap)
+                }
+            } else {
+                0.0
+            };
+            combined_demand.push(demand);
         }
 
         T::from(VectorField::new(combined_demand))
@@ -2401,7 +2444,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // the solver's boundary condition. The solver will compute its own
             // zone air temperature from the multi-node balance.
             let t_zone_prev = self.0.temperatures.as_ref()[zone_idx];
-            let t_ext = t_sol_air_data
+            let _t_ext = t_sol_air_data
                 .get(zone_idx)
                 .copied()
                 .unwrap_or(outdoor_temp);
@@ -2412,8 +2455,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             solver.set_zone_temperature(t_zone_prev);
             solver.set_surface_temperature(t_surface);
-
-
 
             // (#872) Step solver with gains: internal radiative loads to internal mass node.
             // Window solar is NOT injected here to avoid thermal runaway — it's
@@ -2621,7 +2662,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             return 0.0;
         }
 
-
         let temps_slice = self.0.temperatures.as_mut();
         for (i, t_val) in t_i_act.as_ref().iter().enumerate() {
             if i < temps_slice.len() {
@@ -2639,7 +2679,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
             .sum::<f64>();
 
-
         // Diagnostics recording (if enabled)
         if self.0.diagnostics.is_some() {
             self.0.current_hvac_output = Some(hvac_output.clone());
@@ -2649,6 +2688,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.current_hvac_output = None;
         }
 
-
+        hvac_power_watts * dt
     }
 }
