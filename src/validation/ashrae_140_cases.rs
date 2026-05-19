@@ -1483,7 +1483,7 @@ pub struct CaseSpec {
     pub epw_path: Option<PathBuf>,
     /// HVAC equipment (for Cases 800-810)
     pub hvac_equipment: Option<crate::sim::hvac::AnyEquipment>,
-/// Ground temperature boundary condition (°C) for floor slab.
+    /// Ground temperature boundary condition (°C) for floor slab.
     /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
     /// When `None`, the model default (10.0°C) is used for backward compatibility.
     pub ground_temperature_c: Option<f64>,
