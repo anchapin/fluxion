@@ -24,6 +24,13 @@ use crate::sim::multi_node_thermal::ThermalMassNode;
 const DEFAULT_WARMUP_DAYS: usize = 14;
 
 /// Multi-node HVAC runner with warm-up period support.
+#[deprecated(
+    since = "0.9.0",
+    note = "Use multi-node thermal model with inline HVAC control instead. \
+            The `MultiNodeSolver` now supports HVAC integration directly, \
+            providing better energy accounting and Crank-Nicolson time integration. \
+            See `crate::sim::multi_node_thermal` for the preferred approach."
+)]
 ///
 /// Wraps a `MultiNodeSolver` and provides:
 /// - Simple setpoint-based HVAC control (heating / cooling)

@@ -2573,6 +2573,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // This matches the 5R1C ordering: compute Q → compute t_act → update mass using t_act.
         // The previous ordering (mass → HVAC) caused a one-timestep lag where mass used
         // the PREVIOUS step's t_act, slowing convergence and overestimating HVAC energy.
+        //
+        // Issue #860: Use multi-node t_air for HVAC demand when available.
+        // The multi-node solver provides a physically accurate free-floating temperature
+        // from the 9R4C thermal balance (wall/roof/floor nodes → surface → air).
+        // This is more accurate than the 5R1C t_i_free which uses a lumped mass.
         let (hvac_for_temp_calc, t_i_act) = if self.0.free_float {
             // Free-float: no HVAC, t_i_act = t_i_free
             let t_i_free_vec = t_i_free_5r1c.as_ref().to_vec();
@@ -2581,13 +2586,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 T::from(VectorField::new(t_i_free_vec)),
             )
         } else {
-            // HVAC mode: coefficient-based demand
+            // HVAC mode: use multi-node t_air (from _t_i_free_mn) when available
             let heat_cap = self.0.hvac_heating_capacity;
             let cool_cap = self.0.hvac_cooling_capacity;
             let mut hvac_data = Vec::with_capacity(self.0.num_zones);
             let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
             for i in 0..self.0.num_zones {
-                let t_free_val = t_i_free_5r1c.as_ref()[i];
+                // Issue #860: Prefer multi-node t_air over 5R1C t_free for HVAC demand
+                let t_free_val =
+                    if i < self.0.multi_node_solvers.len() {
+                        // Use multi-node computed free-float temperature (available at line 2534)
+                        // The multi-node t_air uses conductance-weighted envelope node temperatures
+                        // and the air energy balance: T_air = (h_tr_is*T_surface + h_ve*T_out + phi_ia)/(h_tr_is + h_ve)
+                        _t_i_free_mn.as_ref().get(i).copied().unwrap_or_else(|| {
+                            t_i_free_5r1c.as_ref().get(i).copied().unwrap_or(20.0)
+                        })
+                    } else {
+                        t_i_free_5r1c.as_ref()[i]
+                    };
                 let term_rest_1_zone = self.0.derived_term_rest_1.as_ref()[i];
                 let den_val = self.0.derived_den.as_ref()[i];
                 let h_coeff = if term_rest_1_zone > 0.0 {
