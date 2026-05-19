@@ -11,14 +11,14 @@ use crate::sim::assembly::BuildingAssembly;
 use crate::sim::construction::{SurfaceType, WallSurface};
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
-use crate::sim::occupancy::{BuildingType as OccupancyBuildingType, OccupancyProfile};
+use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::WindowProperties;
 use crate::sim::thermal_model_data::ThermalModelData;
 use crate::sim::view_factors;
-use crate::validation::ashrae_140_cases::{self, BuildingType, CaseSpec, Orientation, ShadingType};
+use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
 use crate::validation::config::{validate_assembly, validate_constants};
 use crate::validation::diagnostics::SimulationDiagnostics;
 
