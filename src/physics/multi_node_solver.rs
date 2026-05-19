@@ -170,6 +170,17 @@ impl MultiNodeSolver {
             let numer = node.capacitance / dt * node.temperature + h_is * t_i + h_me * t_env_avg;
             node.temperature = numer / denom;
         }
+
+        // Issue #862: Update surface_temperature from solved mass node temperatures.
+        // Uses the same conductance-weighted average formula as compute_zone_air_temperature
+        // so that future timesteps use consistent surface temperatures.
+        let h_ms_total = m.wall.h_tr_ms + m.roof.h_tr_ms + m.floor.h_tr_ms;
+        if h_ms_total > 1e-6 {
+            self.surface_temperature = (m.wall.h_tr_ms * m.wall.temperature
+                + m.roof.h_tr_ms * m.roof.temperature
+                + m.floor.h_tr_ms * m.floor.temperature)
+                / h_ms_total;
+        }
     }
 
     // ── Issue #871: Air Balance API Methods ───────────────────────────
@@ -370,6 +381,15 @@ impl MultiNodeSolver {
                     + gains_internal;
                 node.temperature = numer / denom;
             }
+        }
+
+        // Issue #862: Update surface_temperature from solved mass node temperatures.
+        let h_ms_total = m.wall.h_tr_ms + m.roof.h_tr_ms + m.floor.h_tr_ms;
+        if h_ms_total > 1e-6 {
+            self.surface_temperature = (m.wall.h_tr_ms * m.wall.temperature
+                + m.roof.h_tr_ms * m.roof.temperature
+                + m.floor.h_tr_ms * m.floor.temperature)
+                / h_ms_total;
         }
     }
 

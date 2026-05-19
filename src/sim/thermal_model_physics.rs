@@ -41,7 +41,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// * `zone_temps` - Current zone temperatures (°C)
     /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
     /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
-    fn hvac_demand_from_ideal_loads(
+    fn compute_zone_hvac_load(
         &self,
         zone_temps: &[f64],
         heating_setpoint: f64,
@@ -965,7 +965,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let ideal_loads_for_equipment: T = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
-            self.hvac_demand_from_ideal_loads(
+            self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
@@ -1054,11 +1054,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // instead of broadcasting a single scalar value to all zones.
             // Use IdealLoadsSystem thermodynamic formulas (mass_flow * cp * delta_t)
             // instead of sensitivity-based (setpoint - temp) / sensitivity
-            let hvac_output = self.hvac_demand_from_ideal_loads(
-                t_i_free.as_ref(),
-                heating_setpoint,
-                cooling_setpoint,
-            );
+            let hvac_output =
+                self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint);
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // Physics-based: No calibration factors - track actual HVAC demand
@@ -1087,7 +1084,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             hvac_output
         } else {
             // Use IdealLoadsSystem thermodynamic formulas for energy
-            let hvac_output_raw = self.hvac_demand_from_ideal_loads(
+            let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
@@ -1135,29 +1132,45 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // mass temperature is static — invalid when HVAC heat flows through the high-conductance
         // mass path (h_is_ms_series = 583 W/K for Case 600, creating 6.1x conductance overestimate).
         //
-        // Fix: Use hvac_demand_from_ideal_loads() (mass_flow × cp × ΔT) unconditionally.
+        // Fix: Use compute_zone_hvac_load() (mass_flow × cp × ΔT) unconditionally.
         // Temperature change: t_i_act = t_i_free + hvac_power / h_tr_is (physically correct).
         //
         // Issue #738: Check free_float BEFORE calling HVAC to ensure zero output
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
-            self.hvac_demand_from_ideal_loads(
+            self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
             )
         };
 
-        // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
+        // Temperature update using zone air energy balance
+        // Q_total = Q_hvac + Q_infiltration
+        // Q_infiltration = h_ve × (T_outdoor - T_zone)
+        // C_zone_air = zone_volume × ρ × cp [J/K]
+        // ΔT_zone = Q_total × dt / C_zone_air
+        //
+        // This replaces the old formula: t_i_act = t_i_free + hvac / h_tr_is
+        // which only accounted for surface-air heat transfer, not infiltration.
+        let h_ve_vec = self.0.h_ve.as_ref();
+        let zone_vol_vec = self.0.zone_volume.as_ref();
+        let rho = 1.2; // kg/m³
+        let cp = 1005.0; // J/(kg·K)
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
         let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
-            let h_is = h_tr_is_vec[i];
-            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
-                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+            let zone_vol = zone_vol_vec[i];
+            let h_ve = h_ve_vec[i];
+            let c_zone_air = zone_vol * rho * cp; // J/K
+
+            if c_zone_air > 0.0 {
+                let q_infiltration = h_ve * (outdoor_temp - t_free[i]);
+                let total_heat = hvac[i] + q_infiltration;
+                let delta_t = total_heat * dt / c_zone_air;
+                t_i_act_data.push(t_free[i] + delta_t);
             } else {
                 t_i_act_data.push(t_free[i]);
             }
@@ -1698,7 +1711,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Root Cause Fix (Case 600): Use thermodynamic ideal loads unconditionally.
-        let hvac_output_raw = self.hvac_demand_from_ideal_loads(
+        let hvac_output_raw = self.compute_zone_hvac_load(
             t_i_free.as_ref(),
             self.0.heating_setpoint,
             self.0.cooling_setpoint,
