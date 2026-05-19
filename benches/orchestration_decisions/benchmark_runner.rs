@@ -34,12 +34,10 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use std::time::Duration;
 
 // Include sibling modules (both files live in benches/orchestration_decisions/)
-#[path = "tdqs.rs"]
-mod tdqs;
-
 #[path = "decision_recorder.rs"]
 mod decision_recorder;
 
+use decision_recorder::tdqs_mod as tdqs;
 use decision_recorder::{
     assert_label_consistency, current_adaptive_timestep_decision,
     current_constraint_warning_decision, current_hvac_horizon_decision, current_solver_decision,
