@@ -34,9 +34,6 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use std::time::Duration;
 
 // Include sibling modules (both files live in benches/orchestration_decisions/)
-#[path = "tdqs.rs"]
-mod tdqs;
-
 #[path = "decision_recorder.rs"]
 mod decision_recorder;
 
@@ -47,6 +44,7 @@ use decision_recorder::{
     ground_truth_constraint_warning, ground_truth_hvac_horizon, ground_truth_solver_is_fd,
     ground_truth_surrogate_routing,
 };
+use decision_recorder::tdqs_mod as tdqs;
 use tdqs::{compute_tdqs, compute_tdqs_breakdown};
 
 // ---------------------------------------------------------------------------

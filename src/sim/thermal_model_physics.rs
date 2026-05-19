@@ -49,18 +49,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> T {
         let enabled_vec = self.0.hvac_enabled.as_ref();
 
-        let heating_vec = vec![heating_setpoint; self.0.num_zones];
-        let cooling_vec = vec![cooling_setpoint; self.0.num_zones];
-
         let heat_cap = self.0.hvac_heating_capacity;
         let cool_cap = self.0.hvac_cooling_capacity;
 
         let mut combined_demand = vec![0.0; self.0.num_zones];
+        let heating_slice = &[heating_setpoint];
+        let cooling_slice = &[cooling_setpoint];
         for (zone_idx, opt_system) in self.0.ideal_loads_system.iter().enumerate() {
             if let Some(ref system) = opt_system {
                 let zone_temps_slice = &zone_temps[zone_idx..zone_idx + 1];
-                let heating_slice = &heating_vec[zone_idx..zone_idx + 1];
-                let cooling_slice = &cooling_vec[zone_idx..zone_idx + 1];
                 let enabled_slice = &enabled_vec[zone_idx..zone_idx + 1];
 
                 let demands = system.calculate_power_demand_vector(
