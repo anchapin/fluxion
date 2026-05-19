@@ -1,0 +1,11 @@
+{
+  "grading": [
+    {"text": "enthalpy_value_correct: Enthalpy at 25°C/50%RH is approximately 50.3 kJ/kg_da (within 2%)", "passed": true, "evidence": "h = 50.32 kJ/kg_dry_air; test against expected_h = 50.32 with tolerance 0.02"},
+    {"text": "dewpoint_value_correct: Dew point at 25°C/50%RH is approximately 13.9°C (within 1°C)", "passed": true, "evidence": "T_dp = 13.89°C; test against expected_dp = 13.89 with tolerance 0.1"},
+    {"text": "specific_volume_correct: Specific volume at 25°C/50%RH is approximately 0.858 m³/kg_da (within 2%)", "passed": true, "evidence": "v = 0.8582 m³/kg_dry_air; test against expected_v = 0.858 with tolerance 0.005"},
+    {"text": "rust_struct_provided: Output includes a Rust struct with multiple psychrometric fields", "passed": true, "evidence": "PsychrometricState with 11 fields including t_db, rh, pressure, p_ws, p_w, humidity_ratio, enthalpy, dew_point, wet_bulb, specific_volume, degree_of_saturation"},
+    {"text": "unit_tests_present: Rust code includes #[test] functions validating reference values", "passed": true, "evidence": "13 #[test] functions"},
+    {"text": "physics_constraints: Tests validate physical constraints (dew point < dry bulb, etc.)", "passed": true, "evidence": "test_saturated_air verifies dew_point == dry_bulb at 100% RH; test_dry_air verifies humidity_ratio ~ 0 at 0% RH"},
+    {"text": "ashrae_citation: References ASHRAE Handbook of Fundamentals or Hyland-Wexler correlations", "passed": true, "evidence": "States 'Saturation pressure via ASHRAE fundamental equation' with coefficients matching ASHRAE formulation"}
+  ]
+}

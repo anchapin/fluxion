@@ -35,15 +35,15 @@ pub enum ThermalIntegrationMethod {
 
 /// Selects the appropriate integration method based on thermal capacitance.
 ///
-/// For high thermal capacitance (> 500 J/K), uses implicit methods to ensure
-/// numerical stability. For low thermal capacitance, explicit Euler is sufficient
-/// and computationally faster.
+/// For high thermal capacitance (> 500 J/K), uses Crank-Nicolson for
+/// 2nd-order accuracy and unconditional stability per ISO 13790 §C.4.
+/// For low thermal capacitance, explicit Euler is sufficient and faster.
 ///
 /// # Arguments
 /// * `cm` - Thermal capacitance (J/K)
 ///
 /// # Returns
-/// * `BackwardEuler` if cm > 500 J/K
+/// * `CrankNicolson` if cm > 500 J/K (ISO 13790 recommended)
 /// * `ExplicitEuler` otherwise
 ///
 /// # Example
@@ -51,14 +51,15 @@ pub enum ThermalIntegrationMethod {
 /// use fluxion::sim::thermal_integration::select_integration_method;
 ///
 /// let method = select_integration_method(1000.0);
-/// assert_eq!(method, ThermalIntegrationMethod::BackwardEuler);
+/// assert_eq!(method, ThermalIntegrationMethod::CrankNicolson);
 /// ```
 pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
-    // Threshold from research: explicit Euler becomes unstable for Cm > 500 J/K
+    // ISO 13790 §C.4 recommends Crank-Nicolson for high thermal mass
+    // Crank-Nicolson is unconditionally stable (A-stable) and 2nd-order accurate
     const HIGH_MASS_THRESHOLD: f64 = 500.0;
 
     if cm > HIGH_MASS_THRESHOLD {
-        ThermalIntegrationMethod::BackwardEuler
+        ThermalIntegrationMethod::CrankNicolson
     } else {
         ThermalIntegrationMethod::ExplicitEuler
     }
@@ -506,23 +507,23 @@ mod tests {
 
     #[test]
     fn test_select_integration_method_high_mass() {
-        // High thermal mass: use implicit method
+        // High thermal mass: use CrankNicolson (ISO 13790 compliant)
         assert_eq!(
             select_integration_method(1000.0),
-            ThermalIntegrationMethod::BackwardEuler
+            ThermalIntegrationMethod::CrankNicolson
         );
     }
 
     #[test]
     fn test_select_integration_method_threshold() {
-        // At threshold: use implicit for safety
+        // At threshold: explicit Euler for low mass, CrankNicolson for high mass (ISO 13790)
         assert_eq!(
             select_integration_method(500.0),
             ThermalIntegrationMethod::ExplicitEuler
         );
         assert_eq!(
             select_integration_method(501.0),
-            ThermalIntegrationMethod::BackwardEuler
+            ThermalIntegrationMethod::CrankNicolson
         );
     }
 
