@@ -242,6 +242,59 @@ pub fn backward_euler_update_2cond(
     numer / denom
 }
 
+/// Backward Euler solver for thermal mass with 2 conductances using H_tr_3.
+///
+/// For high-mass envelopes (Case 900+), the correct thermal coupling is through
+/// H_tr_3 (the combined air-side conductance ≈ 40 W/K), NOT h_tr_ms + h_tr_me
+/// (which gives ≈ 1450 W/K and a time constant of ~1.9 hours instead of ~69 hours).
+///
+/// This function replaces `backward_euler_update_2cond` for high-mass cases where
+/// the envelope mass should be thermally coupled to the zone air through the slow
+/// H_tr_3 path, not the fast surface-to-mass path.
+///
+/// Heat balance:
+/// Cm * (Tm_new - Tm_old) / dt = h_tr_3 * (t_zone - Tm_new) + phi_m
+///
+/// Rearranged:
+/// (Cm/dt + h_tr_3) * Tm_new = Cm/dt * Tm_old + h_tr_3 * t_zone + phi_m
+///
+/// # Arguments
+/// * `tm_old` - Previous mass temperature (°C)
+/// * `dt` - Time step (seconds)
+/// * `cm` - Thermal capacitance (J/K)
+/// * `h_tr_3` - ISO 13790 combined conductance H_tr_3 (W/K) ≈ 40 W/K for Case 900
+/// * `t_zone` - Zone air temperature (°C)
+/// * `phi_m` - Direct gains to thermal mass (W)
+///
+/// # Returns
+/// * New mass temperature (°C)
+#[allow(clippy::too_many_arguments)]
+pub fn backward_euler_update_2cond_h_tr3(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_3: f64,
+    t_zone: f64,
+    phi_m: f64,
+) -> f64 {
+    // Check for invalid inputs
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    // Calculate denominator: (Cm/dt + h_tr_3)
+    let denom = cm / dt + h_tr_3;
+
+    // Calculate numerator: Cm/dt * Tm_old + h_tr_3 * t_zone + phi_m
+    let numer = cm / dt * tm_old + h_tr_3 * t_zone + phi_m;
+
+    // Return new temperature
+    numer / denom
+}
+
 /// Crank-Nicolson solver for semi-implicit thermal mass update.
 ///
 /// Uses average of old and new heat fluxes for 2nd-order accuracy:
