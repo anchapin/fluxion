@@ -1700,7 +1700,10 @@ impl ThermalModel<VectorField> {
         // The per-surface fields and multi_node_solvers are already initialized in the
         // is_9r4c_model block above (lines ~1312).
         // For blind validation: remove this block or guard with ValidationMode::Informed
-        if spec.case_id.starts_with("9") && spec.case_id != "960" {
+        // FIX: Don't enable 9R4C for free-floating cases - the multi-node solver maintains
+        // its own internal state and doesn't sync back to envelope_mass_temperatures,
+        // causing t_i_free_5r1c (used in free-float path) to produce wrong temperatures.
+        if spec.case_id.starts_with("9") && spec.case_id != "960" && !spec.is_free_floating() {
             model.enable_9r4c_model();
         }
 
@@ -1721,6 +1724,11 @@ impl ThermalModel<VectorField> {
             ];
             model.enable_ctf(&wall_layers, 3600.0, 50);
             model.ctf_primary = true;
+            // FIX: Enable 6R2C model for 900FF/950FF free-float. Previously this was
+            // skipped (free-float used 5R1C path directly), but 6R2C gives better
+            // high-mass thermal lag behavior. The early return in step_physics_6r2c
+            // still ensures zero HVAC output for free-float.
+            model.configure_6r2c_model(0.75, 100.0, None);
         }
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)

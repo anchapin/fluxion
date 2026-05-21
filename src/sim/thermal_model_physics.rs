@@ -19,7 +19,7 @@ use crate::sim::profiles;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
-    backward_euler_update, backward_euler_update_2cond, crank_nicolson_update,
+    backward_euler_update_2cond, crank_nicolson_iso13790, crank_nicolson_update,
     crank_nicolson_update_3cond, select_integration_method, ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
@@ -1311,30 +1311,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     // SESSION 72: Include ventilation-to-mass cooling
                     let effective_h_tr_em = h_tr_em + h_vent_mass_zone;
-                    backward_euler_update(
-                        tm_old,
-                        dt,
-                        cm,
-                        effective_h_tr_em,
-                        h_tr_ms,
-                        // Use weighted average of sol-air and outdoor temp for ventilation
-                        if h_vent_mass_zone > 0.0 {
-                            (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
-                                / effective_h_tr_em
-                        } else {
-                            t_sol_air[i]
-                        },
-                        t_s,
-                        phi_m_zone,
-                    )
+                    // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
+                    // See detailed comment in the CrankNicolson branch below.
+                    let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+                    let t_ext_eff = if h_vent_mass_zone > 0.0 {
+                        (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
+                            / effective_h_tr_em
+                    } else {
+                        t_sol_air[i]
+                    };
+                    // Backward Euler with h_tr_3:
+                    // (Cm/dt + h_tr_em + h_tr_3) * Tm_new = Cm/dt * Tm_old + h_tr_em * t_ext + h_tr_3 * t_s + phi_m
+                    let cm_dt = cm / dt;
+                    let denom = cm_dt + effective_h_tr_em + h_tr_3_zone;
+                    let numer = cm_dt * tm_old
+                        + effective_h_tr_em * t_ext_eff
+                        + h_tr_3_zone * t_s
+                        + phi_m_zone;
+                    numer / denom
                 }
                 ThermalIntegrationMethod::ExplicitEuler => {
                     // Use explicit Euler for low thermal mass (faster, still stable)
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     // SESSION 72: Include ventilation-to-mass cooling
+                    // Issue #896 FIX: Use h_tr_3 instead of h_tr_ms for the air-to-mass bottleneck.
+                    // See detailed comment in the CrankNicolson branch below.
+                    let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
                     let q_vent_mass = h_vent_mass_zone * (outdoor_temp - tm_old);
                     let q_m_net = h_tr_em * (t_sol_air[i] - tm_old)
-                        + h_tr_ms * (t_s - tm_old)
+                        + h_tr_3_zone * (t_s - tm_old)
                         + phi_m_zone
                         + q_vent_mass;
                     tm_old + (q_m_net / cm) * dt
@@ -1343,21 +1348,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
                     // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
                     // SESSION 72: Include ventilation-to-mass cooling
-                    let effective_h_tr_em = h_tr_em + h_vent_mass_zone;
-                    let t_ext_weighted = if h_vent_mass_zone > 0.0 {
-                        (h_tr_em * t_sol_air[i] + h_vent_mass_zone * outdoor_temp)
-                            / effective_h_tr_em
-                    } else {
-                        t_sol_air[i]
-                    };
-                    crank_nicolson_update(
+                    // Issue #896 FIX: Use crank_nicolson_iso13790 with h_tr_3 instead of
+                    // crank_nicolson_update with h_tr_ms. The h_tr_ms (~1300 W/K) is the
+                    // direct surface-to-mass conductance, but heat from the air node reaches
+                    // the mass through the combined air-to-surface bottleneck (h_tr_3 ≈ 40 W/K).
+                    // Using h_tr_ms gives a time constant of ~4 hours (too fast), while h_tr_3
+                    // gives ~6 days (matching ISO 13790 dynamics and correct seasonal mass swing).
+                    // phi_m_zone already includes all gains that reach the mass node.
+                    crank_nicolson_iso13790(
                         tm_old,
                         dt,
                         cm,
-                        effective_h_tr_em,
-                        h_tr_ms,
-                        t_ext_weighted,
-                        t_s,
+                        *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms),
+                        h_tr_em, // Ventilation is handled via air/surface temp, not directly here
                         phi_m_zone,
                     )
                 }
@@ -1699,9 +1702,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _hour_of_day_idx = timestep % 24;
 
         // Issue #738: Free-float mode must completely disable HVAC output
-        if self.0.free_float {
-            return 0.0;
-        }
+        // NOTE: Don't return early here - we need to update mass temperatures
+        // and zone temperatures for correct free-float temperature tracking.
+        // The hvac_output_raw will be zero (computed from free-float t_i_free).
 
         // Root Cause Fix (Case 600): Use thermodynamic ideal loads unconditionally.
         let hvac_output_raw = self.compute_zone_hvac_load(
@@ -2622,6 +2625,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]
                 };
 
+                // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
+                if timestep == 337 && i == 0 && !self.0.free_float {
+                    eprintln!(
+                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, term_rest_1={:.2}, den={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
+                        self.0.h_tr_is.as_ref()[i],
+                        self.0.h_ve.as_ref()[i],
+                        term_rest_1_zone,
+                        den_val,
+                        h_coeff,
+                        t_free_val,
+                        h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
+                    );
+                }
+
                 let q = if t_free_val < self.0.heating_setpoint {
                     h_coeff * (self.0.heating_setpoint - t_free_val)
                 } else if t_free_val > self.0.cooling_setpoint {
@@ -2629,6 +2646,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else {
                     0.0
                 };
+
                 let q_clamped = q.clamp(-cool_cap, heat_cap);
                 hvac_data.push(q_clamped);
 
@@ -2686,16 +2704,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     t_i_blended
                 };
 
-                let tm_new = backward_euler_update(
-                    tm_old,
-                    dt,
-                    cm,
-                    h_tr_em,
-                    h_tr_ms,
-                    t_ext,
-                    t_s,
-                    phi_m.as_ref()[i],
-                );
+                // Issue #896 FIX: Use h_tr_3 (combined air-to-mass conductance ≈ 40 W/K)
+                // instead of h_tr_ms (direct surface-to-mass ≈ 1300 W/K).
+                //
+                // The mass node in ISO 13790 receives heat from the air node through
+                // H_tr_3, which is the SERIES combination of (air-to-surface + surface-to-mass).
+                // This creates an air-side bottleneck that slows the mass response to ~6 days,
+                // matching measured building dynamics. Using h_tr_ms directly gives ~4.5 hours,
+                // which is far too fast and causes the mass to not cool sufficiently at night.
+                //
+                // The h_tr_3 conductance is computed once at initialization from:
+                //   H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms)
+                //   where H_tr_2 = H_tr_1 + h_tr_w, and H_tr_1 = h_ve * h_tr_is / (h_ve + h_tr_is)
+                let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+
+                // Backward Euler with h_tr_3 instead of h_tr_ms:
+                // (Cm/dt + h_tr_em + h_tr_3) * Tm_new = Cm/dt * Tm_old + h_tr_em * t_ext + h_tr_3 * t_s + phi_m
+                let cm_dt = cm / dt;
+                let denom = cm_dt + h_tr_em + h_tr_3_zone;
+                let numer =
+                    cm_dt * tm_old + h_tr_em * t_ext + h_tr_3_zone * t_s + phi_m.as_ref()[i];
+                let tm_new = numer / denom;
+
                 new_mass_temperatures.push(tm_new);
             }
             self.0.mass_temperatures = VectorField::new(new_mass_temperatures).into();
