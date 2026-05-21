@@ -954,19 +954,22 @@ mod tests {
     }
 
     #[test]
-    fn predict_mock() {
+    fn predict_without_model_uses_analytical() {
         let m = SurrogateManager::new().unwrap();
         let loads = m.predict_loads(&[20.0, 21.0, 22.0]);
         assert_eq!(loads.len(), 3);
-        assert_eq!(loads[0], 1.2);
+        // When no model is loaded, analytical_loads is used as fallback
+        // which computes solar gain based on time of day (non-negative)
+        assert!(loads[0] >= 0.0);
     }
 
     #[test]
-    fn predict_mock_batched() {
+    fn predict_batched_without_model_uses_analytical() {
         let m = SurrogateManager::new().unwrap();
         let loads = m.predict_loads_batched(&[vec![20.0, 21.0], vec![22.0, 23.0]]);
         assert_eq!(loads.len(), 2);
-        assert_eq!(loads[0][0], 1.2);
+        // Each batch returns analytical loads (non-negative)
+        assert!(loads[0][0] >= 0.0);
     }
 
     #[test]
@@ -981,8 +984,8 @@ mod tests {
         let temps = vec![20.0, 21.0, 22.0];
         let loads = m.predict_loads_with_fallback(&temps).unwrap();
         assert_eq!(loads.len(), 3);
-        // It returns mock loads 1.2 because model_loaded is false
-        assert_eq!(loads[0], 1.2);
+        // When model_loaded is false, falls back to analytical loads (non-negative)
+        assert!(loads[0] >= 0.0);
     }
 
     #[test]
@@ -1057,7 +1060,8 @@ mod tests {
         let loads = manager.predict_loads_with_fallback(&temps).unwrap();
 
         assert_eq!(loads.len(), 2);
-        assert_eq!(loads[0], 1.2); // Default behavior when no model is loaded
+        // Default behavior when no model is loaded: analytical loads (non-negative solar gain)
+        assert!(loads[0] >= 0.0);
 
         // Call analytical_loads directly to cover it
         let analytical = manager.analytical_loads(&temps).unwrap();
