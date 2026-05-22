@@ -54,8 +54,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> T {
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let h_ve_vec = self.0.h_ve.as_ref();
-        let h_tr_w_vec = self.0.h_tr_w.as_ref();
         let enabled_vec = self.0.hvac_enabled.as_ref();
+        let term_rest_1_vec = self.0.derived_term_rest_1.as_ref();
+        let den_vec = self.0.derived_den.as_ref();
 
         let heat_cap = self.0.hvac_heating_capacity;
         let cool_cap = self.0.hvac_cooling_capacity;
@@ -68,19 +69,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
 
-            // Total conductance that varies with window U-value
-            // This is the correct formula for low-mass buildings:
-            // h_total = h_tr_is + h_ve + h_tr_w
-            // NOT just ventilation (h_ve) which gave ~21.7 W/K
-            let h_total = h_tr_is_vec[zone_idx] + h_ve_vec[zone_idx] + h_tr_w_vec[zone_idx];
+            // Use the correct HVAC coefficient from the full 5R1C/6R2C network solution.
+            // This is the same formula used in the iterative solver (line ~2676):
+            //   h_coeff = den / (2 * term_rest_1) for 5R1C network
+            // This properly accounts for series-parallel conductance topology.
+            let term_rest_1 = term_rest_1_vec[zone_idx];
+            let den_val = den_vec[zone_idx];
+            let h_coeff = if term_rest_1 > 0.0 {
+                den_val / (2.0 * term_rest_1)
+            } else {
+                h_tr_is_vec[zone_idx] + h_ve_vec[zone_idx]
+            };
+
             let t_zone = zone_temps[zone_idx];
 
             let demand = if t_zone < heating_setpoint {
-                // Heating needed: Q = h_total × (T_setpoint - T_zone)
-                h_total * (heating_setpoint - t_zone)
+                // Heating needed: Q = h_coeff × (T_setpoint - T_zone)
+                h_coeff * (heating_setpoint - t_zone)
             } else if t_zone > cooling_setpoint {
-                // Cooling needed: Q = -h_total × (T_zone - T_cool_sp)
-                -h_total * (t_zone - cooling_setpoint)
+                // Cooling needed: Q = -h_coeff × (T_zone - T_cool_sp)
+                -h_coeff * (t_zone - cooling_setpoint)
             } else {
                 0.0
             };
