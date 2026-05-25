@@ -19,9 +19,9 @@ use crate::sim::profiles;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
-    backward_euler_update, backward_euler_update_2cond, backward_euler_update_2cond_h_tr3,
-    crank_nicolson_iso13790, crank_nicolson_update, crank_nicolson_update_3cond,
-    select_integration_method, ThermalIntegrationMethod,
+    backward_euler_update_2cond, backward_euler_update_2cond_h_tr3, crank_nicolson_iso13790,
+    crank_nicolson_update, crank_nicolson_update_3cond, select_integration_method,
+    ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
@@ -2813,15 +2813,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Calculate and return total HVAC output (energy)
         let hvac_output = hvac_for_temp_calc;
-        let hvac_cloned = hvac_output.clone();
-        let hvac_power_watts = hvac_cloned
-            .as_ref()
-            .iter()
-            .zip(self.0.hvac_enabled.as_ref().iter())
-            .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
-            .sum::<f64>();
 
-        // Accumulate annual energy and track peak power
+        // Accumulate annual energy and track peak power without cloning
+        let mut hvac_power_watts = 0.0;
         {
             let mut heating_sum = 0.0_f64;
             let mut cooling_sum = 0.0_f64;
@@ -2831,6 +2825,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .zip(self.0.hvac_enabled.as_ref().iter())
             {
                 let val = if enabled > 0.5 { output } else { 0.0 };
+                hvac_power_watts += val;
+
                 if val > 0.0 {
                     heating_sum += val;
                 } else if val < 0.0 {

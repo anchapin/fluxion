@@ -13,3 +13,6 @@
 ## 2026-05-19 - Avoided intermediate Vector allocations in hvac_demand_from_ideal_loads (Take 2)
 **Learning:** Slices of uniform values can be created from single variables as slices rather than by allocating memory dynamically.
 **Action:** Replaced `vec![val; N]` with `&[val]` when the loop logic passes only single element slices down.
+## 2026-05-23 - Optimized HVAC Power Accumulation
+**Learning:** Replaced the allocation and clone from `.clone()` by keeping the accumulation of peak power inside the summation block without allocating a new buffer (`let hvac_cloned = hvac_output.clone(); let hvac_power_watts = hvac_cloned.as_ref().iter()...`).
+**Action:** When a `.clone()` operation produces an iterator directly consumed by `.sum()`, evaluate if it can be combined with another iteration loop on the same reference or avoided completely by aggregating manually inside an existing block of similar iterators.
