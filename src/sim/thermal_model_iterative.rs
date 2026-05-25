@@ -509,8 +509,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let (window_gain_watts, opaque_gain_watts) =
                         self.calculate_zone_solar_gain(zone_idx, timestep, weather);
                     let floor_area = self.0.zone_area.as_ref()[zone_idx];
-                    zone_solar_gains.push(window_gain_watts / floor_area);
-                    zone_opaque_gains.push(opaque_gain_watts / floor_area);
+                    let solar_gain_normalized = window_gain_watts / floor_area;
+                    let opaque_gain_normalized = opaque_gain_watts / floor_area;
+                    zone_solar_gains.push(solar_gain_normalized);
+                    zone_opaque_gains.push(opaque_gain_normalized);
                 }
 
                 // SESSION 79: For free-floating cases, DO NOT reduce solar gains
@@ -521,9 +523,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Apply zone-specific solar gains
                 self.0.solar_gains = T::from(VectorField::new(zone_solar_gains.clone()));
                 self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains.clone()));
-
-                // DEBUG: Log the actual gains stored
-                // DEBUG: DEBUG_CALC_ANALYTICAL removed (PR #821)
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;

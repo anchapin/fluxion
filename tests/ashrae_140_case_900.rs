@@ -1342,6 +1342,7 @@ fn test_900_series_regression() {
             // Run full simulation with HVAC
             let mut model = ThermalModel::<VectorField>::from_spec(&spec);
             model.reset_peak_power();
+            model.reset_heating_cooling_energy();
 
             let mut total_heating = 0.0_f64;
             let mut total_cooling = 0.0_f64;
