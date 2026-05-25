@@ -19,9 +19,9 @@ use crate::sim::profiles;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
-    backward_euler_update, backward_euler_update_2cond, backward_euler_update_2cond_h_tr3,
-    crank_nicolson_iso13790, crank_nicolson_update, crank_nicolson_update_3cond,
-    select_integration_method, ThermalIntegrationMethod,
+    backward_euler_update_2cond, backward_euler_update_2cond_h_tr3, crank_nicolson_iso13790,
+    crank_nicolson_update, crank_nicolson_update_3cond, select_integration_method,
+    ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
@@ -54,8 +54,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> T {
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let h_ve_vec = self.0.h_ve.as_ref();
-        let h_tr_ms_vec = self.0.h_tr_ms.as_ref();
-        let h_tr_me_vec = self.0.h_tr_me.as_ref();
         let enabled_vec = self.0.hvac_enabled.as_ref();
         let term_rest_1_vec = self.0.derived_term_rest_1.as_ref();
         let den_vec = self.0.derived_den.as_ref();
@@ -72,51 +70,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
 
             // Use the correct HVAC coefficient from the full 5R1C/6R2C network solution.
-            // The series-parallel conductance topology determines how HVAC heat flow
-            // couples to the zone air node through the building envelope.
-            //
-            // For 5R1C network (term_rest_1 = h_tr_ms + h_tr_is):
-            //   h_coeff = den / (2 * term_rest_1)
-            //   where den = h_ms_is_prod + term_rest_1 * h_ext
-            //
-            // For 6R2C network (term_rest_1 = h_tr_ms + h_tr_me + h_tr_is):
-            // The zone air sees h_tr_is in series with the parallel combination of
-            // h_ext and (h_tr_ms + h_tr_me). The series-parallel reduction is:
-            //   h_parallel = h_ext * (h_tr_ms + h_tr_me) / (h_ext + h_tr_ms + h_tr_me)
-            //   h_coeff = h_tr_is * h_parallel / (h_tr_is + h_parallel)
-            //
-            // This correctly accounts for:
-            // - h_ext = building envelope conductance (h_tr_w + h_ve)
-            // - h_tr_ms = interior surface to envelope mass conductance
-            // - h_tr_me = interior surface to internal mass conductance
-            // - h_tr_is = interior surface to zone air conductance
+            // This is the same formula used in the iterative solver (line ~2676):
+            //   h_coeff = den / (2 * term_rest_1) for 5R1C network
+            // This properly accounts for series-parallel conductance topology.
             let term_rest_1 = term_rest_1_vec[zone_idx];
             let den_val = den_vec[zone_idx];
-            let h_ext_val = self
-                .0
-                .derived_h_ext
-                .as_ref()
-                .get(zone_idx)
-                .copied()
-                .unwrap_or(h_tr_is_vec[zone_idx] + h_ve_vec[zone_idx]);
-            let h_tr_ms_zone = h_tr_ms_vec[zone_idx];
-            let h_tr_me_zone = h_tr_me_vec[zone_idx];
-            let h_sum_no_is = h_tr_ms_zone + h_tr_me_zone;
-            let h_coeff = if (self.0.thermal_model_type
-                == crate::sim::thermal_model_core::ThermalModelType::SixRTwoC
-                || self.0.thermal_model_type
-                    == crate::sim::thermal_model_core::ThermalModelType::NineRFourC)
-                && h_sum_no_is > 0.0
-                && h_ext_val > 0.0
-                && h_tr_is_vec[zone_idx] > 0.0
-            {
-                // 6R2C/9R4C: Series-parallel reduction including h_tr_is
-                // h_parallel = h_ext * (h_tr_ms + h_tr_me) / (h_ext + h_tr_ms + h_tr_me)
-                let h_parallel = (h_ext_val * h_sum_no_is) / (h_ext_val + h_sum_no_is);
-                // h_coeff = h_tr_is * h_parallel / (h_tr_is + h_parallel)
-                (h_tr_is_vec[zone_idx] * h_parallel) / (h_tr_is_vec[zone_idx] + h_parallel)
-            } else if term_rest_1 > 0.0 {
-                // 5R1C: Use standard formula
+            let h_coeff = if term_rest_1 > 0.0 {
                 den_val / (2.0 * term_rest_1)
             } else {
                 h_tr_is_vec[zone_idx] + h_ve_vec[zone_idx]
@@ -297,22 +256,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         if h_tr_sum > 0.0 {
-            let cm_sum = self.0.thermal_capacitance.as_ref().iter().sum::<f64>();
-            // If thermal_capacitance is suspiciously small (default placeholder ~1.0),
-            // the model hasn't been properly initialized from a case spec.
-            // Use case_id heuristic to return sensible defaults.
-            if cm_sum < 1000.0 {
-                // Bare ThermalModel::new() has thermal_capacitance = 1.0 - not a real model
-                // Return default tau based on case_id heuristic (legacy behavior before Issue #821)
-                if is_high_mass {
-                    10.0 // High-mass default: ~10 hours
-                } else {
-                    0.5 // Low-mass default: ~30 minutes
-                }
-            } else {
-                let tau_seconds = cm_sum / h_tr_sum;
-                tau_seconds / 3600.0 // Convert to hours
-            }
+            let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
+            tau_seconds / 3600.0 // Convert to hours
         } else {
             2.0 // Default: 2 hours (boundary between low/high mass)
         }
@@ -623,14 +568,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// This is the original implementation for backward compatibility.
     fn step_physics_5r1c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
-
-        // DEBUG Issue #923: Check if 5R1C is called for 900FF
-        if timestep < 3 {
-            eprintln!(
-                "DEBUG_5R1C_CALL: case_id={}, t={}",
-                self.0.case_id, timestep
-            );
-        }
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
         // Calculate sky temperature for proper sol-air calculation with longwave radiation
@@ -1599,58 +1536,33 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext_base = &self.0.derived_h_ext;
         let term_rest_1 = &self.0.derived_term_rest_1;
 
-        // === Issue #824: Night-ventilation air-side coupling for 6R2C ===
-        // For ASHRAE 140 Case 950FF the spec defines a night-ventilation fan that runs
-        // 18:00 → 07:00 at 1703.16 m³/h, supplying outside air directly to the zone.
-        // Per ASHRAE 140 §5.4 (Case 950 description), this is an *air-side* path that
-        // adds h_ve_night to the air-to-outdoor conductance during active hours.
-        //
-        // This was correctly implemented in step_physics_5r1c (line 719-788) but the
-        // same logic was missing from step_physics_6r2c. The fix adds h_ve_night to
-        // derived_h_ext during active hours, making night ventilation work consistently
-        // across both 5R1C (low-mass) and 6R2C (high-mass) model paths.
-        let h_ve_night: f64;
-        let modified_h_ext: T = if let Some(ref night_vent) = self.0.night_ventilation {
-            if night_vent.is_active_at_hour(_hour_of_day) {
-                // Calculate h_ve_night = ρ · Cp · V̇_fan / 3600 [W/K]
-                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
-                let cp = self
-                    .0
-                    .heat_capacity
-                    .as_ref()
-                    .first()
-                    .copied()
-                    .unwrap_or(1005.0);
-                h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
-                // Add h_ve_night to h_ext for active ventilation
-                let base = h_ext_base.as_ref();
-                let mut v = Vec::with_capacity(base.len());
-                for &b in base.iter() {
-                    v.push(b + h_ve_night);
-                }
-                T::from(VectorField::new(v))
-            } else {
-                h_ext_base.clone()
-            }
-        } else {
-            h_ve_night = 0.0;
-            h_ext_base.clone()
-        };
+        // Night ventilation no longer modifies h_ext (same fix as 5R1C path).
+        let modified_h_ext: Option<T> = None;
+        let h_ext = h_ext_base;
 
         // 6R2C specific terms
         let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
         let h_ms_me_is_prod =
             self.0.h_tr_is.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
 
-        let h_total_with_iz = if self.0.num_zones > 1 {
-            modified_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
+        let den: T;
+        let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
+            if self.0.num_zones > 1 {
+                mod_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
+            } else {
+                mod_h_ext.clone()
+            }
         } else {
-            modified_h_ext.clone()
+            if self.0.num_zones > 1 {
+                self.0.derived_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
+            } else {
+                self.0.derived_h_ext.clone()
+            }
         };
 
         // Issue 693 fix: ground coupling coefficient in 6R2C den
         let ground_coeff_6r2c = h_sum.clone() * self.0.h_tr_floor.clone();
-        let den: T = h_ms_me_is_prod.clone()
+        den = h_ms_me_is_prod.clone()
             + h_sum.clone() * h_total_with_iz.clone()
             + ground_coeff_6r2c.clone();
 
@@ -1661,10 +1573,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // When ctf_primary=true, the 6R2C h_tr_ms coupling is DISABLED because
         // CTF provides the correct multi-layer conduction dynamics directly.
         // The CTF heat flow q_ctf (computed from T_si_ctf) replaces the 6R2C h_tr_ms * t_mass term.
-        // Issue #923: For free-float cases, do NOT zero the mass coupling even when ctf_primary=true.
-        // Without HVAC, CTF has no active driving force, so we need proper 6R2C mass coupling.
-        let num_tm = if self.0.ctf_primary && !self.0.free_float {
-            // Zero out the 6R2C coupling - CTF will drive the zone air heat balance (HVAC case only)
+        let num_tm = if self.0.ctf_primary {
+            // Zero out the 6R2C coupling - CTF will drive the zone air heat balance
             self.0.derived_h_ms_is_prod.constant_like(0.0)
         } else {
             self.0
@@ -1782,7 +1692,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let _env_mass_vals = self.0.envelope_mass_temperatures.as_ref();
             let h_sum_vals = h_sum.as_ref();
             let sum_term_vals = sum_term.as_ref();
-            let h_ext_debug = modified_h_ext.as_ref();
+            let h_ext_debug = h_ext.as_ref();
             let phi_ia_debug = phi_ia.as_ref();
             let solar_debug = self.0.solar_gains.as_ref();
             let loads_debug = self.0.loads.as_ref();
@@ -2431,51 +2341,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let den = self.0.derived_den.clone();
         // (#872: sensitivity variable removed — HVAC demand now uses h_loss × ΔT formula)
 
-        // Issue #923 Fix: For 6R2C models (including 900FF free-floating),
-        // use proper 6R2C mass coupling formula: h_tr_ms * tm_env + h_tr_me * tm_int
-        // instead of the 5R1C h_ms_is_prod * mass_temperatures.
-        //
-        // The 5R1C formula uses self.0.mass_temperatures which is NEVER updated for 6R2C
-        // cases (stays frozen at 20°C initial value). This caused t_i_free ≈ outdoor temp
-        // because the massive thermal mass contribution was essentially zero.
-        //
-        // The 6R2C formula correctly uses envelope_mass_temperatures and internal_mass_temperatures
-        // which ARE updated at each timestep in step_physics_6r2c.
-        let num_tm: T = if self.0.thermal_model_type
-            == crate::sim::thermal_model_core::ThermalModelType::SixRTwoC
-        {
-            // Proper 6R2C mass coupling: h_tr_ms * T_env + h_tr_me * T_int
-            let h_ms_ref = self.0.h_tr_ms.as_ref();
-            let h_me_ref = self.0.h_tr_me.as_ref();
-            let t_env_ref = self.0.envelope_mass_temperatures.as_ref();
-            let t_int_ref = self.0.internal_mass_temperatures.as_ref();
-            let mut result = Vec::with_capacity(self.0.num_zones);
-            for i in 0..self.0.num_zones {
-                let h_ms = h_ms_ref.get(i).copied().unwrap_or(0.0);
-                let h_me = h_me_ref.get(i).copied().unwrap_or(0.0);
-                let t_env = t_env_ref.get(i).copied().unwrap_or(20.0);
-                let t_int = t_int_ref.get(i).copied().unwrap_or(20.0);
-                result.push(h_ms * t_env + h_me * t_int);
-            }
-            T::from(VectorField::new(result))
-        } else if self.0.ctf_primary && !self.0.free_float {
-            // Zero out the 5R1C coupling for CTF-primary HVAC cases - CTF drives the balance
-            self.0.derived_h_ms_is_prod.constant_like(0.0)
-        } else {
-            // Standard 5R1C mass coupling
-            self.0
-                .derived_h_ms_is_prod
-                .zip_with(&self.0.mass_temperatures, |a, b| a * b)
-        };
-
-        // DEBUG Issue #923: Check if ctf_primary is even true for 900FF
-        if self.0.case_id == "900FF" {
-            eprintln!("DEBUG_900FF_MASS: ctf_primary={}, free_float={}, num_tm[0]={:.2}, mass_temps[0]={:.2}, h_ms_is_prod[0]={:.2}",
-                self.0.ctf_primary, self.0.free_float,
-                num_tm.as_ref().get(0).copied().unwrap_or(0.0),
-                self.0.mass_temperatures.as_ref().get(0).copied().unwrap_or(0.0),
-                self.0.derived_h_ms_is_prod.as_ref().get(0).copied().unwrap_or(0.0));
-        }
+        let num_tm = self
+            .0
+            .derived_h_ms_is_prod
+            .zip_with(&self.0.mass_temperatures, |a, b| a * b);
         let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
 
         let mut phi_ia_with_iz = phi_ia.clone();
@@ -2812,47 +2681,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     };
                 let term_rest_1_zone = self.0.derived_term_rest_1.as_ref()[i];
                 let den_val = self.0.derived_den.as_ref()[i];
-                let h_ext_zone = self
-                    .0
-                    .derived_h_ext
-                    .as_ref()
-                    .get(i)
-                    .copied()
-                    .unwrap_or_else(|| self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]);
-                let h_tr_ms_zone = self.0.h_tr_ms.as_ref()[i];
-                let h_tr_me_zone = self.0.h_tr_me.as_ref()[i];
-                let h_tr_is_zone = self.0.h_tr_is.as_ref()[i];
-                let h_sum_no_is = h_tr_ms_zone + h_tr_me_zone;
-                let h_coeff = if (self.0.thermal_model_type
-                    == crate::sim::thermal_model_core::ThermalModelType::SixRTwoC
-                    || self.0.thermal_model_type
-                        == crate::sim::thermal_model_core::ThermalModelType::NineRFourC)
-                    && h_sum_no_is > 0.0
-                    && h_ext_zone > 0.0
-                    && h_tr_is_zone > 0.0
-                {
-                    // 6R2C/9R4C: Series-parallel reduction including h_tr_is
-                    // h_parallel = h_ext * (h_tr_ms + h_tr_me) / (h_ext + h_tr_ms + h_tr_me)
-                    let h_parallel = (h_ext_zone * h_sum_no_is) / (h_ext_zone + h_sum_no_is);
-                    // h_coeff = h_tr_is * h_parallel / (h_tr_is + h_parallel)
-                    (h_tr_is_zone * h_parallel) / (h_tr_is_zone + h_parallel)
-                } else if term_rest_1_zone > 0.0 {
-                    // 5R1C: Use standard formula
+                let h_coeff = if term_rest_1_zone > 0.0 {
                     den_val / (2.0 * term_rest_1_zone)
                 } else {
-                    h_tr_is_zone + self.0.h_ve.as_ref()[i]
+                    self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]
                 };
 
                 // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
                 if timestep == 337 && i == 0 && !self.0.free_float {
                     eprintln!(
-                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, h_tr_ms={:.2}, h_tr_me={:.2}, h_ext={:.2}, h_sum_no_is={:.2}, term_rest_1={:.2}, den={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
-                        h_tr_is_zone,
+                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, term_rest_1={:.2}, den={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
+                        self.0.h_tr_is.as_ref()[i],
                         self.0.h_ve.as_ref()[i],
-                        h_tr_ms_zone,
-                        h_tr_me_zone,
-                        h_ext_zone,
-                        h_sum_no_is,
                         term_rest_1_zone,
                         den_val,
                         h_coeff,
@@ -2980,15 +2820,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Calculate and return total HVAC output (energy)
         let hvac_output = hvac_for_temp_calc;
-        let hvac_cloned = hvac_output.clone();
-        let hvac_power_watts = hvac_cloned
-            .as_ref()
-            .iter()
-            .zip(self.0.hvac_enabled.as_ref().iter())
-            .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
-            .sum::<f64>();
 
-        // Accumulate annual energy and track peak power
+        // Accumulate annual energy and track peak power without cloning
+        let mut hvac_power_watts = 0.0;
         {
             let mut heating_sum = 0.0_f64;
             let mut cooling_sum = 0.0_f64;
@@ -2998,6 +2832,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 .zip(self.0.hvac_enabled.as_ref().iter())
             {
                 let val = if enabled > 0.5 { output } else { 0.0 };
+                hvac_power_watts += val;
+
                 if val > 0.0 {
                     heating_sum += val;
                 } else if val < 0.0 {
