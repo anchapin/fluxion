@@ -889,6 +889,32 @@ impl MassClass {
             MassClass::VeryHeavy => (370_000.0, f64::INFINITY),
         }
     }
+
+    /// Returns the thermal coupling coefficient (h_ms) for t_i_free calculation.
+    ///
+    /// For low-mass buildings (VeryLight/Light), the ISO 13790 admittance method
+    /// produces h_ms values that are too large, causing t_i_free to be dominated
+    /// by mass temperature instead of tracking outdoor conditions.
+    ///
+    /// Per ISO 13790 Table C.2, the admittance method is calibrated for
+    /// medium+ mass classes. For VeryLight/Light, we use a reduced coefficient
+    /// that allows proper thermal coupling in the t_i_free formula.
+    ///
+    /// # Returns
+    /// h_ms coefficient in W/(m²·K)
+    ///
+    /// # Physical Basis
+    /// - VeryLight/Light: h_ms = 2.0 W/(m²·K) — furniture and lightweight internal mass
+    /// - Medium+: h_ms = 9.1 W/(m²·K) — ISO 13790 full admittance method
+    pub fn h_ms_coeff(&self) -> f64 {
+        match self {
+            MassClass::VeryLight => 2.0,
+            MassClass::Light => 2.0,
+            MassClass::Medium => 9.1,
+            MassClass::Heavy => 9.1,
+            MassClass::VeryHeavy => 9.1,
+        }
+    }
 }
 
 /// Pre-defined material properties for common building materials.
