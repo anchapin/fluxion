@@ -906,12 +906,23 @@ fn test_900ff_without_ctf() {
     let spec_900ff = ASHRAE140Case::Case900FF.spec();
     let weather = DenverTmyWeather::new();
 
-    // === Case A: 900FF with 6R2C + CTF (default) ===
+    // === Case A: 900FF with 6R2C + CTF ===
     let mut model_with_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
     model_with_ctf.heating_setpoint = -999.0;
     model_with_ctf.cooling_setpoint = 999.0;
     model_with_ctf.hvac_heating_capacity = 0.0;
     model_with_ctf.hvac_cooling_capacity = 0.0;
+
+    // Issue #913: CTF is NOT enabled by default in from_spec().
+    // Explicitly enable CTF for Case A to compare 6R2C+CTF vs 6R2C-only.
+    // Use high-mass wall layers matching the 900 construction.
+    let wall_layers = vec![
+        CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
+        CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
+        CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
+    ];
+    model_with_ctf.enable_ctf(&wall_layers, 3600.0, 50);
+    println!("Case A: CTF enabled = {}", model_with_ctf.ctf_is_enabled());
 
     let mut min_a = f64::INFINITY;
     let mut max_a = f64::NEG_INFINITY;
@@ -933,15 +944,15 @@ fn test_900ff_without_ctf() {
     model_no_ctf.hvac_heating_capacity = 0.0;
     model_no_ctf.hvac_cooling_capacity = 0.0;
 
-    // Verify CTF is enabled by default
-    assert!(
-        model_no_ctf.ctf_is_enabled(),
-        "CTF should be enabled by default for 900FF"
-    );
+    // CTF is disabled by default - no need to explicitly disable for Case B
+    println!("Case B: CTF enabled = {}", model_no_ctf.ctf_is_enabled());
 
-    // Disable CTF - this removes the CTF solver and reverts to 6R2C only
+    // Disable CTF just to be explicit (though it's already disabled)
     model_no_ctf.disable_ctf();
-    assert!(!model_no_ctf.ctf_is_enabled(), "CTF should be disabled now");
+    assert!(
+        !model_no_ctf.ctf_is_enabled(),
+        "CTF should be disabled for Case B"
+    );
 
     let mut min_b = f64::INFINITY;
     let mut max_b = f64::NEG_INFINITY;

@@ -257,7 +257,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         if h_tr_sum > 0.0 {
             let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
-            tau_seconds / 3600.0 // Convert to hours
+            let tau_hours = tau_seconds / 3600.0; // Convert to hours
+
+            // Sanity check: if tau is extremely small (< 0.001 hours = 3.6 seconds),
+            // the model is likely not properly initialized (placeholder values).
+            // Use 2-hour default for uninitialized models.
+            if tau_hours < 0.001 {
+                // Model not properly initialized - use default
+                2.0
+            } else {
+                tau_hours
+            }
         } else {
             2.0 // Default: 2 hours (boundary between low/high mass)
         }
