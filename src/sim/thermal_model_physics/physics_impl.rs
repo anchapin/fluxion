@@ -635,7 +635,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
             if self.0.hvac_equipment.is_none() {
-                // Note: hvac_power_for_peak is positive for heating, negative for cooling
+                // Note: hvac_output_raw is positive for heating, negative for cooling
                 // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
                 let enabled_vec = self.0.hvac_enabled.as_ref();
                 let hvac_power_watts = hvac_power_for_peak

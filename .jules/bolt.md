@@ -19,3 +19,7 @@
 ## 2026-06-11 - Avoided Vector allocations in den calculation of step_physics_6r2c
 **Learning:** In hot simulation loops like `step_physics_6r2c`, chained tensor operations using `.clone()` to build terms like `den` or `ground_coeff` cause extreme allocation pressure due to intermediate `Vec` creations.
 **Action:** When a composite value needs to be built across `num_zones` from multiple tensor properties, use a single explicit `for i in 0..self.0.num_zones` loop and `.as_ref()[i]` to build up the result safely inside a single pre-allocated `Vec::with_capacity()`.
+
+## 2026-05-30 - Optimized HVAC Peak Power Calculation
+**Learning:** In `ThermalModel::step_physics`, using `.clone()` on `hvac_output_raw` to store the value for peak power calculations generated unnecessary memory allocations.
+**Action:** The cloned `hvac_power_for_peak` value was completely redundant since `hvac_output_raw` could be directly chained to compute peak power calculations (which requires an elementwise read, not a mutable borrow nor ownership of the Tensor block).
