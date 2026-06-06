@@ -16,6 +16,10 @@
 ## 2026-05-23 - Optimized HVAC Power Accumulation
 **Learning:** Replaced the allocation and clone from `.clone()` by keeping the accumulation of peak power inside the summation block without allocating a new buffer (`let hvac_cloned = hvac_output.clone(); let hvac_power_watts = hvac_cloned.as_ref().iter()...`).
 **Action:** When a `.clone()` operation produces an iterator directly consumed by `.sum()`, evaluate if it can be combined with another iteration loop on the same reference or avoided completely by aggregating manually inside an existing block of similar iterators.
+## 2026-05-24 - Optimized 6R2C step_physics math
+**Learning:** Replaced chained .clone() vector math and intermediate allocations in `step_physics_6r2c` with chained `.zip_with` closures to fuse iterations and eliminate redundant vector allocations.
+**Action:** When working with math blocks that use `a.clone() + b.clone()` and `c.clone() * d.clone()`, apply chained `.zip_with` pattern consistently to eliminate double iteration loops and allocations.
+
 ## 2026-06-11 - Avoided Vector allocations in den calculation of step_physics_6r2c
 **Learning:** In hot simulation loops like `step_physics_6r2c`, chained tensor operations using `.clone()` to build terms like `den` or `ground_coeff` cause extreme allocation pressure due to intermediate `Vec` creations.
 **Action:** When a composite value needs to be built across `num_zones` from multiple tensor properties, use a single explicit `for i in 0..self.0.num_zones` loop and `.as_ref()[i]` to build up the result safely inside a single pre-allocated `Vec::with_capacity()`.
