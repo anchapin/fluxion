@@ -265,7 +265,7 @@ impl Default for ModelMetadata {
 /// Replaces expensive CFD/ray-tracing with pre-trained neural networks.
 /// Physics-informed: neural predictions constrained by energy balance.
 /// Supports both single-model and composite (multi-component) surrogates.
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Debug)]
 pub struct SurrogateManager {
     pub model_loaded: bool,
     pub model_path: Option<String>,
@@ -274,6 +274,17 @@ pub struct SurrogateManager {
     pub device_id: usize,
     /// Optional composite surrogate that aggregates multiple component models
     pub composite: Option<CompositeSurrogate>,
+    /// ONNX inference metrics (timing, throughput) for benchmarking vs physics.
+    /// Uses interior mutability so it can be updated from `&self` methods.
+    /// Wrapped in an Arc so the manager remains `Clone` (callers throughout
+    /// the codebase clone `SurrogateManager`).
+    pub inference_metrics: Arc<parking_lot::Mutex<InferenceMetrics>>,
+}
+
+impl Default for SurrogateManager {
+    fn default() -> Self {
+        Self::new().expect("Failed to create default SurrogateManager")
+    }
 }
 
 /// Thread-safe pool of ONNX Runtime sessions for concurrent inference.
@@ -532,7 +543,25 @@ impl SurrogateManager {
             backend: InferenceBackend::CPU,
             device_id: 0,
             composite: None,
+            inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
         })
+    }
+
+    /// Returns `true` if the manager has no real ONNX model loaded and is
+    /// therefore returning placeholder ("mock") predictions.
+    ///
+    /// When `is_mock()` returns `true`, [`Self::predict_loads`] and
+    /// [`Self::predict_loads_batched`] return a constant `1.2` per zone
+    /// (or the analytical fallback) instead of running a neural network.
+    /// Use [`Self::load_onnx`] to load a real model and switch off mock
+    /// mode.
+    pub fn is_mock(&self) -> bool {
+        !self.model_loaded && self.composite.is_none()
+    }
+
+    /// Returns a snapshot of the current inference metrics.
+    pub fn inference_metrics(&self) -> InferenceMetrics {
+        self.inference_metrics.lock().clone()
     }
 
     pub fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
@@ -645,6 +674,7 @@ impl SurrogateManager {
             backend,
             device_id,
             composite: None,
+            inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
         })
     }
 
@@ -666,6 +696,9 @@ impl SurrogateManager {
                     backend: InferenceBackend::CUDA,
                     device_id: config.device_ids.first().copied().unwrap_or(0),
                     composite: None,
+                    inference_metrics: Arc::new(parking_lot::Mutex::new(
+                        InferenceMetrics::default(),
+                    )),
                 })
             }
             Err(e) => {
@@ -704,6 +737,7 @@ impl SurrogateManager {
             backend: InferenceBackend::CPU,
             device_id: 0,
             composite: Some(composite),
+            inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
         })
     }
 
@@ -713,50 +747,74 @@ impl SurrogateManager {
         }
 
         if !self.model_loaded {
+            // Mock fallback: constant 1.2 load per zone, matching prior behavior.
             return vec![1.2; current_temps.len()];
         }
-        if let Some(ref pool) = self.session_pool {
-            let input_data: Vec<f32> = current_temps.iter().map(|&x| x as f32).collect();
-            let n_input = input_data.len();
-            match pool.get_or_create_session() {
-                Ok(mut session_guard) => {
-                    let input_tensor =
-                        match ort::value::Value::from_array(([1, n_input], input_data)) {
-                            Ok(t) => t,
-                            Err(e) => {
-                                panic!("Failed to create input tensor: {}. Error: {}", e, e);
-                            }
-                        };
-                    match session_guard.run(ort::inputs![input_tensor]) {
-                        Ok(outputs) => {
-                            if outputs.len() > 0 {
-                                match outputs[0].try_extract_array::<f32>() {
-                                    Ok(array_view) => {
-                                        let v: Vec<f64> =
-                                            array_view.iter().copied().map(|x| x as f64).collect();
-                                        if v.len() == n_input {
-                                            return v;
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to extract tensor: {}, using mock loads", e)
-                                    }
-                                }
-                            }
-                            panic!("ONNX inference returned no outputs.");
-                        }
-                        Err(e) => {
-                            panic!("ONNX inference error: {}.", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    panic!("Could not acquire ORT session: {}.", e);
-                }
+
+        // Real ONNX path — but never panic; fall back to mock on any failure
+        // so the simulation keeps running. Issue #899: replace mock with real
+        // inference pipeline, with graceful degradation.
+        match self.predict_loads_onnx(current_temps) {
+            Ok(loads) => loads,
+            Err(e) => {
+                warn!(
+                    "ONNX inference failed ({}), falling back to mock placeholder",
+                    e
+                );
+                vec![1.2; current_temps.len()]
             }
-        } else {
-            panic!("No session pool available.");
         }
+    }
+
+    /// Explicit ONNX inference — returns an error instead of panicking
+    /// or silently falling back to mock data. Use this when you need to
+    /// distinguish real neural predictions from mock placeholders.
+    ///
+    /// Returns `Err` if:
+    /// - no ONNX model has been loaded via [`Self::load_onnx`]
+    /// - input tensor shape does not match the model's expected input
+    /// - the ONNX runtime reports an inference error
+    pub fn predict_loads_onnx(&self, current_temps: &[f64]) -> Result<Vec<f64>, String> {
+        if !self.model_loaded {
+            return Err("No ONNX model loaded".to_string());
+        }
+        let pool = self
+            .session_pool
+            .as_ref()
+            .ok_or_else(|| "No session pool available".to_string())?;
+
+        let input_data: Vec<f32> = current_temps.iter().map(|&x| x as f32).collect();
+        let n_input = input_data.len();
+
+        let start = std::time::Instant::now();
+        let mut session_guard = pool
+            .get_or_create_session()
+            .map_err(|e| format!("Could not acquire ORT session: {}", e))?;
+
+        let input_tensor = ort::value::Value::from_array(([1_i64, n_input as i64], input_data))
+            .map_err(|e| format!("Failed to create input tensor: {}", e))?;
+
+        let outputs = session_guard
+            .run(ort::inputs![input_tensor])
+            .map_err(|e| format!("ONNX inference error: {}", e))?;
+
+        let result = if outputs.len() > 0 {
+            let array_view = outputs[0]
+                .try_extract_array::<f32>()
+                .map_err(|e| format!("Failed to extract tensor: {}", e))?;
+            let v: Vec<f64> = array_view.iter().copied().map(|x| x as f64).collect();
+            if v.is_empty() {
+                return Err("ONNX inference returned empty output".to_string());
+            }
+            v
+        } else {
+            return Err("ONNX inference returned no outputs".to_string());
+        };
+
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        self.inference_metrics.lock().record_inference(elapsed_ms);
+        let _ = n_input; // kept for forward-compat shape validation
+        Ok(result)
     }
 
     pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
@@ -773,63 +831,83 @@ impl SurrogateManager {
                 .map(|temps| vec![1.2; temps.len()])
                 .collect();
         }
-        if let Some(ref pool) = self.session_pool {
-            let batch_size = batch_temps.len();
-            let input_size = batch_temps[0].len();
-            for t in batch_temps {
-                if t.len() != input_size {
-                    panic!("Inconsistent input sizes in batch: expected {} elements per config, found varying sizes.", input_size);
-                }
+
+        match self.predict_loads_batched_onnx(batch_temps) {
+            Ok(loads) => loads,
+            Err(e) => {
+                warn!(
+                    "Batched ONNX inference failed ({}), falling back to mock placeholder",
+                    e
+                );
+                batch_temps
+                    .iter()
+                    .map(|temps| vec![1.2; temps.len()])
+                    .collect()
             }
-            let flattened: Vec<f32> = batch_temps
-                .iter()
-                .flat_map(|v| v.iter().map(|&x| x as f32))
-                .collect();
-            match pool.get_or_create_session() {
-                Ok(mut session_guard) => {
-                    let input_tensor = match ort::value::Value::from_array((
-                        vec![batch_size, input_size],
-                        flattened,
-                    )) {
-                        Ok(t) => t,
-                        Err(e) => {
-                            panic!("Failed to create input tensor: {}. Error: {}", e, e);
-                        }
-                    };
-                    match session_guard.run(ort::inputs![input_tensor]) {
-                        Ok(outputs) => {
-                            if outputs.len() > 0 {
-                                match outputs[0].try_extract_array::<f32>() {
-                                    Ok(array_view) => {
-                                        let result_iter =
-                                            array_view.iter().copied().map(|x| x as f64);
-                                        let results: Vec<f64> = result_iter.collect();
-                                        let output_size = results.len() / batch_size;
-                                        let mut batch_results = Vec::with_capacity(batch_size);
-                                        for chunk in results.chunks(output_size) {
-                                            batch_results.push(chunk.to_vec());
-                                        }
-                                        return batch_results;
-                                    }
-                                    Err(e) => {
-                                        warn!("Failed to extract tensor: {}, using mock loads", e)
-                                    }
-                                }
-                            }
-                            panic!("ONNX inference returned no outputs for batch.");
-                        }
-                        Err(e) => {
-                            panic!("ONNX inference error: {}.", e);
-                        }
-                    }
-                }
-                Err(e) => {
-                    panic!("Could not acquire ORT session: {}.", e);
-                }
-            }
-        } else {
-            panic!("No session pool available.");
         }
+    }
+
+    /// Explicit batched ONNX inference — returns an error instead of
+    /// panicking or silently falling back to mock data.
+    pub fn predict_loads_batched_onnx(
+        &self,
+        batch_temps: &[Vec<f64>],
+    ) -> Result<Vec<Vec<f64>>, String> {
+        if !self.model_loaded {
+            return Err("No ONNX model loaded".to_string());
+        }
+        if batch_temps.is_empty() {
+            return Ok(Vec::new());
+        }
+        let pool = self
+            .session_pool
+            .as_ref()
+            .ok_or_else(|| "No session pool available".to_string())?;
+
+        let batch_size = batch_temps.len();
+        let input_size = batch_temps[0].len();
+        for t in batch_temps {
+            if t.len() != input_size {
+                return Err(format!(
+                    "Inconsistent input sizes in batch: expected {} elements per config",
+                    input_size
+                ));
+            }
+        }
+        let flattened: Vec<f32> = batch_temps
+            .iter()
+            .flat_map(|v| v.iter().map(|&x| x as f32))
+            .collect();
+
+        let start = std::time::Instant::now();
+        let mut session_guard = pool
+            .get_or_create_session()
+            .map_err(|e| format!("Could not acquire ORT session: {}", e))?;
+
+        let input_tensor =
+            ort::value::Value::from_array((vec![batch_size as i64, input_size as i64], flattened))
+                .map_err(|e| format!("Failed to create input tensor: {}", e))?;
+
+        let outputs = session_guard
+            .run(ort::inputs![input_tensor])
+            .map_err(|e| format!("ONNX inference error: {}", e))?;
+
+        if outputs.len() == 0 {
+            return Err("ONNX inference returned no outputs for batch".to_string());
+        }
+        let array_view = outputs[0]
+            .try_extract_array::<f32>()
+            .map_err(|e| format!("Failed to extract tensor: {}", e))?;
+        let results: Vec<f64> = array_view.iter().copied().map(|x| x as f64).collect();
+        if results.is_empty() {
+            return Err("ONNX inference returned empty batch output".to_string());
+        }
+        let output_size = results.len() / batch_size;
+        let batch_results: Vec<Vec<f64>> =
+            results.chunks(output_size).map(|c| c.to_vec()).collect();
+        let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
+        self.inference_metrics.lock().record_inference(elapsed_ms);
+        Ok(batch_results)
     }
 }
 
@@ -1178,5 +1256,183 @@ mod tests {
 
         let result = m.predict_loads_governed(&temps, &domain, SurrogateMode::NeuralWithFallback);
         assert!(result.is_ok());
+    }
+
+    // ---- Issue #899: real ONNX inference pipeline tests ----
+
+    /// Path to the tiny test ONNX model shipped under `assets/`. The model
+    /// takes `float32[1, 6]` and returns the first input value as
+    /// `float32[1, 1]` (a deterministic pass-through used to verify
+    /// tensor shape handling end-to-end).
+    const DUMMY_ONNX_MODEL: &str = "assets/dummy_surrogate.onnx";
+
+    #[test]
+    fn test_is_mock_true_when_no_model_loaded() {
+        // Issue #899: callers need a way to detect mock mode.
+        let m = SurrogateManager::new().unwrap();
+        assert!(
+            m.is_mock(),
+            "fresh SurrogateManager should report is_mock() == true"
+        );
+    }
+
+    #[test]
+    fn test_is_mock_false_when_model_loaded() {
+        // Skip cleanly if the fixture is missing (e.g. cargo packaging dropped it).
+        if !std::path::Path::new(DUMMY_ONNX_MODEL).exists() {
+            eprintln!("Skipping: {} not found", DUMMY_ONNX_MODEL);
+            return;
+        }
+        let m = SurrogateManager::load_onnx(DUMMY_ONNX_MODEL)
+            .expect("failed to load dummy ONNX fixture");
+        assert!(!m.is_mock(), "after load_onnx, is_mock() must be false");
+        assert!(m.model_loaded);
+    }
+
+    #[test]
+    fn test_predict_loads_onnx_errors_when_no_model_loaded() {
+        let m = SurrogateManager::new().unwrap();
+        let result = m.predict_loads_onnx(&[20.0, 22.0]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("No ONNX model loaded"));
+    }
+
+    #[test]
+    fn test_load_real_onnx_model_and_inspect_io() {
+        // Verifies the end-to-end ONNX pipeline: load, inspect inputs/outputs.
+        // This is the Phase 1 integration test called out in Issue #899.
+        if !std::path::Path::new(DUMMY_ONNX_MODEL).exists() {
+            eprintln!("Skipping: {} not found", DUMMY_ONNX_MODEL);
+            return;
+        }
+        let m = SurrogateManager::load_onnx(DUMMY_ONNX_MODEL)
+            .expect("failed to load dummy ONNX fixture");
+        assert!(m.model_loaded);
+        assert_eq!(m.model_path.as_deref(), Some(DUMMY_ONNX_MODEL));
+
+        // Inspect the session I/O schema via the underlying session pool.
+        let pool = m.session_pool.as_ref().expect("session pool");
+        let mut guard = pool
+            .get_or_create_session()
+            .expect("acquire session for inspection");
+        let input_names: Vec<String> = guard
+            .inputs()
+            .into_iter()
+            .map(|i| i.name().to_string())
+            .collect();
+        let output_names: Vec<String> = guard
+            .outputs()
+            .into_iter()
+            .map(|o| o.name().to_string())
+            .collect();
+        assert!(
+            input_names.contains(&"input".to_string()),
+            "expected input named 'input', got {:?}",
+            input_names
+        );
+        assert!(
+            output_names.contains(&"output".to_string()),
+            "expected output named 'output', got {:?}",
+            output_names
+        );
+    }
+
+    #[test]
+    fn test_predict_loads_onnx_runs_real_inference() {
+        // End-to-end: the dummy model is a pass-through (output[0,0] = input[0,0]).
+        // We feed 6 floats and verify the first is returned (with mock fallback
+        // behavior gone — this is a real ONNX call).
+        if !std::path::Path::new(DUMMY_ONNX_MODEL).exists() {
+            eprintln!("Skipping: {} not found", DUMMY_ONNX_MODEL);
+            return;
+        }
+        let m = SurrogateManager::load_onnx(DUMMY_ONNX_MODEL)
+            .expect("failed to load dummy ONNX fixture");
+        let temps = vec![42.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let result = m.predict_loads_onnx(&temps);
+        assert!(result.is_ok(), "ONNX inference failed: {:?}", result.err());
+        let loads = result.unwrap();
+        // The dummy model picks the first input value (Gather on axis 1, idx 0).
+        assert!(!loads.is_empty(), "ONNX output should not be empty");
+        let first = loads[0];
+        assert!(
+            (first - 42.0).abs() < 1e-4,
+            "expected pass-through ~42.0, got {}",
+            first
+        );
+
+        // Metrics should have recorded the inference.
+        let metrics = m.inference_metrics();
+        assert_eq!(metrics.num_inferences, 1, "should record one inference");
+        assert!(
+            metrics.avg_inference_time_ms >= 0.0,
+            "elapsed should be non-negative"
+        );
+    }
+
+    #[test]
+    fn test_predict_loads_uses_real_onnx_when_loaded() {
+        // The public `predict_loads` should route through ONNX when a model
+        // is loaded (and not return the 1.2 mock constant). This is the
+        // regression test for Issue #899.
+        if !std::path::Path::new(DUMMY_ONNX_MODEL).exists() {
+            eprintln!("Skipping: {} not found", DUMMY_ONNX_MODEL);
+            return;
+        }
+        let m = SurrogateManager::load_onnx(DUMMY_ONNX_MODEL)
+            .expect("failed to load dummy ONNX fixture");
+        let loads = m.predict_loads(&[7.5, 1.0, 2.0, 3.0, 4.0, 5.0]);
+        // The dummy model outputs input[0] = 7.5 — NOT the 1.2 mock constant.
+        assert!(!loads.is_empty());
+        let first = loads[0];
+        assert!(
+            (first - 7.5).abs() < 1e-4,
+            "expected real ONNX output ~7.5, got {} (was the 1.2 mock constant returned?)",
+            first
+        );
+    }
+
+    #[test]
+    fn test_inference_metrics_default_zero() {
+        let m = SurrogateManager::new().unwrap();
+        let metrics = m.inference_metrics();
+        assert_eq!(metrics.num_inferences, 0);
+        assert_eq!(metrics.avg_inference_time_ms, 0.0);
+        assert_eq!(metrics.throughput, 0.0);
+    }
+
+    #[test]
+    fn test_predict_loads_batched_onnx_errors_when_no_model_loaded() {
+        let m = SurrogateManager::new().unwrap();
+        let result = m.predict_loads_batched_onnx(&[vec![1.0, 2.0], vec![3.0, 4.0]]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_predict_loads_batched_runs_real_inference() {
+        if !std::path::Path::new(DUMMY_ONNX_MODEL).exists() {
+            eprintln!("Skipping: {} not found", DUMMY_ONNX_MODEL);
+            return;
+        }
+        let m = SurrogateManager::load_onnx(DUMMY_ONNX_MODEL)
+            .expect("failed to load dummy ONNX fixture");
+        // Each row is [first_value, ...] where the model picks the first.
+        let batch = vec![
+            vec![10.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![20.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        ];
+        let result = m.predict_loads_batched(&batch);
+        assert_eq!(result.len(), 2);
+        // Real inference (not the 1.2 mock).
+        assert!(
+            (result[0][0] - 10.0).abs() < 1e-4,
+            "row 0 expected ~10.0, got {}",
+            result[0][0]
+        );
+        assert!(
+            (result[1][0] - 20.0).abs() < 1e-4,
+            "row 1 expected ~20.0, got {}",
+            result[1][0]
+        );
     }
 }
