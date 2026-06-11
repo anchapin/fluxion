@@ -1,0 +1,134 @@
+Version, 25.2;
+
+! ── Simulation Control ──────────────────────────────────────────────────
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+! Run for 3 days starting Jan 1
+RunPeriod,
+  StepChangeRun,  ! Name
+  1,   ! Start Month
+  1,   ! Start Day of Month
+  ,    ! Start Year
+  1,   ! End Month
+  3,   ! End Day of Month
+  ,    ! End Year
+  Tuesday,
+  No,   ! Use Weather File Holidays
+  No,   ! Use Weather File Daylight Saving
+  No,   ! Apply Weekend Holiday Rule
+  No,   ! Use Weather File Rain
+  No;   ! Use Weather File Snow
+
+Timestep, 4;  ! 15-min timesteps for better transient resolution
+
+! ── Building ────────────────────────────────────────────────────────────
+Building,
+  RefBox_Conduction,
+  0.0,
+  City,
+  0.04,
+  0.4,
+  FullExterior,
+  25;
+
+! ── Zone ────────────────────────────────────────────────────────────────
+Zone,
+  ZONE1,
+  0, 0, 0, 0, 1, 1, , , , ;
+
+! ── Materials ───────────────────────────────────────────────────────────
+! 200mm heavyweight concrete (density ~2300, k ~1.73, cp ~840)
+Material,
+  CONCRETE_200,
+  MediumRough,
+  0.200,       ! Thickness {m}
+  1.730,       ! Conductivity {W/m-K}
+  2300,        ! Density {kg/m3}
+  840;         ! Specific Heat {J/kg-K}
+
+! Insulated wall for non-test surfaces (very high R to approximate adiabatic)
+Material,
+  HIGH_INSUL,
+  MediumRough,
+  0.200,
+  0.01,       ! Very low conductivity ≈ adiabatic
+  12,
+  840;
+
+Construction,
+  CONCRETE_WALL,
+  CONCRETE_200;
+
+Construction,
+  INSUL_WALL,
+  HIGH_INSUL;
+
+! ── Ground temperature ──────────────────────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+! ── Global Geometry Rules ───────────────────────────────────────────────
+GlobalGeometryRules,
+  UpperLeftCorner,
+  ClockWise,
+  World;
+
+! ── Surfaces ────────────────────────────────────────────────────────────
+! South wall — the TEST wall (200mm concrete, faces outdoors)
+! Exposed to real weather → outdoor temp drives conduction
+BuildingSurface:Detailed,
+  SouthWall,         ! Name
+  Wall,              ! Surface Type
+  CONCRETE_WALL,     ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Outdoors,          ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  SunExposed,        ! Sun Exposure
+  WindExposed,       ! Wind Exposure
+  ,                  ! View Factor to Ground
+  4,                 ! Number of Vertices
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 0, 0,
+  0, 0, 0;
+
+! North wall — highly insulated (faces outdoors but negligible heat transfer)
+BuildingSurface:Detailed,
+  NorthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  6, 8, 0;
+
+! East wall — highly insulated
+BuildingSurface:Detailed,
+  EastWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 0, 2.7,  6, 8, 2.7,  6, 8, 0,  6, 0, 0;
+
+! West wall — highly insulated
+BuildingSurface:Detailed,
+  WestWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 8, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8, 0;
+
+! Roof — highly insulated
+BuildingSurface:Detailed,
+  Roof, Roof, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 8, 2.7,  0, 8, 2.7;
+
+! Floor — ground contact with high insulation
+BuildingSurface:Detailed,
+  Floor, Floor, INSUL_WALL, ZONE1, , Ground, , NoSun, NoWind, ,
+  4, 0, 0, 0,  6, 0, 0,  6, 8, 0,  0, 8, 0;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Conduction Heat Transfer Rate per Area, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Conduction Heat Transfer Rate per Area, Timestep;
