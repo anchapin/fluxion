@@ -35,6 +35,7 @@ use crate::physics::method_selector::{
 };
 use crate::physics::solver_registry::SolverRegistry;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::wall_spec::WallSpec;
 use crate::sim::assembly::BuildingAssembly;
 use log::{debug, warn};
 
@@ -118,17 +119,18 @@ impl SolverManager {
         let method = result.method;
 
         // Create solver based on method
+        let wall_spec = WallSpec::from_assembly(wall_assembly);
         let solver: Box<dyn HeatConductionSolver> = match method {
             ThermalMethod::FiveR1C => {
                 debug!("Creating 5R1C solver for wall {}", wall_index);
                 let mut solver = FiveR1CSolver::new();
-                solver.initialize(wall_assembly)?;
+                solver.initialize(&wall_spec)?;
                 Box::new(solver)
             }
             ThermalMethod::CTF => {
                 debug!("Creating CTF solver for wall {}", wall_index);
                 let mut solver = CTFSolverWrapper::new();
-                match solver.initialize(wall_assembly) {
+                match solver.initialize(&wall_spec) {
                     Ok(()) => Box::new(solver),
                     Err(e) => {
                         // CTF failed, fallback to FD if enabled
@@ -138,7 +140,7 @@ impl SolverManager {
                                 wall_index, e
                             );
                             let mut fd_solver = FDSolverWrapper::new();
-                            fd_solver.initialize(wall_assembly)?;
+                            fd_solver.initialize(&wall_spec)?;
                             Box::new(fd_solver)
                         } else {
                             return Err(e);
@@ -149,7 +151,7 @@ impl SolverManager {
             ThermalMethod::FiniteDifference => {
                 debug!("Creating FD solver for wall {}", wall_index);
                 let mut solver = FDSolverWrapper::new();
-                solver.initialize(wall_assembly)?;
+                solver.initialize(&wall_spec)?;
                 Box::new(solver)
             }
         };
