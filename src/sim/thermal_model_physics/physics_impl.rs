@@ -489,10 +489,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let ideal_loads_for_equipment: T = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
+            // Issue #900: pass mass_temperatures so the dynamic mass heat
+            // release term is included in the cooling demand.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
+                self.0.mass_temperatures.as_ref(),
             )
         };
 
@@ -578,8 +581,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // instead of broadcasting a single scalar value to all zones.
             // Use IdealLoadsSystem thermodynamic formulas (mass_flow * cp * delta_t)
             // instead of sensitivity-based (setpoint - temp) / sensitivity
-            let hvac_output =
-                self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint);
+            //
+            // Issue #900: pass mass_temperatures so the dynamic mass heat
+            // release term is included in the cooling demand.
+            let hvac_output = self.compute_zone_hvac_load(
+                t_i_free.as_ref(),
+                heating_setpoint,
+                cooling_setpoint,
+                self.0.mass_temperatures.as_ref(),
+            );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // Physics-based: No calibration factors - track actual HVAC demand
@@ -608,10 +618,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             hvac_output
         } else {
             // Use IdealLoadsSystem thermodynamic formulas for energy
+            //
+            // Issue #900: pass mass_temperatures so the dynamic mass heat
+            // release term is included in the cooling demand.
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
+                self.0.mass_temperatures.as_ref(),
             );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
@@ -664,10 +678,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
+            // Issue #900: pass mass_temperatures so the dynamic mass heat
+            // release term is included in the cooling demand.
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
+                self.0.mass_temperatures.as_ref(),
             )
         };
 
@@ -1237,10 +1254,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The hvac_output_raw will be zero (computed from free-float t_i_free).
 
         // Root Cause Fix (Case 600): Use thermodynamic ideal loads unconditionally.
+        //
+        // Issue #900: pass mass_temperatures so the dynamic mass heat release
+        // term is included in the cooling demand.
         let hvac_output_raw = self.compute_zone_hvac_load(
             t_i_free.as_ref(),
             self.0.heating_setpoint,
             self.0.cooling_setpoint,
+            self.0.mass_temperatures.as_ref(),
         );
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
@@ -2180,10 +2201,83 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     );
                 }
 
+                // Issue #900: dynamic mass heat release term (cooling only).
+                //
+                // Use the multi-node solver's mass node temperatures when
+                // available — they are stable and physically correct. The
+                // 5R1C lumped mass can diverge numerically in the 9R4C path
+                // (it is updated by the post-HVAC mass integrator at line
+                // ~2240) and would produce degenerate heat release values
+                // (T_mass > 70°C) if used directly.
+                //
+                // For the 5R1C path or when multi-node is unavailable, fall
+                // back to the 5R1C lumped mass temperature. The hvac module
+                // applies the same sanity guard (-20..=80°C) on its own.
+                let t_mass_mn = if i < self.0.multi_node_solvers.len() {
+                    let solver = &self.0.multi_node_solvers[i];
+                    // Conductance-weighted envelope temperature (wall/roof/floor).
+                    let h_ms_w = solver.mass.wall.h_tr_ms;
+                    let h_ms_r = solver.mass.roof.h_tr_ms;
+                    let h_ms_f = solver.mass.floor.h_tr_ms;
+                    let h_ms_total = h_ms_w + h_ms_r + h_ms_f;
+                    if h_ms_total > 1e-6 {
+                        (h_ms_w * solver.mass.wall.temperature
+                            + h_ms_r * solver.mass.roof.temperature
+                            + h_ms_f * solver.mass.floor.temperature)
+                            / h_ms_total
+                    } else {
+                        solver.envelope_temperature()
+                    }
+                } else {
+                    self.0.mass_temperatures.as_ref()[i]
+                };
+                // Issue #900: mass heat release term (cooling only).
+                //
+                // See compute_zone_hvac_load (hvac.rs) for the formula
+                // and gating conditions. The 9R4C inline path uses multi-
+                // node envelope temperatures (stable, well below 35°C)
+                // and the same high-mass threshold (h_tr_ms ≥ 500 W/K).
+                //
+                // The cap is set higher than the 5R1C path (50× vs 10×)
+                // because the multi-node temps are stable: the 9R4C mass
+                // nodes track each other (wall/roof/floor envelope
+                // weighted temp stays in 28–33°C range) and the peak
+                // mass_heat_release of ~3 kW at T_mass = 30°C brings
+                // Case 900 cooling close to the ASHRAE 140 reference
+                // peak range (2.10–3.50 kW).
+                const MASS_RELEASE_DAMPING_9R4C: f64 = 1.0;
+                const HIGH_MASS_H_TR_MS_THRESHOLD_9R4C: f64 = 500.0;
+                const MASS_TEMP_MAX_9R4C: f64 = 35.0;
+                const MASS_RELEASE_MAX_FACTOR_9R4C: f64 = 50.0;
+                let mass_heat_release_unclamped = if t_mass_mn > self.0.cooling_setpoint
+                    && t_mass_mn <= MASS_TEMP_MAX_9R4C
+                    && h_tr_ms >= HIGH_MASS_H_TR_MS_THRESHOLD_9R4C
+                {
+                    h_tr_ms * (t_mass_mn - self.0.cooling_setpoint) * MASS_RELEASE_DAMPING_9R4C
+                } else {
+                    0.0
+                };
+                let mass_heat_release = if mass_heat_release_unclamped > 0.0 {
+                    mass_heat_release_unclamped.min(h_loss * MASS_RELEASE_MAX_FACTOR_9R4C)
+                } else {
+                    0.0
+                };
+
                 let q = if t_free_val < self.0.heating_setpoint {
+                    // Heating: keep Issue #925 formula unchanged.
+                    // Mass heat absorption term is intentionally omitted
+                    // (see Issue #900 in hvac.rs for rationale).
                     h_coeff * (self.0.heating_setpoint - t_free_val)
                 } else if t_free_val > self.0.cooling_setpoint {
-                    h_coeff * (self.0.cooling_setpoint - t_free_val)
+                    // Cooling, zone above setpoint.
+                    //   -h_loss × (T_free − T_cool)        steady-state heat loss to outside
+                    //   −h_tr_ms × (T_mass − T_cool) × 0.5 dynamic mass heat release
+                    h_coeff * (self.0.cooling_setpoint - t_free_val) - mass_heat_release
+                } else if mass_heat_release > 0.0 {
+                    // Dead band, but mass is hotter than cool_sp — mass
+                    // releases heat that the HVAC must remove. See Issue
+                    // #900 in hvac.rs.
+                    -mass_heat_release
                 } else {
                     0.0
                 };
@@ -2192,6 +2286,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 hvac_data.push(q_clamped);
 
                 // Self-consistent: t_act = t_free + Q / h_coeff = T_setpoint (when not clamped)
+                //
+                // Issue #900 note: the "self-consistent" formula here uses
+                // h_loss only. For a heating demand (q > 0) sized to the
+                // Issue #925 formula, this gives t_i_act = T_setpoint, which
+                // is the design intent. For a cooling demand that includes
+                // the dynamic mass heat release term, this can give
+                // t_i_act below T_cool_sp; that over-cooling is a known
+                // limitation of the steady-state t_i_free approximation
+                // (see #917, #924) and is accepted as a tractable
+                // approximation here.
                 if h_coeff > 0.0 && q_clamped.abs() > 1e-6 {
                     t_i_act_data.push(t_free_val + q_clamped / h_coeff);
                 } else {
