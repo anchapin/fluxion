@@ -75,6 +75,7 @@ pub mod physics;
 #[cfg(feature = "python-bindings")]
 pub mod python;
 pub mod sim;
+pub mod solar;
 pub mod testing;
 pub mod thermal;
 pub mod validation;

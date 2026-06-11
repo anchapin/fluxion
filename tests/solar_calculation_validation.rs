@@ -244,7 +244,9 @@ fn test_solar_position_accuracy() {
 fn test_incidence_angle_calculation() {
     let sun_pos = calculate_solar_position(39.7, -104.9, 2024, 6, 21, 12.0);
 
-    // South-facing vertical surface at solar noon should have incidence angle = altitude
+    // South-facing vertical surface at solar noon: sun is due south (az ≈ 180°),
+    // incidence angle = altitude (sun is nearly overhead, hits wall at steep angle).
+    // For a vertical wall facing the sun, cos(θ) = cos(altitude), so θ = altitude.
     let cos_theta_south = sun_pos.incidence_cosine(90.0, 180.0);
     let incidence_angle_south = cos_theta_south.acos().to_degrees();
     assert!(
