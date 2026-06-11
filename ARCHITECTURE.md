@@ -48,7 +48,14 @@ graph TD
         PHY["PhysicsThermalModel"]
         SUR["SurrogateThermalModel"]
         UNI["UnifiedThermalModel"]
+        MOCK["MockThermalModel<br/>(sim/thermal_model_mock.rs)"]
         ENG["Engine<br/>(sim/engine.rs)"]
+    end
+
+    subgraph SurfaceFlux ["Surface Heat Flux"]
+        SFP["SurfaceHeatFluxProvider<br/>(sim/surface_flux_provider.rs)"]
+        PSFP["PhysicsSurfaceFluxProvider<br/>(combines HeatConductionSolver + solar)"]
+        MSFP["MockSurfaceHeatFluxProvider<br/>(fixed values for testing)"]
     end
 
     EPW --> SP
@@ -64,6 +71,10 @@ graph TD
     ZB --> PHY & SUR
     PHY & SUR --> UNI
     UNI --> ENG
+    MOCK --> ZB
+    ST --> SFP
+    SD --> SFP
+    SFP --> PSFP & MSFP
 ```
 
 ---
@@ -238,12 +249,42 @@ These traits support the main physics pipeline and should also be documented:
 
 | Trait | File | Purpose |
 |-------|------|---------|
+| `SurfaceHeatFluxProvider` | `src/sim/surface_flux_provider.rs` | Surface-level heat flux abstraction (conduction + solar combined) |
 | `WeatherSource` | `src/weather/mod.rs` | Weather data access abstraction |
 | `PsychrometricCalculations` | `src/weather/psychrometrics.rs` | Moist air property calculations |
 | `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |
 | `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |
 | `GroundTemperature` | `src/sim/boundary.rs` | Ground temp boundary condition |
+
+### Surface Heat Flux Trait Hierarchy
+
+The `SurfaceHeatFluxProvider` trait decouples the zone solver from specific heat flux
+calculation methods. It wraps conduction and solar into a single interface:
+
+```text
+SurfaceHeatFluxProvider (surface level, sim/surface_flux_provider.rs)
+├── PhysicsSurfaceFluxProvider   (combines HeatConductionSolver + solar gain)
+└── MockSurfaceHeatFluxProvider  (fixed values for testing)
+```
+
+```rust
+pub trait SurfaceHeatFluxProvider: Send + Sync {
+    fn surface_heat_flux(&self, surface_idx: usize, T_zone: f64, T_outdoor: f64, dt_seconds: f64) -> f64;
+    fn num_surfaces(&self) -> usize;
+    fn name(&self) -> &str;
+}
+```
+
+### Thermal Model Trait Hierarchy
+
+```text
+ThermalModelTrait (zone level, sim/thermal_model.rs)
+├── PhysicsThermalModel        (analytical 5R1C thermal network)
+├── SurrogateThermalModel      (neural network inference)
+├── UnifiedThermalModel        (runtime switching between physics/surrogate)
+└── MockThermalModel           (fixed values for testing, sim/thermal_model_mock.rs)
+```
 
 ---
 
