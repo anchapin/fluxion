@@ -25,7 +25,6 @@ use crate::sim::thermal_integration::{
     ThermalIntegrationMethod,
 };
 use crate::sim::thermal_model_core::ThermalModel;
-use crate::validation::ashrae_140_cases::Orientation;
 
 // Methods in this file are being incrementally migrated to the sibling
 // submodules in `thermal_model_physics/` (see Issue #902). Methods that
@@ -2038,7 +2037,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     weather.dni,
                     weather.dhi,
                     Some(weather.ghi),
-                    Orientation::South,
+                    crate::validation::ashrae_140_cases::Orientation::South,
                     ground_reflectance,
                     day_of_year + 1,
                 );
@@ -2047,7 +2046,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     weather.dni,
                     weather.dhi,
                     Some(weather.ghi),
-                    Orientation::Up,
+                    crate::validation::ashrae_140_cases::Orientation::Up,
                     ground_reflectance,
                     day_of_year + 1,
                 );
