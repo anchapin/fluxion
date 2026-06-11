@@ -1,21 +1,22 @@
-//! Thermal model core module
+//! 5R1C/6R2C/8R3C/9R4C physics step implementations for `ThermalModel`.
 //!
-//! ISO 13790-compliant 5R1C/6R2C thermal network implementation.
-//! Contains the core thermal model types, struct, and implementations.
+//! Hosts the per-network-type physics solvers:
+//! - [`ThermalModel::step_physics_5r1c`]
+//! - [`ThermalModel::step_physics_6r2c`]
+//! - [`ThermalModel::step_physics_8r3c`]
+//! - [`ThermalModel::step_physics_9r4c`]
+//!
+//! Originally part of the monolithic `thermal_model_physics.rs`
+//! (Issue #898), extracted into this submodule as part of the
+//! Issue #902 modular split. The implementations are large (the 5R1C
+//! path alone is ~880 lines) and remain in a single file because the
+//! internal-state coupling between the variants is high; the
+//! dispatcher in [`super::step_dispatcher`] routes to the right one.
 
-use crossbeam::channel::{Receiver, Sender};
-use log::{error, info, warn};
-
-use crate::ai::surrogate::SurrogateManager;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
-use crate::sim::adaptive_timestep::TimestepMode;
-use crate::sim::equipment::Equipment;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
-use crate::sim::lighting::LightingSchedule;
-use crate::sim::occupancy::OccupancyProfile;
-use crate::sim::profiles;
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_integration::{
@@ -23,610 +24,23 @@ use crate::sim::thermal_integration::{
     crank_nicolson_update, crank_nicolson_update_3cond, select_integration_method,
     ThermalIntegrationMethod,
 };
-use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
-use crate::sim::timestep_solver::StepParameters;
+use crate::sim::thermal_model_core::ThermalModel;
 use crate::validation::ashrae_140_cases::Orientation;
-use crate::weather::HourlyWeatherData;
 
+// Methods in this file are being incrementally migrated to the sibling
+// submodules in `thermal_model_physics/` (see Issue #902). Methods that
+// are still in this file retain the same `impl<T: ...> ThermalModel<T>`
+// bound so they continue to merge with the others.
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
-    /// Compute HVAC demand using total building heat transfer conductance.
-    ///
-    /// For ASHRAE 140 Case 600-series (low-mass buildings), the IdealLoadsSystem
-    /// was giving ~21.7 W/K (ventilation only) instead of the building's actual
-    /// ~1251 W/K total conductance (h_tr_is + h_ve + h_tr_w).
-    ///
-    /// This caused zones to never reach setpoint because HVAC demand was severely
-    /// underestimated.
-    ///
-    /// Returns a VectorField of power values:
-    /// - Positive = heating demand (W)
-    /// - Negative = cooling demand (W)
-    ///
-    /// # Arguments
-    /// * `zone_temps` - Current zone temperatures (°C)
-    /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
-    /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
-    fn compute_zone_hvac_load(
-        &self,
-        zone_temps: &[f64],
-        heating_setpoint: f64,
-        cooling_setpoint: f64,
-    ) -> T {
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
-        let h_ve_vec = self.0.h_ve.as_ref();
-        let h_tr_w_vec = self.0.h_tr_w.as_ref();
-        let h_tr_ms_vec = self.0.h_tr_ms.as_ref();
-        let h_tr_em_vec = self.0.h_tr_em.as_ref();
-        let enabled_vec = self.0.hvac_enabled.as_ref();
-
-        let heat_cap = self.0.hvac_heating_capacity;
-        let cool_cap = self.0.hvac_cooling_capacity;
-
-        let mut combined_demand = vec![0.0; self.0.num_zones];
-        for zone_idx in 0..self.0.num_zones {
-            // Check hvac_enabled flag before computing demand
-            if enabled_vec[zone_idx] < 0.5 {
-                combined_demand[zone_idx] = 0.0;
-                continue;
-            }
-
-            // Issue #925: HVAC demand coefficient.
-            //
-            // The previous formula h_coeff = den / (2 * term_rest_1) over-weighted
-            // the h_tr_ms contribution, producing excessive HVAC response for
-            // high-mass buildings (Case 900 heating 6x over reference, cooling
-            // 3x under reference). For Case 600 the same formula happened to
-            // land near the reference range, which masked the underlying
-            // physics error.
-            //
-            // Physics: at setpoint, the building's steady-state heat loss
-            // coefficient (zone -> outdoor) is the parallel combination of
-            // the direct paths (ventilation, window) and the series through-mass
-            // path (h_tr_is -> h_tr_ms -> h_tr_em). This is H_total_simple in
-            // test_case_600_htotal_verification and equals ~93 W/K for both
-            // Case 600 and Case 900 (same envelope, same insulation).
-            //
-            // h_loss = h_ve + h_tr_w + (h_tr_is × h_tr_ms × h_tr_em) /
-            //                            (h_tr_is × h_tr_ms + h_tr_ms × h_tr_em
-            //                             + h_tr_em × h_tr_is)
-            //
-            // This is a true heat-loss coefficient, not the free-floating
-            // denominator from t_i_free. The t_i_free formula already includes
-            // the mass dynamics via the h_ms_is_prod term, so combining
-            // h_loss with t_free correctly captures both the building loss
-            // and the mass buffering effect.
-            let h_ve = h_ve_vec[zone_idx];
-            let h_tr_w = h_tr_w_vec[zone_idx];
-            let h_tr_is = h_tr_is_vec[zone_idx];
-            let h_tr_ms = h_tr_ms_vec[zone_idx];
-            let h_tr_em = h_tr_em_vec[zone_idx];
-
-            // Series conductance: air -> surface -> mass -> envelope exterior
-            // 1/h_series = 1/h_tr_is + 1/h_tr_ms + 1/h_tr_em
-            let h_loss_via_mass = if h_tr_is > 0.0 && h_tr_ms > 0.0 && h_tr_em > 0.0 {
-                let denom = h_tr_is * h_tr_ms + h_tr_ms * h_tr_em + h_tr_em * h_tr_is;
-                if denom > 0.0 {
-                    h_tr_is * h_tr_ms * h_tr_em / denom
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
-            let h_loss = h_ve + h_tr_w + h_loss_via_mass;
-
-            // Fallback for the degenerate case where any of the series
-            // conductances is zero: use the direct path only.
-            let h_coeff = if h_loss > 0.0 { h_loss } else { h_ve + h_tr_w };
-
-            let t_zone = zone_temps[zone_idx];
-
-            let demand = if t_zone < heating_setpoint {
-                // Heating needed: Q = h_loss × (T_setpoint - T_zone)
-                h_coeff * (heating_setpoint - t_zone)
-            } else if t_zone > cooling_setpoint {
-                // Cooling needed: Q = -h_loss × (T_zone - T_cool_sp)
-                -h_coeff * (t_zone - cooling_setpoint)
-            } else {
-                0.0
-            };
-
-            // Clamp to HVAC capacity limits to prevent numerical explosion
-            combined_demand[zone_idx] = demand.clamp(-cool_cap, heat_cap);
-        }
-
-        T::from(VectorField::new(combined_demand))
-    }
-
-    /// Core physics simulation loop for annual building energy performance.
-    ///
-    /// Simulates hourly thermal dynamics using batched inference with a coordinator.
-    ///
-    /// This method implements the worker side of the coordinator-worker pattern.
-    /// At each timestep, it sends its current temperature state to the coordinator,
-    /// waits for the predicted loads, and then completes the physics calculation.
-    pub fn solve_timesteps_batched(
-        &mut self,
-        steps: usize,
-        tx: Sender<Vec<f64>>,
-        rx: Receiver<Vec<f64>>,
-    ) -> f64 {
-        let cycle = get_daily_cycle();
-        let total_energy_kwh: f64 = (0..steps)
-            .map(|t| {
-                let hour_of_day = t % 24;
-                let daily_cycle = cycle[hour_of_day];
-                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-
-                // 1. Send current state to coordinator
-                let temps = self.get_temperatures();
-                tx.send(temps).expect("Failed to send state to coordinator");
-
-                // 2. Receive predicted loads from coordinator
-                let loads = rx.recv().expect("Failed to receive loads from coordinator");
-                self.set_loads(&loads);
-
-                // 3. Solve physics for this timestep
-                self.step_physics(t, outdoor_temp, 3600.0)
-            })
-            .sum();
-
-        // Normalize by total floor area to get EUI
-        let total_area = self.0.zone_area.integrate();
-        if total_area > 0.0 {
-            total_energy_kwh / total_area
-        } else {
-            0.0
-        }
-    }
-
-    /// Simulates hourly thermal dynamics of the building, computing cumulative energy consumption.
-    /// Can use either analytical load calculations (exact) or neural network surrogates (fast).
-    ///
-    /// # Arguments
-    /// * `steps` - Number of hourly timesteps (typically 8760 for 1 year)
-    /// * `surrogates` - Reference to SurrogateManager for load predictions
-    /// * `use_ai` - If true, use neural surrogates; if false, use analytical calculations
-    ///
-    /// # Returns
-    /// Cumulative annual energy use intensity (EUI) in kWh/m²/year.
-    /// Solves thermal network dynamics over specified timesteps.
-    ///
-    /// Uses CTA operations for vector-accelerated solving of the 5R1C/6R2C algebraic system.
-    /// Calculates Ti_free (free-floating temp), determines HVAC demand, solves Ti_act and Tm_next.
-    /// Returns Energy Use Intensity (EUI) normalized by floor area.
-    ///
-    /// # Arguments
-    /// * `steps` - Number of timesteps to simulate (8760 for 1 year)
-    /// * `surrogates` - SurrogateManager for AI-based load prediction
-    /// * `use_ai` - If true, use surrogates; if false, compute analytical loads
-    /// * `lighting` - Optional lighting schedule (Plan 17-04)
-    /// * `equipment` - Optional equipment list (Plan 17-04)
-    /// * `occupancy` - Optional occupancy profile (Plan 17-04)
-    ///
-    /// # Returns
-    /// Energy Use Intensity (EUI) in kWh/m²/year
-    ///
-    /// # Performance
-    /// - Target: <100ms for 8760 timesteps (single building)
-    /// - Uses CTA operations for vector acceleration
-    /// - Thread-safe for parallel evaluation via rayon
-    ///
-    /// # Example
-    /// ```rust,no_run
-    /// let eui = model.solve_timesteps(8760, &surrogates, false, None, None, None);
-    /// // Simulates 1 year with analytical loads (no internal loads)
-    /// ```
-    pub fn solve_timesteps(
-        &mut self,
-        steps: usize,
-        surrogates: &SurrogateManager,
-        use_ai: bool,
-        lighting: Option<&LightingSchedule>,
-        equipment: Option<&[Box<dyn Equipment>]>,
-        occupancy: Option<&OccupancyProfile>,
-    ) -> f64 {
-        // Determine timestep based on case_id and timestep_mode
-        let dt_seconds = self.calculate_timestep_seconds();
-
-        self.solve_timesteps_with_dt(
-            steps, surrogates, use_ai, lighting, equipment, occupancy, dt_seconds,
-        )
-    }
-
-    /// Calculate timestep in seconds based on timestep_mode and case_id.
-    ///
-    /// For high-mass cases (900 series), this returns 360 seconds (6 minutes).
-    /// For low-mass cases (600 series), this returns 3600 seconds (1 hour).
-    pub fn calculate_timestep_seconds(&self) -> f64 {
-        match &self.0.timestep_mode {
-            TimestepMode::Fixed { dt } => dt.as_secs_f64(),
-            TimestepMode::Adaptive {
-                base_dt,
-                min_dt: _,
-                threshold_tau,
-            } => {
-                // Calculate time constant for this building
-                let tau_hours = self.estimate_time_constant_hours();
-                if tau_hours >= *threshold_tau {
-                    // High-mass: use adaptive timestep
-                    base_dt.as_secs_f64()
-                } else {
-                    // Low-mass: use 1-hour standard timestep
-                    3600.0
-                }
-            }
-        }
-    }
-
-    /// Estimate thermal time constant in hours from physical parameters.
-    ///
-    /// Issue #821 / Probe H: We previously short-circuited this with
-    /// `TimeConstantAnalyzer::for_case(&self.0.case_id)`, returning a hard-coded τ
-    /// table per ASHRAE 140 case identifier. That broke blind-validation
-    /// (case_id is supposed to be opaque to the solver) and could disagree with
-    /// the actual `Cm / h_tr_ms` after Probe A's ISO 13790 conductance change.
-    ///
-    /// We now always derive τ from physics:
-    ///   τ_seconds = Σ C_m  /  Σ h_tr_ms   (sum across zones)
-    /// and only fall back to a 2-hour default if `h_tr_ms` is degenerate.
-    pub fn estimate_time_constant_hours(&self) -> f64 {
-        // Check if this is a high-mass case (900 series)
-        let is_high_mass = matches!(
-            self.0.case_id.as_str(),
-            "900" | "910" | "920" | "930" | "940" | "950" | "900FF" | "950FF"
-        );
-
-        // For high-mass cases, use H_tr_3 (~40 W/K) for correct slow thermal coupling
-        // This gives ~69 hour time constant instead of ~1.9 hours with h_tr_ms
-        let h_tr_sum = if is_high_mass {
-            // Use derived_h_tr_3 for high-mass cases
-            // Fall back to h_tr_ms if derived_h_tr_3 hasn't been computed yet (model not initialized)
-            let derived = self.0.derived_h_tr_3.as_ref().iter().sum::<f64>();
-            if derived > 1e-6 {
-                derived
-            } else {
-                self.0.h_tr_ms.as_ref().iter().sum::<f64>()
-            }
-        } else {
-            // Standard: use h_tr_ms for surface-to-mass coupling
-            self.0.h_tr_ms.as_ref().iter().sum::<f64>()
-        };
-
-        if h_tr_sum > 0.0 {
-            let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
-            let tau_hours = tau_seconds / 3600.0; // Convert to hours
-
-            // Sanity check: if tau is extremely small (< 0.001 hours = 3.6 seconds),
-            // the model is likely not properly initialized (placeholder values).
-            // Use 2-hour default for uninitialized models.
-            if tau_hours < 0.001 {
-                // Model not properly initialized - use default
-                2.0
-            } else {
-                tau_hours
-            }
-        } else {
-            2.0 // Default: 2 hours (boundary between low/high mass)
-        }
-    }
-
-    /// Solve thermal model for specified timesteps with variable timestep support.
-    ///
-    /// This method extends solve_timesteps to support adaptive timestep simulation,
-    /// allowing finer timesteps (e.g., 6-minute) for high-mass buildings.
-    ///
-    /// # Arguments
-    /// * `steps` - Number of hourly timesteps (typically 8760 for 1 year)
-    /// * `surrogates` - Reference to SurrogateManager for load predictions
-    /// * `use_ai` - If true, use neural surrogates; if false, use analytical calculations
-    /// * `lighting` - Optional lighting schedule for internal heat gains (Plan 17-04)
-    /// * `equipment` - Optional equipment list for internal heat gains (Plan 17-04)
-    /// * `occupancy` - Optional occupancy profile for internal heat gains (Plan 17-04)
-    /// * `dt_seconds` - Timestep duration in seconds (e.g., 3600.0 for 1-hour, 360.0 for 6-minute)
-    ///
-    /// # Returns
-    /// Cumulative annual energy use intensity (EUI) in kWh/m²/year.
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use fluxion::sim::engine::ThermalModel;
-    /// use fluxion::physics::cta::VectorField;
-    /// use fluxion::ai::surrogate::SurrogateManager;
-    ///
-    /// let mut model = ThermalModel::<VectorField>::new(1);
-    /// let surrogates = SurrogateManager::new();
-    ///
-    /// // Run with 6-minute timestep for high-mass building
-    /// let eui = model.solve_timesteps_with_dt(8760, &surrogates, false, None, None, None, 360.0);
-    /// ```
-    #[allow(clippy::too_many_arguments)]
-    pub fn solve_timesteps_with_dt(
-        &mut self,
-        steps: usize,
-        surrogates: &SurrogateManager,
-        use_ai: bool,
-        lighting: Option<&LightingSchedule>,
-        equipment: Option<&[Box<dyn Equipment>]>,
-        occupancy: Option<&OccupancyProfile>,
-        dt_seconds: f64,
-    ) -> f64 {
-        // Record call for wiring validation (Plan 21-10)
-        #[cfg(feature = "wiring-tracing")]
-        if let Some(ref tracer) = self.0.tracer {
-            tracer.record_call("solve_timesteps_with_dt");
-        }
-
-        info!(
-            "Starting simulation for {} timesteps with dt={:.1}s, use_ai={}",
-            steps, dt_seconds, use_ai
-        );
-
-        // Auto-load building profile if not manually provided (Plan 17-04)
-        let profile_bundle = match (lighting, equipment, occupancy) {
-            (None, None, None) => {
-                // Load profile from JSON based on building_type
-                match profiles::load_building_profile(self.0.building_type) {
-                    Ok(profile) => {
-                        info!(
-                            "Auto-loaded building profile for {:?}: lighting, {} equipment items, occupancy",
-                            self.0.building_type,
-                            profile.equipment.len()
-                        );
-                        Some(profile)
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to load building profile for {:?}: {}. Running without internal loads.",
-                            self.0.building_type, e
-                        );
-                        None
-                    }
-                }
-            }
-            _ => None, // Use provided overrides
-        };
-
-        // Determine which profiles to use
-        let lighting_ref = profile_bundle.as_ref().map(|p| &p.lighting).or(lighting);
-        let occupancy_ref = profile_bundle.as_ref().map(|p| &p.occupancy).or(occupancy);
-
-        // Handle equipment conversion if profile was loaded
-        let equipment_converted: Option<Vec<Box<dyn Equipment>>> =
-            profile_bundle.as_ref().map(|profile| {
-                profile
-                    .equipment
-                    .iter()
-                    .map(|eq| {
-                        // Try to downcast and clone
-                        if let Some(computer) = eq
-                            .as_any()
-                            .downcast_ref::<crate::sim::equipment::ComputerEquipment>()
-                        {
-                            Box::new(computer.clone()) as Box<dyn Equipment>
-                        } else if let Some(server) = eq
-                            .as_any()
-                            .downcast_ref::<crate::sim::equipment::ServerRack>()
-                        {
-                            Box::new(server.clone()) as Box<dyn Equipment>
-                        } else if let Some(generic) =
-                            eq.as_any()
-                                .downcast_ref::<crate::sim::equipment::GenericEquipment>()
-                        {
-                            Box::new(generic.clone()) as Box<dyn Equipment>
-                        } else {
-                            panic!("Unknown equipment type in building profile");
-                        }
-                    })
-                    .collect()
-            });
-        let _equipment_ref = equipment_converted.as_deref().or(equipment);
-
-        // Issue #763 — initialize hourly temperature storage before timestep loop
-        self.0.hourly_temperatures = Some(vec![Vec::with_capacity(steps); self.0.num_zones]);
-
-        // Issue #901 perf: construct a single StepParameters once and reuse it
-        // (passed by & reference to solve_single_step). Avoids per-step clones of
-        // SurrogateManager, LightingSchedule, and OccupancyProfile.
-        // When use_ai is false we still need a SurrogateManager value; use Default
-        // (heap-free) instead of cloning the (potentially heavy) composite surrogate.
-        let step_params = StepParameters {
-            use_ai,
-            surrogates: if use_ai {
-                surrogates.clone()
-            } else {
-                SurrogateManager::default()
-            },
-            use_analytical_gains: true,
-            lighting: lighting_ref.cloned(),
-            equipment: None, // Can't clone dyn Equipment, so pass None
-            occupancy: occupancy_ref.cloned(),
-        };
-
-        let cycle = get_daily_cycle();
-        let total_energy_kwh: f64 = (0..steps)
-            .map(|t| {
-                if t % 1000 == 0 {
-                    info!("Progress: {}/{} timesteps", t, steps);
-                }
-                let hour_of_day = t % 24;
-                let daily_cycle = cycle[hour_of_day];
-                let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                let energy = self.solve_single_step(t, outdoor_temp, &step_params, dt_seconds);
-
-                // Issue #763 — capture zone temperatures after each timestep
-                // Issue #901 perf: bound check is unnecessary — temperatures always has
-                // exactly num_zones entries and hourly is sized to num_zones at init.
-                if let Some(ref mut hourly) = self.0.hourly_temperatures {
-                    let temps = self.0.temperatures.as_ref();
-                    debug_assert_eq!(temps.len(), hourly.len());
-                    for (zone_idx, &temp) in temps.iter().enumerate() {
-                        hourly[zone_idx].push(temp);
-                    }
-                }
-
-                energy
-            })
-            .sum();
-
-        // Normalize by total floor area to get EUI
-        let total_area = self.0.zone_area.integrate();
-        if total_area > 0.0 {
-            let eui = total_energy_kwh / total_area;
-            info!("Simulation complete: EUI = {:.2} kWh/m²/year", eui);
-            eui
-        } else {
-            error!("Total floor area is zero, cannot calculate EUI");
-            0.0
-        }
-    }
-
-    /// Extract current temperatures for batched inference.
-    ///
-    /// # Returns
-    /// Vector of current zone temperatures in degrees Celsius.
-    pub fn get_temperatures(&self) -> Vec<f64> {
-        self.0.temperatures.as_ref().to_vec()
-    }
-
-    /// Get the full hourly zone temperature profiles (Issue #763).
-    ///
-    /// # Returns
-    /// `Some([[T00, T01, ...], [T10, T11, ...], ...])` where outer index is zone,
-    /// inner index is timestep (0..steps-1), or `None` if the simulation has not
-    /// been run through `solve_timesteps_with_dt`.
-    pub fn get_hourly_temperatures(&self) -> Option<Vec<Vec<f64>>> {
-        self.0.hourly_temperatures.clone()
-    }
-
-    /// Calculate analytical thermal loads without neural surrogates.
-    ///
-    /// This method computes thermal loads from first principles physics:
-    /// - Solar gains: self.0.solar_gains.as_ref()[zone] for each zone
-    /// - Conduction: window_u_value * window_area[zone] * (outdoor_temp - temperatures.as_ref()[zone])
-    /// - Ventilation: h_ve.as_ref()[zone] * (outdoor_temp - temperatures.as_ref()[zone])
-    ///
-    /// # Arguments
-    ///
-    /// * `outdoor_temp` - Outdoor air temperature (°C)
-    /// * `hour_of_day` - Hour of day (0-23) for solar gain calculation
-    ///
-    /// # Returns
-    ///
-    /// Vector of thermal loads (W/m²) for each zone
-    ///
-    /// # Example
-    ///
-    /// ```rust,no_run
-    /// use fluxion::sim::engine::ThermalModel;
-    /// use fluxion::physics::cta::VectorField;
-    ///
-    /// let model = ThermalModel::<VectorField>::new(1);
-    /// let outdoor_temp = 35.0;
-    /// let hour_of_day = 12;
-    /// let loads = model.calculate_analytical_loads(outdoor_temp, hour_of_day);
-    /// ```
-    pub fn calculate_analytical_loads(&self, outdoor_temp: f64, _hour_of_day: usize) -> Vec<f64> {
-        let mut loads = Vec::with_capacity(self.0.num_zones);
-
-        // Calculate window area for each zone
-        let width = self
-            .0
-            .zone_area
-            .zip_with(&self.0.aspect_ratio, |a, ar| (a * ar).sqrt());
-        let depth = self.0.zone_area.zip_with(&width, |a, w| a / w);
-        let perimeter = (width + depth) * 2.0;
-        let gross_wall_area = perimeter.clone() * self.0.ceiling_height.clone();
-        let window_area = gross_wall_area * self.0.window_ratio.clone();
-
-        for zone_idx in 0..self.0.num_zones {
-            let zone_temp = self.0.temperatures.as_ref()[zone_idx];
-            let zone_window_area = window_area.as_ref()[zone_idx];
-            let h_ve = self.0.h_ve.as_ref()[zone_idx];
-
-            // 1. Solar gains (already computed in self.0.solar_gains)
-            let solar_gain = self.0.solar_gains.as_ref()[zone_idx];
-
-            // 2. Conduction through windows: Q = U * A * (T_out - T_in)
-            let conduction = self.0.window_u_value * zone_window_area * (outdoor_temp - zone_temp);
-
-            // 3. Ventilation: Q = h_ve * (T_out - T_in)
-            let ventilation = h_ve * (outdoor_temp - zone_temp);
-
-            // Total load (W/m²)
-            let total_load = solar_gain + conduction + ventilation;
-            loads.push(total_load);
-        }
-
-        loads
-    }
-
-    /// Apply pre-computed loads from batched inference.
-    ///
-    /// # Arguments
-    /// * `loads` - Thermal loads (W/m²) for each zone
-    pub fn set_loads(&mut self, loads: &[f64]) {
-        self.0.loads = T::from(VectorField::new(loads.to_vec()));
-    }
-
-    /// Set weather data for solar gain calculations.
-    ///
-    /// This enables proper solar gain calculation in step_physics when weather data
-    /// is not provided through the CaseSpec (e.g., when using DenverTmyWeather directly).
-    ///
-    /// # Arguments
-    ///
-    /// * `weather` - Hourly weather data to use for solar calculations
-    pub fn set_weather(&mut self, weather: HourlyWeatherData) {
-        self.0.weather = Some(weather);
-    }
-
-    /// Solve physics for one timestep (assumes loads already set).
-    ///
-    /// This method performs only the physics calculation portion of solve_single_step,
-    /// assuming that loads have already been set via set_loads() or calculated externally.
-    /// This enables batched inference: collect all temperatures, run one batched prediction,
-    /// distribute loads, then call this method in parallel.
-    ///
-    /// # Arguments
-    /// * `timestep` - Current timestep index (used for ground temperature)
-    /// * `outdoor_temp` - Outdoor air temperature (°C)
-    /// * `dt_seconds` - Timestep duration in seconds (default: 3600.0 for 1-hour timestep)
-    ///
-    /// # Returns
-    /// HVAC energy consumption for the timestep in kWh.
-    ///
-    /// Issue #351: Calculate solar gains internally if weather data is available
-    pub fn step_physics(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
-        // Record call for wiring validation (Plan 21-10)
-        #[cfg(feature = "wiring-tracing")]
-        if let Some(ref tracer) = self.0.tracer {
-            tracer.record_call("step_physics");
-        }
-
-        // Issue #351: Calculate loads from weather data if not already set
-        // This is needed for ASHRAE 140 validation where step_physics is called directly
-        if self.0.weather.is_some() {
-            self.calc_analytical_loads(timestep, true);
-        }
-
-        // Branch based on thermal model type
-        if self.is_nine_r4c_model() {
-            self.step_physics_9r4c(timestep, outdoor_temp, dt_seconds)
-        } else if self.is_8r3c_model() {
-            self.step_physics_8r3c(timestep, outdoor_temp, dt_seconds)
-        } else if self.is_6r2c_model() {
-            self.step_physics_6r2c(timestep, outdoor_temp, dt_seconds)
-        } else {
-            self.step_physics_5r1c(timestep, outdoor_temp, dt_seconds)
-        }
-    }
-
     /// Solve physics for one timestep using the 5R1C (single mass node) model.
     ///
     /// This is the original implementation for backward compatibility.
-    fn step_physics_5r1c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+    pub(crate) fn step_physics_5r1c(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        dt_seconds: f64,
+    ) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
@@ -1519,7 +933,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// - Internal mass (furniture, partitions) - faster response
     ///
     /// This better captures thermal phase shifts in high-mass buildings.
-    fn step_physics_6r2c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+    pub(crate) fn step_physics_6r2c(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        dt_seconds: f64,
+    ) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
 
         // DEBUG: Check solar_gains at entry to step_physics_6r2c
@@ -2229,36 +1648,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         hvac_energy_for_step / 3.6e6 // Return kWh
     }
 
-    // 8R3C Thermal Network (Phase 20 evaluation)
-    //
-    // Structure:
-    // - 8 resistance nodes:
-    //   1. Exterior (outside air)
-    //   2. Interior (zone air)
-    //   3. Ceiling mass (thermal mass in ceiling)
-    //   4. Floor mass (thermal mass in floor)
-    //   5. Partition mass (thermal mass in interior partitions)
-    //   6. Windows (exterior -> interior)
-    //   7. Ceiling surface (interior -> ceiling mass)
-    //   8. Floor surface (interior -> floor mass)
-    //
-    // - 3 capacitance nodes:
-    //   1. Ceiling mass (heat capacity)
-    //   2. Floor mass (heat capacity)
-    //   3. Partition mass (heat capacity)
-    //
-    // Rationale: High-mass buildings (Case 920, Case 960) show large
-    // annual energy errors (229-322%) with 5R1C due to insufficient
-    // thermal mass representation. 8R3C adds additional mass nodes for
-    // ceiling, floor, and partitions to better capture thermal inertia.
-    //
-    // Expected: If 8R3C shows >50% accuracy improvement vs 5R1C with
-    // acceptable performance (<4x slowdown), consider as alternative for
-    // high-mass buildings. Otherwise, keep 5R1C as default (per
-    // Phase 12 6R2C findings).
-    //
-    // Reference: Phase 12 6R2C evaluation (showed no improvement, 1.5-2x slowdown)
-
     /// Solves a single timestep using the 8R3C thermal network (Phase 20 evaluation).
     ///
     /// The 8R3C model uses 3 capacitance nodes (ceiling, floor, partition mass)
@@ -2274,7 +1663,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// # Note
     /// This is a simplified implementation for evaluation purposes. It follows the
     /// 5R1C/6R2C pattern but with additional mass nodes for ceiling, floor, and partitions.
-    fn step_physics_8r3c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+    pub(crate) fn step_physics_8r3c(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        dt_seconds: f64,
+    ) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
 
         // Get ground temperature at this timestep (unused in simplified 8R3C)
@@ -2331,7 +1725,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// The solver computes free-floating temperature using 5R1C network, then updates
     /// the multi-node thermal mass state. Zone temperatures are calculated using the
     /// 5R1C free-floating temperature, and the multi-node solver tracks per-surface temperatures.
-    fn step_physics_9r4c(&mut self, timestep: usize, outdoor_temp: f64, dt_seconds: f64) -> f64 {
+    pub(crate) fn step_physics_9r4c(
+        &mut self,
+        timestep: usize,
+        outdoor_temp: f64,
+        dt_seconds: f64,
+    ) -> f64 {
         let dt = dt_seconds;
 
         // Get ground temperature at this timestep
