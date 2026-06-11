@@ -38,9 +38,8 @@
 //! FDSolverWrapper               FDSolver (internals)
 //! ```
 //!
-//! The `HeatConductionSolver` trait still takes `BuildingAssembly` for
-//! backwards compatibility. The conversion happens at the call site
-//! in `SolverManager::get_or_create_solver()`.
+//! The `HeatConductionSolver` trait now takes `WallSpec` directly. The conversion
+//! from `BuildingAssembly` to `WallProperties` happens at the `WallSpec` level.
 
 use crate::sim::assembly::BuildingAssembly;
 
