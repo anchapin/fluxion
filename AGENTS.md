@@ -1,3 +1,50 @@
+# Fluxion — Agent Instructions
+
+## Required Reading (MANDATORY)
+
+Before working on ANY issue, read `ARCHITECTURE.md` in the repository root. It contains:
+- Module dependency diagram (Mermaid) with data flow
+- Explicit input/output contracts for all 5 physics modules
+- Trait hierarchy for ML surrogate swap points
+- Module status table showing which modules are isolated and tested
+- Single-timestep sequence diagram
+
+**Rule**: Do NOT modify physics code without checking ARCHITECTURE.md first. If the code doesn't match the documented interfaces, update ARCHITECTURE.md to reflect reality OR fix the code to match the architecture.
+
+## Validation Strategy (Current)
+
+We are in **Phase 1: Module Isolation**. The rules:
+1. **No ASHRAE 140 system-level testing** until individual modules pass E+ reference tests
+2. **No parameter tuning** to make system tests pass — fix the underlying math
+3. **Each module must match EnergyPlus within 1% tolerance** on isolated scenarios
+4. Modules: Weather -> Solar -> Conduction -> Ventilation -> Zone Balance (test in this order)
+
+## Module Boundaries
+
+```
+Weather (epw.rs)          -> Solar (solar.rs)           -> Zone Balance (thermal_model.rs)
+                          -> Ventilation (ventilation.rs) -> Zone Balance
+                          -> Conduction (solver_trait.rs) -> Zone Balance
+```
+
+Every module interaction goes through a Rust trait:
+- `HeatConductionSolver` — conduction (5R1C, CTF, FD, future ML)
+- `VentilationSchedule` — ventilation (constant, scheduled, weather-dependent)
+- `ThermalModelTrait` — zone solver (physics, surrogate, hybrid)
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `ARCHITECTURE.md` | Module boundaries, I/O contracts, diagrams |
+| `src/physics/solver_trait.rs` | HeatConductionSolver trait definition |
+| `src/sim/thermal_model.rs` | ThermalModelTrait definition |
+| `src/sim/solar.rs` | Solar position and irradiance calculations |
+| `src/sim/ventilation.rs` | Ventilation schedule trait |
+| `tests/reference_data/` | EnergyPlus CSV reference data for unit tests |
+
+---
+
 # context-mode — MANDATORY routing rules
 
 You have context-mode MCP tools available. These rules are NOT optional — they protect your context window from flooding. A single unrouted command can dump 56 KB into context and waste the entire session.

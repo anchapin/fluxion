@@ -1,0 +1,40 @@
+name: Architecture Drift Detection
+
+on:
+  schedule:
+    # Run nightly at 03:00 UTC
+    - cron: '0 3 * * *'
+  pull_request:
+    paths:
+      - 'src/**/*.rs'
+      - 'ARCHITECTURE.md'
+      - 'scripts/check_architecture_drift.py'
+  workflow_dispatch:
+
+jobs:
+  check-drift:
+    runs-on: ubuntu-latest
+    name: Check ARCHITECTURE.md drift
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run architecture drift detection
+        run: python3 scripts/check_architecture_drift.py
+
+      - name: Comment on PR if drift detected (on PR trigger only)
+        if: failure() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: `## Architecture Drift Detected\n\nThe drift detection script found inconsistencies between ARCHITECTURE.md and the source code.\n\n**Either:**\n1. Update ARCHITECTURE.md to document the new trait/module\n2. Fix the code to match the documented architecture\n3. Add false-positive names to \`skip_traits\` in \`scripts/check_architecture_drift.py\`\n\nRun \`python3 scripts/check_architecture_drift.py\` locally to see details.`
+            })
