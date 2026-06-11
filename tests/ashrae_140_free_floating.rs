@@ -1231,3 +1231,191 @@ fn test_900ff_without_ctf() {
     println!("\nReference: 600FF Min=-18.8 to -15.6°C, Max=64.9-75.1°C");
     println!("           900FF Min=-6.4 to -1.6°C, Max=41.8-46.4°C");
 }
+
+/// Test: Mass temperatures must differ between 600FF and 900FF (Issue #923)
+///
+/// Case 600FF (low-mass) and Case 900FF (high-mass) should produce different
+/// mass temperatures because they have fundamentally different thermal mass.
+/// If mass temperatures are the same, the thermal mass parameters are not being
+/// properly used.
+///
+/// Key diagnostic from Issue #924:
+/// - 600FF: Mass Min=2.30°C Max=59.10°C (swing 56.80°C)
+/// - 900FF: Mass Min=6.29°C Max=40.97°C (swing 34.69°C)
+#[test]
+fn test_mass_temperatures_differ_between_600ff_and_900ff() {
+    let spec_600ff = ASHRAE140Case::Case600FF.spec();
+    let spec_900ff = ASHRAE140Case::Case900FF.spec();
+    let weather = DenverTmyWeather::new();
+
+    // === Simulate 600FF ===
+    let mut model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
+    model_600ff.heating_setpoint = -999.0;
+    model_600ff.cooling_setpoint = 999.0;
+    model_600ff.hvac_heating_capacity = 0.0;
+    model_600ff.hvac_cooling_capacity = 0.0;
+
+    let mut mass_temps_600ff = Vec::with_capacity(8760);
+    let mut air_temps_600ff = Vec::with_capacity(8760);
+
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_600ff.weather = Some(weather_data.clone());
+        model_600ff.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+        if let Some(&mass_temp) = model_600ff.mass_temperatures.as_slice().first() {
+            mass_temps_600ff.push(mass_temp);
+        }
+        if let Some(&air_temp) = model_600ff.temperatures.as_slice().first() {
+            air_temps_600ff.push(air_temp);
+        }
+    }
+
+    // === Simulate 900FF ===
+    let mut model_900ff = ThermalModel::<VectorField>::from_spec(&spec_900ff);
+    model_900ff.heating_setpoint = -999.0;
+    model_900ff.cooling_setpoint = 999.0;
+    model_900ff.hvac_heating_capacity = 0.0;
+    model_900ff.hvac_cooling_capacity = 0.0;
+
+    let mut mass_temps_900ff = Vec::with_capacity(8760);
+    let mut air_temps_900ff = Vec::with_capacity(8760);
+
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model_900ff.weather = Some(weather_data.clone());
+        model_900ff.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+        if let Some(&mass_temp) = model_900ff.mass_temperatures.as_slice().first() {
+            mass_temps_900ff.push(mass_temp);
+        }
+        if let Some(&air_temp) = model_900ff.temperatures.as_slice().first() {
+            air_temps_900ff.push(air_temp);
+        }
+    }
+
+    // === Compute mass temperature statistics ===
+    let mass_min_600ff = mass_temps_600ff
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let mass_max_600ff = mass_temps_600ff
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let mass_swing_600ff = mass_max_600ff - mass_min_600ff;
+
+    let mass_min_900ff = mass_temps_900ff
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let mass_max_900ff = mass_temps_900ff
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let mass_swing_900ff = mass_max_900ff - mass_min_900ff;
+
+    // === Compute air temperature statistics ===
+    let air_min_600ff = air_temps_600ff
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let air_max_600ff = air_temps_600ff
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let air_swing_600ff = air_max_600ff - air_min_600ff;
+
+    let air_min_900ff = air_temps_900ff
+        .iter()
+        .cloned()
+        .fold(f64::INFINITY, f64::min);
+    let air_max_900ff = air_temps_900ff
+        .iter()
+        .cloned()
+        .fold(f64::NEG_INFINITY, f64::max);
+    let air_swing_900ff = air_max_900ff - air_min_900ff;
+
+    // === Diagnostic output ===
+    println!("\n=== Issue #923: Mass Temperature Differentiation ===");
+    println!();
+    println!("600FF (Low Mass):");
+    println!(
+        "  Mass: Min={:.2}°C  Max={:.2}°C  Swing={:.2}°C",
+        mass_min_600ff, mass_max_600ff, mass_swing_600ff
+    );
+    println!(
+        "  Air:  Min={:.2}°C  Max={:.2}°C  Swing={:.2}°C",
+        air_min_600ff, air_max_600ff, air_swing_600ff
+    );
+    println!();
+    println!("900FF (High Mass):");
+    println!(
+        "  Mass: Min={:.2}°C  Max={:.2}°C  Swing={:.2}°C",
+        mass_min_900ff, mass_max_900ff, mass_swing_900ff
+    );
+    println!(
+        "  Air:  Min={:.2}°C  Max={:.2}°C  Swing={:.2}°C",
+        air_min_900ff, air_max_900ff, air_swing_900ff
+    );
+    println!();
+    println!("Difference:");
+    println!(
+        "  Mass Max Diff: {:.2}°C",
+        (mass_max_600ff - mass_max_900ff).abs()
+    );
+    println!(
+        "  Mass Swing Diff: {:.2}°C",
+        (mass_swing_600ff - mass_swing_900ff).abs()
+    );
+
+    // === Assertions ===
+    // 1. Mass temperatures must be different between 600FF and 900FF
+    //    The absolute difference in max mass temperature must be > 5°C
+    let mass_max_diff = (mass_max_600ff - mass_max_900ff).abs();
+    assert!(
+        mass_max_diff > 5.0,
+        "Mass max temperatures must differ by >5°C between 600FF and 900FF. \
+         600FF mass max={:.2}°C, 900FF mass max={:.2}°C, diff={:.2}°C",
+        mass_max_600ff,
+        mass_max_900ff,
+        mass_max_diff
+    );
+
+    // 2. Mass temperature swings must be different
+    //    Low-mass should have LARGER mass swing than high-mass
+    //    (high-mass thermal storage dampens mass temperature response)
+    let swing_diff = mass_swing_600ff - mass_swing_900ff;
+    assert!(
+        swing_diff > 5.0,
+        "Low-mass (600FF) should have larger mass swing than high-mass (900FF). \
+         600FF mass swing={:.2}°C, 900FF mass swing={:.2}°C, diff={:.2}°C",
+        mass_swing_600ff,
+        mass_swing_900ff,
+        swing_diff
+    );
+
+    // 3. High-mass should have lower mass max temperature
+    //    (thermal storage prevents mass from getting as hot)
+    assert!(
+        mass_max_900ff < mass_max_600ff,
+        "High-mass (900FF) mass max ({:.2}°C) should be lower than low-mass (600FF) mass max ({:.2}°C)",
+        mass_max_900ff, mass_max_600ff
+    );
+
+    // 4. High-mass should have higher mass min temperature
+    //    (thermal storage keeps mass warmer at night)
+    assert!(
+        mass_min_900ff > mass_min_600ff,
+        "High-mass (900FF) mass min ({:.2}°C) should be higher than low-mass (600FF) mass min ({:.2}°C)",
+        mass_min_900ff, mass_min_600ff
+    );
+
+    println!();
+    println!("✅ Mass temperatures correctly differ between 600FF and 900FF (Issue #923)");
+    println!(
+        "   - Mass max diff: {:.2}°C (low-mass hotter)",
+        mass_max_diff
+    );
+    println!("   - Mass swing diff: {:.2}°C (low-mass wider)", swing_diff);
+}
