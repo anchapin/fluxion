@@ -70,7 +70,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // overwrite (200,000 J/m²K × zone_area) was a ~15× overestimate for low-mass
         // construction and biased peak air temperatures 10-20 °C low for FF cases.
 
-        // Update optimization cache
+        // Update optimization cache (computes derived_h_tr_3, derived_h_ext, etc.)
+        self.update_optimization_cache();
         self.update_optimization_cache();
     }
 

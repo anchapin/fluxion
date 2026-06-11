@@ -325,9 +325,21 @@ fn test_thermal_model_time_constant_estimation() {
     // High-mass case - use from_spec to properly initialize physics parameters
     let model_900 = ThermalModel::<VectorField>::from_spec(&ASHRAE140Case::Case900.spec());
     let tau_900 = model_900.estimate_time_constant_hours();
+
+    // Issue #894: derived_h_tr_3 must be computed (was 0.0 before fix)
+    let h_tr_3_0 = *model_900.derived_h_tr_3.as_ref().get(0).unwrap_or(&0.0);
     assert!(
-        tau_900 > 2.0,
-        "Case 900 should have τ > 2 hours (ASHRAE 140 high-mass), got {}",
+        h_tr_3_0 > 1.0,
+        "Issue #894: derived_h_tr_3 must be > 1 W/K (air-to-mass bottleneck), got {}",
+        h_tr_3_0
+    );
+
+    // τ must be physically reasonable for high-mass concrete construction
+    // With h_tr_3 ≈ 40 W/K and Cm ≈ 2e7 J/K: τ ≈ 500+ hours (~20+ days)
+    // Previous bug: τ ≈ 5 hours (h_tr_ms fallback, ~1000 W/K)
+    assert!(
+        tau_900 > 10.0,
+        "Case 900 should have τ > 10 hours (high-mass concrete), got {}",
         tau_900
     );
 
