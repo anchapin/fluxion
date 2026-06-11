@@ -34,7 +34,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         &mut self,
         timestep: usize,
         outdoor_temp: f64,
-        step_params: StepParameters,
+        step_params: &StepParameters,
         dt_seconds: f64,
     ) -> f64 {
         // 1. Calculate External Loads
@@ -521,8 +521,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // The thermal capacitance reduction (0.5x) is sufficient for FF behavior
 
                 // Apply zone-specific solar gains
-                self.0.solar_gains = T::from(VectorField::new(zone_solar_gains.clone()));
-                self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains.clone()));
+                // Issue #901 perf: consume the freshly-built Vec directly into VectorField::new
+                // rather than cloning first (the variables are not used after this point).
+                self.0.solar_gains = T::from(VectorField::new(zone_solar_gains));
+                self.0.opaque_solar_gains = T::from(VectorField::new(zone_opaque_gains));
             } else {
                 // Fallback to trivial sine-wave approximation if no weather data
                 let hour_of_day = timestep % 24;

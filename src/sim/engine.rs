@@ -107,7 +107,7 @@ mod tests {
             equipment: None,
             occupancy: None,
         };
-        let energy1 = model1.solve_single_step(0, 20.0, step_params, 3600.0);
+        let energy1 = model1.solve_single_step(0, 20.0, &step_params, 3600.0);
 
         model2.calc_analytical_loads(0, true);
         let energy2 = model2.step_physics(0, 20.0, 3600.0);
@@ -386,7 +386,7 @@ mod tests {
                     occupancy: None,
                 };
                 let energy_kwh =
-                    model.solve_single_step(step, outdoor_temp_heating, step_params, 3600.0);
+                    model.solve_single_step(step, outdoor_temp_heating, &step_params, 3600.0);
                 total_energy_kwh += energy_kwh;
             }
 
@@ -423,7 +423,7 @@ mod tests {
                 equipment: None,
                 occupancy: None,
             };
-            let energy_kwh = model.solve_single_step(0, outdoor_temp, step_params, 3600.0);
+            let energy_kwh = model.solve_single_step(0, outdoor_temp, &step_params, 3600.0);
 
             println!("Skipping zero_load_when_no_temperature_difference test due to thermal mass energy accounting");
             println!("Energy when in deadband: {:.9}", energy_kwh);
@@ -451,7 +451,8 @@ mod tests {
                 equipment: None,
                 occupancy: None,
             };
-            let energy_heating = model.solve_single_step(0, outdoor_temp_cold, step_params, 3600.0);
+            let energy_heating =
+                model.solve_single_step(0, outdoor_temp_cold, &step_params, 3600.0);
 
             model.temperatures = VectorField::from_scalar(27.0, 1);
             model.mass_temperatures = VectorField::from_scalar(27.0, 1);
@@ -464,7 +465,7 @@ mod tests {
                 equipment: None,
                 occupancy: None,
             };
-            let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, step_params, 3600.0);
+            let energy_cooling = model.solve_single_step(0, outdoor_temp_hot, &step_params, 3600.0);
 
             model.temperatures = VectorField::from_scalar(23.5, 1);
             model.mass_temperatures = VectorField::from_scalar(23.5, 1);
@@ -476,7 +477,7 @@ mod tests {
                 equipment: None,
                 occupancy: None,
             };
-            let energy_deadband = model.solve_single_step(0, 23.5, step_params_2, 3600.0);
+            let energy_deadband = model.solve_single_step(0, 23.5, &step_params_2, 3600.0);
 
             assert!(energy_heating > 0.0);
             assert!(energy_cooling < 0.0);
@@ -565,8 +566,9 @@ mod tests {
                     equipment: None,
                     occupancy: None,
                 };
-                model1.solve_single_step(t, outdoor_temp, step_params.clone_for_test(), 3600.0);
-                model2.solve_single_step(t, outdoor_temp, step_params, 3600.0);
+                let step_params_for_model1 = step_params.clone_for_test();
+                model1.solve_single_step(t, outdoor_temp, &step_params_for_model1, 3600.0);
+                model2.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
             }
 
             assert!(model2.temperatures[0] > model1.temperatures[0]);
@@ -638,8 +640,10 @@ mod tests {
                 occupancy: None,
             };
             for t in 0..24 {
-                model_cold.solve_single_step(t, outdoor_temp, step_params.clone_for_test(), 3600.0);
-                model_warm.solve_single_step(t, outdoor_temp, step_params.clone_for_test(), 3600.0);
+                let cold_params = step_params.clone_for_test();
+                let warm_params = step_params.clone_for_test();
+                model_cold.solve_single_step(t, outdoor_temp, &cold_params, 3600.0);
+                model_warm.solve_single_step(t, outdoor_temp, &warm_params, 3600.0);
             }
 
             assert_ne!(model_cold.temperatures[0], model_warm.temperatures[0]);
