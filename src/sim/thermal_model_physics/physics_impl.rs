@@ -1054,7 +1054,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext = h_ext_base;
 
         // 6R2C specific terms
-        let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
+        let h_sum = self
+            .0
+            .h_tr_ms
+            .zip_with(&self.0.h_tr_me, |a, b| a + b)
+            .zip_with(&self.0.h_tr_is, |a, b| a + b);
 
         // We optimize the calculation of den to avoid intermediate vector allocations using explicit scalar loop.
         let mut den_data = Vec::with_capacity(self.0.num_zones);
