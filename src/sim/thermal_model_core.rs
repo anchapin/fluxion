@@ -1260,11 +1260,11 @@ impl ThermalModel<VectorField> {
             h_tr_em_south_vec.push(h_tr_em_south);
 
             // === PHASE 36-04 FIX: τ DIAGNOSTIC OUTPUT ===
-            // Calculate thermal time constant τ = Cm / (h_tr_ms + h_tr_me)
-            // For 6R2C model, h_tr_em does NOT affect mass dynamics directly
-            // The mass nodes are coupled via h_tr_ms (to surface) and h_tr_me (to internal mass)
-            // This diagnostic shows the actual τ from physics-based conductances
-            // NOTE: h_tr_me computed inline since h_tr_me_vec not yet defined at this point
+            // Calculate thermal time constant using derived_h_tr_3 (ISO 13790 air-to-mass conductance)
+            // For 6R2C model, the mass receives heat from the AIR node through H_tr_3,
+            // not directly from the surface through h_tr_ms.
+            // NOTE: derived_h_tr_3 not yet computed at this point; use h_tr_ms as proxy
+            // (actual H_tr_3 will be computed after the zone loop when all conductances are set)
             if zone_idx == 0 && spec.case_id == "900" && !thermal_cap_vec.is_empty() {
                 let cm = thermal_cap_vec[0]; // J/K
                 let h_ms = h_tr_ms_vec[zone_idx]; // W/K
@@ -1273,11 +1273,13 @@ impl ThermalModel<VectorField> {
                 } else {
                     48.0 // fallback
                 };
-                let h_me = 4.5 * 0.5 * floor_area_0; // PHASE 36-04: reduced from 2.0 to 0.5 factor
-                let h_total = h_ms + h_me; // W/K - correct formula for 6R2C
+                let h_me = 4.5 * 0.5 * floor_area_0;
+                // NOTE: Using h_tr_ms here; actual H_tr_3 will be ~40 W/K (much smaller)
+                // The correct τ will be logged after derived_h_tr_3 is computed
+                let h_total = h_ms + h_me; // W/K - proxy (h_tr_ms >> H_tr_3)
                 let tau_seconds = cm / h_total.max(0.1);
                 let tau_hours = tau_seconds / 3600.0;
-                eprintln!("PHASE 36-04 DIAGNOSTIC τ: Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_me={:.2} W/K, τ={:.1} hours (6R2C physics-based calculation)", cm, h_total, tau_hours);
+                eprintln!("PHASE 36-04 DIAGNOSTIC τ (proxy): Case 900 - Cm={:.0e} J/K, h_tr_ms+h_tr_me={:.2} W/K, τ_proxy={:.1} hours", cm, h_total, tau_hours);
             }
 
             // === SESSION 83 DIAGNOSTIC: Output h_tr_em, h_tr_ms, solar distribution ===
@@ -1502,6 +1504,64 @@ impl ThermalModel<VectorField> {
         model.h_tr_me = VectorField::new(h_tr_me_vec);
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
+
+        // === Issue #894 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
+        //
+        // The thermal mass in the 6R2C model receives heat from the AIR node through H_tr_3,
+        // which is the SERIES combination of (air-to-surface + surface-to-mass).
+        // This creates an air-side bottleneck that slows the mass response.
+        //
+        // Without this, derived_h_tr_3 is 0.0 and the physics solvers silently fall back
+        // to h_tr_ms (~1300 W/K), giving a time constant of ~5 hours instead of the
+        // correct ~6 days for high-mass construction.
+        //
+        // Formula (ISO 13790, Section 6.3):
+        //   H_tr_1 = h_ve × h_tr_is / (h_ve + h_tr_is)   [series: ventilation + interior surface]
+        //   H_tr_2 = H_tr_1 + h_tr_w                        [parallel: window conduction]
+        //   H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms)            [series: air-to-surface + surface-to-mass]
+        {
+            let mut derived_h_tr_3_vec = Vec::with_capacity(num_zones);
+            for zone_idx in 0..num_zones {
+                let h_tr_ms_z = *model.h_tr_ms.as_ref().get(zone_idx).unwrap_or(&0.0);
+                let h_tr_is_z = *model.h_tr_is.as_ref().get(zone_idx).unwrap_or(&0.0);
+                let h_tr_w_z = *model.h_tr_w.as_ref().get(zone_idx).unwrap_or(&0.0);
+                let h_ve_z = *model.h_ve.as_ref().get(zone_idx).unwrap_or(&0.0);
+
+                let h_tr_3 = if h_tr_ms_z > 0.0 && h_tr_is_z > 0.0 && h_ve_z > 0.0 {
+                    // H_tr_1: series of ventilation and interior surface conductance
+                    let h_tr_1 = if (h_ve_z + h_tr_is_z) > 0.0 {
+                        (h_ve_z * h_tr_is_z) / (h_ve_z + h_tr_is_z)
+                    } else {
+                        0.0
+                    };
+                    // H_tr_2: H_tr_1 in parallel with window conduction
+                    let h_tr_2 = h_tr_1 + h_tr_w_z;
+                    // H_tr_3: series of H_tr_2 and h_tr_ms
+                    if h_tr_2 > 0.0 {
+                        (h_tr_2 * h_tr_ms_z) / (h_tr_2 + h_tr_ms_z)
+                    } else {
+                        h_tr_ms_z
+                    }
+                } else {
+                    h_tr_ms_z // Fallback for uninitialized conductances
+                };
+                derived_h_tr_3_vec.push(h_tr_3);
+            }
+            model.derived_h_tr_3 = VectorField::new(derived_h_tr_3_vec);
+
+            // Issue #894: Log correct τ using derived_h_tr_3 for Case 900
+            if spec.case_id == "900" {
+                let cm = *model.thermal_capacitance.as_ref().first().unwrap_or(&0.0);
+                let h_tr_3_0 = *model.derived_h_tr_3.as_ref().first().unwrap_or(&0.0);
+                let h_tr_ms_0 = *model.h_tr_ms.as_ref().first().unwrap_or(&0.0);
+                let tau_seconds = if h_tr_3_0 > 0.0 { cm / h_tr_3_0 } else { 0.0 };
+                let tau_hours = tau_seconds / 3600.0;
+                eprintln!(
+                    "Issue #894 FIX: Case 900 - derived_h_tr_3={:.2} W/K (was h_tr_ms={:.2} W/K), τ={:.1} hours ({:.1} days)",
+                    h_tr_3_0, h_tr_ms_0, tau_hours, tau_hours / 24.0
+                );
+            }
+        }
 
         // Physics-based: Thermal capacitance should use actual construction properties
         // No case-specific reduction factors - physics should be correct for all cases
