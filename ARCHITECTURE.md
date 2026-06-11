@@ -197,7 +197,7 @@ pub trait VentilationSchedule {
 
 ### Module 5: Zone Air Heat Balance
 
-**Source**: `src/sim/thermal_model.rs`, `src/sim/thermal_model_physics.rs`
+**Source**: `src/sim/thermal_model_core.rs`, `src/sim/thermal_model_physics/`
 **Purpose**: Solve the zone heat balance equation at each timestep.
 
 | Input | Type | Source |

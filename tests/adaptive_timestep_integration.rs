@@ -329,7 +329,6 @@ fn test_thermal_model_time_constant_estimation() {
     // Issue #894: derived_h_tr_3 must be computed (was 0.0 before fix)
     let h_tr_3_0 = *model_900.derived_h_tr_3.as_ref().get(0).unwrap_or(&0.0);
     assert!(
-    assert!(
         h_tr_3_0 > 1.0,
         "Issue #894: derived_h_tr_3 must be > 1 W/K (air-to-mass bottleneck), got {}",
         h_tr_3_0
