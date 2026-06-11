@@ -688,68 +688,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             )
         };
 
-        // Temperature update using zone air energy balance.
+        // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
         //
-        // Issue #924 fix: t_i_free is the steady-state solution of the lumped
-        // 5R1C heat balance — that equation already accounts for the
-        // h_ve * (T_outdoor − T_air) ventilation term. Adding an *additional*
-        // h_ve * (T_outdoor − t_i_free) * dt / C_a on top of t_i_free is a
-        // forward-Euler step with weight h_ve*dt/C_a ≈ 1.08 (for the
-        // standard 8m×6m×2.7m zone) which is unconditionally unstable and
-        // makes t_i_act track outdoor at weight 1.08 instead of converging
-        // to t_i_free. That cancels the thermal-mass damping already
-        // computed in t_i_free and produces the symptom of Case 600FF /
-        // 900FF air temperatures being nearly identical despite very
-        // different mass temperatures.
+        // Issue #903 Root Cause: A previous change (c372977) replaced this formula
+        // with an explicit energy balance that added `q_infiltration = h_ve * (T_out - T_free)`
+        // on top of t_i_free. That double-counts the infiltration loss, because
+        // t_i_free already includes the steady-state h_ve × (T_outdoor - T_zone) term
+        // through `den = h_ms_is_prod + term_rest_1 * (h_ve + h_tr_w) + ...`.
         //
-        // Correct approach (matches 9R4C path, line ~1843): t_i_free is the
-        // equilibrium, so use it directly. For HVAC mode, the HVAC adds heat
-        // to the air node, raising the air temperature by Q / h_tr_is (the
-        // surface-side coupling path), which is the only term *not* already
-        // represented in t_i_free.
+        // For Case 600 (low-mass), C_zone_air ≈ 72 kJ/K is small compared to the
+        // ~20-50°C outdoor swings × dt = 3600 s × h_ve = 22 W/K, so the spurious
+        // q_infiltration term drove delta_t up to ±20°C per timestep, collapsing
+        // both t_i_act and the mass temperature (via the surface coupling), which
+        // then required excessive heating in every subsequent step. Free-float
+        // cases (no HVAC to balance it) ended up locked near the outdoor temperature
+        // — Case 600FF max 39°C vs reference 64.9-75.1°C, min -20.7°C vs -18.8 to -15.6°C.
         //
-        // C_zone_air forward-Euler update is left in place ONLY as a
-        // transient relaxation toward t_i_free: t_i_act = t_i_free +
-        // (θ_air_old − t_i_free) * exp(−H_total*dt/C_a) where H_total ≈
-        // h_tr_is + h_ve. For the typical case h_tr_is + h_ve ≈ 1273 W/K
-        // and C_a ≈ 156 kJ/K, exp(−1273*3600/156266) ≈ 2e-13 ≈ 0, so the
-        // exponential correction is negligible and t_i_act ≈ t_i_free
-        // (one timestep is already the steady state for the air node).
+        // Fix: restore the original physics-based formula. The hvac_power / h_tr_is
+        // term gives the steady-state temperature rise the HVAC achieves through the
+        // air-to-surface coupling, and t_i_free already accounts for all other heat
+        // flows (infiltration, conduction, solar, internal gains, mass coupling).
+        let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
-        let zone_vol_vec = self.0.zone_volume.as_ref();
-        let rho = 1.2; // kg/m³
-        let cp = 1005.0; // J/(kg·K)
-        let h_ve_vec = self.0.h_ve.as_ref();
         let mut t_i_act_data = Vec::with_capacity(self.0.num_zones);
         for i in 0..self.0.num_zones {
             let h_is = h_tr_is_vec[i];
-            let h_ve = h_ve_vec[i];
-            let zone_vol = zone_vol_vec[i];
-            let c_zone_air = zone_vol * rho * cp; // J/K
-            let hvac_i = hvac[i];
-            let t_free_i = t_free[i];
-
-            // HVAC contribution: Q / h_tr_is (matches 9R4C path, line ~1843).
-            // In free-float, hvac_i = 0 so this term vanishes and we get
-            // t_i_act = t_i_free directly.
-            let hvac_delta = if h_is > 0.0 { hvac_i / h_is } else { 0.0 };
-
-            // Transient relaxation: in one timestep, the air node ODE
-            //   C_a * dθ_air/dt = hvac + h_tr_is*(θ_s − θ_air) + h_ve*(T_e − θ_air) + Φ_ia
-            // approaches the steady state θ_air,0 (= t_i_free) with time
-            // constant τ = C_a / (h_tr_is + h_ve). Crank–Nicolson (or
-            // exponential) integration gives:
-            //   t_i_act = t_i_free + (θ_air_old − t_i_free) * exp(−(h_is+h_ve)*dt/C_a)
-            // For h_is + h_ve ≈ 1273 W/K, dt=3600 s, C_a≈156 kJ/K, the
-            // exponential term is ≈ 2e-13 so the relaxation collapses to
-            // "t_i_act = t_i_free + hvac/h_is".
-            let prev_t_air = self.0.previous_temperatures.as_ref()[i];
-            let exp_arg = -((h_is + h_ve) * dt) / c_zone_air;
-            let decay = if exp_arg < -50.0 { 0.0 } else { exp_arg.exp() };
-            let relaxation = (prev_t_air - t_free_i) * decay;
-            t_i_act_data.push(t_free_i + hvac_delta + relaxation);
+            if h_is > 0.0 && hvac[i].abs() > 1e-6 {
+                t_i_act_data.push(t_free[i] + hvac[i] / h_is);
+            } else {
+                t_i_act_data.push(t_free[i]);
+            }
         }
         let t_i_act = T::from(VectorField::new(t_i_act_data));
 
