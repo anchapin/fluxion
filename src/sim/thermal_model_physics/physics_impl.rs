@@ -2160,35 +2160,19 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     } else {
                         t_i_free_5r1c.as_ref()[i]
                     };
-                // Issue #925: HVAC coefficient = building heat loss coefficient
-                // (zone -> outdoor), not the lumped 5R1C free-floating denominator.
-                // See compute_zone_hvac_load for full derivation.
-                let h_ve = self.0.h_ve.as_ref()[i];
-                let h_tr_w = self.0.h_tr_w.as_ref()[i];
-                let h_tr_is = self.0.h_tr_is.as_ref()[i];
+                // Issue #907: HVAC coefficient is the full 5R1C/6R2C Norton equivalent
+                // at the air node (see `compute_hvac_coefficient`). Use it here so the
+                // self-consistent t_act = t_free + Q/h_coeff check matches T_setpoint
+                // (h_tr_1 + h_ve alone is too small — it ignores mass/ground paths).
+                let h_coeff = self.compute_hvac_coefficient(i);
                 let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
-                let h_tr_em = self.0.h_tr_em.as_ref()[i];
-
-                // Series conductance: air -> surface -> mass -> envelope exterior
-                let series_denom = h_tr_is * h_tr_ms + h_tr_ms * h_tr_em + h_tr_em * h_tr_is;
-                let h_loss_via_mass =
-                    if h_tr_is > 0.0 && h_tr_ms > 0.0 && h_tr_em > 0.0 && series_denom > 0.0 {
-                        h_tr_is * h_tr_ms * h_tr_em / series_denom
-                    } else {
-                        0.0
-                    };
-                let h_loss = h_ve + h_tr_w + h_loss_via_mass;
-                let h_coeff = if h_loss > 0.0 { h_loss } else { h_ve + h_tr_w };
 
                 // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
                 if timestep == 337 && i == 0 && !self.0.free_float {
                     eprintln!(
-                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, h_tr_w={:.2}, h_tr_ms={:.2}, h_tr_em={:.2}, h_loss={:.4}, t_free={:.2}, q_heating={:.4}",
+                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
                         self.0.h_tr_is.as_ref()[i],
                         self.0.h_ve.as_ref()[i],
-                        self.0.h_tr_w.as_ref()[i],
-                        self.0.h_tr_ms.as_ref()[i],
-                        self.0.h_tr_em.as_ref()[i],
                         h_coeff,
                         t_free_val,
                         h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
@@ -2252,7 +2236,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     0.0
                 };
                 let mass_heat_release = if mass_heat_release_unclamped > 0.0 {
-                    mass_heat_release_unclamped.min(h_loss * MASS_RELEASE_MAX_FACTOR_9R4C)
+                    mass_heat_release_unclamped.min(h_coeff * MASS_RELEASE_MAX_FACTOR_9R4C)
                 } else {
                     0.0
                 };

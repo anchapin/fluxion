@@ -13,11 +13,68 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::thermal_model_core::ThermalModel;
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
+    /// Compute the HVAC heat transfer coefficient (Norton equivalent at the air node)
+    /// for the 5R1C/6R2C thermal network.
+    ///
+    /// The HVAC coefficient `h_coeff` represents the total effective thermal conductance
+    /// from the zone air node to the boundary (outdoor + ground) when computing the
+    /// heating/cooling load `Q_HVAC = h_coeff * (T_setpoint - T_zone)`.
+    ///
+    /// For the 5R1C network (air, surface, mass nodes), the Norton equivalent at the
+    /// air node is obtained by eliminating the internal surface and mass nodes:
+    ///
+    /// ```text
+    ///   h_ms_em = h_tr_ms · h_tr_em / (h_tr_ms + h_tr_em)   [mass-to-ground series]
+    ///   X       = h_tr_w + h_ms_em + h_tr_floor             [surface-to-boundary parallel]
+    ///   h_is_X  = h_tr_is · X / (h_tr_is + X)               [air-through-surface series]
+    ///   h_eff   = h_is_X + h_ve                             [+ direct air-to-outdoor]
+    /// ```
+    ///
+    /// This value correctly accounts for ALL paths from air to boundary (via windows,
+    /// via envelope mass, via floor-ground), giving the right annual heating/cooling
+    /// energy for ASHRAE 140 Case 600 (low-mass) — see Issue #907.
+    ///
+    /// - **HVAC coefficient too high** (e.g., `den/(2·term_rest_1)` → 154 W/K for
+    ///   Case 600) → annual heating inflated ~3.4x (18.62 MWh vs 5.5–7.5 MWh ref).
+    /// - **HVAC coefficient too low** (e.g., `H_tr_1 + h_ve` → 43 W/K) → annual
+    ///   heating halved (2.46 MWh). This excludes the mass/ground paths entirely.
+    /// - **Norton equivalent** (≈ 98.65 W/K for Case 600) → 5.4–6.6 MWh, in range.
+    pub(crate) fn compute_hvac_coefficient(&self, zone_idx: usize) -> f64 {
+        let h_tr_is = self.0.h_tr_is.as_ref()[zone_idx];
+        let h_tr_ms = self.0.h_tr_ms.as_ref()[zone_idx];
+        let h_tr_em = self.0.h_tr_em.as_ref()[zone_idx];
+        let h_tr_w = self.0.h_tr_w.as_ref()[zone_idx];
+        let h_ve = self.0.h_ve.as_ref()[zone_idx];
+        let h_tr_floor = self.0.h_tr_floor.as_ref()[zone_idx];
+
+        // Series combination of mass node and mass-to-ground (interior mass path)
+        let h_ms_em_series = if h_tr_ms + h_tr_em > 0.0 {
+            h_tr_ms * h_tr_em / (h_tr_ms + h_tr_em)
+        } else {
+            0.0
+        };
+
+        // Surface-to-boundary: three parallel paths (window→outdoor, mass→ground,
+        // floor→ground). This is the Norton reduction step.
+        let surface_to_boundary = h_tr_w + h_ms_em_series + h_tr_floor;
+
+        // Air-through-surface: h_tr_is in series with the surface-to-boundary net.
+        let h_is_to_boundary = if h_tr_is + surface_to_boundary > 0.0 {
+            h_tr_is * surface_to_boundary / (h_tr_is + surface_to_boundary)
+        } else {
+            0.0
+        };
+
+        // Total air-to-boundary: air-through-surface (Norton) plus direct ventilation
+        // air-to-outdoor.
+        h_is_to_boundary + h_ve
+    }
+
     /// Compute HVAC demand using total building heat transfer conductance.
     ///
     /// For ASHRAE 140 Case 600-series (low-mass buildings), the IdealLoadsSystem
     /// was giving ~21.7 W/K (ventilation only) instead of the building's actual
-    /// ~1251 W/K total conductance (h_tr_is + h_ve + h_tr_w).
+    /// total conductance (≈98.65 W/K after the Norton-equivalent fix, Issue #907).
     ///
     /// This caused zones to never reach setpoint because HVAC demand was severely
     /// underestimated.
@@ -72,11 +129,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         cooling_setpoint: f64,
         mass_temperatures: &[f64],
     ) -> T {
-        let h_tr_is_vec = self.0.h_tr_is.as_ref();
-        let h_ve_vec = self.0.h_ve.as_ref();
-        let h_tr_w_vec = self.0.h_tr_w.as_ref();
         let h_tr_ms_vec = self.0.h_tr_ms.as_ref();
-        let h_tr_em_vec = self.0.h_tr_em.as_ref();
         let enabled_vec = self.0.hvac_enabled.as_ref();
 
         let heat_cap = self.0.hvac_heating_capacity;
@@ -140,54 +193,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
 
-            // Issue #925: HVAC demand coefficient.
-            //
-            // The previous formula h_coeff = den / (2 * term_rest_1) over-weighted
-            // the h_tr_ms contribution, producing excessive HVAC response for
-            // high-mass buildings (Case 900 heating 6x over reference, cooling
-            // 3x under reference). For Case 600 the same formula happened to
-            // land near the reference range, which masked the underlying
-            // physics error.
-            //
-            // Physics: at setpoint, the building's steady-state heat loss
-            // coefficient (zone -> outdoor) is the parallel combination of
-            // the direct paths (ventilation, window) and the series through-mass
-            // path (h_tr_is -> h_tr_ms -> h_tr_em). This is H_total_simple in
-            // test_case_600_htotal_verification and equals ~93 W/K for both
-            // Case 600 and Case 900 (same envelope, same insulation).
-            //
-            // h_loss = h_ve + h_tr_w + (h_tr_is × h_tr_ms × h_tr_em) /
-            //                            (h_tr_is × h_tr_ms + h_tr_ms × h_tr_em
-            //                             + h_tr_em × h_tr_is)
-            //
-            // This is a true heat-loss coefficient, not the free-floating
-            // denominator from t_i_free. The t_i_free formula already includes
-            // the mass dynamics via the h_ms_is_prod term, so combining
-            // h_loss with t_free correctly captures both the building loss
-            // and the mass buffering effect.
-            let h_ve = h_ve_vec[zone_idx];
-            let h_tr_w = h_tr_w_vec[zone_idx];
-            let h_tr_is = h_tr_is_vec[zone_idx];
+            // Issue #907: Use the full 5R1C/6R2C Norton equivalent at the air node
+            // (see `compute_hvac_coefficient` doc-comment for derivation).
+            //   Previous Wave 2 formula `den/(2*term_rest_1)` over-counted the mass
+            //   coupling term, giving Case 600 heating 18.62 MWh (3.4x above the
+            //   5.5–7.5 MWh reference). The Issue #925 interim `h_loss` formula
+            //   (≈93 W/K) excluded the floor-ground path and used a simpler series
+            //   combination that under-counted for low-mass buildings.
+            //   The Norton equivalent (≈ 98.65 W/K for Case 600) sits at the right
+            //   physical answer: total air-to-boundary conductance through the full
+            //   5R1C series-parallel network including h_tr_floor.
+            let h_coeff = self.compute_hvac_coefficient(zone_idx);
             let h_tr_ms = h_tr_ms_vec[zone_idx];
-            let h_tr_em = h_tr_em_vec[zone_idx];
-
-            // Series conductance: air -> surface -> mass -> envelope exterior
-            // 1/h_series = 1/h_tr_is + 1/h_tr_ms + 1/h_tr_em
-            let h_loss_via_mass = if h_tr_is > 0.0 && h_tr_ms > 0.0 && h_tr_em > 0.0 {
-                let denom = h_tr_is * h_tr_ms + h_tr_ms * h_tr_em + h_tr_em * h_tr_is;
-                if denom > 0.0 {
-                    h_tr_is * h_tr_ms * h_tr_em / denom
-                } else {
-                    0.0
-                }
-            } else {
-                0.0
-            };
-            let h_loss = h_ve + h_tr_w + h_loss_via_mass;
-
-            // Fallback for the degenerate case where any of the series
-            // conductances is zero: use the direct path only.
-            let h_coeff = if h_loss > 0.0 { h_loss } else { h_ve + h_tr_w };
 
             let t_zone = zone_temps[zone_idx];
             // Issue #900: read the mass temperature for the dynamic mass heat
@@ -227,7 +244,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 0.0
             };
             // Cap the mass-driven cooling term to MASS_RELEASE_MAX_FACTOR ×
-            // h_loss (~0.93 kW for Case 900 envelope). The cap is set
+            // h_coeff (~0.93 kW for Case 900 envelope). The cap is set
             // conservatively low to prevent divergence amplification: in
             // multi-zone high-mass cases like Case 960 (which uses 5R1C,
             // not 9R4C), the 5R1C lumped mass for the conditioned back
@@ -237,7 +254,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // uses stable multi-node temps and applies its own higher
             // cap.
             let mass_heat_release = if mass_heat_release_unclamped > 0.0 {
-                mass_heat_release_unclamped.min(h_loss * MASS_RELEASE_MAX_FACTOR)
+                mass_heat_release_unclamped.min(h_coeff * MASS_RELEASE_MAX_FACTOR)
             } else {
                 0.0
             };
