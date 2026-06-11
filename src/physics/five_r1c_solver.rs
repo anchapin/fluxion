@@ -28,7 +28,7 @@
 //! - T_m: Temperature of thermal mass node
 
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::wall_spec::WallSpec;
 
 /// 5R1C thermal network solver.
 ///
@@ -82,13 +82,13 @@ impl HeatConductionSolver for FiveR1CSolver {
         "5R1C"
     }
 
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
         // Calculate total thermal resistance [m²·K/W]
         self.R_total = wall.total_r_value();
 
         // Calculate total thermal capacitance [J/m²·K]
-        // thermal_mass() returns kJ/m²·K, so convert to J/m²·K
-        self.C_total = wall.thermal_mass() * 1000.0;
+        // WallSpec::thermal_capacity() returns J/(m²·K) directly
+        self.C_total = wall.thermal_capacity();
 
         // Set surface resistances (default values)
         self.R_si = 1.0 / 8.0; // h_interior = 8 W/m²·K
@@ -143,6 +143,7 @@ impl HeatConductionSolver for FiveR1CSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::wall_spec::WallSpec;
     use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 
     #[test]
@@ -155,7 +156,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = solver.initialize(&wall);
+        let result = solver.initialize(&WallSpec::from_assembly(&wall));
         assert!(result.is_ok());
         assert!(solver.is_valid());
         assert!(solver.R_total > 0.0);
@@ -170,7 +171,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Calculate flux for 20°C interior, 0°C exterior
         let flux = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
@@ -191,7 +192,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Steady-state flux
         let T_int = 20.0;
@@ -242,7 +243,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
         let rate = solver.energy_storage_rate();
         // Current implementation returns 0 for energy storage rate
         assert_eq!(rate, 0.0);
@@ -256,7 +257,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Test various timestep values
         for timestep in [300.0, 600.0, 1800.0, 3600.0, 7200.0] {
@@ -276,7 +277,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Very hot exterior
         let flux_hot = solver.step(3600.0, 20.0, 50.0, 8.0, 25.0).unwrap();
@@ -299,7 +300,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Convection coefficients are ignored in current implementation
         let flux1 = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();

@@ -27,7 +27,7 @@ use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMateri
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::wall_properties::WallProperties;
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::wall_spec::WallSpec;
 
 /// CTF solver wrapper implementing the common HeatConductionSolver trait.
 ///
@@ -116,9 +116,9 @@ impl HeatConductionSolver for CTFSolverWrapper {
         "CTF"
     }
 
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
-        // Convert assembly to wall properties (the seam)
-        let wall_props = WallProperties::from_assembly(wall);
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        // Convert WallSpec to wall properties (the seam)
+        let wall_props = wall.to_wall_properties();
 
         // Convert wall properties to CTF materials
         let materials = Self::wall_properties_to_ctf_materials(&wall_props);
@@ -226,13 +226,15 @@ impl HeatConductionSolver for CTFSolverWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::wall_spec::WallSpec;
     use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 
-    fn create_test_wall() -> BuildingAssembly {
-        AssemblyBuilder::new("Test Wall".to_string())
+    fn create_test_wall() -> WallSpec {
+        let assembly = AssemblyBuilder::new("Test Wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.2))) // 200mm concrete
             .build()
-            .unwrap()
+            .unwrap();
+        WallSpec::from_assembly(&assembly)
     }
 
     #[test]
@@ -381,10 +383,9 @@ mod tests {
     #[test]
     fn test_ctf_wrapper_without_warmup_vs_with_warmup() {
         use crate::physics::ctf_coefficients::CTFCalculator;
-        use crate::physics::wall_properties::WallProperties;
 
         let wall = create_test_wall();
-        let wall_props = WallProperties::from_assembly(&wall);
+        let wall_props = wall.to_wall_properties();
         let materials = CTFSolverWrapper::wall_properties_to_ctf_materials(&wall_props);
         let timestep = 3600.0;
         let coeffs = CTFCalculator::with_defaults(&materials, timestep).compute_coefficients();

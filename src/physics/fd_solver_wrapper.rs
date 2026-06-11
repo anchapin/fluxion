@@ -27,7 +27,7 @@ use crate::physics::fd_discretization::{MaterialLayer, WallDiscretization};
 use crate::physics::fd_solver::{ImplicitFDSolver, SurfaceBC};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::wall_properties::WallProperties;
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::wall_spec::WallSpec;
 
 /// Finite difference solver wrapper implementing the common HeatConductionSolver trait.
 ///
@@ -106,22 +106,13 @@ impl FDSolverWrapper {
             .collect()
     }
 
-    /// Calculate surface heat flux from temperature profile.
-    fn calculate_surface_flux(
-        _solver: &ImplicitFDSolver,
-        _discretization: &WallDiscretization,
-        T_interior: f64,
-        h_interior: f64,
-    ) -> f64 {
-        // Get surface temperature (first node)
-        // Note: ImplicitFDSolver doesn't expose temperatures directly
-        // We'll use a simplified approach - assume surface temp is close to interior temp
-        // In a real implementation, we'd need to query the solver for surface temperature
-        let T_surface = 20.0; // Placeholder - would need proper access to solver state
-
-        // Calculate convective flux at interior surface
-        // q = h * (T_zone - T_surface)
-        // Positive flux = heat flowing into zone
+    /// Calculate interior surface heat flux from solver state.
+    ///
+    /// Uses the FD solver's actual surface temperature:
+    /// q = h * (T_zone - T_surface)
+    /// Positive flux = heat flowing into zone
+    fn calculate_surface_flux(solver: &ImplicitFDSolver, T_interior: f64, h_interior: f64) -> f64 {
+        let T_surface = solver.interior_surface_temp();
         h_interior * (T_interior - T_surface)
     }
 }
@@ -137,9 +128,9 @@ impl HeatConductionSolver for FDSolverWrapper {
         "FD"
     }
 
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
-        // Convert assembly to wall properties (the seam)
-        let wall_props = WallProperties::from_assembly(wall);
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        // Convert WallSpec to wall properties (the seam)
+        let wall_props = wall.to_wall_properties();
 
         // Convert wall properties to material layers
         let materials = Self::wall_properties_to_material_layers(&wall_props);
@@ -194,13 +185,9 @@ impl HeatConductionSolver for FDSolverWrapper {
             ));
         }
 
-        // Get mutable references to solver and discretization
+        // Get mutable reference to solver
         let solver = self.solver.as_mut().ok_or_else(|| {
             SolverError::InvalidConfig("FD solver is None after initialization".to_string())
-        })?;
-
-        let discretization = self.discretization.as_ref().ok_or_else(|| {
-            SolverError::InvalidConfig("FD discretization is None after initialization".to_string())
         })?;
 
         // Create boundary conditions
@@ -210,8 +197,8 @@ impl HeatConductionSolver for FDSolverWrapper {
         // Advance FD solver by one timestep
         solver.step(timestep, &interior_bc, &exterior_bc);
 
-        // Calculate surface heat flux
-        self.q_flux = Self::calculate_surface_flux(solver, discretization, T_interior, h_interior);
+        // Calculate surface heat flux using actual solver state
+        self.q_flux = Self::calculate_surface_flux(solver, T_interior, h_interior);
 
         Ok(self.q_flux)
     }
@@ -230,13 +217,15 @@ impl HeatConductionSolver for FDSolverWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::wall_spec::WallSpec;
     use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 
-    fn create_test_wall() -> BuildingAssembly {
-        AssemblyBuilder::new("Test Wall".to_string())
+    fn create_test_wall() -> WallSpec {
+        let assembly = AssemblyBuilder::new("Test Wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.2))) // 200mm concrete
             .build()
-            .unwrap()
+            .unwrap();
+        WallSpec::from_assembly(&assembly)
     }
 
     #[test]
