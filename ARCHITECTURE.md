@@ -366,7 +366,7 @@ Surrogates must match physics within 2% on held-out data.
 | Weather | Partial | No | No | Partial |
 | Solar | No | No | No | No |
 | Conduction | No | Yes (`HeatConductionSolver`) | No | No |
-| Ventilation | No | Yes (`VentilationSchedule`) | No | No |
+| Ventilation | Yes | Yes (`VentilationSchedule`) | No | Yes |
 | Zone Balance | No | Yes (`ThermalModelTrait`) | No | No |
 
 **Next steps**: Fill every "No" cell left-to-right.
