@@ -1054,41 +1054,44 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext = h_ext_base;
 
         // 6R2C specific terms
-        let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
+        let h_sum = self
+            .0
+            .h_tr_ms
+            .zip_with(&self.0.h_tr_me, |a, b| a + b)
+            .zip_with(&self.0.h_tr_is, |a, b| a + b);
 
-        // We optimize the calculation of den to avoid intermediate vector allocations using explicit scalar loop.
-        let mut den_data = Vec::with_capacity(self.0.num_zones);
-        let mut ground_coeff_6r2c_data = Vec::with_capacity(self.0.num_zones);
+        let h_ms_me_is_prod = self.0.h_tr_is.zip_with(
+            &self.0.h_tr_ms.zip_with(&self.0.h_tr_me, |a, b| a + b),
+            |a, b| a * b,
+        );
 
-        let mod_h_ext_ref = modified_h_ext.as_ref().map(|t| t.as_ref());
-        let h_ext_ref = self.0.derived_h_ext.as_ref();
-
-        for i in 0..self.0.num_zones {
-            let h_ms = self.0.h_tr_ms.as_ref()[i];
-            let h_me = self.0.h_tr_me.as_ref()[i];
-            let h_is = self.0.h_tr_is.as_ref()[i];
-            let h_sum_val = h_ms + h_me + h_is;
-            let h_ms_me_is_prod = h_is * (h_ms + h_me);
-
-            let mut h_total_with_iz = if let Some(mod_h_ext) = mod_h_ext_ref {
-                mod_h_ext[i]
-            } else {
-                h_ext_ref[i]
-            };
-
+        let den: T;
+        let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
             if self.0.num_zones > 1 {
-                h_total_with_iz += self.0.h_tr_iz.as_ref()[i] + self.0.h_tr_iz_rad.as_ref()[i];
+                mod_h_ext
+                    .zip_with(&self.0.h_tr_iz, |a, b| a + b)
+                    .zip_with(&self.0.h_tr_iz_rad, |a, b| a + b)
+            } else {
+                mod_h_ext.clone()
             }
+        } else {
+            if self.0.num_zones > 1 {
+                self.0
+                    .derived_h_ext
+                    .zip_with(&self.0.h_tr_iz, |a, b| a + b)
+                    .zip_with(&self.0.h_tr_iz_rad, |a, b| a + b)
+            } else {
+                self.0.derived_h_ext.clone()
+            }
+        };
 
-            let ground_coeff_val = h_sum_val * self.0.h_tr_floor.as_ref()[i];
-            let den_val = h_ms_me_is_prod + h_sum_val * h_total_with_iz + ground_coeff_val;
-
-            den_data.push(den_val);
-            ground_coeff_6r2c_data.push(ground_coeff_val);
-        }
-
-        let ground_coeff_6r2c = T::from(VectorField::new(ground_coeff_6r2c_data));
-        let den = T::from(VectorField::new(den_data));
+        // Issue 693 fix: ground coupling coefficient in 6R2C den
+        let ground_coeff_6r2c = h_sum.zip_with(&self.0.h_tr_floor, |a, b| a * b);
+        den = h_ms_me_is_prod
+            .zip_with(&h_sum.zip_with(&h_total_with_iz, |a, b| a * b), |a, b| {
+                a + b
+            })
+            .zip_with(&ground_coeff_6r2c, |a, b| a + b);
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
