@@ -39,12 +39,12 @@
 //! use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 //!
 //! let mut solver = FiveR1CSolver::new();
-//! solver.initialize(&wall_assembly)?;
+//! solver.initialize(&wall_spec)?;
 //!
 //! let flux = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0)?;
 //! ```
 
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::wall_spec::WallSpec;
 use std::error::Error;
 use std::fmt;
 
@@ -97,7 +97,7 @@ impl Error for SolverError {}
 /// # impl MySolver { fn new() -> Self { MySolver } }
 /// # impl HeatConductionSolver for MySolver {
 /// #     fn name(&self) -> &str { "test" }
-/// #     fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> { Ok(()) }
+/// #     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> { Ok(()) }
 /// #     fn step(&mut self, dt: f64, T_int: f64, T_ext: f64, h_int: f64, h_ext: f64) -> Result<f64, SolverError> { Ok(0.0) }
 /// #     fn energy_storage_rate(&self) -> f64 { 0.0 }
 /// #     fn is_valid(&self) -> bool { true }
@@ -114,11 +114,11 @@ pub trait HeatConductionSolver: Send + Sync {
     /// Initialize solver with wall construction
     ///
     /// # Arguments
-    /// * `wall` - Wall assembly with material layers and properties
+    /// * `wall` - Wall specification with material layers and properties
     ///
     /// # Returns
     /// Ok if initialization successful, Err if construction is invalid
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError>;
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError>;
 
     /// Advance solver by one timestep
     ///
@@ -220,7 +220,7 @@ mod tests {
                 "TestSolver"
             }
 
-            fn initialize(&mut self, _wall: &BuildingAssembly) -> Result<(), SolverError> {
+            fn initialize(&mut self, _wall: &WallSpec) -> Result<(), SolverError> {
                 Ok(())
             }
 
@@ -267,7 +267,7 @@ mod tests {
                 "FailingSolver"
             }
 
-            fn initialize(&mut self, _wall: &BuildingAssembly) -> Result<(), SolverError> {
+            fn initialize(&mut self, _wall: &WallSpec) -> Result<(), SolverError> {
                 Err(SolverError::ConstructionError("bad wall".to_string()))
             }
 
@@ -294,7 +294,7 @@ mod tests {
         let mut solver = FailingSolver;
         assert!(!solver.is_valid());
 
-        // Note: initialize() returns error before needing BuildingAssembly
+        // Note: initialize() returns error before needing WallSpec
         let step_result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
         assert!(step_result.is_err());
         assert!(step_result.unwrap_err().to_string().contains("instability"));
