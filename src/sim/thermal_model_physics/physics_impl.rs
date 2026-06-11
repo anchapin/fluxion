@@ -1086,23 +1086,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // 6R2C specific terms
         let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
-        let h_ms_me_is_prod =
-            self.0.h_tr_is.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
 
-        let den: T;
-        let h_total_with_iz = if let Some(ref mod_h_ext) = modified_h_ext {
-            if self.0.num_zones > 1 {
-                mod_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
-            } else {
-                mod_h_ext.clone()
-            }
-        } else {
-            if self.0.num_zones > 1 {
-                self.0.derived_h_ext.clone() + self.0.h_tr_iz.clone() + self.0.h_tr_iz_rad.clone()
-            } else {
-                self.0.derived_h_ext.clone()
-            }
-        };
+        // We optimize the calculation of den to avoid intermediate vector allocations using explicit scalar loop.
+        let mut den_data = Vec::with_capacity(self.0.num_zones);
+        let mut ground_coeff_6r2c_data = Vec::with_capacity(self.0.num_zones);
 
         let ground_coeff_6r2c = h_sum.clone() * self.0.h_tr_floor.clone();
         den = h_ms_me_is_prod.clone()
