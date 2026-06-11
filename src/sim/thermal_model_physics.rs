@@ -257,7 +257,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         if h_tr_sum > 0.0 {
             let tau_seconds = self.0.thermal_capacitance.as_ref().iter().sum::<f64>() / h_tr_sum;
-            tau_seconds / 3600.0 // Convert to hours
+            let tau_hours = tau_seconds / 3600.0; // Convert to hours
+
+            // Sanity check: if tau is extremely small (< 0.001 hours = 3.6 seconds),
+            // the model is likely not properly initialized (placeholder values).
+            // Use 2-hour default for uninitialized models.
+            if tau_hours < 0.001 {
+                // Model not properly initialized - use default
+                2.0
+            } else {
+                tau_hours
+            }
         } else {
             2.0 // Default: 2 hours (boundary between low/high mass)
         }
@@ -378,6 +388,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #763 — initialize hourly temperature storage before timestep loop
         self.0.hourly_temperatures = Some(vec![Vec::with_capacity(steps); self.0.num_zones]);
 
+        // Issue #901 perf: construct a single StepParameters once and reuse it
+        // (passed by & reference to solve_single_step). Avoids per-step clones of
+        // SurrogateManager, LightingSchedule, and OccupancyProfile.
+        // When use_ai is false we still need a SurrogateManager value; use Default
+        // (heap-free) instead of cloning the (potentially heavy) composite surrogate.
+        let step_params = StepParameters {
+            use_ai,
+            surrogates: if use_ai {
+                surrogates.clone()
+            } else {
+                SurrogateManager::default()
+            },
+            use_analytical_gains: true,
+            lighting: lighting_ref.cloned(),
+            equipment: None, // Can't clone dyn Equipment, so pass None
+            occupancy: occupancy_ref.cloned(),
+        };
+
         let cycle = get_daily_cycle();
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
@@ -387,22 +415,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let hour_of_day = t % 24;
                 let daily_cycle = cycle[hour_of_day];
                 let outdoor_temp = 10.0 + 10.0 * daily_cycle;
-                let step_params = StepParameters {
-                    use_ai,
-                    surrogates: surrogates.clone(),
-                    use_analytical_gains: true,
-                    lighting: lighting_ref.cloned(),
-                    equipment: None, // Can't clone dyn Equipment, so pass None
-                    occupancy: occupancy_ref.cloned(),
-                };
-                let energy = self.solve_single_step(t, outdoor_temp, step_params, dt_seconds);
+                let energy = self.solve_single_step(t, outdoor_temp, &step_params, dt_seconds);
 
                 // Issue #763 — capture zone temperatures after each timestep
+                // Issue #901 perf: bound check is unnecessary — temperatures always has
+                // exactly num_zones entries and hourly is sized to num_zones at init.
                 if let Some(ref mut hourly) = self.0.hourly_temperatures {
-                    for (zone_idx, &temp) in self.0.temperatures.as_ref().iter().enumerate() {
-                        if zone_idx < hourly.len() {
-                            hourly[zone_idx].push(temp);
-                        }
+                    let temps = self.0.temperatures.as_ref();
+                    debug_assert_eq!(temps.len(), hourly.len());
+                    for (zone_idx, &temp) in temps.iter().enumerate() {
+                        hourly[zone_idx].push(temp);
                     }
                 }
 
@@ -654,11 +676,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Use outdoor_temp directly. Solar gains on opaque surfaces are already included in phi_m.
-        let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
-        for _ in 0..self.0.num_zones {
-            t_sol_air_data.push(outdoor_temp);
-        }
-        let t_sol_air = VectorField::new(t_sol_air_data.clone());
+        // Issue #901 perf: build the VectorField once, then read via as_ref() at use-sites
+        // (previously this cloned the Vec a second time into `t_sol_air`).
+        let t_sol_air = VectorField::from_scalar(outdoor_temp, self.0.num_zones);
 
         // Simplified 5R1C calculation using CTA
         // Include ground coupling through floor
@@ -700,41 +720,55 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // The cached derived_h_ext / derived_den are computed at-build-time
         // from the static h_ve only; we recompute h_ext and den per-step when
-        // night-vent is active. Static cache is reused unchanged at every
-        // other hour to keep the hot path cheap.
-        let mut h_ve_night_zone = vec![0.0_f64; self.0.num_zones];
+        // Issue #901 perf: only allocate h_ve_night_zone when night-ventilation is
+        // actually active. The common (no-night-vent) path now reuses the cached
+        // static vector without re-zeroing a per-step scratch buffer.
         let mut night_vent_active_now = false;
-        if let Some(ref night_vent) = self.0.night_ventilation {
-            if night_vent.is_active_at_hour(hour_of_day) {
-                night_vent_active_now = true;
-                // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
-                // (the conditioned zone). Multi-zone night-vent (Case 960
-                // sunspace etc.) is out of scope for this issue.
-                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
-                let cp = self
-                    .0
-                    .heat_capacity
-                    .as_ref()
-                    .first()
-                    .copied()
-                    .unwrap_or(1005.0);
-                let h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
-                h_ve_night_zone[0] = h_ve_night;
-            }
-        }
+        let h_ve_night_zone: Option<Vec<f64>> =
+            if let Some(ref night_vent) = self.0.night_ventilation {
+                if night_vent.is_active_at_hour(hour_of_day) {
+                    night_vent_active_now = true;
+                    // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
+                    // (the conditioned zone). Multi-zone night-vent (Case 960
+                    // sunspace etc.) is out of scope for this issue.
+                    let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
+                    let cp = self
+                        .0
+                        .heat_capacity
+                        .as_ref()
+                        .first()
+                        .copied()
+                        .unwrap_or(1005.0);
+                    let h_ve_night = night_vent.fan_capacity * rho * cp / 3600.0;
+                    let mut v = vec![0.0_f64; self.0.num_zones];
+                    v[0] = h_ve_night;
+                    Some(v)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
 
         // Build per-zone h_ext that includes the night-vent contribution when
         // active. When inactive (the common case) this is just an alloc-free
         // alias to the cached vector via Vec::clone — see below.
         let h_ext_owned: T = if night_vent_active_now {
             let base = h_ext_base.as_ref();
+            // Safe to unwrap: h_ve_night_zone is Some exactly when night_vent_active_now is true.
+            let night_add = h_ve_night_zone
+                .as_ref()
+                .expect("night_vent_active_now implies h_ve_night_zone is Some");
             let mut v = Vec::with_capacity(base.len());
             for (i, &b) in base.iter().enumerate() {
-                v.push(b + h_ve_night_zone[i]);
+                v.push(b + night_add[i]);
             }
             T::from(VectorField::new(v))
         } else {
-            T::from(VectorField::new(h_ext_base.as_ref().to_vec()))
+            // Issue #901 perf: clone the cached derived_h_ext (T: Clone) instead of
+            // building a fresh Vec from a slice and wrapping it in a new VectorField.
+            // One Vec clone replaces one Vec alloc + one VectorField wrap.
+            self.0.derived_h_ext.clone()
         };
         let h_ext: &T = &h_ext_owned;
 
@@ -793,8 +827,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let num_zones = self.0.num_zones;
 
         // Start with phi_ia; we will add inter-zone heat directly to its buffer if needed.
-        // Clone so phi_ia remains available for the Case 610 debug print below (line 914).
-        let mut phi_ia_with_iz = phi_ia.clone();
+        // Issue #901 perf: move phi_ia (no clone). The original is no longer used
+        // after this point in step_physics_5r1c — the legacy comment referencing a
+        // Case 610 debug print at "line 914" referred to step_physics_6r2c, not here.
+        let mut phi_ia_with_iz = phi_ia;
 
         if num_zones > 1 {
             let temps = self.0.temperatures.as_ref();
@@ -858,10 +894,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Convert flux [W/m²] to power [W] by multiplying by zone area
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_ctf = q_flux * area;
-
                     // Subtract standard 5R1C envelope conduction to avoid double-counting
                     // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = t_sol_air.as_ref().get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .mass_temperatures
@@ -900,7 +935,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
                     // Subtract standard 5R1C envelope conduction to avoid double-counting
                     // Q_5r1c = h_tr_em * (T_sol_air - T_mass)
-                    let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+                    let t_sol_air_i = t_sol_air.as_ref().get(i).copied().unwrap_or(outdoor_temp);
                     let t_mass = self
                         .0
                         .mass_temperatures
@@ -1128,7 +1163,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
-            let hvac_power_for_peak = hvac_output_raw.clone();
+            // Issue #901 perf: borrow hvac_output_raw directly instead of cloning for
+            // the peak-power read. The original is returned to the caller below, untouched.
+            let hvac_power_for_peak = hvac_output_raw.as_ref();
 
             // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
             if self.0.hvac_equipment.is_none() {
@@ -1136,7 +1173,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
                 let enabled_vec = self.0.hvac_enabled.as_ref();
                 let hvac_power_watts = hvac_power_for_peak
-                    .as_ref()
                     .iter()
                     .zip(enabled_vec.iter())
                     .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })

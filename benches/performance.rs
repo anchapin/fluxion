@@ -1,4 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::performance::metrics::collect_performance_metrics;
 
@@ -15,6 +16,25 @@ pub fn benchmark_thermal_solver(c: &mut Criterion) {
         let mut model = ThermalModel::new(10);
         b.iter(|| {
             model.step_physics(black_box(0), black_box(20.0), black_box(3600.0));
+        })
+    });
+
+    // Issue #901 — benchmark the actual hot path called out in the issue
+    // (annual 8760-step loop) to measure the StepParameters-clone reduction.
+    // Analytical mode (use_ai=false) to avoid the costly ONNX session load.
+    c.bench_function("solve_timesteps_8760_analytical", |b| {
+        let surrogates = SurrogateManager::new().expect("Failed to create SurrogateManager");
+        b.iter(|| {
+            let mut m = ThermalModel::new(black_box(1));
+            let _eui = m.solve_timesteps_with_dt(
+                black_box(8760),
+                &surrogates,
+                black_box(false),
+                None,
+                None,
+                None,
+                black_box(3600.0),
+            );
         })
     });
 

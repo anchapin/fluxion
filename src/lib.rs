@@ -1118,6 +1118,9 @@ impl BatchOracle {
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
+            // Note: StepParameters is !Sync (Box<dyn Equipment>), so it cannot be moved
+            // into the rayon for_each closure. We construct a per-step instance inside
+            // the inner loop and pass by & reference (Issue #901).
             let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
@@ -1136,7 +1139,7 @@ impl BatchOracle {
                             equipment: None,
                             occupancy: None,
                         };
-                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
+                        *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
                 });
 
@@ -1386,6 +1389,9 @@ impl BatchOracle {
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
+            // Note: StepParameters is !Sync (Box<dyn Equipment>), so it cannot be moved
+            // into the rayon for_each closure. We construct a per-step instance inside
+            // the inner loop and pass by & reference (Issue #901).
             let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
@@ -1404,7 +1410,7 @@ impl BatchOracle {
                             equipment: None,
                             occupancy: None,
                         };
-                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
+                        *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
                 });
 
