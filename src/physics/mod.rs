@@ -59,3 +59,4 @@ pub mod solver_manager;
 pub mod solver_registry;
 pub mod solver_trait;
 pub mod wall_properties;
+pub mod wall_spec;
