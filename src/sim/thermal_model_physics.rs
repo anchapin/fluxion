@@ -54,9 +54,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> T {
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let h_ve_vec = self.0.h_ve.as_ref();
+        let h_tr_w_vec = self.0.h_tr_w.as_ref();
+        let h_tr_ms_vec = self.0.h_tr_ms.as_ref();
+        let h_tr_em_vec = self.0.h_tr_em.as_ref();
         let enabled_vec = self.0.hvac_enabled.as_ref();
-        let term_rest_1_vec = self.0.derived_term_rest_1.as_ref();
-        let den_vec = self.0.derived_den.as_ref();
 
         let heat_cap = self.0.hvac_heating_capacity;
         let cool_cap = self.0.hvac_cooling_capacity;
@@ -69,25 +70,62 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
 
-            // Use the correct HVAC coefficient from the full 5R1C/6R2C network solution.
-            // This is the same formula used in the iterative solver (line ~2676):
-            //   h_coeff = den / (2 * term_rest_1) for 5R1C network
-            // This properly accounts for series-parallel conductance topology.
-            let term_rest_1 = term_rest_1_vec[zone_idx];
-            let den_val = den_vec[zone_idx];
-            let h_coeff = if term_rest_1 > 0.0 {
-                den_val / (2.0 * term_rest_1)
+            // Issue #925: HVAC demand coefficient.
+            //
+            // The previous formula h_coeff = den / (2 * term_rest_1) over-weighted
+            // the h_tr_ms contribution, producing excessive HVAC response for
+            // high-mass buildings (Case 900 heating 6x over reference, cooling
+            // 3x under reference). For Case 600 the same formula happened to
+            // land near the reference range, which masked the underlying
+            // physics error.
+            //
+            // Physics: at setpoint, the building's steady-state heat loss
+            // coefficient (zone -> outdoor) is the parallel combination of
+            // the direct paths (ventilation, window) and the series through-mass
+            // path (h_tr_is -> h_tr_ms -> h_tr_em). This is H_total_simple in
+            // test_case_600_htotal_verification and equals ~93 W/K for both
+            // Case 600 and Case 900 (same envelope, same insulation).
+            //
+            // h_loss = h_ve + h_tr_w + (h_tr_is × h_tr_ms × h_tr_em) /
+            //                            (h_tr_is × h_tr_ms + h_tr_ms × h_tr_em
+            //                             + h_tr_em × h_tr_is)
+            //
+            // This is a true heat-loss coefficient, not the free-floating
+            // denominator from t_i_free. The t_i_free formula already includes
+            // the mass dynamics via the h_ms_is_prod term, so combining
+            // h_loss with t_free correctly captures both the building loss
+            // and the mass buffering effect.
+            let h_ve = h_ve_vec[zone_idx];
+            let h_tr_w = h_tr_w_vec[zone_idx];
+            let h_tr_is = h_tr_is_vec[zone_idx];
+            let h_tr_ms = h_tr_ms_vec[zone_idx];
+            let h_tr_em = h_tr_em_vec[zone_idx];
+
+            // Series conductance: air -> surface -> mass -> envelope exterior
+            // 1/h_series = 1/h_tr_is + 1/h_tr_ms + 1/h_tr_em
+            let h_loss_via_mass = if h_tr_is > 0.0 && h_tr_ms > 0.0 && h_tr_em > 0.0 {
+                let denom = h_tr_is * h_tr_ms + h_tr_ms * h_tr_em + h_tr_em * h_tr_is;
+                if denom > 0.0 {
+                    h_tr_is * h_tr_ms * h_tr_em / denom
+                } else {
+                    0.0
+                }
             } else {
-                h_tr_is_vec[zone_idx] + h_ve_vec[zone_idx]
+                0.0
             };
+            let h_loss = h_ve + h_tr_w + h_loss_via_mass;
+
+            // Fallback for the degenerate case where any of the series
+            // conductances is zero: use the direct path only.
+            let h_coeff = if h_loss > 0.0 { h_loss } else { h_ve + h_tr_w };
 
             let t_zone = zone_temps[zone_idx];
 
             let demand = if t_zone < heating_setpoint {
-                // Heating needed: Q = h_coeff × (T_setpoint - T_zone)
+                // Heating needed: Q = h_loss × (T_setpoint - T_zone)
                 h_coeff * (heating_setpoint - t_zone)
             } else if t_zone > cooling_setpoint {
-                // Cooling needed: Q = -h_coeff × (T_zone - T_cool_sp)
+                // Cooling needed: Q = -h_loss × (T_zone - T_cool_sp)
                 -h_coeff * (t_zone - cooling_setpoint)
             } else {
                 0.0
@@ -2708,22 +2746,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     } else {
                         t_i_free_5r1c.as_ref()[i]
                     };
-                let term_rest_1_zone = self.0.derived_term_rest_1.as_ref()[i];
-                let den_val = self.0.derived_den.as_ref()[i];
-                let h_coeff = if term_rest_1_zone > 0.0 {
-                    den_val / (2.0 * term_rest_1_zone)
-                } else {
-                    self.0.h_tr_is.as_ref()[i] + self.0.h_ve.as_ref()[i]
-                };
+                // Issue #925: HVAC coefficient = building heat loss coefficient
+                // (zone -> outdoor), not the lumped 5R1C free-floating denominator.
+                // See compute_zone_hvac_load for full derivation.
+                let h_ve = self.0.h_ve.as_ref()[i];
+                let h_tr_w = self.0.h_tr_w.as_ref()[i];
+                let h_tr_is = self.0.h_tr_is.as_ref()[i];
+                let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
+                let h_tr_em = self.0.h_tr_em.as_ref()[i];
+
+                // Series conductance: air -> surface -> mass -> envelope exterior
+                let series_denom = h_tr_is * h_tr_ms + h_tr_ms * h_tr_em + h_tr_em * h_tr_is;
+                let h_loss_via_mass =
+                    if h_tr_is > 0.0 && h_tr_ms > 0.0 && h_tr_em > 0.0 && series_denom > 0.0 {
+                        h_tr_is * h_tr_ms * h_tr_em / series_denom
+                    } else {
+                        0.0
+                    };
+                let h_loss = h_ve + h_tr_w + h_loss_via_mass;
+                let h_coeff = if h_loss > 0.0 { h_loss } else { h_ve + h_tr_w };
 
                 // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
                 if timestep == 337 && i == 0 && !self.0.free_float {
                     eprintln!(
-                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, term_rest_1={:.2}, den={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
+                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, h_tr_w={:.2}, h_tr_ms={:.2}, h_tr_em={:.2}, h_loss={:.4}, t_free={:.2}, q_heating={:.4}",
                         self.0.h_tr_is.as_ref()[i],
                         self.0.h_ve.as_ref()[i],
-                        term_rest_1_zone,
-                        den_val,
+                        self.0.h_tr_w.as_ref()[i],
+                        self.0.h_tr_ms.as_ref()[i],
+                        self.0.h_tr_em.as_ref()[i],
                         h_coeff,
                         t_free_val,
                         h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
