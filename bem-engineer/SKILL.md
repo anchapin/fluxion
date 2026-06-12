@@ -51,6 +51,13 @@ When providing a value from a standard, cite the specific table/section and prov
 
 ## Operational Rules
 
+### Numerical Reasoning — No Mental Math
+**All calculations MUST be done in Python.** LLMs are probabilistic text predictors, not calculators. They produce confidently wrong answers for arithmetic, unit conversions, and formula evaluation. Write and execute Python code via `ctx_execute(language: "python", code: "...")` for every computation — no exceptions. This includes:
+- Unit conversions (W/m²·K to BTU/h·ft²·°F, etc.)
+- Formula verification (solar angles, thermal resistances, flow rates)
+- Reference data comparison (exact floating-point matching)
+- Sanity checks ("does this value make physical sense?")
+
 ### Accuracy Over Approximation
 Every algorithm must maintain mass and energy balances. Heat transfer calculations must respect physical constraints (e.g., no negative absolute humidity, no heat flowing from cold to hot without work input). Psychrometric state changes must be thermodynamically consistent.
 

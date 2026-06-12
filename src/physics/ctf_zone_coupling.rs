@@ -167,9 +167,24 @@ impl CtfZoneCouplingSolver {
         for _iter in 0..self.max_iterations {
             iterations = _iter + 1;
 
-            // Step CTF solver with current T_si estimate
-            // Note: CTF solver needs both interior and exterior temperatures
-            q_ctf_last = solver.step(t_si, t_sol_air);
+            // Compute CTF flux WITHOUT stepping the solver during Newton-Raphson.
+            // Each step() call shifts history buffers, so calling it inside the
+            // NR loop would corrupt the solver state. Instead, use the coefficients
+            // directly with the current history.
+            let t_int_hist = solver.interior_temperature_history();
+            let t_ext_hist = solver.exterior_temperature_history();
+            let q_hist = solver.interior_flux_history();
+
+            // Build temporary histories with current T_si estimate
+            let mut t_ext_current = vec![t_sol_air; t_ext_hist.len()];
+            t_ext_current[1..].copy_from_slice(&t_ext_hist[1..]);
+
+            q_ctf_last = solver.coefficients.calculate_interior_flux(
+                t_si,
+                &t_ext_current,
+                &t_int_hist[1..],
+                &q_hist[1..],
+            );
 
             // Surface heat balance residual:
             // f(T_si) = h_ci*(T_zone - T_si) + h_ri*(T_mass - T_si) + solar - q_ctf
