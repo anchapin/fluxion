@@ -44,7 +44,7 @@ pub fn build_analysis_prompt(config_json: &str, rule_issues: &[BemIssue]) -> Str
                 prompt.push_str(&format!("  Suggestion: {}\n", s));
             }
         }
-        prompt.push_str("\n");
+        prompt.push('\n');
     }
 
     prompt.push_str(r#"Based on the configuration and rule-based checks above, provide:
@@ -70,7 +70,7 @@ pub fn build_troubleshooting_prompt(issue: &BemIssue, context: &str) -> String {
     let mut prompt = String::new();
 
     prompt.push_str("## Troubleshooting Request\n\n");
-    prompt.push_str(&format!("### Issue Details:\n"));
+    prompt.push_str("### Issue Details:\n");
     prompt.push_str(&format!("- Category: {}\n", issue.category));
     prompt.push_str(&format!("- Field: {}\n", issue.field));
     prompt.push_str(&format!("- Severity: {}\n", issue.severity));
@@ -78,7 +78,7 @@ pub fn build_troubleshooting_prompt(issue: &BemIssue, context: &str) -> String {
     if let Some(ref s) = issue.suggestion {
         prompt.push_str(&format!("- Existing Suggestion: {}\n", s));
     }
-    prompt.push_str("\n");
+    prompt.push('\n');
 
     prompt.push_str("### Configuration Context:\n```json\n");
     prompt.push_str(context);
