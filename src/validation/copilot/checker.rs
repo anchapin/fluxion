@@ -63,13 +63,13 @@ impl BemChecker {
         ];
 
         for (field, message) in required_fields {
-            if !config.get(field).is_some() {
+            if config.get(field).is_none() {
                 issues.push(BemIssue::error("required_fields", field, message));
             }
         }
 
         // Check for location
-        if !config.get("latitude").is_some() || !config.get("longitude").is_some() {
+        if config.get("latitude").is_none() || config.get("longitude").is_none() {
             issues.push(BemIssue::warning(
                 "required_fields",
                 "location",
@@ -284,7 +284,7 @@ impl BemChecker {
             "equipment_schedule",
         ];
         for field in schedule_fields {
-            if !config.get(field).is_some() {
+            if config.get(field).is_none() {
                 issues.push(BemIssue::warning(
                     "internal_loads",
                     field,
@@ -414,7 +414,7 @@ impl BemChecker {
     /// Check HVAC configuration
     fn check_hvac_configuration(&self, config: &Value, issues: &mut Vec<BemIssue>) {
         // Check for HVAC system definition
-        if !config.get("hvac_system").is_some() {
+        if config.get("hvac_system").is_none() {
             issues.push(BemIssue::info(
                 "hvac_configuration",
                 "hvac_system",
@@ -477,7 +477,7 @@ impl BemChecker {
     /// Check thermal zone configuration
     fn check_thermal_zones(&self, config: &Value, issues: &mut Vec<BemIssue>) {
         // Check zone definition
-        if !config.get("zones").is_some() {
+        if config.get("zones").is_none() {
             issues.push(BemIssue::warning(
                 "thermal_zones",
                 "zones",
@@ -532,7 +532,7 @@ impl BemChecker {
     /// Check weather data configuration
     fn check_weather_data(&self, config: &Value, issues: &mut Vec<BemIssue>) {
         // Check for weather file
-        if !config.get("weather_file").is_some() {
+        if config.get("weather_file").is_none() {
             issues.push(BemIssue::warning(
                 "weather_data",
                 "weather_file",
