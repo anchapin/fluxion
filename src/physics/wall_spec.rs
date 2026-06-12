@@ -256,6 +256,105 @@ pub fn concrete_200mm_spec() -> WallSpec {
     )
 }
 
+/// Lightweight wall: wood stud + insulation.
+///
+/// Typical wood stud wall construction (ASHRAE 140 lightweight):
+/// - Exterior: wood siding (9mm)
+/// - Cavity: fiberglass insulation (66mm)
+/// - Interior: plasterboard/gypsum (12mm)
+///
+/// Properties per ASHRAE 140 Table 7-27:
+/// - Wood stud: k=0.14 W/(m·K), ρ=500 kg/m³, cp=900 J/(kg·K)
+/// - Fiberglass: k=0.04 W/(m·K), ρ=12 kg/m³, cp=840 J/(kg·K)
+/// - Plasterboard: k=0.16 W/(m·K), ρ=784 kg/m³, cp=840 J/(kg·K)
+///
+/// Note: Wood studs are spaced at 16" (400mm) intervals, so only ~10-15%
+/// of wall area is wood. For 1D FD modeling, we use an effective
+/// reduced density that accounts for stud spacing (wood stud
+/// area fraction ~0.10).
+///
+/// This construction has low thermal mass (C < 50 kJ/m²K) and is
+/// dominated by the insulation layer.
+pub fn lightweight_wall_spec() -> WallSpec {
+    WallSpec::multi_layer(
+        "Lightweight Wood Stud",
+        vec![
+            LayerSpec::new("Wood Stud", 0.09, 0.14, 50.0, 900.0),
+            LayerSpec::new("Fiberglass", 0.066, 0.04, 12.0, 840.0),
+            LayerSpec::new("Plasterboard", 0.012, 0.16, 784.0, 840.0),
+        ],
+    )
+}
+
+/// Composite wall: concrete + insulation.
+///
+/// Multi-layer concrete wall with exterior insulation:
+/// - Interior: concrete (100mm)
+/// - Cavity: foam insulation (61.5mm)
+/// - Exterior: concrete block or brick
+///
+/// Properties per ASHRAE 140 high-mass wall:
+/// - Concrete: k=1.13 W/(m·K), ρ=1400 kg/m³, cp=1000 J/(kg·K)
+/// - Foam insulation: k=0.04 W/(m·K), ρ=14 kg/m³, cp=1400 J/(kg·K)
+/// - Concrete block: k=0.51 W/(m·K), ρ=1400 kg/m³, cp=840 J/(kg·K)
+///
+/// This construction has high thermal mass and significant insulation.
+pub fn composite_wall_spec() -> WallSpec {
+    WallSpec::multi_layer(
+        "Composite Concrete",
+        vec![
+            LayerSpec::new("Concrete Inner", 0.100, 1.13, 1400.0, 1000.0),
+            LayerSpec::new("Foam Insulation", 0.0615, 0.04, 14.0, 1400.0),
+            LayerSpec::new("Concrete Block", 0.100, 0.51, 1400.0, 840.0),
+        ],
+    )
+}
+
+/// Roof construction: insulation + concrete deck.
+///
+/// Typical flat roof assembly:
+/// - Interior: plasterboard ceiling (10mm)
+/// - Cavity: fiberglass insulation (111.8mm)
+/// - Exterior: roof deck (19mm)
+///
+/// Properties per ASHRAE 140 lightweight roof:
+/// - Roof deck: k=0.14 W/(m·K), ρ=500 kg/m³, cp=1300 J/(kg·K)
+/// - Fiberglass: k=0.04 W/(m·K), ρ=12 kg/m³, cp=840 J/(kg·K)
+/// - Plasterboard: k=0.16 W/(m·K), ρ=784 kg/m³, cp=840 J/(kg·K)
+///
+/// Horizontal surface with different film coefficients than walls.
+pub fn roof_spec() -> WallSpec {
+    WallSpec::multi_layer(
+        "Roof Assembly",
+        vec![
+            LayerSpec::new("Plasterboard", 0.010, 0.16, 784.0, 840.0),
+            LayerSpec::new("Fiberglass", 0.1118, 0.04, 12.0, 840.0),
+            LayerSpec::new("Roof Deck", 0.019, 0.14, 500.0, 1300.0),
+        ],
+    )
+}
+
+/// Floor construction: insulated timber floor.
+///
+/// Floor slab with insulation (ground contact):
+/// - Top: timber flooring (25mm)
+/// - Bottom: insulation over concrete slab
+///
+/// Properties per ASHRAE 140 insulated floor:
+/// - Timber: k=0.14 W/(m·K), ρ=600 kg/m³, cp=1600 J/(kg·K)
+/// - Fiberglass: k=0.04 W/(m·K), ρ=12 kg/m³, cp=840 J/(kg·K)
+///
+/// Ground contact boundary condition uses T_ground = 9.4°C per ASHRAE 140.
+pub fn floor_spec() -> WallSpec {
+    WallSpec::multi_layer(
+        "Insulated Floor",
+        vec![
+            LayerSpec::new("Timber", 0.025, 0.14, 600.0, 1600.0),
+            LayerSpec::new("Fiberglass", 0.197, 0.04, 12.0, 840.0),
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
