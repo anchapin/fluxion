@@ -117,8 +117,8 @@ impl XDTPackage {
         }
 
         let metadata_path = output_dir.join("metadata.json");
-        let metadata_json =
-            serde_json::to_string_pretty(&self.metadata).map_err(|e| XDTError::Serialization(e.to_string()))?;
+        let metadata_json = serde_json::to_string_pretty(&self.metadata)
+            .map_err(|e| XDTError::Serialization(e.to_string()))?;
         fs::write(&metadata_path, metadata_json)?;
 
         Ok(())
@@ -318,7 +318,8 @@ impl XDTExporter {
     }
 
     pub fn export(&self, format: ExportFormat) -> Result<XDTPackage, XDTError> {
-        let model_data = fs::read(&self.input_path).map_err(|_| XDTError::ModelNotFound(self.input_path.clone()))?;
+        let model_data = fs::read(&self.input_path)
+            .map_err(|_| XDTError::ModelNotFound(self.input_path.clone()))?;
 
         let mut metadata = XDTMetadata::default();
         metadata.model_name = self.model_name.clone();
@@ -338,10 +339,7 @@ impl XDTExporter {
             "occupancy".to_string(),
             "time_of_day".to_string(),
         ];
-        metadata.output_features = vec![
-            "heating_load".to_string(),
-            "cooling_load".to_string(),
-        ];
+        metadata.output_features = vec!["heating_load".to_string(), "cooling_load".to_string()];
 
         let model_bytes = model_data.len() as u64;
         metadata.file_size_bytes = model_bytes;
