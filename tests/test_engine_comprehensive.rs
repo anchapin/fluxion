@@ -24,7 +24,7 @@ fn test_night_ventilation_activation() {
         equipment: None,
         occupancy: None,
     };
-    let energy_inactive = model.solve_single_step(12, 10.0, step_params_inactive, 3600.0);
+    let energy_inactive = model.solve_single_step(12, 10.0, &step_params_inactive, 3600.0);
 
     // Test at 23:00 (active)
     let step_params_active = StepParameters {
@@ -35,7 +35,7 @@ fn test_night_ventilation_activation() {
         equipment: None,
         occupancy: None,
     };
-    let energy_active = model.solve_single_step(23, 10.0, step_params_active, 3600.0);
+    let energy_active = model.solve_single_step(23, 10.0, &step_params_active, 3600.0);
 
     // Both should run without panic
     assert!(energy_inactive >= 0.0);
@@ -60,7 +60,7 @@ fn test_multi_zone_initialization() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     let step_params = StepParameters {
         use_ai: false,
         surrogates: surrogates.clone(),
@@ -69,7 +69,7 @@ fn test_multi_zone_initialization() {
         equipment: None,
         occupancy: None,
     };
-    let _energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let _energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
@@ -87,7 +87,7 @@ fn test_8r3c_initialization() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
@@ -114,7 +114,7 @@ fn test_ctf_integration() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
@@ -135,7 +135,7 @@ fn test_fd_integration() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
@@ -156,7 +156,7 @@ fn test_thermal_mass_integration() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
@@ -178,7 +178,7 @@ fn test_hvac_equipment_integration() {
         equipment: None,
         occupancy: None,
     };
-    let energy = model.solve_single_step(0, 10.0, step_params, 3600.0);
+    let energy = model.solve_single_step(0, 10.0, &step_params, 3600.0);
     assert!(energy.is_finite());
 }
 
