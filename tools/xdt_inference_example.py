@@ -33,7 +33,7 @@ import argparse
 import json
 import sys
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -42,6 +42,7 @@ import numpy as np
 
 try:
     import onnxruntime as ort
+
     ONNXRUNTIME_AVAILABLE = True
 except ImportError:
     ONNXRUNTIME_AVAILABLE = False
@@ -66,9 +67,15 @@ class WeatherData:
         ]
 
     @classmethod
-    def from_epw_hour(cls, dry_bulb: float, dew_point: float, 
-                      dni: float, dhi: float, ghi: float,
-                      wind_speed: float = 0.0) -> "WeatherData":
+    def from_epw_hour(
+        cls,
+        dry_bulb: float,
+        dew_point: float,
+        dni: float,
+        dhi: float,
+        ghi: float,
+        wind_speed: float = 0.0,
+    ) -> "WeatherData":
         solar = (dni + dhi + ghi) / 3.0 if ghi > 0 else 0.0
         return cls(
             exterior_temp=dry_bulb,
@@ -97,7 +104,7 @@ class SensorData:
         ]
 
 
-@dataclass 
+@dataclass
 class XDTPrediction:
     heating_load: float
     cooling_load: float
@@ -131,7 +138,9 @@ class SimulatedSensorStream:
             else:
                 temp = 15.0
 
-            solar = max(0, 800 * np.sin(np.pi * (hour - 6) / 12)) if 6 <= hour <= 18 else 0
+            solar = (
+                max(0, 800 * np.sin(np.pi * (hour - 6) / 12)) if 6 <= hour <= 18 else 0
+            )
 
             return WeatherData(
                 exterior_temp=temp,
@@ -214,7 +223,9 @@ class RealXDTInference:
         if len(features.shape) == 1:
             features = features.reshape(1, -1)
 
-        outputs = self.session.run([self.output_name], {self.input_name: features.astype(np.float32)})
+        outputs = self.session.run(
+            [self.output_name], {self.input_name: features.astype(np.float32)}
+        )
         result = outputs[0][0]
 
         elapsed_ms = (time.perf_counter() - start) * 1000
@@ -234,8 +245,7 @@ class RealXDTInference:
             features_batch = features_batch.reshape(1, -1)
 
         outputs = self.session.run(
-            [self.output_name], 
-            {self.input_name: features_batch.astype(np.float32)}
+            [self.output_name], {self.input_name: features_batch.astype(np.float32)}
         )
         results = outputs[0]
 
@@ -251,6 +261,8 @@ class RealXDTInference:
 
 
 class XDTRuntime:
+    inference: "MockXDTInference | RealXDTInference"
+
     def __init__(self, model_path: Optional[str] = None, use_mock: bool = False):
         if use_mock or not ONNXRUNTIME_AVAILABLE:
             print("Using MOCK inference (onnxruntime not available)")
@@ -258,27 +270,29 @@ class XDTRuntime:
             self.is_mock = True
         else:
             print(f"Loading xDT model from: {model_path}")
+            if model_path is None:
+                raise ValueError("model_path is required for RealXDTInference")
             self.inference = RealXDTInference(model_path)
             self.is_mock = False
 
     def combine_features(
-        self, 
-        weather: WeatherData, 
+        self,
+        weather: WeatherData,
         sensors: SensorData,
-        time_features: Tuple[int, int, int]
+        time_features: Tuple[int, int, int],
     ) -> np.ndarray:
         hour_of_day, day_of_year, month = time_features
 
         features = np.array(
-            weather.to_feature_vector() + 
-            sensors.to_feature_vector() + 
-            [
+            weather.to_feature_vector()
+            + sensors.to_feature_vector()
+            + [
                 float(hour_of_day) / 24.0,
                 float(day_of_year) / 365.0,
                 float(month) / 12.0,
                 1.0 if hour_of_day in range(8, 18) else 0.0,
             ],
-            dtype=np.float32
+            dtype=np.float32,
         )
         return features
 
@@ -298,13 +312,19 @@ class XDTRuntime:
         days: int = 1,
     ) -> List[Tuple[datetime, XDTPrediction, WeatherData, SensorData]]:
         results = []
-        current_time = datetime.now().replace(hour=start_hour, minute=0, second=0, microsecond=0)
+        current_time = datetime.now().replace(
+            hour=start_hour, minute=0, second=0, microsecond=0
+        )
 
         for day in range(days):
             for hour in range(24):
                 weather = sensor_stream.get_current_weather()
                 sensors = sensor_stream.get_current_sensors(hour)
-                time_features = (hour, current_time.timetuple().tm_yday, current_time.month)
+                time_features = (
+                    hour,
+                    current_time.timetuple().tm_yday,
+                    current_time.month,
+                )
 
                 prediction = self.predict(weather, sensors, time_features)
 
@@ -322,7 +342,7 @@ class XDTRuntime:
         cooling_setpoint: float = 24.0,
         hours: int = 24,
     ) -> Dict[str, Any]:
-        results = self.predict_24h_cycle(sensor_stream, hours=hours // 24)
+        results = self.predict_24h_cycle(sensor_stream, days=hours // 24)
 
         total_heating = sum(p.heating_load for _, p, _, _ in results)
         total_cooling = sum(p.cooling_load for _, p, _, _ in results)
@@ -383,8 +403,12 @@ def print_simulation_summary(results: Dict[str, Any]):
     print(f"  Peak Cooling: {results['peak_cooling_w']:.1f} W")
     print()
     print("TEMPERATURE RANGES")
-    print(f"  Exterior: {results['exterior_temp_range_c'][0]:.1f}°C to {results['exterior_temp_range_c'][1]:.1f}°C")
-    print(f"  Zone:     {results['zone_temp_range_c'][0]:.1f}°C to {results['zone_temp_range_c'][1]:.1f}°C")
+    print(
+        f"  Exterior: {results['exterior_temp_range_c'][0]:.1f}°C to {results['exterior_temp_range_c'][1]:.1f}°C"
+    )
+    print(
+        f"  Zone:     {results['zone_temp_range_c'][0]:.1f}°C to {results['zone_temp_range_c'][1]:.1f}°C"
+    )
     print()
     print("INFERENCE PERFORMANCE")
     print(f"  Avg inference time: {results['avg_inference_time_ms']:.2f} ms")
@@ -413,7 +437,8 @@ Examples:
     )
 
     parser.add_argument(
-        "--model", "-m",
+        "--model",
+        "-m",
         type=str,
         help="Path to xDT ONNX model",
     )
@@ -433,7 +458,8 @@ Examples:
         help="Show hourly predictions for a day",
     )
     parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         type=str,
         help="Save results to JSON file",
     )
@@ -454,13 +480,17 @@ Examples:
         base_temp = 20.0
         for hour in range(24):
             temp = base_temp + 8 * np.sin(np.pi * (hour - 6) / 12)
-            solar = max(0, 700 * np.sin(np.pi * (hour - 6) / 12)) if 6 <= hour <= 18 else 0
-            weather_data.append(WeatherData(
-                exterior_temp=temp,
-                humidity=50.0,
-                solar_irradiance=solar,
-                wind_speed=2.0,
-            ))
+            solar = (
+                max(0, 700 * np.sin(np.pi * (hour - 6) / 12)) if 6 <= hour <= 18 else 0
+            )
+            weather_data.append(
+                WeatherData(
+                    exterior_temp=temp,
+                    humidity=50.0,
+                    solar_irradiance=solar,
+                    wind_speed=2.0,
+                )
+            )
 
         sensor_stream = SimulatedSensorStream(weather_data)
 
@@ -478,7 +508,9 @@ Examples:
         elif args.hourly:
             print("HOURLY PREDICTIONS")
             print("-" * 60)
-            print(f"{'Hour':<6} {'Ext Temp':<10} {'Zone Temp':<10} {'Heat Load':<12} {'Cool Load':<12}")
+            print(
+                f"{'Hour':<6} {'Ext Temp':<10} {'Zone Temp':<10} {'Heat Load':<12} {'Cool Load':<12}"
+            )
             print("-" * 60)
 
             for hour in range(24):
@@ -488,8 +520,10 @@ Examples:
 
                 prediction = runtime.predict(weather, sensors, time_features)
 
-                print(f"{hour:02d}:00  {weather.exterior_temp:8.1f}°C  {sensors.zone_temp:8.1f}°C  "
-                      f"{prediction.heating_load:8.1f} W  {prediction.cooling_load:8.1f} W")
+                print(
+                    f"{hour:02d}:00  {weather.exterior_temp:8.1f}°C  {sensors.zone_temp:8.1f}°C  "
+                    f"{prediction.heating_load:8.1f} W  {prediction.cooling_load:8.1f} W"
+                )
 
                 sensor_stream.advance()
 
@@ -515,20 +549,22 @@ Examples:
 
     time_features = (14, 180, 6)
 
-    print(f"Weather Input:")
+    print("Weather Input:")
     print(f"  Exterior temp: {weather.exterior_temp}°C")
     print(f"  Humidity: {weather.humidity}%")
     print(f"  Solar irradiance: {weather.solar_irradiance} W/m²")
     print(f"  Wind speed: {weather.wind_speed} m/s")
     print()
-    print(f"Sensor Input:")
+    print("Sensor Input:")
     print(f"  Zone temp: {sensors.zone_temp}°C")
     print(f"  Heating setpoint: {sensors.heating_setpoint}°C")
     print(f"  Cooling setpoint: {sensors.cooling_setpoint}°C")
     print(f"  Occupancy: {sensors.occupancy:.0%}")
     print(f"  Internal gains: {sensors.internal_gains} W")
     print()
-    print(f"Time: {time_features[0]:02d}:00, Day {time_features[1]}, Month {time_features[2]}")
+    print(
+        f"Time: {time_features[0]:02d}:00, Day {time_features[1]}, Month {time_features[2]}"
+    )
     print()
 
     prediction = runtime.predict(weather, sensors, time_features)
@@ -546,10 +582,14 @@ Examples:
     print("BMS CONTROL DECISION")
     if prediction.heating_load > 100:
         print("  -> Action: CALL FOR HEATING")
-        print(f"  -> Recommended supply temp: {20 + prediction.heating_load / 100:.1f}°C")
+        print(
+            f"  -> Recommended supply temp: {20 + prediction.heating_load / 100:.1f}°C"
+        )
     elif prediction.cooling_load > 100:
         print("  -> Action: CALL FOR COOLING")
-        print(f"  -> Recommended supply temp: {24 - prediction.cooling_load / 100:.1f}°C")
+        print(
+            f"  -> Recommended supply temp: {24 - prediction.cooling_load / 100:.1f}°C"
+        )
     else:
         print("  -> Action: NO HEATING/COOLING REQUIRED")
         print("  -> Zone is within setpoint bounds")
