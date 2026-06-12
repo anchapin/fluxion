@@ -52,6 +52,7 @@ pub mod five_r1c_solver;
 pub mod geometry_tensor;
 pub mod method_selector;
 pub mod nd_array;
+pub mod state_space_ctf;
 pub mod thermal_mass;
 
 pub mod multi_node_solver;

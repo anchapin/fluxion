@@ -392,9 +392,16 @@ mod tests {
         let config = CTFSolverConfig::new(3600.0, 50);
         let solver = CTFSolver::new(coeffs, config);
 
-        assert_eq!(solver.t_interior_history.len(), 50);
-        assert_eq!(solver.t_exterior_history.len(), 50);
-        assert_eq!(solver.q_interior_history.len(), 50);
+        // Phase D update: the solver history length is
+        //   max(config.history_size, coefficients.num_coeffs)
+        // (the larger of the two — we need at least num_coeffs entries
+        // for the CTF evaluation, and at least config.history_size for
+        // user expectations). The second argument to CTFSolverConfig::new
+        // is a LOWER BOUND on history size.
+        let expected_len = 50_usize.max(solver.coefficients.num_coeffs);
+        assert_eq!(solver.t_interior_history.len(), expected_len);
+        assert_eq!(solver.t_exterior_history.len(), expected_len);
+        assert_eq!(solver.q_interior_history.len(), expected_len);
     }
 
     #[test]
