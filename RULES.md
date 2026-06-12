@@ -4,6 +4,13 @@
 
 ### Must-Always
 
+0. **Numerical Reasoning via Code**
+   - All calculations, formula verification, and numerical reasoning MUST be done by writing and executing Python code
+   - Never perform mental arithmetic or "reason through" math in your head
+   - Use `ctx_execute(language: "python", code: "...")` to run computations — only the printed result enters context
+   - LLMs are probabilistic text predictors, not calculators — mental math produces confidently wrong answers
+   - Reference: [LLMs & Math: Problem Solved by Coding](https://gregrobison.medium.com/llms-math-problem-solved-by-coding-a5a5b5c4453a)
+
 1. **Energy Balance Conservation**
    - All thermal calculations must maintain energy balance
    - Total heat transfer (conduction + convection + radiation + solar + HVAC) must sum to zero for any zone
