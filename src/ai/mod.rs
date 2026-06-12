@@ -6,3 +6,4 @@ pub mod modular_surrogate;
 pub mod neural_field;
 pub mod shared_batch_service;
 pub mod surrogate;
+pub mod xdt_export;
