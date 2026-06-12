@@ -8,6 +8,7 @@ pub mod automation;
 pub mod benchmark;
 pub mod commands;
 pub mod config;
+pub mod copilot;
 pub mod cross_validation;
 pub mod cross_validator;
 pub mod diagnostic;
@@ -120,6 +121,12 @@ pub use reference_data::{
 pub use report::{
     BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ReportHeader, ValidationResult,
     ValidationStatus, ValidationSuite,
+};
+
+// Re-export copilot types
+pub use copilot::{
+    BemChecker, BemIssue, BemIssueSeverity, Copilot, CopilotConfig, CopilotResult,
+    ValidationChecks, OLLAMA_DEFAULT_URL,
 };
 
 /// Validation configuration for different validation scenarios

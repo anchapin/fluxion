@@ -364,10 +364,10 @@ Surrogates must match physics within 2% on held-out data.
 | Module | Isolated? | Trait Defined? | E+ Reference Data? | Unit Tests Pass? |
 |--------|-----------|----------------|--------------------|--------------------|
 | Weather | Partial | No | No | Partial |
-| Solar | No | No | No | No |
-| Conduction | No | Yes (`HeatConductionSolver`) | No | No |
-| Ventilation | Yes | Yes (`VentilationSchedule`) | No | Yes |
-| Zone Balance | No | Yes (`ThermalModelTrait`) | No | No |
+| Solar | Yes | No | No | No |
+| Conduction | Yes | Yes (`HeatConductionSolver`) | Yes | Yes |
+| Ventilation | Yes | Yes (`VentilationSchedule`) | Yes | Yes |
+| Zone Balance | Partial | Yes (`ThermalModelTrait`) | Yes | Partial |
 
 **Next steps**: Fill every "No" cell left-to-right.
 
