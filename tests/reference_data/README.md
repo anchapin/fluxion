@@ -52,12 +52,19 @@ Prerequisites:
 |------|-------------|------|---------|
 | `fixed_inputs_zone_temp.csv` | Annual zone energy balance with fixed sub-module inputs | 8760 | hour, T_zone, T_out, Q_cond, Q_solar, Q_vent, Q_int, Q_heat, Q_cool |
 
+### Weather (`weather/`)
+
+| File | Description | Rows | Columns |
+|------|-------------|------|---------|
+| `psychrometrics_denver.csv` | Hourly psychrometric state points for Denver TMY3 | 8760 | hour, T_dry, T_dew, RH, p_sat, W, h, p_baro |
+
 ### EnergyPlus Models (`energyplus_models/`)
 
 | File | Description |
 |------|-------------|
 | `annual_solar_ventilation.idf` | Single-zone box (6×8×2.7m), lightweight walls, no HVAC, 0.5 ACH |
 | `step_change_concrete.idf` | Single-zone, 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `psychrometrics_denver.idf` | Minimal single-zone box for psychrometric state point output (site outdoor air) |
 | `ventilation_denver_05ach.idf` | Denver, 0.5 ACH — same geometry, ACH parameterised |
 | `ventilation_denver_10ach.idf` | Denver, 1.0 ACH |
 | `ventilation_denver_01ach.idf` | Denver, 0.1 ACH (tight) |
@@ -104,6 +111,13 @@ Prerequisites:
 - **Other surfaces**: Adiabatic
 - **Timestep**: 15 minutes (4 per hour)
 - **Run period**: 72 hours (Jan 1-3)
+
+### Model 3: Psychrometric State Points
+- **Geometry**: 1m × 1m × 2.7m minimal box (5 surfaces, no HVAC)
+- **Purpose**: Output hourly psychrometric state variables from Denver TMY3 weather
+- **Output variables**: Site Outdoor Air Drybulb, Dewpoint, Humidity Ratio, Enthalpy, Barometric Pressure, Relative Humidity
+- **p_sat computed via Magnus formula** (ASHRAE Fundamentals): p_sat = 610.94 × exp(17.625 × T_dew / (T_dew + 243.04)) [Pa]
+- **Weather**: USA_CO_Golden-NREL TMY3 (39.74°N, 105.18°W)
 
 ## CSV Format
 
