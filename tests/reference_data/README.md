@@ -27,6 +27,7 @@ Prerequisites:
 |------|-------------|------|---------|
 | `solar_position_denver.csv` | Hourly solar position for Denver TMY3 | 8760 | hour, altitude, azimuth, zenith |
 | `surface_irradiance_south.csv` | Beam, diffuse, ground-reflected on south vertical wall | 8760 | hour, beam, diffuse, ground_reflected |
+| `solar_gain_distribution.csv` | Per-surface solar gain distribution for ASHRAE 140 box | 43800 | hour, surface, beam_W, diffuse_W, total_W |
 
 ### Conduction (`conduction/`)
 
@@ -45,6 +46,12 @@ Prerequisites:
 | `infiltration_tampa_05ach.csv` | Tampa FL (hot-humid), 0.5 ACH | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
 | `infiltration_dulles_05ach.csv` | Dulles VA (cold), 0.5 ACH | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
 
+### Zone Balance (`zone_balance/`)
+
+| File | Description | Rows | Columns |
+|------|-------------|------|---------|
+| `fixed_inputs_zone_temp.csv` | Annual zone energy balance with fixed sub-module inputs | 8760 | hour, T_zone, T_out, Q_cond, Q_solar, Q_vent, Q_int, Q_heat, Q_cool |
+
 ### EnergyPlus Models (`energyplus_models/`)
 
 | File | Description |
@@ -56,6 +63,8 @@ Prerequisites:
 | `ventilation_denver_01ach.idf` | Denver, 0.1 ACH (tight) |
 | `ventilation_tampa_05ach.idf` | Tampa, 0.5 ACH |
 | `ventilation_dulles_05ach.idf` | Dulles, 0.5 ACH |
+| `ashrae_140_solar_gain.idf` | ASHRAE 140 box for per-surface solar gain distribution, 5 surfaces, no HVAC |
+| `fixed_inputs_zone_temp.idf` | Single-zone, ideal loads HVAC locked at 20°C, all surfaces NoSun/NoWind, annual run |
 
 ## Model Parameters
 

@@ -152,9 +152,9 @@ fn simulate_multi_node_900ff() -> (f64, f64, f64, f64) {
 
         // Track HVAC energy (should be zero for free-float)
         if q_hvac > 0.0 {
-            heating_energy += q_hvac / 1000.0 * (3600.0 / 3600.0); // kWh
+            heating_energy += q_hvac / 1000.0; // kJ (3600 J/s * 1s / 1000)
         } else if q_hvac < 0.0 {
-            cooling_energy += (-q_hvac) / 1000.0 * (3600.0 / 3600.0); // kWh
+            cooling_energy += (-q_hvac) / 1000.0; // kJ (3600 J/s * 1s / 1000)
         }
 
         // Estimate zone temperature from solver
