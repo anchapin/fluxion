@@ -36,12 +36,19 @@ Prerequisites:
 |------|-------------|------|---------|
 | `infiltration_denver.csv` | Hourly outdoor temp, wind, infiltration ACH, vent conductance | 8760 | hour, T_out, wind_speed, ACH, C_vent |
 
+### Zone Balance (`zone_balance/`)
+
+| File | Description | Rows | Columns |
+|------|-------------|------|---------|
+| `fixed_inputs_zone_temp.csv` | Annual zone energy balance with fixed sub-module inputs | 8760 | hour, T_zone, T_out, Q_cond, Q_solar, Q_vent, Q_int, Q_heat, Q_cool |
+
 ### EnergyPlus Models (`energyplus_models/`)
 
 | File | Description |
 |------|-------------|
 | `annual_solar_ventilation.idf` | Single-zone box (6×8×2.7m), lightweight walls, no HVAC, 0.5 ACH |
 | `step_change_concrete.idf` | Single-zone, 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `fixed_inputs_zone_temp.idf` | Single-zone, ideal loads HVAC locked at 20°C, all surfaces NoSun/NoWind, annual run |
 
 ## Model Parameters
 
