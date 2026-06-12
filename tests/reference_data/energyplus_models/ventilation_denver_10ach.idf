@@ -1,0 +1,84 @@
+Version, 25.2.0;
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  AnnualRun,
+  1, 1, , 12, 31, , Tuesday, Yes, Yes, No, Yes, Yes;
+
+Timestep, 1;
+
+Building,
+  RefBox_Vent,
+  0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  ZONE1, 0, 0, 0, 0, 1, 1, , 129.60000000000002, , ;
+
+Material,
+  EXT_GYP, MediumRough, 0.016, 0.16, 800, 1090;
+Material,
+  EXT_INSULATION, MediumRough, 0.050, 0.04, 12, 840;
+Material,
+  INT_GYP, MediumSmooth, 0.013, 0.16, 800, 1090;
+
+Construction,
+  EXTWALL, EXT_GYP, EXT_INSULATION, INT_GYP;
+
+Material,
+  ROOF_INSUL, MediumRough, 0.080, 0.04, 12, 840;
+Construction,
+  ROOF, ROOF_INSUL;
+
+Material,
+  FLOOR_INSUL, MediumRough, 0.080, 0.04, 12, 840;
+Construction,
+  FLOOR, FLOOR_INSUL;
+
+GlobalGeometryRules,
+  UpperLeftCorner, ClockWise, World;
+
+BuildingSurface:Detailed,
+  SouthWall, Wall, EXTWALL, ZONE1, , Outdoors, , SunExposed, WindExposed, 0.5, 4,
+  0, 0, 2.7,  6, 0, 2.7,  6, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, EXTWALL, ZONE1, , Outdoors, , SunExposed, WindExposed, 0.5, 4,
+  6, 8.0, 2.7,  0, 8.0, 2.7,  0, 8.0, 0,  6, 8.0, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, EXTWALL, ZONE1, , Outdoors, , SunExposed, WindExposed, 0.5, 4,
+  6.0, 0, 2.7,  6.0, 8.0, 2.7,  6.0, 8.0, 0,  6.0, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, EXTWALL, ZONE1, , Outdoors, , SunExposed, WindExposed, 0.5, 4,
+  0, 8.0, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8.0, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, ROOF, ZONE1, , Outdoors, , SunExposed, WindExposed, , 4,
+  0, 0, 2.7,  6.0, 0, 2.7,  6.0, 8.0, 2.7,  0, 8.0, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, FLOOR, ZONE1, , Ground, , NoSun, NoWind, , 4,
+  0, 0, 0,  6.0, 0, 0,  6.0, 8.0, 0,  0, 8.0, 0;
+
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+ZoneInfiltration:DesignFlowRate,
+  Infil_Z1_ACH,
+  ZONE1,
+  ,
+  AirChanges/Hour,
+  ,
+  ,
+  ,
+  1.0,
+  ;
+
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Hourly;
+Output:Variable, *, Site Wind Speed, Hourly;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Hourly;

@@ -198,10 +198,12 @@ impl HeatConductionSolver for CTFSolverWrapper {
             );
         }
 
-        // Approximate surface temperature accounting for convection resistance
-        // T_surface = T_air - q_conv/h (where q_conv = q_flux)
-        let t_interior_surface = T_interior - self.prev_q_flux / self.h_interior;
-        let t_exterior_surface = T_exterior; // T_exterior assumed to be surface temperature
+        // The CTF coefficients already include film resistance scaling
+        // (R_SI=0.125, R_SE=0.044). Input temperatures should be AIR temperatures,
+        // not surface temperatures — applying a surface correction would double-count
+        // the film resistance and cause instability.
+        let t_interior_surface = T_interior;
+        let t_exterior_surface = T_exterior;
 
         // Step the CTF solver with surface temperatures
         let q_flux = solver.step(t_interior_surface, t_exterior_surface);

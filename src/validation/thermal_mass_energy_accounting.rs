@@ -1133,7 +1133,7 @@ mod tests {
         .expect("Failed to load EPW weather data");
 
         // Run simulation for a representative day (24 hours)
-        let _max_conservation_error = 0.0_f64;
+        let mut max_conservation_error = 0.0_f64;
         for step in 0..24 {
             let weather_data = weather.get_hourly_data(step).unwrap();
             model.weather = Some(weather_data.clone());
@@ -1230,9 +1230,9 @@ mod tests {
             let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
             // Run simulation for a representative day (24 hours)
-            let _max_phi_ia = 0.0_f64;
-            let _max_phi_st = 0.0_f64;
-            let _max_phi_m = 0.0_f64;
+            let mut max_phi_ia = 0.0_f64;
+            let mut max_phi_st = 0.0_f64;
+            let mut max_phi_m = 0.0_f64;
 
             for step in 0..24 {
                 let weather_data = weather.get_hourly_data(step).unwrap();
