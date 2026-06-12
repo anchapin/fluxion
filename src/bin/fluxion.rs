@@ -424,6 +424,33 @@ enum Commands {
         #[command(subcommand)]
         command: AutomationSubcommand,
     },
+
+    /// LLM-powered BEM input validation co-pilot
+    Copilot {
+        /// Path to building configuration JSON file
+        #[arg(short, long)]
+        config: PathBuf,
+
+        /// Ollama server URL (default: http://localhost:11434)
+        #[arg(short, long)]
+        ollama_url: Option<String>,
+
+        /// LLM model to use (default: llama3.2:latest)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Skip LLM and use only rule-based checks
+        #[arg(long)]
+        rule_only: bool,
+
+        /// Output results to JSON file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Enable verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
 }
 
 /// Handle automation commands
@@ -1116,6 +1143,67 @@ fn main() -> Result<()> {
 
         Commands::Automation { command } => {
             handle_automation_command(&command)?;
+        }
+
+        Commands::Copilot {
+            config,
+            ollama_url,
+            model,
+            rule_only,
+            output,
+            verbose,
+        } => {
+            use fluxion::validation::copilot::{Copilot, CopilotConfig};
+            use tokio::runtime::Runtime;
+
+            // Build copilot config
+            let mut copilot_config = CopilotConfig::default();
+            if let Some(url) = ollama_url {
+                copilot_config = copilot_config.with_ollama_url(url);
+            }
+            if let Some(m) = model {
+                copilot_config = copilot_config.with_model(m);
+            }
+            if rule_only {
+                copilot_config = copilot_config.rule_based_only();
+            }
+            if verbose {
+                copilot_config = copilot_config.verbose();
+            }
+
+            // Read configuration file
+            let config_content = std::fs::read_to_string(config)
+                .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+
+            // Run copilot analysis
+            let rt = Runtime::new()?;
+            let mut copilot = Copilot::new(copilot_config);
+
+            if verbose {
+                eprintln!("[Copilot] Checking Ollama availability...");
+                let available = rt.block_on(copilot.is_ollama_available());
+                if available {
+                    eprintln!("[Copilot] Ollama is available");
+                } else {
+                    eprintln!("[Copilot] Ollama not available - using rule-based only");
+                }
+            }
+
+            let result = rt.block_on(copilot.analyze(&config_content))?;
+
+            // Output results
+            if let Some(ref output_path) = output {
+                let json = serde_json::to_string_pretty(&result)?;
+                std::fs::write(output_path, json)?;
+                println!("Results written to {}", output_path.display());
+            } else {
+                result.print_summary();
+            }
+
+            // Exit with error code if validation failed
+            if !result.is_valid() {
+                std::process::exit(1);
+            }
         }
     }
 
