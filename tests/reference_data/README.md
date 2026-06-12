@@ -23,6 +23,7 @@ Prerequisites:
 |------|-------------|------|---------|
 | `solar_position_denver.csv` | Hourly solar position for Denver TMY3 | 8760 | hour, altitude, azimuth, zenith |
 | `surface_irradiance_south.csv` | Beam, diffuse, ground-reflected on south vertical wall | 8760 | hour, beam, diffuse, ground_reflected |
+| `solar_gain_distribution.csv` | Per-surface solar gain distribution for ASHRAE 140 box | 43800 | hour, surface, beam_W, diffuse_W, total_W |
 
 ### Conduction (`conduction/`)
 
@@ -42,6 +43,7 @@ Prerequisites:
 |------|-------------|
 | `annual_solar_ventilation.idf` | Single-zone box (6×8×2.7m), lightweight walls, no HVAC, 0.5 ACH |
 | `step_change_concrete.idf` | Single-zone, 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `ashrae_140_solar_gain.idf` | ASHRAE 140 box for per-surface solar gain distribution, 5 surfaces, no HVAC |
 
 ## Model Parameters
 
