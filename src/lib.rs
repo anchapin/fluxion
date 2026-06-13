@@ -82,7 +82,9 @@ pub mod validation;
 pub mod weather;
 
 // Re-export thermal model traits for public API
-pub use sim::surface_flux_provider::{MockSurfaceHeatFluxProvider, SurfaceHeatFluxProvider};
+pub use sim::surface_flux_provider::{
+    MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
+};
 pub use sim::thermal_model::{
     PhysicsThermalModel, SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode,
     ThermalModelTrait, UnifiedThermalModel,
