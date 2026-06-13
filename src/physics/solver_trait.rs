@@ -51,6 +51,7 @@
 //! )?;
 //! ```
 
+#[allow(unused_imports)]
 use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
 use std::error::Error;
