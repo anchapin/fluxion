@@ -16,6 +16,7 @@
 //! - Combined physics providers that aggregate conduction + solar internally
 
 use crate::physics::solver_trait::HeatConductionSolver;
+use crate::physics::units::{FromF64, ToF64};
 use std::sync::{Arc, RwLock};
 
 /// Trait for providing surface heat flux from any source (conduction, solar, or combined).
@@ -243,7 +244,14 @@ impl SurfaceHeatFluxProvider for PhysicsSurfaceFluxProvider {
         let conduction_flux = {
             let mut solver = self.solvers[surface_idx].write().unwrap();
             solver
-                .step(dt_seconds, T_zone, T_outdoor, h_int, h_ext)
+                .step(
+                    FromF64::from_value(dt_seconds),
+                    FromF64::from_value(T_zone),
+                    FromF64::from_value(T_outdoor),
+                    FromF64::from_value(h_int),
+                    FromF64::from_value(h_ext),
+                )
+                .map(|q| q.to_value())
                 .unwrap_or(0.0)
         };
 
