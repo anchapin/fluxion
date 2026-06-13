@@ -1,7 +1,7 @@
 # EnergyPlus Version: 25.2.0
 # Model: South-facing vertical wall (6m × 2.7m), lightweight construction
 # EPW: USA_CO_Golden-NREL.724666_TMY3.epw
-# Generated: 2026-06-11 20:53 UTC
+# Generated: 2026-06-13 12:37 UTC
 # Parameters: Azimuth=180° (South), Tilt=90° (vertical), diffuse = total incident - beam (E+ 25.2 does not separate sky/ground diffuse)
 # Rows: 8760
 hour(1-8760),beam_irradiance(W/m2),ground_diffuse_irradiance(W/m2)

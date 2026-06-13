@@ -5,19 +5,15 @@ for bottom-up validation of individual Fluxion physics modules.
 
 ## Data Generation
 
-Run the generation scripts from the repository root:
+Run the generation script from the repository root:
 
 ```bash
-# Original annual data (solar + ventilation + conduction)
 python tests/reference_data/generate_reference_data.py
-
-# Expanded ventilation scenarios (Issue #967)
-python tests/reference_data/generate_ventilation_scenarios.py
 ```
 
 Prerequisites:
 - EnergyPlus 25.2.0 on PATH
-- EPW files bundled with E+ in `/usr/local/EnergyPlus-25-2-0/WeatherData/`
+- EPW: `USA_CO_Golden-NREL.724666_TMY3.epw` (bundled with E+)
 
 ## Generated Files
 
@@ -27,7 +23,6 @@ Prerequisites:
 |------|-------------|------|---------|
 | `solar_position_denver.csv` | Hourly solar position for Denver TMY3 | 8760 | hour, altitude, azimuth, zenith |
 | `surface_irradiance_south.csv` | Beam, diffuse, ground-reflected on south vertical wall | 8760 | hour, beam, diffuse, ground_reflected |
-| `solar_gain_distribution.csv` | Per-surface solar gain distribution for ASHRAE 140 box | 43800 | hour, surface, beam_W, diffuse_W, total_W |
 
 ### Conduction (`conduction/`)
 
@@ -62,22 +57,6 @@ Prerequisites:
 
 ## Model Parameters
 
-### Base Geometry (all ventilation scenarios)
-- **Geometry**: 6m × 8m × 2.7m single zone
-- **Volume**: 129.6 m³
-- **Construction**: Lightweight (steel stud + 50mm insulation + gypsum)
-- **HVAC**: None (free-floating)
-
-### Ventilation Scenarios (Issue #967)
-
-| Scenario | EPW | Climate Zone | ACH | C_vent (W/K) |
-|----------|-----|-------------|-----|---------------|
-| Denver 0.5 ACH | USA_CO_Golden-NREL.724666_TMY3 | 5B (Mixed-Dry) | 0.5 | 21.6 |
-| Denver 1.0 ACH | USA_CO_Golden-NREL.724666_TMY3 | 5B (Mixed-Dry) | 1.0 | 43.2 |
-| Denver 0.1 ACH (tight) | USA_CO_Golden-NREL.724666_TMY3 | 5B (Mixed-Dry) | 0.1 | 4.32 |
-| Tampa 0.5 ACH | USA_FL_Tampa.Intl.AP.722110_TMY3 | 1A (Hot-Humid) | 0.5 | 21.6 |
-| Dulles 0.5 ACH | USA_VA_Sterling-Washington.Dulles.Intl.AP.724030_TMY3 | 6A (Cold) | 0.5 | 21.6 |
-
 ### Model 1: Annual Solar + Ventilation
 - **Geometry**: 6m × 8m × 2.7m single zone
 - **Volume**: 129.6 m³
@@ -108,20 +87,6 @@ Prerequisites:
 
 ## CSV Format
 
-### Ventilation CSV Columns
-
-```
-hour(1-8760), T_out(C), wind_speed(m/s), ACH(1/h), C_vent(W/K), Q_vent(W)
-```
-
-- **hour**: Hourly timestep (1–8760, representing Jan 1 hour 1 through Dec 31 hour 24)
-- **T_out**: Outdoor dry-bulb temperature [°C] from EPW
-- **wind_speed**: Site wind speed [m/s] from EPW
-- **ACH**: Air changes per hour [1/h] — constant per scenario
-- **C_vent**: Ventilation conductance [W/K] = ACH × V × ρ × c_p / 3600
-- **Q_vent**: Ventilation heat loss [W] = C_vent × (T_zone − T_out)
-  - T_zone = Zone Mean Air Temperature from E+ simulation (free-floating, no HVAC)
-
 ## Ventilation Conductance Calculation
 
 From ASHRAE Fundamentals, the ventilation conductance is:
@@ -136,10 +101,4 @@ Where:
 - ρ = air density ≈ 1.2 kg/m³ (at standard conditions)
 - c_p = specific heat of air = 1000 J/(kg·K)
 
-Per-scenario conductance:
-
-| ACH | C_vent (W/K) |
-|-----|-------------|
-| 0.1 | 4.32 |
-| 0.5 | 21.6 |
-| 1.0 | 43.2 |
+For this model: C_vent = 0.5 × 129.6 × 1.2 × 1000 / 3600 = **21.6 W/K**
