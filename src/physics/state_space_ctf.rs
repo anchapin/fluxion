@@ -1174,7 +1174,7 @@ fn expm_higham_padé13(a: &[Vec<f64>]) -> Vec<Vec<f64>> {
     }
 
     // Scale A by 1/2^s: B = A / 2^s
-    let scale = 1.0_f64 / (1u32 << s) as f64;
+    let scale = 1.0_f64 / (1u64 << s.min(63)) as f64;
     let b_mat: Vec<Vec<f64>> = (0..n)
         .map(|i| (0..n).map(|j| a[i][j] * scale).collect())
         .collect();
