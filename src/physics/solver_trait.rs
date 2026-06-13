@@ -226,7 +226,9 @@ mod tests {
 
     #[test]
     fn test_heat_conduction_solver_trait_can_be_implemented() {
-        use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
+        use crate::physics::units::{
+            FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time,
+        };
 
         struct TestSolver {
             valid: bool,
@@ -284,7 +286,9 @@ mod tests {
 
     #[test]
     fn test_heat_conduction_solver_can_return_error() {
-        use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
+        use crate::physics::units::{
+            FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time,
+        };
 
         struct FailingSolver;
 
