@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use rand::rngs::StdRng;
 use rand::Rng;
 use rand::SeedableRng;
-use std::cell::RefCell;
+use rayon::prelude::*;
 use std::sync::Arc;
 
 #[derive(Clone, Debug, Copy, Default)]
@@ -951,56 +951,53 @@ impl SurrogateManager {
             let loads = self.predict_loads(current_temps);
             return PredictionWithUncertainty::new(loads.clone(), vec![0.0; loads.len()]);
         }
-        let mut all_predictions: Vec<Vec<f64>> = Vec::with_capacity(num_samples);
         let base_prediction = self.predict_loads(current_temps);
-        thread_local! { static RNG: RefCell<StdRng> = RefCell::new(StdRng::from_entropy()); }
-        for _ in 0..num_samples {
-            let _perturbed_temps: Vec<f64> = current_temps
-                .iter()
-                .map(|&t| {
-                    t + RNG.with(|r| {
-                        let mut rng = r.borrow_mut();
-                        (rng.gen::<f64>() - 0.5) * 2.0 * noise_std
+        let variance: f64 =
+            base_prediction.iter().map(|v| v * 0.05).sum::<f64>() / base_prediction.len() as f64;
+        let num_outputs = base_prediction.len();
+
+        // Parallel Monte Carlo sampling using rayon
+        let all_predictions: Vec<Vec<f64>> = (0..num_samples)
+            .into_par_iter()
+            .map(|_i| {
+                let mut rng = StdRng::from_entropy();
+                let perturbed_temps: Vec<f64> = current_temps
+                    .iter()
+                    .map(|&t| t + (rng.gen::<f64>() - 0.5) * 2.0 * noise_std)
+                    .collect();
+                let _perturbed_temps = perturbed_temps;
+                base_prediction
+                    .iter()
+                    .map(|&v| v + (rng.gen::<f64>() - 0.5) * 2.0 * variance.sqrt())
+                    .collect()
+            })
+            .collect();
+
+        // Parallel aggregation of predictions using fold
+        let means: Vec<f64> = (0..num_outputs)
+            .into_par_iter()
+            .map(|i| all_predictions.iter().map(|pred| pred[i]).sum::<f64>() / num_samples as f64)
+            .collect();
+
+        // Parallel computation of variances
+        let variances: Vec<f64> = (0..num_outputs)
+            .into_par_iter()
+            .map(|i| {
+                let mean = means[i];
+                all_predictions
+                    .iter()
+                    .map(|pred| {
+                        let diff = pred[i] - mean;
+                        diff * diff
                     })
-                })
-                .collect();
-            let variance: f64 = base_prediction.iter().map(|v| v * 0.05).sum::<f64>()
-                / base_prediction.len() as f64;
-            let prediction: Vec<f64> = base_prediction
-                .iter()
-                .map(|&v| {
-                    v + RNG.with(|r| {
-                        let mut rng = r.borrow_mut();
-                        (rng.gen::<f64>() - 0.5) * 2.0 * variance.sqrt()
-                    })
-                })
-                .collect();
-            all_predictions.push(prediction);
-        }
-        let num_outputs = all_predictions[0].len();
-        let mut means: Vec<f64> = vec![0.0; num_outputs];
-        let mut variances: Vec<f64> = vec![0.0; num_outputs];
-        for pred in &all_predictions {
-            for (i, &val) in pred.iter().enumerate() {
-                means[i] += val;
-            }
-        }
-        for mean in &mut means {
-            *mean /= num_samples as f64;
-        }
-        for pred in &all_predictions {
-            for (i, &val) in pred.iter().enumerate() {
-                let diff = val - means[i];
-                variances[i] += diff * diff;
-            }
-        }
-        for var in &mut variances {
-            *var /= if num_samples > 1 {
-                (num_samples - 1) as f64
-            } else {
-                1.0
-            };
-        }
+                    .sum::<f64>()
+                    / if num_samples > 1 {
+                        (num_samples - 1) as f64
+                    } else {
+                        1.0
+                    }
+            })
+            .collect();
         let std: Vec<f64> = variances.iter().map(|v| v.sqrt()).collect();
         PredictionWithUncertainty::new(means, std)
     }
