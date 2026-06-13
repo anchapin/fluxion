@@ -1,7 +1,7 @@
 # EnergyPlus Version: 25.2.0
 # Model: Single-zone box (6×8×2.7m), 0.5 ACH constant infiltration, no HVAC
 # EPW: USA_CO_Golden-NREL.724666_TMY3.epw
-# Generated: 2026-06-11 20:53 UTC
+# Generated: 2026-06-13 12:37 UTC
 # Parameters: Volume=129.60000000000002 m³, ACH=0.5, ρ_air=1.2 kg/m³, cp=1000 J/(kg·K), C_vent=21.6 W/K
 # Rows: 8760
 hour(1-8760),outdoor_temp(C),wind_speed(m/s),infiltration_ach(1/h),vent_conductance(W/K)
