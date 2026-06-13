@@ -3,7 +3,7 @@
 //! Tests `calculate_surface_irradiance()` from `fluxion::solar` against E+ output
 //! for a south-facing vertical wall in Denver.
 //!
-//! # Acceptance Criteria (Issue #945)
+//! # Acceptance Criteria (Issue #1012)
 //! - Beam irradiance within 1% of E+
 //! - Total irradiance within 1% of E+ (where irradiance > 10 W/m²)
 //!
@@ -16,6 +16,8 @@
 use fluxion::solar::{
     calculate_day_of_year, calculate_solar_position, calculate_surface_irradiance, SolarPosition,
 };
+use fluxion::weather::epw::EpwWeatherSource;
+use std::io::Cursor;
 
 const DENVER_LAT: f64 = 39.74;
 const DENVER_LON: f64 = -105.18;
@@ -64,21 +66,6 @@ fn parse_reference_csv() -> Vec<(usize, f64, f64)> {
         .collect()
 }
 
-/// Load weather data from EPW for Denver TMY3.
-/// Returns (dni, dhi, ghi) for each hour (0-indexed).
-fn load_epw_weather() -> Vec<(f64, f64, f64)> {
-    // We use the solar position reference CSV to derive the weather data
-    // But for irradiance testing, we need actual DNI/DHI/GHI from the EPW.
-    // Since the reference data doesn't include weather, we use the fluxion EPW loader.
-    //
-    // For this test, we'll compute irradiance using the solar position and
-    // compare only the relative patterns. Full validation requires EPW loading.
-    //
-    // Instead, let's test with synthetic weather that represents typical conditions.
-    // The key test is that our beam irradiance matches E+ when given the same inputs.
-    Vec::new()
-}
-
 #[test]
 fn test_reference_data_loads() {
     let reference = parse_reference_csv();
@@ -125,11 +112,11 @@ fn test_beam_irradiance_south_surface_pattern() {
 
     println!("South-facing vertical wall at solar noon:");
     println!(
-        "  Winter solstice: alt={:.1}° beam={:.1} W/m² total={:.1} W/m²",
+        "  Winter solstice: alt={:.1} deg beam={:.1} W/m2 total={:.1} W/m2",
         winter_solstice_noon.altitude_deg, irr_winter.beam_wm2, irr_winter.total_wm2
     );
     println!(
-        "  Summer solstice: alt={:.1}° beam={:.1} W/m² total={:.1} W/m²",
+        "  Summer solstice: alt={:.1} deg beam={:.1} W/m2 total={:.1} W/m2",
         summer_solstice_noon.altitude_deg, irr_summer.beam_wm2, irr_summer.total_wm2
     );
 
@@ -149,7 +136,7 @@ fn test_beam_irradiance_south_surface_pattern() {
 #[test]
 fn test_beam_irradiance_physics_constraints() {
     // Beam irradiance on a vertical surface cannot exceed DNI
-    // (cos(incidence) ≤ 1 for any surface)
+    // (cos(incidence) <= 1 for any surface)
     let sun_pos = calculate_solar_position(DENVER_LAT, DENVER_LON, 2023, 3, 21, 12.0);
     let doy = calculate_day_of_year(2023, 3, 21);
     let dni = 900.0;
@@ -216,7 +203,7 @@ fn test_nighttime_zero_irradiance() {
 
 #[test]
 fn test_horizontal_surface_no_beam_below_horizon() {
-    // Horizontal surface with sun at 45° altitude: beam = DNI * sin(45°)
+    // Horizontal surface with sun at 45 deg altitude: beam = DNI * sin(45 deg)
     let sun_pos = SolarPosition {
         altitude_deg: 45.0,
         azimuth_deg: 180.0,
@@ -233,12 +220,172 @@ fn test_horizontal_surface_no_beam_below_horizon() {
         172,
     );
 
-    // Beam on horizontal = DNI * cos(zenith) = DNI * sin(altitude) = 800 * sin(45°) ≈ 565.7
+    // Beam on horizontal = DNI * cos(zenith) = DNI * sin(altitude) = 800 * sin(45 deg) approx 565.7
     let expected_beam = dni * 45.0_f64.to_radians().sin();
     assert!(
         (irr.beam_wm2 - expected_beam).abs() < 1.0,
-        "Horizontal beam ({:.1}) should be ≈{:.1}",
+        "Horizontal beam ({:.1}) should be approx {:.1}",
         irr.beam_wm2,
         expected_beam
+    );
+}
+
+// ===========================================================================
+// Section 2: E+ Reference Data Validation (Issue #1012)
+// ===========================================================================
+
+/// TMY data uses month/day/hour fields rather than sequential indices.
+/// This function returns the actual date from the weather record.
+fn weather_record_to_date(month: u32, day: u32, hour: u8) -> (i32, u32, u32, f64) {
+    // EPW hour is 1-24 where hour N represents (N-1):00 to N:00
+    // Midpoint is (N-1) + 0.5 = N - 0.5
+    let hour_of_day = (hour as f64) - 0.5;
+    (2023, month, day, hour_of_day)
+}
+
+/// Test beam irradiance against E+ reference data within 1% tolerance.
+/// Uses Denver EPW weather data to compute surface irradiance.
+#[test]
+fn test_beam_irradiance_vs_energyplus() {
+    // Load E+ reference data
+    let reference = parse_reference_csv();
+    assert_eq!(reference.len(), 8760, "Should have 8760 hours of data");
+
+    // Load Denver EPW weather data
+    let epw_data = include_bytes!("test_data/denver.epw");
+    let epw_reader = Cursor::new(&epw_data[..]);
+    let weather_records =
+        EpwWeatherSource::parse_epw_v3(epw_reader).expect("Failed to parse Denver EPW file");
+    assert!(
+        weather_records.len() >= 8760,
+        "EPW should have at least 8760 hours"
+    );
+    let mut max_error_pct = 0.0f64;
+    let mut sum_error_pct = 0.0f64;
+    let mut hours_exceeding = 0usize;
+    let mut valid_hours = 0usize;
+
+    for (hour, ref_beam, _) in &reference {
+        let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
+        let weather = &weather_records[*hour - 1];
+
+        let sun_pos =
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+        let doy = calculate_day_of_year(year, month, day);
+
+        let irr = calculate_surface_irradiance(
+            &sun_pos,
+            weather.dni,
+            weather.dhi,
+            None,
+            fluxion::solar::surface_irradiance::Orientation::South,
+            0.2,
+            doy,
+        );
+
+        // Only compare when irradiance is significant (> 10 W/m2)
+        if *ref_beam > 10.0 {
+            let error_pct = ((irr.beam_wm2 - ref_beam) / ref_beam * 100.0).abs();
+            sum_error_pct += error_pct;
+            if error_pct > max_error_pct {
+                max_error_pct = error_pct;
+            }
+            if error_pct > 1.0 {
+                hours_exceeding += 1;
+            }
+            valid_hours += 1;
+        }
+    }
+
+    let mean_error_pct = if valid_hours > 0 {
+        sum_error_pct / valid_hours as f64
+    } else {
+        0.0
+    };
+
+    println!("=== Surface Irradiance vs E+ Validation ===");
+    println!("Valid hours compared: {}", valid_hours);
+    println!("Max error: {:.2}%", max_error_pct);
+    println!("Mean error: {:.2}%", mean_error_pct);
+    println!("Hours exceeding 1% tolerance: {}", hours_exceeding);
+
+    assert!(
+        max_error_pct <= 1.0,
+        "Max beam irradiance error {:.2}% exceeds 1% tolerance",
+        max_error_pct
+    );
+}
+
+/// Test ground diffuse irradiance against E+ reference data within 1% tolerance.
+#[test]
+fn test_ground_diffuse_vs_energyplus() {
+    // Load E+ reference data
+    let reference = parse_reference_csv();
+    assert_eq!(reference.len(), 8760, "Should have 8760 hours of data");
+
+    // Load Denver EPW weather data
+    let epw_data = include_bytes!("test_data/denver.epw");
+    let epw_reader = Cursor::new(&epw_data[..]);
+    let weather_records =
+        EpwWeatherSource::parse_epw_v3(epw_reader).expect("Failed to parse Denver EPW file");
+    assert!(
+        weather_records.len() >= 8760,
+        "EPW should have at least 8760 hours"
+    );
+
+    let mut max_error_pct = 0.0f64;
+    let mut sum_error_pct = 0.0f64;
+    let mut hours_exceeding = 0usize;
+    let mut valid_hours = 0usize;
+
+    for (hour, _, ref_ground_diff) in &reference {
+        let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
+        let weather = &weather_records[*hour - 1];
+
+        let sun_pos =
+            calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour_of_day);
+        let doy = calculate_day_of_year(year, month, day);
+
+        let irr = calculate_surface_irradiance(
+            &sun_pos,
+            weather.dni,
+            weather.dhi,
+            None,
+            fluxion::solar::surface_irradiance::Orientation::South,
+            0.2,
+            doy,
+        );
+
+        // Only compare when irradiance is significant (> 10 W/m2)
+        if *ref_ground_diff > 10.0 {
+            let error_pct =
+                ((irr.ground_reflected_wm2 - ref_ground_diff) / ref_ground_diff * 100.0).abs();
+            sum_error_pct += error_pct;
+            if error_pct > max_error_pct {
+                max_error_pct = error_pct;
+            }
+            if error_pct > 1.0 {
+                hours_exceeding += 1;
+            }
+            valid_hours += 1;
+        }
+    }
+
+    let mean_error_pct = if valid_hours > 0 {
+        sum_error_pct / valid_hours as f64
+    } else {
+        0.0
+    };
+
+    println!("=== Ground Diffuse vs E+ Validation ===");
+    println!("Valid hours compared: {}", valid_hours);
+    println!("Max error: {:.2}%", max_error_pct);
+    println!("Mean error: {:.2}%", mean_error_pct);
+    println!("Hours exceeding 1% tolerance: {}", hours_exceeding);
+
+    assert!(
+        max_error_pct <= 1.0,
+        "Max ground diffuse error {:.2}% exceeds 1% tolerance",
+        max_error_pct
     );
 }
