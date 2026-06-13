@@ -18,6 +18,24 @@
 //! T_new = T_old + dt * (Q_in - Q_out) / C_surface
 //! ```
 //!
+//! ## Mass Temperature Update (Issue #1003)
+//!
+//! The thermal mass temperature is updated using backward Euler integration:
+//! ```text
+//! T_mass_new = (T_mass_old * C_mass + dt * (h_tr_is * T_air + h_tr_ms * T_sky))
+//!              / (C_mass + dt * (h_tr_is + h_tr_ms))
+//! ```
+//!
+//! Where:
+//! - T_mass_new = new mass temperature [°C]
+//! - T_mass_old = old mass temperature [°C]
+//! - C_mass = thermal mass capacity [J/K]
+//! - dt = timestep [s]
+//! - h_tr_is = interior surface heat transfer coefficient [W/K]
+//! - h_tr_ms = mass-to-sky heat transfer coefficient [W/K]
+//! - T_air = zone air temperature [°C]
+//! - T_sky = sky temperature [°C]
+//!
 //! ## Surface Temperature Calculation
 //!
 //! Surface temperature is computed from the mass temperature using ISO 13790
@@ -62,6 +80,108 @@ impl SurfaceKind {
             Orientation::North | Orientation::East | Orientation::South | Orientation::West => {
                 SurfaceKind::Wall
             }
+        }
+    }
+}
+
+/// Thermal mass node for per-surface conduction.
+///
+/// Each surface has its own thermal mass node that stores the interior-side
+/// temperature state. The mass temperature evolves according to the backward
+/// Euler update formula (Issue #1003):
+/// ```text
+/// T_mass_new = (T_mass_old * C_mass + dt * (h_tr_is * T_air + h_tr_ms * T_sky))
+///              / (C_mass + dt * (h_tr_is + h_tr_ms))
+/// ```
+///
+/// This represents the discretized heat balance at the mass node:
+/// - Heat input: h_tr_is * T_air (from zone air)
+/// - Heat input: h_tr_ms * T_sky (from sky via exterior)
+/// - Heat stored: C_mass * T_mass
+#[derive(Debug, Clone, PartialEq)]
+pub struct MassNode {
+    /// Surface identifier (links to corresponding SurfaceNode)
+    pub id: usize,
+    /// Thermal mass temperature in °C
+    pub temperature: f64,
+    /// Thermal mass capacity in J/K
+    pub capacitance: f64,
+    /// Conductance from interior surface to mass in W/K
+    pub h_tr_is: f64,
+    /// Conductance from mass to sky (exterior) in W/K
+    pub h_tr_ms: f64,
+}
+
+impl MassNode {
+    /// Create a new MassNode.
+    ///
+    /// # Arguments
+    /// * `id` - Surface identifier
+    /// * `temperature` - Initial mass temperature in °C
+    /// * `capacitance` - Thermal mass capacity in J/K
+    /// * `h_tr_is` - Interior surface-to-mass conductance in W/K
+    /// * `h_tr_ms` - Mass-to-sky conductance in W/K
+    pub fn new(
+        id: usize,
+        temperature: f64,
+        capacitance: f64,
+        h_tr_is: f64,
+        h_tr_ms: f64,
+    ) -> Self {
+        Self {
+            id,
+            temperature,
+            capacitance,
+            h_tr_is,
+            h_tr_ms,
+        }
+    }
+
+    /// Update mass temperature using backward Euler integration.
+    ///
+    /// Implements the backward Euler update formula from Issue #1003:
+    /// ```text
+    /// T_mass_new = (T_mass_old * C_mass + dt * (h_tr_is * T_air + h_tr_ms * T_sky))
+    ///              / (C_mass + dt * (h_tr_is + h_tr_ms))
+    /// ```
+    ///
+    /// # Arguments
+    /// * `dt` - Time step in seconds
+    /// * `T_air` - Zone air temperature in °C
+    /// * `T_sky` - Sky temperature in °C
+    pub fn update(&mut self, dt: f64, T_air: f64, T_sky: f64) {
+        if self.capacitance <= 0.0 {
+            return;
+        }
+
+        let numerator = self.temperature * self.capacitance
+            + dt * (self.h_tr_is * T_air + self.h_tr_ms * T_sky);
+        let denominator = self.capacitance + dt * (self.h_tr_is + self.h_tr_ms);
+
+        if denominator > 0.0 {
+            self.temperature = numerator / denominator;
+        }
+    }
+
+    /// Compute steady-state mass temperature.
+    ///
+    /// At steady state (dt → ∞), the formula reduces to:
+    /// ```text
+    /// T_mass_ss = (h_tr_is * T_air + h_tr_ms * T_sky) / (h_tr_is + h_tr_ms)
+    /// ```
+    ///
+    /// # Arguments
+    /// * `T_air` - Zone air temperature in °C
+    /// * `T_sky` - Sky temperature in °C
+    ///
+    /// # Returns
+    /// Steady-state mass temperature in °C
+    pub fn steady_state_temperature(&self, T_air: f64, T_sky: f64) -> f64 {
+        let conductance_sum = self.h_tr_is + self.h_tr_ms;
+        if conductance_sum > 0.0 {
+            (self.h_tr_is * T_air + self.h_tr_ms * T_sky) / conductance_sum
+        } else {
+            self.temperature
         }
     }
 }
@@ -237,6 +357,8 @@ impl SurfaceNode {
 pub struct PerSurfaceConductionSolver {
     /// Collection of surface nodes
     surfaces: Vec<SurfaceNode>,
+    /// Collection of mass nodes (one per surface)
+    mass_nodes: Vec<MassNode>,
 }
 
 impl PerSurfaceConductionSolver {
@@ -244,17 +366,32 @@ impl PerSurfaceConductionSolver {
     pub fn new() -> Self {
         Self {
             surfaces: Vec::new(),
+            mass_nodes: Vec::new(),
         }
     }
 
     /// Create a solver with the given surfaces.
-    pub fn with_surfaces(surfaces: Vec<SurfaceNode>) -> Self {
-        Self { surfaces }
+    pub fn with_surfaces(surfaces: Vec<SurfaceNode>, mass_nodes: Vec<MassNode>) -> Self {
+        Self { surfaces, mass_nodes }
     }
 
-    /// Add a surface to the solver.
-    pub fn add_surface(&mut self, surface: SurfaceNode) {
+    /// Add a mass node to the solver.
+    pub fn add_mass_node(&mut self, mass_node: MassNode) {
+        self.mass_nodes.push(mass_node);
+    }
+
+    /// Add a surface and its corresponding mass node together.
+    ///
+    /// This is the primary method for adding thermal nodes to the solver.
+    /// Both the surface node and mass node share the same ID for cross-referencing.
+    pub fn add_surface_with_mass(
+        &mut self,
+        surface: SurfaceNode,
+        mass_node: MassNode,
+    ) {
+        debug_assert_eq!(surface.id, mass_node.id, "Surface and MassNode must have same ID");
         self.surfaces.push(surface);
+        self.mass_nodes.push(mass_node);
     }
 
     /// Add a surface from thermal model data parameters.
@@ -323,6 +460,39 @@ impl PerSurfaceConductionSolver {
     /// Get total heat flow across all surfaces.
     pub fn total_heat_flow(&self) -> f64 {
         self.surfaces.iter().map(|s| s.heat_flow).sum()
+    }
+
+    /// Get a reference to a mass node by index.
+    pub fn get_mass_node(&self, index: usize) -> Option<&MassNode> {
+        self.mass_nodes.get(index)
+    }
+
+    /// Get a mutable reference to a mass node by index.
+    pub fn get_mass_node_mut(&mut self, index: usize) -> Option<&mut MassNode> {
+        self.mass_nodes.get_mut(index)
+    }
+
+    /// Get all mass node temperatures.
+    pub fn mass_temperatures(&self) -> Vec<f64> {
+        self.mass_nodes.iter().map(|m| m.temperature).collect()
+    }
+
+    /// Update all mass nodes using backward Euler integration.
+    ///
+    /// Implements the backward Euler update formula from Issue #1003:
+    /// ```text
+    /// T_mass_new = (T_mass_old * C_mass + dt * (h_tr_is * T_air + h_tr_ms * T_sky))
+    ///              / (C_mass + dt * (h_tr_is + h_tr_ms))
+    /// ```
+    ///
+    /// # Arguments
+    /// * `dt` - Time step in seconds
+    /// * `T_air` - Zone air temperature in °C
+    /// * `T_sky` - Sky temperature in °C
+    pub fn update_mass_nodes(&mut self, dt: f64, T_air: f64, T_sky: f64) {
+        for mass_node in &mut self.mass_nodes {
+            mass_node.update(dt, T_air, T_sky);
+        }
     }
 
     /// Update all surfaces using backward Euler integration.
@@ -632,5 +802,219 @@ mod tests {
 
         let horiz_kind = SurfaceKind::from_orientation(Orientation::Horizontal);
         assert_eq!(horiz_kind, SurfaceKind::Roof);
+    }
+
+    // =============================================================================
+    // Mass Node Tests (Issue #1003 - Backward Euler Update Formula)
+    // =============================================================================
+
+    /// Test: Backward Euler update formula for mass temperature.
+    ///
+    /// Verifies that the implementation matches the analytical formula:
+    /// T_mass_new = (T_mass_old * C_mass + dt * (h_tr_is * T_air + h_tr_ms * T_sky))
+    ///              / (C_mass + dt * (h_tr_is + h_tr_ms))
+    #[test]
+    fn test_mass_node_backward_euler_formula() {
+        // Create a mass node with known properties
+        let mut mass_node = MassNode::new(
+            0,           // id
+            20.0,        // initial temperature T_mass_old = 20°C
+            100_000.0,   // C_mass = 100,000 J/K
+            10.0,        // h_tr_is = 10 W/K
+            5.0,         // h_tr_ms = 5 W/K
+        );
+
+        let dt = 3600.0;     // dt = 1 hour
+        let T_air = 22.0;    // T_air = 22°C
+        let T_sky = 0.0;     // T_sky = 0°C
+
+        // Compute expected result using the analytical formula
+        let expected = {
+            let numerator = 20.0 * 100_000.0 + 3600.0 * (10.0 * 22.0 + 5.0 * 0.0);
+            let denominator = 100_000.0 + 3600.0 * (10.0 + 5.0);
+            numerator / denominator
+        };
+
+        // Update and verify
+        mass_node.update(dt, T_air, T_sky);
+
+        // Should match analytical formula within floating-point tolerance
+        assert!(
+            (mass_node.temperature - expected).abs() < 1e-10,
+            "Mass node temp {} should match expected {}",
+            mass_node.temperature,
+            expected
+        );
+    }
+
+    /// Test: Mass node approaches steady-state temperature.
+    ///
+    /// When dt → ∞, the mass temperature should approach the weighted average:
+    /// T_ss = (h_tr_is * T_air + h_tr_ms * T_sky) / (h_tr_is + h_tr_ms)
+    #[test]
+    fn test_mass_node_steady_state() {
+        let mass_node = MassNode::new(
+            0,
+            20.0,
+            100_000.0,
+            10.0,
+            5.0,
+        );
+
+        let T_air = 25.0;
+        let T_sky = 5.0;
+
+        let expected_ss = mass_node.steady_state_temperature(T_air, T_sky);
+        let expected_manual = (10.0 * 25.0 + 5.0 * 5.0) / (10.0 + 5.0);
+
+        assert!(
+            (expected_ss - expected_manual).abs() < 1e-10,
+            "Steady-state temp {} should match expected {}",
+            expected_ss,
+            expected_manual
+        );
+
+        // With large dt, should approach steady state
+        let mut mass_node_large_dt = MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0);
+        mass_node_large_dt.update(1e12, T_air, T_sky); // Very large dt
+
+        assert!(
+            (mass_node_large_dt.temperature - expected_ss).abs() < 1e-6,
+            "With large dt, mass temp {} should approach steady state {}",
+            mass_node_large_dt.temperature,
+            expected_ss
+        );
+    }
+
+    /// Test: Mass node zero capacitance handling.
+    ///
+    /// A mass node with zero capacitance should not update (division by zero protection).
+    #[test]
+    fn test_mass_node_zero_capacitance() {
+        let mut mass_node = MassNode::new(
+            0,
+            20.0,
+            0.0,        // Zero capacitance
+            10.0,
+            5.0,
+        );
+
+        let initial_temp = mass_node.temperature;
+        mass_node.update(3600.0, 22.0, 0.0);
+
+        // Temperature should remain unchanged
+        assert_eq!(
+            mass_node.temperature, initial_temp,
+            "Mass node with zero capacitance should not update"
+        );
+    }
+
+    /// Test: Mass node update_all in solver.
+    ///
+    /// Verifies that update_mass_nodes correctly updates all mass nodes.
+    #[test]
+    fn test_solver_update_mass_nodes() {
+        let mut solver = PerSurfaceConductionSolver::new();
+
+        // Add mass nodes with different properties
+        solver.add_mass_node(MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0));
+        solver.add_mass_node(MassNode::new(1, 15.0, 80_000.0, 8.0, 3.0));
+
+        let dt = 3600.0;
+        let T_air = 22.0;
+        let T_sky = 0.0;
+
+        // Update all mass nodes
+        solver.update_mass_nodes(dt, T_air, T_sky);
+
+        let mass_temps = solver.mass_temperatures();
+
+        // Both mass nodes should have updated
+        assert_eq!(mass_temps.len(), 2);
+
+        // Mass node 0: T_old=20, should move toward (10*22 + 5*0)/(10+5) = 14.67
+        // Mass node 1: T_old=15, should move toward (8*22 + 3*0)/(8+3) = 16
+        assert!(
+            mass_temps[0] < 20.0 && mass_temps[0] > 0.0,
+            "Mass node 0 temp {} should decrease toward steady state",
+            mass_temps[0]
+        );
+        assert!(
+            mass_temps[1] > 15.0 && mass_temps[1] < 22.0,
+            "Mass node 1 temp {} should increase toward steady state",
+            mass_temps[1]
+        );
+    }
+
+    /// Test: Backward Euler is unconditionally stable.
+    ///
+    /// Backward Euler should remain stable even with very large timesteps.
+    #[test]
+    fn test_backward_euler_stability() {
+        let mut mass_node = MassNode::new(
+            0,
+            100.0,      // Very different from T_air and T_sky
+            1000.0,     // Small capacitance
+            100.0,      // Large conductance
+            100.0,
+        );
+
+        let T_air = 0.0;
+        let T_sky = 0.0;
+        let dt = 1e6; // Very large timestep (10^6 seconds ≈ 11.5 days)
+
+        // Should not diverge or produce NaN
+        mass_node.update(dt, T_air, T_sky);
+
+        assert!(
+            mass_node.temperature.is_finite(),
+            "Mass temperature {} should be finite (not NaN or Inf)",
+            mass_node.temperature
+        );
+
+        // Should approach steady state
+        assert!(
+            mass_node.temperature > 0.0 && mass_node.temperature < 100.0,
+            "Mass temperature {} should be between T_air and initial",
+            mass_node.temperature
+        );
+    }
+
+    /// Test: Mass node heat flows are conserved.
+    ///
+    /// At any timestep, the heat flow balance should be satisfied:
+    /// Q_tr_is + Q_tr_ms = C_mass * dT/dt
+    #[test]
+    fn test_mass_node_energy_conservation() {
+        let mut mass_node = MassNode::new(
+            0,
+            20.0,
+            50_000.0,
+            10.0,
+            5.0,
+        );
+
+        let dt = 3600.0;
+        let T_air = 22.0;
+        let T_sky = 2.0;
+
+        let T_old = mass_node.temperature;
+        mass_node.update(dt, T_air, T_sky);
+        let T_new = mass_node.temperature;
+
+        // Heat flows
+        let Q_tr_is = 10.0 * (T_air - T_new);
+        let Q_tr_ms = 5.0 * (T_sky - T_new);
+        let Q_stored = 50_000.0 * (T_new - T_old) / dt;
+
+        // Energy balance: Q_tr_is + Q_tr_ms = Q_stored
+        let imbalance = (Q_tr_is + Q_tr_ms - Q_stored).abs();
+        let tolerance = 1e-10;
+
+        assert!(
+            imbalance < tolerance,
+            "Energy imbalance {} should be negligible",
+            imbalance
+        );
     }
 }
