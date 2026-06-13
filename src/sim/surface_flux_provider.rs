@@ -15,6 +15,9 @@
 //! - ML surrogate providers that predict flux directly from boundary conditions
 //! - Combined physics providers that aggregate conduction + solar internally
 
+use crate::physics::solver_trait::HeatConductionSolver;
+use std::sync::{Arc, RwLock};
+
 /// Trait for providing surface heat flux from any source (conduction, solar, or combined).
 ///
 /// This abstraction allows the zone solver to be agnostic about HOW flux is calculated.
@@ -105,6 +108,156 @@ impl SurfaceHeatFluxProvider for MockSurfaceHeatFluxProvider {
 
     fn name(&self) -> &str {
         "MockSurfaceHeatFluxProvider"
+    }
+}
+
+/// Physics-based flux provider combining conduction solver + solar gain.
+///
+/// This provider wraps a `HeatConductionSolver` per surface and combines:
+/// - Conduction flux from the solver (W/m²)
+/// - Solar gain per surface (W/m²)
+///
+/// # Example
+///
+/// ```
+/// use fluxion::sim::surface_flux_provider::{PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider};
+/// use fluxion::physics::five_r1c_solver::FiveR1CSolver;
+/// use fluxion::physics::wall_spec::WallSpec;
+///
+/// // Create a wall spec
+/// let wall = WallSpec::single_layer("200mm Concrete", 0.2, 1.73, 2243.0, 837.0);
+///
+/// // Create solver and initialize
+/// let mut solver = FiveR1CSolver::new();
+/// solver.initialize(&wall).unwrap();
+///
+/// // Create physics provider with one surface
+/// let provider = PhysicsSurfaceFluxProvider::new()
+///     .add_surface(solver, 10.0, 0.0); // solver, area_m2, solar_gain_wm2
+///
+/// assert_eq!(provider.num_surfaces(), 1);
+/// ```
+pub struct PhysicsSurfaceFluxProvider {
+    /// Solvers per surface (boxed, wrapped in RwLock for thread-safe interior mutability)
+    solvers: Vec<Arc<RwLock<Box<dyn HeatConductionSolver>>>>,
+    /// Surface areas [m²]
+    areas: Vec<f64>,
+    /// Solar gain per surface [W/m²]
+    solar_gain_wm2: Vec<f64>,
+    /// Interior film coefficients [W/m²·K]
+    h_int: Vec<f64>,
+    /// Exterior film coefficients [W/m²·K]
+    h_ext: Vec<f64>,
+}
+
+impl PhysicsSurfaceFluxProvider {
+    /// Create a new empty physics provider.
+    pub fn new() -> Self {
+        Self {
+            solvers: Vec::new(),
+            areas: Vec::new(),
+            solar_gain_wm2: Vec::new(),
+            h_int: Vec::new(),
+            h_ext: Vec::new(),
+        }
+    }
+
+    /// Add a surface with its solver and properties.
+    ///
+    /// # Arguments
+    /// * `solver` - Initialized heat conduction solver (consumed)
+    /// * `area_m2` - Surface area [m²]
+    /// * `solar_gain_wm2` - Solar gain per unit area [W/m²]
+    pub fn add_surface(
+        mut self,
+        solver: impl HeatConductionSolver + 'static,
+        area_m2: f64,
+        solar_gain_wm2: f64,
+    ) -> Self {
+        self.solvers.push(Arc::new(RwLock::new(Box::new(solver))));
+        self.areas.push(area_m2);
+        self.solar_gain_wm2.push(solar_gain_wm2);
+        self.h_int.push(8.0); // Default interior h
+        self.h_ext.push(25.0); // Default exterior h
+        self
+    }
+
+    /// Add a surface with custom film coefficients.
+    pub fn add_surface_with_film_coefficients(
+        mut self,
+        solver: impl HeatConductionSolver + 'static,
+        area_m2: f64,
+        solar_gain_wm2: f64,
+        h_int: f64,
+        h_ext: f64,
+    ) -> Self {
+        self.solvers.push(Arc::new(RwLock::new(Box::new(solver))));
+        self.areas.push(area_m2);
+        self.solar_gain_wm2.push(solar_gain_wm2);
+        self.h_int.push(h_int);
+        self.h_ext.push(h_ext);
+        self
+    }
+
+    /// Update solar gain for a surface.
+    pub fn set_solar_gain(&mut self, surface_idx: usize, solar_gain_wm2: f64) {
+        if surface_idx < self.solar_gain_wm2.len() {
+            self.solar_gain_wm2[surface_idx] = solar_gain_wm2;
+        }
+    }
+
+    /// Get current solar gain for a surface.
+    pub fn get_solar_gain(&self, surface_idx: usize) -> f64 {
+        self.solar_gain_wm2.get(surface_idx).copied().unwrap_or(0.0)
+    }
+
+    /// Get surface area.
+    pub fn get_area(&self, surface_idx: usize) -> f64 {
+        self.areas.get(surface_idx).copied().unwrap_or(0.0)
+    }
+}
+
+impl Default for PhysicsSurfaceFluxProvider {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SurfaceHeatFluxProvider for PhysicsSurfaceFluxProvider {
+    fn surface_heat_flux(
+        &self,
+        surface_idx: usize,
+        T_zone: f64,
+        T_outdoor: f64,
+        dt_seconds: f64,
+    ) -> f64 {
+        if surface_idx >= self.solvers.len() {
+            return 0.0;
+        }
+
+        let h_int = *self.h_int.get(surface_idx).unwrap_or(&8.0);
+        let h_ext = *self.h_ext.get(surface_idx).unwrap_or(&25.0);
+        let solar = *self.solar_gain_wm2.get(surface_idx).unwrap_or(&0.0);
+
+        // Compute conduction flux using the solver (via RwLock for thread-safe interior mutability)
+        let conduction_flux = {
+            let mut solver = self.solvers[surface_idx].write().unwrap();
+            solver
+                .step(dt_seconds, T_zone, T_outdoor, h_int, h_ext)
+                .unwrap_or(0.0)
+        };
+
+        // Total flux = conduction + solar
+        // Positive = heat into zone
+        conduction_flux + solar
+    }
+
+    fn num_surfaces(&self) -> usize {
+        self.solvers.len()
+    }
+
+    fn name(&self) -> &str {
+        "PhysicsSurfaceFluxProvider"
     }
 }
 
