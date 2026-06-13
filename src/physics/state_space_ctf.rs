@@ -601,12 +601,23 @@ fn compute_ctf_from_state_space(
             );
         }
 
-        // Check convergence: the s series tail must be negligible relative to
-        // U_bare, AND we must have at least n terms (Cayley-Hamilton theorem
-        // guarantees R(n)=0, so the extraction is exact after n iterations).
-        // The s-tail check alone is insufficient for multi-layer walls where
-        // s values can become small before the e series has converged.
+        // Check convergence: two criteria (hybrid approach)
+        //
+        // 1. PARTIAL-SUM CHECK (primary): For thin walls, the s series oscillates
+        //    in sign so individual terms never become small, but the partial sum
+        //    ΣX converges to U_bare. Stop when |ΣX - U_bare| / U_bare < CONVRG_LIM.
+        //
+        // 2. S-TAIL CHECK (fallback): For thick walls with monotonic decay, the
+        //    individual s terms become tiny. Stop when max|s_tail| / U_bare < CONVRG_LIM.
+        //
+        // Either criterion is sufficient to stop. Cayley-Hamilton guarantees
+        // R(n)=0 so extraction is exact after n iterations minimum.
         if inum >= MIN_CTF_TERMS.max(n) {
+            // Criterion 1: partial sum convergence
+            let x_partial: f64 = s0[1][0] + (0..inum).map(|j| s[1][0][j]).sum::<f64>();
+            let x_residual_rel = (x_partial - u_bare).abs() / u_bare.max(1e-10);
+
+            // Criterion 2: s-tail magnitude (fallback for monotonic-decay walls)
             let max_s_tail = s[0]
                 .iter()
                 .chain(s[1].iter())
@@ -614,7 +625,7 @@ fn compute_ctf_from_state_space(
                 .fold(0.0f64, f64::max);
             let s_tail_rel = max_s_tail / u_bare.max(1e-10);
 
-            if s_tail_rel < CONVRG_LIM {
+            if x_residual_rel < CONVRG_LIM || s_tail_rel < CONVRG_LIM {
                 num_ctf_terms = inum;
                 converged = true;
                 break;
