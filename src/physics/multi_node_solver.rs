@@ -480,6 +480,7 @@ impl MultiNodeSolver {
     /// energy balance because they appear identically on both sides of the
     /// backward Euler update equation. The net heat flow is still:
     ///   Q_k = C_k/dt · (T_k_new - T_k_old)
+    #[allow(clippy::too_many_arguments)]
     fn check_energy_balance_with_gains(
         &self,
         t_wall_old: f64,
