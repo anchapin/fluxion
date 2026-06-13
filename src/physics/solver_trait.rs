@@ -54,37 +54,27 @@
 #[allow(unused_imports)]
 use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
-use std::error::Error;
-use std::fmt;
+use thiserror::Error;
 
 /// Error type for solver operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum SolverError {
     /// Invalid configuration parameters
+    #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
     /// Coefficient calculation failed
+    #[error("Coefficient error: {0}")]
     CoefficientError(String),
     /// Numerical instability detected
+    #[error("Numerical instability: {0}")]
     Instability(String),
     /// Convergence failure
+    #[error("Convergence error: {0}")]
     ConvergenceError(String),
     /// Invalid wall construction
+    #[error("Construction error: {0}")]
     ConstructionError(String),
 }
-
-impl fmt::Display for SolverError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SolverError::InvalidConfig(msg) => write!(f, "Invalid configuration: {}", msg),
-            SolverError::CoefficientError(msg) => write!(f, "Coefficient error: {}", msg),
-            SolverError::Instability(msg) => write!(f, "Numerical instability: {}", msg),
-            SolverError::ConvergenceError(msg) => write!(f, "Convergence error: {}", msg),
-            SolverError::ConstructionError(msg) => write!(f, "Construction error: {}", msg),
-        }
-    }
-}
-
-impl Error for SolverError {}
 
 /// Common trait for all heat conduction solvers.
 ///
@@ -169,6 +159,7 @@ pub trait HeatConductionSolver: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
 
     #[test]
     fn test_solver_error_display_invalid_config() {
