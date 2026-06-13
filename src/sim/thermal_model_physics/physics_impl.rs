@@ -960,7 +960,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
 
-
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
         // Calculate sky temperature for proper sol-air calculation with longwave radiation
         let sky_temp = self
@@ -1535,7 +1534,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let q_env_net = h_tr_ms * (t_s - tm_env_old)
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
-
 
                     tm_env_old + (q_env_net / cm_env) * dt
                 }
