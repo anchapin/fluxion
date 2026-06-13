@@ -960,14 +960,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     ) -> f64 {
         let dt = dt_seconds; // Use provided timestep duration
 
-        // DEBUG: Check solar_gains at entry to step_physics_6r2c
-        if timestep == 12 {
-            eprintln!(
-                "DEBUG_STEP_6R2C_ENTRY: t={}, solar_gains[0]={:.2}",
-                timestep,
-                self.0.solar_gains.as_ref()[0]
-            );
-        }
 
         // Prepare sol-air temperature and calculate CTF/FD heat fluxes early to avoid borrow conflicts
         // Calculate sky temperature for proper sol-air calculation with longwave radiation
@@ -1544,19 +1536,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         + h_tr_me * (tm_int - tm_env_old)
                         + phi_m_env_zone;
 
-                    // Debug: Print heat flow breakdown for first zone
-                    if timestep == 0 && i == 0 {
-                        println!(
-                            "DEBUG step_physics_6r2c: q_env_net={:.2}, dt={:.0}, cm_env={:.0}",
-                            q_env_net, dt, cm_env
-                        );
-                        println!(
-                            "  Components: h_tr_ms*({:.1}-{:.1})={:.2}, h_tr_me*({:.1}-{:.1})={:.2}, phi_m_env={:.2}",
-                            t_s, tm_env_old, h_tr_ms * (t_s - tm_env_old),
-                            tm_int, tm_env_old, h_tr_me * (tm_int - tm_env_old),
-                            phi_m_env_zone
-                        );
-                    }
 
                     tm_env_old + (q_env_net / cm_env) * dt
                 }
