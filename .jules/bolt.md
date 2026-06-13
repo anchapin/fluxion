@@ -27,3 +27,6 @@
 ## 2026-05-30 - Optimized HVAC Peak Power Calculation
 **Learning:** In `ThermalModel::step_physics`, using `.clone()` on `hvac_output_raw` to store the value for peak power calculations generated unnecessary memory allocations.
 **Action:** The cloned `hvac_power_for_peak` value was completely redundant since `hvac_output_raw` could be directly chained to compute peak power calculations (which requires an elementwise read, not a mutable borrow nor ownership of the Tensor block).
+## 2026-06-12 - Ensure step_physics_6r2c doesn't print debugging output in hot loops
+**Learning:** Found debug `println!` output within the `step_physics_6r2c` hot loop which blocked IO and lowered throughput.
+**Action:** Removed these debug `println!` macros since they should not be compiled in standard performance builds.
