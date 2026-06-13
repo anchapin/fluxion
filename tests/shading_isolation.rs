@@ -468,7 +468,7 @@ fn test_combined_overhang_and_fin() {
     // shadow_y = 1.414m, shaded_height = 1.414m, fraction = 1.414*6/12 = 0.7071
     // Fin at 45° az: shadow_x = 1.0m, fraction = 1.0*2/12 = 0.1667
     // Combined = 0.7071 + 0.1667 = 0.8738
-    let expected = f64::consts::FRAC_1_SQRT_2 + 1.0 / 6.0;
+    let expected = std::f64::consts::FRAC_1_SQRT_2 + 1.0 / 6.0;
     let rel_error = (shaded - expected).abs() / expected;
 
     assert!(
