@@ -1,0 +1,190 @@
+Version, 25.2;
+
+! ── Simulation Control ──────────────────────────────────────────────────
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+RunPeriod,
+  AnnualRun,  ! Name
+  1,   ! Start Month
+  1,   ! Start Day of Month
+  ,    ! Start Year
+  12,  ! End Month
+  31,  ! End Day of Month
+  ,    ! End Year
+  Tuesday,  ! Day of Week for Start Day
+  Yes,      ! Use Weather File Holidays and Special Days
+  Yes,      ! Use Weather File Daylight Saving Period
+  No,       ! Apply Weekend Holiday Rule
+  Yes,      ! Use Weather File Rain Indicators
+  Yes;      ! Use Weather File Snow Indicators
+
+Timestep, 1;
+
+! ── Building (minimal box needed for E+ to advance simulation) ──────────
+Building,
+  RefBox_Psychro,  ! Name
+  0.0,             ! North Axis {deg}
+  City,             ! Terrain
+  0.04,             ! Loads Convergence Tolerance Value
+  0.4,              ! Temperature Convergence Tolerance Value {deltaC}
+  FullExterior,     ! Solar Distribution
+  25;               ! Maximum Number of Warmup Days
+
+! ── Zone ────────────────────────────────────────────────────────────────
+Zone,
+  ZONE1,   ! Name
+  0,       ! Direction of Relative North {deg}
+  0,       ! X Origin {m}
+  0,       ! Y Origin {m}
+  0,       ! Z Origin {m}
+  1,       ! Type
+  1,       ! Multiplier
+  ,        ! Ceiling Height {m}
+  129.6,   ! Volume {m3}
+  ,        ! Floor Area {m2}
+  ;        ! Zone Inside Convection Algorithm
+
+! ── Materials ────────────────────────────────────────────────────────────
+Material,
+  MIN_GYP,
+  MediumRough,
+  0.013,
+  0.16,
+  800,
+  1090;
+
+Construction,
+  MIN_WALL,
+  MIN_GYP;
+
+! ── Global Geometry Rules ───────────────────────────────────────────────
+GlobalGeometryRules,
+  UpperLeftCorner,
+  ClockWise,
+  World;
+
+! ── Surfaces (single small floor + 4 walls — minimum viable geometry) ──
+! Floor (ground)
+BuildingSurface:Detailed,
+  Floor,
+  Floor,
+  MIN_WALL,
+  ZONE1,
+  ,
+  Ground,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  0, 0, 0,
+  1, 0, 0,
+  1, 1, 0,
+  0, 1, 0;
+
+! South wall
+BuildingSurface:Detailed,
+  SouthWall,
+  Wall,
+  MIN_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  SunExposed,
+  WindExposed,
+  0.5,
+  4,
+  0, 0, 2.7,
+  1, 0, 2.7,
+  1, 0, 0,
+  0, 0, 0;
+
+! North wall
+BuildingSurface:Detailed,
+  NorthWall,
+  Wall,
+  MIN_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  SunExposed,
+  WindExposed,
+  0.5,
+  4,
+  1, 1, 2.7,
+  0, 1, 2.7,
+  0, 1, 0,
+  1, 1, 0;
+
+! East wall
+BuildingSurface:Detailed,
+  EastWall,
+  Wall,
+  MIN_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  SunExposed,
+  WindExposed,
+  0.5,
+  4,
+  1, 0, 2.7,
+  1, 1, 2.7,
+  1, 1, 0,
+  1, 0, 0;
+
+! West wall
+BuildingSurface:Detailed,
+  WestWall,
+  Wall,
+  MIN_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  SunExposed,
+  WindExposed,
+  0.5,
+  4,
+  0, 1, 2.7,
+  0, 0, 2.7,
+  0, 0, 0,
+  0, 1, 0;
+
+! Roof
+BuildingSurface:Detailed,
+  Roof,
+  Roof,
+  MIN_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  SunExposed,
+  WindExposed,
+  ,
+  4,
+  0, 0, 2.7,
+  1, 0, 2.7,
+  1, 1, 2.7,
+  0, 1, 2.7;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+! Psychrometric state point variables
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Hourly;
+Output:Variable, *, Site Outdoor Air Dewpoint Temperature, Hourly;
+Output:Variable, *, Site Outdoor Air Humidity Ratio, Hourly;
+Output:Variable, *, Site Outdoor Air Enthalpy, Hourly;
+Output:Variable, *, Site Outdoor Air Barometric Pressure, Hourly;
+Output:Variable, *, Site Outdoor Air Relative Humidity, Hourly;
+Output:Variable, *, Site Vapor Pressure Outdoor Air, Hourly;
