@@ -23,6 +23,10 @@ use crate::sim::multi_node_thermal::ThermalMassNode;
 /// Matches [`crate::sim::warmup::DEFAULT_WARMUP_DAYS`].
 const DEFAULT_WARMUP_DAYS: usize = 14;
 
+/// Specific heat of air at constant pressure [J/kgK].
+/// ASHRAE Handbook Fundamentals (2021) Chapter 1: moist air cp ≈ 1006 J/kgK.
+const CP_AIR: f64 = 1006.0;
+
 /// Multi-node HVAC runner with warm-up period support.
 #[deprecated(
     since = "0.9.0",
@@ -67,6 +71,12 @@ pub struct MultiNodeHvacRunner {
     warmed_up: bool,
     /// Number of warm-up timesteps (default: 336 = 14 days × 24 hours)
     warmup_timesteps: usize,
+
+    // -- Air-node HVAC fields (Issue #1007) --
+    /// Air mass flow rate [kg/s]
+    pub m_dot: f64,
+    /// Supply air temperature [°C]
+    pub T_supply: f64,
 }
 
 impl MultiNodeHvacRunner {
@@ -100,6 +110,8 @@ impl MultiNodeHvacRunner {
             timestep_count: 0,
             warmed_up: false,
             warmup_timesteps: DEFAULT_WARMUP_DAYS * 24,
+            m_dot: 0.0,
+            T_supply: heating_setpoint,
         }
     }
 
@@ -113,7 +125,12 @@ impl MultiNodeHvacRunner {
         let internal = ThermalMassNode::new(20.0, 1e6, 10.0, 5.0);
         let solver = MultiNodeSolver::new(10.0, wall, roof, floor, internal);
 
-        Self::new(solver, 15.0, 20.0, 20.0, 26.0)
+        let mut runner = Self::new(solver, 15.0, 20.0, 20.0, 26.0);
+        // Default mass flow rate: 0.5 kg/s (typical for residential HVAC)
+        runner.m_dot = 0.5;
+        // Default supply air temperature: 40°C heating, 16°C cooling
+        runner.T_supply = 40.0;
+        runner
     }
 
     /// Configure the warm-up duration in days.
@@ -146,6 +163,34 @@ impl MultiNodeHvacRunner {
         self.annual_cooling_energy = 0.0;
         self.peak_heating_power = 0.0;
         self.peak_cooling_power = 0.0;
+    }
+
+    /// Compute Q_HVAC using the air-node energy balance formula (Issue #1007).
+    ///
+    /// Q_HVAC = m_dot * cp * (T_supply - T_air)
+    ///
+    /// Where:
+    /// - Q_HVAC = HVAC heating/cooling power [W]
+    /// - m_dot = air mass flow rate [kg/s]
+    /// - cp = specific heat of air [J/kgK] (≈ 1006)
+    /// - T_supply = supply air temperature [°C]
+    /// - T_air = zone air temperature [°C]
+    ///
+    /// Positive Q_HVAC indicates heating (supply air warmer than zone).
+    /// Negative Q_HVAC indicates cooling (supply air cooler than zone).
+    pub fn compute_q_hvac(&self) -> f64 {
+        self.m_dot * CP_AIR * (self.T_supply - self.prev_zone_temp)
+    }
+
+    /// Set the mass flow rate and supply air temperature for HVAC calculations.
+    ///
+    /// # Arguments
+    ///
+    /// * `m_dot` - Air mass flow rate [kg/s]
+    /// * `T_supply` - Supply air temperature [°C]
+    pub fn set_hvac_air_properties(&mut self, m_dot: f64, T_supply: f64) {
+        self.m_dot = m_dot;
+        self.T_supply = T_supply;
     }
 
     /// Advance the simulation by one timestep.
@@ -421,6 +466,154 @@ mod tests {
             q.abs() < 1000.0,
             "HVAC power should be small when zone is near setpoint: got {} W",
             q
+        );
+    }
+
+    // =============================================================================
+    // Q_HVAC Air-Node Energy Balance Formula Tests (Issue #1007)
+    // =============================================================================
+
+    #[test]
+    fn test_q_hvac_formula_heating() {
+        // Q_HVAC = m_dot * cp * (T_supply - T_air)
+        // Example: m_dot=0.5 kg/s, T_supply=40°C, T_air=20°C
+        // Expected: Q_HVAC = 0.5 * 1006 * (40 - 20) = 10060 W (heating)
+        let mut runner = create_test_runner();
+        runner.m_dot = 0.5;
+        runner.T_supply = 40.0;
+        runner.prev_zone_temp = 20.0;
+
+        let q_hvac = runner.compute_q_hvac();
+        let expected = 0.5 * CP_AIR * (40.0 - 20.0);
+
+        assert!(
+            (q_hvac - expected).abs() < 1e-6,
+            "Q_HVAC heating formula mismatch: got {:.2}, expected {:.2}",
+            q_hvac,
+            expected
+        );
+        assert!(
+            q_hvac > 0.0,
+            "Q_HVAC should be positive for heating (T_supply > T_air)"
+        );
+    }
+
+    #[test]
+    fn test_q_hvac_formula_cooling() {
+        // Q_HVAC = m_dot * cp * (T_supply - T_air)
+        // Example: m_dot=0.5 kg/s, T_supply=16°C, T_air=26°C
+        // Expected: Q_HVAC = 0.5 * 1006 * (16 - 26) = -5030 W (cooling)
+        let mut runner = create_test_runner();
+        runner.m_dot = 0.5;
+        runner.T_supply = 16.0;
+        runner.prev_zone_temp = 26.0;
+
+        let q_hvac = runner.compute_q_hvac();
+        let expected = 0.5 * CP_AIR * (16.0 - 26.0);
+
+        assert!(
+            (q_hvac - expected).abs() < 1e-6,
+            "Q_HVAC cooling formula mismatch: got {:.2}, expected {:.2}",
+            q_hvac,
+            expected
+        );
+        assert!(
+            q_hvac < 0.0,
+            "Q_HVAC should be negative for cooling (T_supply < T_air)"
+        );
+    }
+
+    #[test]
+    fn test_q_hvac_formula_zero_when_equal() {
+        // When T_supply == T_air, Q_HVAC should be zero (no heating/cooling needed)
+        let mut runner = create_test_runner();
+        runner.m_dot = 0.5;
+        runner.T_supply = 22.0;
+        runner.prev_zone_temp = 22.0;
+
+        let q_hvac = runner.compute_q_hvac();
+
+        assert!(
+            q_hvac.abs() < 1e-10,
+            "Q_HVAC should be zero when T_supply == T_air: got {:.6}",
+            q_hvac
+        );
+    }
+
+    #[test]
+    fn test_q_hvac_formula_proportional_to_mass_flow() {
+        // Q_HVAC is proportional to m_dot
+        let mut runner = create_test_runner();
+        runner.T_supply = 40.0;
+        runner.prev_zone_temp = 20.0;
+
+        runner.m_dot = 0.5;
+        let q1 = runner.compute_q_hvac();
+
+        runner.m_dot = 1.0;
+        let q2 = runner.compute_q_hvac();
+
+        assert!(
+            (q2 - 2.0 * q1).abs() < 1e-6,
+            "Q_HVAC should double when m_dot doubles: q1={:.2}, q2={:.2}",
+            q1,
+            q2
+        );
+    }
+
+    #[test]
+    fn test_q_hvac_formula_proportional_to_temperature_diff() {
+        // Q_HVAC is proportional to (T_supply - T_air)
+        let mut runner = create_test_runner();
+        runner.m_dot = 0.5;
+        runner.prev_zone_temp = 20.0;
+
+        runner.T_supply = 30.0;
+        let q1 = runner.compute_q_hvac();
+
+        runner.T_supply = 40.0;
+        let q2 = runner.compute_q_hvac();
+
+        // 40-20 = 2 * (30-20), so q2 should be 2 * q1
+        assert!(
+            (q2 - 2.0 * q1).abs() < 1e-6,
+            "Q_HVAC should double when temperature diff doubles: q1={:.2}, q2={:.2}",
+            q1,
+            q2
+        );
+    }
+
+    #[test]
+    fn test_set_hvac_air_properties() {
+        let mut runner = create_test_runner();
+        runner.set_hvac_air_properties(0.75, 45.0);
+
+        assert_eq!(runner.m_dot, 0.75);
+        assert_eq!(runner.T_supply, 45.0);
+    }
+
+    #[test]
+    fn test_default_hvac_air_properties() {
+        // with_defaults() sets m_dot=0.5 and T_supply=40.0
+        let runner = MultiNodeHvacRunner::with_defaults();
+        assert_eq!(runner.m_dot, 0.5);
+        assert_eq!(runner.T_supply, 40.0);
+    }
+
+    #[test]
+    fn test_q_hvac_with_defaults() {
+        // Test Q_HVAC formula with default values from with_defaults()
+        let runner = MultiNodeHvacRunner::with_defaults();
+        // Default: m_dot=0.5, T_supply=40, zone starts at heating_setpoint=20
+        // Q_HVAC = 0.5 * 1006 * (40 - 20) = 10060 W
+        let expected = 0.5 * CP_AIR * (40.0 - 20.0);
+        let q_hvac = runner.compute_q_hvac();
+
+        assert!(
+            (q_hvac - expected).abs() < 1e-6,
+            "Q_HVAC with defaults mismatch: got {:.2}, expected {:.2}",
+            q_hvac,
+            expected
         );
     }
 }
