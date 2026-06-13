@@ -206,6 +206,8 @@ pub struct SurfaceNode {
     pub capacitance: f64,
     /// Conductance from surface to mass node in W/K
     pub h_tr_ms: f64,
+    /// Conductance from interior surface to air in W/K
+    pub h_tr_is: f64,
     /// Conductance from exterior to mass node in W/K
     pub h_tr_em: f64,
     /// Interior surface heat transfer coefficient in W/m²K
@@ -229,6 +231,7 @@ impl SurfaceNode {
     /// * `temperature` - Initial temperature in °C
     /// * `capacitance` - Thermal capacitance in J/K
     /// * `h_tr_ms` - Surface-to-mass conductance in W/K
+    /// * `h_tr_is` - Interior surface-to-air conductance in W/K
     /// * `h_tr_em` - Exterior-to-mass conductance in W/K
     /// * `h_tr_is` - Interior surface heat transfer coefficient in W/m²K
     /// * `mass_temperature` - Initial mass temperature in °C
@@ -240,6 +243,7 @@ impl SurfaceNode {
         temperature: f64,
         capacitance: f64,
         h_tr_ms: f64,
+        h_tr_is: f64,
         h_tr_em: f64,
         h_tr_is: f64,
         mass_temperature: f64,
@@ -252,6 +256,7 @@ impl SurfaceNode {
             temperature,
             capacitance,
             h_tr_ms,
+            h_tr_is,
             h_tr_em,
             h_tr_is,
             mass_temperature,
@@ -274,7 +279,42 @@ impl SurfaceNode {
         self.u_value * self.area * (mass_temperature - exterior_temperature)
     }
 
-    /// Compute surface temperature from mass temperature.
+    /// Compute surface temperature from mass and air temperatures using ISO 13790 formula.
+    ///
+    /// This is the primary formula for calculating interior surface temperature
+    /// from the zone air temperature and mass temperature:
+    /// ```text
+    /// T_surface = (h_tr_is * T_air + h_tr_ms * T_mass) / (h_tr_is + h_tr_ms)
+    /// ```
+    ///
+    /// This represents the heat balance at the interior surface where:
+    /// - h_tr_is connects the surface to the zone air
+    /// - h_tr_ms connects the surface to the thermal mass
+    ///
+    /// When h_tr_is dominates (high surface convection), T_surface ≈ T_air.
+    /// When h_tr_ms dominates (high thermal coupling to mass), T_surface ≈ T_mass.
+    ///
+    /// # Arguments
+    /// * `zone_air_temperature` - Zone air temperature in °C
+    /// * `mass_temperature` - Thermal mass node temperature in °C
+    ///
+    /// # Returns
+    /// Surface temperature in °C
+    pub fn surface_temperature_from_mass(
+        &self,
+        zone_air_temperature: f64,
+        mass_temperature: f64,
+    ) -> f64 {
+        let h_sum = self.h_tr_is + self.h_tr_ms;
+        if h_sum > 0.0 {
+            (self.h_tr_is * zone_air_temperature + self.h_tr_ms * mass_temperature) / h_sum
+        } else {
+            // Fallback if conductances are zero
+            mass_temperature
+        }
+    }
+
+    /// Compute surface temperature from mass and exterior temperatures.
     ///
     /// Uses ISO 13790 surface heat transfer relationship:
     /// ```text
@@ -418,6 +458,7 @@ impl PerSurfaceConductionSolver {
         u_value: f64,
         temperature: f64,
         h_tr_ms: f64,
+        h_tr_is: f64,
         h_tr_em: f64,
         h_tr_is: f64,
     ) {
@@ -435,6 +476,7 @@ impl PerSurfaceConductionSolver {
             temperature,
             capacitance,
             h_tr_ms,
+            h_tr_is,
             h_tr_em,
             h_tr_is,
             temperature, // mass_temperature starts equal to surface temperature
@@ -538,17 +580,19 @@ impl PerSurfaceConductionSolver {
         }
     }
 
-    /// Compute surface temperatures from mass temperature.
+    /// Compute surface temperatures from mass and air temperatures.
+    ///
+    /// Uses the ISO 13790 formula: T_surface = (h_tr_is * T_air + h_tr_ms * T_mass) / (h_tr_is + h_tr_ms)
     ///
     /// Returns a vector of surface temperatures corresponding to each surface node.
     pub fn compute_surface_temperatures(
         &self,
+        zone_air_temperature: f64,
         mass_temperature: f64,
-        exterior_temperature: f64,
     ) -> Vec<f64> {
         self.surfaces
             .iter()
-            .map(|s| s.surface_temperature(mass_temperature, exterior_temperature))
+            .map(|s| s.surface_temperature_from_mass(zone_air_temperature, mass_temperature))
             .collect()
     }
 
@@ -603,6 +647,7 @@ mod tests {
             0.5,  // U = 0.5 W/m²K
             20.0, // initial temperature
             5.0,  // h_tr_ms
+            4.0,  // h_tr_is
             2.0,  // h_tr_em
         );
 
@@ -659,6 +704,7 @@ mod tests {
             0.2, // Low U = thick insulation
             20.0,
             10.0, // h_tr_ms
+            8.0,  // h_tr_is
             5.0,  // h_tr_em
         );
 
@@ -671,6 +717,7 @@ mod tests {
             2.0, // High U = thin insulation
             20.0,
             50.0, // h_tr_ms
+            40.0, // h_tr_is
             20.0, // h_tr_em
         );
 
@@ -702,7 +749,140 @@ mod tests {
         );
     }
 
-    /// Test: Surface temperature computation from mass temperature.
+    /// Test: Surface temperature computation from mass and air temperatures using ISO 13790.
+    #[test]
+    fn test_surface_temperature_from_mass() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(
+            0,
+            SurfaceKind::Roof,
+            20.0, // area
+            0.3,  // U-value
+            15.0, // temperature
+            8.0,  // h_tr_ms
+            6.0,  // h_tr_is
+            3.0,  // h_tr_em
+        );
+
+        let zone_air_temp = 22.0;
+        let mass_temp = 18.0;
+
+        let computed_temps = solver.compute_surface_temperatures(zone_air_temp, mass_temp);
+        let t_surface = computed_temps[0];
+
+        // T_surface = (h_tr_is * T_air + h_tr_ms * T_mass) / (h_tr_is + h_tr_ms)
+        // T_surface = (6.0 * 22.0 + 8.0 * 18.0) / (6.0 + 8.0)
+        // T_surface = (132.0 + 144.0) / 14.0 = 276.0 / 14.0 = 19.714...
+        let expected = (6.0 * zone_air_temp + 8.0 * mass_temp) / (6.0 + 8.0);
+        assert!(
+            (t_surface - expected).abs() < 1e-10,
+            "Surface temp {} should equal expected {}",
+            t_surface,
+            expected
+        );
+
+        // T_surface should be between T_air and T_mass
+        assert!(
+            t_surface > mass_temp && t_surface < zone_air_temp,
+            "Surface temp {} should be between air {} and mass {}",
+            t_surface,
+            zone_air_temp,
+            mass_temp
+        );
+    }
+
+    /// Test: Surface temperature when air dominates (high h_tr_is).
+    #[test]
+    fn test_surface_temperature_air_dominates() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(
+            0,
+            SurfaceKind::Wall,
+            10.0,
+            0.5,
+            20.0,
+            1.0,   // h_tr_ms - small
+            100.0, // h_tr_is - large, so air dominates
+            2.0,
+        );
+
+        let zone_air_temp = 22.0;
+        let mass_temp = 18.0;
+
+        let computed_temps = solver.compute_surface_temperatures(zone_air_temp, mass_temp);
+        let t_surface = computed_temps[0];
+
+        // When h_tr_is >> h_tr_ms, T_surface ≈ T_air
+        assert!(
+            (t_surface - zone_air_temp).abs() < 0.1,
+            "When air dominates, T_surface ({}) should be close to T_air ({})",
+            t_surface,
+            zone_air_temp
+        );
+    }
+
+    /// Test: Surface temperature when mass dominates (high h_tr_ms).
+    #[test]
+    fn test_surface_temperature_mass_dominates() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(
+            0,
+            SurfaceKind::Wall,
+            10.0,
+            0.5,
+            20.0,
+            100.0, // h_tr_ms - large, so mass dominates
+            1.0,   // h_tr_is - small
+            2.0,
+        );
+
+        let zone_air_temp = 22.0;
+        let mass_temp = 18.0;
+
+        let computed_temps = solver.compute_surface_temperatures(zone_air_temp, mass_temp);
+        let t_surface = computed_temps[0];
+
+        // When h_tr_ms >> h_tr_is, T_surface ≈ T_mass
+        assert!(
+            (t_surface - mass_temp).abs() < 0.1,
+            "When mass dominates, T_surface ({}) should be close to T_mass ({})",
+            t_surface,
+            mass_temp
+        );
+    }
+
+    /// Test: Surface temperature when h_tr_is == h_tr_ms (equal weighting).
+    #[test]
+    fn test_surface_temperature_equal_weighting() {
+        let mut solver = PerSurfaceConductionSolver::new();
+        solver.add_surface_from_params(
+            0,
+            SurfaceKind::Wall,
+            10.0,
+            0.5,
+            20.0,
+            5.0, // h_tr_ms
+            5.0, // h_tr_is - equal to h_tr_ms
+            2.0,
+        );
+
+        let zone_air_temp = 22.0;
+        let mass_temp = 18.0;
+
+        let computed_temps = solver.compute_surface_temperatures(zone_air_temp, mass_temp);
+        let t_surface = computed_temps[0];
+
+        // When h_tr_is == h_tr_ms, T_surface = (T_air + T_mass) / 2
+        let expected = (zone_air_temp + mass_temp) / 2.0;
+        assert!(
+            (t_surface - expected).abs() < 1e-10,
+            "When equal weighting, T_surface ({}) should be average ({})",
+            t_surface,
+            expected
+        );
+    }
+
+    /// Test: Surface temperature computation from mass temperature (deprecated method).
     #[test]
     fn test_surface_temperature_computation() {
         let mut solver = PerSurfaceConductionSolver::new();
@@ -713,14 +893,18 @@ mod tests {
             0.3,  // U-value
             15.0, // temperature (will be overwritten by computation)
             8.0,  // h_tr_ms
+            6.0,  // h_tr_is
             3.0,  // h_tr_em
         );
 
         let mass_temp = 20.0;
         let exterior_temp = -10.0;
 
-        let computed_temps = solver.compute_surface_temperatures(mass_temp, exterior_temp);
-        let t_surface = computed_temps[0];
+        // Use the original surface_temperature method directly
+        let t_surface = solver
+            .get(0)
+            .unwrap()
+            .surface_temperature(mass_temp, exterior_temp);
 
         // T_surface should be between T_mass and T_exterior
         assert!(
@@ -736,7 +920,7 @@ mod tests {
     #[test]
     fn test_energy_conservation() {
         let mut solver = PerSurfaceConductionSolver::new();
-        solver.add_surface_from_params(0, SurfaceKind::Wall, 15.0, 0.5, 18.0, 12.0, 6.0);
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 15.0, 0.5, 18.0, 12.0, 10.0, 6.0);
 
         let mass_temp = 22.0;
         let exterior_temp = 2.0;
@@ -764,7 +948,7 @@ mod tests {
         let mut solver = PerSurfaceConductionSolver::new();
 
         // Add wall and roof with different properties
-        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 2.0);
+        solver.add_surface_from_params(0, SurfaceKind::Wall, 10.0, 0.5, 20.0, 5.0, 4.0, 2.0);
         solver.add_surface_from_params(
             1,
             SurfaceKind::Roof,
@@ -772,6 +956,7 @@ mod tests {
             0.3,
             15.0, // Different initial temperature
             4.0,
+            3.0,
             1.5,
         );
 
