@@ -59,5 +59,6 @@ pub mod multi_node_solver;
 pub mod solver_manager;
 pub mod solver_registry;
 pub mod solver_trait;
+pub mod units;
 pub mod wall_properties;
 pub mod wall_spec;

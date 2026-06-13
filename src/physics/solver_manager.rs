@@ -35,6 +35,7 @@ use crate::physics::method_selector::{
 };
 use crate::physics::solver_registry::SolverRegistry;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
 use crate::sim::assembly::BuildingAssembly;
 use log::{debug, warn};
@@ -240,7 +241,14 @@ impl SolverManager {
             SolverError::InvalidConfig(format!("No solver for wall {}", wall_index))
         })?;
 
-        solver.step(timestep, T_interior, T_exterior, h_interior, h_exterior)
+        let flux = solver.step(
+            Time::from_value(timestep),
+            Temperature::from_value(T_interior),
+            Temperature::from_value(T_exterior),
+            HeatTransferCoefficient::from_value(h_interior),
+            HeatTransferCoefficient::from_value(h_exterior),
+        )?;
+        Ok(flux.to_value())
     }
 
     /// Get energy storage rate for a wall.
@@ -351,8 +359,14 @@ impl SolverManager {
                 SolverError::InvalidConfig(format!("No solver for wall {}", wall_index))
             })?;
 
-            let flux = solver.step(dt, T_int, T_ext, h_int, h_ext)?;
-            fluxes.push(flux);
+            let flux = solver.step(
+                Time::from_value(dt),
+                Temperature::from_value(T_int),
+                Temperature::from_value(T_ext),
+                HeatTransferCoefficient::from_value(h_int),
+                HeatTransferCoefficient::from_value(h_ext),
+            )?;
+            fluxes.push(flux.to_value());
         }
 
         Ok(fluxes)

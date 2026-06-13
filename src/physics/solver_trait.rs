@@ -37,13 +37,21 @@
 //! ```rust
 //! use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
 //! use fluxion::physics::five_r1c_solver::FiveR1CSolver;
+//! use fluxion::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
 //!
 //! let mut solver = FiveR1CSolver::new();
 //! solver.initialize(&wall_spec)?;
 //!
-//! let flux = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0)?;
+//! let flux = solver.step(
+//!     Time::from_value(3600.0),
+//!     Temperature::from_value(20.0),
+//!     Temperature::from_value(5.0),
+//!     HeatTransferCoefficient::from_value(8.0),
+//!     HeatTransferCoefficient::from_value(25.0),
+//! )?;
 //! ```
 
+use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
 use std::error::Error;
 use std::fmt;
@@ -93,19 +101,26 @@ impl Error for SolverError {}
 ///
 /// ```rust
 /// # use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
+/// # use fluxion::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
 /// # struct MySolver;
 /// # impl MySolver { fn new() -> Self { MySolver } }
 /// # impl HeatConductionSolver for MySolver {
 /// #     fn name(&self) -> &str { "test" }
 /// #     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> { Ok(()) }
-/// #     fn step(&mut self, dt: f64, T_int: f64, T_ext: f64, h_int: f64, h_ext: f64) -> Result<f64, SolverError> { Ok(0.0) }
+/// #     fn step(&mut self, dt: Time, T_int: Temperature, T_ext: Temperature, h_int: HeatTransferCoefficient, h_ext: HeatTransferCoefficient) -> Result<HeatFlux, SolverError> { Ok(HeatFlux::from_value(0.0)) }
 /// #     fn energy_storage_rate(&self) -> f64 { 0.0 }
 /// #     fn is_valid(&self) -> bool { true }
 /// # }
 /// let mut solver = MySolver::new();
 /// solver.initialize(&wall)?;
 ///
-/// let flux = solver.step(3600.0, T_zone, T_outdoor, h_int, h_ext)?;
+/// let flux = solver.step(
+///     Time::from_value(3600.0),
+///     Temperature::from_value(T_zone),
+///     Temperature::from_value(T_outdoor),
+///     HeatTransferCoefficient::from_value(h_int),
+///     HeatTransferCoefficient::from_value(h_ext),
+/// )?;
 /// ```
 pub trait HeatConductionSolver: Send + Sync {
     /// Get solver name/type identifier
@@ -133,12 +148,12 @@ pub trait HeatConductionSolver: Send + Sync {
     /// Heat flux through wall [W/m²] (positive = heat flowing into zone)
     fn step(
         &mut self,
-        timestep: f64,
-        T_interior: f64,
-        T_exterior: f64,
-        h_interior: f64,
-        h_exterior: f64,
-    ) -> Result<f64, SolverError>;
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError>;
 
     /// Get current energy storage rate in wall [W/m²]
     ///
@@ -210,6 +225,8 @@ mod tests {
 
     #[test]
     fn test_heat_conduction_solver_trait_can_be_implemented() {
+        use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
+
         struct TestSolver {
             valid: bool,
             storage_rate: f64,
@@ -226,13 +243,13 @@ mod tests {
 
             fn step(
                 &mut self,
-                _timestep: f64,
-                _T_interior: f64,
-                _T_exterior: f64,
-                _h_interior: f64,
-                _h_exterior: f64,
-            ) -> Result<f64, SolverError> {
-                Ok(42.0)
+                _timestep: Time,
+                _T_interior: Temperature,
+                _T_exterior: Temperature,
+                _h_interior: HeatTransferCoefficient,
+                _h_exterior: HeatTransferCoefficient,
+            ) -> Result<HeatFlux, SolverError> {
+                Ok(HeatFlux::from_value(42.0))
             }
 
             fn energy_storage_rate(&self) -> f64 {
@@ -253,13 +270,21 @@ mod tests {
         assert!(solver.is_valid());
         assert_eq!(solver.energy_storage_rate(), 10.0);
 
-        let result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
+        let result = solver.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42.0);
+        assert_eq!(result.unwrap().to_value(), 42.0);
     }
 
     #[test]
     fn test_heat_conduction_solver_can_return_error() {
+        use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
+
         struct FailingSolver;
 
         impl HeatConductionSolver for FailingSolver {
@@ -273,12 +298,12 @@ mod tests {
 
             fn step(
                 &mut self,
-                _timestep: f64,
-                _T_interior: f64,
-                _T_exterior: f64,
-                _h_interior: f64,
-                _h_exterior: f64,
-            ) -> Result<f64, SolverError> {
+                _timestep: Time,
+                _T_interior: Temperature,
+                _T_exterior: Temperature,
+                _h_interior: HeatTransferCoefficient,
+                _h_exterior: HeatTransferCoefficient,
+            ) -> Result<HeatFlux, SolverError> {
                 Err(SolverError::Instability("NaN detected".to_string()))
             }
 
@@ -295,7 +320,13 @@ mod tests {
         assert!(!solver.is_valid());
 
         // Note: initialize() returns error before needing WallSpec
-        let step_result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
+        let step_result = solver.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(step_result.is_err());
         assert!(step_result.unwrap_err().to_string().contains("instability"));
     }

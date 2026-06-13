@@ -122,6 +122,8 @@ def check_drift() -> list[str]:
         "ContinuousTensor",  # internal CTA trait
         "ContinuousField",  # internal CTA trait
         "CrossValidationAdapter",  # validation infra, not physics
+        "FromF64",  # internal unit conversion trait
+        "ToF64",  # internal unit conversion trait
     }
 
     # These are structs mentioned in ARCHITECTURE.md that get false-positived
