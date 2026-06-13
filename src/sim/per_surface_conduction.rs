@@ -88,6 +88,12 @@ pub struct SurfaceNode {
     pub h_tr_ms: f64,
     /// Conductance from exterior to mass node in W/K
     pub h_tr_em: f64,
+    /// Interior surface heat transfer coefficient in W/m²K
+    /// Used for computing heat exchange between zone air and interior surface
+    pub h_tr_is: f64,
+    /// Thermal mass temperature in °C
+    /// Updated using backward Euler integration
+    pub mass_temperature: f64,
     /// Net heat flow rate at the surface in W
     pub heat_flow: f64,
 }
@@ -104,6 +110,8 @@ impl SurfaceNode {
     /// * `capacitance` - Thermal capacitance in J/K
     /// * `h_tr_ms` - Surface-to-mass conductance in W/K
     /// * `h_tr_em` - Exterior-to-mass conductance in W/K
+    /// * `h_tr_is` - Interior surface heat transfer coefficient in W/m²K
+    /// * `mass_temperature` - Initial mass temperature in °C
     pub fn new(
         id: usize,
         kind: SurfaceKind,
@@ -113,6 +121,8 @@ impl SurfaceNode {
         capacitance: f64,
         h_tr_ms: f64,
         h_tr_em: f64,
+        h_tr_is: f64,
+        mass_temperature: f64,
     ) -> Self {
         Self {
             id,
@@ -123,6 +133,8 @@ impl SurfaceNode {
             capacitance,
             h_tr_ms,
             h_tr_em,
+            h_tr_is,
+            mass_temperature,
             heat_flow: 0.0,
         }
     }
@@ -270,6 +282,7 @@ impl PerSurfaceConductionSolver {
         temperature: f64,
         h_tr_ms: f64,
         h_tr_em: f64,
+        h_tr_is: f64,
     ) {
         // Thermal capacitance: C = ρ * c * V = ρ * c * (A * d)
         // Using typical concrete: ρ = 2300 kg/m³, c = 1000 J/kgK, d = 0.1m
@@ -286,6 +299,8 @@ impl PerSurfaceConductionSolver {
             capacitance,
             h_tr_ms,
             h_tr_em,
+            h_tr_is,
+            temperature, // mass_temperature starts equal to surface temperature
         );
         self.surfaces.push(surface);
     }
