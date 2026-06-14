@@ -1012,7 +1012,7 @@ impl ThermalModel<VectorField> {
             // h_tr_ms ≈ 240 W/K instead of 1092 W/K, producing proper thermal coupling.
             let h_ms_coeff = match spec.construction_type {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.1,
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 0.33,
                 crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
