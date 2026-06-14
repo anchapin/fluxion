@@ -27,13 +27,6 @@ const DEFAULT_WARMUP_DAYS: usize = 14;
 /// ASHRAE Handbook Fundamentals (2021) Chapter 1: moist air cp ≈ 1006 J/kgK.
 const CP_AIR: f64 = 1006.0;
 
-/// Minimum total conductance [W/K] used as the denominator of the zone
-/// temperature estimate. Below this floor (≈ 1 µW/K, many orders of magnitude
-/// under any physically meaningful envelope), the zone-temperature estimate is
-/// ill-defined; we skip the update and return `0.0` demand rather than
-/// producing `±∞` (Issue #1006).
-const ZONE_TEMP_CONDUCTANCE_FLOOR: f64 = 1e-6;
-
 /// Multi-node HVAC runner with warm-up period support.
 #[deprecated(
     since = "0.9.0",
@@ -250,50 +243,90 @@ impl MultiNodeHvacRunner {
         // Update solver boundary conditions
         self.solver.set_exterior_temperature(outdoor_temp);
 
-        // Estimate zone temperature from previous step's mass temperatures
-        // and current heat flows. Simple energy balance:
-        //   T_zone ≈ (h_tr_w * T_out + h_ve * T_out + solar + internal + h_tr_is * T_surface) /
-        //            (h_tr_w + h_ve + h_tr_is)
-        let h_tr_is = self.solver.h_tr_is;
-        let t_surface = self.solver.surface_temperature;
+        // === Step 1: Compute free-floating zone temperature (BEFORE HVAC) ===
+        // Use the multi-node solver's air balance with the current (pre-step) mass
+        // temperatures. This is the temperature the zone would reach if no HVAC
+        // were operating. Per Issue #858 design: T_air = T_free in deadband.
+        //
+        // The convective portion of internal gains goes to the air (phi_ia);
+        // the radiative portion is injected into the mass via step_with_gains().
+        // For ASHRAE 140, the convective fraction of internal gains is typically
+        // ~0.5 for residential (per ISO 13790 Annex C).
+        let phi_ia = 0.5 * internal_gain;
+        let t_free = self
+            .solver
+            .compute_zone_air_temperature(outdoor_temp, self.h_ve, phi_ia);
 
-        // Issue #1006: denominator guard. A zero or sub-floor total conductance
-        // means the zone has no envelope, no infiltration, and no mass coupling
-        // — i.e. the energy balance is singular. Returning 0 demand here
-        // matches the "no information, no HVAC" semantics and prevents the
-        // ±∞ MWh readings observed in the original bug report.
-        let denom = self.h_tr_w + self.h_ve + h_tr_is;
-        let zone_temp = if denom > ZONE_TEMP_CONDUCTANCE_FLOOR {
-            (self.h_tr_w * outdoor_temp
-                + self.h_ve * outdoor_temp
-                + solar_gain
-                + internal_gain
-                + h_tr_is * t_surface)
-                / denom
+        // === Step 2: Determine HVAC mode and target zone temperature ===
+        // Per Issue #858: T_air = T_setpoint when heating/cooling active,
+        // T_air = T_free in deadband. We force the solver's boundary to T_setpoint
+        // so the mass sees the conditioned temperature (mimics ideal HVAC).
+        //
+        // Issue #1006: NaN/Inf guard on the free-floating temperature. Even with
+        // the solver's own denominator guard in `compute_zone_air_temperature`,
+        // a future caller could reach this point with a non-finite value (e.g.
+        // uninitialized mass temperatures). In that case, fall back to outdoor
+        // temperature so the solver can still advance mass temperatures; the
+        // deadband check below will treat the timestep as inactive and demand
+        // will be 0 — matching the "no information, no HVAC" semantics.
+        let t_free_safe = if t_free.is_finite() {
+            t_free
         } else {
-            // Degenerate envelope: fall back to outdoor temperature so the
-            // solver can still advance mass temperatures. Demand is forced
-            // to 0 below because the deadband check is meaningless without
-            // a meaningful zone temperature.
             outdoor_temp
         };
-
-        self.solver.set_zone_temperature(zone_temp);
-        self.prev_zone_temp = zone_temp;
-
-        // Compute HVAC demand: maintain zone within setpoint deadband
-        let q_hvac = if zone_temp < self.heating_setpoint {
-            // Heating needed: power to bring zone up to setpoint
-            (self.h_tr_w + self.h_ve + h_tr_is) * (self.heating_setpoint - zone_temp)
-        } else if zone_temp > self.cooling_setpoint {
-            // Cooling needed: power to bring zone down to setpoint
-            -((self.h_tr_w + self.h_ve + h_tr_is) * (zone_temp - self.cooling_setpoint))
+        let (t_air_target, hvac_active, hvac_setpoint) = if t_free_safe < self.heating_setpoint {
+            (self.heating_setpoint, true, self.heating_setpoint)
+        } else if t_free_safe > self.cooling_setpoint {
+            (self.cooling_setpoint, true, self.cooling_setpoint)
         } else {
-            0.0
+            (t_free, false, t_free)
         };
 
-        // Step the thermal solver (updates mass temperatures)
-        self.solver.step(dt);
+        self.solver.set_zone_temperature(t_air_target);
+        self.prev_zone_temp = t_air_target;
+
+        // === Step 3: Step the multi-node solver with proper gain injection ===
+        // Distribute solar gain to envelope nodes (south wall dominant for Case 900):
+        //   - 60% to wall (south-facing window irradiation)
+        //   - 30% to roof (diffuse + ground-reflected on horizontal)
+        //   - 10% to floor (small ground-reflected fraction)
+        // Internal radiative portion (50%) goes to internal mass node.
+        let g_wall = 0.6 * solar_gain;
+        let g_roof = 0.3 * solar_gain;
+        let g_floor = 0.1 * solar_gain;
+        let g_internal = 0.5 * internal_gain;
+        self.solver
+            .step_with_gains(dt, g_wall, g_roof, g_floor, g_internal);
+
+        // === Step 4: Compute HVAC power using the air node energy balance ===
+        // Per Issue #858 air node balance (simplified to single h_tr_is for
+        // compatibility with MultiNodeSolver, which uses a single shared h_tr_is):
+        //
+        //   h_tr_is*(T_surface - T_air) + h_ve*(T_out - T_air) + h_tr_w*(T_out - T_air)
+        //     + phi_ia + Q_HVAC = 0
+        //
+        // Solving for Q_HVAC (heat ADDED to zone by HVAC):
+        //   Q_HVAC = (h_tr_is + h_ve + h_tr_w) * T_air
+        //          - h_tr_is * T_surface
+        //          - (h_ve + h_tr_w) * T_out
+        //          - phi_ia
+        //
+        // Positive Q_HVAC = heating (heat added to zone).
+        // Negative Q_HVAC = cooling (heat removed from zone).
+        let h_tr_is = self.solver.h_tr_is;
+        let t_surface_post = self.solver.surface_temperature;
+        let h_total = h_tr_is + self.h_ve + self.h_tr_w;
+
+        let q_hvac = if hvac_active {
+            // HVAC mode: maintain T_air at setpoint
+            h_total * hvac_setpoint
+                - h_tr_is * t_surface_post
+                - (self.h_ve + self.h_tr_w) * outdoor_temp
+                - phi_ia
+        } else {
+            // Deadband: no HVAC needed; report zero load.
+            0.0
+        };
 
         // Warm-up check: skip energy accumulation during warm-up
         if !self.warmed_up {
