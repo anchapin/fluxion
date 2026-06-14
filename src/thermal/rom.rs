@@ -28,9 +28,9 @@
 //! - ISO 13790:2008: Calculation of energy use for space heating and cooling
 //! - "Advancements in Building Energy Simulation Engines" - Reduced Order Models section
 
+use nalgebra::{DMatrix, DVector};
 use std::error::Error;
 use std::fmt;
-use nalgebra::{DMatrix, DVector};
 
 #[derive(Clone, Debug, Copy, PartialEq, Eq, Default)]
 pub enum ROMMode {
