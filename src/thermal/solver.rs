@@ -6,6 +6,7 @@
 use crate::physics::cta::VectorField;
 use crate::validation::performance::metrics;
 use crate::validation::performance::optimization;
+use nalgebra::{DMatrix, DVector};
 
 /// Solver result containing convergence information.
 #[derive(Debug, Clone)]
@@ -28,7 +29,7 @@ pub struct ThermalSolver {
     pub heat_gains: VectorField,
 
     /// Inter-zone conductance matrix
-    pub conductance_matrix: Vec<Vec<f64>>,
+    pub conductance_matrix: DMatrix<f64>,
 
     /// Time step for current solve
     pub timestep: f64,
@@ -44,7 +45,7 @@ impl ThermalSolver {
         temperatures: VectorField,
         capacitances: VectorField,
         heat_gains: VectorField,
-        conductance_matrix: Vec<Vec<f64>>,
+        conductance_matrix: DMatrix<f64>,
     ) -> Self {
         Self {
             temperatures,
@@ -82,7 +83,7 @@ impl ThermalSolver {
             // Add inter-zone heat contributions
             for j in 0..num_zones {
                 if i != j {
-                    let conductance = self.conductance_matrix[i][j];
+                    let conductance = self.conductance_matrix[(i, j)];
                     let temp_diff =
                         self.temperatures.as_slice()[j] - self.temperatures.as_slice()[i];
                     net_heat += conductance * temp_diff;
@@ -108,7 +109,7 @@ impl ThermalSolver {
             // Calculate inter-zone heat contributions
             for j in 0..num_zones {
                 if i != j {
-                    let conductance = self.conductance_matrix[i][j];
+                    let conductance = self.conductance_matrix[(i, j)];
                     let temp_diff =
                         self.temperatures.as_slice()[j] - self.temperatures.as_slice()[i];
                     net_heat += conductance * temp_diff;
@@ -204,7 +205,7 @@ mod tests {
         let temps = VectorField::from_scalar(20.0, 2);
         let caps = VectorField::from_scalar(1000.0, 2);
         let gains = VectorField::from_scalar(100.0, 2);
-        let matrix = vec![vec![0.0, 50.0], vec![50.0, 0.0]];
+        let matrix = DMatrix::from_vec(2, 2, vec![0.0, 50.0, 50.0, 0.0]);
 
         let solver = ThermalSolver::new(temps, caps, gains, matrix);
         assert_eq!(solver.temperatures.len(), 2);
@@ -217,7 +218,7 @@ mod tests {
             VectorField::from_scalar(20.0, 2),
             VectorField::from_scalar(1000.0, 2),
             VectorField::from_scalar(100.0, 2),
-            vec![vec![0.0, 50.0], vec![50.0, 0.0]],
+            DMatrix::from_vec(2, 2, vec![0.0, 50.0, 50.0, 0.0]),
         );
 
         solver.enable_optimizations();
@@ -234,7 +235,7 @@ mod tests {
             VectorField::from_scalar(20.0, 2),
             VectorField::from_scalar(1000.0, 2),
             VectorField::from_scalar(100.0, 2),
-            vec![vec![0.0, 50.0], vec![50.0, 0.0]],
+            DMatrix::from_vec(2, 2, vec![0.0, 50.0, 50.0, 0.0]),
         );
 
         solver.enable_optimizations();
