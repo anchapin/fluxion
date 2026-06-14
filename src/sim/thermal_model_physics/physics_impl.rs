@@ -2173,18 +2173,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_coeff = self.compute_hvac_coefficient(i);
                 let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
 
-                // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
-                if timestep == 337 && i == 0 && !self.0.free_float {
-                    eprintln!(
-                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
-                        self.0.h_tr_is.as_ref()[i],
-                        self.0.h_ve.as_ref()[i],
-                        h_coeff,
-                        t_free_val,
-                        h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
-                    );
-                }
-
                 // Issue #900: dynamic mass heat release term (cooling only).
                 //
                 // Use the multi-node solver's mass node temperatures when
@@ -2215,54 +2203,78 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else {
                     self.0.mass_temperatures.as_ref()[i]
                 };
-                // Issue #900: mass heat release term (cooling only).
-                //
-                // See compute_zone_hvac_load (hvac.rs) for the formula
-                // and gating conditions. The 9R4C inline path uses multi-
-                // node envelope temperatures (stable, well below 35°C)
-                // and the same high-mass threshold (h_tr_ms ≥ 500 W/K).
-                //
-                // The cap is set higher than the 5R1C path (50× vs 10×)
-                // because the multi-node temps are stable: the 9R4C mass
-                // nodes track each other (wall/roof/floor envelope
-                // weighted temp stays in 28–33°C range) and the peak
-                // mass_heat_release of ~3 kW at T_mass = 30°C brings
-                // Case 900 cooling close to the ASHRAE 140 reference
-                // peak range (2.10–3.50 kW).
-                const MASS_RELEASE_DAMPING_9R4C: f64 = 1.0;
-                const HIGH_MASS_H_TR_MS_THRESHOLD_9R4C: f64 = 500.0;
-                const MASS_TEMP_MAX_9R4C: f64 = 35.0;
-                const MASS_RELEASE_MAX_FACTOR_9R4C: f64 = 50.0;
-                let mass_heat_release_unclamped = if t_mass_mn > self.0.cooling_setpoint
-                    && t_mass_mn <= MASS_TEMP_MAX_9R4C
-                    && h_tr_ms >= HIGH_MASS_H_TR_MS_THRESHOLD_9R4C
-                {
-                    h_tr_ms * (t_mass_mn - self.0.cooling_setpoint) * MASS_RELEASE_DAMPING_9R4C
-                } else {
-                    0.0
-                };
-                let mass_heat_release = if mass_heat_release_unclamped > 0.0 {
-                    mass_heat_release_unclamped.min(h_coeff * MASS_RELEASE_MAX_FACTOR_9R4C)
-                } else {
-                    0.0
-                };
 
+                // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
+                if timestep == 337 && i == 0 && !self.0.free_float {
+                    let h_tr_is = self.0.h_tr_is.as_ref()[i];
+                    let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
+                    let h_tr_em = self.0.h_tr_em.as_ref()[i];
+                    let h_tr_w = self.0.h_tr_w.as_ref()[i];
+                    let h_tr_floor = self.0.h_tr_floor.as_ref()[i];
+                    let h_ve_scalar = self.0.h_ve.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_ms_em = h_tr_ms * h_tr_em / (h_tr_ms + h_tr_em);
+                    let stb = h_tr_w + h_ms_em + h_tr_floor;
+                    let h_is_X = h_tr_is * stb / (h_tr_is + stb);
+                    let h_coeff_check = h_is_X + h_ve_scalar;
+                    eprintln!(
+                        "HVAC_DBG[step=337]: h_tr_is={:.3}, h_tr_ms={:.1}, h_tr_em={:.3}, h_tr_w={:.3}, h_tr_floor={:.3}, h_ve={:.3}",
+                        h_tr_is, h_tr_ms, h_tr_em, h_tr_w, h_tr_floor, h_ve_scalar
+                    );
+                    eprintln!(
+                        "  h_ms_em={:.3}, stb={:.3}, h_is_X={:.3}, h_coeff={:.4} (check={:.4})",
+                        h_ms_em, stb, h_is_X, h_coeff, h_coeff_check
+                    );
+                    eprintln!(
+                        "  t_free={:.2}, t_mass_mn={:.2}, q_heating={:.2}",
+                        t_free_val,
+                        t_mass_mn,
+                        h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
+                    );
+                }
+
+                // Issue #908 corrected cooling formula:
+
+                //
+                // OLD formula problems:
+                // 1. Steady-state term used t_free_val (multi-node air temp with STALE
+                //    surface temperatures, computed before step_physics_9r4c updates them).
+                //    This gives a tiny value when t_free_val barely exceeds t_cool_sp.
+                // 2. mass_heat_release used h_tr_ms directly (1092 W/K), giving huge
+                //    values (3.3 kW for 3°C ΔT) that had to be capped, losing the
+                //    physical link to the Norton equivalent h_coeff.
+                //
+                // CORRECTED formula (from steady-state zone air energy balance):
+                // Q = h_coeff × (T_mass − T_cool_sp)
+                // This is derived by substituting the Norton equivalent property
+                // h_tr_ms × (T_mass − T_zone) = h_coeff × (T_mass − T_zone) into
+                // the zone energy balance, eliminating the need for a separate
+                // mass term and avoiding the h_tr_ms/h_coeff mismatch.
+                //
+                // Sign convention: Q > 0 = heating, Q < 0 = cooling.
+                //
+                // Issue #908 FIX: Prevent misclassification of cooling demand as heating.
+                //
+                // The formula q = -h_coeff * (t_mass_mn - T_cool_sp) produces a POSITIVE
+                // value when t_mass_mn < T_cool_sp (e.g., mass at 20°C from winter control,
+                // cooling setpoint at 27°C → q = +700 W). This positive value gets
+                // accumulated as HEATING energy (val > 0 → heating_sum += val), inflating
+                // annual heating by ~1.75 MWh and leaving cooling near zero.
+                //
+                // Fix: Only compute cooling when t_mass_mn > T_cool_sp. A cold mass cannot
+                // release heat for cooling — setting q = 0 when mass is cold is physically
+                // correct and prevents misclassification.
                 let q = if t_free_val < self.0.heating_setpoint {
                     // Heating: keep Issue #925 formula unchanged.
                     // Mass heat absorption term is intentionally omitted
                     // (see Issue #900 in hvac.rs for rationale).
                     h_coeff * (self.0.heating_setpoint - t_free_val)
-                } else if t_free_val > self.0.cooling_setpoint {
-                    // Cooling, zone above setpoint.
-                    //   -h_loss × (T_free − T_cool)        steady-state heat loss to outside
-                    //   −h_tr_ms × (T_mass − T_cool) × 0.5 dynamic mass heat release
-                    h_coeff * (self.0.cooling_setpoint - t_free_val) - mass_heat_release
-                } else if mass_heat_release > 0.0 {
-                    // Dead band, but mass is hotter than cool_sp — mass
-                    // releases heat that the HVAC must remove. See Issue
-                    // #900 in hvac.rs.
-                    -mass_heat_release
+                } else if t_mass_mn > self.0.cooling_setpoint {
+                    // Cooling: only when mass is warm enough to release heat.
+                    // Uses t_mass_mn (already computed at lines 2200-2217) which
+                    // reflects the CURRENT thermal mass state after step_physics_9r4c.
+                    -h_coeff * (t_mass_mn - self.0.cooling_setpoint)
                 } else {
+                    // Mass is cold (at or below cooling setpoint): no cooling available.
                     0.0
                 };
 

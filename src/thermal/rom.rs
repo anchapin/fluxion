@@ -28,6 +28,7 @@
 //! - ISO 13790:2008: Calculation of energy use for space heating and cooling
 //! - "Advancements in Building Energy Simulation Engines" - Reduced Order Models section
 
+use nalgebra::{DMatrix, DVector};
 use std::error::Error;
 use std::fmt;
 
@@ -113,7 +114,7 @@ impl Default for PCAConfig {
 #[derive(Clone, Debug)]
 pub struct PCATransformer {
     config: PCAConfig,
-    eigenvectors: Vec<Vec<f64>>,
+    eigenvectors: DMatrix<f64>,
     eigenvalues: Vec<f64>,
     means: Vec<f64>,
 }
@@ -122,7 +123,7 @@ impl PCATransformer {
     pub fn new(config: PCAConfig) -> Self {
         Self {
             config,
-            eigenvectors: vec![],
+            eigenvectors: DMatrix::zeros(0, 0),
             eigenvalues: vec![],
             means: vec![],
         }
@@ -164,13 +165,13 @@ impl PCATransformer {
         Ok(())
     }
 
-    fn compute_covariance(data: &[f64], n_features: usize) -> Vec<Vec<f64>> {
+    fn compute_covariance(data: &[f64], n_features: usize) -> DMatrix<f64> {
         let n_samples = data.len() / n_features;
         if n_samples == 0 {
-            return vec![vec![0.0; n_features]; n_features];
+            return DMatrix::zeros(n_features, n_features);
         }
 
-        let mut covariance = vec![vec![0.0; n_features]; n_features];
+        let mut covariance = DMatrix::zeros(n_features, n_features);
 
         for j in 0..n_features {
             for k in 0..n_features {
@@ -178,62 +179,53 @@ impl PCATransformer {
                 for i in 0..n_samples {
                     cov += data[i * n_features + j] * data[i * n_features + k];
                 }
-                covariance[j][k] = cov / (n_samples - 1) as f64;
+                covariance[(j, k)] = cov / (n_samples - 1) as f64;
             }
         }
 
         covariance
     }
 
-    fn power_iteration(matrix: &[Vec<f64>], n_components: usize) -> (Vec<Vec<f64>>, Vec<f64>) {
-        let n = matrix.len();
+    fn power_iteration(matrix: &DMatrix<f64>, n_components: usize) -> (DMatrix<f64>, Vec<f64>) {
+        let n = matrix.nrows();
         if n == 0 {
-            return (vec![], vec![]);
+            return (DMatrix::zeros(0, 0), vec![]);
         }
 
-        let mut eigenvectors = vec![vec![0.0; n]; n_components.min(n)];
-        let eigenvalues = vec![0.0; n_components.min(n)];
+        let n_comp = n_components.min(n);
+        let mut eigenvectors = DMatrix::zeros(n, n_comp);
+        let eigenvalues = vec![0.0; n_comp];
 
-        for k in 0..n_components.min(n) {
-            let mut v: Vec<f64> = (0..n).map(|i| if i == k { 1.0 } else { 0.0 }).collect();
+        for k in 0..n_comp {
+            let mut v: DVector<f64> = DVector::zeros(n);
+            v[k] = 1.0;
 
             for _iter in 0..100 {
-                let mut new_v = vec![0.0; n];
-                for i in 0..n {
-                    for j in 0..n {
-                        new_v[i] += matrix[i][j] * v[j];
-                    }
-                }
+                let new_v = matrix * &v;
 
                 let norm = new_v.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let mut new_v_normalized = new_v.clone();
                 if norm > 1e-10 {
-                    for v_i in new_v.iter_mut().take(n) {
-                        *v_i /= norm;
-                    }
+                    new_v_normalized /= norm;
                 }
 
-                for (i, _eig) in eigenvectors.iter().take(k).enumerate() {
-                    let dot: f64 = eigenvectors[i]
-                        .iter()
-                        .zip(&new_v)
-                        .map(|(a, b)| a * b)
-                        .sum::<f64>();
-                    for j in 0..n {
-                        new_v[j] -= dot * eigenvectors[i][j];
-                    }
+                // Orthogonalize against previous eigenvectors
+                for i in 0..k {
+                    let eig_col = eigenvectors.column(i).clone();
+                    let dot = new_v_normalized.dot(&eig_col);
+                    let eig_col_scaled = eig_col * dot;
+                    new_v_normalized -= &eig_col_scaled;
                 }
 
-                let norm = new_v.iter().map(|x| x * x).sum::<f64>().sqrt();
+                let norm = new_v_normalized.iter().map(|x| x * x).sum::<f64>().sqrt();
                 if norm > 1e-10 {
-                    for v_i in new_v.iter_mut().take(n) {
-                        *v_i /= norm;
-                    }
+                    new_v_normalized /= norm;
                 }
 
-                v = new_v;
+                v = new_v_normalized;
             }
 
-            eigenvectors[k] = v;
+            eigenvectors.set_column(k, &v);
         }
 
         (eigenvectors, eigenvalues)
@@ -249,7 +241,7 @@ impl PCATransformer {
 
         let n_samples = data.len() / self.means.len();
         let n_features = self.means.len();
-        let n_components = self.eigenvectors.len();
+        let n_components = self.eigenvectors.ncols();
 
         let mut projected = vec![0.0; n_samples * n_components];
 
@@ -258,7 +250,7 @@ impl PCATransformer {
                 let mut dot = 0.0;
                 for k in 0..n_features {
                     let centered = data[i * n_features + k] - self.means[k];
-                    dot += centered * self.eigenvectors[j][k];
+                    dot += centered * self.eigenvectors[(k, j)];
                 }
                 projected[i * n_components + j] = dot;
             }
@@ -268,7 +260,7 @@ impl PCATransformer {
     }
 
     pub fn inverse_transform(&self, projected: &[f64]) -> ROMResult<Vec<f64>> {
-        let n_components = self.eigenvectors.len();
+        let n_components = self.eigenvectors.ncols();
         let n_samples = projected.len() / n_components;
 
         if n_samples == 0 {
@@ -285,7 +277,7 @@ impl PCATransformer {
             for k in 0..n_features {
                 for j in 0..n_components {
                     reconstructed[i * n_features + k] +=
-                        projected[i * n_components + j] * self.eigenvectors[j][k];
+                        projected[i * n_components + j] * self.eigenvectors[(k, j)];
                 }
                 reconstructed[i * n_features + k] += self.means[k];
             }
@@ -366,9 +358,9 @@ impl ZoneClustering {
         Ok(())
     }
 
-    fn compute_distance_matrix(capacitances: &[f64], conductances: &[f64]) -> Vec<Vec<f64>> {
+    fn compute_distance_matrix(capacitances: &[f64], conductances: &[f64]) -> DMatrix<f64> {
         let n = capacitances.len();
-        let mut dist_matrix = vec![vec![0.0; n]; n];
+        let mut dist_matrix = DMatrix::zeros(n, n);
 
         let cap_mean: f64 = capacitances.iter().sum::<f64>() / n as f64;
         let cap_std = (capacitances
@@ -407,7 +399,7 @@ impl ZoneClustering {
             for j in 0..n {
                 let d_cap = cap_norm[i] - cap_norm[j];
                 let d_cond = cond_norm[i] - cond_norm[j];
-                dist_matrix[i][j] = (d_cap * d_cap + d_cond * d_cond).sqrt();
+                dist_matrix[(i, j)] = (d_cap * d_cap + d_cond * d_cond).sqrt();
             }
         }
 
@@ -416,10 +408,10 @@ impl ZoneClustering {
 
     fn select_initial_centroids(
         &self,
-        dist_matrix: &[Vec<f64>],
+        dist_matrix: &DMatrix<f64>,
         n_clusters: usize,
     ) -> ROMResult<Vec<usize>> {
-        let n = dist_matrix.len();
+        let n = dist_matrix.nrows();
         if n == 0 {
             return Err(Box::new(ROMError::AgglomerationFailed {
                 reason: "Empty distance matrix".to_string(),
@@ -433,14 +425,14 @@ impl ZoneClustering {
             let mut max_dist = 0.0;
             let mut best_idx = k;
 
-            for (i, row) in dist_matrix.iter().enumerate().take(n) {
+            for i in 0..n {
                 if centroids[..k].contains(&i) {
                     continue;
                 }
 
                 let min_dist_to_centroids: f64 = centroids[..k]
                     .iter()
-                    .map(|&c| row[c])
+                    .map(|&c| dist_matrix[(i, c)])
                     .fold(f64::MAX, f64::min);
 
                 if min_dist_to_centroids > max_dist {
@@ -456,7 +448,7 @@ impl ZoneClustering {
     }
 
     fn kmeans_assign(
-        dist_matrix: &[Vec<f64>],
+        dist_matrix: &DMatrix<f64>,
         centroids: &[usize],
         n_samples: usize,
     ) -> Vec<usize> {
@@ -468,7 +460,7 @@ impl ZoneClustering {
             let mut best_cluster = 0;
 
             for (j, &centroid) in centroids.iter().enumerate() {
-                let dist = dist_matrix[i][centroid];
+                let dist = dist_matrix[(i, centroid)];
                 if dist < min_dist {
                     min_dist = dist;
                     best_cluster = j;

@@ -4,6 +4,8 @@
 //! the coupled system of ordinary differential equations that govern
 //! multi-zone thermal dynamics.
 
+use nalgebra::{DMatrix, DVector};
+
 /// Solve the coupled multi-zone thermal system using backward Euler method.
 ///
 /// # Arguments
@@ -68,31 +70,29 @@ fn inter_zone_heat_contribution(zone_index: usize, h_tr_iz: &[f64], temperatures
 ///
 /// # Returns
 /// System matrix (C/dt - A) for implicit method
-///
-/// # Note
-/// This is a placeholder that would use faer::Mat in full implementation
-pub fn build_system_matrix(c: &[f64], h_tr_iz: &[f64], dt: f64) -> Vec<Vec<f64>> {
+pub fn build_system_matrix(c: &[f64], h_tr_iz: &[f64], dt: f64) -> DMatrix<f64> {
     let num_zones = c.len();
-    let mut matrix = vec![vec![0.0; num_zones]; num_zones];
+    let mut data = vec![0.0; num_zones * num_zones];
 
     // Build diagonal and off-diagonal terms
     for i in 0..num_zones {
         // Diagonal term: C_i/dt + sum of conductances
-        matrix[i][i] = c[i] / dt;
+        data[i * num_zones + i] = c[i] / dt;
 
         for j in 0..num_zones {
             if i != j {
                 // Off-diagonal: -h_tr_ij (heat loss to other zones)
-                matrix[i][j] = -h_tr_iz[i].min(h_tr_iz[j]); // Symmetric approximation
-                matrix[i][i] += h_tr_iz[i].min(h_tr_iz[j]); // Add to diagonal
+                let conductance = h_tr_iz[i].min(h_tr_iz[j]);
+                data[i * num_zones + j] = -conductance; // Symmetric approximation
+                data[i * num_zones + i] += conductance; // Add to diagonal
             }
         }
     }
 
-    matrix
+    DMatrix::from_vec(num_zones, num_zones, data)
 }
 
-/// Solve linear system using simplified method.
+/// Solve linear system using nalgebra's LU decomposition.
 ///
 /// # Arguments
 /// * `matrix` - System matrix
@@ -100,35 +100,43 @@ pub fn build_system_matrix(c: &[f64], h_tr_iz: &[f64], dt: f64) -> Vec<Vec<f64>>
 ///
 /// # Returns
 /// Solution vector
-///
-/// # Note
-/// In full implementation, this would use faer::solve
-pub fn solve_with_faer(mut matrix: Vec<Vec<f64>>, rhs: Vec<f64>) -> Vec<f64> {
-    // Simplified: use Gaussian elimination for small systems
-    // In practice, this would call faer::solve
-    let n = matrix.len();
+pub fn solve_with_faer(matrix: DMatrix<f64>, rhs: DVector<f64>) -> DVector<f64> {
+    // Use nalgebra's LU decomposition to solve the system
+    let decomposition = matrix.clone().lu();
+    decomposition.solve(&rhs).unwrap_or_else(|| {
+        // Fallback to Gaussian elimination if LU fails
+        solve_gaussian_elimination(matrix, rhs)
+    })
+}
+
+/// Fallback Gaussian elimination solver.
+#[allow(unused_mut)]
+fn solve_gaussian_elimination(mut matrix: DMatrix<f64>, mut rhs: DVector<f64>) -> DVector<f64> {
+    let n = matrix.nrows();
     let mut solution = rhs.clone();
 
-    // Forward elimination
+    // Forward elimination with partial pivoting
     for i in 0..n {
-        // Partial pivoting
         let mut max_row = i;
         for k in i + 1..n {
-            if matrix[k][i].abs() > matrix[max_row][i].abs() {
+            if matrix[(k, i)].abs() > matrix[(max_row, i)].abs() {
                 max_row = k;
             }
         }
 
         // Swap rows
-        matrix.swap(i, max_row);
-        solution.swap(i, max_row);
+        if max_row != i {
+            for j in 0..n {
+                matrix.swap((i, j), (max_row, j));
+            }
+            solution.swap_rows(i, max_row);
+        }
 
         // Eliminate
-        #[allow(clippy::needless_range_loop)]
         for k in i + 1..n {
-            let factor = matrix[k][i] / matrix[i][i];
+            let factor = matrix[(k, i)] / matrix[(i, i)];
             for j in i..n {
-                matrix[k][j] -= factor * matrix[i][j];
+                matrix[(k, j)] -= factor * matrix[(i, j)];
             }
             solution[k] -= factor * solution[i];
         }
@@ -137,9 +145,9 @@ pub fn solve_with_faer(mut matrix: Vec<Vec<f64>>, rhs: Vec<f64>) -> Vec<f64> {
     // Back substitution
     for i in (0..n).rev() {
         for k in i + 1..n {
-            solution[i] -= matrix[i][k] * solution[k];
+            solution[i] -= matrix[(i, k)] * solution[k];
         }
-        solution[i] /= matrix[i][i];
+        solution[i] /= matrix[(i, i)];
     }
 
     solution
@@ -190,20 +198,20 @@ mod tests {
         let dt = 3600.0;
 
         let matrix = build_system_matrix(&c, &h_tr_iz, dt);
-        assert_eq!(matrix.len(), 2);
-        assert_eq!(matrix[0].len(), 2);
+        assert_eq!(matrix.nrows(), 2);
+        assert_eq!(matrix.ncols(), 2);
 
         // Check diagonal dominance
-        assert!(matrix[0][0] > matrix[0][1].abs());
-        assert!(matrix[1][1] > matrix[1][0].abs());
+        assert!(matrix[(0, 0)] > matrix[(0, 1)].abs());
+        assert!(matrix[(1, 1)] > matrix[(1, 0)].abs());
     }
 
     #[test]
     fn test_solve_with_faer_simple() {
         // Test simple 2x2 system: [2 1; 1 3] * [x; y] = [5; 6]
         // Solution: x=1.8, y=1.4 (derived from: 2x+y=5, x+3y=6)
-        let matrix = vec![vec![2.0, 1.0], vec![1.0, 3.0]];
-        let rhs = vec![5.0, 6.0];
+        let matrix = DMatrix::from_vec(2, 2, vec![2.0, 1.0, 1.0, 3.0]);
+        let rhs = DVector::from_vec(vec![5.0, 6.0]);
 
         let solution = solve_with_faer(matrix, rhs);
         assert_eq!(solution.len(), 2);
