@@ -121,13 +121,7 @@ impl MassNode {
     /// * `capacitance` - Thermal mass capacity in J/K
     /// * `h_tr_is` - Interior surface-to-mass conductance in W/K
     /// * `h_tr_ms` - Mass-to-sky conductance in W/K
-    pub fn new(
-        id: usize,
-        temperature: f64,
-        capacitance: f64,
-        h_tr_is: f64,
-        h_tr_ms: f64,
-    ) -> Self {
+    pub fn new(id: usize, temperature: f64, capacitance: f64, h_tr_is: f64, h_tr_ms: f64) -> Self {
         Self {
             id,
             temperature,
@@ -210,9 +204,6 @@ pub struct SurfaceNode {
     pub h_tr_is: f64,
     /// Conductance from exterior to mass node in W/K
     pub h_tr_em: f64,
-    /// Interior surface heat transfer coefficient in W/m²K
-    /// Used for computing heat exchange between zone air and interior surface
-    pub h_tr_is: f64,
     /// Thermal mass temperature in °C
     /// Updated using backward Euler integration
     pub mass_temperature: f64,
@@ -233,8 +224,8 @@ impl SurfaceNode {
     /// * `h_tr_ms` - Surface-to-mass conductance in W/K
     /// * `h_tr_is` - Interior surface-to-air conductance in W/K
     /// * `h_tr_em` - Exterior-to-mass conductance in W/K
-    /// * `h_tr_is` - Interior surface heat transfer coefficient in W/m²K
     /// * `mass_temperature` - Initial mass temperature in °C
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: usize,
         kind: SurfaceKind,
@@ -245,7 +236,6 @@ impl SurfaceNode {
         h_tr_ms: f64,
         h_tr_is: f64,
         h_tr_em: f64,
-        h_tr_is: f64,
         mass_temperature: f64,
     ) -> Self {
         Self {
@@ -258,7 +248,6 @@ impl SurfaceNode {
             h_tr_ms,
             h_tr_is,
             h_tr_em,
-            h_tr_is,
             mass_temperature,
             heat_flow: 0.0,
         }
@@ -424,7 +413,10 @@ impl PerSurfaceConductionSolver {
 
     /// Create a solver with the given surfaces.
     pub fn with_surfaces(surfaces: Vec<SurfaceNode>, mass_nodes: Vec<MassNode>) -> Self {
-        Self { surfaces, mass_nodes }
+        Self {
+            surfaces,
+            mass_nodes,
+        }
     }
 
     /// Add a mass node to the solver.
@@ -436,12 +428,11 @@ impl PerSurfaceConductionSolver {
     ///
     /// This is the primary method for adding thermal nodes to the solver.
     /// Both the surface node and mass node share the same ID for cross-referencing.
-    pub fn add_surface_with_mass(
-        &mut self,
-        surface: SurfaceNode,
-        mass_node: MassNode,
-    ) {
-        debug_assert_eq!(surface.id, mass_node.id, "Surface and MassNode must have same ID");
+    pub fn add_surface_with_mass(&mut self, surface: SurfaceNode, mass_node: MassNode) {
+        debug_assert_eq!(
+            surface.id, mass_node.id,
+            "Surface and MassNode must have same ID"
+        );
         self.surfaces.push(surface);
         self.mass_nodes.push(mass_node);
     }
@@ -450,6 +441,7 @@ impl PerSurfaceConductionSolver {
     ///
     /// Convenience constructor that computes h_tr_ms and h_tr_em from area and U-value.
     /// Uses parallel conductance formula: h = 1 / (1/h1 + 1/h2) for stacked resistances.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_surface_from_params(
         &mut self,
         id: usize,
@@ -460,7 +452,6 @@ impl PerSurfaceConductionSolver {
         h_tr_ms: f64,
         h_tr_is: f64,
         h_tr_em: f64,
-        h_tr_is: f64,
     ) {
         // Thermal capacitance: C = ρ * c * V = ρ * c * (A * d)
         // Using typical concrete: ρ = 2300 kg/m³, c = 1000 J/kgK, d = 0.1m
@@ -478,7 +469,6 @@ impl PerSurfaceConductionSolver {
             h_tr_ms,
             h_tr_is,
             h_tr_em,
-            h_tr_is,
             temperature, // mass_temperature starts equal to surface temperature
         );
         self.surfaces.push(surface);
@@ -1017,16 +1007,16 @@ mod tests {
     fn test_mass_node_backward_euler_formula() {
         // Create a mass node with known properties
         let mut mass_node = MassNode::new(
-            0,           // id
-            20.0,        // initial temperature T_mass_old = 20°C
-            100_000.0,   // C_mass = 100,000 J/K
-            10.0,        // h_tr_is = 10 W/K
-            5.0,         // h_tr_ms = 5 W/K
+            0,         // id
+            20.0,      // initial temperature T_mass_old = 20°C
+            100_000.0, // C_mass = 100,000 J/K
+            10.0,      // h_tr_is = 10 W/K
+            5.0,       // h_tr_ms = 5 W/K
         );
 
-        let dt = 3600.0;     // dt = 1 hour
-        let T_air = 22.0;    // T_air = 22°C
-        let T_sky = 0.0;     // T_sky = 0°C
+        let dt = 3600.0; // dt = 1 hour
+        let T_air = 22.0; // T_air = 22°C
+        let T_sky = 0.0; // T_sky = 0°C
 
         // Compute expected result using the analytical formula
         let expected = {
@@ -1053,13 +1043,7 @@ mod tests {
     /// T_ss = (h_tr_is * T_air + h_tr_ms * T_sky) / (h_tr_is + h_tr_ms)
     #[test]
     fn test_mass_node_steady_state() {
-        let mass_node = MassNode::new(
-            0,
-            20.0,
-            100_000.0,
-            10.0,
-            5.0,
-        );
+        let mass_node = MassNode::new(0, 20.0, 100_000.0, 10.0, 5.0);
 
         let T_air = 25.0;
         let T_sky = 5.0;
@@ -1092,11 +1076,8 @@ mod tests {
     #[test]
     fn test_mass_node_zero_capacitance() {
         let mut mass_node = MassNode::new(
-            0,
-            20.0,
-            0.0,        // Zero capacitance
-            10.0,
-            5.0,
+            0, 20.0, 0.0, // Zero capacitance
+            10.0, 5.0,
         );
 
         let initial_temp = mass_node.temperature;
@@ -1152,10 +1133,9 @@ mod tests {
     #[test]
     fn test_backward_euler_stability() {
         let mut mass_node = MassNode::new(
-            0,
-            100.0,      // Very different from T_air and T_sky
-            1000.0,     // Small capacitance
-            100.0,      // Large conductance
+            0, 100.0,  // Very different from T_air and T_sky
+            1000.0, // Small capacitance
+            100.0,  // Large conductance
             100.0,
         );
 
@@ -1186,13 +1166,7 @@ mod tests {
     /// Q_tr_is + Q_tr_ms = C_mass * dT/dt
     #[test]
     fn test_mass_node_energy_conservation() {
-        let mut mass_node = MassNode::new(
-            0,
-            20.0,
-            50_000.0,
-            10.0,
-            5.0,
-        );
+        let mut mass_node = MassNode::new(0, 20.0, 50_000.0, 10.0, 5.0);
 
         let dt = 3600.0;
         let T_air = 22.0;

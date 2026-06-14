@@ -35,6 +35,7 @@
 //! All envelope nodes share the same surface node T_s via their respective h_tr_ms paths.
 
 use crate::sim::multi_node_thermal::{MultiNodeThermalMass, ThermalMassNode};
+use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
 
 /// Per-surface exterior boundary temperatures for the multi-node solver (Issue #863).
 ///
@@ -326,6 +327,105 @@ impl MultiNodeSolver {
         } else {
             0.0 // Within deadband
         }
+    }
+
+    // ── Issue #1005: Per-Surface Conduction Integration ──────────────────
+
+    /// Build a `PerSurfaceConductionSolver` from the current multi-node state.
+    ///
+    /// Each envelope mass node (wall, roof, floor) is paired with a
+    /// `SurfaceNode` carrying the same `h_tr_ms` and `h_tr_em` conductances
+    /// and the corresponding exterior boundary temperature. The `PerSurfaceConductionSolver`
+    /// then tracks the per-surface temperature (the air-side film) separately
+    /// from the bulk mass node temperature.
+    ///
+    /// This is the integration point between the multi-node thermal model
+    /// (Issue #857, parent of #1005) and the per-surface conduction module.
+    /// Callers can then drive the per-surface solver to refine `surface_temperature`
+    /// without losing the multi-node mass tracking.
+    pub fn build_per_surface_solver(&self) -> PerSurfaceConductionSolver {
+        let mut solver = PerSurfaceConductionSolver::new();
+        // Wall: id=0, h_tr_ms from mass, h_tr_em from mass, ext from sol-air
+        solver.add_surface_from_params(
+            0,
+            SurfaceKind::Wall,
+            1.0, // area (per-unit, scaled at use site)
+            0.0, // U-value (not used by update())
+            self.mass.wall.temperature,
+            self.mass.wall.h_tr_ms,
+            self.h_tr_is,
+            self.mass.wall.h_tr_em,
+        );
+        // Roof: id=1
+        solver.add_surface_from_params(
+            1,
+            SurfaceKind::Roof,
+            1.0,
+            0.0,
+            self.mass.roof.temperature,
+            self.mass.roof.h_tr_ms,
+            self.h_tr_is,
+            self.mass.roof.h_tr_em,
+        );
+        // Floor: id=2
+        solver.add_surface_from_params(
+            2,
+            SurfaceKind::Floor,
+            1.0,
+            0.0,
+            self.mass.floor.temperature,
+            self.mass.floor.h_tr_ms,
+            self.h_tr_is,
+            self.mass.floor.h_tr_em,
+        );
+        solver
+    }
+
+    /// Step the per-surface solver in lockstep with the multi-node solver.
+    ///
+    /// This is the integration point for Issue #1005. It runs the per-surface
+    /// solver using the current mass node temperatures and per-surface exterior
+    /// temperatures, then writes the refined `surface_temperature` back to
+    /// `self`. The per-surface solver tracks the surface film independently
+    /// from the bulk mass node, providing a more accurate air-side temperature
+    /// for the air node energy balance.
+    ///
+    /// # Arguments
+    /// * `dt` — Timestep duration [s]
+    ///
+    /// # Returns
+    /// The (wall, roof, floor) per-surface temperatures [°C]
+    pub fn step_per_surface(&mut self, dt: f64) -> (f64, f64, f64) {
+        // Build a transient per-surface solver from current state
+        let mut solver = self.build_per_surface_solver();
+
+        // Per-surface exterior temperatures (Issue #863)
+        let t_ext_wall = self.exterior_temperatures.t_ext_wall;
+        let t_ext_roof = self.exterior_temperatures.t_ext_roof;
+        let t_ext_floor = self.exterior_temperatures.t_ext_floor;
+
+        // Update each surface with its own mass node temperature and exterior temperature
+        solver.update_surface(0, dt, self.mass.wall.temperature, t_ext_wall);
+        solver.update_surface(1, dt, self.mass.roof.temperature, t_ext_roof);
+        solver.update_surface(2, dt, self.mass.floor.temperature, t_ext_floor);
+
+        let temps = solver.surface_temperatures();
+        let t_surface_wall = temps.first().copied().unwrap_or(self.surface_temperature);
+        let t_surface_roof = temps.get(1).copied().unwrap_or(self.surface_temperature);
+        let t_surface_floor = temps.get(2).copied().unwrap_or(self.surface_temperature);
+
+        // Update self.surface_temperature as a conductance-weighted average (matches
+        // the original multi-node convention used by compute_zone_air_temperature).
+        let h_ms_total = self.mass.wall.h_tr_ms + self.mass.roof.h_tr_ms + self.mass.floor.h_tr_ms;
+        if h_ms_total > 1e-6 {
+            self.surface_temperature = (self.mass.wall.h_tr_ms * t_surface_wall
+                + self.mass.roof.h_tr_ms * t_surface_roof
+                + self.mass.floor.h_tr_ms * t_surface_floor)
+                / h_ms_total;
+        }
+        // else: keep the prior self.surface_temperature (graceful fallback)
+
+        (t_surface_wall, t_surface_roof, t_surface_floor)
     }
 
     /// Step the solver with per-node heat gains injected into the backward Euler.
