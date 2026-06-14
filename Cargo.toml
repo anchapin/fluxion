@@ -258,6 +258,11 @@ path = "tests/integration/test_ashrae_140_regression.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
 name = "integration-wiring"
 path = "tests/integration/test_wiring.rs"
 harness = true
