@@ -27,6 +27,13 @@ const DEFAULT_WARMUP_DAYS: usize = 14;
 /// ASHRAE Handbook Fundamentals (2021) Chapter 1: moist air cp ≈ 1006 J/kgK.
 const CP_AIR: f64 = 1006.0;
 
+/// Minimum total conductance [W/K] used as the denominator of the zone
+/// temperature estimate. Below this floor (≈ 1 µW/K, many orders of magnitude
+/// under any physically meaningful envelope), the zone-temperature estimate is
+/// ill-defined; we skip the update and return `0.0` demand rather than
+/// producing `±∞` (Issue #1006).
+const ZONE_TEMP_CONDUCTANCE_FLOOR: f64 = 1e-6;
+
 /// Multi-node HVAC runner with warm-up period support.
 #[deprecated(
     since = "0.9.0",
@@ -178,7 +185,19 @@ impl MultiNodeHvacRunner {
     ///
     /// Positive Q_HVAC indicates heating (supply air warmer than zone).
     /// Negative Q_HVAC indicates cooling (supply air cooler than zone).
+    ///
+    /// # Numerical stability (Issue #1006)
+    ///
+    /// Returns `0.0` (no heating/cooling demand) if any input is non-finite
+    /// (`NaN` or `±∞`). This prevents silent NaN propagation into the energy
+    /// accumulators, which previously produced `-inf` temperature and `inf MWh`
+    /// readings when uninitialized `h_tr_is_surfaces` led to division by zero
+    /// upstream of the zone temperature used here.
     pub fn compute_q_hvac(&self) -> f64 {
+        if !self.m_dot.is_finite() || !self.T_supply.is_finite() || !self.prev_zone_temp.is_finite()
+        {
+            return 0.0;
+        }
         self.m_dot * CP_AIR * (self.T_supply - self.prev_zone_temp)
     }
 
@@ -213,6 +232,21 @@ impl MultiNodeHvacRunner {
     pub fn step(&mut self, outdoor_temp: f64, solar_gain: f64, internal_gain: f64, dt: f64) -> f64 {
         self.timestep_count += 1;
 
+        // Issue #1006: NaN/Inf guard on inputs. If any caller passes a
+        // non-finite value (e.g. uninitialized h_tr_is_surfaces leading to
+        // ±∞ upstream), short-circuit to a no-op timestep rather than
+        // propagating non-finite values into the solver, energy
+        // accumulators, or peak-power trackers.
+        if !outdoor_temp.is_finite()
+            || !solar_gain.is_finite()
+            || !internal_gain.is_finite()
+            || !dt.is_finite()
+            || !self.solver.h_tr_is.is_finite()
+            || !self.solver.surface_temperature.is_finite()
+        {
+            return 0.0;
+        }
+
         // Update solver boundary conditions
         self.solver.set_exterior_temperature(outdoor_temp);
 
@@ -223,12 +257,26 @@ impl MultiNodeHvacRunner {
         let h_tr_is = self.solver.h_tr_is;
         let t_surface = self.solver.surface_temperature;
 
-        let zone_temp = (self.h_tr_w * outdoor_temp
-            + self.h_ve * outdoor_temp
-            + solar_gain
-            + internal_gain
-            + h_tr_is * t_surface)
-            / (self.h_tr_w + self.h_ve + h_tr_is);
+        // Issue #1006: denominator guard. A zero or sub-floor total conductance
+        // means the zone has no envelope, no infiltration, and no mass coupling
+        // — i.e. the energy balance is singular. Returning 0 demand here
+        // matches the "no information, no HVAC" semantics and prevents the
+        // ±∞ MWh readings observed in the original bug report.
+        let denom = self.h_tr_w + self.h_ve + h_tr_is;
+        let zone_temp = if denom > ZONE_TEMP_CONDUCTANCE_FLOOR {
+            (self.h_tr_w * outdoor_temp
+                + self.h_ve * outdoor_temp
+                + solar_gain
+                + internal_gain
+                + h_tr_is * t_surface)
+                / denom
+        } else {
+            // Degenerate envelope: fall back to outdoor temperature so the
+            // solver can still advance mass temperatures. Demand is forced
+            // to 0 below because the deadband check is meaningless without
+            // a meaningful zone temperature.
+            outdoor_temp
+        };
 
         self.solver.set_zone_temperature(zone_temp);
         self.prev_zone_temp = zone_temp;
@@ -257,8 +305,21 @@ impl MultiNodeHvacRunner {
         }
 
         // After warm-up: accumulate energy and track peaks
-        let heating_power_kw = if q_hvac > 0.0 { q_hvac / 1000.0 } else { 0.0 };
-        let cooling_power_kw = if q_hvac < 0.0 { -q_hvac / 1000.0 } else { 0.0 };
+        // Issue #1006: clamp the demand to a finite value before accumulation.
+        // Even with the input/denominator guards above, a future caller could
+        // (e.g. via a state-aware override) reach this point with a non-finite
+        // q_hvac; we treat that as zero demand rather than poisoning the
+        // annual totals.
+        let heating_power_kw = if q_hvac.is_finite() && q_hvac > 0.0 {
+            q_hvac / 1000.0
+        } else {
+            0.0
+        };
+        let cooling_power_kw = if q_hvac.is_finite() && q_hvac < 0.0 {
+            -q_hvac / 1000.0
+        } else {
+            0.0
+        };
 
         self.annual_heating_energy += heating_power_kw * (dt / 3600.0);
         self.annual_cooling_energy += cooling_power_kw * (dt / 3600.0);
@@ -615,5 +676,154 @@ mod tests {
             q_hvac,
             expected
         );
+    }
+
+    // =============================================================================
+    // Numerical Stability Tests (Issue #1006)
+    //
+    // The original bug report described `-inf` zone temperatures and `inf MWh`
+    // energy accumulators. These tests pin the new defensive behaviour:
+    // non-finite inputs and degenerate envelopes must not produce non-finite
+    // outputs.
+    // =============================================================================
+
+    #[test]
+    fn test_q_hvac_returns_zero_for_nan_inputs() {
+        let mut runner = create_test_runner();
+        runner.m_dot = f64::NAN;
+        runner.T_supply = 40.0;
+        runner.prev_zone_temp = 20.0;
+        assert_eq!(runner.compute_q_hvac(), 0.0);
+
+        runner.m_dot = 0.5;
+        runner.T_supply = f64::NAN;
+        assert_eq!(runner.compute_q_hvac(), 0.0);
+
+        runner.T_supply = 40.0;
+        runner.prev_zone_temp = f64::NAN;
+        assert_eq!(runner.compute_q_hvac(), 0.0);
+    }
+
+    #[test]
+    fn test_q_hvac_returns_zero_for_infinite_inputs() {
+        let mut runner = create_test_runner();
+        runner.m_dot = f64::INFINITY;
+        assert_eq!(runner.compute_q_hvac(), 0.0);
+
+        runner.m_dot = 0.5;
+        runner.T_supply = f64::INFINITY;
+        assert_eq!(runner.compute_q_hvac(), 0.0);
+
+        runner.T_supply = 40.0;
+        runner.prev_zone_temp = f64::NEG_INFINITY;
+        assert_eq!(runner.compute_q_hvac(), 0.0);
+    }
+
+    #[test]
+    fn test_q_hvac_output_is_always_finite_for_finite_inputs() {
+        // Sweep a range of finite inputs and ensure the result is finite
+        // (no overflow, no NaN, no Inf).
+        let mut runner = create_test_runner();
+        for m_dot in [0.0, 0.5, 1.0, 100.0] {
+            for t_supply in [-50.0, 0.0, 22.0, 100.0, 1000.0] {
+                for t_air in [-50.0, 0.0, 22.0, 100.0, 1000.0] {
+                    runner.m_dot = m_dot;
+                    runner.T_supply = t_supply;
+                    runner.prev_zone_temp = t_air;
+                    let q = runner.compute_q_hvac();
+                    assert!(
+                        q.is_finite(),
+                        "Q_HVAC must be finite for finite inputs: m_dot={}, \
+                         T_supply={}, T_air={}, got q={}",
+                        m_dot,
+                        t_supply,
+                        t_air,
+                        q
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_step_with_zero_conductances_does_not_produce_inf() {
+        // Issue #1006: degenerate envelope (all conductances zero) used to
+        // produce ±∞ zone temperature and then ±∞ MWh accumulators. The new
+        // denominator guard must short-circuit cleanly.
+        let mut runner = create_test_runner();
+        runner.h_tr_w = 0.0;
+        runner.h_ve = 0.0;
+        // solver.h_tr_is is left at its default — override to 0 to make the
+        // denominator exactly 0.
+        runner.solver.h_tr_is = 0.0;
+
+        let q = runner.step(20.0, 0.0, 0.0, 3600.0);
+        assert!(q.is_finite(), "q_hvac must be finite, got {}", q);
+        assert!(
+            runner.annual_heating_energy.is_finite(),
+            "annual_heating_energy must be finite, got {}",
+            runner.annual_heating_energy
+        );
+        assert!(
+            runner.annual_cooling_energy.is_finite(),
+            "annual_cooling_energy must be finite, got {}",
+            runner.annual_cooling_energy
+        );
+        assert!(
+            runner.peak_heating_power.is_finite(),
+            "peak_heating_power must be finite, got {}",
+            runner.peak_heating_power
+        );
+        assert!(
+            runner.peak_cooling_power.is_finite(),
+            "peak_cooling_power must be finite, got {}",
+            runner.peak_cooling_power
+        );
+        assert!(
+            runner.prev_zone_temp.is_finite(),
+            "prev_zone_temp must be finite, got {}",
+            runner.prev_zone_temp
+        );
+    }
+
+    #[test]
+    fn test_step_with_nan_inputs_does_not_propagate() {
+        // Issue #1006: non-finite inputs to step() must short-circuit to 0
+        // demand and must not poison any state.
+        let mut runner = create_test_runner();
+        let q = runner.step(f64::NAN, 0.0, 0.0, 3600.0);
+        assert_eq!(q, 0.0);
+        assert!(runner.annual_heating_energy.is_finite());
+        assert!(runner.annual_cooling_energy.is_finite());
+
+        let q = runner.step(20.0, f64::INFINITY, 0.0, 3600.0);
+        assert_eq!(q, 0.0);
+
+        let q = runner.step(20.0, 0.0, f64::NEG_INFINITY, 3600.0);
+        assert_eq!(q, 0.0);
+
+        // dt non-finite: also a no-op
+        let q = runner.step(20.0, 0.0, 0.0, f64::NAN);
+        assert_eq!(q, 0.0);
+    }
+
+    #[test]
+    fn test_step_long_run_remains_finite_under_extreme_inputs() {
+        // Issue #1006: a long run with alternating extreme outdoor
+        // temperatures must not produce non-finite accumulators.
+        let mut runner = create_test_runner();
+        for hour in 0..8760 {
+            // Sinusoidal outdoor between -30 and +50 °C
+            let t_out = 10.0 + 40.0 * (((hour as f64) * std::f64::consts::PI / 12.0).sin());
+            let q = runner.step(t_out, 0.0, 0.0, 3600.0);
+            assert!(q.is_finite(), "q non-finite at hour {}: {}", hour, q);
+        }
+        assert!(runner.annual_heating_energy.is_finite());
+        assert!(runner.annual_cooling_energy.is_finite());
+        assert!(runner.peak_heating_power.is_finite());
+        assert!(runner.peak_cooling_power.is_finite());
+        // Energy totals must not be ±∞ even after a full year of stepping.
+        assert!(runner.annual_heating_energy.abs() < 1e6);
+        assert!(runner.annual_cooling_energy.abs() < 1e6);
     }
 }
