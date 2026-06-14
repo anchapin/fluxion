@@ -16,6 +16,7 @@ pub mod lighting;
 pub mod multi_node_hvac_runner;
 pub mod multi_node_thermal;
 pub mod occupancy;
+pub mod per_surface_conduction;
 pub mod profiles;
 pub mod schedule;
 pub mod shading;
