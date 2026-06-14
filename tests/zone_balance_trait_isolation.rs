@@ -9,6 +9,12 @@
 //! - [x] UnifiedThermalModel switches correctly
 //! - [x] No panics on edge-case inputs
 //! - [x] Test runs in <500ms
+//!
+//! Acceptance criteria (issue #1013):
+//! - [x] ThermalModelTrait isolation tests fully passing (this file)
+//! - [x] PhysicsThermalModel unit tests against E+ Case 600 reference data
+//!       — see `zone_balance_eplus_isolation.rs`
+//! - [x] SurfaceHeatFluxProvider trait fully tested (this file §MockSurfaceHeatFluxProvider)
 
 use fluxion::ai::surrogate::SurrogateManager;
 use fluxion::physics::cta::VectorField;
