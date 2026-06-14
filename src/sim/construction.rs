@@ -741,15 +741,16 @@ impl Construction {
         // Mass-to-surface conductance represents thermal coupling between
         // thermal mass and interior surface of building envelope
         //
-        // For simplified 5R1C model with low-mass construction, this is typically
-        // 1.5-2.5 W/m²K times surface area
+        // The h_ms coefficient depends on mass class per ISO 13790:
+        // - VeryLight/Light: 2.0 W/m²K (furniture/internal mass dominates)
+        // - Medium/Heavy/VeryHeavy: 9.1 W/m²K (envelope mass dominates)
         //
-        // Based on ASHRAE 140 Case 600 reference values and typical construction:
-        // h_tr_ms ≈ 2.0 W/m²K for low-mass buildings
+        // Using the construction's iso_13790_mass_class() gives the correct
+        // h_ms coefficient for both low-mass and high-mass buildings.
         //
         // Units: W/m²K × m² = W/K
-        const H_MS: f64 = 2.0; // W/m²K - typical value for low-mass construction
-        H_MS * surface_area
+        let h_ms = self.iso_13790_mass_class().h_ms_coeff();
+        h_ms * surface_area
     }
 
     /// Calculates surface-to-interior conductance (h_tr_is) for 5R1C thermal network.
