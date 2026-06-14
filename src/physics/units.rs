@@ -109,3 +109,39 @@ impl ToF64 for HeatFlux {
         self.get::<uom::si::heat_flux_density::watt_per_square_meter>()
     }
 }
+
+impl FromF64 for ThermalConductance {
+    fn from_value(val: f64) -> Self {
+        Self::new::<uom::si::thermal_conductance::watt_per_kelvin>(val)
+    }
+}
+
+impl ToF64 for ThermalConductance {
+    fn to_value(&self) -> f64 {
+        self.get::<uom::si::thermal_conductance::watt_per_kelvin>()
+    }
+}
+
+impl FromF64 for Power {
+    fn from_value(val: f64) -> Self {
+        Self::new::<uom::si::power::watt>(val)
+    }
+}
+
+impl ToF64 for Power {
+    fn to_value(&self) -> f64 {
+        self.get::<uom::si::power::watt>()
+    }
+}
+
+impl FromF64 for Energy {
+    fn from_value(val: f64) -> Self {
+        Self::new::<uom::si::energy::joule>(val)
+    }
+}
+
+impl ToF64 for Energy {
+    fn to_value(&self) -> f64 {
+        self.get::<uom::si::energy::joule>()
+    }
+}

@@ -9,6 +9,7 @@
 //! - **Scheduled**: Time-based ACH changes (e.g., night ventilation)
 //! - **Weather-Responsive**: ACH varies with outdoor temperature and wind speed
 
+use crate::physics::units::{FromF64, ThermalConductance};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
@@ -335,8 +336,8 @@ impl VentilationSchedule for WeatherDependentVentilation {
 /// * `volume` - Zone volume (m³)
 /// * `rho` - Air density (kg/m³), typically 1.2
 /// * `cp` - Specific heat capacity of air (J/kg·K), typically 1005
-pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> f64 {
-    (ach * volume * rho * cp) / 3600.0
+pub fn ach_to_conductance(ach: f64, volume: f64, rho: f64, cp: f64) -> ThermalConductance {
+    ThermalConductance::from_value((ach * volume * rho * cp) / 3600.0)
 }
 
 #[cfg(test)]
@@ -411,22 +412,25 @@ mod tests {
 
     #[test]
     fn test_ach_to_conductance() {
+        use crate::physics::units::ToF64;
         // Standard values: ach=1.0, volume=100m³, rho=1.2, cp=1005
         let conductance = ach_to_conductance(1.0, 100.0, 1.2, 1005.0);
-        assert!((conductance - 33.5).abs() < 0.01); // (1*100*1.2*1005)/3600 = 33.5
+        assert!((conductance.to_value() - 33.5).abs() < 0.01); // (1*100*1.2*1005)/3600 = 33.5
     }
 
     #[test]
     fn test_ach_to_conductance_zero() {
-        assert_eq!(ach_to_conductance(0.0, 100.0, 1.2, 1005.0), 0.0);
+        use crate::physics::units::ToF64;
+        assert_eq!(ach_to_conductance(0.0, 100.0, 1.2, 1005.0).to_value(), 0.0);
     }
 
     #[test]
     fn test_ach_to_conductance_scaling() {
+        use crate::physics::units::ToF64;
         // Doubling ACH should double conductance
         let c1 = ach_to_conductance(0.5, 100.0, 1.2, 1005.0);
         let c2 = ach_to_conductance(1.0, 100.0, 1.2, 1005.0);
-        assert!((c2 - 2.0 * c1).abs() < 0.001);
+        assert!((c2.to_value() - 2.0 * c1.to_value()).abs() < 0.001);
     }
 
     #[test]
