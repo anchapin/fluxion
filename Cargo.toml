@@ -311,3 +311,8 @@ harness = true
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
 harness = true
+
+[[test]]
+name = "case_900_determinism"
+path = "tests/case_900_determinism.rs"
+harness = true
