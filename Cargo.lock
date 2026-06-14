@@ -922,6 +922,7 @@ dependencies = [
  "napi-build",
  "napi-derive",
  "ndarray 0.16.1",
+ "noisy_float",
  "num-complex",
  "num-traits",
  "num_cpus",
@@ -2136,6 +2137,15 @@ name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
+name = "noisy_float"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c16843be85dd410c6a12251c4eca0dd1d3ee8c5725f746c4d5e0fdcec0a864b2"
+dependencies = [
+ "num-traits",
+]
 
 [[package]]
 name = "num-bigint"
