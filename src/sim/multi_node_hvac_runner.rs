@@ -205,11 +205,63 @@ impl MultiNodeHvacRunner {
         self.T_supply = T_supply;
     }
 
+    /// Compute the free-floating zone air temperature (T_free) from the
+    /// 5R1C/multi-node air node energy balance with HVAC turned off.
+    ///
+    /// T_free represents the temperature the zone would reach at the
+    /// current timestep **if the HVAC system were OFF**. It is derived
+    /// from the conductance-weighted surface temperature of the envelope
+    /// mass nodes, the outdoor temperature, and the internal air-side
+    /// gains (solar + internal convective):
+    ///
+    /// ```text
+    /// T_free = (h_tr_is × T_surface + h_ve × T_outdoor + φ_ia) / (h_tr_is + h_ve)
+    /// ```
+    ///
+    /// where `T_surface` is computed by the multi-node solver from the
+    /// current envelope mass node temperatures via
+    /// `MultiNodeSolver::compute_zone_air_temperature`, and
+    /// `φ_ia = solar_gain + internal_gain` is the combined air-side heat
+    /// gain [W].
+    ///
+    /// This function is the foundation of the Issue #1008 deadband logic:
+    /// the HVAC mode is selected by comparing T_free to the setpoints.
+    ///
+    /// # Arguments
+    ///
+    /// * `outdoor_temp` - Exterior (dry-bulb) temperature [°C]
+    /// * `solar_gain` - Solar heat gain into the zone [W]
+    /// * `internal_gain` - Internal convective heat gains [W]
+    ///
+    /// # Returns
+    ///
+    /// Free-floating zone air temperature [°C] (i.e. what T_zone would be
+    /// with HVAC off given the current mass node state and boundary
+    /// conditions).
+    pub fn compute_t_free(&self, outdoor_temp: f64, solar_gain: f64, internal_gain: f64) -> f64 {
+        let phi_ia = solar_gain + internal_gain;
+        self.solver
+            .compute_zone_air_temperature(outdoor_temp, self.h_ve, phi_ia)
+    }
+
     /// Advance the simulation by one timestep.
     ///
     /// During the warm-up period the solver updates mass temperatures but
     /// energy totals are **not** accumulated. After warm-up, energy and peak
     /// power tracking resumes normally.
+    ///
+    /// # Deadband Handling (Issue #1008)
+    ///
+    /// The HVAC mode is selected by comparing the **free-floating zone
+    /// temperature** (T_free) from the 5R1C air node balance to the heating
+    /// and cooling setpoints:
+    ///
+    /// - If `T_free < heating_setpoint` → heating mode: zone is held at
+    ///   the heating setpoint and `Q_HVAC` is positive (heat added).
+    /// - If `T_free > cooling_setpoint` → cooling mode: zone is held at
+    ///   the cooling setpoint and `Q_HVAC` is negative (heat removed).
+    /// - Otherwise → **deadband mode**: HVAC is off, `Q_HVAC = 0`, and
+    ///   the zone air temperature equals T_free for this timestep.
     ///
     /// # Arguments
     ///
@@ -221,7 +273,7 @@ impl MultiNodeHvacRunner {
     /// # Returns
     ///
     /// The HVAC power demand for this timestep [W].
-    /// Positive = heating, negative = cooling, zero = no HVAC needed.
+    /// Positive = heating, negative = cooling, zero = deadband.
     pub fn step(&mut self, outdoor_temp: f64, solar_gain: f64, internal_gain: f64, dt: f64) -> f64 {
         self.timestep_count += 1;
 
@@ -858,5 +910,330 @@ mod tests {
         // Energy totals must not be ±∞ even after a full year of stepping.
         assert!(runner.annual_heating_energy.abs() < 1e6);
         assert!(runner.annual_cooling_energy.abs() < 1e6);
+    }
+
+    // =============================================================================
+    // Deadband Handling Tests (Issue #1008)
+    //
+    // Verify the multi-node HVAC runner uses the free-floating zone air
+    // temperature T_free (from the 5R1C air node balance) to select the
+    // HVAC mode:
+    //   - T_free < heating_setpoint  -> heating mode (Q_HVAC > 0)
+    //   - T_free > cooling_setpoint  -> cooling mode (Q_HVAC < 0)
+    //   - otherwise                  -> deadband    (Q_HVAC = 0, zone == T_free)
+    // =============================================================================
+
+    /// Test runner factory with known initial mass temperatures (20°C) and
+    /// the default 20–26 °C deadband. All h_tr_ms values default to 0 in
+    /// `ThermalMassNode::new`, so we set them here to make the air node
+    /// balance well-defined.
+    fn create_deadband_test_runner() -> MultiNodeHvacRunner {
+        let mut wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);
+        wall.h_tr_ms = 50.0;
+        let mut roof = ThermalMassNode::new(20.0, 3e6, 30.0, 15.0);
+        roof.h_tr_ms = 30.0;
+        let mut floor = ThermalMassNode::new(20.0, 2e6, 20.0, 10.0);
+        floor.h_tr_ms = 20.0;
+        let internal = ThermalMassNode::new(20.0, 1e6, 10.0, 5.0);
+        let solver = MultiNodeSolver::new(10.0, wall, roof, floor, internal);
+        // h_ve = 15 W/K, setpoints 20/26 °C, warm-up disabled for energy tracking
+        MultiNodeHvacRunner::new(solver, 15.0, 20.0, 20.0, 26.0).with_warmup_days(0)
+    }
+
+    #[test]
+    fn test_compute_t_free_steady_state() {
+        // All mass nodes at 20°C, outdoor at 20°C, no gains → T_free = 20°C
+        let runner = create_deadband_test_runner();
+        let t_free = runner.compute_t_free(20.0, 0.0, 0.0);
+        assert!(
+            (t_free - 20.0).abs() < 0.1,
+            "T_free should be ~20°C at steady-state 20°C outdoor, got {t_free}"
+        );
+    }
+
+    #[test]
+    fn test_compute_t_free_cold_outdoor() {
+        // All mass at 20°C, outdoor at 0°C, no gains
+        // T_free = (10 * 20 + 15 * 0) / 25 = 8°C
+        let runner = create_deadband_test_runner();
+        let t_free = runner.compute_t_free(0.0, 0.0, 0.0);
+        let expected = (10.0 * 20.0 + 15.0 * 0.0) / (10.0 + 15.0);
+        assert!(
+            (t_free - expected).abs() < 0.1,
+            "T_free cold-outdoor mismatch: got {t_free}, expected {expected}"
+        );
+        assert!(
+            t_free < 20.0,
+            "T_free should be below heating setpoint with cold outdoor: got {t_free}"
+        );
+    }
+
+    #[test]
+    fn test_compute_t_free_hot_outdoor() {
+        // All mass at 20°C, outdoor at 35°C, no gains
+        // T_free = (10 * 20 + 15 * 35) / 25 = (200 + 525) / 25 = 29°C
+        let runner = create_deadband_test_runner();
+        let t_free = runner.compute_t_free(35.0, 0.0, 0.0);
+        let expected = (10.0 * 20.0 + 15.0 * 35.0) / (10.0 + 15.0);
+        assert!(
+            (t_free - expected).abs() < 0.1,
+            "T_free hot-outdoor mismatch: got {t_free}, expected {expected}"
+        );
+        assert!(
+            t_free > 26.0,
+            "T_free should be above cooling setpoint with hot outdoor: got {t_free}"
+        );
+    }
+
+    #[test]
+    fn test_deadband_uses_t_free_q_zero() {
+        // Outdoor at 20°C: T_free = 20°C which is the heating setpoint.
+        // Boundary case: T_free == heating_setpoint is in the deadband,
+        // so Q_HVAC must be exactly 0 and prev_zone_temp must equal T_free.
+        let mut runner = create_deadband_test_runner();
+        let q = runner.step(20.0, 0.0, 0.0, 3600.0);
+        assert_eq!(
+            q, 0.0,
+            "Q_HVAC must be exactly 0 in deadband (T_free at heating setpoint)"
+        );
+        assert!(
+            (runner.prev_zone_temp - 20.0).abs() < 0.1,
+            "prev_zone_temp should follow T_free in deadband, got {}",
+            runner.prev_zone_temp
+        );
+    }
+
+    #[test]
+    fn test_deadband_zone_follows_t_free_trajectory() {
+        // Step multiple times with outdoor at 22°C (well inside the
+        // 20–26°C deadband). The zone temperature should follow the
+        // free-floating trajectory (close to 22°C, drifting toward the
+        // mass-temp equilibrium) and Q_HVAC must remain exactly 0.
+        let mut runner = create_deadband_test_runner();
+        for _ in 0..5 {
+            let q = runner.step(22.0, 0.0, 0.0, 3600.0);
+            assert_eq!(
+                q, 0.0,
+                "Q_HVAC must be exactly 0 throughout the deadband trajectory"
+            );
+            // Zone should remain in the 20–26°C deadband
+            assert!(
+                runner.prev_zone_temp >= 19.0 && runner.prev_zone_temp <= 27.0,
+                "Zone temp drifted out of deadband: {}",
+                runner.prev_zone_temp
+            );
+        }
+    }
+
+    #[test]
+    fn test_heating_mode_triggered_by_t_free() {
+        // Outdoor at 0°C: T_free = 8°C < heating setpoint (20°C) → heating
+        // Q_HVAC must be positive and the zone must be clamped to the
+        // heating setpoint.
+        let mut runner = create_deadband_test_runner();
+        let q = runner.step(0.0, 0.0, 0.0, 3600.0);
+        assert!(
+            q > 0.0,
+            "Heating mode must produce positive Q_HVAC, got {q}"
+        );
+        // Zone temperature is clamped to the heating setpoint in heating mode
+        assert!(
+            (runner.prev_zone_temp - 20.0).abs() < 0.1,
+            "Zone temp in heating mode should be heating setpoint, got {}",
+            runner.prev_zone_temp
+        );
+    }
+
+    #[test]
+    fn test_cooling_mode_triggered_by_t_free() {
+        // Outdoor at 35°C with high solar gain: T_free >> cooling setpoint
+        // → cooling mode. Q_HVAC must be negative and the zone must be
+        // clamped to the cooling setpoint.
+        let mut runner = create_deadband_test_runner();
+        // Warm up the building so the mass temps rise enough to push
+        // T_free above 26°C. With high outdoor + solar gains, T_free
+        // climbs well past the cooling setpoint within a few steps.
+        let mut q = 0.0;
+        for _ in 0..6 {
+            q = runner.step(35.0, 1000.0, 200.0, 3600.0);
+        }
+        assert!(
+            q < 0.0,
+            "Cooling mode must produce negative Q_HVAC, got {q}"
+        );
+        // Zone temperature should be clamped to cooling setpoint (26°C)
+        assert!(
+            (runner.prev_zone_temp - 26.0).abs() < 0.1,
+            "Zone temp in cooling mode should be cooling setpoint, got {}",
+            runner.prev_zone_temp
+        );
+    }
+
+    #[test]
+    fn test_heating_to_deadband_transition() {
+        // Start cold (T_free low → heating), then warm outdoor so the
+        // building drifts into the deadband. Q_HVAC must transition
+        // from positive (heating) to exactly 0 (deadband) without
+        // oscillating or jumping.
+        let mut runner = create_deadband_test_runner();
+
+        // Step 1: cold outdoor → heating
+        let q_cold = runner.step(-5.0, 0.0, 0.0, 3600.0);
+        assert!(
+            q_cold > 0.0,
+            "Cold start should produce heating, got {q_cold}"
+        );
+
+        // Steps 2–20: warm outdoor (23°C) with no gains so T_free rises
+        // and eventually enters the 20–26°C deadband
+        let mut entered_deadband = false;
+        for _ in 0..20 {
+            let q = runner.step(23.0, 0.0, 0.0, 3600.0);
+            if q == 0.0 {
+                entered_deadband = true;
+            }
+        }
+        assert!(
+            entered_deadband,
+            "Q_HVAC should drop to 0 when zone enters deadband"
+        );
+    }
+
+    #[test]
+    fn test_cooling_to_deadband_transition() {
+        // Start hot (T_free > 26°C → cooling), then mild outdoor so the
+        // building cools into the deadband.
+        let mut runner = create_deadband_test_runner();
+
+        // Steps 1–6: hot outdoor with solar → cooling
+        let mut had_cooling = false;
+        for _ in 0..6 {
+            let q = runner.step(35.0, 1000.0, 200.0, 3600.0);
+            if q < 0.0 {
+                had_cooling = true;
+            }
+        }
+        assert!(had_cooling, "Hot start should produce cooling");
+
+        // Then mild outdoor (22°C) without gains to drift toward deadband
+        let mut entered_deadband = false;
+        for _ in 0..40 {
+            let q = runner.step(22.0, 0.0, 0.0, 3600.0);
+            if q == 0.0 {
+                entered_deadband = true;
+            }
+        }
+        assert!(
+            entered_deadband,
+            "Q_HVAC should drop to 0 when zone enters deadband from cooling"
+        );
+    }
+
+    #[test]
+    fn test_deadband_no_energy_accumulation() {
+        // In deadband, Q_HVAC = 0 so no heating or cooling energy should
+        // accumulate over many timesteps.
+        let mut runner = create_deadband_test_runner();
+        for _ in 0..10 {
+            runner.step(22.0, 0.0, 0.0, 3600.0);
+        }
+        assert_eq!(
+            runner.annual_heating_energy, 0.0,
+            "No heating energy should accumulate in deadband"
+        );
+        assert_eq!(
+            runner.annual_cooling_energy, 0.0,
+            "No cooling energy should accumulate in deadband"
+        );
+        assert_eq!(
+            runner.peak_heating_power, 0.0,
+            "No peak heating power in deadband"
+        );
+        assert_eq!(
+            runner.peak_cooling_power, 0.0,
+            "No peak cooling power in deadband"
+        );
+    }
+
+    #[test]
+    fn test_heating_mode_accumulates_heating_energy() {
+        // Cold outdoor, warm-up disabled: heating energy must accumulate.
+        let mut runner = create_deadband_test_runner();
+        for _ in 0..5 {
+            runner.step(0.0, 0.0, 0.0, 3600.0);
+        }
+        assert!(
+            runner.annual_heating_energy > 0.0,
+            "Heating energy should accumulate in heating mode, got {}",
+            runner.annual_heating_energy
+        );
+        assert!(
+            runner.peak_heating_power > 0.0,
+            "Peak heating power should be > 0 in heating mode, got {}",
+            runner.peak_heating_power
+        );
+        assert_eq!(
+            runner.annual_cooling_energy, 0.0,
+            "No cooling energy should accumulate in pure heating mode"
+        );
+    }
+
+    #[test]
+    fn test_cooling_mode_accumulates_cooling_energy() {
+        // Hot outdoor with high solar gain: cooling energy must accumulate.
+        let mut runner = create_deadband_test_runner();
+        for _ in 0..10 {
+            runner.step(35.0, 1000.0, 200.0, 3600.0);
+        }
+        assert!(
+            runner.annual_cooling_energy > 0.0,
+            "Cooling energy should accumulate in cooling mode, got {}",
+            runner.annual_cooling_energy
+        );
+        assert!(
+            runner.peak_cooling_power > 0.0,
+            "Peak cooling power should be > 0 in cooling mode, got {}",
+            runner.peak_cooling_power
+        );
+        assert_eq!(
+            runner.annual_heating_energy, 0.0,
+            "No heating energy should accumulate in pure cooling mode"
+        );
+    }
+
+    #[test]
+    fn test_t_free_drops_with_solar_gain() {
+        // Internal + solar gains raise T_free (move zone toward cooling
+        // demand) — this is the "warmer zone" direction.
+        let runner = create_deadband_test_runner();
+        let t_free_no_gain = runner.compute_t_free(22.0, 0.0, 0.0);
+        let t_free_with_gain = runner.compute_t_free(22.0, 2000.0, 200.0);
+        assert!(
+            t_free_with_gain > t_free_no_gain,
+            "Internal + solar gains should raise T_free: {t_free_with_gain} > {t_free_no_gain}"
+        );
+    }
+
+    #[test]
+    fn test_t_free_uses_solver_mass_state() {
+        // The T_free computation must reflect the current mass node
+        // temperatures, not some hard-coded default. Pre-cool the mass
+        // nodes by stepping at 0°C, then check T_free is lower than
+        // the uncooled case.
+        let mut runner = create_deadband_test_runner();
+
+        // Cool the mass down for 24 timesteps
+        for _ in 0..24 {
+            runner.step(0.0, 0.0, 0.0, 3600.0);
+        }
+        // Now read T_free at 20°C outdoor — the cooled mass should
+        // pull T_free below 20°C (the cooling setpoint means nothing
+        // here since outdoor is 20°C, but the cooled surface should
+        // drag T_free down).
+        let t_free = runner.compute_t_free(20.0, 0.0, 0.0);
+        assert!(
+            t_free < 20.0,
+            "T_free should be below outdoor when mass is cooled: got {t_free}"
+        );
     }
 }
