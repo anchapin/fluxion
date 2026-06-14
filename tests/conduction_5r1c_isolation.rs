@@ -53,6 +53,9 @@
 
 use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::solver_trait::HeatConductionSolver;
+use fluxion::physics::units::{
+    FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
+};
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
 
 // ---------------------------------------------------------------------------
@@ -136,14 +139,23 @@ fn test_steady_state_lightweight_wall() {
     let r_total = wall.total_r_value();
 
     let expected_flux = (t_ext - t_int) / r_total;
-    let actual_flux = solver.step(3600.0, t_int, t_ext, 8.0, 25.0).unwrap();
+    let actual_flux: HeatFlux = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
+    let actual_flux_value = actual_flux.to_value();
 
-    let rel_error = (actual_flux - expected_flux).abs() / expected_flux.abs();
+    let rel_error = (actual_flux_value - expected_flux).abs() / expected_flux.abs();
     assert!(
         rel_error < 0.001,
         "Lightweight wall steady-state: expected {:.6} W/m², got {:.6} W/m², rel_error = {:.4}% (limit 0.1%)",
         expected_flux,
-        actual_flux,
+        actual_flux_value,
         rel_error * 100.0
     );
 }
@@ -158,7 +170,16 @@ fn test_steady_state_heavyweight_wall() {
     let r_total = wall.total_r_value();
 
     let expected_flux = (t_ext - t_int) / r_total;
-    let actual_flux = solver.step(3600.0, t_int, t_ext, 8.0, 25.0).unwrap();
+    let actual_flux = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
 
     let rel_error = (actual_flux - expected_flux).abs() / expected_flux.abs();
     assert!(
@@ -180,7 +201,16 @@ fn test_steady_state_insulated_wall() {
     let r_total = wall.total_r_value();
 
     let expected_flux = (t_ext - t_int) / r_total;
-    let actual_flux = solver.step(3600.0, t_int, t_ext, 8.0, 25.0).unwrap();
+    let actual_flux = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
 
     let rel_error = (actual_flux - expected_flux).abs() / expected_flux.abs();
     assert!(
@@ -202,7 +232,16 @@ fn test_steady_state_very_heavyweight_wall() {
     let r_total = wall.total_r_value();
 
     let expected_flux = (t_ext - t_int) / r_total;
-    let actual_flux = solver.step(3600.0, t_int, t_ext, 8.0, 25.0).unwrap();
+    let actual_flux = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
 
     let rel_error = (actual_flux - expected_flux).abs() / expected_flux.abs();
     assert!(
@@ -220,7 +259,16 @@ fn test_steady_state_zero_delta_t() {
     let wall = heavyweight_wall();
     let mut solver = init_solver(&wall);
 
-    let flux = solver.step(3600.0, 20.0, 20.0, 8.0, 25.0).unwrap();
+    let flux = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
     assert!(
         flux.abs() < 1e-12,
         "Zero ΔT should produce zero flux, got {:.2e} W/m²",
@@ -237,7 +285,16 @@ fn test_steady_state_flux_sign_convention() {
     let mut solver = init_solver(&wall);
 
     // Heat gain scenario
-    let flux_gain = solver.step(3600.0, 20.0, 35.0, 8.0, 25.0).unwrap();
+    let flux_gain = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(35.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
     assert!(
         flux_gain > 0.0,
         "T_ext > T_int → flux should be positive (heat gain), got {:.4}",
@@ -245,7 +302,16 @@ fn test_steady_state_flux_sign_convention() {
     );
 
     // Heat loss scenario
-    let flux_loss = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0).unwrap();
+    let flux_loss = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
     assert!(
         flux_loss < 0.0,
         "T_ext < T_int → flux should be negative (heat loss), got {:.4}",
@@ -259,8 +325,26 @@ fn test_steady_state_symmetry() {
     let wall = insulated_wall();
     let mut solver = init_solver(&wall);
 
-    let flux_forward = solver.step(3600.0, 20.0, 10.0, 8.0, 25.0).unwrap();
-    let flux_reverse = solver.step(3600.0, 10.0, 20.0, 8.0, 25.0).unwrap();
+    let flux_forward = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(10.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
+    let flux_reverse = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(10.0),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
 
     assert!(
         (flux_forward + flux_reverse).abs() < 1e-10,
@@ -277,8 +361,26 @@ fn test_steady_state_linearity() {
     let wall = lightweight_wall();
     let mut solver = init_solver(&wall);
 
-    let flux_10k = solver.step(3600.0, 20.0, 10.0, 8.0, 25.0).unwrap();
-    let flux_20k = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+    let flux_10k = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(10.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
+    let flux_20k = solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
 
     let ratio = flux_20k / flux_10k;
     assert!(
@@ -377,14 +479,31 @@ fn test_transient_step_response_heavyweight() {
     let mut solver = init_solver(&wall);
 
     // Initialize at equilibrium
-    solver.step(dt, t_int, t_ext_initial, 8.0, 25.0).unwrap();
+    solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext_initial),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     // Apply step change and run for 5τ
     let n_steps = (5.0 * tau / dt).ceil() as usize;
     let mut fluxes: Vec<f64> = Vec::with_capacity(n_steps);
 
     for _ in 0..n_steps {
-        let flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+        let flux = solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext_final),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap()
+            .to_value();
         fluxes.push(flux);
     }
 
@@ -433,12 +552,29 @@ fn test_transient_step_response_lightweight() {
     let mut solver = init_solver(&wall);
 
     // Start at equilibrium
-    solver.step(dt, t_int, 20.0, 8.0, 25.0).unwrap();
+    solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     // Run for 5τ
     let n_steps = (5.0 * tau / dt).ceil() as usize;
     for i in 0..n_steps {
-        let flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+        let flux = solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext_final),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap()
+            .to_value();
         // Check convergence at t = 3τ
         let t_elapsed = (i + 1) as f64 * dt;
         if (t_elapsed - 3.0 * tau).abs() < dt {
@@ -474,16 +610,42 @@ fn test_transient_step_response_insulated() {
     let mut solver = init_solver(&wall);
 
     // Start at equilibrium
-    solver.step(dt, t_int, 20.0, 8.0, 25.0).unwrap();
+    solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     // Run for 5τ
     let n_steps = (5.0 * tau / dt).ceil() as usize;
     for _ in 0..n_steps {
-        let _flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+        let _flux = solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext_final),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap()
+            .to_value();
     }
 
     // After 5τ, should be at steady-state
-    let final_flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+    let final_flux = solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(t_ext_final),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
     let rel_error = (final_flux - q_ss).abs() / q_ss.abs();
     assert!(
         rel_error < 0.01,
@@ -532,13 +694,30 @@ fn test_time_constant_heavyweight() {
     let dt = 60.0; // 1-minute timesteps for precision
 
     let mut solver = init_solver(&wall);
-    solver.step(dt, t_int, 20.0, 8.0, 25.0).unwrap();
+    solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     let mut tau_measured: Option<f64> = None;
     let max_steps = (10.0 * tau_analytical / dt) as usize;
 
     for i in 0..max_steps {
-        let flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+        let flux = solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext_final),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap()
+            .to_value();
         let fraction = flux / q_ss;
 
         // Check if we've crossed the 63.2% threshold
@@ -583,13 +762,30 @@ fn test_time_constant_lightweight() {
     let dt = 60.0;
 
     let mut solver = init_solver(&wall);
-    solver.step(dt, t_int, 20.0, 8.0, 25.0).unwrap();
+    solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     let mut tau_measured: Option<f64> = None;
     let max_steps = (10.0 * tau_analytical / dt) as usize;
 
     for i in 0..max_steps {
-        let flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+        let flux = solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext_final),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap()
+            .to_value();
         let fraction = flux / q_ss;
         if fraction.abs() >= 0.6321 {
             tau_measured = Some((i + 1) as f64 * dt);
@@ -623,13 +819,30 @@ fn test_time_constant_insulated() {
     let dt = 60.0;
 
     let mut solver = init_solver(&wall);
-    solver.step(dt, t_int, 20.0, 8.0, 25.0).unwrap();
+    solver
+        .step(
+            Time::from_value(dt),
+            Temperature::from_value(t_int),
+            Temperature::from_value(20.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     let mut tau_measured: Option<f64> = None;
     let max_steps = (10.0 * tau_analytical / dt) as usize;
 
     for i in 0..max_steps {
-        let flux = solver.step(dt, t_int, t_ext_final, 8.0, 25.0).unwrap();
+        let flux = solver
+            .step(
+                Time::from_value(dt),
+                Temperature::from_value(t_int),
+                Temperature::from_value(t_ext_final),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap()
+            .to_value();
         let fraction = flux / q_ss;
         if fraction.abs() >= 0.6321 {
             tau_measured = Some((i + 1) as f64 * dt);
@@ -669,9 +882,15 @@ fn test_trait_lifecycle() {
     assert!(solver.is_valid(), "Solver should be valid after init");
 
     // Step
-    let step_result = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+    let step_result = solver.step(
+        Time::from_value(3600.0),
+        Temperature::from_value(20.0),
+        Temperature::from_value(0.0),
+        HeatTransferCoefficient::from_value(8.0),
+        HeatTransferCoefficient::from_value(25.0),
+    );
     assert!(step_result.is_ok(), "Step should succeed after init");
-    let flux = step_result.unwrap();
+    let flux = step_result.unwrap().to_value();
     assert!(flux.is_finite(), "Flux should be finite");
     assert!(flux < 0.0, "Heat loss scenario: flux should be negative");
 
@@ -689,7 +908,13 @@ fn test_trait_lifecycle() {
 #[test]
 fn test_step_before_init_returns_error() {
     let mut solver = FiveR1CSolver::new();
-    let result = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+    let result = solver.step(
+        Time::from_value(3600.0),
+        Temperature::from_value(20.0),
+        Temperature::from_value(0.0),
+        HeatTransferCoefficient::from_value(8.0),
+        HeatTransferCoefficient::from_value(25.0),
+    );
 
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
@@ -714,8 +939,26 @@ fn test_determinism() {
     let mut solver1 = init_solver(&wall);
     let mut solver2 = init_solver(&wall);
 
-    let flux1 = solver1.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
-    let flux2 = solver2.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+    let flux1 = solver1
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
+    let flux2 = solver2
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .to_value();
 
     assert_eq!(
         flux1, flux2,
@@ -740,7 +983,13 @@ fn test_performance_gate() {
 
     // Run 1000 steps (simulating ~42 days at 1-hour timesteps)
     for _ in 0..1000 {
-        let _ = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+        let _ = solver.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
     }
 
     let elapsed = start.elapsed();
