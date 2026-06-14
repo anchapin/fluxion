@@ -761,10 +761,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Physics-based: No correction factors - use raw energy values
         self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
         self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
-        self.0.ctf_annual_heating_joules = 0.0;
-        self.0.ctf_annual_cooling_joules = 0.0;
-        self.0.fd_annual_heating_joules = 0.0;
-        self.0.fd_annual_cooling_joules = 0.0;
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
@@ -1340,10 +1336,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Physics-based: No correction factors - use raw energy values
         self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
         self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
-        self.0.ctf_annual_heating_joules = 0.0;
-        self.0.ctf_annual_cooling_joules = 0.0;
-        self.0.fd_annual_heating_joules = 0.0;
-        self.0.fd_annual_cooling_joules = 0.0;
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6

@@ -419,18 +419,6 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
-        // Physics-based: No correction factors needed
-        // The thermal network physics should produce correct results without empirical adjustments
-        // τ = Cm / (h_tr_ms + h_tr_me) is determined by actual construction properties (Issue 693 fix)
-        model.time_constant_sensitivity_correction = 1.0;
-        model.cooling_sensitivity_correction = 1.0;
-
-        // Issue #665 fix: 6R2C correction factors disabled
-        // The empirically-derived 5.2 and 1.74 correction factors were papering over
-        // calculation errors. Now using physics-based values directly.
-        model.time_constant_sensitivity_correction_6r2c = 1.0;
-        model.cooling_sensitivity_correction_6r2c = 1.0;
-
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];
         let floor_area = geometry.floor_area();
@@ -771,9 +759,6 @@ impl ThermalModel<VectorField> {
         // === SESSION 33: REMOVED mode-specific factors ===
         // Using physics-based parameters only, no case-specific tuning.
 
-        // NOTE: time_constant_sensitivity_correction is already set in from_spec()
-        // No need to set it again here - doing so would be redundant
-
         for zone_idx in 0..num_zones {
             let zone_floor_area = if zone_idx < spec.geometry.len() {
                 spec.geometry[zone_idx].floor_area()
@@ -1010,9 +995,14 @@ impl ThermalModel<VectorField> {
             // For low-mass buildings, thermal mass is primarily furniture/internal elements,
             // not the building envelope. Using reduced h_ms = 2.0 W/(m²·K) gives
             // h_tr_ms ≈ 240 W/K instead of 1092 W/K, producing proper thermal coupling.
+            //
+            // REVERT: h_ms_coeff=0.33 was tried to get proper ~69 hour time constant via
+            // derived_h_tr_3, but it decoupled the thermal mass too much, causing 900FF to
+            // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
+            // mass coupling; time constant will be addressed separately via derived_h_tr_3.
             let h_ms_coeff = match spec.construction_type {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 0.33,
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.1,
                 crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
@@ -2314,10 +2304,6 @@ impl ThermalModel<VectorField> {
             solar_distribution_to_air: 0.1,
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
             thermal_mass_coupling_enhancement: 1.0, // Default: no coupling enhancement
-            time_constant_sensitivity_correction: 1.0, // Default: no correction
-            cooling_sensitivity_correction: 1.0, // Default: no correction
-            time_constant_sensitivity_correction_6r2c: 1.0, // Default: no correction for 6R2C
-            cooling_sensitivity_correction_6r2c: 1.0, // Default: no correction for 6R2C cooling
             // Mode-specific factors removed - using physics-based conductances
             // h_tr_em_heating_factor, h_tr_em_cooling_factor removed
             // h_tr_ms_heating_factor, h_tr_ms_cooling_factor removed
