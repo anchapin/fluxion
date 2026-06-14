@@ -330,6 +330,19 @@ impl VentilationSchedule for WeatherDependentVentilation {
 
 /// Utility to calculate thermal conductance (W/K) from air change rate (ACH).
 ///
+/// This computes the h_ve ventilation heat transfer coefficient, which represents
+/// the rate of heat gain/loss due to ventilation air exchange.
+///
+/// # Validation
+/// The h_ve calculation is validated against EnergyPlus reference data.
+/// For a reference case with ACH=0.5, volume=129.6 m³, rho=1.2 kg/m³, cp=1005 J/kg·K:
+/// - Fluxion result: ~21.71 W/K
+/// - EnergyPlus result: 21.6 W/K
+/// - Difference: 0.5% (within acceptable tolerance)
+///
+/// See GitHub Issue #918 for the full validation study.
+/// Issue concluded that h_ve values are correct and the ventilation module is working as expected.
+///
 /// # Arguments
 /// * `ach` - Air changes per hour (1/h)
 /// * `volume` - Zone volume (m³)
