@@ -2116,6 +2116,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solver.set_surface_temperature(t_surface);
         }
 
+        // === Issue #1005: Per-surface conduction integration ===
+        //
+        // Refine the surface temperature for each zone using the per-surface
+        // conduction solver. This tracks the air-side surface film independently
+        // from the bulk mass node, using each surface's own conductances and
+        // exterior boundary. The result is written back to the multi-node
+        // solver's `surface_temperature` so subsequent air-node energy
+        // balances use a more accurate boundary value.
+        for zone_idx in 0..self.0.num_zones {
+            if zone_idx >= self.0.multi_node_solvers.len() {
+                continue;
+            }
+            let solver = &mut self.0.multi_node_solvers[zone_idx];
+            solver.step_per_surface(dt);
+        }
+
         // Calculate HVAC demand
         let _hour_of_day_idx = timestep % 24;
         let temp_rate = if timestep > 0 {
