@@ -448,9 +448,10 @@ fn test_combined_overhang_front_sun() {
 /// Combined shading at 45° alt, 45° azimuth (both devices contribute).
 ///
 /// At 45° altitude, 45° azimuth to the right:
-/// - Overhang: shaded_fraction ≈ 0.5774 (from earlier test)
+/// - Overhang: shaded_fraction ≈ 0.7071
 /// - Right fin: shaded_fraction ≈ 0.1667
-/// - Combined = 0.5774 + 0.1667 = 0.7441
+/// - Overlap (corner): ≈ 0.1178 (counted twice in naive addition)
+/// - Corrected = 0.7071 + 0.1667 - 0.1178 = 0.7559
 #[test]
 fn test_combined_overhang_and_fin() {
     let window = standard_window();
@@ -467,8 +468,11 @@ fn test_combined_overhang_and_fin() {
     // Overhang at 45° alt, 45° az: tan_profile = tan(45)/cos(45) = 1/0.866 = 1.414
     // shadow_y = 1.414m, shaded_height = 1.414m, fraction = 1.414*6/12 = 0.7071
     // Fin at 45° az: shadow_x = 1.0m, fraction = 1.0*2/12 = 0.1667
-    // Combined = 0.7071 + 0.1667 = 0.8738
-    let expected = std::f64::consts::FRAC_1_SQRT_2 + 1.0 / 6.0;
+    // Overlap: shadow_x * shadow_y / window_area = 1.0*1.414/12 = 0.1178
+    // Corrected = 0.7071 + 0.1667 - 0.1178 = 0.7559 (Issue #747 fix)
+    // Note: shadow_y = depth * tan_profile = 1.0 * (1.0/FRAC_1_SQRT_2), so overlap = 1.0/(12*FRAC_1_SQRT_2)
+    let overlap_fraction = 1.0 / (12.0 * std::f64::consts::FRAC_1_SQRT_2);
+    let expected = std::f64::consts::FRAC_1_SQRT_2 + 1.0 / 6.0 - overlap_fraction;
     let rel_error = (shaded - expected).abs() / expected;
 
     assert!(
