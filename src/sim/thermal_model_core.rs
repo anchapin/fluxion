@@ -1010,9 +1010,14 @@ impl ThermalModel<VectorField> {
             // For low-mass buildings, thermal mass is primarily furniture/internal elements,
             // not the building envelope. Using reduced h_ms = 2.0 W/(m²·K) gives
             // h_tr_ms ≈ 240 W/K instead of 1092 W/K, producing proper thermal coupling.
+            //
+            // REVERT: h_ms_coeff=0.33 was tried to get proper ~69 hour time constant via
+            // derived_h_tr_3, but it decoupled the thermal mass too much, causing 900FF to
+            // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
+            // mass coupling; time constant will be addressed separately via derived_h_tr_3.
             let h_ms_coeff = match spec.construction_type {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 0.33,
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.1,
                 crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
