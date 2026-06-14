@@ -800,6 +800,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_em_ref = self.0.h_tr_em.as_ref();
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
+        let t_i_act_ref = t_i_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
@@ -809,6 +810,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
+            let t_i = t_i_act_ref[i];
             let phi_m_zone = phi_m_ref[i];
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
@@ -889,24 +891,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     tm_old + (q_m_net / cm) * dt
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
-                    // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
-                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    // SESSION 72: Include ventilation-to-mass cooling
                     // Issue #896 FIX: Use crank_nicolson_iso13790 with h_tr_3 instead of
                     // crank_nicolson_update with h_tr_ms. The h_tr_ms (~1300 W/K) is the
                     // direct surface-to-mass conductance, but heat from the air node reaches
                     // the mass through the combined air-to-surface bottleneck (h_tr_3 ≈ 40 W/K).
-                    // Using h_tr_ms gives a time constant of ~4 hours (too fast), while h_tr_3
-                    // gives ~6 days (matching ISO 13790 dynamics and correct seasonal mass swing).
-                    // phi_m_zone already includes all gains that reach the mass node.
-                    crank_nicolson_iso13790(
-                        tm_old,
-                        dt,
-                        cm,
-                        *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms),
-                        h_tr_em, // Ventilation is handled via air/surface temp, not directly here
-                        phi_m_zone,
-                    )
+                    //
+                    // CRITICAL: phi_m_tot must include boundary conductance source terms per
+                    // ISO 13790 §C.3:
+                    //   phi_m_tot = phi_m + h_tr_em * T_sol_air + h_tr_3 * T_air
+                    //
+                    // Previously only phi_m_zone (direct solar gains ≈ 500 W) was passed,
+                    // omitting h_tr_em * T_sol_air + h_tr_3 * T_air (≈ 6400 W combined).
+                    // This decoupled the mass from its environment, causing excessive damping
+                    // (~64% swing reduction instead of the expected ~44% per ASHRAE 140).
+                    //
+                    // Uses T_air (t_i) as the boundary for H_tr_3, not T_s (surface temp).
+                    // T_s includes Tm_old feedback through h_tr_ms, which would put h_tr_ms
+                    // in series with itself via H_tr_3, creating an artificial self-coupling
+                    // loop. T_air is the correct upstream boundary for the air-side network.
+                    let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+                    let phi_m_tot = phi_m_zone + h_tr_em * t_sol_air[i] + h_tr_3_zone * t_i;
+                    crank_nicolson_iso13790(tm_old, dt, cm, h_tr_3_zone, h_tr_em, phi_m_tot)
                 }
             };
 
