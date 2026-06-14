@@ -110,6 +110,7 @@ pub fn solve_with_faer(matrix: DMatrix<f64>, rhs: DVector<f64>) -> DVector<f64> 
 }
 
 /// Fallback Gaussian elimination solver.
+#[allow(unused_mut)]
 fn solve_gaussian_elimination(mut matrix: DMatrix<f64>, mut rhs: DVector<f64>) -> DVector<f64> {
     let n = matrix.nrows();
     let mut solution = rhs.clone();

@@ -213,7 +213,7 @@ impl PCATransformer {
                 for i in 0..k {
                     let eig_col = eigenvectors.column(i).clone();
                     let dot = new_v_normalized.dot(&eig_col);
-                    let eig_col_scaled = &eig_col * dot;
+                    let eig_col_scaled = eig_col * dot;
                     new_v_normalized -= &eig_col_scaled;
                 }
 
