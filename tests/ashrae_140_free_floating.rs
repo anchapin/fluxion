@@ -1012,28 +1012,18 @@ fn test_900ff_with_5r1c_model() {
 /// This isolates whether CTF is causing the overheating issue (Max=73°C vs reference 41-46°C)
 #[test]
 fn test_900ff_without_ctf() {
-    #[allow(unused_imports)]
-    use fluxion::physics::ctf_coefficients::CTFMaterial;
-
     let spec_900ff = ASHRAE140Case::Case900FF.spec();
     let weather = DenverTmyWeather::new();
 
-    // === Case A: 900FF with 6R2C + CTF ===
+    // === Case A: 900FF with 6R2C + CTF (CTF enabled by default for 900FF - Issue #913) ===
     let mut model_with_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
     model_with_ctf.heating_setpoint = -999.0;
     model_with_ctf.cooling_setpoint = 999.0;
     model_with_ctf.hvac_heating_capacity = 0.0;
     model_with_ctf.hvac_cooling_capacity = 0.0;
 
-    // Issue #913: CTF is NOT enabled by default in from_spec().
-    // Explicitly enable CTF for Case A to compare 6R2C+CTF vs 6R2C-only.
-    // Use high-mass wall layers matching the 900 construction.
-    let wall_layers = vec![
-        CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
-        CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
-        CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
-    ];
-    model_with_ctf.enable_ctf(&wall_layers, 3600.0, 50);
+    // CTF is now enabled by default in from_spec() for 900FF (Issue #913 fix)
+    // Case A uses the default CTF-enabled model
     println!("Case A: CTF enabled = {}", model_with_ctf.ctf_is_enabled());
 
     let mut min_a = f64::INFINITY;
