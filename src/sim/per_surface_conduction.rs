@@ -225,6 +225,7 @@ impl SurfaceNode {
     /// * `h_tr_is` - Interior surface-to-air conductance in W/K
     /// * `h_tr_em` - Exterior-to-mass conductance in W/K
     /// * `mass_temperature` - Initial mass temperature in °C
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: usize,
         kind: SurfaceKind,
@@ -440,6 +441,7 @@ impl PerSurfaceConductionSolver {
     ///
     /// Convenience constructor that computes h_tr_ms and h_tr_em from area and U-value.
     /// Uses parallel conductance formula: h = 1 / (1/h1 + 1/h2) for stacked resistances.
+    #[allow(clippy::too_many_arguments)]
     pub fn add_surface_from_params(
         &mut self,
         id: usize,
