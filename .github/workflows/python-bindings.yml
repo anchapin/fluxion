@@ -25,71 +25,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          # PR gate: 2 jobs
-          - os: ubuntu-latest
-            python-version: '3.10'
-            only_on_main: false
-          - os: ubuntu-latest
-            python-version: '3.12'
-            only_on_main: false
-          - os: windows-latest
-            python-version: '3.10'
-            only_on_main: false
-          - os: windows-latest
-            python-version: '3.12'
-            only_on_main: false
-          # Main-only: remaining OS × Python combos
-          - os: macos-latest
-            python-version: '3.10'
-            only_on_main: true
-          - os: macos-latest
-            python-version: '3.11'
-            only_on_main: true
-          - os: macos-latest
-            python-version: '3.12'
-            only_on_main: true
-          - os: macos-latest
-            python-version: '3.13'
-            only_on_main: true
-          - os: ubuntu-latest
-            python-version: '3.11'
-            only_on_main: true
-          - os: ubuntu-latest
-            python-version: '3.13'
-            only_on_main: true
-          - os: windows-latest
-            python-version: '3.11'
-            only_on_main: true
-          - os: windows-latest
-            python-version: '3.13'
-            only_on_main: true
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.10', '3.11', '3.12', '3.13']
         exclude:
-          # Exclude main-only combos on PRs
+          # Exclude macOS on PRs (not in PR matrix)
           - os: macos-latest
             python-version: '3.10'
-            only_on_main: true
           - os: macos-latest
             python-version: '3.11'
-            only_on_main: true
           - os: macos-latest
             python-version: '3.12'
-            only_on_main: true
           - os: macos-latest
             python-version: '3.13'
-            only_on_main: true
+          # Exclude Python 3.11 and 3.13 on ubuntu/windows on PRs
           - os: ubuntu-latest
             python-version: '3.11'
-            only_on_main: true
           - os: ubuntu-latest
             python-version: '3.13'
-            only_on_main: true
           - os: windows-latest
             python-version: '3.11'
-            only_on_main: true
           - os: windows-latest
             python-version: '3.13'
-            only_on_main: true
     steps:
       - uses: actions/checkout@v4
 
@@ -117,3 +73,4 @@ jobs:
         run: |
           pip install --find-links ./target/wheels fluxion
           python -c "import fluxion; print('[OK] Fluxion module loaded successfully')"
+# trigger
