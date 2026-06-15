@@ -786,6 +786,7 @@ impl WeatherSource for EpwWeatherSource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
     use std::io::Cursor;
 
     /// Creates a minimal valid EPW file for testing.
@@ -1310,5 +1311,89 @@ mod tests {
         assert!(debug_v2.contains("V2"));
         let debug_v3 = format!("{:?}", EpwVersion::V3);
         assert!(debug_v3.contains("V3"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Property-Based Tests (proptest)
+    // Issue #1062: Property-based testing for core math & parsers
+    //
+    // Tests EPW parser with random valid and invalid inputs.
+    // -------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(1000))]
+
+        #[test]
+        fn prop_valid_data_line_parsing(
+            year in 1991_i32..2025,
+            month in 1_u32..13,
+            day in 1_u32..29,
+            hour in 0_u32..24,
+            minute in 0_u32..60,
+            temp in -50.0_f64..60.0,
+            humidity in 1.0_f64..100.0,
+        ) {
+            // Generate a valid EPW data line with all required fields (minimum 35)
+            // Format: year,month,day,hour,minute,EPW_flag,dry_bulb,dewpoint,humidity,wind_dir,wind_speed, ...
+            // Key field indices: [6]=dry_bulb, [8]=humidity, [12]=HIR, [13]=GHI, [14]=DNI, [15]=DHI, [21]=wind_speed
+            let line = format!(
+                "{},{},{},{},{},?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9?9?9,{},50,{},180,3.5,300,200,100,50,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+                year, month, day, hour, minute, temp, humidity
+            );
+            let result = EpwWeatherSource::parse_data_line(&line, 0);
+            prop_assert!(result.is_ok(), "Valid line should parse: {}", line);
+        }
+
+        #[test]
+        fn prop_invalid_data_line_returns_error(line in "[^,]{1,10},[^,]{1,10},[^,]{1,10}") {
+            let result = EpwWeatherSource::parse_data_line(&line, 0);
+            prop_assert!(result.is_err(), "Malformed line should fail: {}", line);
+        }
+
+        #[test]
+        fn prop_truncated_data_line_rejected(line in "[0-9,y,?9*]{10,50}") {
+            let result = EpwWeatherSource::parse_data_line(&line, 0);
+            prop_assert!(result.is_err(), "Truncated line should fail");
+        }
+    }
+
+    #[test]
+    fn test_parse_data_line_with_various_missing_fields() {
+        use std::io::Cursor;
+
+        // Missing optional fields (too few commas)
+        let incomplete_lines = [
+            "1991,1,1,1,0",    // missing most fields
+            "1991,1,1,1,0,?9", // missing fields after EPW flag
+            "1991,1,1,1",      // severely truncated
+            "",                // empty line
+        ];
+
+        for line in incomplete_lines.iter() {
+            let result = EpwWeatherSource::parse_data_line(line, 0);
+            assert!(result.is_err(), "Should fail to parse: {}", line);
+        }
+    }
+
+    #[test]
+    fn test_parse_location_with_various_formats() {
+        // Valid formats
+        let valid_locations = [
+            "LOCATION,Denver,CO,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0,1991-2005",
+            "LOCATION,,,USA,TMY3,724690,39.83,-104.65,-7.0,1655.0",
+            "LOCATION,Test City,,USA,AMY,123456,40.0,-100.0,-6.0,500.0",
+        ];
+
+        for loc in valid_locations.iter() {
+            let result = EpwWeatherSource::parse_location(loc);
+            // None of these should panic
+            let _ = result;
+        }
+
+        // Invalid format should not panic
+        let invalid = "NOTLOCATION";
+        let result = EpwWeatherSource::parse_location(invalid);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
     }
 }
