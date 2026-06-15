@@ -34,6 +34,7 @@ pub mod adaptive_calibration;
 pub mod ashrae_140_multi_zone;
 pub mod case_195_calibration;
 pub mod case_960;
+pub mod empirical;
 pub mod energy_balance;
 pub mod high_mass;
 pub mod statistical;
@@ -205,6 +206,14 @@ pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerato
 pub use thermal_mass_energy_accounting::{
     calculate_mass_energy, validate_energy_balance_over_year, BuildingBalanceSummary,
     EnergyBalanceReport, ZoneBalanceEntry,
+};
+
+// Empirical validation re-exports
+pub use empirical::{
+    generate_empirical_report, get_ashrae_rp_sources, BuildingType, EmpiricalMetric,
+    EmpiricalStatistics, EmpiricalValidationConfig, EmpiricalValidationReport,
+    EmpiricalValidationResult, EmpiricalValidationStatus, MonitoredBuildingDatabase,
+    MonitoredDataPoint, MonitoredDataSource,
 };
 
 #[cfg(test)]
