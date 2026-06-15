@@ -278,6 +278,11 @@ path = "tests/integration/test_cli.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
 harness = true
