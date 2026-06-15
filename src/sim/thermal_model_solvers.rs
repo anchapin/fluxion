@@ -86,22 +86,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // h_ext = h_tr_w + h_ve + non-south opaque envelope
         //
-        // Issue #715: The south wall has insulation creating a series thermal path
-        // bypassing the mass node. We previously also injected
-        // `h_south_series = h_is_south × h_em_south / (h_is_south + h_em_south)`
-        // here as an additional parallel path between air and outdoor. That term
-        // double-counted the south wall (already in `h_tr_em` on the mass side and
-        // `h_tr_is` on the air side), and for Case 600/650 it added ~9 W/K of
-        // spurious air-to-outdoor conductance, suppressing peak free-float air
-        // temperature. With the ISO 13790 lumped h_ms (Issue #821), the south wall
-        // is now correctly coupled through the mass node and does not need a
-        // bypass path. We drop `h_south_series` from `derived_h_ext`. The
-        // dedicated south-wall vectors (`h_tr_is_south`, `h_tr_em_south`,
-        // `h_tr_is_no_south`) are kept on the model for the 9R4C / CTF paths
-        // owned by Issues #715 / #730.
-        let h_tr_em_non_south = self.0.h_tr_em.clone() - self.0.h_tr_em_south.clone();
-
-        self.0.derived_h_ext = self.0.h_tr_w.clone() + h_tr_em_non_south + self.0.h_ve.clone();
+        // Issue #917: derived_h_ext must NOT include h_tr_em_non_south.
+        //
+        // In the ISO 13790 5R1C network, the opaque envelope conductance (h_tr_em)
+        // connects the MASS node to outdoor (used in the backward Euler / Crank-
+        // Nicolson mass update). Adding it to h_ext (the AIR-to-outdoor path) double-
+        // counts the opaque envelope, creating ~49 W/K of phantom air-to-outdoor
+        // conductance that drains heat from the zone and suppresses free-floating
+        // temperatures by ~2-5 °C.
+        //
+        // The correct air-to-outdoor conductance is:
+        //   h_ext = h_tr_w (windows) + h_ve (ventilation/infiltration)
+        //
+        // The south-wall bypass (h_south_series) was already removed by Issue #715.
+        // The dedicated south-wall vectors are kept for the 9R4C / CTF paths.
+        self.0.derived_h_ext = self.0.h_tr_w.clone() + self.0.h_ve.clone();
 
         // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
         // Note: h_tr_me is 0 for 5R1C, non-zero for 6R2C (envelope↔internal mass coupling)
