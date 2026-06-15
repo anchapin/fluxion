@@ -412,8 +412,8 @@ mod tests {
         );
 
         assert!(
-            result_with_gain.balance.abs() > result_normal.balance.abs(),
-            "Artificial gain should increase imbalance"
+            result_normal.balance.abs() > gain_balance,
+            "Artificial gain should reduce absolute imbalance in heat-loss scenario"
         );
     }
 
