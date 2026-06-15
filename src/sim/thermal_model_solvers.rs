@@ -65,13 +65,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let air_cap = volume * self.0.air_density.clone() * self.0.heat_capacity.clone();
         self.0.h_ve = (air_cap.clone() * self.0.infiltration_rate.clone()) / 3600.0;
 
-        // Issue #585 FIX: Thermal capacitance is now calculated from construction layers in from_spec()
-        // using iso_13790_effective_capacitance_per_area() for walls, roof, and floor.
-        // ADD: Calculate proper thermal capacitance (air + structure approximation)
-        let structure_cap = self.0.zone_area.clone() * 200_000.0;
-        self.0.thermal_capacitance = air_cap + structure_cap;
+        // Issue #821: thermal_capacitance is set in `from_spec()` using actual construction
+        // layers (Issue #585) and must NOT be overwritten here. The previous hardcoded
+        // overwrite (200,000 J/m²K × zone_area) was a ~15× overestimate for low-mass
+        // construction and biased peak air temperatures 10-20 °C low for FF cases.
 
-        // Update optimization cache
+        // Update optimization cache (computes derived_h_tr_3, derived_h_ext, etc.)
+        self.update_optimization_cache();
         self.update_optimization_cache();
     }
 
@@ -84,26 +84,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let _h_tr_is_ms_series = (self.0.h_tr_is.clone() * self.0.h_tr_ms.clone())
             / (self.0.h_tr_is.clone() + self.0.h_tr_ms.clone());
 
-        // h_ext = h_tr_w + h_ve + south wall series + non-south opaque envelope
-        // Issue #715: South wall has insulation creating a series thermal path.
-        // Instead of adding h_tr_em directly, we use the series combination:
-        // h_south_series = 1 / (1/h_tr_is_south + 1/h_tr_em_south)
-        // This properly models the south wall's insulated path through the mass node.
+        // h_ext = h_tr_w + h_ve + non-south opaque envelope
         //
-        // For non-south walls: h_tr_em is the direct envelope conductance (no bypass issue).
-        // We compute it as: h_tr_em_non_south = h_tr_em - h_tr_em_south
-        let h_tr_em_non_south = self.0.h_tr_em.clone() - self.0.h_tr_em_south.clone();
-
-        // South wall series: 1 / (1/h_tr_is_south + 1/h_tr_em_south)
-        // = h_tr_is_south * h_tr_em_south / (h_tr_is_south + h_tr_em_south)
-        // We compute h_tr_is_south from: h_tr_is_total = h_tr_is_no_south + h_tr_is_south
-        // => h_tr_is_south = h_tr_is_total - h_tr_is_no_south
-        let h_tr_is_south = self.0.h_tr_is.clone() - self.0.h_tr_is_no_south.clone();
-        let h_south_series = (h_tr_is_south.clone() * self.0.h_tr_em_south.clone())
-            / (h_tr_is_south.clone() + self.0.h_tr_em_south.clone());
-
-        self.0.derived_h_ext =
-            self.0.h_tr_w.clone() + h_south_series + h_tr_em_non_south + self.0.h_ve.clone();
+        // Issue #917: derived_h_ext must NOT include h_tr_em_non_south.
+        //
+        // In the ISO 13790 5R1C network, the opaque envelope conductance (h_tr_em)
+        // connects the MASS node to outdoor (used in the backward Euler / Crank-
+        // Nicolson mass update). Adding it to h_ext (the AIR-to-outdoor path) double-
+        // counts the opaque envelope, creating ~49 W/K of phantom air-to-outdoor
+        // conductance that drains heat from the zone and suppresses free-floating
+        // temperatures by ~2-5 °C.
+        //
+        // The correct air-to-outdoor conductance is:
+        //   h_ext = h_tr_w (windows) + h_ve (ventilation/infiltration)
+        //
+        // The south-wall bypass (h_south_series) was already removed by Issue #715.
+        // The dedicated south-wall vectors are kept for the 9R4C / CTF paths.
+        self.0.derived_h_ext = self.0.h_tr_w.clone() + self.0.h_ve.clone();
 
         // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
         // Note: h_tr_me is 0 for 5R1C, non-zero for 6R2C (envelope↔internal mass coupling)
@@ -140,6 +137,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             + self.0.derived_term_rest_1.clone() * h_total.clone()
             + self.0.derived_ground_coeff.clone();
 
+        // ISO 13790 §C.6-C.8: Combined conductances for Crank-Nicolson mass update
+        // H_tr_1 = 1 / (1/h_ve + 1/h_tr_is) = h_ve * h_tr_is / (h_ve + h_tr_is)
+        self.0.derived_h_tr_1 = (self.0.h_ve.clone() * self.0.h_tr_is.clone())
+            / (self.0.h_ve.clone() + self.0.h_tr_is.clone());
+
+        // H_tr_2 = H_tr_1 + h_tr_w
+        self.0.derived_h_tr_2 = self.0.derived_h_tr_1.clone() + self.0.h_tr_w.clone();
+
+        // H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms) = H_tr_2 * h_tr_ms / (H_tr_2 + h_tr_ms)
+        self.0.derived_h_tr_3 = (self.0.derived_h_tr_2.clone() * self.0.h_tr_ms.clone())
+            / (self.0.derived_h_tr_2.clone() + self.0.h_tr_ms.clone());
+
         // sensitivity = 1 / h_total (thermal resistance in K/W)
         // This represents the temperature change per Watt of HVAC power
         // HVAC power formula: P = (T_sp - T_free) / sensitivity
@@ -152,17 +161,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // The series combination of these paths gives the total thermal resistance
         // that the HVAC system "sees" when trying to control air temperature.
-        self.0.derived_sensitivity =
-            self.0.derived_term_rest_1.clone() / self.0.derived_den.clone();
-
-        // Debug: Print sensitivity calculation for Case 600
-        if self.0.case_id == "600" {
-            println!(
-                "DEBUG SENS Case 600: h_ext={:.2} W/K, sensitivity={:.6} K/W (1/h_total)",
-                h_total.as_ref()[0],
-                self.0.derived_sensitivity.as_ref()[0]
-            );
-        }
+        // Note (#872): derived_sensitivity has been removed. HVAC demand now uses
+        // the physics-based h_loss × (T_sp - T_free) formula in step_physics_9r4c,
+        // and ideal loads formula in step_physics_5r1c.
     }
 
     /// Configures the model to use the 6R2C thermal network with two mass nodes.
@@ -221,12 +222,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.thermal_model_type == ThermalModelType::EightRThreeC
     }
 
+    /// Check if this is a 9R4C thermal model (Phase 6, Issue #715).
+    pub fn is_nine_r4c_model(&self) -> bool {
+        self.0.thermal_model_type == ThermalModelType::NineRFourC
+    }
+
     /// Reset to 5R1C thermal model (disable 6R2C and 8R3C).
     ///
     /// This reverts the thermal model to the default ISO 13790 5R1C configuration
     /// with a single thermal mass node.
     pub fn reset_to_5r1c(&mut self) {
         self.0.thermal_model_type = ThermalModelType::FiveROneC;
+    }
+
+    /// Enable 9R4C thermal model for high-mass buildings (Phase 6).
+    ///
+    /// The 9R4C model uses 4 thermal mass nodes (wall, roof, floor, internal)
+    /// to properly capture thermal inertia in heavy-mass buildings (Case 900+ series).
+    ///
+    /// This method should be called during model construction for high-mass buildings.
+    /// The per-surface conductances and MultiNodeSolver instances must already be
+    /// initialized in `from_spec()` via the `is_9r4c_model` path.
+    pub fn enable_9r4c_model(&mut self) {
+        self.0.thermal_model_type = ThermalModelType::NineRFourC;
     }
 
     /// Disable 6R2C model and revert to 5R1C with single thermal mass node.

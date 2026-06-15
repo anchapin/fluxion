@@ -1,0 +1,239 @@
+name: TDQS Regression Check
+
+# Runs the orchestration decision benchmark harness and checks the
+# Temporal Decision Quality Score (TDQS) against the stored baseline.
+#
+# CI rule: TDQS must not drop > 5 percentage points on ANY decision type.
+# This ensures Wave 1-3 physics fixes do not degrade orchestration decision quality.
+#
+# Related: Issue #708 (orchestration benchmarking spec)
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: 'Update rule_based_baseline.json from current results (main only)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: tdqs-regression-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  issues: write  # Required for posting PR comments
+  contents: write  # Required for committing baseline updates
+
+jobs:
+  tdqs-check:
+    name: TDQS Regression Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # -----------------------------------------------------------------------
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
+      # -----------------------------------------------------------------------
+      - name: Install Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      # -----------------------------------------------------------------------
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target/
+          key: ${{ runner.os }}-cargo-tdqs-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-tdqs-
+            ${{ runner.os }}-cargo-
+
+      # -----------------------------------------------------------------------
+      - name: Generate labeled decision dataset
+        run: |
+          python3 benches/orchestration_decisions/dataset/generate_dataset.py \
+            --output benches/orchestration_decisions/dataset/labeled_decisions.json
+          echo "Dataset:"
+          python3 -c "
+          import json
+          with open('benches/orchestration_decisions/dataset/labeled_decisions.json') as f:
+              d = json.load(f)
+          s = d['summary']
+          print(f'  Total decisions: {s[\"total_decisions\"]}')
+          print(f'  Overall accuracy: {s[\"accuracy\"]:.1%}')
+          "
+
+      # -----------------------------------------------------------------------
+      - name: Run TDQS Python cross-check
+        run: python3 benches/orchestration_decisions/metrics/tdqs.py
+
+      # -----------------------------------------------------------------------
+      - name: Build orchestration_decisions benchmark
+        run: cargo build --bench orchestration_decisions --release
+
+      # -----------------------------------------------------------------------
+      - name: Run orchestration_decisions benchmark
+        id: bench
+        run: |
+          # Run benchmark — this also writes current_tdqs.json via print_tdqs_report
+          cargo bench --bench orchestration_decisions -- --output-format bencher 2>&1 | tee bench_output.txt
+
+          # Extract TDQS line for step output
+          TDQS=$(grep "^TDQS_OVERALL=" bench_output.txt | tail -1 | cut -d= -f2)
+          if [ -n "$TDQS" ]; then
+            echo "tdqs_overall=$TDQS" >> $GITHUB_OUTPUT
+            echo "TDQS Overall: $TDQS"
+          fi
+
+      # -----------------------------------------------------------------------
+      - name: TDQS regression check
+        id: regression
+        run: |
+          WARN_FLAG=""
+          # Warn-only on non-main PRs; hard-fail on main
+          if [ "${{ github.ref }}" != "refs/heads/main" ]; then
+            WARN_FLAG="--warn-only"
+          fi
+
+          python3 scripts/check_tdqs_regression.py \
+            --current  benches/orchestration_decisions/baselines/current_tdqs.json \
+            --baseline benches/orchestration_decisions/baselines/rule_based_baseline.json \
+            --threshold 0.05 \
+            $WARN_FLAG
+
+      # -----------------------------------------------------------------------
+      - name: Upload TDQS results artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tdqs-results-${{ github.sha }}
+          path: |
+            benches/orchestration_decisions/baselines/current_tdqs.json
+            benches/orchestration_decisions/dataset/labeled_decisions.json
+          retention-days: 90
+
+      # -----------------------------------------------------------------------
+      # Update the committed baseline (manual dispatch, main branch only)
+      - name: Update committed baseline
+        if: |
+          github.ref == 'refs/heads/main' &&
+          github.event_name == 'workflow_dispatch' &&
+          github.event.inputs.update_baseline == 'true'
+        run: |
+          # Re-generate and compute TDQS for the baseline update
+          python3 benches/orchestration_decisions/dataset/generate_dataset.py \
+            --output benches/orchestration_decisions/dataset/labeled_decisions.json
+
+          # Copy current_tdqs.json to rule_based_baseline.json
+          cp benches/orchestration_decisions/baselines/current_tdqs.json \
+             benches/orchestration_decisions/baselines/rule_based_baseline.json
+
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add \
+            benches/orchestration_decisions/baselines/rule_based_baseline.json \
+            benches/orchestration_decisions/dataset/labeled_decisions.json
+          git diff --staged --quiet || \
+            git commit -m "chore(perf): update TDQS baseline from orchestration benchmark run [skip ci]"
+          git push
+
+      # -----------------------------------------------------------------------
+      - name: Post PR comment
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const fs = require('fs');
+            const currentPath = 'benches/orchestration_decisions/baselines/current_tdqs.json';
+            const baselinePath = 'benches/orchestration_decisions/baselines/rule_based_baseline.json';
+
+            if (!fs.existsSync(currentPath)) {
+              console.log('No current TDQS file, skipping comment');
+              return;
+            }
+
+            const current = JSON.parse(fs.readFileSync(currentPath, 'utf8'));
+            const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf8'));
+
+            const threshold = 0.05;
+            const curOverall = current.overall || 0;
+            const baseOverall = baseline.overall || 0;
+            const delta = curOverall - baseOverall;
+            const regression = (baseOverall - curOverall) > threshold;
+            const icon = regression ? '❌' : (delta > 0 ? '✅' : '➡️');
+
+            const TYPES = ['solver_selection','adaptive_timestep','surrogate_routing','constraint_warning','hvac_horizon'];
+            const rows = TYPES.map(dt => {
+              const b = (baseline.per_type?.[dt]?.tdqs ?? 0).toFixed(4);
+              const c = (current.per_type?.[dt]?.tdqs ?? 0).toFixed(4);
+              const d = (parseFloat(c) - parseFloat(b));
+              const s = d >= 0 ? `+${d.toFixed(4)}` : d.toFixed(4);
+              const st = (parseFloat(b) - parseFloat(c)) > threshold ? '❌' : '✅';
+              return `| \`${dt}\` | ${b} | ${c} | \`${s}\` | ${st} |`;
+            }).join('\n');
+
+            const sign = delta >= 0 ? '+' : '';
+            const body = [
+              `## \${icon} TDQS Regression Check`,
+              '',
+              `**Overall TDQS**: \${curOverall.toFixed(4)} (baseline: \${baseOverall.toFixed(4)}, delta: \\\`\${sign}\${delta.toFixed(4)}\\\`)`,
+              '',
+              '| Decision Type | Baseline | Current | Delta | Status |',
+              '|---------------|----------|---------|-------|--------|',
+              '\${rows}',
+              '',
+              '\${regression',
+              '  ? \'> ⚠️ **Regression detected** — TDQS dropped > 5 pp on one or more decision types.\'',
+              '  : delta > 0',
+              '    ? \`> ✅ **Improvement** — TDQS increased by +\${delta.toFixed(4)}.\`',
+              '    : \'> ➡️ No significant change in TDQS.\'',
+              '}',
+              '',
+              '_Threshold: 5 pp | Dataset: 195 ASHRAE 140 decisions | [Spec](https://github.com/anchapin/fluxion/issues/708#issuecomment-4434794603)_',
+            ].join('\n');
+
+            try {
+              const {data: comments} = await github.rest.issues.listComments({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+              });
+
+              const existing = comments.find(c =>
+                c.user.login === 'github-actions[bot]' && c.body.includes('TDQS Regression Check')
+              );
+
+              if (existing) {
+                await github.rest.issues.updateComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  comment_id: existing.id,
+                  body,
+                });
+              } else {
+                await github.rest.issues.createComment({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  body,
+                });
+              }
+            } catch (error) {
+              console.log('Failed to post PR comment:', error.message);
+              console.log('This is non-critical - benchmark results are available in the artifact.');
+            }

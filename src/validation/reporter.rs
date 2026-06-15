@@ -144,12 +144,33 @@ impl ValidationReportGenerator {
     ) -> Result<String, String> {
         let mut output = String::new();
 
-        // Header
-        output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
-        output.push_str(&format!(
-            "*Generated: {}*\n\n",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-        ));
+        // Section 8.1 Compliance Header
+        if let Some(ref header) = report.report_header {
+            output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+            output.push_str("## Section 8.1 Compliance Information\n\n");
+            output.push_str("| Field | Value |\n");
+            output.push_str("|-------|-------|\n");
+            output.push_str(&format!("| Program Name | {} |\n", header.program_name));
+            output.push_str(&format!(
+                "| Program Version | {} |\n",
+                header.program_version
+            ));
+            output.push_str(&format!("| Developer | {} |\n", header.developer));
+            output.push_str(&format!(
+                "| Run Date | {} |\n",
+                header.run_date.format("%Y-%m-%d %H:%M UTC")
+            ));
+            output.push_str(&format!("| ASHRAE Edition | {} |\n", header.ashrae_edition));
+            output.push_str(&format!("| Weather File | {} |\n", header.weather_file_id));
+            output.push_str("\n---\n\n");
+        } else {
+            // Fallback header when no report_header is set
+            output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+            output.push_str(&format!(
+                "*Generated: {}*\n\n",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+            ));
+        }
 
         // Summary Card
         output.push_str("## Summary\n\n");
@@ -407,7 +428,7 @@ impl ValidationReportGenerator {
 
         for result in &case_results {
             // Use benchmark data for reference values if available
-            let (ref_min, ref_max) = match (result.metric, benchmark) {
+            let (ref_min, ref_max) = match (result.metric.clone(), benchmark) {
                 (MetricType::AnnualHeating, Some(b)) => {
                     (b.annual_heating_min, b.annual_heating_max)
                 }
@@ -419,7 +440,7 @@ impl ValidationReportGenerator {
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
 
-            match result.metric {
+            match &result.metric {
                 MetricType::AnnualHeating => {
                     heating_str = format!(
                         "{:.2} MWh (Ref: {:.2}-{:.2})",
@@ -494,13 +515,13 @@ impl ValidationReportGenerator {
 
         for result in &case_results {
             // Use benchmark data for reference values if available
-            let (ref_min, ref_max) = match (result.metric, benchmark) {
+            let (ref_min, ref_max) = match (result.metric.clone(), benchmark) {
                 (MetricType::MinFreeFloat, Some(b)) => (b.min_free_float_min, b.min_free_float_max),
                 (MetricType::MaxFreeFloat, Some(b)) => (b.max_free_float_min, b.max_free_float_max),
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
 
-            match result.metric {
+            match &result.metric {
                 MetricType::MinFreeFloat => {
                     min_str = format!(
                         "{:.2}°C (Ref: {:.2}-{:.2})",
@@ -546,7 +567,7 @@ impl ValidationReportGenerator {
         for result in &report.results {
             if result.failed() {
                 let key = format!("{} - {}", result.case_id, result.metric);
-                let issue = classify_issue(result.case_id.as_str(), result.metric);
+                let issue = classify_issue(result.case_id.as_str(), result.metric.clone());
                 map.insert(key, issue);
             }
         }
@@ -1103,6 +1124,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             ),
+            peak_timestamp: None,
         };
         report.add_result(result);
 

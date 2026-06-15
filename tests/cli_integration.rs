@@ -74,6 +74,7 @@ fn test_delta_command() {
             patch: Some(patch),
             sweep: None,
         }],
+        warm_up_years: 2,
     };
     let yaml = serde_yaml::to_string(&delta_config).unwrap();
     let config_path = temp_dir.path().join("delta.yaml");

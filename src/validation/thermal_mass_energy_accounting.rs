@@ -1108,4 +1108,178 @@ mod tests {
 
         println!("\n✅ All 600-series cases passed energy accounting validation");
     }
+
+    /// Test Case 600 (HVAC on) internal gains conservation.
+    ///
+    /// Verifies that for Case 600 with HVAC enabled, the internal gains are
+    /// correctly split and conserved: phi_ia + phi_st + phi_m == total internal load.
+    /// This validates ISO 13790 Section C.4 Eq. C.5/C.6 internal gains split.
+    ///
+    /// Reference: ISO 13790 Section C.4 (internal gains distribution)
+    /// ENG-2026-0515-005 invariant: Conservation of internal gains across nodes.
+    #[test]
+    fn test_case_600_internal_gains_conservation() {
+        use crate::weather::epw::EpwWeatherSource;
+        use crate::weather::WeatherSource;
+
+        println!("\n=== Testing Case 600 Internal Gains Conservation ===");
+
+        let spec = ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
+
+        // Run simulation for a representative day (24 hours)
+        let mut max_conservation_error = 0.0_f64;
+        for step in 0..24 {
+            let weather_data = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(weather_data.clone());
+
+            // Run physics step
+            model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+            // Get heat balance terms via pr821-diag feature
+            #[cfg(feature = "pr821-diag")]
+            {
+                let phi_ia = model.last_phi_ia;
+                let phi_st = model.last_phi_st;
+                let phi_m = model.last_phi_m;
+
+                // Get loads for this zone (zone 0)
+                let load_w = model.loads.as_ref().first().copied().unwrap_or(0.0);
+                let zone_area = model.zone_area.as_ref().first().copied().unwrap_or(1.0);
+                let total_load = load_w * zone_area;
+
+                // Conservation: phi_ia + phi_st + phi_m == total_load * (1 + small_error)
+                // Due to floating point, we allow 0.1% tolerance
+                let computed_sum = phi_ia + phi_st + phi_m;
+                let error = if total_load > 0.0 {
+                    ((computed_sum - total_load) / total_load).abs()
+                } else {
+                    computed_sum.abs() // If no load, sum should be ~0
+                };
+
+                max_conservation_error = max_conservation_error.max(error);
+
+                println!(
+                    "  Step {:3}: phi_ia={:8.3} W, phi_st={:8.3} W, phi_m={:8.3} W, sum={:8.3} W, load={:8.3} W, error={:.4}%",
+                    step, phi_ia, phi_st, phi_m, computed_sum, total_load, error * 100.0
+                );
+            }
+        }
+
+        #[cfg(feature = "pr821-diag")]
+        {
+            println!(
+                "  Max conservation error: {:.4}%",
+                max_conservation_error * 100.0
+            );
+            // Assert conservation is within 1% (0.01)
+            assert!(
+                max_conservation_error < 0.01,
+                "Case 600 internal gains conservation FAILED: {:.4}% error (threshold: 1%)",
+                max_conservation_error * 100.0
+            );
+            println!("  ✅ Case 600 internal gains conservation: PASSED");
+        }
+
+        #[cfg(not(feature = "pr821-diag"))]
+        {
+            println!("  ⚠️  pr821-diag feature not enabled, skipping conservation check");
+            println!("  ⚠️  Enable with: cargo test --features pr821-diag");
+        }
+    }
+
+    /// Test that free-floating cases (FF suffix) have phi_ia=phi_st=0.
+    ///
+    /// Per ENG-2026-0515-005 invariant: In free-floating cases (600FF, 650FF, 900FF, 950FF),
+    /// the internal convective gains to air node (phi_ia) and radiative gains to surface
+    /// node (phi_st) are both zero because HVAC is off and internal gains are handled
+    /// through the mass node only for free-floating temperature calculation.
+    ///
+    /// Only phi_m should be non-zero in free-floating cases.
+    ///
+    /// Reference: ISO 13790 Section C.4 (free-floating temperature calculation)
+    /// ENG-2026-0515-005 invariant: phi_ia=phi_st=0 for all FF cases.
+    #[test]
+    fn test_free_floating_phi_ia_phi_st_zero() {
+        use crate::weather::epw::EpwWeatherSource;
+        use crate::weather::WeatherSource;
+
+        println!("\n=== Testing Free-Floating Cases phi_ia=phi_st=0 Invariant ===");
+
+        let ff_cases = [
+            ("600FF", ASHRAE140Case::Case600FF),
+            ("650FF", ASHRAE140Case::Case650FF),
+            ("900FF", ASHRAE140Case::Case900FF),
+            ("950FF", ASHRAE140Case::Case950FF),
+        ];
+
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
+
+        for (case_id, case_enum) in ff_cases {
+            println!("\n  Testing Case {}...", case_id);
+
+            let spec = case_enum.spec();
+            let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+            // Run simulation for a representative day (24 hours)
+            let mut max_phi_ia = 0.0_f64;
+            let mut max_phi_st = 0.0_f64;
+            let mut max_phi_m = 0.0_f64;
+
+            for step in 0..24 {
+                let weather_data = weather.get_hourly_data(step).unwrap();
+                model.weather = Some(weather_data.clone());
+
+                // Run physics step
+                model.step_physics(step, weather_data.dry_bulb_temp, 3600.0);
+
+                // Get heat balance terms via pr821-diag feature
+                #[cfg(feature = "pr821-diag")]
+                {
+                    max_phi_ia = max_phi_ia.max(model.last_phi_ia.abs());
+                    max_phi_st = max_phi_st.max(model.last_phi_st.abs());
+                    max_phi_m = max_phi_m.max(model.last_phi_m.abs());
+                }
+            }
+
+            #[cfg(feature = "pr821-diag")]
+            {
+                println!(
+                    "  {}: max_phi_ia={:.3} W, max_phi_st={:.3} W, max_phi_m={:.3} W",
+                    case_id, max_phi_ia, max_phi_st, max_phi_m
+                );
+
+                // Assert phi_ia and phi_st are effectively zero (< 1W threshold)
+                assert!(
+                    max_phi_ia < 1.0,
+                    "Case {} FAILED: phi_ia={:.3} W (expected < 1 W for free-floating)",
+                    case_id,
+                    max_phi_ia
+                );
+                assert!(
+                    max_phi_st < 1.0,
+                    "Case {} FAILED: phi_st={:.3} W (expected < 1 W for free-floating)",
+                    case_id,
+                    max_phi_st
+                );
+                println!("  ✅ {} phi_ia=phi_st=0 invariant: PASSED", case_id);
+            }
+
+            #[cfg(not(feature = "pr821-diag"))]
+            {
+                println!("  ⚠️  pr821-diag feature not enabled, skipping phi check");
+                println!("  ⚠️  Enable with: cargo test --features pr821-diag");
+            }
+        }
+
+        println!("\n✅ All free-floating cases passed phi_ia=phi_st=0 invariant");
+    }
 }

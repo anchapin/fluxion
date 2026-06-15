@@ -8,6 +8,7 @@ pub mod automation;
 pub mod benchmark;
 pub mod commands;
 pub mod config;
+pub mod copilot;
 pub mod cross_validation;
 pub mod cross_validator;
 pub mod diagnostic;
@@ -16,10 +17,12 @@ pub mod ep_oracle;
 pub mod export;
 pub mod fdd;
 pub mod guardrails;
+pub mod hvac_bestest;
 pub mod multi_reference;
 pub mod performance;
 pub mod reference;
 pub mod reference_data;
+pub mod reference_loader;
 pub mod reporting;
 pub mod tolerance;
 
@@ -31,6 +34,7 @@ pub mod adaptive_calibration;
 pub mod ashrae_140_multi_zone;
 pub mod case_195_calibration;
 pub mod case_960;
+pub mod empirical;
 pub mod energy_balance;
 pub mod high_mass;
 pub mod statistical;
@@ -104,6 +108,10 @@ pub use high_mass::{
     CombinedHighMassReport, HighMassMetrics, HighMassSummary, HighMassValidationCase,
     HighMassValidationReport,
 };
+pub use hvac_bestest::{
+    run_hvac_bestest, validate_results, EquipmentType, HVACBestestCase, HVACBestestCaseDefinition,
+    HVACBestestResult, HVACBestestRunner, OperatingMode,
+};
 pub use physics_validator::{
     generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,
 };
@@ -117,8 +125,14 @@ pub use reference_data::{
     within_tolerance, ReferenceData,
 };
 pub use report::{
-    BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ValidationResult,
+    BenchmarkReport, Interpretation, MetricType, ReferenceProgram, ReportHeader, ValidationResult,
     ValidationStatus, ValidationSuite,
+};
+
+// Re-export copilot types
+pub use copilot::{
+    BemChecker, BemIssue, BemIssueSeverity, Copilot, CopilotConfig, CopilotResult,
+    ValidationChecks, OLLAMA_DEFAULT_URL,
 };
 
 /// Validation configuration for different validation scenarios
@@ -192,6 +206,14 @@ pub use reporter::{SystematicIssue, SystematicIssueMap, ValidationReportGenerato
 pub use thermal_mass_energy_accounting::{
     calculate_mass_energy, validate_energy_balance_over_year, BuildingBalanceSummary,
     EnergyBalanceReport, ZoneBalanceEntry,
+};
+
+// Empirical validation re-exports
+pub use empirical::{
+    generate_empirical_report, get_ashrae_rp_sources, BuildingType, EmpiricalMetric,
+    EmpiricalStatistics, EmpiricalValidationConfig, EmpiricalValidationReport,
+    EmpiricalValidationResult, EmpiricalValidationStatus, MonitoredBuildingDatabase,
+    MonitoredDataPoint, MonitoredDataSource,
 };
 
 #[cfg(test)]

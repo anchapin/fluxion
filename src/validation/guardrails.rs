@@ -104,6 +104,7 @@ mod tests {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -131,6 +132,7 @@ mod tests {
             percent_error: 6.0,
             status: ValidationStatus::Warning,
             per_program: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -158,6 +160,7 @@ mod tests {
             percent_error: 12.0,
             status: ValidationStatus::Warning,
             per_program: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -185,6 +188,7 @@ mod tests {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_timestamp: None,
         };
         let fail_result = ValidationResult {
             case_id: "610".to_string(),
@@ -195,6 +199,7 @@ mod tests {
             percent_error: 50.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_timestamp: None,
         };
         report.results.push(pass_result);
         report.results.push(fail_result);
@@ -223,6 +228,7 @@ mod tests {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -307,6 +313,7 @@ mod tests {
             percent_error: 15.0,
             status: ValidationStatus::Warning,
             per_program: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 

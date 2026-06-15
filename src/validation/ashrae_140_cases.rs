@@ -953,7 +953,7 @@ pub enum ConstructionType {
 }
 
 /// Orientation of a surface.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Orientation {
     North,
     East,
@@ -1391,6 +1391,32 @@ impl CommonWall {
     }
 }
 
+/// Building usage type for thermal mass calculations.
+///
+/// Used to select appropriate furniture factor (f_furniture) for thermal mass
+/// calculations based on building usage type:
+///
+/// | Building Type   | f_furniture | C_me factor       | h_tr_me factor    |
+/// |-----------------|-------------|-------------------|-------------------|
+/// | Residential     | 0.3         | 0.3 × A_floor     | 0.3 × A_floor     |
+/// | Commercial      | 0.5         | 0.5 × A_floor     | 0.5 × A_floor     |
+/// | Institutional   | 0.5         | 0.5 × A_floor     | 0.5 × A_floor     |
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum BuildingType {
+    /// Residential buildings - lighter furniture, f_furniture = 0.3
+    Residential,
+    /// Commercial buildings - heavier furniture, f_furniture = 0.5
+    Commercial,
+    /// Institutional buildings (schools, hospitals) - f_furniture = 0.5
+    Institutional,
+}
+
+impl Default for BuildingType {
+    fn default() -> Self {
+        BuildingType::Residential
+    }
+}
+
 /// Complete case specification for an ASHRAE 140 test case.
 ///
 /// This struct contains all the information needed to configure a ThermalModel
@@ -1457,6 +1483,12 @@ pub struct CaseSpec {
     pub epw_path: Option<PathBuf>,
     /// HVAC equipment (for Cases 800-810)
     pub hvac_equipment: Option<crate::sim::hvac::AnyEquipment>,
+    /// Ground temperature boundary condition (°C) for floor slab.
+    /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C for all cases with floor slab.
+    /// When `None`, the model default (10.0°C) is used for backward compatibility.
+    pub ground_temperature_c: Option<f64>,
+    /// Building usage type for thermal mass calculations (default: Residential)
+    pub building_type: BuildingType,
 }
 
 /// Geometry specification for a building zone.
@@ -1683,31 +1715,67 @@ impl CaseSpec {
     /// window areas, and construction types.
     pub fn case600_reference_conductances(&self) -> ConductanceReferences {
         // ASHRAE 140 Case 600 reference conductances
-        // These are derived from EnergyPlus/ESP-r reference simulations
+        // Calculated from physics-based formulas using material properties and geometry.
         //
-        // Note: These are placeholder values that should be updated with
-        // actual reference values from ASHRAE 140 standard documentation
-        // or EnergyPlus simulation results.
+        // Case 600 geometry: 8.0m × 6.0m × 2.7m (W×D×H)
+        // Volume: 129.6 m³
+        // South window: 12.0 m² (double_clear_glass, U=2.10 W/m²K)
+        // ACH: 0.5
+        //
+        // Construction (low-mass wall):
+        // - Plasterboard: k=0.16 W/mK, d=0.012m
+        // - Fiberglass: k=0.04 W/mK, d=0.066m
+        // - Wood siding: k=0.14 W/mK, d=0.009m
+
+        // === Geometry ===
+        let width = 8.0;
+        let depth = 6.0;
+        let height = 2.7;
+        let volume = width * depth * height; // 129.6 m³
+        let floor_area = width * depth; // 48.0 m²
+
+        // Wall areas (4 walls total)
+        let wall_area_total = 2.0 * (width * height + depth * height); // 75.6 m²
+
+        // === Window properties (double_clear_glass) ===
+        let window_area = 12.0;
+        let window_u = 2.10; // W/m²K from WindowSpec::double_clear_glass()
+
+        // === Ventilation conductance ===
+        // h_ve = ρ × cp × (ACH/3600) × V
+        let rho_air = crate::physics::constants::AIR_DENSITY_SEA_LEVEL;
+        let cp_air = crate::physics::constants::AIR_SPECIFIC_HEAT;
+        let ach = 0.5;
+        let h_ve = rho_air * cp_air * (ach / 3600.0) * volume;
+
+        // === Window conductance ===
+        // h_tr_w = U_window × A_window
+        let h_tr_w = window_u * window_area;
+
+        // === Surface-to-interior conductance ===
+        // h_tr_is = H_SI × A_floor (ASHRAE 140 simplified 5R1C value H_SI=3.45)
+        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+        let h_tr_is = H_SI * floor_area;
+
+        // === Mass-to-surface conductance ===
+        // h_tr_ms = h_ms × A_floor
+        // h_ms = 2.0 W/m²K for low-mass (VeryLight/Light per ISO 13790)
+        let h_ms = 2.0; // W/m²K for low-mass construction
+        let h_tr_ms = h_ms * floor_area;
+
+        // === Exterior-to-mass conductance ===
+        // h_tr_em = U_wall × A_walls + h_tr_w
+        // Calculate wall U-value from material properties
+        let wall = Assemblies::low_mass_wall();
+        let u_wall = wall.u_value(None, None);
+        let h_tr_em = u_wall * wall_area_total + h_tr_w;
+
         ConductanceReferences {
-            // Exterior-to-mass: accounts for wall + window U-values, thermal bridges
-            // Typical range: 50-150 W/K for low-mass buildings
-            h_tr_em: 123.45,
-
-            // Window conductance: U_window × A_window
-            // Case 600: U=3.0 W/m²K, A=12.0 m² → h_tr_w = 36.0 W/K
-            h_tr_w: 36.0,
-
-            // Mass-to-surface: thermal mass coupling
-            // Typical range: 50-100 W/K for low-mass buildings
-            h_tr_ms: 89.01,
-
-            // Surface-to-interior: interior film coefficient × surface area
-            // Typical: h_si ≈ 7.69-10.0 W/m²K, A ≈ 150-250 m²
-            h_tr_is: 234.56,
-
-            // Ventilation: ρ × cp × (ACH/3600) × V
-            // Case 600: ACH=0.5, V=129.6 m³ → h_ve ≈ 21.7 W/K
-            h_ve: 21.72,
+            h_tr_em,
+            h_tr_w,
+            h_tr_ms,
+            h_tr_is,
+            h_ve,
         }
     }
 }
@@ -1753,6 +1821,11 @@ pub struct CaseBuilder {
     door_area: Option<f64>,
     /// Custom EPW weather file path (if using non-default weather)
     epw_path: Option<PathBuf>,
+    /// Ground temperature boundary condition (°C) for floor slab (Issue #746).
+    /// Per ASHRAE 140-2023 Annex B §B3.3: T_ground = 9.4°C.
+    ground_temperature_c: Option<f64>,
+    /// Building usage type for thermal mass calculations
+    building_type: BuildingType,
 }
 
 impl Default for CaseBuilder {
@@ -1783,6 +1856,8 @@ impl CaseBuilder {
             door_height: None,
             door_area: None,
             epw_path: None,
+            ground_temperature_c: None,
+            building_type: BuildingType::default(),
         }
     }
 
@@ -2046,6 +2121,19 @@ impl CaseBuilder {
         self
     }
 
+    /// Sets the building type for thermal mass calculations.
+    ///
+    /// Determines the furniture factor (f_furniture) used in thermal mass calculations:
+    /// - `Residential`: f_furniture = 0.3 (lighter furniture)
+    /// - `Commercial`: f_furniture = 0.5 (heavier furniture)
+    /// - `Institutional`: f_furniture = 0.5 (heavier furniture, e.g., schools, hospitals)
+    ///
+    /// Default is `Residential` for backward compatibility.
+    pub fn with_building_type(mut self, building_type: BuildingType) -> Self {
+        self.building_type = building_type;
+        self
+    }
+
     /// Configures door geometry for temperature-dependent air exchange (stack effect).
     ///
     /// Used for sunspace buildings (Case 960) where door openings between
@@ -2057,6 +2145,18 @@ impl CaseBuilder {
     pub fn with_door_geometry(mut self, height: f64, area: f64) -> Self {
         self.door_height = Some(height);
         self.door_area = Some(area);
+        self
+    }
+
+    /// Sets the ground temperature boundary condition for the floor slab (°C).
+    ///
+    /// Per ASHRAE 140-2023 Annex B §B3.3, T_ground = 9.4°C (annual mean Denver
+    /// air temperature) applies to all cases with a floor slab (600, 610–650,
+    /// 900–950, and their free-float variants).
+    ///
+    /// When not set, the model default ground temperature (10.0°C) is used.
+    pub fn with_ground_temperature(mut self, temp_c: f64) -> Self {
+        self.ground_temperature_c = Some(temp_c);
         self
     }
 
@@ -2126,6 +2226,8 @@ impl CaseBuilder {
             door_area: self.door_area,
             epw_path: self.epw_path.clone(),
             hvac_equipment: None,
+            ground_temperature_c: self.ground_temperature_c,
+            building_type: self.building_type,
         };
 
         // spec.validate()?; // Skip detailed validation for now to save time
@@ -2170,24 +2272,33 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 600 should validate")
     }
 
-    /// Case 610 - Low mass with south shading.
+    /// Case 610 - Low mass with south shading + west window.
     pub fn case_610_south_shading() -> CaseSpec {
         Self::new()
             .with_case_id("610".to_string())
-            .with_description("Low mass with south shading (1m overhang)".to_string())
+            .with_description(
+                "Low mass with south shading (1m overhang) + west 3m² window".to_string(),
+            )
             .with_dimensions(8.0, 6.0, 2.7)
             .low_mass_construction()
             .with_south_window(12.0)
+            .with_window(3.0, Orientation::West)
             .with_window_properties(WindowSpec::double_clear_glass())
             .with_shading(ShadingDevice::overhang(1.0, 2.7))
             .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 610 should validate")
     }
@@ -2205,6 +2316,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 620 should validate")
     }
@@ -2223,6 +2337,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 630 should validate")
     }
@@ -2240,6 +2357,9 @@ impl CaseBuilder {
             .with_hvac_setback(20.0, 27.0, 10.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 640 should validate")
     }
@@ -2258,6 +2378,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 650 should validate")
     }
@@ -2276,6 +2399,9 @@ impl CaseBuilder {
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 600FF should validate")
     }
@@ -2297,6 +2423,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 650FF should validate")
     }
@@ -2321,6 +2450,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 900 should validate")
     }
@@ -2344,6 +2476,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 910 should validate")
     }
@@ -2366,6 +2501,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 920 should validate")
     }
@@ -2389,6 +2527,9 @@ impl CaseBuilder {
             .with_hvac_setpoints(20.0, 27.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 930 should validate")
     }
@@ -2411,6 +2552,9 @@ impl CaseBuilder {
             .with_hvac_setback(20.0, 27.0, 10.0)
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 940 should validate")
     }
@@ -2434,6 +2578,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 950 should validate")
     }
@@ -2457,6 +2604,9 @@ impl CaseBuilder {
             .with_hvac(HvacSchedule::free_floating())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 900FF should validate")
     }
@@ -2483,6 +2633,9 @@ impl CaseBuilder {
             .with_night_ventilation(NightVentilation::case_650())
             .with_infiltration(0.5)
             .with_num_zones(1)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 950FF should validate")
     }
@@ -2512,6 +2665,9 @@ impl CaseBuilder {
             .with_infiltration(0.5)
             .with_door_geometry(2.0, 1.5) // Door opening: height=2.0m, area=1.5m² (Plan 04-04)
             .with_num_zones(2)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
             .build()
             .expect("Case 960 should validate")
     }

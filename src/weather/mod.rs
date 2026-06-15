@@ -28,7 +28,7 @@ pub use interpolation::{interpolate_weather, select_method_for_field, Interpolat
 pub use tmy3::{load_weather_locations, Tmy3Cache, WeatherLocation};
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
+use thiserror::Error;
 
 /// Hourly weather data for building energy simulation.
 ///
@@ -515,35 +515,24 @@ impl HourlyWeatherData {
 }
 
 /// Error types for weather data operations.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Error)]
 pub enum WeatherError {
     /// Invalid hour index provided (must be 0-8759 for hourly data).
+    #[error("Invalid hour index: {0} (must be 0-8759)")]
     InvalidHour(usize),
 
     /// Weather data is incomplete or missing required fields.
+    #[error("Incomplete weather data: {0}")]
     IncompleteData(String),
 
     /// Error parsing weather data from file or string.
+    #[error("Parse error: {0}")]
     ParseError(String),
 
     /// Input/output error reading weather data file.
+    #[error("IO error: {0}")]
     IoError(String),
 }
-
-impl fmt::Display for WeatherError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            WeatherError::InvalidHour(hour) => {
-                write!(f, "Invalid hour index: {} (must be 0-8759)", hour)
-            }
-            WeatherError::IncompleteData(msg) => write!(f, "Incomplete weather data: {}", msg),
-            WeatherError::ParseError(msg) => write!(f, "Parse error: {}", msg),
-            WeatherError::IoError(msg) => write!(f, "IO error: {}", msg),
-        }
-    }
-}
-
-impl std::error::Error for WeatherError {}
 
 /// Trait for abstracting different weather data sources.
 ///

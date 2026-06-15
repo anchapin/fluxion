@@ -344,10 +344,13 @@ impl ThermalMethodSelector {
         let tau = self.calculate_time_constant(wall);
 
         // Select method based on thermal mass
+        // Issue #726: CTF is architecturally wrong for high-mass constructions
+        // (900-series). For high thermal mass, FD is more appropriate because
+        // the thermal wave penetrates deeply into the construction.
         let method = if tau < self.threshold_hours {
             ThermalMethod::FiveR1C // Low mass: use fast 5R1C
         } else {
-            ThermalMethod::CTF // High mass: use accurate CTF (Issue #726: should be FD for heavy-mass)
+            ThermalMethod::FiniteDifference // High mass: use FD (Issue #726)
         };
 
         tracing::info!(
@@ -637,7 +640,8 @@ mod tests {
 
         let method = selector.select_method(&wall);
 
-        assert_eq!(method, ThermalMethod::CTF);
+        // Issue #726: FD should be used for high-mass constructions
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -653,16 +657,20 @@ mod tests {
 
     #[test]
     fn test_fallback_invalid_ctf() {
+        // Use a heavyweight wall to test CTF→FD fallback
+        // Issue #726: For heavyweight walls, select_method now returns FD directly,
+        // so we test the fallback path by verifying behavior when ctf_valid=false.
         let selector = ThermalMethodSelector::default();
         let wall = create_heavyweight_wall();
 
-        // CTF invalid → should fall back to FD
+        // When CTF is invalid and fallback enabled, should get FD
         let method = selector.select_with_fallback(&wall, false);
         assert_eq!(method, ThermalMethod::FiniteDifference);
 
-        // CTF valid → should use CTF
+        // When ctf_valid=true but select_method returns FD (heavyweight after fix),
+        // the fallback logic is not triggered - select_with_fallback returns FD
         let method = selector.select_with_fallback(&wall, true);
-        assert_eq!(method, ThermalMethod::CTF);
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -673,9 +681,10 @@ mod tests {
         };
         let wall = create_heavyweight_wall();
 
-        // CTF invalid but fallback disabled → should still return CTF
+        // After Issue #726 fix: heavyweight walls return FD directly,
+        // so fallback disabled doesn't affect the result
         let method = selector.select_with_fallback(&wall, false);
-        assert_eq!(method, ThermalMethod::CTF);
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -722,7 +731,8 @@ mod tests {
 
         assert!(report.contains("Total walls: 3"));
         assert!(report.contains("5R1C: 1 walls"));
-        assert!(report.contains("CTF:  2 walls"));
+        // Issue #726: Heavyweight walls now use FD instead of CTF
+        assert!(report.contains("FD:   2 walls"));
     }
 
     #[test]
@@ -842,9 +852,10 @@ mod tests {
         };
         let wall = create_heavyweight_wall();
 
-        // Even with CTF invalid, fallback disabled should return CTF
+        // Issue #726: Heavyweight walls now use FD directly from select_method,
+        // so fallback disabled doesn't change the result
         let method = selector.select_with_fallback(&wall, false);
-        assert_eq!(method, ThermalMethod::CTF);
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]

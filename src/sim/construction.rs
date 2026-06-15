@@ -741,15 +741,16 @@ impl Construction {
         // Mass-to-surface conductance represents thermal coupling between
         // thermal mass and interior surface of building envelope
         //
-        // For simplified 5R1C model with low-mass construction, this is typically
-        // 1.5-2.5 W/m²K times surface area
+        // The h_ms coefficient depends on mass class per ISO 13790:
+        // - VeryLight/Light: 2.0 W/m²K (furniture/internal mass dominates)
+        // - Medium/Heavy/VeryHeavy: 9.1 W/m²K (envelope mass dominates)
         //
-        // Based on ASHRAE 140 Case 600 reference values and typical construction:
-        // h_tr_ms ≈ 2.0 W/m²K for low-mass buildings
+        // Using the construction's iso_13790_mass_class() gives the correct
+        // h_ms coefficient for both low-mass and high-mass buildings.
         //
         // Units: W/m²K × m² = W/K
-        const H_MS: f64 = 2.0; // W/m²K - typical value for low-mass construction
-        H_MS * surface_area
+        let h_ms = self.iso_13790_mass_class().h_ms_coeff();
+        h_ms * surface_area
     }
 
     /// Calculates surface-to-interior conductance (h_tr_is) for 5R1C thermal network.
@@ -889,6 +890,32 @@ impl MassClass {
             MassClass::VeryHeavy => (370_000.0, f64::INFINITY),
         }
     }
+
+    /// Returns the thermal coupling coefficient (h_ms) for t_i_free calculation.
+    ///
+    /// For low-mass buildings (VeryLight/Light), the ISO 13790 admittance method
+    /// produces h_ms values that are too large, causing t_i_free to be dominated
+    /// by mass temperature instead of tracking outdoor conditions.
+    ///
+    /// Per ISO 13790 Table C.2, the admittance method is calibrated for
+    /// medium+ mass classes. For VeryLight/Light, we use a reduced coefficient
+    /// that allows proper thermal coupling in the t_i_free formula.
+    ///
+    /// # Returns
+    /// h_ms coefficient in W/(m²·K)
+    ///
+    /// # Physical Basis
+    /// - VeryLight/Light: h_ms = 2.0 W/(m²·K) — furniture and lightweight internal mass
+    /// - Medium+: h_ms = 9.1 W/(m²·K) — ISO 13790 full admittance method
+    pub fn h_ms_coeff(&self) -> f64 {
+        match self {
+            MassClass::VeryLight => 2.0,
+            MassClass::Light => 2.0,
+            MassClass::Medium => 9.1,
+            MassClass::Heavy => 9.1,
+            MassClass::VeryHeavy => 9.1,
+        }
+    }
 }
 
 /// Pre-defined material properties for common building materials.
@@ -900,7 +927,7 @@ pub struct Materials;
 impl Materials {
     /// Plasterboard (gypsum board)
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
+        ConstructionLayer::new("Plasterboard", 0.16, 784.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
@@ -910,7 +937,7 @@ impl Materials {
 
     /// Wood siding
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
+        ConstructionLayer::new("Wood Siding", 0.14, 530.0, 900.0, thickness)
     }
 
     /// Concrete (normal weight)
@@ -923,12 +950,12 @@ impl Materials {
     /// Concrete blocks have lower thermal conductivity (k=0.51 W/mK) than normal concrete (k=1.13 W/mK).
     /// This is specified in ASHRAE 140 Table 7-27 for high-mass construction.
     pub fn concrete_block(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 840.0, thickness)
     }
 
     /// Foam insulation
     pub fn foam(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Foam", 0.04, 14.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing
@@ -942,13 +969,43 @@ impl Materials {
     }
 
     /// Concrete slab (heavy mass)
+    ///
+    /// **Note:** these are normal-weight slab properties (k=1.13, ρ=1400, cp=1000).
+    /// For ASHRAE 140-2023 Case 900-series construction, use
+    /// [`Materials::concrete_heavyweight`] instead, which carries the medium-density
+    /// values from Table B1-3 (Issue #730).
     pub fn concrete_slab(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Concrete Slab", 1.13, 1400.0, 1000.0, thickness)
     }
 
+    /// Heavyweight (medium-density) concrete per ASHRAE 140-2023 Table B1-3.
+    ///
+    /// Used for the 900-series high-mass floor slab and (eventually) other
+    /// BESTEST heavyweight constructions. Values are the BESTEST medium-density
+    /// concrete spec — NOT normal-weight structural concrete.
+    ///
+    /// | Property | Value | Source |
+    /// |----------|-------|--------|
+    /// | k        | 0.51 W/m·K | ASHRAE 140-2023 Table B1-3 |
+    /// | ρ        | 1400 kg/m³ | ASHRAE 140-2023 Table B1-3 |
+    /// | cp       | 840 J/kg·K | ASHRAE 140-2023 Table B1-3 |
+    ///
+    /// Reference: Judkoff & Neymark (1995), NREL/TP-472-6231, §4.2.2.
+    /// Closes Issue #730 (medium-density vs normal-weight concrete confusion).
+    pub fn concrete_heavyweight(thickness: f64) -> ConstructionLayer {
+        // ASHRAE 140-2023 Table B1-3, BESTEST heavyweight (medium-density) concrete.
+        ConstructionLayer::new(
+            "Concrete (ASHRAE 140 heavyweight)",
+            0.51,
+            1400.0,
+            840.0,
+            thickness,
+        )
+    }
+
     /// Insulation for floor/walls
     pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Insulation", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Insulation", 0.04, 14.0, 1400.0, thickness)
     }
 }
 
@@ -1021,9 +1078,12 @@ impl Assemblies {
     }
 
     /// High mass floor construction (ASHRAE 140 Case 900).
+    ///
+    /// Slab uses [`Materials::concrete_heavyweight`] per ASHRAE 140-2023 Table B1-3
+    /// (k=0.51, ρ=1400, cp=840). Closes Issue #730.
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
-            Materials::concrete_slab(0.080),
+            Materials::concrete_heavyweight(0.080),
             Materials::insulation_high_mass(0.201), // Adjusted for U=0.190
         ])
     }
@@ -1582,7 +1642,7 @@ mod tests {
     fn test_materials_plasterboard() {
         let layer = Materials::plasterboard(0.012);
         assert_eq!(layer.conductivity, 0.16);
-        assert_eq!(layer.density, 950.0);
+        assert_eq!(layer.density, 784.0);
         assert_eq!(layer.specific_heat, 840.0);
         assert_eq!(layer.thickness, 0.012);
     }
@@ -1600,8 +1660,8 @@ mod tests {
     fn test_materials_wood_siding() {
         let layer = Materials::wood_siding(0.009);
         assert_eq!(layer.conductivity, 0.14);
-        assert_eq!(layer.density, 500.0);
-        assert_eq!(layer.specific_heat, 1300.0);
+        assert_eq!(layer.density, 530.0);
+        assert_eq!(layer.specific_heat, 900.0);
         assert_eq!(layer.thickness, 0.009);
     }
 
@@ -1618,7 +1678,7 @@ mod tests {
     fn test_materials_foam() {
         let layer = Materials::foam(0.0615);
         assert_eq!(layer.conductivity, 0.04);
-        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.density, 14.0);
         assert_eq!(layer.specific_heat, 1400.0);
         assert_eq!(layer.thickness, 0.0615);
     }
@@ -1687,7 +1747,7 @@ mod tests {
         // Fiberglass: 12 × 0.066 × 840 = 665.28
         // Siding: 500 × 0.009 × 1300 = 5850
         // Total: 9576 + 665.28 + 5850 = 16091.28 J/m²K
-        let expected_c = 950.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected_c = 784.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((c_per_area - expected_c).abs() < EPSILON);
     }
 
@@ -1803,7 +1863,7 @@ mod tests {
     fn test_iso_13790_effective_capacitance() {
         let wall = Assemblies::low_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 950.0 * 0.012 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected = 784.0 * 0.012 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1811,7 +1871,7 @@ mod tests {
     fn test_iso_13790_effective_capacitance_high_mass() {
         let wall = Assemblies::high_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 1400.0 * 0.100 * 1000.0 + 500.0 * 0.009 * 1300.0;
+        let expected = 1400.0 * 0.100 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1950,7 +2010,8 @@ mod tests {
     fn test_high_mass_floor() {
         let floor = Assemblies::high_mass_floor();
         assert_eq!(floor.layer_count(), 2);
-        assert_eq!(floor.layers[0].name, "Concrete Slab");
+        // Issue #730: ASHRAE 140-2023 Table B1-3 heavyweight (medium-density) concrete.
+        assert_eq!(floor.layers[0].name, "Concrete (ASHRAE 140 heavyweight)");
         assert_eq!(floor.layers[1].name, "Insulation");
     }
 
@@ -1974,7 +2035,7 @@ mod tests {
         let layer = Materials::concrete_block(0.1);
         assert_eq!(layer.conductivity, 0.51);
         assert_eq!(layer.density, 1400.0);
-        assert_eq!(layer.specific_heat, 1000.0);
+        assert_eq!(layer.specific_heat, 840.0);
     }
 
     #[test]
@@ -2002,10 +2063,47 @@ mod tests {
     }
 
     #[test]
+    fn test_materials_concrete_heavyweight_matches_ashrae_140_table_b1_3() {
+        // ASHRAE 140-2023 Table B1-3 — BESTEST heavyweight (medium-density) concrete.
+        // Reference: Judkoff & Neymark (1995), NREL/TP-472-6231, §4.2.2.
+        let layer = Materials::concrete_heavyweight(0.200);
+        assert_eq!(layer.conductivity, 0.51, "k must match Table B1-3");
+        assert_eq!(layer.density, 1400.0, "rho must match Table B1-3");
+        assert_eq!(layer.specific_heat, 840.0, "cp must match Table B1-3");
+        assert_eq!(layer.thickness, 0.200);
+        // Areal heat capacity per Table B1-3: kappa = rho * cp * d = 1400 * 840 * 0.200
+        let kappa = layer.density * layer.specific_heat * layer.thickness;
+        assert!(
+            (kappa - 235_200.0).abs() < 1.0,
+            "kappa must be 235.2 kJ/m^2K"
+        );
+    }
+
+    #[test]
+    fn test_high_mass_floor_uses_ashrae_140_heavyweight_concrete() {
+        // Issue #730: high_mass_floor() must source its slab from
+        // Materials::concrete_heavyweight, not normal-weight Materials::concrete_slab.
+        let floor = Assemblies::high_mass_floor();
+        let slab = &floor.layers[0];
+        assert_eq!(
+            slab.conductivity, 0.51,
+            "slab k must be ASHRAE 140 Table B1-3 value"
+        );
+        assert_eq!(
+            slab.density, 1400.0,
+            "slab rho must be ASHRAE 140 Table B1-3 value"
+        );
+        assert_eq!(
+            slab.specific_heat, 840.0,
+            "slab cp must be ASHRAE 140 Table B1-3 value"
+        );
+    }
+
+    #[test]
     fn test_materials_insulation_high_mass() {
         let layer = Materials::insulation_high_mass(0.1);
         assert_eq!(layer.conductivity, 0.04);
-        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.density, 14.0);
         assert_eq!(layer.specific_heat, 1400.0);
     }
 

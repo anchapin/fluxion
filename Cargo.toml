@@ -45,6 +45,11 @@ wiring-tracing = []
 multi-zone = []
 # Feature flag for ASHRAE 140 v2021 support
 ashrae_140_v2021 = []
+# Feature flag for PR #821 diagnostics (writes hourly CSVs for 600FF/650FF debugging)
+pr821-diag = []
+# Feature flag for loom concurrency testing (Issue #1065)
+# Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
+loom = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
@@ -72,6 +77,8 @@ sha2 = "0.10"
 
 # Numerical & Math
 faer = { version = "0.23.2", default-features = false, features = ["std"] }
+nalgebra = "0.33"  # Linear algebra - matrix operations
+uom = "0.35"  # Units of measurement - dimensional analysis
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
 num-complex = "0.4"
@@ -127,9 +134,14 @@ approx = "0.5"
 rstest = "0.25"
 dhat = "0.3"
 proptest = "1.5"
+noisy_float = "0.2"
 
 # Mock HTTP server for tests
 mockito = "1.7"
+
+# Loom for concurrency and race condition testing (Issue #1065)
+# Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
+loom = "0.1"
 
 [[bench]]
 name = "cta_bench"
@@ -165,6 +177,11 @@ harness = false
 
 [[bench]]
 name = "parallel_validation"
+harness = false
+
+[[bench]]
+name = "orchestration_decisions"
+path = "benches/orchestration_decisions/benchmark_runner.rs"
 harness = false
 
 [[bin]]
@@ -248,6 +265,11 @@ path = "tests/integration/test_ashrae_140_regression.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
 name = "integration-wiring"
 path = "tests/integration/test_wiring.rs"
 harness = true
@@ -268,6 +290,16 @@ path = "tests/integration/test_cli.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
+name = "integration-fmi-cosimulation"
+path = "tests/integration/test_fmi_cosimulation.rs"
+harness = true
+
+[[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
 harness = true
@@ -285,4 +317,35 @@ harness = true
 [[test]]
 name = "validation_case_900_peak_attribution"
 path = "tests/validation/case_900_peak_attribution.rs"
+harness = true
+
+[[test]]
+name = "validation_hourly_ff_profile"
+path = "tests/validation/hourly_ff_profile.rs"
+harness = true
+
+[[test]]
+name = "validation_night_ventilation_air_side"
+path = "tests/validation/night_ventilation_air_side.rs"
+harness = true
+
+[[test]]
+name = "validation_empirical"
+path = "tests/validation/empirical_validation_test.rs"
+harness = true
+
+[[test]]
+name = "weather_epw_fields"
+path = "tests/weather_epw_fields.rs"
+harness = true
+
+# Loom concurrency tests (Issue #1065)
+[[test]]
+name = "loom_concurrency_tests"
+path = "tests/concurrency/loom_concurrency_tests.rs"
+harness = true
+
+[[test]]
+name = "case_900_determinism"
+path = "tests/case_900_determinism.rs"
 harness = true

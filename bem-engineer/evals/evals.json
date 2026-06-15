@@ -1,0 +1,51 @@
+{
+  "skill_name": "bem-engineer",
+  "evals": [
+    {
+      "id": 0,
+      "name": "psychrometric-rust",
+      "prompt": "Calculate the enthalpy, dew point, and specific volume of air at 25°C dry-bulb, 50% RH, at sea level. Then write a Rust function that takes (T_db, RH, P) and returns a struct with all derived psychrometric properties. Include unit tests that validate against the known values you just computed.",
+      "expected_output": "Correct thermodynamic values at 25°C/50%RH/101325Pa, a Rust struct with psychrometric calculations, and unit tests validating the computed values.",
+      "files": [],
+      "assertions": [
+        {"name": "enthalpy_value_correct", "description": "Enthalpy at 25°C/50%RH is approximately 50.3 kJ/kg_da (within 2%)"},
+        {"name": "dewpoint_value_correct", "description": "Dew point at 25°C/50%RH is approximately 13.9°C (within 1°C)"},
+        {"name": "specific_volume_correct", "description": "Specific volume at 25°C/50%RH is approximately 0.858 m³/kg_da (within 2%)"},
+        {"name": "rust_struct_provided", "description": "Output includes a Rust struct with multiple psychrometric fields (not just one value)"},
+        {"name": "unit_tests_present", "description": "Rust code includes #[test] functions that validate against computed reference values"},
+        {"name": "physics_constraints", "description": "Tests validate physical constraints: dew point < dry bulb, positive enthalpy increment over 0°C baseline"},
+        {"name": "ashrae_citation", "description": "References ASHRAE Handbook of Fundamentals or Hyland-Wexler correlations for saturation pressure"}
+      ]
+    },
+    {
+      "id": 1,
+      "name": "ashrae-62-1-vrp",
+      "prompt": "I need the minimum outdoor air rate for a 3,000 sq ft conference room with a default occupant density per ASHRAE 62.1-2022. Give me the table citation, the VRP math, and a Python function that computes V_oz for any zone given area, population, and zone category.",
+      "expected_output": "ASHRAE 62.1 table citation, VRP formula breakdown with actual numbers for the conference room, and a Python function with type hints that generalizes the calculation.",
+      "files": [],
+      "assertions": [
+        {"name": "table_citation_present", "description": "Cites the specific ASHRAE 62.1 table for occupancy category rates (Table 6.2.2.1 or equivalent)"},
+        {"name": "vrp_formula_shown", "description": "Shows V_bz = Rp × Pz + Ra × Az (or equivalent ventilation rate procedure equation)"},
+        {"name": "conference_room_result", "description": "Computes ~930 cfm for the 3000 sq ft conference room (accounts for 150 people at default density)"},
+        {"name": "python_function_generalized", "description": "Python function accepts arbitrary area, population, and zone category — not hardcoded to conference rooms"},
+        {"name": "ez_accounted_for", "description": "Explains or parameterizes zone air distribution effectiveness (Ez) in the V_oz calculation"},
+        {"name": "default_density_correct", "description": "Uses correct default occupant density for conference rooms (50 per 1000 sq ft per 62.1)"}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "openstudio-vav-measure",
+      "prompt": "Write an OpenStudio measure that replaces all constant-volume terminal boxes in a model with VAV terminals, applying a minimum airflow fraction of 0.3. Then write a Python script that parses the EnergyPlus SQL output and compares zone airflow rates before and after the measure to confirm the VAV boxes are operating correctly.",
+      "expected_output": "A complete Ruby OpenStudio measure with argument handling and model manipulation logic, plus a Python SQL parsing script that queries and compares airflow data.",
+      "files": [],
+      "assertions": [
+        {"name": "ruby_measure_complete", "description": "Ruby file includes name, description, arguments, and run methods following OpenStudio ModelMeasure pattern"},
+        {"name": "cv_to_vav_conversion", "description": "Correctly identifies AirTerminal:SingleDuct:Uncontrolled (or ConstantVolume) and creates VAV replacements"},
+        {"name": "min_airflow_fraction", "description": "Sets minimum airflow fraction to 0.3 (or makes it a configurable argument with 0.3 default)"},
+        {"name": "python_sql_parser", "description": "Python script connects to EnergyPlus SQLite database and queries airflow-related tables"},
+        {"name": "before_after_comparison", "description": "Script compares airflow rates between baseline and post-measure runs"},
+        {"name": "error_handling_ruby", "description": "Ruby measure uses registerError/registerWarning/registerInfo properly with graceful failure"}
+      ]
+    }
+  ]
+}

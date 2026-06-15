@@ -1,0 +1,6 @@
+{
+  "eval_id": 0,
+  "eval_name": "psychrometric-rust",
+  "prompt": "Calculate the enthalpy, dew point, and specific volume of air at 25°C dry-bulb, 50% RH, at sea level. Then write a Rust function that takes (T_db, RH, P) and returns a struct with all derived psychrometric properties. Include unit tests that validate against the known values you just computed.",
+  "assertions": []
+}

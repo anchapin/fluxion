@@ -28,7 +28,8 @@
 //! - T_m: Temperature of thermal mass node
 
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_spec::WallSpec;
 
 /// 5R1C thermal network solver.
 ///
@@ -82,13 +83,13 @@ impl HeatConductionSolver for FiveR1CSolver {
         "5R1C"
     }
 
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
         // Calculate total thermal resistance [m²·K/W]
         self.R_total = wall.total_r_value();
 
         // Calculate total thermal capacitance [J/m²·K]
-        // thermal_mass() returns kJ/m²·K, so convert to J/m²·K
-        self.C_total = wall.thermal_mass() * 1000.0;
+        // WallSpec::thermal_capacity() returns J/(m²·K) directly
+        self.C_total = wall.thermal_capacity();
 
         // Set surface resistances (default values)
         self.R_si = 1.0 / 8.0; // h_interior = 8 W/m²·K
@@ -111,12 +112,12 @@ impl HeatConductionSolver for FiveR1CSolver {
 
     fn step(
         &mut self,
-        _timestep: f64,
-        T_interior: f64,
-        T_exterior: f64,
-        _h_interior: f64,
-        _h_exterior: f64,
-    ) -> Result<f64, SolverError> {
+        _timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        _h_interior: HeatTransferCoefficient,
+        _h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError> {
         if !self.initialized {
             return Err(SolverError::InvalidConfig(
                 "Solver not initialized. Call initialize() first.".to_string(),
@@ -125,9 +126,9 @@ impl HeatConductionSolver for FiveR1CSolver {
 
         // Simple 5R1C calculation (no mass node dynamics for now)
         // This is the baseline implementation - can be extended with mass node
-        self.q_flux = self.steady_state_flux(T_interior, T_exterior);
+        self.q_flux = self.steady_state_flux(T_interior.to_value(), T_exterior.to_value());
 
-        Ok(self.q_flux)
+        Ok(HeatFlux::from_value(self.q_flux))
     }
 
     fn energy_storage_rate(&self) -> f64 {
@@ -143,6 +144,10 @@ impl HeatConductionSolver for FiveR1CSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::units::{
+        FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
+    };
+    use crate::physics::wall_spec::WallSpec;
     use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 
     #[test]
@@ -155,7 +160,7 @@ mod tests {
             .build()
             .unwrap();
 
-        let result = solver.initialize(&wall);
+        let result = solver.initialize(&WallSpec::from_assembly(&wall));
         assert!(result.is_ok());
         assert!(solver.is_valid());
         assert!(solver.R_total > 0.0);
@@ -170,16 +175,24 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Calculate flux for 20°C interior, 0°C exterior
-        let flux = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+        let flux = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
 
         // Flux should be negative (heat flowing out)
-        assert!(flux < 0.0);
+        assert!(flux.to_value() < 0.0);
 
         // Magnitude should be reasonable (around 50-100 W/m² for this ΔT)
-        assert!(flux.abs() > 10.0 && flux.abs() < 200.0);
+        assert!(flux.to_value().abs() > 10.0 && flux.to_value().abs() < 200.0);
     }
 
     #[test]
@@ -191,7 +204,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Steady-state flux
         let T_int = 20.0;
@@ -242,7 +255,7 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
         let rate = solver.energy_storage_rate();
         // Current implementation returns 0 for energy storage rate
         assert_eq!(rate, 0.0);
@@ -256,15 +269,21 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Test various timestep values
         for timestep in [300.0, 600.0, 1800.0, 3600.0, 7200.0] {
-            let flux = solver.step(timestep, 20.0, 0.0, 8.0, 25.0);
+            let flux = solver.step(
+                Time::from_value(timestep),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            );
             assert!(flux.is_ok());
             let f = flux.unwrap();
-            assert!(f < 0.0); // Heat flowing out
-            assert!(f.abs() > 10.0 && f.abs() < 200.0);
+            assert!(f.to_value() < 0.0); // Heat flowing out
+            assert!(f.to_value().abs() > 10.0 && f.to_value().abs() < 200.0);
         }
     }
 
@@ -276,19 +295,43 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Very hot exterior
-        let flux_hot = solver.step(3600.0, 20.0, 50.0, 8.0, 25.0).unwrap();
-        assert!(flux_hot > 0.0); // Heat flowing in
+        let flux_hot = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(50.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(flux_hot.to_value() > 0.0); // Heat flowing in
 
         // Very cold exterior
-        let flux_cold = solver.step(3600.0, 20.0, -30.0, 8.0, 25.0).unwrap();
-        assert!(flux_cold < 0.0); // Heat flowing out
+        let flux_cold = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(-30.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(flux_cold.to_value() < 0.0); // Heat flowing out
 
         // Zero delta temperature
-        let flux_zero = solver.step(3600.0, 20.0, 20.0, 8.0, 25.0).unwrap();
-        assert_eq!(flux_zero, 0.0); // No heat flow
+        let flux_zero = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert_eq!(flux_zero.to_value(), 0.0); // No heat flow
     }
 
     #[test]
@@ -299,14 +342,30 @@ mod tests {
             .build()
             .unwrap();
 
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
 
         // Convection coefficients are ignored in current implementation
-        let flux1 = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
-        let flux2 = solver.step(3600.0, 20.0, 0.0, 100.0, 5.0).unwrap();
+        let flux1 = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        let flux2 = solver
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(100.0),
+                HeatTransferCoefficient::from_value(5.0),
+            )
+            .unwrap();
 
         // Should be the same since convection is ignored
-        assert_eq!(flux1, flux2);
+        assert_eq!(flux1.to_value(), flux2.to_value());
     }
 
     #[test]
@@ -315,7 +374,13 @@ mod tests {
         assert!(!solver.is_valid());
 
         // Should return error when stepping without initialization
-        let result = solver.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+        let result = solver.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(result.is_err());
 
         if let Err(SolverError::InvalidConfig(msg)) = result {

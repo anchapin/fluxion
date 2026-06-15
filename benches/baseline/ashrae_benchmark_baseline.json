@@ -1,0 +1,19 @@
+{
+  "_comment": "ASHRAE 140 benchmark baseline — placeholder until first CI run on main populates real numbers. Update by running: python scripts/ashrae_benchmark_harness.py --save-baseline benches/baseline/ashrae_benchmark_baseline.json",
+  "schema_version": "1",
+  "timestamp": "1970-01-01T00:00:00+00:00",
+  "commit_sha": "placeholder",
+  "branch": "main",
+  "summary": {
+    "total_validation_cases": 0,
+    "validation_cases_passed": 0,
+    "validation_cases_failed": 0,
+    "pass_rate": 0.0,
+    "mae_percent": 0.0,
+    "total_duration_s": 0.0,
+    "total_tests_passed": 0,
+    "total_tests_failed": 0
+  },
+  "test_targets": [],
+  "validation_cases": []
+}

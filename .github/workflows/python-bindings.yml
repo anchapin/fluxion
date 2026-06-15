@@ -1,6 +1,10 @@
 name: Python Bindings (maturin)
 
-on: [pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -11,15 +15,37 @@ env:
   RUST_MIN_STACK: 33554432
   CARGO_BUILD_JOBS: 2
 
+# PRs: fast signal with 2 key combos (ubuntu + windows, oldest + newest py).
+# Main: full matrix (4 OS × 4 Python) for comprehensive validation.
+
 jobs:
   build:
-    name: Build Python Wheels
+    name: Build Python Wheels (${{ matrix.os }} / py ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python-version: ['3.10', '3.11', '3.12', '3.13']
+        exclude:
+          # Exclude macOS on PRs (not in PR matrix)
+          - os: macos-latest
+            python-version: '3.10'
+          - os: macos-latest
+            python-version: '3.11'
+          - os: macos-latest
+            python-version: '3.12'
+          - os: macos-latest
+            python-version: '3.13'
+          # Exclude Python 3.11 and 3.13 on ubuntu/windows on PRs
+          - os: ubuntu-latest
+            python-version: '3.11'
+          - os: ubuntu-latest
+            python-version: '3.13'
+          - os: windows-latest
+            python-version: '3.11'
+          - os: windows-latest
+            python-version: '3.13'
     steps:
       - uses: actions/checkout@v4
 
@@ -47,3 +73,4 @@ jobs:
         run: |
           pip install --find-links ./target/wheels fluxion
           python -c "import fluxion; print('[OK] Fluxion module loaded successfully')"
+# trigger

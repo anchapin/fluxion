@@ -75,16 +75,21 @@ pub mod physics;
 #[cfg(feature = "python-bindings")]
 pub mod python;
 pub mod sim;
+pub mod solar;
 pub mod testing;
 pub mod thermal;
 pub mod validation;
 pub mod weather;
 
 // Re-export thermal model traits for public API
+pub use sim::surface_flux_provider::{
+    MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
+};
 pub use sim::thermal_model::{
     PhysicsThermalModel, SurrogateThermalModel, ThermalModelBuilder, ThermalModelMode,
     ThermalModelTrait, UnifiedThermalModel,
 };
+pub use sim::thermal_model_mock::MockThermalModel;
 
 // Re-export ISO 13790 Annex C construction types
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
@@ -98,6 +103,8 @@ use sim::engine::{StepParameters, ThermalModel};
 use crate::api::error::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
 #[cfg(feature = "python-bindings")]
 use crate::api::parameters::BuildingParameters;
+#[cfg(feature = "python-bindings")]
+use crate::weather::HourlyWeatherData;
 
 use anyhow::Result;
 #[allow(unused_imports)]
@@ -307,6 +314,144 @@ impl Model {
                 .solve_timesteps(steps, &self.surrogates, use_surrogates, None, None, None);
         info!("Simulation complete, EUI = {:.2} kWh/m²/year", result);
         Ok(result)
+    }
+
+    /// Simulate building energy consumption with NumPy array inputs for weather data.
+    ///
+    /// This method enables direct NumPy memory sharing between Python and Rust,
+    /// eliminating copy overhead for large simulations. Weather data is passed
+    /// as NumPy arrays, and zone temperatures are returned as a 2D NumPy array.
+    ///
+    /// # Arguments
+    /// * `dry_bulb_temp` - Outdoor dry bulb temperature (°C), shape (steps,)
+    /// * `dni` - Direct Normal Irradiance (W/m²), shape (steps,)
+    /// * `dhi` - Diffuse Horizontal Irradiance (W/m²), shape (steps,)
+    /// * `ghi` - Global Horizontal Irradiance (W/m²), shape (steps,)
+    /// * `wind_speed` - Wind speed (m/s), shape (steps,)
+    /// * `humidity` - Relative humidity (%), shape (steps,)
+    /// * `horizontal_infrared` - Horizontal infrared radiation (W/m²), shape (steps,)
+    /// * `use_surrogates` - If true, use AI surrogates for load predictions
+    ///
+    /// # Returns
+    /// 2D NumPy array of zone temperatures (steps x num_zones) in °C
+    ///
+    /// # Example
+    /// ```python
+    /// import fluxion
+    /// import numpy as np
+    ///
+    /// model = fluxion.Model(num_zones=3)
+    ///
+    /// # Create weather data arrays (8760 hourly values)
+    /// n_timesteps = 8760
+    /// dry_bulb = np.random.uniform(10, 35, n_timesteps)
+    /// dni = np.random.uniform(0, 1000, n_timesteps)
+    /// dhi = np.random.uniform(0, 500, n_timesteps)
+    /// ghi = np.random.uniform(0, 1000, n_timesteps)
+    /// wind_speed = np.random.uniform(0, 10, n_timesteps)
+    /// humidity = np.random.uniform(30, 80, n_timesteps)
+    /// horizontal_ir = np.random.uniform(200, 500, n_timesteps)
+    ///
+    /// # Run simulation and get zone temperatures
+    /// zone_temps = model.simulate_numpy(
+    ///     dry_bulb, dni, dhi, ghi, wind_speed, humidity, horizontal_ir, False
+    /// )
+    /// # zone_temps.shape == (8760, 3)
+    /// ```
+    fn simulate_numpy<'py>(
+        &mut self,
+        py: Python<'py>,
+        dry_bulb_temp: &Bound<'py, pyo3::types::PyAny>,
+        dni: &Bound<'py, pyo3::types::PyAny>,
+        dhi: &Bound<'py, pyo3::types::PyAny>,
+        ghi: &Bound<'py, pyo3::types::PyAny>,
+        wind_speed: &Bound<'py, pyo3::types::PyAny>,
+        humidity: &Bound<'py, pyo3::types::PyAny>,
+        horizontal_infrared: &Bound<'py, pyo3::types::PyAny>,
+        use_surrogates: bool,
+    ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
+        use rayon::prelude::*;
+
+        // Helper to extract 1D numpy array as Vec<f64>
+        fn extract_1d_f64(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {
+            if let Ok(pyarr) = arr.downcast::<numpy::PyArray1<f64>>() {
+                let slice = unsafe { pyarr.as_slice()? };
+                return Ok(slice.to_vec());
+            }
+            Err(pyo3::exceptions::PyValueError::new_err(
+                "Expected 1D numpy array",
+            ))
+        }
+
+        // Extract weather data arrays
+        let dry_bulb_vec = extract_1d_f64(dry_bulb_temp)?;
+        let dni_vec = extract_1d_f64(dni)?;
+        let dhi_vec = extract_1d_f64(dhi)?;
+        let ghi_vec = extract_1d_f64(ghi)?;
+        let wind_vec = extract_1d_f64(wind_speed)?;
+        let humidity_vec = extract_1d_f64(humidity)?;
+        let hir_vec = extract_1d_f64(horizontal_infrared)?;
+
+        let steps = dry_bulb_vec.len();
+
+        // Validate all arrays have the same length
+        if dni_vec.len() != steps
+            || dhi_vec.len() != steps
+            || ghi_vec.len() != steps
+            || wind_vec.len() != steps
+            || humidity_vec.len() != steps
+            || hir_vec.len() != steps
+        {
+            return Err(pyo3::exceptions::PyValueError::new_err(
+                "All weather arrays must have the same length",
+            ));
+        }
+
+        let num_zones = self.inner.num_zones;
+        info!(
+            "Starting NumPy simulation for {} timesteps, {} zones, use_surrogates={}",
+            steps, num_zones, use_surrogates
+        );
+
+        // Initialize temperature storage: (steps x num_zones)
+        let mut zone_temps = Array2::<f64>::zeros((steps, num_zones));
+
+        // Build weather data and run simulation
+        for t in 0..steps {
+            if t % 1000 == 0 {
+                info!("Progress: {}/{} timesteps", t, steps);
+            }
+
+            let weather = HourlyWeatherData {
+                dry_bulb_temp: dry_bulb_vec[t],
+                dni: dni_vec[t],
+                dhi: dhi_vec[t],
+                ghi: ghi_vec[t],
+                wind_speed: wind_vec[t],
+                humidity: humidity_vec[t],
+                horizontal_infrared: hir_vec[t],
+                hour_of_year: t,
+                ground_temperature: None,
+                horizontal_illuminance: None,
+                diffuse_illuminance: None,
+                snow_depth: None,
+                snow_cover: None,
+                present_weather: None,
+                present_weather_code: None,
+            };
+
+            self.inner.set_weather(weather);
+            let _energy = self.inner.step_physics(t, dry_bulb_vec[t], 3600.0);
+
+            // Collect zone temperatures
+            let temps = self.inner.get_temperatures();
+            for (zone_idx, &temp) in temps.iter().enumerate() {
+                zone_temps[[t, zone_idx]] = temp;
+            }
+        }
+
+        info!("NumPy simulation complete");
+        Ok(numpy::PyArray2::from_owned_array_bound(py, zone_temps))
     }
 
     /// Simulate one timestep.
@@ -1118,6 +1263,9 @@ impl BatchOracle {
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
+            // Note: StepParameters is !Sync (Box<dyn Equipment>), so it cannot be moved
+            // into the rayon for_each closure. We construct a per-step instance inside
+            // the inner loop and pass by & reference (Issue #901).
             let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
@@ -1136,7 +1284,7 @@ impl BatchOracle {
                             equipment: None,
                             occupancy: None,
                         };
-                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
+                        *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
                 });
 
@@ -1386,6 +1534,9 @@ impl BatchOracle {
             }
         } else if !valid_configs.is_empty() {
             // Analytical path - fully parallel
+            // Note: StepParameters is !Sync (Box<dyn Equipment>), so it cannot be moved
+            // into the rayon for_each closure. We construct a per-step instance inside
+            // the inner loop and pass by & reference (Issue #901).
             let mut energies = vec![0.0; valid_configs.len()];
             valid_configs
                 .par_iter_mut()
@@ -1404,7 +1555,7 @@ impl BatchOracle {
                             equipment: None,
                             occupancy: None,
                         };
-                        *energy += model.solve_single_step(t, outdoor_temp, step_params, 3600.0);
+                        *energy += model.solve_single_step(t, outdoor_temp, &step_params, 3600.0);
                     }
                 });
 

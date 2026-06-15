@@ -30,3 +30,21 @@ pub const EXTERIOR_FILM_COEFF_DEFAULT: f64 = 29.3;
 /// Default solar absorptance for opaque exterior surfaces per ASHRAE 140 Table B1-3.
 /// **Value:** 0.6 (medium-color surface)
 pub const SOLAR_ABSORPTANCE_DEFAULT: f64 = 0.6;
+
+/// Ground temperature boundary condition for floor slab per ASHRAE 140-2023 Annex B §B3.3.
+///
+/// T_ground = 9.4°C (annual mean Denver air temperature).
+/// Applies to ALL cases with floor slab (600, 610–650, 900–950 and free-float variants).
+pub const GROUND_TEMPERATURE_C: f64 = 9.4;
+
+/// Ground thermal conductivity per ASHRAE 140-2023 Annex B §B3.3.
+/// **Value:** 1.28 W/m·K
+pub const GROUND_CONDUCTIVITY: f64 = 1.28;
+
+/// Ground density per ASHRAE 140-2023 Annex B §B3.3.
+/// **Value:** 1500 kg/m³
+pub const GROUND_DENSITY: f64 = 1500.0;
+
+/// Ground specific heat capacity per ASHRAE 140-2023 Annex B §B3.3.
+/// **Value:** 840 J/(kg·K)
+pub const GROUND_SPECIFIC_HEAT: f64 = 840.0;

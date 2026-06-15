@@ -1,0 +1,82 @@
+[
+  {
+    "query": "hey so i have this idf file (VAV_Proposal_Baseline.idf) and i need to change all the Fan:VariableVolume objects to have a max flow rate that's 15% lower than what's currently in there. there's like 40 of them. can you script this out for me? i'm on a mac, the file is in ~/Projects/energy_models/phoenix_office/",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm running a baseline model for ASHRAE 90.1-2019 appendix G compliance and the budget building envelope needs to meet Table 5.5-5 for climate zone 4A. My model has a 50,000 ft² office building with 40% window-wall ratio. Can you calculate the maximum U-value and SHGC requirements and then write an OpenStudio measure that automatically applies these envelope properties?",
+    "should_trigger": true
+  },
+  {
+    "query": "my energyplus model keeps crashing with a 'floor temperature out of range' error in zone 'Perimeter_ZN_1'. timestep is 6 per hour. i've checked the construction and it seems fine. what could cause this and how do i fix it?",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to set up a parametric study for a 200k ft² hospital in Miami. Variables are: wall R-value (R-10 to R-30 in steps of 5), window U-value (0.25 to 0.55), SHGC (0.15 to 0.45), and COP (3.0 to 6.0). That's a lot of combinations. Can you set up a Latin Hypercube sampling with 100 runs and generate the IDF files?",
+    "should_trigger": true
+  },
+  {
+    "query": "we ran the annual simulation and i need to pull zone-level cooling and heating loads from the SQL output. specifically i want the peak cooling load for each zone with the timestamp it occurs, and also the total annual energy consumption broken down by fuel type. the eplusout.sql is in /mnt/sim_results/run_047/",
+    "should_trigger": true
+  },
+  {
+    "query": "what's the mixed air condition when you mix 2000 cfm of outdoor air at 95°F DB / 78°F WB with 8000 cfm of return air at 75°F DB / 50% RH? i need the DB, WB, humidity ratio, and enthalpy of the mixed stream. show me the math and then give me a python function that generalizes this for any two airstreams.",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm training a neural network surrogate for annual energy use intensity (EUI) predictions. I need to generate training data from EnergyPlus — about 500 simulation variants of a medium office building. Each variant changes insulation thickness, window properties, internal loads, and HVAC efficiency. Can you write the sampling script and the post-processing to extract EUI from each run's SQL output into a CSV with the input parameters?",
+    "should_trigger": true
+  },
+  {
+    "query": "ok so i need to write an openstudio measure that goes through all the thermal zones in a model and assigns lighting power density based on space type using ASHRAE 90.1-2019 Table 9.5.1. if the space type isn't in the table it should default to 1.0 W/ft² and register a warning. also need it to handle enclosed parking garages separately at 0.15 W/ft² per section 9.4.3.",
+    "should_trigger": true
+  },
+  {
+    "query": "Can you calculate the minimum ventilation rate for a 15,000 ft² office space with 120 occupants per ASHRAE 62.1? I need the VRP calculation, the Ez assumptions you're making for a ceiling diffuser system with cooling mode, and then a function I can reuse for other space types.",
+    "should_trigger": true
+  },
+  {
+    "query": "i have an .osm file where someone accidentally duplicated every thermal zone. so there's like 'Core_ZN' and 'Core_ZN 1' and they're identical. i need a ruby script or measure that finds zones whose names differ only by a trailing number or space+number, checks if their floor area and space loads match, and removes the duplicates. the file is called Hospital_Addition_Final.osm",
+    "should_trigger": true
+  },
+  {
+    "query": "I need to calculate the convective heat transfer coefficient for flow over a flat plate in a wind tunnel experiment. The free stream velocity is 15 m/s, plate length is 0.5m, air temperature is 300K. Can you compute the local and average Nusselt numbers and give me the heat transfer coefficients?",
+    "should_trigger": false
+  },
+  {
+    "query": "Write a Rust web server using Axum that serves a REST API for managing a todo list. It should have CRUD endpoints, use SQLite for persistence, and return JSON responses. Include proper error handling and maybe some integration tests.",
+    "should_trigger": false
+  },
+  {
+    "query": "I have a CSV file with daily temperature readings from weather stations across Colorado for the past 10 years. The columns are: station_id, date, tmax, tmin, precipitation. I need to compute growing degree days for each station using a base of 50°F and then plot a heatmap of average GDD by county. The file is at ~/data/co_weather_2015_2025.csv",
+    "should_trigger": false
+  },
+  {
+    "query": "my car's AC is blowing warm air. the compressor engages when i press the button but the low-side pressure reading at idle is only 15 psi which seems low. it's a 2018 accord with the 1.5T. do i just need a recharge or could there be a bigger issue?",
+    "should_trigger": false
+  },
+  {
+    "query": "I'm designing a liquid cooling system for a server rack. Each server generates 500W and there are 42 servers in the rack. I need to size the pump and heat exchanger. Coolant is 50/50 propylene glycol/water, target delta-T is 10°C across the rack. Can you calculate the required flow rate and then help me pick a pump curve?",
+    "should_trigger": false
+  },
+  {
+    "query": "Can you write me a Python script that reads a bunch of JSON files from a directory, flattens any nested objects, and outputs a single pandas DataFrame? The files have inconsistent schemas — some have 'user.profile.address' nesting, others are flat. Output needs to go to a parquet file.",
+    "should_trigger": false
+  },
+  {
+    "query": "i'm building a dashboard with React and Recharts that shows our company's monthly electricity costs across 12 facilities. the data comes from an API that returns {facility_name, month, kwh, cost_usd}. i want a line chart with facility comparison and a bar chart for total spend. can you set up the component?",
+    "should_trigger": false
+  },
+  {
+    "query": "A Rankine cycle operates between 10 MPa and 10 kPa with turbine inlet at 500°C. The turbine has an isentropic efficiency of 85% and the pump is 90% efficient. Calculate the thermal efficiency, net work output per kg of steam, and the quality at the turbine exit. Show me the T-s diagram state points.",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to set up a Terraform module that provisions an AWS VPC with public and private subnets across 3 AZs, an Application Load Balancer, and an ECS Fargate service running a containerized Python app. The container image is in ECR. Include auto-scaling based on CPU utilization.",
+    "should_trigger": false
+  },
+  {
+    "query": "write a ruby script that scrapes product listings from an e-commerce site, extracts the price, name, and availability, and saves to CSV. the site paginates with ?page=2 etc. i need it to handle rate limiting and retry on 500 errors",
+    "should_trigger": false
+  }
+]

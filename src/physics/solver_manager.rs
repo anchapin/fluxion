@@ -35,6 +35,8 @@ use crate::physics::method_selector::{
 };
 use crate::physics::solver_registry::SolverRegistry;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_spec::WallSpec;
 use crate::sim::assembly::BuildingAssembly;
 use log::{debug, warn};
 
@@ -118,17 +120,18 @@ impl SolverManager {
         let method = result.method;
 
         // Create solver based on method
+        let wall_spec = WallSpec::from_assembly(wall_assembly);
         let solver: Box<dyn HeatConductionSolver> = match method {
             ThermalMethod::FiveR1C => {
                 debug!("Creating 5R1C solver for wall {}", wall_index);
                 let mut solver = FiveR1CSolver::new();
-                solver.initialize(wall_assembly)?;
+                solver.initialize(&wall_spec)?;
                 Box::new(solver)
             }
             ThermalMethod::CTF => {
                 debug!("Creating CTF solver for wall {}", wall_index);
                 let mut solver = CTFSolverWrapper::new();
-                match solver.initialize(wall_assembly) {
+                match solver.initialize(&wall_spec) {
                     Ok(()) => Box::new(solver),
                     Err(e) => {
                         // CTF failed, fallback to FD if enabled
@@ -138,7 +141,7 @@ impl SolverManager {
                                 wall_index, e
                             );
                             let mut fd_solver = FDSolverWrapper::new();
-                            fd_solver.initialize(wall_assembly)?;
+                            fd_solver.initialize(&wall_spec)?;
                             Box::new(fd_solver)
                         } else {
                             return Err(e);
@@ -149,7 +152,7 @@ impl SolverManager {
             ThermalMethod::FiniteDifference => {
                 debug!("Creating FD solver for wall {}", wall_index);
                 let mut solver = FDSolverWrapper::new();
-                solver.initialize(wall_assembly)?;
+                solver.initialize(&wall_spec)?;
                 Box::new(solver)
             }
         };
@@ -238,7 +241,14 @@ impl SolverManager {
             SolverError::InvalidConfig(format!("No solver for wall {}", wall_index))
         })?;
 
-        solver.step(timestep, T_interior, T_exterior, h_interior, h_exterior)
+        let flux = solver.step(
+            Time::from_value(timestep),
+            Temperature::from_value(T_interior),
+            Temperature::from_value(T_exterior),
+            HeatTransferCoefficient::from_value(h_interior),
+            HeatTransferCoefficient::from_value(h_exterior),
+        )?;
+        Ok(flux.to_value())
     }
 
     /// Get energy storage rate for a wall.
@@ -349,8 +359,14 @@ impl SolverManager {
                 SolverError::InvalidConfig(format!("No solver for wall {}", wall_index))
             })?;
 
-            let flux = solver.step(dt, T_int, T_ext, h_int, h_ext)?;
-            fluxes.push(flux);
+            let flux = solver.step(
+                Time::from_value(dt),
+                Temperature::from_value(T_int),
+                Temperature::from_value(T_ext),
+                HeatTransferCoefficient::from_value(h_int),
+                HeatTransferCoefficient::from_value(h_ext),
+            )?;
+            fluxes.push(flux.to_value());
         }
 
         Ok(fluxes)
@@ -496,7 +512,8 @@ mod tests {
         let solver = manager.get_solver_mut(0);
         assert!(solver.is_some());
         let solver_name = solver.unwrap().name();
-        assert!(solver_name == "5R1C" || solver_name == "CTF");
+        // Issue #726: heavyweight wall (200mm concrete) should now use FD
+        assert!(solver_name == "5R1C" || solver_name == "CTF" || solver_name == "FD");
     }
 
     #[test]

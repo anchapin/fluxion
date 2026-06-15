@@ -3,6 +3,7 @@
 //! Tests validation status computation, tolerance calculations,
 //! multi-reference enrichment, and edge cases.
 
+use fluxion::validation::ashrae_140_cases::Orientation;
 use fluxion::validation::report::{
     BenchmarkData, BenchmarkReport, MetricType, ValidationResult, ValidationStatus,
 };
@@ -44,11 +45,11 @@ mod validator_unit_tests {
     fn test_metric_type_display_names() {
         assert_eq!(
             MetricType::AnnualHeating.display_name(),
-            "Annual Heating Energy (MWh)"
+            "Annual Heating Energy (kWh)"
         );
         assert_eq!(
             MetricType::AnnualCooling.display_name(),
-            "Annual Cooling Energy (MWh)"
+            "Annual Cooling Energy (kWh)"
         );
         assert_eq!(
             MetricType::PeakHeating.display_name(),
@@ -58,14 +59,32 @@ mod validator_unit_tests {
             MetricType::PeakCooling.display_name(),
             "Peak Cooling Load (kW)"
         );
+        // IncidentSolar per ASHRAE 140-2023 Section 8.2.3
+        assert_eq!(
+            MetricType::IncidentSolar {
+                surface_id: "S".to_string(),
+                orientation: Orientation::South,
+            }
+            .display_name(),
+            "Incident Solar Radiation (kWh/m²)"
+        );
     }
 
     #[test]
     fn test_metric_type_units() {
-        assert_eq!(MetricType::AnnualHeating.units(), "MWh");
-        assert_eq!(MetricType::AnnualCooling.units(), "MWh");
+        assert_eq!(MetricType::AnnualHeating.units(), "kWh");
+        assert_eq!(MetricType::AnnualCooling.units(), "kWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
         assert_eq!(MetricType::PeakCooling.units(), "kW");
+        // IncidentSolar per ASHRAE 140-2023 Section 8.2.3
+        assert_eq!(
+            MetricType::IncidentSolar {
+                surface_id: "roof".to_string(),
+                orientation: Orientation::Up,
+            }
+            .units(),
+            "kWh/m²"
+        );
     }
 
     // ========================================================================

@@ -8,6 +8,7 @@ use crate::physics::ctf_coefficients::CTFCoefficients;
 use crate::physics::ctf_solver::CTFSolver;
 use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
 use crate::physics::fd_solver::ImplicitFDSolver;
+use crate::physics::multi_node_solver::MultiNodeSolver;
 use crate::physics::solver_manager::SolverManager;
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::boundary::GroundTemperature;
@@ -102,6 +103,7 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub thermal_bridge_coefficient: f64,
     pub ideal_air_loads_mode: bool,
     pub ideal_loads_system: Vec<Option<IdealLoadsSystem>>,
+    pub free_float: bool, // When true, HVAC output is forced to zero (for free-floating cases)
     pub ctf_coefficients: Option<CTFCoefficients>,
     pub ctf_solvers: Vec<CTFSolver>,
     pub ctf_enabled: bool,
@@ -111,6 +113,7 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub fd_solvers: Vec<ImplicitFDSolver>,
     pub fd_enabled: bool,
     pub fd_timestep: f64,
+    pub multi_node_solvers: Vec<MultiNodeSolver>,
     pub solver_manager: Option<SolverManager>,
     pub convective_fraction: f64,
     pub solar_distribution_to_air: f64,
@@ -143,11 +146,45 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub derived_term_rest_1: T,
     pub derived_h_ms_is_prod: T,
     pub derived_den: T,
-    pub derived_sensitivity: T,
     pub derived_ground_coeff: T,
+    /// ISO 13790 §C.6: H_tr_1 = 1/(1/H_ve_adj + 1/H_tr_is) — combined ventilation + surface-to-air
+    pub derived_h_tr_1: T,
+    /// ISO 13790 §C.7: H_tr_2 = H_tr_1 + H_tr_w — adds window conductance
+    pub derived_h_tr_2: T,
+    /// ISO 13790 §C.8: H_tr_3 = 1/(1/H_tr_2 + 1/H_tr_ms) — combined air-to-mass (~40 W/K for Case 900)
+    pub derived_h_tr_3: T,
     pub diagnostics: Option<SimulationDiagnostics>,
     pub current_hvac_output: Option<T>,
     pub internal_radiative_to_mass: f64,
+    // Per-surface thermal mass conductances for 9R4C model (Issue #715, Phase 6B)
+    pub h_tr_ms_wall: Option<T>,
+    pub h_tr_ms_roof: Option<T>,
+    pub h_tr_ms_floor: Option<T>,
+    pub h_tr_em_wall: Option<T>,
+    pub h_tr_em_roof: Option<T>,
+    pub h_tr_em_floor: Option<T>,
+    // Per-surface thermal capacitances for 9R4C model
+    pub cm_wall: Option<T>,
+    pub cm_roof: Option<T>,
+    pub cm_floor: Option<T>,
+    pub cm_internal: Option<T>,
+    // Multi-node thermal mass state for 9R4C model
+    pub multi_node_thermal_mass: Option<crate::sim::multi_node_thermal::MultiNodeThermalMass>,
+    /// PR #821 / Issue #825 — most recent zone-0 phi_ia (W to air node) computed
+    /// inside `step_physics_5r1c`. Captured for the `pr821-diag` CSV writer so
+    /// the heat-balance terms can be inspected hour by hour. Always 0.0 when
+    /// the `pr821-diag` feature is disabled (and the field does not exist).
+    #[cfg(feature = "pr821-diag")]
+    pub last_phi_ia: f64,
+    /// PR #821 / Issue #825 — most recent zone-0 phi_st (W to surface node).
+    #[cfg(feature = "pr821-diag")]
+    pub last_phi_st: f64,
+    /// PR #821 / Issue #825 — most recent zone-0 phi_m (W to mass node).
+    #[cfg(feature = "pr821-diag")]
+    pub last_phi_m: f64,
+    /// Issue #763 — full hourly zone temperature profiles for post-processing and reporting.
+    /// Format: [num_zones][8760] hourly temperatures in °C.
+    pub hourly_temperatures: Option<Vec<Vec<f64>>>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -226,6 +263,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             thermal_bridge_coefficient: self.thermal_bridge_coefficient,
             ideal_air_loads_mode: self.ideal_air_loads_mode,
             ideal_loads_system: self.ideal_loads_system.clone(),
+            free_float: self.free_float,
             ctf_coefficients: self.ctf_coefficients.clone(),
             ctf_solvers: self.ctf_solvers.clone(),
             ctf_enabled: self.ctf_enabled,
@@ -235,6 +273,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             fd_solvers: vec![],
             fd_enabled: self.fd_enabled,
             fd_timestep: self.fd_timestep,
+            multi_node_solvers: vec![],
             solver_manager: None,
             convective_fraction: self.convective_fraction,
             solar_distribution_to_air: self.solar_distribution_to_air,
@@ -268,11 +307,31 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             derived_term_rest_1: self.derived_term_rest_1.clone(),
             derived_h_ms_is_prod: self.derived_h_ms_is_prod.clone(),
             derived_den: self.derived_den.clone(),
-            derived_sensitivity: self.derived_sensitivity.clone(),
             derived_ground_coeff: self.derived_ground_coeff.clone(),
+            derived_h_tr_1: self.derived_h_tr_1.clone(),
+            derived_h_tr_2: self.derived_h_tr_2.clone(),
+            derived_h_tr_3: self.derived_h_tr_3.clone(),
             diagnostics: None,
             current_hvac_output: self.current_hvac_output.clone(),
             internal_radiative_to_mass: self.internal_radiative_to_mass,
+            h_tr_ms_wall: self.h_tr_ms_wall.clone(),
+            h_tr_ms_roof: self.h_tr_ms_roof.clone(),
+            h_tr_ms_floor: self.h_tr_ms_floor.clone(),
+            h_tr_em_wall: self.h_tr_em_wall.clone(),
+            h_tr_em_roof: self.h_tr_em_roof.clone(),
+            h_tr_em_floor: self.h_tr_em_floor.clone(),
+            cm_wall: self.cm_wall.clone(),
+            cm_roof: self.cm_roof.clone(),
+            cm_floor: self.cm_floor.clone(),
+            cm_internal: self.cm_internal.clone(),
+            multi_node_thermal_mass: self.multi_node_thermal_mass.clone(),
+            #[cfg(feature = "pr821-diag")]
+            last_phi_ia: self.last_phi_ia,
+            #[cfg(feature = "pr821-diag")]
+            last_phi_st: self.last_phi_st,
+            #[cfg(feature = "pr821-diag")]
+            last_phi_m: self.last_phi_m,
+            hourly_temperatures: None,
         }
     }
 }

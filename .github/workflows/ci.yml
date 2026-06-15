@@ -53,7 +53,7 @@ jobs:
       - name: Build and install Python bindings
         env:
           RUST_MIN_STACK: 33554432
-          CARGO_BUILD_JOBS: 2
+          CARGO_BUILD_JOBS: 1
         run: |
           source venv/bin/activate
           maturin develop --release --jobs 2

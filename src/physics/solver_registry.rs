@@ -97,6 +97,7 @@ impl Default for SolverRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::wall_spec::WallSpec;
 
     #[test]
     fn test_solver_registry_new() {
@@ -118,7 +119,7 @@ mod tests {
             .unwrap();
 
         let mut solver = FiveR1CSolver::new();
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
         let boxed: Box<dyn HeatConductionSolver> = Box::new(solver);
 
         registry.insert(0, boxed, wall.clone(), "5R1C".to_string());
@@ -141,7 +142,7 @@ mod tests {
             .unwrap();
 
         let mut solver = FiveR1CSolver::new();
-        solver.initialize(&wall).unwrap();
+        solver.initialize(&WallSpec::from_assembly(&wall)).unwrap();
         let boxed: Box<dyn HeatConductionSolver> = Box::new(solver);
 
         registry.insert(0, boxed, wall, "5R1C".to_string());
@@ -164,7 +165,7 @@ mod tests {
             .unwrap();
 
         let mut solver1 = FiveR1CSolver::new();
-        solver1.initialize(&wall).unwrap();
+        solver1.initialize(&WallSpec::from_assembly(&wall)).unwrap();
         let solver2 = FiveR1CSolver::new();
         let boxed1: Box<dyn HeatConductionSolver> = Box::new(solver1);
         let boxed2: Box<dyn HeatConductionSolver> = Box::new(solver2);
