@@ -283,6 +283,11 @@ path = "tests/integration/test_cli.rs"
 harness = true
 
 [[test]]
+name = "integration-fmi-cosimulation"
+path = "tests/integration/test_fmi_cosimulation.rs"
+harness = true
+
+[[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
 harness = true
@@ -315,4 +320,9 @@ harness = true
 [[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
+harness = true
+
+[[test]]
+name = "case_900_determinism"
+path = "tests/case_900_determinism.rs"
 harness = true

@@ -199,6 +199,7 @@ pub fn calculate_solar_position(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_solar_position_winter_morning() {
@@ -275,5 +276,95 @@ mod tests {
             zenith_deg: 45.0,
         };
         assert_eq!(pos1, pos2);
+    }
+
+    // -------------------------------------------------------------------------
+    // Property-Based Tests (proptest)
+    // Issue #1062: Property-based testing for core math & parsers
+    //
+    // These tests verify physical invariants for solar position calculations
+    // across random lat/lon/hour/day combinations.
+    // -------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+        #[test]
+        fn prop_solar_position_azimuth_range(
+            latitude in -90.0_f64..90.0,
+            longitude in -180.0_f64..180.0,
+            hour in 0.0_f64..24.0,
+        ) {
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, hour);
+            prop_assert!(pos.azimuth_deg >= 0.0 && pos.azimuth_deg < 360.0,
+                "Azimuth {} out of range [0, 360)", pos.azimuth_deg);
+        }
+
+        #[test]
+        fn prop_solar_position_zenith_and_altitude_sum_to_90(
+            latitude in -90.0_f64..90.0,
+            longitude in -180.0_f64..180.0,
+            hour in 0.0_f64..24.0,
+        ) {
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, hour);
+            let sum = pos.altitude_deg + pos.zenith_deg;
+            prop_assert!((sum - 90.0).abs() < 1e-10,
+                "Altitude {} + Zenith {} should equal 90", pos.altitude_deg, pos.zenith_deg);
+        }
+
+        #[test]
+        fn prop_altitude_bounded_by_horizon(
+            latitude in -90.0_f64..90.0,
+            longitude in -180.0_f64..180.0,
+        ) {
+            let pos = calculate_solar_position(latitude, longitude, 2024, 12, 21, 12.0);
+            prop_assert!(pos.altitude_deg >= -90.0 && pos.altitude_deg <= 90.0,
+                "Altitude {} outside physical range [-90, 90]", pos.altitude_deg);
+        }
+
+        #[test]
+        fn prop_is_above_horizon_consistency(
+            latitude in -90.0_f64..90.0,
+            longitude in -180.0_f64..180.0,
+        ) {
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, 12.0);
+            let expected = pos.altitude_deg > 0.0;
+            prop_assert_eq!(pos.is_above_horizon(), expected,
+                "is_above_horizon inconsistent with altitude {}", pos.altitude_deg);
+        }
+
+        #[test]
+        fn prop_incidence_cosine_clamped_to_unit_interval(
+            latitude in -90.0_f64..90.0,
+            longitude in -180.0_f64..180.0,
+            surface_tilt in 0.0_f64..90.0,
+            surface_azimuth in 0.0_f64..360.0,
+        ) {
+            let pos = calculate_solar_position(latitude, longitude, 2024, 6, 21, 12.0);
+            let cos_i = pos.incidence_cosine(surface_tilt, surface_azimuth);
+            prop_assert!(cos_i >= 0.0 && cos_i <= 1.0,
+                "Incidence cosine {} outside [0, 1]", cos_i);
+        }
+
+        #[test]
+        fn prop_day_of_year_valid_range(
+            year in 1900_i32..2100,
+            month in 1_u32..13,
+            day in 1_u32..32,
+        ) {
+            let doy = calculate_day_of_year(year, month, day);
+            prop_assert!(doy >= 1 && doy <= 366,
+                "Day of year {} outside valid range [1, 366]", doy);
+        }
+
+        #[test]
+        fn prop_leap_year_day_of_year_dec31(
+            year in 1900_i32..2100,
+        ) {
+            let is_leap = (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+            let expected = if is_leap { 366 } else { 365 };
+            let doy = calculate_day_of_year(year, 12, 31);
+            prop_assert_eq!(doy, expected, "Day of year for Dec 31 mismatch");
+        }
     }
 }

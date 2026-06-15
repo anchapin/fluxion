@@ -156,6 +156,7 @@ fn solve_gaussian_elimination(mut matrix: DMatrix<f64>, mut rhs: DVector<f64>) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_solve_coupled_system_simple() {
@@ -257,5 +258,71 @@ mod tests {
         let final_energy = c[0] * final_temps[0] + c[1] * final_temps[1];
 
         assert!((initial_energy - final_energy).abs() < 1e-6);
+    }
+
+    // -------------------------------------------------------------------------
+    // Property-Based Tests (proptest)
+    // Issue #1062: Property-based testing for core math & parsers
+    //
+    // Tests matrix inversion and solver properties across random inputs.
+    // -------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+        #[test]
+        fn prop_system_matrix_is_non_singular(
+            c0 in 100.0_f64..100_000.0,
+            c1 in 100.0_f64..100_000.0,
+            h0 in 0.0_f64..1000.0,
+            h1 in 0.0_f64..1000.0,
+            dt in 1.0_f64..3600.0,
+        ) {
+            let c = [c0, c1];
+            let h_tr_iz = [h0, h1];
+            let matrix = build_system_matrix(&c, &h_tr_iz, dt);
+            prop_assert!(matrix.clone().lu().solve(&DVector::from_vec(vec![1.0, 1.0])).is_some(),
+                "System matrix should be non-singular for valid thermal parameters");
+        }
+
+        #[test]
+        fn prop_solve_produces_finite_result(
+            c0 in 100.0_f64..100_000.0,
+            c1 in 100.0_f64..100_000.0,
+            h0 in 0.0_f64..1000.0,
+            h1 in 0.0_f64..1000.0,
+            dt in 1.0_f64..3600.0,
+            t0 in -50.0_f64..100.0,
+            t1 in -50.0_f64..100.0,
+        ) {
+            let c = [c0, c1];
+            let h_tr_iz = [h0, h1];
+            let q = [0.0, 0.0];
+            let current_temps = [t0, t1];
+            let result = solve_coupled_system(&c, &h_tr_iz, &q, dt, &current_temps);
+            prop_assert!(result.iter().all(|t| t.is_finite()),
+                "All temperatures must be finite");
+        }
+
+        #[test]
+        fn prop_solve_preserves_energy_when_no_external_heat(
+            c0 in 100.0_f64..100_000.0,
+            c1 in 100.0_f64..100_000.0,
+            h0 in 0.0_f64..1000.0,
+            h1 in 0.0_f64..1000.0,
+            dt in 1.0_f64..3600.0,
+            t0 in -50.0_f64..100.0,
+            t1 in -50.0_f64..100.0,
+        ) {
+            let c = [c0, c1];
+            let h_tr_iz = [h0, h1];
+            let q = [0.0, 0.0];
+            let initial_temps = [t0, t1];
+            let initial_energy = c[0] * initial_temps[0] + c[1] * initial_temps[1];
+            let final_temps = solve_coupled_system(&c, &h_tr_iz, &q, dt, &initial_temps);
+            let final_energy = c[0] * final_temps[0] + c[1] * final_temps[1];
+            prop_assert!((initial_energy - final_energy).abs() < 1e-6,
+                "Energy should be conserved with zero external heat");
+        }
     }
 }
