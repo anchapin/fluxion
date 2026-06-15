@@ -800,6 +800,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_em_ref = self.0.h_tr_em.as_ref();
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
+        let t_i_act_ref = t_i_act.as_ref();
         let phi_m_ref = phi_m.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
@@ -809,6 +810,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
+            let t_i = t_i_act_ref[i];
             let phi_m_zone = phi_m_ref[i];
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
@@ -889,22 +891,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     tm_old + (q_m_net / cm) * dt
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
-                    // Use Crank-Nicolson for 2nd-order accuracy (alternative to backward Euler)
-                    // FIX D1: Use sol-air temperature (T_sol-air) instead of outdoor_temp
-                    // SESSION 72: Include ventilation-to-mass cooling
-                    // Issue #896 FIX: Use crank_nicolson_iso13790 with h_tr_3 instead of
-                    // crank_nicolson_update with h_tr_ms. The h_tr_ms (~1300 W/K) is the
-                    // direct surface-to-mass conductance, but heat from the air node reaches
-                    // the mass through the combined air-to-surface bottleneck (h_tr_3 ≈ 40 W/K).
-                    // Using h_tr_ms gives a time constant of ~4 hours (too fast), while h_tr_3
-                    // gives ~6 days (matching ISO 13790 dynamics and correct seasonal mass swing).
-                    // phi_m_zone already includes all gains that reach the mass node.
+                    // Crank-Nicolson for 2nd-order accuracy (ISO 13790 §C.4)
+                    // Issues #896 + #917 combined fix:
+                    // - Pass explicit temperature driving terms to the integrator (#917)
+                    // - Use t_i (zone air) as the boundary for h_tr_3, NOT t_s (surface temp) (#896)
+                    //   because t_s includes Tm_old feedback through h_tr_ms, creating an
+                    //   artificial self-coupling loop. t_i is the correct upstream boundary.
+                    // - t_ext = sol-air temperature (opaque envelope driving temp for h_tr_em)
+                    // - t_sup = zone air temperature (air-side network driving temp for h_tr_3)
                     crank_nicolson_iso13790(
                         tm_old,
                         dt,
                         cm,
                         *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms),
-                        h_tr_em, // Ventilation is handled via air/surface temp, not directly here
+                        h_tr_em,
+                        t_sol_air[i],
+                        t_i,
                         phi_m_zone,
                     )
                 }
@@ -996,17 +998,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //   m_air_frac  = fraction of internal radiative gains to AIR node (phi_ia via routing)
         let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
         let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        // SESSION 76 FIX: Solar gain distribution
-        // ASHRAE 140 spec: 60% solar to mass, 40% to surface
-        // The code uses solar_beam_to_mass_fraction to control this split
-        // With solar_beam_to_mass_fraction = 0.6:
-        //   - 60% of solar goes to mass (70% envelope + 30% internal split)
-        //   - 40% of solar goes to surface
-        // Additionally, solar_distribution_to_air sends some solar directly to zone air
-        let st_sol_frac = (1.0 - self.0.solar_beam_to_mass_fraction) * 0.6; // Solar to surface
+        // Solar gain distribution for 6R2C model.
+        // Energy-conserving split: st + m_env + m_int = 1.0 when sol_to_air = 0.
+        // With solar_beam_to_mass_fraction = 0.0: 100% to surface (fast air heating).
+        // With solar_beam_to_mass_fraction = 1.0: 70% envelope mass, 30% internal mass.
+        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction; // Solar to surface
         let m_env_sol_frac = self.0.solar_beam_to_mass_fraction * 0.7; // Solar to envelope mass
         let m_int_sol_frac = self.0.solar_beam_to_mass_fraction * 0.3; // Solar to internal mass
-                                                                       // Solar to air (via solar_distribution_to_air) - SESSION 76 addition
         let sol_to_air_frac = self.0.solar_distribution_to_air;
 
         let loads_ref = self.0.loads.as_ref();
@@ -2048,14 +2046,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             solver.set_surface_exterior_temperatures(surface_ext_temps);
 
-            // (#872) Step solver with gains: internal radiative loads to internal mass node.
-            // Window solar is NOT injected here to avoid thermal runaway — it's
-            // handled via phi_ia in the air node. Full per-node gain injection (#873)
-            // will refine this with proper per-surface solar distribution.
+            // Issue #895/#873: Step solver with proper per-node gain injection.
+            // - phi_st (radiative gains to surface): distributed to wall/roof/floor
+            //   proportional to h_tr_ms (per Issue #873 requirement)
+            // - phi_m (solar to mass): goes to internal mass node
+            // - phi_ia (convective to air): handled via compute_zone_air_temperature
             let zone_area_val = self.0.zone_area.as_ref()[zone_idx];
-            let load_w = loads_ref[zone_idx] * zone_area_val;
-            let internal_rad = load_w * rad_frac;
-            solver.step_with_gains(dt, 0.0, 0.0, 0.0, internal_rad);
+            let phi_st_zone = phi_st.as_ref()[zone_idx];
+            let phi_m_zone = phi_m.as_ref()[zone_idx];
+            // Distribute phi_st to envelope nodes proportional to h_tr_ms
+            let h_ms_w = solver.mass.wall.h_tr_ms;
+            let h_ms_r = solver.mass.roof.h_tr_ms;
+            let h_ms_f = solver.mass.floor.h_tr_ms;
+            let h_ms_total = h_ms_w + h_ms_r + h_ms_f;
+            let wall_frac = if h_ms_total > 1e-6 {
+                h_ms_w / h_ms_total
+            } else {
+                1.0 / 3.0
+            };
+            let roof_frac = if h_ms_total > 1e-6 {
+                h_ms_r / h_ms_total
+            } else {
+                1.0 / 3.0
+            };
+            let floor_frac = if h_ms_total > 1e-6 {
+                h_ms_f / h_ms_total
+            } else {
+                1.0 / 3.0
+            };
+            // phi_st goes to envelope nodes, phi_m goes to internal node
+            let gains_wall = phi_st_zone * wall_frac;
+            let gains_roof = phi_st_zone * roof_frac;
+            let gains_floor = phi_st_zone * floor_frac;
+            let gains_internal = phi_m_zone;
+            solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
         }
 
         // (#872) Compute zone air temperature from multi-node solver.
@@ -2189,18 +2213,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let h_coeff = self.compute_hvac_coefficient(i);
                 let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
 
-                // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
-                if timestep == 337 && i == 0 && !self.0.free_float {
-                    eprintln!(
-                        "HVAC_DBG[step=337]: h_tr_is={:.2}, h_ve={:.2}, h_coeff={:.4}, t_free={:.2}, q_heating={:.4}",
-                        self.0.h_tr_is.as_ref()[i],
-                        self.0.h_ve.as_ref()[i],
-                        h_coeff,
-                        t_free_val,
-                        h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
-                    );
-                }
-
                 // Issue #900: dynamic mass heat release term (cooling only).
                 //
                 // Use the multi-node solver's mass node temperatures when
@@ -2231,54 +2243,78 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else {
                     self.0.mass_temperatures.as_ref()[i]
                 };
-                // Issue #900: mass heat release term (cooling only).
-                //
-                // See compute_zone_hvac_load (hvac.rs) for the formula
-                // and gating conditions. The 9R4C inline path uses multi-
-                // node envelope temperatures (stable, well below 35°C)
-                // and the same high-mass threshold (h_tr_ms ≥ 500 W/K).
-                //
-                // The cap is set higher than the 5R1C path (50× vs 10×)
-                // because the multi-node temps are stable: the 9R4C mass
-                // nodes track each other (wall/roof/floor envelope
-                // weighted temp stays in 28–33°C range) and the peak
-                // mass_heat_release of ~3 kW at T_mass = 30°C brings
-                // Case 900 cooling close to the ASHRAE 140 reference
-                // peak range (2.10–3.50 kW).
-                const MASS_RELEASE_DAMPING_9R4C: f64 = 1.0;
-                const HIGH_MASS_H_TR_MS_THRESHOLD_9R4C: f64 = 500.0;
-                const MASS_TEMP_MAX_9R4C: f64 = 35.0;
-                const MASS_RELEASE_MAX_FACTOR_9R4C: f64 = 50.0;
-                let mass_heat_release_unclamped = if t_mass_mn > self.0.cooling_setpoint
-                    && t_mass_mn <= MASS_TEMP_MAX_9R4C
-                    && h_tr_ms >= HIGH_MASS_H_TR_MS_THRESHOLD_9R4C
-                {
-                    h_tr_ms * (t_mass_mn - self.0.cooling_setpoint) * MASS_RELEASE_DAMPING_9R4C
-                } else {
-                    0.0
-                };
-                let mass_heat_release = if mass_heat_release_unclamped > 0.0 {
-                    mass_heat_release_unclamped.min(h_coeff * MASS_RELEASE_MAX_FACTOR_9R4C)
-                } else {
-                    0.0
-                };
 
+                // DEBUG: Print h_coeff breakdown on first HVAC step after warmup
+                if timestep == 337 && i == 0 && !self.0.free_float {
+                    let h_tr_is = self.0.h_tr_is.as_ref()[i];
+                    let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
+                    let h_tr_em = self.0.h_tr_em.as_ref()[i];
+                    let h_tr_w = self.0.h_tr_w.as_ref()[i];
+                    let h_tr_floor = self.0.h_tr_floor.as_ref()[i];
+                    let h_ve_scalar = self.0.h_ve.as_ref().get(i).copied().unwrap_or(0.0);
+                    let h_ms_em = h_tr_ms * h_tr_em / (h_tr_ms + h_tr_em);
+                    let stb = h_tr_w + h_ms_em + h_tr_floor;
+                    let h_is_X = h_tr_is * stb / (h_tr_is + stb);
+                    let h_coeff_check = h_is_X + h_ve_scalar;
+                    eprintln!(
+                        "HVAC_DBG[step=337]: h_tr_is={:.3}, h_tr_ms={:.1}, h_tr_em={:.3}, h_tr_w={:.3}, h_tr_floor={:.3}, h_ve={:.3}",
+                        h_tr_is, h_tr_ms, h_tr_em, h_tr_w, h_tr_floor, h_ve_scalar
+                    );
+                    eprintln!(
+                        "  h_ms_em={:.3}, stb={:.3}, h_is_X={:.3}, h_coeff={:.4} (check={:.4})",
+                        h_ms_em, stb, h_is_X, h_coeff, h_coeff_check
+                    );
+                    eprintln!(
+                        "  t_free={:.2}, t_mass_mn={:.2}, q_heating={:.2}",
+                        t_free_val,
+                        t_mass_mn,
+                        h_coeff * (self.0.heating_setpoint - t_free_val).max(0.0)
+                    );
+                }
+
+                // Issue #908 corrected cooling formula:
+
+                //
+                // OLD formula problems:
+                // 1. Steady-state term used t_free_val (multi-node air temp with STALE
+                //    surface temperatures, computed before step_physics_9r4c updates them).
+                //    This gives a tiny value when t_free_val barely exceeds t_cool_sp.
+                // 2. mass_heat_release used h_tr_ms directly (1092 W/K), giving huge
+                //    values (3.3 kW for 3°C ΔT) that had to be capped, losing the
+                //    physical link to the Norton equivalent h_coeff.
+                //
+                // CORRECTED formula (from steady-state zone air energy balance):
+                // Q = h_coeff × (T_mass − T_cool_sp)
+                // This is derived by substituting the Norton equivalent property
+                // h_tr_ms × (T_mass − T_zone) = h_coeff × (T_mass − T_zone) into
+                // the zone energy balance, eliminating the need for a separate
+                // mass term and avoiding the h_tr_ms/h_coeff mismatch.
+                //
+                // Sign convention: Q > 0 = heating, Q < 0 = cooling.
+                //
+                // Issue #908 FIX: Prevent misclassification of cooling demand as heating.
+                //
+                // The formula q = -h_coeff * (t_mass_mn - T_cool_sp) produces a POSITIVE
+                // value when t_mass_mn < T_cool_sp (e.g., mass at 20°C from winter control,
+                // cooling setpoint at 27°C → q = +700 W). This positive value gets
+                // accumulated as HEATING energy (val > 0 → heating_sum += val), inflating
+                // annual heating by ~1.75 MWh and leaving cooling near zero.
+                //
+                // Fix: Only compute cooling when t_mass_mn > T_cool_sp. A cold mass cannot
+                // release heat for cooling — setting q = 0 when mass is cold is physically
+                // correct and prevents misclassification.
                 let q = if t_free_val < self.0.heating_setpoint {
                     // Heating: keep Issue #925 formula unchanged.
                     // Mass heat absorption term is intentionally omitted
                     // (see Issue #900 in hvac.rs for rationale).
                     h_coeff * (self.0.heating_setpoint - t_free_val)
-                } else if t_free_val > self.0.cooling_setpoint {
-                    // Cooling, zone above setpoint.
-                    //   -h_loss × (T_free − T_cool)        steady-state heat loss to outside
-                    //   −h_tr_ms × (T_mass − T_cool) × 0.5 dynamic mass heat release
-                    h_coeff * (self.0.cooling_setpoint - t_free_val) - mass_heat_release
-                } else if mass_heat_release > 0.0 {
-                    // Dead band, but mass is hotter than cool_sp — mass
-                    // releases heat that the HVAC must remove. See Issue
-                    // #900 in hvac.rs.
-                    -mass_heat_release
+                } else if t_mass_mn > self.0.cooling_setpoint {
+                    // Cooling: only when mass is warm enough to release heat.
+                    // Uses t_mass_mn (already computed at lines 2200-2217) which
+                    // reflects the CURRENT thermal mass state after step_physics_9r4c.
+                    -h_coeff * (t_mass_mn - self.0.cooling_setpoint)
                 } else {
+                    // Mass is cold (at or below cooling setpoint): no cooling available.
                     0.0
                 };
 

@@ -68,10 +68,17 @@ pub fn calculate_shaded_fraction(
         0.0
     };
     shaded_area += overhang_area;
-
     // 2. Fin shading
     for fin in fins {
-        shaded_area += calculate_fin_shadow_area(window, fin, solar);
+        let (area, width) = calculate_fin_shadow_with_dimensions(window, fin, solar);
+        total_shaded_area += area;
+
+        // Calculate overlap between this fin's shadow and the overhang shadow
+        // The overlap is at the corner of the window where both shadows intersect
+        if let Some(oh_height) = overhang_shadowed_height {
+            let overlap = width * oh_height;
+            total_overlap_area += overlap;
+        }
     }
 
     // 3. Subtract overlap between overhang and fin shadows (Issue #747)
@@ -127,48 +134,41 @@ fn calculate_overlap_area(
     let overlap_height = shadow_y.min(window.height);
 
     overlap_width * overlap_height
-}
 
-fn calculate_overhang_shadow_area(
+/// Returns both the shadow area and the vertical shadow height for the overhang.
+fn calculate_overhang_shadow_with_dimensions(
     window: &WindowArea,
     oh: &Overhang,
     solar: &LocalSolarPosition,
-) -> f64 {
-    // Shadow depth: D * tan(alt) / cos(rel_az)
-    // Wait, let's use the standard projection:
-    // Vertical shadow distance y = Depth * tan(profile_angle)
-    // where tan(profile_angle) = tan(altitude) / cos(relative_azimuth)
-
+) -> (f64, f64) {
     if solar.relative_azimuth.abs() >= std::f64::consts::FRAC_PI_2 {
-        return 0.0; // Sun is behind the surface
+        return (0.0, 0.0);
     }
 
     let tan_profile = solar.altitude.tan() / solar.relative_azimuth.cos();
     if tan_profile <= 0.0 {
-        return 0.0;
+        return (0.0, 0.0);
     }
 
     let shadow_y = oh.depth * tan_profile;
 
-    // Vertical portion of window shaded:
-    // The shadow starts oh.distance_above the window top.
     let shadow_top_on_window = (shadow_y - oh.distance_above).max(0.0);
     let shaded_height = shadow_top_on_window.min(window.height);
 
-    shaded_height * window.width
+    let area = shaded_height * window.width;
+    (area, shaded_height)
 }
 
-fn calculate_fin_shadow_area(
+/// Returns both the shadow area and the horizontal shadow width for the fin.
+fn calculate_fin_shadow_with_dimensions(
     window: &WindowArea,
     fin: &ShadeFin,
     solar: &LocalSolarPosition,
-) -> f64 {
+) -> (f64, f64) {
     if solar.relative_azimuth.abs() >= std::f64::consts::FRAC_PI_2 {
-        return 0.0;
+        return (0.0, 0.0);
     }
 
-    // For a fin, the shadow width x = Depth * tan(relative_azimuth)
-    // But it depends on which side the sun is.
     let sun_az = solar.relative_azimuth;
 
     let is_shaded_by_this_fin = match fin.side {
@@ -177,18 +177,17 @@ fn calculate_fin_shadow_area(
     };
 
     if !is_shaded_by_this_fin {
-        return 0.0;
+        return (0.0, 0.0);
     }
 
     let shadow_x = fin.depth * sun_az.abs().tan();
 
-    // Horizontal portion of window shaded:
     let shadow_width_on_window = (shadow_x - fin.distance_from_edge).max(0.0);
     let shaded_width = shadow_width_on_window.min(window.width);
 
-    shaded_width * window.height
+    let area = shaded_width * window.height;
+    (area, shaded_width)
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
