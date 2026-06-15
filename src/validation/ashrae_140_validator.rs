@@ -1669,10 +1669,6 @@ impl ASHRAE140Validator {
                     annual_heating_joules, annual_cooling_joules
                 );
                 println!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
-                println!(
-                    "DEBUG Case 600: correction_factor={}",
-                    model.time_constant_sensitivity_correction
-                );
             }
 
             // Track min/max temperatures for free-floating cases
