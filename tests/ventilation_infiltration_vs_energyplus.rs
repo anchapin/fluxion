@@ -158,7 +158,8 @@ fn test_conductance_matches_energyplus() {
 
     for row in &ref_data {
         // Use the same parameters as E+: ach=0.5, volume=129.6, rho=1.2, cp=1000
-        let our_cond = ach_to_conductance(DESIGN_ACH, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT);
+        let our_cond = ach_to_conductance(DESIGN_ACH, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT)
+            .get::<uom::si::thermal_conductance::watt_per_kelvin>();
         let ep_cond = row.vent_conductance;
 
         let error_pct = if ep_cond.abs() > 1e-10 {
@@ -179,7 +180,8 @@ fn test_conductance_matches_energyplus() {
     let elapsed = start.elapsed();
 
     // Verify the analytical result: (0.5 * 129.6 * 1.2 * 1000) / 3600 = 21.6
-    let computed = ach_to_conductance(DESIGN_ACH, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT);
+    let computed = ach_to_conductance(DESIGN_ACH, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
     assert!(
         (computed - EXPECTED_CONDUCTANCE).abs() < 1e-10,
         "Conductance formula verification: expected {EXPECTED_CONDUCTANCE}, got {computed}"
@@ -479,15 +481,18 @@ fn test_ach_to_conductance_formula() {
         "Analytical verification: expected {EXPECTED_CONDUCTANCE}, computed {expected}"
     );
 
-    let computed = ach_to_conductance(DESIGN_ACH, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT);
+    let computed = ach_to_conductance(DESIGN_ACH, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
     assert!(
         (computed - expected).abs() < 1e-10,
         "ach_to_conductance: expected {expected}, got {computed}"
     );
 
     // Scaling: double ACH → double conductance
-    let c1 = ach_to_conductance(0.5, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT);
-    let c2 = ach_to_conductance(1.0, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT);
+    let c1 = ach_to_conductance(0.5, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
+    let c2 = ach_to_conductance(1.0, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
     assert!(
         (c2 - 2.0 * c1).abs() < 1e-10,
         "Doubling ACH must double conductance"
@@ -495,7 +500,8 @@ fn test_ach_to_conductance_formula() {
 
     // Zero ACH → zero conductance
     assert_eq!(
-        ach_to_conductance(0.0, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT),
+        ach_to_conductance(0.0, VOLUME, AIR_DENSITY, AIR_SPECIFIC_HEAT)
+            .get::<uom::si::thermal_conductance::watt_per_kelvin>(),
         0.0
     );
 }

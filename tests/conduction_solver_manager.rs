@@ -252,7 +252,17 @@ fn test_trait_dispatch_matches_direct_call() {
     direct_solver.initialize(&wall_spec).unwrap();
 
     // Get flux via direct call
-    let flux_via_direct = direct_solver.step(3600.0, 20.0, 5.0, 8.0, 25.0).unwrap();
+    use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time};
+    let flux_via_direct = direct_solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap()
+        .get::<uom::si::heat_flux_density::watt_per_square_meter>();
 
     // Results should match (within floating point tolerance)
     assert!(

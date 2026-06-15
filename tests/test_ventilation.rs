@@ -168,7 +168,8 @@ fn test_ach_to_conductance_basic() {
     let cp = 1005.0; // J/kg·K
 
     // 1 ACH in 100 m³ volume
-    let conductance = ach_to_conductance(1.0, 100.0, rho, cp);
+    let conductance = ach_to_conductance(1.0, 100.0, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Q = (1 * 100 * 1.2 * 1005) / 3600 = 33.5 W/K
     let expected = (1.0 * 100.0 * 1.2 * 1005.0) / 3600.0;
@@ -178,13 +179,15 @@ fn test_ach_to_conductance_basic() {
 
 #[test]
 fn test_ach_to_conductance_zero_ach() {
-    let conductance = ach_to_conductance(0.0, 100.0, 1.2, 1005.0);
+    let conductance = ach_to_conductance(0.0, 100.0, 1.2, 1005.0)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
     assert!(conductance.abs() < 1e-10);
 }
 
 #[test]
 fn test_ach_to_conductance_zero_volume() {
-    let conductance = ach_to_conductance(1.0, 0.0, 1.2, 1005.0);
+    let conductance = ach_to_conductance(1.0, 0.0, 1.2, 1005.0)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
     assert!(conductance.abs() < 1e-10);
 }
 
@@ -194,9 +197,12 @@ fn test_ach_to_conductance_proportional_to_ach() {
     let rho = 1.2;
     let cp = 1005.0;
 
-    let c1 = ach_to_conductance(0.5, volume, rho, cp);
-    let c2 = ach_to_conductance(1.0, volume, rho, cp);
-    let c3 = ach_to_conductance(2.0, volume, rho, cp);
+    let c1 = ach_to_conductance(0.5, volume, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
+    let c2 = ach_to_conductance(1.0, volume, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
+    let c3 = ach_to_conductance(2.0, volume, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Should be linear with ACH
     assert!((c2 - 2.0 * c1).abs() < 1e-10);
@@ -209,9 +215,12 @@ fn test_ach_to_conductance_proportional_to_volume() {
     let rho = 1.2;
     let cp = 1005.0;
 
-    let c1 = ach_to_conductance(ach, 50.0, rho, cp);
-    let c2 = ach_to_conductance(ach, 100.0, rho, cp);
-    let c3 = ach_to_conductance(ach, 200.0, rho, cp);
+    let c1 = ach_to_conductance(ach, 50.0, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
+    let c2 = ach_to_conductance(ach, 100.0, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
+    let c3 = ach_to_conductance(ach, 200.0, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Should be linear with volume
     assert!((c2 - 2.0 * c1).abs() < 1e-10);
@@ -226,7 +235,8 @@ fn test_ach_to_conductance_typical_values() {
     let rho = 1.2;
     let cp = 1005.0;
 
-    let conductance = ach_to_conductance(ach, volume, rho, cp);
+    let conductance = ach_to_conductance(ach, volume, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Expected: (0.5 * 250 * 1.2 * 1005) / 3600 ≈ 41.9 W/K
     assert!((conductance - 41.9).abs() < 0.5);
@@ -240,7 +250,8 @@ fn test_ach_to_conductance_large_building() {
     let rho = 1.2;
     let cp = 1005.0;
 
-    let conductance = ach_to_conductance(ach, volume, rho, cp);
+    let conductance = ach_to_conductance(ach, volume, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Expected: (1.0 * 10000 * 1.2 * 1005) / 3600 ≈ 3350 W/K
     assert!((conductance - 3350.0).abs() < 10.0);
@@ -253,8 +264,10 @@ fn test_ach_to_conductance_different_air_properties() {
     let ach = 1.0;
     let cp = 1005.0;
 
-    let c_sea_level = ach_to_conductance(ach, volume, 1.2, cp);
-    let c_altitude = ach_to_conductance(ach, volume, 1.0, cp);
+    let c_sea_level = ach_to_conductance(ach, volume, 1.2, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
+    let c_altitude = ach_to_conductance(ach, volume, 1.0, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Lower density should give lower conductance
     assert!(c_altitude < c_sea_level);
@@ -284,7 +297,8 @@ fn test_ventilation_very_high_ach() {
     let vent = ConstantVentilation::new(50.0);
     assert_eq!(vent.get_ach(0), 50.0);
 
-    let conductance = ach_to_conductance(50.0, 100.0, 1.2, 1005.0);
+    let conductance = ach_to_conductance(50.0, 100.0, 1.2, 1005.0)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
     assert!(conductance > 0.0);
     assert!(conductance < 10000.0); // Should be reasonable
 }
@@ -336,7 +350,8 @@ fn test_ach_to_conductance_unit_consistency() {
     let rho = 1.0; // kg/m³
     let cp = 3600.0; // J/kg·K (chosen to make math easy)
 
-    let conductance = ach_to_conductance(ach, volume, rho, cp);
+    let conductance = ach_to_conductance(ach, volume, rho, cp)
+        .get::<uom::si::thermal_conductance::watt_per_kelvin>();
 
     // Expected: (1 * 1 * 1 * 3600) / 3600 = 1.0 W/K
     assert!((conductance - 1.0).abs() < 1e-10);

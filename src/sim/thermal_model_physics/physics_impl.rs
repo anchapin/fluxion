@@ -891,24 +891,27 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     tm_old + (q_m_net / cm) * dt
                 }
                 ThermalIntegrationMethod::CrankNicolson => {
-                    // Crank-Nicolson for 2nd-order accuracy (ISO 13790 §C.4)
-                    // Issues #896 + #917 combined fix:
-                    // - Pass explicit temperature driving terms to the integrator (#917)
-                    // - Use t_i (zone air) as the boundary for h_tr_3, NOT t_s (surface temp) (#896)
-                    //   because t_s includes Tm_old feedback through h_tr_ms, creating an
-                    //   artificial self-coupling loop. t_i is the correct upstream boundary.
-                    // - t_ext = sol-air temperature (opaque envelope driving temp for h_tr_em)
-                    // - t_sup = zone air temperature (air-side network driving temp for h_tr_3)
-                    crank_nicolson_iso13790(
-                        tm_old,
-                        dt,
-                        cm,
-                        *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms),
-                        h_tr_em,
-                        t_sol_air[i],
-                        t_i,
-                        phi_m_zone,
-                    )
+                    // Issue #896 FIX: Use crank_nicolson_iso13790 with h_tr_3 instead of
+                    // crank_nicolson_update with h_tr_ms. The h_tr_ms (~1300 W/K) is the
+                    // direct surface-to-mass conductance, but heat from the air node reaches
+                    // the mass through the combined air-to-surface bottleneck (h_tr_3 ≈ 40 W/K).
+                    //
+                    // CRITICAL: phi_m_tot must include boundary conductance source terms per
+                    // ISO 13790 §C.3:
+                    //   phi_m_tot = phi_m + h_tr_em * T_sol_air + h_tr_3 * T_air
+                    //
+                    // Previously only phi_m_zone (direct solar gains ≈ 500 W) was passed,
+                    // omitting h_tr_em * T_sol_air + h_tr_3 * T_air (≈ 6400 W combined).
+                    // This decoupled the mass from its environment, causing excessive damping
+                    // (~64% swing reduction instead of the expected ~44% per ASHRAE 140).
+                    //
+                    // Uses T_air (t_i) as the boundary for H_tr_3, not T_s (surface temp).
+                    // T_s includes Tm_old feedback through h_tr_ms, which would put h_tr_ms
+                    // in series with itself via H_tr_3, creating an artificial self-coupling
+                    // loop. T_air is the correct upstream boundary for the air-side network.
+                    let h_tr_3_zone = *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+                    let phi_m_tot = phi_m_zone + h_tr_em * t_sol_air[i] + h_tr_3_zone * t_i;
+                    crank_nicolson_iso13790(tm_old, dt, cm, h_tr_3_zone, h_tr_em, phi_m_tot)
                 }
             };
 
@@ -998,13 +1001,17 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //   m_air_frac  = fraction of internal radiative gains to AIR node (phi_ia via routing)
         let st_int_frac = rad_frac * (1.0 - self.0.solar_distribution_to_air);
         let m_air_frac = rad_frac * self.0.solar_distribution_to_air;
-        // Solar gain distribution for 6R2C model.
-        // Energy-conserving split: st + m_env + m_int = 1.0 when sol_to_air = 0.
-        // With solar_beam_to_mass_fraction = 0.0: 100% to surface (fast air heating).
-        // With solar_beam_to_mass_fraction = 1.0: 70% envelope mass, 30% internal mass.
-        let st_sol_frac = 1.0 - self.0.solar_beam_to_mass_fraction; // Solar to surface
+        // SESSION 76 FIX: Solar gain distribution
+        // ASHRAE 140 spec: 60% solar to mass, 40% to surface
+        // The code uses solar_beam_to_mass_fraction to control this split
+        // With solar_beam_to_mass_fraction = 0.6:
+        //   - 60% of solar goes to mass (70% envelope + 30% internal split)
+        //   - 40% of solar goes to surface
+        // Additionally, solar_distribution_to_air sends some solar directly to zone air
+        let st_sol_frac = (1.0 - self.0.solar_beam_to_mass_fraction) * 0.6; // Solar to surface
         let m_env_sol_frac = self.0.solar_beam_to_mass_fraction * 0.7; // Solar to envelope mass
         let m_int_sol_frac = self.0.solar_beam_to_mass_fraction * 0.3; // Solar to internal mass
+                                                                       // Solar to air (via solar_distribution_to_air) - SESSION 76 addition
         let sol_to_air_frac = self.0.solar_distribution_to_air;
 
         let loads_ref = self.0.loads.as_ref();

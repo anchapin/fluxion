@@ -358,6 +358,7 @@ impl Model {
     /// )
     /// # zone_temps.shape == (8760, 3)
     /// ```
+    #[allow(clippy::too_many_arguments)]
     fn simulate_numpy<'py>(
         &mut self,
         py: Python<'py>,
@@ -370,7 +371,6 @@ impl Model {
         horizontal_infrared: &Bound<'py, pyo3::types::PyAny>,
         use_surrogates: bool,
     ) -> PyResult<Bound<'py, numpy::PyArray2<f64>>> {
-        use rayon::prelude::*;
 
         // Helper to extract 1D numpy array as Vec<f64>
         fn extract_1d_f64(arr: &Bound<'_, pyo3::types::PyAny>) -> PyResult<Vec<f64>> {

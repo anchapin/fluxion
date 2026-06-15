@@ -47,6 +47,9 @@ multi-zone = []
 ashrae_140_v2021 = []
 # Feature flag for PR #821 diagnostics (writes hourly CSVs for 600FF/650FF debugging)
 pr821-diag = []
+# Feature flag for loom concurrency testing (Issue #1065)
+# Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
+loom = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
@@ -135,6 +138,10 @@ noisy_float = "0.2"
 
 # Mock HTTP server for tests
 mockito = "1.7"
+
+# Loom for concurrency and race condition testing (Issue #1065)
+# Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
+loom = "0.1"
 
 [[bench]]
 name = "cta_bench"
@@ -258,6 +265,11 @@ path = "tests/integration/test_ashrae_140_regression.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
 name = "integration-wiring"
 path = "tests/integration/test_wiring.rs"
 harness = true
@@ -275,6 +287,11 @@ harness = true
 [[test]]
 name = "integration-cli"
 path = "tests/integration/test_cli.rs"
+harness = true
+
+[[test]]
+name = "integration-fmi-cosimulation"
+path = "tests/integration/test_fmi_cosimulation.rs"
 harness = true
 
 [[test]]
@@ -308,6 +325,22 @@ path = "tests/validation/night_ventilation_air_side.rs"
 harness = true
 
 [[test]]
+name = "validation_empirical"
+path = "tests/validation/empirical_validation_test.rs"
+harness = true
+
+[[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
+harness = true
+
+# Loom concurrency tests (Issue #1065)
+[[test]]
+name = "loom_concurrency_tests"
+path = "tests/concurrency/loom_concurrency_tests.rs"
+harness = true
+
+[[test]]
+name = "case_900_determinism"
+path = "tests/case_900_determinism.rs"
 harness = true

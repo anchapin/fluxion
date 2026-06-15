@@ -161,6 +161,24 @@ impl BuildingScenario {
         // Set default case ID
         model.case_id = "test".to_string();
 
+        // Compute thermal capacitance: air thermal mass + building thermal mass
+        // Air thermal mass = volume * density * cp = 300 * 1.2 * 1005 = 361,800 J/K
+        // Add building thermal mass for walls, furniture, etc. (approximately 3x air thermal mass)
+        let volume = zone_area * 3.0; // 300 m³
+        let air_thermal_mass = volume * 1.2 * 1005.0; // J/K
+        let total_thermal_mass = air_thermal_mass * 4.0; // Add building thermal mass
+        model.thermal_capacitance = VectorField::from_scalar(total_thermal_mass, self.num_zones);
+
+        // Initialize h_tr_ms (surface-to-mass conductance) - required for 5R1C model
+        // h_tr_ms = 6.83 W/m²K * wall_area for typical construction
+        let perimeter = 2.0 * ((zone_area * 1.5).sqrt() + (zone_area / (zone_area * 1.5).sqrt()));
+        let wall_area = perimeter * 3.0 - zone_area * 0.3; // Approximate wall area minus windows
+        let h_tr_ms = 6.83 * wall_area; // W/K
+        model.h_tr_ms = VectorField::from_scalar(h_tr_ms, self.num_zones);
+
+        // Update derived physics parameters
+        model.update_derived_parameters();
+
         model
     }
 }

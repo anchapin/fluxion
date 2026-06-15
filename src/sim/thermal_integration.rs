@@ -138,37 +138,33 @@ pub fn backward_euler_update(
 
 /// ISO 13790 Crank-Nicolson mass temperature update (§C.4).
 ///
+/// Uses the combined phi_m_tot which includes HVAC power propagated through
+/// the thermal network via H_tr_1, H_tr_2, H_tr_3.
+///
 /// The Crank-Nicolson scheme averages the conductance terms between old and new
-/// time steps for 2nd-order accuracy. The mass energy balance is:
+/// time steps for 2nd-order accuracy:
+///   Tm_next = [Tm_prev × (Cm/dt - 0.5×(H_tr_3 + H_tr_em)) + phi_m_tot]
+///             / [Cm/dt + 0.5×(H_tr_3 + H_tr_em)]
 ///
-///   Cm/dt × (Tm_new − Tm_old) = H_tr_em × (t_ext − Tm_avg) + H_tr_3 × (t_sup − Tm_avg) + phi_m
-///
-/// where Tm_avg = 0.5 × (Tm_old + Tm_new). Rearranged:
-///
-///   Tm_new = [Tm_old × (Cm/dt − ½(H_tr_em + H_tr_3)) + H_tr_em × t_ext + H_tr_3 × t_sup + phi_m]
-///            / [Cm/dt + ½(H_tr_em + H_tr_3)]
-///
-/// Issue #917 fix: the previous version omitted the H_tr_em × t_ext + H_tr_3 × t_sup
-/// driving terms, leaving the mass node coupled only to phi_m (solar gains). This
-/// suppressed all free-floating temperatures by ~30 °C.
+/// The key difference from backward_euler_update:
+/// - Uses H_tr_3 (combined conductance ≈ 40 W/K) instead of h_tr_ms (≈ 1300 W/K)
+/// - This gives the mass a much longer time constant (days, not hours)
+/// - Creating the correct seasonal mass temperature swing for HVAC energy
 ///
 /// # Arguments
-/// * `tm_prev` - Previous mass temperature (°C)
+/// * `tm_prev` - Previous mass temperature (K or °C)
 /// * `dt` - Time step in seconds
 /// * `cm` - Thermal capacitance of mass (J/K)
 /// * `h_tr_3` - ISO 13790 combined conductance H_tr_3 (W/K)
 /// * `h_tr_em` - Mass-to-exterior conductance (W/K)
-/// * `t_ext` - Exterior (sol-air) temperature driving the h_tr_em path (°C)
-/// * `t_sup` - Supply / surface temperature driving the h_tr_3 path (°C)
 /// * `phi_m_tot` - Total heat flow to mass node (W), includes HVAC via network
+#[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_iso13790(
     tm_prev: f64,
     dt: f64,
     cm: f64,
     h_tr_3: f64,
     h_tr_em: f64,
-    t_ext: f64,
-    t_sup: f64,
     phi_m_tot: f64,
 ) -> f64 {
     if dt <= 0.0 {
@@ -182,13 +178,12 @@ pub fn crank_nicolson_iso13790(
     let half_cond = 0.5 * (h_tr_3 + h_tr_em);
 
     let denom = cm_dt + half_cond;
-    let numer = tm_prev * (cm_dt - half_cond) + h_tr_em * t_ext + h_tr_3 * t_sup + phi_m_tot;
+    let numer = tm_prev * (cm_dt - half_cond) + phi_m_tot;
 
     // Check for negative denominator (can happen if conductances > Cm/dt)
     if denom <= 0.0 {
         // Fall back to forward Euler to avoid instability
-        return tm_prev
-            + dt / cm * (h_tr_em * (t_ext - tm_prev) + h_tr_3 * (t_sup - tm_prev) + phi_m_tot);
+        return tm_prev + dt / cm * phi_m_tot;
     }
 
     numer / denom
