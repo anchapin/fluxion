@@ -1449,9 +1449,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // 6R2C specific terms
-        let h_sum = self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is.clone();
+        // Issue #715 FIX: Use h_tr_is_no_south to exclude south wall's bypass path.
+        // The south wall has heavy foam-core insulated panels (R-19.4 ft²·°F·h/Btu ≈ R-3.4 SI)
+        // that create a series thermal path bypassing the thermal mass node.
+        // The south wall is handled separately via h_tr_em_south and h_tr_is_south series path.
+        let h_sum =
+            self.0.h_tr_ms.clone() + self.0.h_tr_me.clone() + self.0.h_tr_is_no_south.clone();
         let h_ms_me_is_prod =
-            self.0.h_tr_is.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
+            self.0.h_tr_is_no_south.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
 
         let den: T;
         let sensitivity: T;
@@ -1483,15 +1488,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // When ctf_primary=true, the 6R2C h_tr_ms coupling is DISABLED because
         // CTF provides the correct multi-layer conduction dynamics directly.
         // The CTF heat flow q_ctf (computed from T_si_ctf) replaces the 6R2C h_tr_ms * t_mass term.
+        // Issue #715 FIX: Use h_tr_is_no_south for the mass coupling term.
+        // derived_h_ms_is_prod was computed with h_tr_is (including south wall),
+        // so we need to recompute with h_tr_is_no_south for the 6R2C model.
+        let h_ms_me_is_prod_no_south =
+            self.0.h_tr_is_no_south.clone() * (self.0.h_tr_ms.clone() + self.0.h_tr_me.clone());
         let num_tm = if self.0.ctf_primary {
             // Zero out the 6R2C coupling - CTF will drive the zone air heat balance
             self.0.derived_h_ms_is_prod.constant_like(0.0)
         } else {
-            self.0
-                .derived_h_ms_is_prod
-                .zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b)
+            h_ms_me_is_prod_no_south.zip_with(&self.0.envelope_mass_temperatures, |a, b| a * b)
         };
-        let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+        // Issue #715 FIX: Use h_tr_is_no_south to exclude south wall from surface-to-air coupling.
+        // The south wall's surface heat flow is handled via its own bypass path.
+        let num_phi_st = self.0.h_tr_is_no_south.zip_with(&phi_st, |a, b| a * b);
 
         // Inter-zone heat transfer (with radiative component - Issue #302)
         let num_zones = self.0.num_zones;
