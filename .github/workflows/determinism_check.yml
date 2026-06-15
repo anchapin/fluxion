@@ -61,25 +61,24 @@ jobs:
 
       - name: Run Case 900 Determinism Test
         id: case900
+        shell: bash
         run: |
-          # Run the determinism test and capture output
           cargo test --test case_900_determinism --release -- --nocapture 2>&1 | tee case900_output.txt
 
       - name: Extract determinism values
         id: extract
+        shell: bash
         run: |
-          python3 << 'EOF'
+          python3 << 'PYEOF'
           import re
           import json
+          import hashlib
 
           with open('case900_output.txt', 'r') as f:
               output = f.read()
 
-          # Look for DETERMINISM_VALUES line
-          # Format: DETERMINISM_VALUES|heating|cooling|peak_h|peak_c
           values = {}
 
-          # Extract Case 900 values
           match = re.search(r'DETERMINISM_VALUES\|([\d.]+)\|([\d.]+)\|([\d.]+)\|([\d.]+)', output)
           if match:
               values['annual_heating_mwh'] = float(match.group(1))
@@ -87,7 +86,6 @@ jobs:
               values['peak_heating_kw'] = float(match.group(3))
               values['peak_cooling_kw'] = float(match.group(4))
 
-          # Extract Case 900FF values if present
           ff_match = re.search(r'DETERMINISM_FF_VALUES\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)', output)
           if ff_match:
               values['ff_min_temp'] = float(ff_match.group(1))
@@ -95,12 +93,9 @@ jobs:
               values['ff_avg_temp'] = float(ff_match.group(3))
               values['ff_temp_swing'] = float(ff_match.group(4))
 
-          # Create deterministic string for hashing
           hash_input = json.dumps(values, sort_keys=True)
-          import hashlib
           hash_hex = hashlib.sha256(hash_input.encode()).hexdigest()
 
-          # Write hash to file for comparison
           with open('output_values.json', 'w') as f:
               json.dump(values, f, indent=2)
           with open('output_hash.txt', 'w') as f:
@@ -109,12 +104,10 @@ jobs:
 
           print(f"Hash: {hash_hex}")
           print(f"Values: {json.dumps(values, indent=2)}")
-          EOF
+          PYEOF
 
-          # Output for workflow
-          echo "output_hash=$(cat output_hash.txt | head -1)" >> $GITHUB_OUTPUT
+          echo "output_hash=$(head -1 output_hash.txt)" >> $GITHUB_OUTPUT
           echo "platform=${{ matrix.os }}" >> $GITHUB_OUTPUT
-          echo "values=$(cat output_values.json)" >> $GITHUB_OUTPUT
 
       - name: Upload Case 900 output
         uses: actions/upload-artifact@v4
