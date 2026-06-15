@@ -308,6 +308,11 @@ path = "tests/validation/night_ventilation_air_side.rs"
 harness = true
 
 [[test]]
+name = "validation_empirical"
+path = "tests/validation/empirical_validation_test.rs"
+harness = true
+
+[[test]]
 name = "weather_epw_fields"
 path = "tests/weather_epw_fields.rs"
 harness = true
