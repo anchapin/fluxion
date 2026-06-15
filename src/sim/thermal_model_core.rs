@@ -1020,7 +1020,6 @@ impl ThermalModel<VectorField> {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => 9.36,
                 crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.36,
                 crate::validation::ashrae_140_cases::ConstructionType::Special => 9.36,
-            let h_ms_iso_13790 = h_ms_coeff * a_m;
 
             h_tr_ms_vec.push(h_ms_iso_13790);
             // Per-surface h_tr_ms for 9R4C model (Phase 6B, Issue #715) — keep the

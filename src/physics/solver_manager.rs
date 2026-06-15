@@ -512,7 +512,8 @@ mod tests {
         let solver = manager.get_solver_mut(0);
         assert!(solver.is_some());
         let solver_name = solver.unwrap().name();
-        assert!(solver_name == "5R1C" || solver_name == "CTF");
+        // Issue #726: heavyweight wall (200mm concrete) should now use FD
+        assert!(solver_name == "5R1C" || solver_name == "CTF" || solver_name == "FD");
     }
 
     #[test]
