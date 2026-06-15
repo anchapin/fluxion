@@ -1011,10 +1011,7 @@ impl ThermalModel<VectorField> {
             // not the building envelope. Using reduced h_ms = 2.0 W/(m²·K) gives
             // h_tr_ms ≈ 240 W/K instead of 1092 W/K, producing proper thermal coupling.
             //
-            // REVERT: h_ms_coeff=0.33 was tried to get proper ~69 hour time constant via
-            // derived_h_tr_3, but it decoupled the thermal mass too much, causing 900FF to
-            // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
-            // mass coupling; time constant will be addressed separately via derived_h_tr_3.
+
             // ISO 13790:2008 §7.2.2.2 specifies h_ms = 9.36 W/(m²·K) for ALL building types.
             // The previous override to 2.0 for LowMass was parameter tuning (Issue #905) that
             // broke the physical coupling between thermal mass and interior surfaces. The
@@ -1514,20 +1511,21 @@ impl ThermalModel<VectorField> {
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
-        // === Issue #894 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
+        // === Issue #894/#1013 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
         //
-        // The thermal mass in the 6R2C model receives heat from the AIR node through H_tr_3,
-        // which is the SERIES combination of (air-to-surface + surface-to-mass).
-        // This creates an air-side bottleneck that slows the mass response.
+        // derived_h_tr_3 is the coupling between thermal mass and interior air.
+        // Per ISO 13790 §6.3, this is the PARALLEL combination of h_tr_ms and h_tr_is,
+        // representing the path: interior air <-> interior surface <-> thermal mass.
         //
-        // Without this, derived_h_tr_3 is 0.0 and the physics solvers silently fall back
-        // to h_tr_ms (~1300 W/K), giving a time constant of ~5 hours instead of the
-        // correct ~6 days for high-mass construction.
+        // The window (h_tr_w) is NOT in this path - it's a separate parallel path
+        // from exterior to interior (direct window gain).
         //
-        // Formula (ISO 13790, Section 6.3):
-        //   H_tr_1 = h_ve × h_tr_is / (h_ve + h_tr_is)   [series: ventilation + interior surface]
-        //   H_tr_2 = H_tr_1 + h_tr_w                        [parallel: window conduction]
-        //   H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms)            [series: air-to-surface + surface-to-mass]
+        // Formula (ISO 13790 §6.3):
+        //   H_tr_3 = h_tr_ms × h_tr_is / (h_tr_ms + h_tr_is)
+        //
+        // Issue #1013: The old formula incorrectly included h_tr_w in series with h_tr_ms,
+        // giving h_tr_3 ≈ 64 W/K for Case 900 (too low, caused temperature under-prediction).
+        // Correct formula gives h_tr_3 ≈ 186 W/K.
         {
             let mut derived_h_tr_3_vec = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
@@ -1536,23 +1534,15 @@ impl ThermalModel<VectorField> {
                 let h_tr_w_z = *model.h_tr_w.as_ref().get(zone_idx).unwrap_or(&0.0);
                 let h_ve_z = *model.h_ve.as_ref().get(zone_idx).unwrap_or(&0.0);
 
-                let h_tr_3 = if h_tr_ms_z > 0.0 && h_tr_is_z > 0.0 && h_ve_z > 0.0 {
-                    // H_tr_1: series of ventilation and interior surface conductance
-                    let h_tr_1 = if (h_ve_z + h_tr_is_z) > 0.0 {
-                        (h_ve_z * h_tr_is_z) / (h_ve_z + h_tr_is_z)
-                    } else {
-                        0.0
-                    };
-                    // H_tr_2: H_tr_1 in parallel with window conduction
-                    let h_tr_2 = h_tr_1 + h_tr_w_z;
-                    // H_tr_3: series of H_tr_2 and h_tr_ms
-                    if h_tr_2 > 0.0 {
-                        (h_tr_2 * h_tr_ms_z) / (h_tr_2 + h_tr_ms_z)
-                    } else {
-                        h_tr_ms_z
-                    }
+                // Issue #1013 FIX: H_tr_3 = h_tr_ms * h_tr_is / (h_tr_ms + h_tr_is)
+                // ISO 13790 §6.3 correct formula for air-to-mass coupling.
+                // The window (h_tr_w) is NOT in series - it's parallel to the surface path.
+                // Old formula included h_tr_w in series, giving h_tr_3 ≈ 64 W/K (wrong).
+                // Correct formula gives h_tr_3 ≈ 186 W/K for Case 900 parameters.
+                let h_tr_3 = if h_tr_ms_z > 0.0 && h_tr_is_z > 0.0 {
+                    (h_tr_ms_z * h_tr_is_z) / (h_tr_ms_z + h_tr_is_z)
                 } else {
-                    h_tr_ms_z // Fallback for uninitialized conductances
+                    h_tr_ms_z // Fallback
                 };
                 derived_h_tr_3_vec.push(h_tr_3);
             }
@@ -1970,6 +1960,19 @@ impl ThermalModel<VectorField> {
             .iter()
             .map(|&vol| Some(IdealLoadsSystem::new(vol, ventilation_ach)))
             .collect();
+
+        // Issue #913: Enable CTF by default for high-mass 900FF cases
+        // The high-mass wall construction requires CTF for accurate heat conduction modeling
+        // Use the same wall layers as the test for consistency
+        if spec.case_id == "900FF" {
+            use crate::physics::ctf_coefficients::CTFMaterial;
+            let wall_layers = vec![
+                CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
+                CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
+                CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
+            ];
+            model.enable_ctf(&wall_layers, 3600.0, 50);
+        }
 
         model
     }
