@@ -1015,10 +1015,14 @@ impl ThermalModel<VectorField> {
             // derived_h_tr_3, but it decoupled the thermal mass too much, causing 900FF to
             // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
             // mass coupling; time constant will be addressed separately via derived_h_tr_3.
+            // ISO 13790:2008 §7.2.2.2 specifies h_ms = 9.36 W/(m²·K) for ALL building types.
+            // The previous override to 2.0 for LowMass was parameter tuning (Issue #905) that
+            // broke the physical coupling between thermal mass and interior surfaces. The
+            // standard value is restored for all construction types.
             let h_ms_coeff = match spec.construction_type {
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.1,
-                crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
+                crate::validation::ashrae_140_cases::ConstructionType::LowMass => 9.36,
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.36,
+                crate::validation::ashrae_140_cases::ConstructionType::Special => 9.36,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
 
@@ -1643,9 +1647,6 @@ impl ThermalModel<VectorField> {
         // thermal model assumptions and was not compliant with ASHRAE 140.
         model.solar_distribution_to_air = 0.0; // ASHRAE 140: zero to air node
 
-        // Solar beam (direct) radiation fraction to thermal mass
-        // Per ASHRAE 140 Section 5.2.2, all transmitted solar is distributed to opaque surfaces
-        // For ASHRAE 140 simplified model, 100% to mass (opaque surfaces absorb solar)
         model.solar_beam_to_mass_fraction = 1.0;
 
         // Physics-based: Thermal mass effects are captured through Cm in the thermal network
