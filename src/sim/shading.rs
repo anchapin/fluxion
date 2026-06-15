@@ -58,18 +58,16 @@ pub fn calculate_shaded_fraction(
         return 1.0; // Sun below horizon
     }
 
-    let mut total_shaded_area = 0.0;
-    let mut total_overlap_area = 0.0;
+    let mut shaded_area = 0.0;
+    let mut overlap_area = 0.0;
 
     // 1. Overhang shading
-    let overhang_shadowed_height = if let Some(oh) = overhang {
-        let (area, height) = calculate_overhang_shadow_with_dimensions(window, oh, solar);
-        total_shaded_area += area;
-        Some(height)
+    let overhang_area = if let Some(oh) = overhang {
+        calculate_overhang_shadow_area(window, oh, solar)
     } else {
-        None
+        0.0
     };
-
+    shaded_area += overhang_area;
     // 2. Fin shading
     for fin in fins {
         let (area, width) = calculate_fin_shadow_with_dimensions(window, fin, solar);
@@ -83,11 +81,59 @@ pub fn calculate_shaded_fraction(
         }
     }
 
-    // Subtract overlap area once to avoid double-counting
-    let net_shaded_area = total_shaded_area - total_overlap_area;
+    // 3. Subtract overlap between overhang and fin shadows (Issue #747)
+    // The overlap occurs at the corner where both shadows cover the same region.
+    // Without this correction, the corner area is counted twice (once in overhang,
+    // once in fin), causing excessive shading in Cases 630/930.
+    if let (Some(oh), Some(active_fin)) = (overhang, find_active_fin(fins, solar)) {
+        overlap_area = calculate_overlap_area(window, oh, active_fin, solar);
+    }
 
+    let net_shaded_area = shaded_area - overlap_area;
     (net_shaded_area / window.area).clamp(0.0, 1.0)
 }
+
+/// Finds the fin that is active (casting shadow) for the given sun position.
+fn find_active_fin<'a>(fins: &'a [ShadeFin], solar: &LocalSolarPosition) -> Option<&'a ShadeFin> {
+    let sun_az = solar.relative_azimuth;
+    for fin in fins {
+        let is_active = match fin.side {
+            Side::Left => sun_az < 0.0,  // Sun is to the left
+            Side::Right => sun_az > 0.0, // Sun is to the right
+        };
+        if is_active {
+            return Some(fin);
+        }
+    }
+    None
+}
+
+/// Calculates the overlap area between overhang and fin shadows.
+fn calculate_overlap_area(
+    window: &WindowArea,
+    oh: &Overhang,
+    fin: &ShadeFin,
+    solar: &LocalSolarPosition,
+) -> f64 {
+    // Calculate shadow dimensions
+    let tan_profile = solar.altitude.tan() / solar.relative_azimuth.cos();
+    if tan_profile <= 0.0 {
+        return 0.0;
+    }
+    let shadow_y = oh.depth * tan_profile;
+    let shadow_x = fin.depth * solar.relative_azimuth.abs().tan();
+
+    if shadow_x <= 0.0 || shadow_y <= 0.0 {
+        return 0.0;
+    }
+
+    // Overlap is at the corner where both shadows exist
+    // The overlap width is limited by the fin shadow reaching into the window
+    // The overlap height is limited by the overhang shadow reaching down
+    let overlap_width = shadow_x.min(window.width);
+    let overlap_height = shadow_y.min(window.height);
+
+    overlap_width * overlap_height
 
 /// Returns both the shadow area and the vertical shadow height for the overhang.
 fn calculate_overhang_shadow_with_dimensions(
