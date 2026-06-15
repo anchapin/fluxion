@@ -669,10 +669,8 @@ pub fn generate_empirical_report(
     // Filter out near-zero reference values for temperature validation
     let mut temp_pairs: Vec<(f64, f64)> = Vec::new();
     for (i, point) in data.iter().enumerate() {
-        if point.T_zone.abs() > config.near_zero_threshold {
-            if i < fluxion_zone_temps.len() {
-                temp_pairs.push((fluxion_zone_temps[i], point.T_zone));
-            }
+        if point.T_zone.abs() > config.near_zero_threshold && i < fluxion_zone_temps.len() {
+            temp_pairs.push((fluxion_zone_temps[i], point.T_zone));
         }
     }
 
