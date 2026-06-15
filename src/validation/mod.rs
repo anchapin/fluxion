@@ -17,6 +17,7 @@ pub mod ep_oracle;
 pub mod export;
 pub mod fdd;
 pub mod guardrails;
+pub mod hvac_bestest;
 pub mod multi_reference;
 pub mod performance;
 pub mod reference;
@@ -105,6 +106,10 @@ pub use high_mass::{
 pub use high_mass::{
     CombinedHighMassReport, HighMassMetrics, HighMassSummary, HighMassValidationCase,
     HighMassValidationReport,
+};
+pub use hvac_bestest::{
+    run_hvac_bestest, validate_results, EquipmentType, HVACBestestCase, HVACBestestCaseDefinition,
+    HVACBestestResult, HVACBestestRunner, OperatingMode,
 };
 pub use physics_validator::{
     generate_validation_report, PhysicsValidationResult, PhysicsValidator, TemperatureViolation,

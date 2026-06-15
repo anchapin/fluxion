@@ -265,6 +265,11 @@ path = "tests/integration/test_ashrae_140_regression.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
 name = "integration-wiring"
 path = "tests/integration/test_wiring.rs"
 harness = true
@@ -282,6 +287,11 @@ harness = true
 [[test]]
 name = "integration-cli"
 path = "tests/integration/test_cli.rs"
+harness = true
+
+[[test]]
+name = "integration-fmi-cosimulation"
+path = "tests/integration/test_fmi_cosimulation.rs"
 harness = true
 
 [[test]]
@@ -323,4 +333,9 @@ harness = true
 [[test]]
 name = "loom_concurrency_tests"
 path = "tests/concurrency/loom_concurrency_tests.rs"
+harness = true
+
+[[test]]
+name = "case_900_determinism"
+path = "tests/case_900_determinism.rs"
 harness = true
