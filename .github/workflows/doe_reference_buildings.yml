@@ -1,0 +1,111 @@
+name: DOE Reference Buildings (Manual Gate)
+
+on:
+  workflow_dispatch:
+    inputs:
+      trigger-reason:
+        description: 'Reason for manual trigger'
+        required: false
+        default: 'manual'
+      building:
+        description: 'Building type to test'
+        required: false
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - small_office
+          - medium_office
+          - retail
+
+# DOE Reference Buildings tests are long-running (annual simulations)
+# Run manually via workflow_dispatch to save CI runner minutes.
+
+jobs:
+  doe-reference-buildings:
+    name: DOE Reference Buildings
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        uses: ./.github/actions/install-system-deps
+        with:
+          packages: libssl-dev,pkg-config,libfontconfig1-dev,fontconfig
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry/index ~/.cargo/registry/cache ~/.cargo/git/db target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run DOE Reference Buildings tests
+        run: |
+          cargo test --test integration-doe-reference-buildings --release -- --nocapture 2>&1 | tee doe_output.txt
+
+      - name: Parse test results
+        run: |
+          python3 << 'EOF'
+          import re
+          import json
+
+          with open('doe_output.txt', 'r') as f:
+              output = f.read()
+
+          # Parse test results
+          tests_passed = len(re.findall(r'test result: ok', output))
+          tests_failed = len(re.findall(r'test result: FAILED', output))
+
+          # Extract timing info
+          timing_matches = re.findall(r'(\w+):\s*([\d.]+)\s*kWh annual energy.*\((\d+) zones', output)
+
+          results = {
+              "tests_passed": tests_passed,
+              "tests_failed": tests_failed,
+              "buildings": {}
+          }
+
+          for name, energy, zones in timing_matches:
+              results["buildings"][name] = {
+                  "annual_energy_kwh": float(energy),
+                  "zones": int(zones)
+              }
+
+          with open('doe_results.json', 'w') as f:
+              json.dump(results, f, indent=2)
+
+          print(f"DOE Reference Buildings Results:")
+          print(f"  Tests passed: {tests_passed}")
+          print(f"  Tests failed: {tests_failed}")
+          for name, data in results["buildings"].items():
+              print(f"  {name}: {data['annual_energy_kwh']:.2f} kWh ({data['zones']} zones)")
+          EOF
+
+      - name: Upload DOE results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doe-reference-buildings-results
+          path: |
+            doe_results.json
+            doe_output.txt
+          retention-days: 30
+
+      - name: Display results
+        run: |
+          echo "## DOE Reference Buildings Results" >> $GITHUB_STEP_SUMMARY
+          if [ -f doe_results.json ]; then
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat doe_results.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Fail if tests failed
+        if: failure()
+        run: |
+          echo "❌ DOE Reference Buildings tests failed"
+          exit 1
