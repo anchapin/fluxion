@@ -1715,31 +1715,67 @@ impl CaseSpec {
     /// window areas, and construction types.
     pub fn case600_reference_conductances(&self) -> ConductanceReferences {
         // ASHRAE 140 Case 600 reference conductances
-        // These are derived from EnergyPlus/ESP-r reference simulations
+        // Calculated from physics-based formulas using material properties and geometry.
         //
-        // Note: These are placeholder values that should be updated with
-        // actual reference values from ASHRAE 140 standard documentation
-        // or EnergyPlus simulation results.
+        // Case 600 geometry: 8.0m × 6.0m × 2.7m (W×D×H)
+        // Volume: 129.6 m³
+        // South window: 12.0 m² (double_clear_glass, U=2.10 W/m²K)
+        // ACH: 0.5
+        //
+        // Construction (low-mass wall):
+        // - Plasterboard: k=0.16 W/mK, d=0.012m
+        // - Fiberglass: k=0.04 W/mK, d=0.066m
+        // - Wood siding: k=0.14 W/mK, d=0.009m
+
+        // === Geometry ===
+        let width = 8.0;
+        let depth = 6.0;
+        let height = 2.7;
+        let volume = width * depth * height; // 129.6 m³
+        let floor_area = width * depth; // 48.0 m²
+
+        // Wall areas (4 walls total)
+        let wall_area_total = 2.0 * (width * height + depth * height); // 75.6 m²
+
+        // === Window properties (double_clear_glass) ===
+        let window_area = 12.0;
+        let window_u = 2.10; // W/m²K from WindowSpec::double_clear_glass()
+
+        // === Ventilation conductance ===
+        // h_ve = ρ × cp × (ACH/3600) × V
+        let rho_air = crate::physics::constants::AIR_DENSITY_SEA_LEVEL;
+        let cp_air = crate::physics::constants::AIR_SPECIFIC_HEAT;
+        let ach = 0.5;
+        let h_ve = rho_air * cp_air * (ach / 3600.0) * volume;
+
+        // === Window conductance ===
+        // h_tr_w = U_window × A_window
+        let h_tr_w = window_u * window_area;
+
+        // === Surface-to-interior conductance ===
+        // h_tr_is = H_SI × A_floor (ASHRAE 140 simplified 5R1C value H_SI=3.45)
+        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+        let h_tr_is = H_SI * floor_area;
+
+        // === Mass-to-surface conductance ===
+        // h_tr_ms = h_ms × A_floor
+        // h_ms = 2.0 W/m²K for low-mass (VeryLight/Light per ISO 13790)
+        let h_ms = 2.0; // W/m²K for low-mass construction
+        let h_tr_ms = h_ms * floor_area;
+
+        // === Exterior-to-mass conductance ===
+        // h_tr_em = U_wall × A_walls + h_tr_w
+        // Calculate wall U-value from material properties
+        let wall = Assemblies::low_mass_wall();
+        let u_wall = wall.u_value(None, None);
+        let h_tr_em = u_wall * wall_area_total + h_tr_w;
+
         ConductanceReferences {
-            // Exterior-to-mass: accounts for wall + window U-values, thermal bridges
-            // Typical range: 50-150 W/K for low-mass buildings
-            h_tr_em: 123.45,
-
-            // Window conductance: U_window × A_window
-            // Case 600: U=3.0 W/m²K, A=12.0 m² → h_tr_w = 36.0 W/K
-            h_tr_w: 36.0,
-
-            // Mass-to-surface: thermal mass coupling
-            // Typical range: 50-100 W/K for low-mass buildings
-            h_tr_ms: 89.01,
-
-            // Surface-to-interior: interior film coefficient × surface area
-            // Typical: h_si ≈ 7.69-10.0 W/m²K, A ≈ 150-250 m²
-            h_tr_is: 234.56,
-
-            // Ventilation: ρ × cp × (ACH/3600) × V
-            // Case 600: ACH=0.5, V=129.6 m³ → h_ve ≈ 21.7 W/K
-            h_ve: 21.72,
+            h_tr_em,
+            h_tr_w,
+            h_tr_ms,
+            h_tr_is,
+            h_ve,
         }
     }
 }
