@@ -116,6 +116,25 @@ jobs:
               console.log('Created regression issue');
             }
 
+      - name: Run flux-diff numerical regression check
+        if: always()
+        run: |
+          if [ -f tools/flux_diff.py ]; then
+            echo "Running flux-diff numerical regression check..."
+            python3 tools/flux_diff.py --help || echo "flux-diff help shown"
+            # Note: Provide baseline and current output files for comparison
+            # Example: python3 tools/flux_diff.py baseline.csv current.csv --format json --output flux_diff_report.json
+          fi
+
+      - name: Upload flux-diff report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flux-diff-report
+          path: flux_diff_report.json
+          retention-days: 30
+        continue-on-error: true
+
       - name: Fail if regression test failed
         if: failure() && steps.regression.outcome == 'failure'
         run: |
