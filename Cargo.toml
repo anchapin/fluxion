@@ -290,6 +290,11 @@ path = "tests/integration/test_cli.rs"
 harness = true
 
 [[test]]
+name = "integration-doe-reference-buildings"
+path = "tests/integration/test_doe_reference_buildings.rs"
+harness = true
+
+[[test]]
 name = "integration-fmi-cosimulation"
 path = "tests/integration/test_fmi_cosimulation.rs"
 harness = true
