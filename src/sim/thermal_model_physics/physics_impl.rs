@@ -2053,7 +2053,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //   proportional to h_tr_ms (per Issue #873 requirement)
             // - phi_m (solar to mass): goes to internal mass node
             // - phi_ia (convective to air): handled via compute_zone_air_temperature
-            let zone_area_val = self.0.zone_area.as_ref()[zone_idx];
+            let _zone_area_val = self.0.zone_area.as_ref()[zone_idx];
             let phi_st_zone = phi_st.as_ref()[zone_idx];
             let phi_m_zone = phi_m.as_ref()[zone_idx];
             // Distribute phi_st to envelope nodes proportional to h_tr_ms
