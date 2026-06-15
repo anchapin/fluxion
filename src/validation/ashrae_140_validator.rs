@@ -1,6 +1,7 @@
 use crate::physics::cta::VectorField;
 use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
+use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
 use crate::validation::benchmark;
 use crate::validation::diagnostic::{
@@ -1543,6 +1544,11 @@ impl ASHRAE140Validator {
         // SESSION 32: Run simulation loop and accumulate energy manually
         // Reset model's internal energy tracking to avoid interference with raw accumulation
         model.reset_heating_cooling_energy();
+
+        // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
+        // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
+        run_warmup(&mut model, weather, &WarmupConfig::default());
+
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
@@ -2062,6 +2068,10 @@ impl ASHRAE140Validator {
             model.hvac_heating_capacity = 0.0;
             model.hvac_cooling_capacity = 0.0;
         }
+
+        // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
+        // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
+        run_warmup(&mut model, weather, &WarmupConfig::default());
 
         let peak_heating_hour: usize = 0;
         let peak_cooling_hour: usize = 0;
