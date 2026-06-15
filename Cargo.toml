@@ -278,6 +278,11 @@ path = "tests/integration/test_cli.rs"
 harness = true
 
 [[test]]
+name = "integration-fmi-cosimulation"
+path = "tests/integration/test_fmi_cosimulation.rs"
+harness = true
+
+[[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
 harness = true
