@@ -2046,14 +2046,40 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             solver.set_surface_exterior_temperatures(surface_ext_temps);
 
-            // (#872) Step solver with gains: internal radiative loads to internal mass node.
-            // Window solar is NOT injected here to avoid thermal runaway — it's
-            // handled via phi_ia in the air node. Full per-node gain injection (#873)
-            // will refine this with proper per-surface solar distribution.
+            // Issue #895/#873: Step solver with proper per-node gain injection.
+            // - phi_st (radiative gains to surface): distributed to wall/roof/floor
+            //   proportional to h_tr_ms (per Issue #873 requirement)
+            // - phi_m (solar to mass): goes to internal mass node
+            // - phi_ia (convective to air): handled via compute_zone_air_temperature
             let zone_area_val = self.0.zone_area.as_ref()[zone_idx];
-            let load_w = loads_ref[zone_idx] * zone_area_val;
-            let internal_rad = load_w * rad_frac;
-            solver.step_with_gains(dt, 0.0, 0.0, 0.0, internal_rad);
+            let phi_st_zone = phi_st.as_ref()[zone_idx];
+            let phi_m_zone = phi_m.as_ref()[zone_idx];
+            // Distribute phi_st to envelope nodes proportional to h_tr_ms
+            let h_ms_w = solver.mass.wall.h_tr_ms;
+            let h_ms_r = solver.mass.roof.h_tr_ms;
+            let h_ms_f = solver.mass.floor.h_tr_ms;
+            let h_ms_total = h_ms_w + h_ms_r + h_ms_f;
+            let wall_frac = if h_ms_total > 1e-6 {
+                h_ms_w / h_ms_total
+            } else {
+                1.0 / 3.0
+            };
+            let roof_frac = if h_ms_total > 1e-6 {
+                h_ms_r / h_ms_total
+            } else {
+                1.0 / 3.0
+            };
+            let floor_frac = if h_ms_total > 1e-6 {
+                h_ms_f / h_ms_total
+            } else {
+                1.0 / 3.0
+            };
+            // phi_st goes to envelope nodes, phi_m goes to internal node
+            let gains_wall = phi_st_zone * wall_frac;
+            let gains_roof = phi_st_zone * roof_frac;
+            let gains_floor = phi_st_zone * floor_frac;
+            let gains_internal = phi_m_zone;
+            solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
         }
 
         // (#872) Compute zone air temperature from multi-node solver.
