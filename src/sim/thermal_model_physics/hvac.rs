@@ -171,29 +171,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // (the term becomes zero in that case).
             let t_mass = mass_temperatures.get(zone_idx).copied().unwrap_or(t_zone);
 
-            let demand = if t_zone < heating_setpoint {
+            let demand = if t_zone <= heating_setpoint {
                 // Heating: Q = h_coeff × (T_heat_sp − T_zone).
+                // Use <= to activate heating when zone is AT setpoint (needs heat to maintain).
                 // Mass absorption term intentionally omitted (Issue #900).
                 h_coeff * (heating_setpoint - t_zone)
-            } else {
-                // Cooling (zone at or above cooling setpoint, OR mass hotter than setpoint):
+            } else if t_zone >= cooling_setpoint {
+                // Cooling (zone at or above cooling setpoint):
                 // Q = -h_coeff × (T_mass − T_cool_sp)  [Issue #908 corrected formula]
                 //
-                // This unified formula replaces the previous two-branch approach:
-                //   OLD: -h_coeff*(t_zone-t_cool_sp) - mass_heat_release  [zone above sp]
-                //        -mass_heat_release                                 [deadband]
-                //   NEW: -h_coeff*(t_mass - t_cool_sp)
-                //
-                // The separate mass_heat_release term was redundant — the Norton
-                // equivalent h_coeff already includes h_tr_ms through the series-parallel
-                // network reduction. The old deadband branch is also redundant: the
-                // unified formula produces cooling demand (Q < 0) whenever t_mass >
-                // t_cool_sp, regardless of t_zone.
-                //
-                // When t_mass < t_cool_sp: Q > 0 (net heating) — not physically
-                // possible in a cooling-dominated period; the hvac_enabled guard and
-                // the outer hvac_mode check prevent spurious heating.
+                // The corrected formula uses mass temperature instead of zone temperature
+                // because the thermal mass stores/releases heat that drives HVAC demand
+                // even when the zone is at setpoint. When T_mass > T_cool_sp, the mass
+                // is releasing heat to the zone, requiring cooling.
                 -h_coeff * (t_mass - cooling_setpoint)
+            } else {
+                // Deadband: zone between heating and cooling setpoints — no HVAC demand.
+                // The corrected formula is NOT applied here because:
+                // - t_mass > t_cool_sp would incorrectly produce cooling demand
+                //   when zone is in deadband (e.g., zone=23.5°C, mass=28°C, cool_sp=27°C)
+                // - t_mass < t_cool_sp would incorrectly produce heating demand
+                //   when zone is in deadband (e.g., zone=23.5°C, mass=20°C, cool_sp=27°C)
+                0.0
             };
 
             // Clamp to HVAC capacity limits to prevent numerical explosion
