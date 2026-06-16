@@ -2266,12 +2266,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let phi_m_floor = phi_m_surface_floor.get(zone_idx).copied().unwrap_or(0.0);
             solver.step_per_surface(
                 dt,
-                mass_temp_wall_pre,
-                mass_temp_roof_pre,
-                mass_temp_floor_pre,
-                phi_m_wall,
-                phi_m_roof,
-                phi_m_floor,
+                (mass_temp_wall_pre, mass_temp_roof_pre, mass_temp_floor_pre),
+                (phi_m_wall, phi_m_roof, phi_m_floor),
             );
         }
 
