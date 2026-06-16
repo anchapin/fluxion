@@ -1,0 +1,279 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gbXML xmlns="http://www.gbxml.org/schema" version="7.01">
+  <Campus id="c1">
+    <Building id="b1" buildingStoryIdRef="s1">
+      <Name>ComplexBuilding</Name>
+      <Description>Complex building with multiple zones, windows, and skylights</Description>
+      <Location>
+        <ZipcodeOrPostalCode>80301</ZipcodeOrPostalCode>
+        <Longitude>-105.15</Longitude>
+        <Latitude>40.01</Latitude>
+        <Elevation>1650</Elevation>
+      </Location>
+    </Building>
+    <BuildingStory id="s1">
+      <Name>Story 1</Name>
+      <Level>0</Level>
+      <Height>3.5</Height>
+    </BuildingStory>
+  </Campus>
+  <Zone id="z1">
+    <Name>OfficeZone</Name>
+    <BuildingStoryIdRef>s1</BuildingStoryIdRef>
+    <Volume>210.0</Volume>
+    <Area>60.0</Area>
+    <Spaces>
+      <Space id="sp1">
+        <Name>OfficeSpace</Name>
+        <Area>60.0</Area>
+        <Volume>210.0</Volume>
+      </Space>
+    </Spaces>
+  </Zone>
+  <Zone id="z2">
+    <Name>StorageZone</Name>
+    <BuildingStoryIdRef>s1</BuildingStoryIdRef>
+    <Volume>105.0</Volume>
+    <Area>30.0</Area>
+    <Spaces>
+      <Space id="sp2">
+        <Name>StorageSpace</Name>
+        <Area>30.0</Area>
+        <Volume>105.0</Volume>
+      </Space>
+    </Spaces>
+  </Zone>
+  <!-- Office Zone Exterior Walls -->
+  <Surface id="ow_north" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Office North Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>28.0</Area>
+    <Height>3.5</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>0,0,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="ow_south" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Office South Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>28.0</Area>
+    <Height>3.5</Height>
+    <Azimuth>180</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,7.5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,7.5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,7.5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>0,7.5,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="ow_east" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Office East Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>26.25</Area>
+    <Height>3.5</Height>
+    <Azimuth>90</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,7.5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,7.5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="ow_west" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Office West Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>26.25</Area>
+    <Height>3.5</Height>
+    <Azimuth>270</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,7.5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,7.5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>0,0,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Inter-zone wall between Office and Storage -->
+  <Surface id="interzone" surfaceType="InteriorWall" constructionIdRef="const_interzone" buildingIdRef="b1">
+    <Name>Office Storage Interzone</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>17.5</Area>
+    <Height>3.5</Height>
+    <Azimuth>90</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Storage Zone Exterior Walls -->
+  <Surface id="sw_south" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Storage South Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>17.5</Area>
+    <Height>3.5</Height>
+    <Azimuth>180</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,5,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="sw_east" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Storage East Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>17.5</Area>
+    <Height>3.5</Height>
+    <Azimuth>90</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>13,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,8,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,8,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="sw_north" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Storage North Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>17.5</Area>
+    <Height>3.5</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,5,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="sw_west" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>Storage West Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>10.5</Area>
+    <Height>3.5</Height>
+    <Azimuth>270</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,8,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,8,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,5,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Roof with Skylight -->
+  <Surface id="roof_main" surfaceType="Roof" constructionIdRef="const_roof1" buildingIdRef="b1">
+    <Name>Main Roof</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>60.0</Area>
+    <Height>3.5</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>0</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,7.5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>0,7.5,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="roof_storage" surfaceType="Roof" constructionIdRef="const_roof1" buildingIdRef="b1">
+    <Name>Storage Roof</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>15.0</Area>
+    <Height>3.5</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>0</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>13,8,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>8,8,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="skylight1" surfaceType="Skylight" constructionIdRef="const_skylight" buildingIdRef="b1">
+    <Name>Skylight1</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>4.0</Area>
+    <Height>3.5</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>0</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>2,2,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>4,2,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>4,4,3.5</Coordinates></Vertex>
+      <Vertex><Coordinates>2,4,3.5</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Floors -->
+  <Surface id="floor_office" surfaceType="SlabOnGrade" constructionIdRef="const_floor1" buildingIdRef="b1">
+    <Name>Office Floor</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>60.0</Area>
+    <Height>0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>180</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,7.5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,7.5,0</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="floor_storage" surfaceType="SlabOnGrade" constructionIdRef="const_floor1" buildingIdRef="b1">
+    <Name>Storage Floor</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>30.0</Area>
+    <Height>0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>180</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,5,0</Coordinates></Vertex>
+      <Vertex><Coordinates>13,8,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,8,0</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Construction id="const_wall1">
+    <Name>StandardWall</Name>
+    <U-value>0.5</U-value>
+  </Construction>
+  <Construction id="const_interzone">
+    <Name>InterzoneWall</Name>
+    <U-value>0.8</U-value>
+  </Construction>
+  <Construction id="const_roof1">
+    <Name>StandardRoof</Name>
+    <U-value>0.3</U-value>
+  </Construction>
+  <Construction id="const_skylight">
+    <Name>Skylight</Name>
+    <U-value>1.8</U-value>
+  </Construction>
+  <Construction id="const_floor1">
+    <Name>SlabOnGrade</Name>
+    <U-value>0.4</U-value>
+  </Construction>
+  <Material id="mat_concrete">
+    <Name>Concrete</Name>
+    <Conductivity>1.4</Conductivity>
+    <Density>2300</Density>
+    <SpecificHeat>840</SpecificHeat>
+  </Material>
+  <Material id="mat_insulation">
+    <Name>Insulation</Name>
+    <Conductivity>0.04</Conductivity>
+    <Density>50</Density>
+    <SpecificHeat>840</SpecificHeat>
+  </Material>
+</gbXML>
