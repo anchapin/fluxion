@@ -404,6 +404,7 @@ impl MultiNodeSolver {
         let t_ext_roof = self.exterior_temperatures.t_ext_roof;
         let t_ext_floor = self.exterior_temperatures.t_ext_floor;
 
+<<<<<<< HEAD
         // Update each surface with its own mass node temperature and exterior temperature
         solver.update_surface(0, dt, self.mass.wall.temperature, t_ext_wall);
         solver.update_surface(1, dt, self.mass.roof.temperature, t_ext_roof);
