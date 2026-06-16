@@ -1806,9 +1806,56 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let phi_st = T::from(VectorField::new(phi_st_data));
         let phi_m = T::from(VectorField::new(phi_m_data));
 
+        // Issue #863: Compute per-surface sol-air temperature for walls.
+        // The CTF/FD flux calculations use t_sol_air_data as the exterior boundary
+        // temperature. Using outdoor_temp would ignore solar gain on west walls,
+        // causing massive heating energy overcounting (9.45 MWh vs reference 1.17-2.04 MWh).
+        let t_sol_air_wall = if let Some(ref weather) = self.0.weather {
+            let hour_of_year = timestep % 8760;
+            let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+            let day_of_year = hour_of_year / 24;
+            let hour = (hour_of_year % 24) as f64 + 0.5;
+            let month = month_days
+                .iter()
+                .position(|&d| d > day_of_year)
+                .unwrap_or(12)
+                .saturating_sub(1) as u32;
+            let day =
+                (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+
+            let sun_pos = calculate_solar_position(
+                self.0.latitude_deg,
+                self.0.longitude_deg,
+                2024,
+                month,
+                day.min(28),
+                hour,
+            );
+
+            let ground_reflectance = 0.2;
+            let wall_irr = calculate_surface_irradiance(
+                &sun_pos,
+                weather.dni,
+                weather.dhi,
+                Some(weather.ghi),
+                crate::validation::ashrae_140_cases::Orientation::South,
+                ground_reflectance,
+                day_of_year + 1,
+            );
+
+            let sol_air = SolAirTemperature::ashrae_140_default();
+            sol_air.for_wall(
+                outdoor_temp,
+                wall_irr.total_wm2,
+                wall_irr.ground_reflected_wm2,
+            )
+        } else {
+            outdoor_temp
+        };
+
         let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
         for _ in 0..self.0.num_zones {
-            t_sol_air_data.push(outdoor_temp);
+            t_sol_air_data.push(t_sol_air_wall);
         }
 
         // Use 5R1C network for free-floating temperature
@@ -1910,13 +1957,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Build numerator with envelope and ground contributions
+        // Issue #863: Use sol-air temperature for wall exterior BC instead of outdoor_temp.
+        // This correctly accounts for solar radiation heating the wall surface, reducing
+        // the net heat loss and fixing massive heating energy overcounting.
         let mut num_rest_with_iz = phi_ia_with_iz;
-        for (n, h) in num_rest_with_iz
+        for (i, (n, h)) in num_rest_with_iz
             .as_mut()
             .iter_mut()
             .zip(h_ext_base.as_ref().iter())
+            .enumerate()
         {
-            *n += h * outdoor_temp;
+            let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
+            *n += h * t_sol_air_i;
         }
         num_rest_with_iz.mul_assign(term_rest_1);
         let ground_coeff = self.0.derived_ground_coeff.as_ref();
