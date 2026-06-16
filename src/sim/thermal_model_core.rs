@@ -2340,6 +2340,7 @@ impl ThermalModel<VectorField> {
             internal_mass_energy_change_cumulative: 0.0, // Internal mass energy change (J)
             ideal_air_loads_mode: false,        // Disable ideal air loads by default (Issue #382)
             free_float: false,                  // Free-floating mode disabled by default
+            warm_up_years: 2, // Warm-up years for periodic steady-state (Issue #744)
 
             // CTF (Conduction Transfer Function) solver for high-mass walls (Phase 28)
             ctf_coefficients: None, // Will be set during initialization if CTF enabled
