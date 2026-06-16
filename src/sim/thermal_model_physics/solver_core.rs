@@ -270,7 +270,10 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Only apply warmup to full-year (8760 timestep) simulations to avoid impacting short-duration tests.
             let warm_up_years = self.0.warm_up_years;
             let is_full_year_simulation = steps >= 8760;
-            info!("Starting warm-up phase: {} year(s), is_full_year={}", warm_up_years, is_full_year_simulation);
+            info!(
+                "Starting warm-up phase: {} year(s), is_full_year={}",
+                warm_up_years, is_full_year_simulation
+            );
             let convergence_threshold = 0.1; // °C per ASHRAE 140
             let hours_per_year = 8760;
 
