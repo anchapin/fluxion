@@ -493,6 +493,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         });
 
         let metrics = QualityMetrics::from_benchmark_report(&report);

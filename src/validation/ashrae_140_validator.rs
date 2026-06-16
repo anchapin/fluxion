@@ -563,13 +563,15 @@ impl ASHRAE140Validator {
                     ));
 
                     // Add peak loads if reference data is available
+                    // Issue #761: ASHRAE 140-2023 Section 8.2.2 requires tracking peak timestamps
                     if data.peak_heating_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &case_id,
                             MetricType::PeakHeating,
                             results.peak_heating_kw,
                             data.peak_heating_min,
                             data.peak_heating_max,
+                            results.peak_heating_timestamp,
                         );
 
                         diagnostic_report.add_comparison_row(ComparisonRow::new(
@@ -582,12 +584,13 @@ impl ASHRAE140Validator {
                     }
 
                     if data.peak_cooling_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &case_id,
                             MetricType::PeakCooling,
                             results.peak_cooling_kw,
                             data.peak_cooling_min,
                             data.peak_cooling_max,
+                            results.peak_cooling_timestamp,
                         );
 
                         diagnostic_report.add_comparison_row(ComparisonRow::new(
@@ -717,22 +720,24 @@ impl ASHRAE140Validator {
                 );
 
                 if data.peak_heating_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakHeating,
                         results.peak_heating_kw,
                         data.peak_heating_min,
                         data.peak_heating_max,
+                        results.peak_heating_timestamp,
                     );
                 }
 
                 if data.peak_cooling_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakCooling,
                         results.peak_cooling_kw,
                         data.peak_cooling_min,
                         data.peak_cooling_max,
+                        results.peak_cooling_timestamp,
                     );
                 }
             }
@@ -1042,22 +1047,24 @@ impl ASHRAE140Validator {
                 );
 
                 if data.peak_heating_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakHeating,
                         results.peak_heating_kw,
                         data.peak_heating_min,
                         data.peak_heating_max,
+                        results.peak_heating_timestamp,
                     );
                 }
 
                 if data.peak_cooling_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakCooling,
                         results.peak_cooling_kw,
                         data.peak_cooling_min,
                         data.peak_cooling_max,
+                        results.peak_cooling_timestamp,
                     );
                 }
             }
@@ -1255,22 +1262,24 @@ impl ASHRAE140Validator {
                     );
 
                     if data.peak_heating_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &partial.case_id,
                             MetricType::PeakHeating,
                             results.peak_heating_kw,
                             data.peak_heating_min,
                             data.peak_heating_max,
+                            results.peak_heating_timestamp,
                         );
                     }
 
                     if data.peak_cooling_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &partial.case_id,
                             MetricType::PeakCooling,
                             results.peak_cooling_kw,
                             data.peak_cooling_min,
                             data.peak_cooling_max,
+                            results.peak_cooling_timestamp,
                         );
                     }
                 }
@@ -2069,8 +2078,13 @@ impl ASHRAE140Validator {
         // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
         run_warmup(&mut model, weather, &WarmupConfig::default());
 
-        let peak_heating_hour: usize = 0;
-        let peak_cooling_hour: usize = 0;
+        // Issue #761: Track peak power and timestamp
+        let mut peak_heating_power_kw: f64 = 0.0;
+        let mut peak_heating_hour: usize = 0;
+        let mut peak_heating_timestamp: Option<(u32, u32, u32)> = None;
+        let mut peak_cooling_power_kw: f64 = 0.0;
+        let mut peak_cooling_hour: usize = 0;
+        let mut peak_cooling_timestamp: Option<(u32, u32, u32)> = None;
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
@@ -2213,8 +2227,21 @@ impl ASHRAE140Validator {
             // step_physics() returns kWh, convert to Joules: kWh * 3.6e6 = Joules
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
+                // Issue #761: Track peak heating power and timestamp
+                if hvac_kwh > peak_heating_power_kw {
+                    peak_heating_power_kw = hvac_kwh;
+                    peak_heating_hour = step;
+                    peak_heating_timestamp = Some((_month as u32, day as u32, hour_of_day as u32));
+                }
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                // Issue #761: Track peak cooling power and timestamp
+                let abs_cooling_kw = -hvac_kwh;
+                if abs_cooling_kw > peak_cooling_power_kw {
+                    peak_cooling_power_kw = abs_cooling_kw;
+                    peak_cooling_hour = step;
+                    peak_cooling_timestamp = Some((_month as u32, day as u32, hour_of_day as u32));
+                }
             }
 
             // Track solar gains energy from model for diagnostics (convert W to Joules)
@@ -2327,8 +2354,8 @@ impl ASHRAE140Validator {
             // Issue #827
             hourly_temperatures,
             // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
-            peak_heating_timestamp: None,
-            peak_cooling_timestamp: None,
+            peak_heating_timestamp,
+            peak_cooling_timestamp,
         };
 
         (results, diagnostic)

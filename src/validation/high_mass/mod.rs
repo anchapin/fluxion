@@ -37,6 +37,7 @@ pub fn run_all_high_mass_cases() -> Vec<crate::validation::report::ValidationRes
                     per_program: None,
                     peak_date: None,
                     peak_hour: None,
+                    peak_timestamp: None,
                 });
             }
         }

@@ -107,6 +107,7 @@ impl HighMassValidationCase {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         Ok(result)
