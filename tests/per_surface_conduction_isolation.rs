@@ -924,7 +924,12 @@ fn test_step_per_surface_refines_surface_temperature() {
     let t_surface_before = solver.surface_temperature;
 
     // Step the per-surface solver
-    let (t_wall, t_roof, t_floor) = solver.step_per_surface(3600.0);
+    // Pass current mass temps (20°C) and zero per-surface solar gains for this test
+    let (t_wall, t_roof, t_floor) = solver.step_per_surface(
+        3600.0,
+        (20.0, 20.0, 20.0), // mass temps (wall, roof, floor)
+        (0.0, 0.0, 0.0),    // phi_m (wall, roof, floor) - no solar gains
+    );
 
     let t_surface_after = solver.surface_temperature;
 
@@ -978,7 +983,12 @@ fn test_multi_node_with_per_surface_integration() {
         // Step the multi-node solver (backward Euler on mass nodes)
         solver.step(3600.0);
         // Step the per-surface solver (Issue #1005 integration)
-        solver.step_per_surface(3600.0);
+        // Use current mass temperatures and zero per-surface gains for this integration test
+        solver.step_per_surface(
+            3600.0,
+            (20.0, 20.0, 20.0), // mass temps (wall, roof, floor)
+            (0.0, 0.0, 0.0),    // phi_m (wall, roof, floor) - no solar gains
+        );
     }
 
     // After 24h, all temperatures should be finite and physically reasonable
@@ -1027,7 +1037,11 @@ fn test_per_surface_first_law_preservation() {
 
     // Run multi-node + per-surface for 1 hour
     solver.step(3600.0);
-    solver.step_per_surface(3600.0);
+    solver.step_per_surface(
+        3600.0,
+        (20.0, 20.0, 20.0), // mass temps (wall, roof, floor)
+        (0.0, 0.0, 0.0),    // phi_m (wall, roof, floor) - no solar gains
+    );
 
     // Final stored energy
     let final_stored = 5_000_000.0 * solver.wall_temperature()
