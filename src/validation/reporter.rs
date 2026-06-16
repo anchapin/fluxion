@@ -1126,6 +1126,7 @@ mod tests {
             ),
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.add_result(result);
 

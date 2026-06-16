@@ -553,6 +553,7 @@ mod group_validation_tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         let p_value = calculate_p_value(&result, 3); // 2 degrees of freedom
@@ -572,6 +573,7 @@ mod group_validation_tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         let p_value = calculate_p_value(&result, 3);
@@ -1627,6 +1629,7 @@ mod statistical_metrics_tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         let p_value = calculate_p_value(&result, 1);
         assert_eq!(p_value, 1.0);

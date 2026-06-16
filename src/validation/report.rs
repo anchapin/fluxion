@@ -415,6 +415,7 @@ impl Default for Case960Report {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         Self {
@@ -441,6 +442,7 @@ impl Default for Case970Report {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         Self {
@@ -494,6 +496,10 @@ pub struct ValidationResult {
     /// Hour of peak value occurrence (0-23) for peak metrics
     #[serde(skip_serializing_if = "Option::is_none")]
     pub peak_hour: Option<u32>,
+    /// Issue #761: Peak timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
+    /// Only populated for PeakHeating and PeakCooling metrics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_timestamp: Option<(u32, u32, u32)>,
 }
 
 impl ValidationResult {
@@ -547,6 +553,7 @@ impl ValidationResult {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         }
     }
 
@@ -724,6 +731,23 @@ impl BenchmarkReport {
         self.add_result(result);
     }
 
+    /// Adds a result with an optional peak timestamp (month, day, hour).
+    ///
+    /// Issue #761: ASHRAE 140-2023 Section 8.2.2 requires tracking peak load timestamps.
+    pub fn add_result_with_peak_timestamp(
+        &mut self,
+        case_id: &str,
+        metric: MetricType,
+        fluxion_value: f64,
+        ref_min: f64,
+        ref_max: f64,
+        peak_timestamp: Option<(u32, u32, u32)>,
+    ) {
+        let mut result = ValidationResult::new(case_id, metric, fluxion_value, ref_min, ref_max);
+        result.peak_timestamp = peak_timestamp;
+        self.add_result(result);
+    }
+
     /// Adds a validation result using multi-reference data, populating per-program statuses.
     ///
     /// This method looks up per-program reference ranges from the provided MultiReferenceDB,
@@ -826,6 +850,7 @@ impl BenchmarkReport {
             per_program: Some(per_program),
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         self.add_result(result);
     }
@@ -1720,6 +1745,7 @@ impl BenchmarkReport {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         Case960Report {
@@ -1765,6 +1791,7 @@ impl BenchmarkReport {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
 
         Case970Report {
@@ -2658,6 +2685,7 @@ impl ValidationSuite {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         }
     }
 
