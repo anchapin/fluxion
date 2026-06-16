@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gbXML xmlns="http://www.gbxml.org/schema" version="7.01">
+  <Campus id="c1">
+    <Building id="b1" buildingStoryIdRef="s1">
+      <Name>SimpleShoebox</Name>
+      <Description>A simple rectangular single-zone building for testing</Description>
+      <Location>
+        <ZipcodeOrPostalCode>80301</ZipcodeOrPostalCode>
+        <Longitude>-105.15</Longitude>
+        <Latitude>40.01</Latitude>
+        <Elevation>1650</Elevation>
+      </Location>
+    </Building>
+    <BuildingStory id="s1">
+      <Name>Story 1</Name>
+      <Level>0</Level>
+      <Height>3.0</Height>
+    </BuildingStory>
+  </Campus>
+  <Zone id="z1">
+    <Name>ThermalZone1</Name>
+    <BuildingStoryIdRef>s1</BuildingStoryIdRef>
+    <Volume>144.0</Volume>
+    <Area>48.0</Area>
+    <Spaces>
+      <Space id="sp1">
+        <Name>Space1</Name>
+        <Area>48.0</Area>
+        <Volume>144.0</Volume>
+      </Space>
+    </Spaces>
+  </Zone>
+  <Surface id="wall1" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>North Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>24.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,0,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall2" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>South Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>24.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>180</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,6,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall3" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>East Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>18.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>90</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall4" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>West Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>18.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>270</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,0,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="roof1" surfaceType="Roof" constructionIdRef="const_roof1" buildingIdRef="b1">
+    <Name>Roof</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>48.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>0</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,3</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,3</Coordinates></Vertex>
+      <Vertex><Coordinates>8,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,6,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="floor1" surfaceType="SlabOnGrade" constructionIdRef="const_floor1" buildingIdRef="b1">
+    <Name>Floor</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>48.0</Area>
+    <Height>0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>180</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>8,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,6,0</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Construction id="const_wall1">
+    <Name>StandardWall</Name>
+    <U-value>0.5</U-value>
+  </Construction>
+  <Construction id="const_roof1">
+    <Name>StandardRoof</Name>
+    <U-value>0.3</U-value>
+  </Construction>
+  <Construction id="const_floor1">
+    <Name>SlabOnGrade</Name>
+    <U-value>0.4</U-value>
+  </Construction>
+  <Material id="mat_concrete">
+    <Name>Concrete</Name>
+    <Conductivity>1.4</Conductivity>
+    <Density>2300</Density>
+    <SpecificHeat>840</SpecificHeat>
+  </Material>
+  <Material id="mat_insulation">
+    <Name>Insulation</Name>
+    <Conductivity>0.04</Conductivity>
+    <Density>50</Density>
+    <SpecificHeat>840</SpecificHeat>
+  </Material>
+</gbXML>

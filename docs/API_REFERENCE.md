@@ -729,6 +729,44 @@ pub struct ValidationResult {
 
 The `peak_date` and `peak_hour` fields capture when peak heating or cooling loads occur, supporting ASHRAE 140 Section 8 gap analysis for peak load timestamp validation.
 
+### Incident Solar Radiation per Surface (Issue #762)
+
+Fluxion reports incident solar radiation on a per-surface basis using the `IncidentSolar` metric type. This metric captures the total annual solar radiation incident on each building surface orientation.
+
+```python
+# Get incident solar radiation results
+results = model.get_validation_results()
+for result in results:
+    if hasattr(result, 'metric') and result.metric.startswith('IncidentSolar'):
+        print(f"{result.metric}: {result.value} kWh/m²")
+```
+
+**Data Format:** `IncidentSolar` metric type with fields:
+- `surface_id`: Surface identifier (e.g., "roof", "N", "S", "E", "W")
+- `orientation`: Surface orientation (North, South, East, West, Roof)
+- `value`: Annual incident solar radiation in kWh/m²
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `surface_id` | `String` | Surface identifier |
+| `orientation` | `String` | Surface orientation (N/S/E/W/Roof) |
+| `annual_incident_solar` | `f64` | Annual incident solar radiation (kWh/m²) |
+
+**Rust Example:**
+```rust
+use fluxion::validation::report::{MetricType, ValidationResult};
+
+// IncidentSolar variant carries surface_id and orientation
+let metric = MetricType::IncidentSolar {
+    surface_id: "roof".to_string(),
+    orientation: crate::validation::ashrae_140_cases::Orientation::Roof,
+};
+let result = ValidationResult::new("600", metric, 180.5, 0.0, 0.0);
+println!("{}", result.metric.display_name()); // "Incident Solar Radiation (kWh/m²)"
+```
+
+**Metric Type:** `MetricType::IncidentSolar { surface_id, orientation }`
+
 ---
 
 ## Error Handling
