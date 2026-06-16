@@ -419,6 +419,18 @@ impl ThermalModel<VectorField> {
         let num_zones = spec.num_zones;
         let mut model = ThermalModel::new(num_zones);
 
+        // Physics-based: No correction factors needed
+        // The thermal network physics should produce correct results without empirical adjustments
+        // τ = Cm / (h_tr_ms + h_tr_me) is determined by actual construction properties (Issue 693 fix)
+        model.time_constant_sensitivity_correction = 1.0;
+        model.cooling_sensitivity_correction = 1.0;
+
+        // Issue #665 fix: 6R2C correction factors disabled
+        // The empirically-derived 5.2 and 1.74 correction factors were papering over
+        // calculation errors. Now using physics-based values directly.
+        model.time_constant_sensitivity_correction_6r2c = 1.0;
+        model.cooling_sensitivity_correction_6r2c = 1.0;
+
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];
         let floor_area = geometry.floor_area();
@@ -750,6 +762,7 @@ impl ThermalModel<VectorField> {
         let mut cm_roof_vec = Vec::with_capacity(num_zones);
         let mut cm_floor_vec = Vec::with_capacity(num_zones);
         let mut cm_internal_vec = Vec::with_capacity(num_zones);
+        let mut thermal_cap_vec = Vec::with_capacity(num_zones);
 
         // Mode-specific factors removed - will use physics-based h_tr_ms calculation
         // The thermal conductance h_tr_ms will be calculated from first principles:
@@ -757,6 +770,9 @@ impl ThermalModel<VectorField> {
 
         // === SESSION 33: REMOVED mode-specific factors ===
         // Using physics-based parameters only, no case-specific tuning.
+
+        // NOTE: time_constant_sensitivity_correction is already set in from_spec()
+        // No need to set it again here - doing so would be redundant
 
         for zone_idx in 0..num_zones {
             let zone_floor_area = if zone_idx < spec.geometry.len() {
@@ -995,15 +1011,17 @@ impl ThermalModel<VectorField> {
             // not the building envelope. Using reduced h_ms = 2.0 W/(m²·K) gives
             // h_tr_ms ≈ 240 W/K instead of 1092 W/K, producing proper thermal coupling.
             //
-
-            // ISO 13790:2008 §7.2.2.2 specifies h_ms = 9.36 W/(m²·K) for ALL building types.
-            // The previous override to 2.0 for LowMass was parameter tuning (Issue #905) that
-            // broke the physical coupling between thermal mass and interior surfaces. The
-            // standard value is restored for all construction types.
+            // REVERT: h_ms_coeff=0.33 was tried to get proper ~69 hour time constant via
+            // derived_h_tr_3, but it decoupled the thermal mass too much, causing 900FF to
+            // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
+            // mass coupling; time constant will be addressed separately via derived_h_tr_3.
             let h_ms_coeff = match spec.construction_type {
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => 9.36,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.36,
-                crate::validation::ashrae_140_cases::ConstructionType::Special => 9.36,
+                crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.1,
+                crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
+            };
+            let h_ms_iso_13790 = h_ms_coeff * a_m;
+
             h_tr_ms_vec.push(h_ms_iso_13790);
             // Per-surface h_tr_ms for 9R4C model (Phase 6B, Issue #715) — keep the
             // half-insulation conduction values; do NOT switch them to ISO 13790 here.
@@ -1246,73 +1264,6 @@ impl ThermalModel<VectorField> {
             h_tr_is_no_south_vec.push(h_tr_is_no_south);
             h_tr_em_south_vec.push(h_tr_em_south);
 
-            // === Issue #715 FIX: South Wall Thermal Bypass ===
-            // The south wall has insulation in the middle, creating a series thermal path
-            // from interior air → interior film → insulation → exterior film → exterior.
-            // This path was bypassed when h_tr_em was added directly to derived_h_ext.
-            // Fix: Compute h_tr_is_south and h_tr_em_south separately, and use the
-            // series combination 1/(1/h_tr_is_south + 1/h_tr_em_south) in derived_h_ext.
-            let south_opaque_area = if zone_idx < model.surfaces.len() {
-                model.surfaces[zone_idx]
-                    .iter()
-                    .find(|s| {
-                        s.orientation == crate::validation::ashrae_140_cases::Orientation::South
-                    })
-                    .map(|s| (s.area - s.window_area).max(0.0))
-                    .unwrap_or(0.0)
-            } else {
-                0.0
-            };
-
-            // Interior film coefficient for south wall (ASHRAE 140 Table 3)
-            let h_tr_is_south_coeff =
-                crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
-            let h_tr_is_south = south_opaque_area * h_tr_is_south_coeff;
-
-            // Compute R_exterior_to_mass for south wall (layers exterior to mass node)
-            // Mass node is at the dominant insulation layer (ISO 13790 half-insulation rule)
-            let wall_construction = &spec.construction.wall;
-            let ins_idx = wall_construction.find_dominant_insulation_layer_index();
-            let r_ext_film_south =
-                1.0 / crate::physics::constants::thermal::ashrae_140::EXTERIOR_FILM_COEFF_DEFAULT;
-            let mut r_exterior_to_mass_south = r_ext_film_south;
-            let layers = &wall_construction.layers;
-            let num_layers = layers.len();
-            for (idx, layer) in layers.iter().enumerate() {
-                let reverse_idx = num_layers - 1 - idx;
-                let layer_r = layer.r_value();
-                if reverse_idx > ins_idx {
-                    r_exterior_to_mass_south += layer_r;
-                } else if reverse_idx == ins_idx {
-                    r_exterior_to_mass_south += layer_r / 2.0;
-                    break;
-                } else {
-                    break;
-                }
-            }
-            let h_tr_em_south = south_opaque_area / r_exterior_to_mass_south.max(0.001);
-
-            // Series combination: 1/(1/h_tr_is_south + 1/h_tr_em_south)
-            let h_south_series = if h_tr_is_south > 0.0 && h_tr_em_south > 0.0 {
-                1.0 / (1.0 / h_tr_is_south + 1.0 / h_tr_em_south)
-            } else {
-                0.0
-            };
-
-            if zone_idx == 0 && spec.case_id == "900" {
-                eprintln!(
-                    "ISSUE715 SOUTH WALL: opaque_area={:.3}m², h_tr_is_south={:.3}W/K, h_tr_em_south={:.3}W/K, series={:.3}W/K, R_ext_to_mass={:.3}",
-                    south_opaque_area, h_tr_is_south, h_tr_em_south, h_south_series, r_exterior_to_mass_south
-                );
-            }
-
-            // h_tr_is_no_south = total_h_tr_is - south wall's contribution
-            let total_h_tr_is = wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is;
-            let h_tr_is_no_south = (total_h_tr_is - h_tr_is_south).max(0.0);
-
-            h_tr_is_no_south_vec.push(h_tr_is_no_south);
-            h_tr_em_south_vec.push(h_tr_em_south);
-
             // === PHASE 36-04 FIX: τ DIAGNOSTIC OUTPUT ===
             // Calculate thermal time constant using derived_h_tr_3 (ISO 13790 air-to-mass conductance)
             // For 6R2C model, the mass receives heat from the AIR node through H_tr_3,
@@ -1395,6 +1346,7 @@ impl ThermalModel<VectorField> {
             model.cm_internal = None;
             model.multi_node_thermal_mass = None;
         }
+
         // === Issue 692 FIX: Physics-Based h_tr_me Calculation ===
         // h_tr_me (surface-to-internal mass conductance) was previously hardcoded to 100.0 W/K
         // but should be derived from construction like h_tr_ms.
@@ -1558,21 +1510,20 @@ impl ThermalModel<VectorField> {
 
         model.thermal_capacitance = VectorField::new(thermal_cap_vec);
 
-        // === Issue #894/#1013 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
+        // === Issue #894 FIX: Compute derived_h_tr_3 (ISO 13790 air-to-mass conductance) ===
         //
-        // derived_h_tr_3 is the coupling between thermal mass and interior air.
-        // Per ISO 13790 §6.3, this is the PARALLEL combination of h_tr_ms and h_tr_is,
-        // representing the path: interior air <-> interior surface <-> thermal mass.
+        // The thermal mass in the 6R2C model receives heat from the AIR node through H_tr_3,
+        // which is the SERIES combination of (air-to-surface + surface-to-mass).
+        // This creates an air-side bottleneck that slows the mass response.
         //
-        // The window (h_tr_w) is NOT in this path - it's a separate parallel path
-        // from exterior to interior (direct window gain).
+        // Without this, derived_h_tr_3 is 0.0 and the physics solvers silently fall back
+        // to h_tr_ms (~1300 W/K), giving a time constant of ~5 hours instead of the
+        // correct ~6 days for high-mass construction.
         //
-        // Formula (ISO 13790 §6.3):
-        //   H_tr_3 = h_tr_ms × h_tr_is / (h_tr_ms + h_tr_is)
-        //
-        // Issue #1013: The old formula incorrectly included h_tr_w in series with h_tr_ms,
-        // giving h_tr_3 ≈ 64 W/K for Case 900 (too low, caused temperature under-prediction).
-        // Correct formula gives h_tr_3 ≈ 186 W/K.
+        // Formula (ISO 13790, Section 6.3):
+        //   H_tr_1 = h_ve × h_tr_is / (h_ve + h_tr_is)   [series: ventilation + interior surface]
+        //   H_tr_2 = H_tr_1 + h_tr_w                        [parallel: window conduction]
+        //   H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms)            [series: air-to-surface + surface-to-mass]
         {
             let mut derived_h_tr_3_vec = Vec::with_capacity(num_zones);
             for zone_idx in 0..num_zones {
@@ -1581,15 +1532,23 @@ impl ThermalModel<VectorField> {
                 let h_tr_w_z = *model.h_tr_w.as_ref().get(zone_idx).unwrap_or(&0.0);
                 let h_ve_z = *model.h_ve.as_ref().get(zone_idx).unwrap_or(&0.0);
 
-                // Issue #1013 FIX: H_tr_3 = h_tr_ms * h_tr_is / (h_tr_ms + h_tr_is)
-                // ISO 13790 §6.3 correct formula for air-to-mass coupling.
-                // The window (h_tr_w) is NOT in series - it's parallel to the surface path.
-                // Old formula included h_tr_w in series, giving h_tr_3 ≈ 64 W/K (wrong).
-                // Correct formula gives h_tr_3 ≈ 186 W/K for Case 900 parameters.
-                let h_tr_3 = if h_tr_ms_z > 0.0 && h_tr_is_z > 0.0 {
-                    (h_tr_ms_z * h_tr_is_z) / (h_tr_ms_z + h_tr_is_z)
+                let h_tr_3 = if h_tr_ms_z > 0.0 && h_tr_is_z > 0.0 && h_ve_z > 0.0 {
+                    // H_tr_1: series of ventilation and interior surface conductance
+                    let h_tr_1 = if (h_ve_z + h_tr_is_z) > 0.0 {
+                        (h_ve_z * h_tr_is_z) / (h_ve_z + h_tr_is_z)
+                    } else {
+                        0.0
+                    };
+                    // H_tr_2: H_tr_1 in parallel with window conduction
+                    let h_tr_2 = h_tr_1 + h_tr_w_z;
+                    // H_tr_3: series of H_tr_2 and h_tr_ms
+                    if h_tr_2 > 0.0 {
+                        (h_tr_2 * h_tr_ms_z) / (h_tr_2 + h_tr_ms_z)
+                    } else {
+                        h_tr_ms_z
+                    }
                 } else {
-                    h_tr_ms_z // Fallback
+                    h_tr_ms_z // Fallback for uninitialized conductances
                 };
                 derived_h_tr_3_vec.push(h_tr_3);
             }
@@ -1684,6 +1643,9 @@ impl ThermalModel<VectorField> {
         // thermal model assumptions and was not compliant with ASHRAE 140.
         model.solar_distribution_to_air = 0.0; // ASHRAE 140: zero to air node
 
+        // Solar beam (direct) radiation fraction to thermal mass
+        // Per ASHRAE 140 Section 5.2.2, all transmitted solar is distributed to opaque surfaces
+        // For ASHRAE 140 simplified model, 100% to mass (opaque surfaces absorb solar)
         model.solar_beam_to_mass_fraction = 1.0;
 
         // Physics-based: Thermal mass effects are captured through Cm in the thermal network
@@ -2007,19 +1969,6 @@ impl ThermalModel<VectorField> {
             .iter()
             .map(|&vol| Some(IdealLoadsSystem::new(vol, ventilation_ach)))
             .collect();
-
-        // Issue #913: Enable CTF by default for high-mass 900FF cases
-        // The high-mass wall construction requires CTF for accurate heat conduction modeling
-        // Use the same wall layers as the test for consistency
-        if spec.case_id == "900FF" {
-            use crate::physics::ctf_coefficients::CTFMaterial;
-            let wall_layers = vec![
-                CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
-                CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
-                CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
-            ];
-            model.enable_ctf(&wall_layers, 3600.0, 50);
-        }
 
         model
     }
@@ -2370,6 +2319,10 @@ impl ThermalModel<VectorField> {
             solar_distribution_to_air: 0.1,
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
             thermal_mass_coupling_enhancement: 1.0, // Default: no coupling enhancement
+            time_constant_sensitivity_correction: 1.0, // Default: no correction
+            cooling_sensitivity_correction: 1.0, // Default: no correction
+            time_constant_sensitivity_correction_6r2c: 1.0, // Default: no correction for 6R2C
+            cooling_sensitivity_correction_6r2c: 1.0, // Default: no correction for 6R2C cooling
             // Mode-specific factors removed - using physics-based conductances
             // h_tr_em_heating_factor, h_tr_em_cooling_factor removed
             // h_tr_ms_heating_factor, h_tr_ms_cooling_factor removed

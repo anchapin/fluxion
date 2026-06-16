@@ -413,7 +413,8 @@ impl Default for Case960Report {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         };
 
         Self {
@@ -438,7 +439,8 @@ impl Default for Case970Report {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         };
 
         Self {
@@ -486,9 +488,12 @@ pub struct ValidationResult {
     /// Per-program validation statuses for multi-reference comparison
     #[serde(skip_serializing_if = "Option::is_none")]
     pub per_program: Option<HashMap<String, ValidationStatus>>,
-    /// Timestamp of peak value occurrence (for peak metrics)
+    /// Date of peak value occurrence (e.g., "Jan 15") for peak metrics
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub peak_timestamp: Option<DateTime<Utc>>,
+    pub peak_date: Option<String>,
+    /// Hour of peak value occurrence (0-23) for peak metrics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_hour: Option<u32>,
 }
 
 impl ValidationResult {
@@ -540,7 +545,8 @@ impl ValidationResult {
             percent_error,
             status,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         }
     }
 
@@ -818,7 +824,8 @@ impl BenchmarkReport {
             percent_error,
             status: overall_status,
             per_program: Some(per_program),
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         };
         self.add_result(result);
     }
@@ -1711,7 +1718,8 @@ impl BenchmarkReport {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         };
 
         Case960Report {
@@ -1755,7 +1763,8 @@ impl BenchmarkReport {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         };
 
         Case970Report {
@@ -2647,7 +2656,8 @@ impl ValidationSuite {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         }
     }
 
