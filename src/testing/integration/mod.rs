@@ -23,5 +23,3 @@ pub use scenarios::{
 
 // DOE Commercial Reference Buildings
 pub mod doe_reference;
-
-pub use doe_reference::DoeBuildingType;

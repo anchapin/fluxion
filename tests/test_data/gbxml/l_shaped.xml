@@ -1,0 +1,227 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gbXML xmlns="http://www.gbxml.org/schema" version="7.01">
+  <Campus id="c1">
+    <Building id="b1" buildingStoryIdRef="s1">
+      <Name>LShapedBuilding</Name>
+      <Description>L-shaped multi-zone building for testing inter-zone surfaces</Description>
+      <Location>
+        <ZipcodeOrPostalCode>80301</ZipcodeOrPostalCode>
+        <Longitude>-105.15</Longitude>
+        <Latitude>40.01</Latitude>
+        <Elevation>1650</Elevation>
+      </Location>
+    </Building>
+    <BuildingStory id="s1">
+      <Name>Story 1</Name>
+      <Level>0</Level>
+      <Height>3.0</Height>
+    </BuildingStory>
+  </Campus>
+  <Zone id="z1">
+    <Name>ZoneA</Name>
+    <BuildingStoryIdRef>s1</BuildingStoryIdRef>
+    <Volume>108.0</Volume>
+    <Area>36.0</Area>
+    <Spaces>
+      <Space id="sp1">
+        <Name>SpaceA</Name>
+        <Area>36.0</Area>
+        <Volume>108.0</Volume>
+      </Space>
+    </Spaces>
+  </Zone>
+  <Zone id="z2">
+    <Name>ZoneB</Name>
+    <BuildingStoryIdRef>s1</BuildingStoryIdRef>
+    <Volume>54.0</Volume>
+    <Area>18.0</Area>
+    <Spaces>
+      <Space id="sp2">
+        <Name>SpaceB</Name>
+        <Area>18.0</Area>
+        <Volume>54.0</Volume>
+      </Space>
+    </Spaces>
+  </Zone>
+  <!-- Zone A Exterior Walls -->
+  <Surface id="wall_a_north" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>ZoneA North Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>12.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,0,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,0,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall_a_west" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>ZoneA West Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>27.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>270</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,9,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,9,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,0,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall_a_south" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>ZoneA South Wall</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>12.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>180</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,9,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,9,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,9,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,9,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Zone B Exterior Walls -->
+  <Surface id="wall_b_east" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>ZoneB East Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>18.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>90</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>4,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,12,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,12,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,6,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall_b_south" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>ZoneB South Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>6.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>180</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>4,12,0</Coordinates></Vertex>
+      <Vertex><Coordinates>6,12,0</Coordinates></Vertex>
+      <Vertex><Coordinates>6,12,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,12,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="wall_b_north" surfaceType="ExteriorWall" constructionIdRef="const_wall1" buildingIdRef="b1">
+    <Name>ZoneB North Wall</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>6.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>4,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>6,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>6,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,6,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Inter-zone wall between ZoneA and ZoneB -->
+  <Surface id="wall_interzone" surfaceType="InteriorWall" constructionIdRef="const_interzone" buildingIdRef="b1">
+    <Name>InterZone Wall AB</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>9.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>90</Azimuth>
+    <Tilt>90</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>4,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,9,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,9,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,6,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Roofs -->
+  <Surface id="roof_a" surfaceType="Roof" constructionIdRef="const_roof1" buildingIdRef="b1">
+    <Name>RoofA</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>36.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>0</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,0,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,9,3</Coordinates></Vertex>
+      <Vertex><Coordinates>0,9,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="roof_b" surfaceType="Roof" constructionIdRef="const_roof1" buildingIdRef="b1">
+    <Name>RoofB</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>18.0</Area>
+    <Height>3.0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>0</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>4,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>6,6,3</Coordinates></Vertex>
+      <Vertex><Coordinates>6,12,3</Coordinates></Vertex>
+      <Vertex><Coordinates>4,12,3</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <!-- Floors -->
+  <Surface id="floor_a" surfaceType="SlabOnGrade" constructionIdRef="const_floor1" buildingIdRef="b1">
+    <Name>FloorA</Name>
+    <AdjacentSpaceIdRef>sp1</AdjacentSpaceIdRef>
+    <Area>36.0</Area>
+    <Height>0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>180</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>0,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,0,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,9,0</Coordinates></Vertex>
+      <Vertex><Coordinates>0,9,0</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Surface id="floor_b" surfaceType="SlabOnGrade" constructionIdRef="const_floor1" buildingIdRef="b1">
+    <Name>FloorB</Name>
+    <AdjacentSpaceIdRef>sp2</AdjacentSpaceIdRef>
+    <Area>18.0</Area>
+    <Height>0</Height>
+    <Azimuth>0</Azimuth>
+    <Tilt>180</Tilt>
+    <Vertices>
+      <Vertex><Coordinates>4,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>6,6,0</Coordinates></Vertex>
+      <Vertex><Coordinates>6,12,0</Coordinates></Vertex>
+      <Vertex><Coordinates>4,12,0</Coordinates></Vertex>
+    </Vertices>
+  </Surface>
+  <Construction id="const_wall1">
+    <Name>StandardWall</Name>
+    <U-value>0.5</U-value>
+  </Construction>
+  <Construction id="const_interzone">
+    <Name>InterzoneWall</Name>
+    <U-value>0.8</U-value>
+  </Construction>
+  <Construction id="const_roof1">
+    <Name>StandardRoof</Name>
+    <U-value>0.3</U-value>
+  </Construction>
+  <Construction id="const_floor1">
+    <Name>SlabOnGrade</Name>
+    <U-value>0.4</U-value>
+  </Construction>
+  <Material id="mat_concrete">
+    <Name>Concrete</Name>
+    <Conductivity>1.4</Conductivity>
+    <Density>2300</Density>
+    <SpecificHeat>840</SpecificHeat>
+  </Material>
+</gbXML>
