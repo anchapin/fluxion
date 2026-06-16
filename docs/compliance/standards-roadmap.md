@@ -19,7 +19,7 @@ fluxion currently targets ASHRAE 140 (building thermal envelope). Several adjace
 | Standard | Market | Priority | fluxion Status | Version |
 |----------|--------|----------|----------------|---------|
 | ASHRAE 140-2023 | US/International (validation baseline) | 1 (current) | Active development | 140-2023 |
-| ASHRAE 90.1 Appendix G | US Commercial | 2 | Planned | 90.1-2022 → 90.1-2025 |
+| ASHRAE 90.1 Appendix G | US Commercial | 2 | Planned | 90.1-2025 |
 | RESNET HERS | US Residential | 3 | Planned | 301-2022 → 301-202x (draft) |
 | California Title 24 ACM | California | 4 | Planned | 2025 (eff. Jan 2026) |
 | ISO 52016 / EN 13790 | EU | 5 | Planned | 52016-1:2017, 52016-3:2024 |
@@ -36,9 +36,9 @@ fluxion currently targets ASHRAE 140 (building thermal envelope). Several adjace
 
 ## 2. ASHRAE 90.1 Appendix G — Commercial Market
 
-**Standard:** ASHRAE 90.1-2022 (Energy Standard for Commercial Buildings) Appendix G Performance Rating Method
+**Standard:** ASHRAE 90.1-2025 (Energy Standard for Commercial Buildings) Appendix G Performance Rating Method
 **Market:** Required for commercial building permits in most US jurisdictions; used for LEED, green building codes
-**Version Note:** ASHRAE 90.1-2025 is currently under development. The 2022 version remains the normative baseline for compliance. fluxion will target 90.1-2022 Appendix G for initial certification, with a migration path to 90.1-2025 upon final publication.
+**Version Note:** ASHRAE 90.1-2025 has been published (released 2025). It incorporates all approved addenda since 90.1-2022 and includes revised interior lighting power allowances. fluxion targets 90.1-2025 Appendix G for initial certification.
 **Priority:** 2
 **fluxion Status:** Not started
 
@@ -141,7 +141,7 @@ Phase 2: ASHRAE 90.1 Appendix G
   └─ Multi-zone HVAC modeling
   └─ Equipment curves
   └─ Lighting/plug load scheduling
-  └─ Target: 90.1-2022 (migrate to 90.1-2025 post-publication)
+  └─ Target: 90.1-2025 (published)
 
 Phase 3: RESNET HERS
   └─ Infiltration model upgrade (ASHRAE 136 method)
@@ -169,6 +169,6 @@ Phase 5: ISO 52016
 - ASHRAE 140 is the **prerequisite** for all other standards — completion of 140 compliance is blocking for subsequent phases.
 - RESNET has a **separate approval process** from ASHRAE; early coordination with RESNET recommended before Phase 3 begins. Draft PDS-01 (301-202x) is under development — monitor RESNET for final publication to avoid duplicating early modeling work.
 - Title 24 2025 takes effect **January 1, 2026** — fluxion should target the 2025 ACM Reference Manual for initial certification.
-- ASHRAE 90.1-2025 is under development — monitor for final publication; fluxion's initial 90.1-2022 Appendix G work will migrate to the new version.
+- ASHRAE 90.1-2025 has been published — fluxion targets this version for initial certification.
 - ISO 52016-3:2024 introduces adaptive envelope methods — consider early alignment for EU market readiness.
 - Title 24 requires **DOE-2 comparison** — understanding DOE-2's underlying physics will be important for Phase 4.
