@@ -269,7 +269,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // DISABLED: ThermalModel::new() doesn't properly initialize physics parameters
         // (cm=1.0 instead of real values), causing numerical explosion during warmup.
         // Re-enable once model initialization is fixed.
-        if false && warm_up_years > 0 && is_full_year_simulation {
+        #[allow(dead_code, clippy::if_same_then_else)]
+        if false {
             info!("Starting warm-up phase: {} year(s)", warm_up_years);
             let convergence_threshold = 0.1; // °C per ASHRAE 140
             let hours_per_year = 8760;
