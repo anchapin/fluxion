@@ -15,6 +15,7 @@
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
+use crate::sim::boundary::distribute_opaque_solar_gains;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
 use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
 use crate::sim::sky_radiation::SolAirTemperature;
@@ -2002,6 +2003,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // 1. Free-floating zone temperature (validated at 42.87°C for 900FF)
         let t_i_free_5r1c = t_i_free.clone();
 
+        // Issue #864: Store pre-gain mass temperatures and per-surface gains for
+        // step_per_surface(). Using pre-gain temperatures avoids double-counting
+        // gains that are added in SurfaceNode::update()'s backward Euler.
+        let mut pre_gain_mass_temps_wall = Vec::with_capacity(self.0.num_zones);
+        let mut pre_gain_mass_temps_roof = Vec::with_capacity(self.0.num_zones);
+        let mut pre_gain_mass_temps_floor = Vec::with_capacity(self.0.num_zones);
+        let mut phi_m_surface_wall = Vec::with_capacity(self.0.num_zones);
+        let mut phi_m_surface_roof = Vec::with_capacity(self.0.num_zones);
+        let mut phi_m_surface_floor = Vec::with_capacity(self.0.num_zones);
+
         #[allow(clippy::needless_range_loop)]
         for zone_idx in 0..self.0.num_zones {
             if zone_idx >= self.0.multi_node_solvers.len() {
@@ -2027,7 +2038,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solver.set_zone_temperature(t_zone_prev);
             solver.set_surface_temperature(t_surface);
 
-            let surface_ext_temps = if let Some(ref weather) = self.0.weather {
+            let (surface_ext_temps, wall_irr_val, roof_irr_val) = if let Some(ref weather) =
+                self.0.weather
+            {
                 let hour_of_year = timestep % 8760;
                 let month_days: [usize; 12] =
                     [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
@@ -2071,7 +2084,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 );
 
                 let sol_air = SolAirTemperature::ashrae_140_default();
-                SurfaceExteriorTemperatures {
+                let ext_temps = SurfaceExteriorTemperatures {
                     t_ext_wall: sol_air.for_wall(
                         outdoor_temp,
                         wall_irr.total_wm2,
@@ -2079,13 +2092,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     ),
                     t_ext_roof: sol_air.for_roof(outdoor_temp, roof_irr.total_wm2, sky_temp),
                     t_ext_floor: t_g,
-                }
+                };
+                (ext_temps, wall_irr.total_wm2, roof_irr.total_wm2)
             } else {
-                SurfaceExteriorTemperatures {
-                    t_ext_wall: t_ext,
-                    t_ext_roof: t_ext,
-                    t_ext_floor: t_g,
-                }
+                (
+                    SurfaceExteriorTemperatures {
+                        t_ext_wall: t_ext,
+                        t_ext_roof: t_ext,
+                        t_ext_floor: t_g,
+                    },
+                    0.0,
+                    0.0,
+                )
             };
 
             solver.set_surface_exterior_temperatures(surface_ext_temps);
@@ -2123,6 +2141,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let gains_roof = phi_st_zone * roof_frac;
             let gains_floor = phi_st_zone * floor_frac;
             let gains_internal = phi_m_zone;
+
+            // Issue #864: Capture pre-gain mass temperatures BEFORE step_with_gains()
+            // so step_per_surface can use them to avoid double-counting gains.
+            // Also compute per-surface opaque solar gains for SurfaceNode::update().
+            let mass_temp_wall_pre = solver.mass.wall.temperature;
+            let mass_temp_roof_pre = solver.mass.roof.temperature;
+            let mass_temp_floor_pre = solver.mass.floor.temperature;
+
+            // Use opaque solar gain (phi_m_zone) distributed by irradiance × area.
+            // Assume equal per-unit areas (1.0 m²) since actual zone geometry
+            // is not stored in the multi-node solver. Using irradiance ensures
+            // sun-facing surfaces get proportionally more gain.
+            let floor_irr_val = 0.0; // Floor gets no direct solar
+            let solar_gains = distribute_opaque_solar_gains(
+                phi_m_zone,
+                1.0, // wall_area (per-unit)
+                1.0, // roof_area (per-unit)
+                1.0, // floor_area (per-unit)
+                wall_irr_val,
+                roof_irr_val,
+                floor_irr_val,
+            );
+
+            pre_gain_mass_temps_wall.push(mass_temp_wall_pre);
+            pre_gain_mass_temps_roof.push(mass_temp_roof_pre);
+            pre_gain_mass_temps_floor.push(mass_temp_floor_pre);
+            phi_m_surface_wall.push(solar_gains.phi_m_wall);
+            phi_m_surface_roof.push(solar_gains.phi_m_roof);
+            phi_m_surface_floor.push(solar_gains.phi_m_floor);
+
             solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
         }
 
@@ -2184,7 +2232,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solver.set_surface_temperature(t_surface);
         }
 
-        // === Issue #1005: Per-surface conduction integration ===
+        // === Issue #1005/#864: Per-surface conduction integration ===
         //
         // Refine the surface temperature for each zone using the per-surface
         // conduction solver. This tracks the air-side surface film independently
@@ -2192,12 +2240,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // exterior boundary. The result is written back to the multi-node
         // solver's `surface_temperature` so subsequent air-node energy
         // balances use a more accurate boundary value.
+        //
+        // Issue #864: Pass pre-gain mass temperatures to avoid double-counting
+        // gains (gains are added in SurfaceNode::update()'s backward Euler).
+        // Also pass per-surface opaque solar gains for direct absorption.
         for zone_idx in 0..self.0.num_zones {
             if zone_idx >= self.0.multi_node_solvers.len() {
                 continue;
             }
             let solver = &mut self.0.multi_node_solvers[zone_idx];
-            solver.step_per_surface(dt);
+            let mass_temp_wall_pre = pre_gain_mass_temps_wall
+                .get(zone_idx)
+                .copied()
+                .unwrap_or(20.0);
+            let mass_temp_roof_pre = pre_gain_mass_temps_roof
+                .get(zone_idx)
+                .copied()
+                .unwrap_or(20.0);
+            let mass_temp_floor_pre = pre_gain_mass_temps_floor
+                .get(zone_idx)
+                .copied()
+                .unwrap_or(20.0);
+            let phi_m_wall = phi_m_surface_wall.get(zone_idx).copied().unwrap_or(0.0);
+            let phi_m_roof = phi_m_surface_roof.get(zone_idx).copied().unwrap_or(0.0);
+            let phi_m_floor = phi_m_surface_floor.get(zone_idx).copied().unwrap_or(0.0);
+            solver.step_per_surface(
+                dt,
+                mass_temp_wall_pre,
+                mass_temp_roof_pre,
+                mass_temp_floor_pre,
+                phi_m_wall,
+                phi_m_roof,
+                phi_m_floor,
+            );
         }
 
         // Calculate HVAC demand
