@@ -1124,7 +1124,8 @@ mod tests {
                 .into_iter()
                 .collect(),
             ),
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         };
         report.add_result(result);
 
