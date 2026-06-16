@@ -149,8 +149,8 @@ impl MetricType {
     /// Returns the display name for this metric type (ASHRAE 140 compliant).
     pub fn display_name(&self) -> &str {
         match self {
-            MetricType::AnnualHeating => "Annual Heating Energy (MWh)",
-            MetricType::AnnualCooling => "Annual Cooling Energy (MWh)",
+            MetricType::AnnualHeating => "Annual Heating Energy (kWh)",
+            MetricType::AnnualCooling => "Annual Cooling Energy (kWh)",
             MetricType::PeakHeating => "Peak Heating Load (kW)",
             MetricType::PeakCooling => "Peak Cooling Load (kW)",
             MetricType::MinFreeFloat => "Minimum Free-Floating Temperature (°C)",
@@ -162,10 +162,21 @@ impl MetricType {
     /// Returns the units for this metric type.
     pub fn units(&self) -> &str {
         match self {
-            MetricType::AnnualHeating | MetricType::AnnualCooling => "MWh",
+            MetricType::AnnualHeating | MetricType::AnnualCooling => "kWh",
             MetricType::PeakHeating | MetricType::PeakCooling => "kW",
             MetricType::MinFreeFloat | MetricType::MaxFreeFloat => "°C",
             MetricType::IncidentSolar { .. } => "kWh/m²",
+        }
+    }
+
+    /// Converts internal MWh storage to Section 8 compliant kWh output.
+    ///
+    /// Issue #749: Section 8 requires kWh but internal storage is MWh.
+    /// This method multiplies annual energy values by 1000 to convert MWh→kWh.
+    pub fn to_output_units(&self, value: f64) -> f64 {
+        match self {
+            MetricType::AnnualHeating | MetricType::AnnualCooling => value * 1000.0,
+            _ => value,
         }
     }
 }
@@ -925,11 +936,12 @@ impl BenchmarkReport {
         for result in &self.results {
             if result.case_id != baseline_case {
                 // Find matching metric in baseline
-                if let Some(baseline) = baseline_results.iter().find(|b| b.metric == result.metric)
+                if let Some(baseline) = baseline_results.iter().find(|b| result.metric == b.metric)
                 {
-                    let delta = result.fluxion_value - baseline.fluxion_value;
+                    let delta_mwh = result.fluxion_value - baseline.fluxion_value;
+                    let delta_output = result.metric.to_output_units(delta_mwh);
                     let key = format!("{} - {}", result.case_id, result.metric.display_name());
-                    deltas.insert(key, delta);
+                    deltas.insert(key, delta_output);
                 }
             }
         }
@@ -1068,13 +1080,16 @@ impl BenchmarkReport {
         output.push_str("|------|--------|---------|---------|---------|-----------|--------|\n");
 
         for result in &self.results {
+            let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+            let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+            let ref_max_kwh = result.metric.to_output_units(result.ref_max);
             output.push_str(&format!(
                 "| {} | {} | {:.2} | {:.2} | {:.2} | {} | {} |\n",
                 result.case_id,
                 result.metric,
-                result.fluxion_value,
-                result.ref_min,
-                result.ref_max,
+                fluxion_kwh,
+                ref_min_kwh,
+                ref_max_kwh,
                 result.deviation_string(),
                 result.status
             ));
@@ -1271,12 +1286,16 @@ impl BenchmarkReport {
                 "negative"
             };
 
+            let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+            let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+            let ref_max_kwh = result.metric.to_output_units(result.ref_max);
+
             html.push_str("    <tr>\n");
             html.push_str(&format!("      <td>{}</td>\n", result.case_id));
             html.push_str(&format!("      <td>{}</td>\n", result.metric));
-            html.push_str(&format!("      <td>{:.2}</td>\n", result.fluxion_value));
-            html.push_str(&format!("      <td>{:.2}</td>\n", result.ref_min));
-            html.push_str(&format!("      <td>{:.2}</td>\n", result.ref_max));
+            html.push_str(&format!("      <td>{:.2}</td>\n", fluxion_kwh));
+            html.push_str(&format!("      <td>{:.2}</td>\n", ref_min_kwh));
+            html.push_str(&format!("      <td>{:.2}</td>\n", ref_max_kwh));
             html.push_str(&format!(
                 "      <td class=\"{}\">{}</td>\n",
                 deviation_class,
@@ -1371,13 +1390,16 @@ impl BenchmarkReport {
 
         // Data rows
         for result in &self.results {
+            let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+            let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+            let ref_max_kwh = result.metric.to_output_units(result.ref_max);
             csv.push_str(&format!(
                 "{},{},{:.4},{:.4},{:.4},{:.2},{}\n",
                 result.case_id,
                 result.metric,
-                result.fluxion_value,
-                result.ref_min,
-                result.ref_max,
+                fluxion_kwh,
+                ref_min_kwh,
+                ref_max_kwh,
                 result.percent_error,
                 result.status
             ));
@@ -1544,12 +1566,15 @@ impl BenchmarkReport {
             output.push_str("|--------|---------|---------|---------|-----------|--------|\n");
 
             for result in case_960_results {
+                let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+                let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+                let ref_max_kwh = result.metric.to_output_units(result.ref_max);
                 output.push_str(&format!(
                     "| {} | {:.2} | {:.2} | {:.2} | {} | {} |\n",
                     result.metric,
-                    result.fluxion_value,
-                    result.ref_min,
-                    result.ref_max,
+                    fluxion_kwh,
+                    ref_min_kwh,
+                    ref_max_kwh,
                     result.deviation_string(),
                     result.status
                 ));
@@ -1568,12 +1593,15 @@ impl BenchmarkReport {
             output.push_str("|--------|---------|---------|---------|-----------|--------|\n");
 
             for result in case_970_results {
+                let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+                let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+                let ref_max_kwh = result.metric.to_output_units(result.ref_max);
                 output.push_str(&format!(
                     "| {} | {:.2} | {:.2} | {:.2} | {} | {} |\n",
                     result.metric,
-                    result.fluxion_value,
-                    result.ref_min,
-                    result.ref_max,
+                    fluxion_kwh,
+                    ref_min_kwh,
+                    ref_max_kwh,
                     result.deviation_string(),
                     result.status
                 ));
@@ -1662,9 +1690,9 @@ impl BenchmarkReport {
                 "{},{},{:.4},{:.4},{:.4},{:.2},{},{}\n",
                 result.case_id,
                 result.metric,
-                result.fluxion_value,
-                result.ref_min,
-                result.ref_max,
+                result.metric.to_output_units(result.fluxion_value),
+                result.metric.to_output_units(result.ref_min),
+                result.metric.to_output_units(result.ref_max),
                 result.percent_error,
                 result.status,
                 case_type
@@ -1721,10 +1749,12 @@ impl BenchmarkReport {
                 .find(|r| r.case_id == "970" && r.metric == *metric);
 
             if let (Some(r960), Some(r970)) = (case_960_result, case_970_result) {
-                let difference = r970.fluxion_value - r960.fluxion_value;
+                let fluxion_960_kwh = r960.metric.to_output_units(r960.fluxion_value);
+                let fluxion_970_kwh = r970.metric.to_output_units(r970.fluxion_value);
+                let difference = fluxion_970_kwh - fluxion_960_kwh;
                 table.push_str(&format!(
                     "| {} | {:.2} | {:.2} | {:+.2} |\n",
-                    metric, r960.fluxion_value, r970.fluxion_value, difference
+                    metric, fluxion_960_kwh, fluxion_970_kwh, difference
                 ));
             }
         }
@@ -3024,9 +3054,9 @@ mod tests {
     fn test_metric_type_display() {
         assert_eq!(
             MetricType::AnnualHeating.display_name(),
-            "Annual Heating Energy (MWh)"
+            "Annual Heating Energy (kWh)"
         );
-        assert_eq!(MetricType::AnnualCooling.units(), "MWh");
+        assert_eq!(MetricType::AnnualCooling.units(), "kWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
     }
 
@@ -3713,8 +3743,8 @@ mod tests {
 
         let deltas = report.delta_analysis("600");
         assert!(!deltas.is_empty());
-        assert!(deltas.contains_key("610 - Annual Heating Energy (MWh)"));
-        assert!((deltas["610 - Annual Heating Energy (MWh)"] - 0.5).abs() < 0.01);
+        assert!(deltas.contains_key("610 - Annual Heating Energy (kWh)"));
+        assert!((deltas["610 - Annual Heating Energy (kWh)"] - 500.0).abs() < 0.01);
     }
 
     #[test]
