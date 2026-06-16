@@ -161,6 +161,7 @@ pub fn backward_euler_update(
 /// * `t_ext` - Exterior (sol-air) temperature driving the h_tr_em path (°C)
 /// * `t_sup` - Supply / surface temperature driving the h_tr_3 path (°C)
 /// * `phi_m_tot` - Total heat flow to mass node (W), includes HVAC via network
+#[allow(clippy::too_many_arguments)]
 pub fn crank_nicolson_iso13790(
     tm_prev: f64,
     dt: f64,
