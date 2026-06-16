@@ -39,7 +39,8 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         },
         // Pass
         ValidationResult {
@@ -51,7 +52,8 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         },
         // Warning (within range but high deviation)
         ValidationResult {
@@ -63,7 +65,8 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             percent_error: 50.0,
             status: ValidationStatus::Warning,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         },
         // Fail
         ValidationResult {
@@ -75,7 +78,8 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             percent_error: 100.0,
             status: ValidationStatus::Fail,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         },
     ];
 

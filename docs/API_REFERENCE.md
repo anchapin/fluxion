@@ -689,6 +689,46 @@ if let Some(temps) = hourly {
 }
 ```
 
+
+### ValidationResult (Issue #761)
+
+The `ValidationResult` struct contains a single validation result for a specific case and metric, including peak load timestamp information.
+
+**Rust Struct Definition:**
+```rust
+pub struct ValidationResult {
+    pub case_id: String,           // Case identifier (e.g., "600", "900", "600FF")
+    pub metric: MetricType,        // Metric type
+    pub fluxion_value: f64,        // Fluxion simulation value
+    pub ref_min: f64,              // Reference minimum value
+    pub ref_max: f64,              // Reference maximum value
+    pub percent_error: f64,        // Percent error from reference midpoint
+    pub status: ValidationStatus,  // Validation status
+    pub per_program: Option<HashMap<String, ValidationStatus>>,  // Per-program statuses
+    pub peak_date: Option<String>, // Date of peak value occurrence (e.g., "Jan 15")
+    pub peak_hour: Option<u32>,    // Hour of peak value occurrence (0-23)
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `case_id` | `String` | Case identifier (e.g., "600", "900", "600FF") |
+| `metric` | `MetricType` | Metric type (heating, cooling, peak, etc.) |
+| `fluxion_value` | `f64` | Fluxion simulation value |
+| `ref_min` | `f64` | Reference minimum value |
+| `ref_max` | `f64` | Reference maximum value |
+| `percent_error` | `f64` | Percent error from reference midpoint |
+| `status` | `ValidationStatus` | Validation status (Pass, Warning, Fail) |
+| `per_program` | `Option<HashMap<String, ValidationStatus>>` | Per-program validation statuses |
+| `peak_date` | `Option<String>` | Date of peak value occurrence (e.g., "Jan 15") for peak metrics |
+| `peak_hour` | `Option<u32>` | Hour of peak value occurrence (0-23) for peak metrics |
+
+**ASHRAE 140 Section 8 Compliance:**
+
+The `peak_date` and `peak_hour` fields capture when peak heating or cooling loads occur, supporting ASHRAE 140 Section 8 gap analysis for peak load timestamp validation.
+
 ### Incident Solar Radiation per Surface (Issue #762)
 
 Fluxion reports incident solar radiation on a per-surface basis using the `IncidentSolar` metric type. This metric captures the total annual solar radiation incident on each building surface orientation.

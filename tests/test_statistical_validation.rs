@@ -232,7 +232,8 @@ fn test_nmbe_calculation() {
         percent_error: 0.0,
         status: ValidationStatus::Pass,
         per_program: None,
-        peak_timestamp: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -251,7 +252,8 @@ fn test_nmbe_calculation() {
         percent_error: 10.0,
         status: ValidationStatus::Pass,
         per_program: None,
-        peak_timestamp: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -270,7 +272,8 @@ fn test_nmbe_calculation() {
         percent_error: -10.0,
         status: ValidationStatus::Pass,
         per_program: None,
-        peak_timestamp: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -298,7 +301,8 @@ fn test_cv_rmse_calculation() {
         percent_error: 0.0,
         status: ValidationStatus::Pass,
         per_program: None,
-        peak_timestamp: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let cv_rmse = calculate_cv_rmse(&results);
@@ -317,7 +321,8 @@ fn test_cv_rmse_calculation() {
         percent_error: 10.0,
         status: ValidationStatus::Pass,
         per_program: None,
-        peak_timestamp: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let cv_rmse = calculate_cv_rmse(&results);
@@ -374,7 +379,8 @@ fn test_ci_nmbe_calculation() {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         },
         ValidationResult {
             case_id: "test2".to_string(),
@@ -385,7 +391,8 @@ fn test_ci_nmbe_calculation() {
             percent_error: 10.0,
             status: ValidationStatus::Pass,
             per_program: None,
-            peak_timestamp: None,
+            peak_date: None,
+            peak_hour: None,
         },
     ];
 
