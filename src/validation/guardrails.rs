@@ -106,6 +106,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -135,6 +136,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -164,6 +166,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -193,6 +196,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         let fail_result = ValidationResult {
             case_id: "610".to_string(),
@@ -205,6 +209,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.results.push(pass_result);
         report.results.push(fail_result);
@@ -235,6 +240,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
@@ -321,6 +327,7 @@ mod tests {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         };
         report.results.push(result);
 
