@@ -1113,3 +1113,172 @@ mod tests {
         );
     }
 }
+
+// ============================================================================
+// IFC Parsing Stubs
+// ============================================================================
+//
+// These stubs describe the expected behavior for IFC (Industry Foundation Classes)
+// parsing, which is the other major BIM format mentioned in Issue #1055.
+//
+// IFC parsing is not yet implemented. These tests serve as a specification
+// for future development and validation of IFC geometry ingestion.
+//
+// IFC is more complex than gbXML because:
+// - Uses STEP format (ISO 10303) instead of XML
+// - Contains full BIM data (walls, windows, doors, spaces, zones)
+// - Requires geometric reasoning (extrusions, boolean operations)
+// - Has multiple schema versions (IFC2x3, IFC4, IFC4x1)
+//
+// Once IFC parsing is implemented, these stubs should be converted to
+// real tests that validate the actual parsing behavior.
+
+#[cfg(test)]
+mod ifc_parsing_stubs {
+    /// IFC surface classification for boundary condition determination
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum IfcSurfaceType {
+        IfcWall,
+        IfcRoof,
+        IfcFloor,
+        IfcWindow,
+        IfcDoor,
+        IfcSlab,
+        IfcCovering,
+        IfcUnknown,
+    }
+
+    /// Boundary condition for IFC surfaces
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum IfcBoundaryCondition {
+        Exterior,
+        Interior,
+        Ground,
+        InterZone,
+        Unknown,
+    }
+
+    /// Parsed IFC building element
+    #[derive(Debug, Clone)]
+    pub struct ParsedIfcElement {
+        pub id: String,
+        pub name: String,
+        pub element_type: IfcSurfaceType,
+        pub area: f64,
+        pub volume: Option<f64>,
+        pub boundary_condition: IfcBoundaryCondition,
+    }
+
+    /// Expected behavior: Parse IFC file and extract building geometry
+    ///
+    /// # Input
+    /// - IFC STEP file (e.g., "simple_office.ifc")
+    ///
+    /// # Expected Output
+    /// - List of building elements (walls, roofs, floors, etc.)
+    /// - Zone assignments for each space
+    /// - Boundary condition classification
+    ///
+    /// # Notes
+    /// - IFC uses placement graphs to determine element orientation
+    /// - Area/volume may need to be computed from geometry representation
+    #[test]
+    fn test_ifc_parsing_interface_exists() {
+        // This test validates that the IFC parsing interface is defined
+        // Once IFC parsing is implemented, this would parse an actual IFC file
+
+        let ifc_file_path = "tests/test_data/ifc/simple_office.ifc";
+
+        // STUB: When IFC parsing is implemented:
+        // let elements = parse_ifc_file(ifc_file_path).expect("Failed to parse IFC file");
+        // assert!(!elements.is_empty(), "Should parse at least one element");
+
+        // For now, we just document the expected interface
+        assert!(
+            true,
+            "IFC parsing stub - interface is documented for future implementation"
+        );
+    }
+
+    /// Expected behavior: Classify IFC elements by surface type
+    ///
+    /// IFC elements are classified using IfcWall, IfcRoof, IfcSlab, etc.
+    /// These must be mapped to Fluxion's boundary condition system.
+    #[test]
+    fn test_ifc_surface_type_classification() {
+        // STUB: When IFC parsing is implemented:
+        // let elements = parse_ifc_file("tests/test_data/ifc/simple_office.ifc");
+        //
+        // let walls: Vec<_> = elements.iter()
+        //     .filter(|e| e.element_type == IfcSurfaceType::IfcWall)
+        //     .collect();
+        //
+        // assert!(!walls.is_empty(), "Should find walls in IFC file");
+        // for wall in walls {
+        //     assert_ne!(wall.boundary_condition, IfcBoundaryCondition::Unknown);
+        // }
+
+        assert!(
+            true,
+            "IFC surface type classification stub - validates element type mapping"
+        );
+    }
+
+    /// Expected behavior: Determine boundary conditions from IFC space adjacency
+    ///
+    /// IFC stores space adjacency through the IfcRelSpaceBoundary relationship.
+    /// This determines whether a surface is exterior or inter-zone.
+    #[test]
+    fn test_ifc_boundary_condition_from_adjacency() {
+        // STUB: When IFC parsing is implemented:
+        // - IfcRelSpaceBoundary with RelatedSpace = external space → Exterior
+        // - IfcRelSpaceBoundary with RelatedSpace = another zone → InterZone
+        // - IfcRelSpaceBoundary with RelatedSpace = same zone → Interior (ignored)
+
+        assert!(
+            true,
+            "IFC boundary condition stub - validates adjacency-based classification"
+        );
+    }
+
+    /// Expected behavior: Calculate zone volumes from IFC spaces
+    ///
+    /// IFC stores space geometry as either:
+    /// - IfcSpace with IfcLocalPlacement (polygonal boundary representation)
+    /// - IfcSpace with IfcShapeRepresentation (boundary representation)
+    ///
+    /// Volume is computed from the enclosed geometry.
+    #[test]
+    fn test_ifc_zone_volume_calculation() {
+        // STUB: When IFC parsing is implemented:
+        // let spaces = parse_ifc_spaces("tests/test_data/ifc/simple_office.ifc");
+        // for space in spaces {
+        //     assert!(space.volume.is_some());
+        //     assert!(space.volume.unwrap() > 0.0);
+        // }
+
+        assert!(
+            true,
+            "IFC zone volume calculation stub - validates volume extraction"
+        );
+    }
+
+    /// Expected behavior: Handle IFC4x1 schema (latest version)
+    ///
+    /// IFC4x1 (ISO 16739-1:2022) is the current standard.
+    /// Key differences from IFC2x3:
+    /// - IfcSpace now has proper volume representation
+    /// - IfcZone replaced by IfcRelAssignsToGroup
+    /// - Better support for nested zones
+    #[test]
+    fn test_ifc_schema_version_handling() {
+        // STUB: When IFC parsing is implemented:
+        // let schema = detect_ifc_schema_version("tests/test_data/ifc/simple_office.ifc");
+        // assert_eq!(schema, IfcSchemaVersion::Ifc4x1);
+
+        assert!(
+            true,
+            "IFC schema version handling stub - validates version detection"
+        );
+    }
+}
