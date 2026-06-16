@@ -392,10 +392,25 @@ impl MultiNodeSolver {
     ///
     /// # Arguments
     /// * `dt` — Timestep duration [s]
+    /// * `mass_temp_wall` — Wall mass temperature BEFORE gains applied [°C] (Issue #864)
+    /// * `mass_temp_roof` — Roof mass temperature BEFORE gains applied [°C]
+    /// * `mass_temp_floor` — Floor mass temperature BEFORE gains applied [°C]
+    /// * `phi_m_wall` — Opaque solar gain to wall surface node [W] (Issue #864)
+    /// * `phi_m_roof` — Opaque solar gain to roof surface node [W]
+    /// * `phi_m_floor` — Opaque solar gain to floor surface node [W]
     ///
     /// # Returns
     /// The (wall, roof, floor) per-surface temperatures [°C]
-    pub fn step_per_surface(&mut self, dt: f64) -> (f64, f64, f64) {
+    pub fn step_per_surface(
+        &mut self,
+        dt: f64,
+        mass_temp_wall: f64,
+        mass_temp_roof: f64,
+        mass_temp_floor: f64,
+        phi_m_wall: f64,
+        phi_m_roof: f64,
+        phi_m_floor: f64,
+    ) -> (f64, f64, f64) {
         // Build a transient per-surface solver from current state
         let mut solver = self.build_per_surface_solver();
 
@@ -404,10 +419,13 @@ impl MultiNodeSolver {
         let t_ext_roof = self.exterior_temperatures.t_ext_roof;
         let t_ext_floor = self.exterior_temperatures.t_ext_floor;
 
-        // Update each surface with its own mass node temperature and exterior temperature
-        solver.update_surface(0, dt, self.mass.wall.temperature, t_ext_wall);
-        solver.update_surface(1, dt, self.mass.roof.temperature, t_ext_roof);
-        solver.update_surface(2, dt, self.mass.floor.temperature, t_ext_floor);
+        // Update each surface with pre-gain mass temperature and per-surface solar gain
+        // Using pre-gain mass temperatures avoids double-counting gains that were
+        // already applied via step_with_gains(). Gains are added directly to the
+        // surface node's backward Euler heat balance via phi_m_surface (Issue #864).
+        solver.update_surface(0, dt, mass_temp_wall, t_ext_wall, phi_m_wall);
+        solver.update_surface(1, dt, mass_temp_roof, t_ext_roof, phi_m_roof);
+        solver.update_surface(2, dt, mass_temp_floor, t_ext_floor, phi_m_floor);
 
         let temps = solver.surface_temperatures();
         let t_surface_wall = temps.first().copied().unwrap_or(self.surface_temperature);

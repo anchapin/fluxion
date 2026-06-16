@@ -337,7 +337,7 @@ impl SurfaceNode {
     ///
     /// Backward Euler (fully implicit):
     /// ```text
-    /// T_new = T_old + dt * (Q_in - Q_out) / C
+    /// T_new = T_old + dt * (Q_in - Q_out + phi_m) / C
     /// ```
     ///
     /// For a surface node, Q_in comes from the mass node and Q_out goes to exterior.
@@ -345,21 +345,28 @@ impl SurfaceNode {
     /// ```text
     /// Q_ms = h_tr_ms * (T_mass - T_surface)   // from mass to surface
     /// Q_em = h_tr_em * (T_surface - T_exterior)  // from surface to exterior
-    /// Q_net = Q_ms - Q_em
+    /// Q_net = Q_ms - Q_em + phi_m_surface
     /// T_new = T_old + dt * Q_net / C
     /// ```
     ///
     /// # Arguments
     /// * `dt` - Time step in seconds
-    /// * `mass_temperature` - Mass node temperature in °C
+    /// * `mass_temperature` - Mass node temperature in °C (pre-gain)
     /// * `exterior_temperature` - Exterior temperature in °C
-    pub fn update(&mut self, dt: f64, mass_temperature: f64, exterior_temperature: f64) {
+    /// * `phi_m_surface` - Solar gain directly to surface node [W]
+    pub fn update(
+        &mut self,
+        dt: f64,
+        mass_temperature: f64,
+        exterior_temperature: f64,
+        phi_m_surface: f64,
+    ) {
         // Heat flow from mass to surface
         let q_ms = self.h_tr_ms * (mass_temperature - self.temperature);
         // Heat flow from surface to exterior (through the envelope)
         let q_em = self.h_tr_em * (self.temperature - exterior_temperature);
-        // Net heat flow (positive = heat entering surface)
-        self.heat_flow = q_ms - q_em;
+        // Net heat flow (positive = heat entering surface) + direct solar gain
+        self.heat_flow = q_ms - q_em + phi_m_surface;
 
         // Backward Euler update
         if self.capacitance > 0.0 {
@@ -549,24 +556,39 @@ impl PerSurfaceConductionSolver {
     ///
     /// # Arguments
     /// * `dt` - Time step in seconds
-    /// * `mass_temperature` - Mass node temperature in °C (shared across surfaces)
+    /// * `mass_temperature` - Mass node temperature in °C (shared across surfaces, pre-gain)
     /// * `exterior_temperature` - Exterior ambient temperature in °C
-    pub fn update_all(&mut self, dt: f64, mass_temperature: f64, exterior_temperature: f64) {
+    /// * `phi_m_surface` - Solar gain directly to surface node [W]
+    pub fn update_all(
+        &mut self,
+        dt: f64,
+        mass_temperature: f64,
+        exterior_temperature: f64,
+        phi_m_surface: f64,
+    ) {
         for surface in &mut self.surfaces {
-            surface.update(dt, mass_temperature, exterior_temperature);
+            surface.update(dt, mass_temperature, exterior_temperature, phi_m_surface);
         }
     }
 
     /// Update a single surface by ID.
+    ///
+    /// # Arguments
+    /// * `id` - Surface ID
+    /// * `dt` - Time step in seconds
+    /// * `mass_temperature` - Mass node temperature in °C (pre-gain)
+    /// * `exterior_temperature` - Exterior temperature in °C
+    /// * `phi_m_surface` - Solar gain directly to surface node [W]
     pub fn update_surface(
         &mut self,
         id: usize,
         dt: f64,
         mass_temperature: f64,
         exterior_temperature: f64,
+        phi_m_surface: f64,
     ) {
         if let Some(surface) = self.surfaces.iter_mut().find(|s| s.id == id) {
-            surface.update(dt, mass_temperature, exterior_temperature);
+            surface.update(dt, mass_temperature, exterior_temperature, phi_m_surface);
         }
     }
 
@@ -651,7 +673,7 @@ mod tests {
         // Collect surface temperatures during transient
         let mut temperatures = Vec::new();
         for _ in 0..100 {
-            solver.update_all(dt, mass_temp, exterior_temp_step);
+            solver.update_all(dt, mass_temp, exterior_temp_step, 0.0);
             temperatures.push(solver.surface_temperatures()[0]);
         }
 
@@ -718,13 +740,13 @@ mod tests {
         // Track temperature evolution
         let mut thick_temps = Vec::new();
         for _ in 0..steps {
-            solver_thick.update_all(dt, mass_temp, exterior_step);
+            solver_thick.update_all(dt, mass_temp, exterior_step, 0.0);
             thick_temps.push(solver_thick.surface_temperatures()[0]);
         }
 
         let mut thin_temps = Vec::new();
         for _ in 0..steps {
-            solver_thin.update_all(dt, mass_temp, exterior_step);
+            solver_thin.update_all(dt, mass_temp, exterior_step, 0.0);
             thin_temps.push(solver_thin.surface_temperatures()[0]);
         }
 
@@ -917,7 +939,7 @@ mod tests {
         let dt = 300.0; // 5 minutes
 
         // Update and check energy balance
-        solver.update_all(dt, mass_temp, exterior_temp);
+        solver.update_all(dt, mass_temp, exterior_temp, 0.0);
 
         let imbalance = solver.energy_imbalance(mass_temp, exterior_temp);
 
@@ -955,7 +977,7 @@ mod tests {
         let exterior_temp = 0.0;
 
         // Update all
-        solver.update_all(dt, mass_temp, exterior_temp);
+        solver.update_all(dt, mass_temp, exterior_temp, 0.0);
 
         let temps = solver.surface_temperatures();
 
