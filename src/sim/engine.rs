@@ -454,8 +454,8 @@ mod tests {
             let energy_heating =
                 model.solve_single_step(0, outdoor_temp_cold, &step_params, 3600.0);
 
-            model.temperatures = VectorField::from_scalar(27.0, 1);
-            model.mass_temperatures = VectorField::from_scalar(27.0, 1);
+            model.temperatures = VectorField::from_scalar(28.0, 1);
+            model.mass_temperatures = VectorField::from_scalar(28.0, 1);
             let outdoor_temp_hot = 35.0;
             let step_params = StepParameters {
                 use_ai: false,
