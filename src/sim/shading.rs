@@ -94,7 +94,9 @@ pub fn calculate_shaded_fraction(
             }
 
             let shadow_x = fin.depth * sun_az.abs().tan();
-            let fin_width = (shadow_x - fin.distance_from_edge).max(0.0).min(window.width);
+            let fin_width = (shadow_x - fin.distance_from_edge)
+                .max(0.0)
+                .min(window.width);
 
             // Overlap is the intersection of the fin shadow strip and overhang shadow strip
             // Fin shadow: vertical strip of width fin_width, full window height
@@ -244,16 +246,12 @@ mod tests {
 
         // Sun at 45° altitude, 30° azimuth to the right (both shading active)
         let solar = LocalSolarPosition {
-            altitude: PI / 4.0,        // 45°
+            altitude: PI / 4.0,         // 45°
             relative_azimuth: PI / 6.0, // 30° to right
         };
 
-        let shaded_combined = calculate_shaded_fraction(
-            &window,
-            Some(&overhang),
-            &[fin_right, fin_left],
-            &solar,
-        );
+        let shaded_combined =
+            calculate_shaded_fraction(&window, Some(&overhang), &[fin_right, fin_left], &solar);
 
         // Calculated values:
         // Overhang: shadow_y = 0.5 * tan(45)/cos(30) = 0.577m, area = 0.577 * 6.0 = 3.464
