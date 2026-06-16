@@ -31,7 +31,11 @@
 use fluxion::physics::method_selector::{ThermalMethod, ThermalMethodSelector};
 use fluxion::physics::solver_manager::SolverManager;
 use fluxion::physics::solver_trait::HeatConductionSolver;
+use fluxion::physics::units::{
+    FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
+};
 use fluxion::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
+use uom::si::heat_flux_density::watt_per_square_meter;
 
 /// Create a lightweight wall (low thermal mass → 5R1C expected).
 fn create_lightweight_wall() -> fluxion::sim::assembly::BuildingAssembly {
@@ -252,14 +256,22 @@ fn test_trait_dispatch_matches_direct_call() {
     direct_solver.initialize(&wall_spec).unwrap();
 
     // Get flux via direct call
-    let flux_via_direct = direct_solver.step(3600.0, 20.0, 5.0, 8.0, 25.0).unwrap();
+    let flux_via_direct = direct_solver
+        .step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        )
+        .unwrap();
 
     // Results should match (within floating point tolerance)
     assert!(
-        (flux_via_manager - flux_via_direct).abs() < 1e-10,
+        (flux_via_manager - flux_via_direct.get::<watt_per_square_meter>()).abs() < 1e-10,
         "Trait dispatch flux should equal direct call flux: manager={}, direct={}",
         flux_via_manager,
-        flux_via_direct
+        flux_via_direct.get::<watt_per_square_meter>()
     );
 }
 
