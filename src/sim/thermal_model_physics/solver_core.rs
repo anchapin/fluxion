@@ -262,16 +262,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let cycle = get_daily_cycle();
 
         // Issue #744 — Warm-up / pre-conditioning for periodic steady-state
-        // Only apply warmup to full-year (8760 timestep) simulations to avoid
-        // impacting short-duration tests.
-        let warm_up_years = self.0.warm_up_years;
-        let is_full_year_simulation = steps >= 8760;
         // DISABLED: ThermalModel::new() doesn't properly initialize physics parameters
         // (cm=1.0 instead of real values), causing numerical explosion during warmup.
         // Re-enable once model initialization is fixed.
         #[allow(dead_code, clippy::if_same_then_else)]
         if false {
-            info!("Starting warm-up phase: {} year(s)", warm_up_years);
+            // Only apply warmup to full-year (8760 timestep) simulations to avoid impacting short-duration tests.
+            let warm_up_years = self.0.warm_up_years;
+            let is_full_year_simulation = steps >= 8760;
+            info!("Starting warm-up phase: {} year(s), is_full_year={}", warm_up_years, is_full_year_simulation);
             let convergence_threshold = 0.1; // °C per ASHRAE 140
             let hours_per_year = 8760;
 
