@@ -104,6 +104,11 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub ideal_air_loads_mode: bool,
     pub ideal_loads_system: Vec<Option<IdealLoadsSystem>>,
     pub free_float: bool, // When true, HVAC output is forced to zero (for free-floating cases)
+    /// Number of warm-up years for annual simulation (Issue #744).
+    /// Runs the full 8760-hour simulation this many times before collecting results,
+    /// ensuring periodic steady-state for high-mass constructions.
+    /// Default: 2.
+    pub warm_up_years: u32,
     pub ctf_coefficients: Option<CTFCoefficients>,
     pub ctf_solvers: Vec<CTFSolver>,
     pub ctf_enabled: bool,
@@ -264,6 +269,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             ideal_air_loads_mode: self.ideal_air_loads_mode,
             ideal_loads_system: self.ideal_loads_system.clone(),
             free_float: self.free_float,
+            warm_up_years: self.warm_up_years,
             ctf_coefficients: self.ctf_coefficients.clone(),
             ctf_solvers: self.ctf_solvers.clone(),
             ctf_enabled: self.ctf_enabled,

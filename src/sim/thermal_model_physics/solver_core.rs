@@ -174,8 +174,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         info!(
-            "Starting simulation for {} timesteps with dt={:.1}s, use_ai={}",
-            steps, dt_seconds, use_ai
+            "Starting simulation for {} timesteps with dt={:.1}s, use_ai={}, warm_up_years={}",
+            steps, dt_seconds, use_ai, self.0.warm_up_years
         );
 
         // Auto-load building profile if not manually provided (Plan 17-04)
@@ -260,6 +260,69 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         let cycle = get_daily_cycle();
+
+        // Issue #744 — Warm-up / pre-conditioning for periodic steady-state
+        // DISABLED: ThermalModel::new() doesn't properly initialize physics parameters
+        // (cm=1.0 instead of real values), causing numerical explosion during warmup.
+        // Re-enable once model initialization is fixed.
+        #[allow(dead_code, clippy::if_same_then_else)]
+        if false {
+            // Only apply warmup to full-year (8760 timestep) simulations to avoid impacting short-duration tests.
+            let warm_up_years = self.0.warm_up_years;
+            let is_full_year_simulation = steps >= 8760;
+            info!(
+                "Starting warm-up phase: {} year(s), is_full_year={}",
+                warm_up_years, is_full_year_simulation
+            );
+            let convergence_threshold = 0.1; // °C per ASHRAE 140
+            let hours_per_year = 8760;
+
+            for year in 1..=warm_up_years {
+                let mass_temps_start_vec = self.0.mass_temperatures.as_ref().to_vec();
+
+                // Run one full year of warm-up
+                for t in 0..hours_per_year {
+                    let hour_of_day = t % 24;
+                    let daily_cycle = cycle[hour_of_day];
+                    let outdoor_temp = 10.0 + 10.0 * daily_cycle;
+                    self.solve_single_step(t, outdoor_temp, &step_params, dt_seconds);
+                }
+
+                // Check convergence: compare mass temperatures at start and end of year
+                let mass_temps_end = self.0.mass_temperatures.as_ref();
+                let max_delta = mass_temps_start_vec
+                    .iter()
+                    .zip(mass_temps_end.iter())
+                    .map(|(start, end)| (start - end).abs())
+                    .fold(0.0_f64, f64::max);
+
+                info!(
+                    "Warm-up year {} complete: max mass temp delta = {:.4}°C",
+                    year, max_delta
+                );
+
+                // Stop if converged
+                if max_delta < convergence_threshold {
+                    info!(
+                        "Warm-up converged after {} year(s) (max_delta={:.4}°C < {:.1}°C threshold)",
+                        year, max_delta, convergence_threshold
+                    );
+                    break;
+                }
+
+                // If not converged and not last year, continue to next iteration
+                if year < warm_up_years {
+                    info!(
+                        "Warm-up not yet converged (max_delta={:.4}°C >= {:.1}°C), continuing...",
+                        max_delta, convergence_threshold
+                    );
+                }
+            }
+
+            info!("Warm-up phase complete, starting main simulation");
+        }
+
+        // Main simulation loop — only this loop's energy is reported
         let total_energy_kwh: f64 = (0..steps)
             .map(|t| {
                 if t % 1000 == 0 {
