@@ -266,7 +266,7 @@ fn test_beam_irradiance_vs_energyplus() {
     let mut valid_hours = 0usize;
 
     for (hour, ref_beam, _) in &reference {
-        let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
+        let (year, month, day, hour_of_day) = epw_hour_to_local_std(*hour);
         let weather = &weather_records[*hour - 1];
 
         let sun_pos =
@@ -339,7 +339,7 @@ fn test_ground_diffuse_vs_energyplus() {
     let mut valid_hours = 0usize;
 
     for (hour, _, ref_ground_diff) in &reference {
-        let (year, month, day, hour_of_day) = epw_hour_to_date(*hour);
+        let (year, month, day, hour_of_day) = epw_hour_to_local_std(*hour);
         let weather = &weather_records[*hour - 1];
 
         let sun_pos =
