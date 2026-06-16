@@ -2043,7 +2043,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //   proportional to h_tr_ms (per Issue #873 requirement)
             // - phi_m (solar to mass): goes to internal mass node
             // - phi_ia (convective to air): handled via compute_zone_air_temperature
-            let zone_area_val = self.0.zone_area.as_ref()[zone_idx];
+            let _zone_area_val = self.0.zone_area.as_ref()[zone_idx];
             let phi_st_zone = phi_st.as_ref()[zone_idx];
             let phi_m_zone = phi_m.as_ref()[zone_idx];
             // Distribute phi_st to envelope nodes proportional to h_tr_ms
@@ -2203,7 +2203,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 // self-consistent t_act = t_free + Q/h_coeff check matches T_setpoint
                 // (h_tr_1 + h_ve alone is too small — it ignores mass/ground paths).
                 let h_coeff = self.compute_hvac_coefficient(i);
-                let h_tr_ms = self.0.h_tr_ms.as_ref()[i];
+                let _h_tr_ms = self.0.h_tr_ms.as_ref()[i];
 
                 // Issue #900: dynamic mass heat release term (cooling only).
                 //
