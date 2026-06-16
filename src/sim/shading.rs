@@ -58,24 +58,56 @@ pub fn calculate_shaded_fraction(
         return 1.0; // Sun below horizon
     }
 
-    let mut shaded_area = 0.0;
+    let mut overhang_area = 0.0;
+    let mut fin_area = 0.0;
 
     // 1. Overhang shading
     if let Some(oh) = overhang {
-        shaded_area += calculate_overhang_shadow_area(window, oh, solar);
+        overhang_area = calculate_overhang_shadow_area(window, oh, solar);
     }
 
     // 2. Fin shading
     for fin in fins {
-        shaded_area += calculate_fin_shadow_area(window, fin, solar);
+        fin_area += calculate_fin_shadow_area(window, fin, solar);
     }
 
-    // Note: This simplified approach might double-count intersection of overhang and fin shadows.
-    // For ASHRAE 140 cases, they are often designed to not overlap significantly or
-    // the overlap is handled by more complex geometry.
-    // For 610/910 (overhang only) and 630/930 (overhang + fins), we should be careful.
+    // 3. Calculate overlap correction to avoid double-counting
+    // The overlap occurs at the corner where both overhang and fin shadows exist.
+    // Overhang shades a horizontal strip (full window width × overhang_height).
+    // Fin shades a vertical strip (fin_width × full window height).
+    // The overlap is their intersection: min(fin_width, window_width) × min(overhang_height, window_height).
+    let mut overlap_area = 0.0;
+    if overhang_area > 0.0 && fin_area > 0.0 {
+        let oh = overhang.unwrap();
+        let tan_profile = solar.altitude.tan() / solar.relative_azimuth.cos();
+        let shadow_y = oh.depth * tan_profile;
+        let overhang_height = (shadow_y - oh.distance_above).max(0.0).min(window.height);
 
-    (shaded_area / window.area).clamp(0.0, 1.0)
+        for fin in fins {
+            let sun_az = solar.relative_azimuth;
+            let is_shaded = match fin.side {
+                Side::Left => sun_az < 0.0,
+                Side::Right => sun_az > 0.0,
+            };
+            if !is_shaded {
+                continue;
+            }
+
+            let shadow_x = fin.depth * sun_az.abs().tan();
+            let fin_width = (shadow_x - fin.distance_from_edge).max(0.0).min(window.width);
+
+            // Overlap is the intersection of the fin shadow strip and overhang shadow strip
+            // Fin shadow: vertical strip of width fin_width, full window height
+            // Overhang shadow: horizontal strip of height overhang_height, full window width
+            // Intersection: width = fin_width, height = overhang_height
+            // (the fin shadow covers full height, so overlap height is just overhang_height)
+            overlap_area += fin_width * overhang_height;
+        }
+    }
+
+    let combined_shaded_area = overhang_area + fin_area - overlap_area;
+
+    (combined_shaded_area / window.area).clamp(0.0, 1.0)
 }
 
 fn calculate_overhang_shadow_area(
@@ -188,6 +220,87 @@ mod tests {
         // Shadow width = 1.0 * tan(45) = 1.0.
         // Window width = 6.0. Shaded fraction = 1.0 / 6.0 = 0.1666...
         assert!((shaded - 1.0 / 6.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_overhang_fin_overlap_correction() {
+        // Case 630/930: Overhang + fins together should not double-count overlap
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang {
+            depth: 0.5,
+            distance_above: 0.0,
+            extension: 10.0,
+        };
+        let fin_right = ShadeFin {
+            depth: 0.5,
+            distance_from_edge: 0.0,
+            side: Side::Right,
+        };
+        let fin_left = ShadeFin {
+            depth: 0.5,
+            distance_from_edge: 0.0,
+            side: Side::Left,
+        };
+
+        // Sun at 45° altitude, 30° azimuth to the right (both shading active)
+        let solar = LocalSolarPosition {
+            altitude: PI / 4.0,        // 45°
+            relative_azimuth: PI / 6.0, // 30° to right
+        };
+
+        let shaded_combined = calculate_shaded_fraction(
+            &window,
+            Some(&overhang),
+            &[fin_right, fin_left],
+            &solar,
+        );
+
+        // Calculated values:
+        // Overhang: shadow_y = 0.5 * tan(45)/cos(30) = 0.577m, area = 0.577 * 6.0 = 3.464
+        // Right fin: shadow_x = 0.5 * tan(30) = 0.289m, area = 0.289 * 2.0 = 0.577
+        // Overlap: fin_width * overhang_height = 0.289 * 0.577 = 0.167
+        // Combined: 3.464 + 0.577 - 0.167 = 3.875 / 12.0 = 0.3229
+        let expected_fraction = 0.322899;
+
+        assert!(
+            (shaded_combined - expected_fraction).abs() < 1e-6,
+            "Overlap correction failed: got {}, expected {}",
+            shaded_combined,
+            expected_fraction
+        );
+
+        // Verify overlap correction actually reduces shaded area vs. double-counting
+        // Double-counted would be: (3.464 + 0.577) / 12.0 = 0.3368
+        let double_counted_fraction = (3.464102 + 0.577350) / 12.0;
+        assert!(
+            shaded_combined < double_counted_fraction,
+            "Overlap correction should reduce shaded area: got {}, double_counted {}",
+            shaded_combined,
+            double_counted_fraction
+        );
+    }
+
+    #[test]
+    fn test_no_overlap_when_no_fins() {
+        // When only overhang is present (Case 610/910), no overlap should be calculated
+        let window = WindowArea::with_dimensions(12.0, Orientation::South, 2.0, 6.0, 0.2, 0.5);
+        let overhang = Overhang {
+            depth: 1.0,
+            distance_above: 0.0,
+            extension: 10.0,
+        };
+
+        let solar = LocalSolarPosition {
+            altitude: PI / 4.0,
+            relative_azimuth: 0.0,
+        };
+
+        let shaded = calculate_shaded_fraction(&window, Some(&overhang), &[], &solar);
+
+        // tan(45) = 1.0. Shadow depth = 1.0m * 1.0 = 1.0m.
+        // Window height = 2.0m. Shaded height = 1.0m.
+        // Shaded fraction = 1.0 / 2.0 = 0.5.
+        assert!((shaded - 0.5).abs() < 1e-6);
     }
 
     /// Case 610 shading diagnostic - tests overhang behavior across seasons
