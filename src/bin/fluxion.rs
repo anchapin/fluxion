@@ -849,7 +849,7 @@ fn run_direct_simulation(
 
     // Load weather data
     println!("Loading weather data...");
-    let _weather = fluxion::weather::epw::EpwWeatherSource::from_path(weather_path)
+    let _weather = fluxion::weather::epw::EpwWeatherSource::from_file(weather_path)
         .map_err(|e| anyhow::anyhow!("Failed to load weather file: {}", e))?;
 
     // TODO: Implement actual simulation
@@ -1562,9 +1562,9 @@ fn main() -> Result<()> {
         } => {
             run_workflow(
                 workflow.as_deref(),
-                *debug,
-                *measures_only,
-                *postprocess_only,
+                debug,
+                measures_only,
+                postprocess_only,
             )?;
         }
 
