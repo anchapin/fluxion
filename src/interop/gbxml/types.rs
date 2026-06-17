@@ -310,7 +310,6 @@ impl Default for Location {
 }
 
 impl CADBuildingSurfaceType {
-    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "InteriorWall" => CADBuildingSurfaceType::InteriorWall,
@@ -372,10 +371,7 @@ mod tests {
 
     #[test]
     fn test_cad_surface_type_as_str() {
-        assert_eq!(
-            CADBuildingSurfaceType::ExteriorWall.as_str(),
-            "ExteriorWall"
-        );
+        assert_eq!(CADBuildingSurfaceType::ExteriorWall.as_str(), "ExteriorWall");
         assert_eq!(CADBuildingSurfaceType::Roof.as_str(), "Roof");
     }
 

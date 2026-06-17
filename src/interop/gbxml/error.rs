@@ -20,7 +20,10 @@ pub enum GbXmlError {
     /// XML serialization error
     XmlSerializeError(String),
     /// IO error (file not found, permission denied, etc.)
-    IoError { path: PathBuf, message: String },
+    IoError {
+        path: PathBuf,
+        message: String,
+    },
     /// Invalid gbXML structure (missing required elements, etc.)
     InvalidStructure(String),
     /// Unsupported gbXML feature
