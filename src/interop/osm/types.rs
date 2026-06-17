@@ -1,220 +1,284 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! OpenStudio OSM data types.
-//!
-//! These types represent the OpenStudio schema objects that are read from
-//! or written to OSM files. They provide a mapping layer between the
-//! OpenStudio XML representation and Fluxion's internal types.
+//! OpenStudio Model (OSM) data structures for representing building geometry,
+//! materials, constructions, and thermal zones.
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmBuilding {
-    pub name: String,
-    pub north_axis: f64,
-    pub terrain: String,
-    pub floorspaces_stories: Option<i32>,
-    pub floor_area: Option<f64>,
-    pub building_type: Option<String>,
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OsmDocument {
+    pub version: String,
+    pub objects: Vec<OsmObject>,
 }
 
-impl Default for OsmBuilding {
-    fn default() -> Self {
-        OsmBuilding {
-            name: "Building".to_string(),
-            north_axis: 0.0,
-            terrain: "Suburbs".to_string(),
-            floorspaces_stories: None,
-            floor_area: None,
-            building_type: None,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OsmObject {
+    pub object_type: String,
+    pub handle: Option<String>,
+    pub fields: HashMap<String, String>,
+    pub comments: Vec<String>,
+}
+
+impl OsmObject {
+    pub fn new(object_type: impl Into<String>) -> Self {
+        OsmObject {
+            object_type: object_type.into(),
+            handle: None,
+            fields: HashMap::new(),
+            comments: Vec::new(),
         }
+    }
+
+    pub fn get_field(&self, key: &str) -> Option<&str> {
+        self.fields.get(key).map(|s| s.as_str())
+    }
+
+    pub fn get_required_field(
+        &self,
+        key: &str,
+    ) -> Result<&str, crate::interop::osm::error::OsmError> {
+        self.fields.get(key).map(|s| s.as_str()).ok_or_else(|| {
+            crate::interop::osm::error::OsmError::missing_field(&self.object_type, key)
+        })
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmThermalZone {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BuildingStory {
+    pub handle: String,
     pub name: String,
-    pub zone_name: Option<String>,
-    pub multiplier: Option<i32>,
+    pub level: Option<f64>,
+    pub height: Option<f64>,
+    pub spaces: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Space {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: Option<String>,
+    pub story_handle: Option<String>,
+    pub area: Option<f64>,
     pub volume: Option<f64>,
-    pub floor_area: Option<f64>,
+    pub surfaces: Vec<Surface>,
 }
 
-impl Default for OsmThermalZone {
-    fn default() -> Self {
-        OsmThermalZone {
-            name: "Thermal Zone 1".to_string(),
-            zone_name: None,
-            multiplier: Some(1),
-            volume: None,
-            floor_area: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmSpace {
-    pub name: String,
-    pub thermal_zone: Option<String>,
-    pub building_story: Option<String>,
-    pub x_position: Option<f64>,
-    pub y_position: Option<f64>,
-    pub z_position: Option<f64>,
-    pub direction_of_relative_north: Option<f64>,
-    pub building_unit: Option<String>,
-}
-
-impl Default for OsmSpace {
-    fn default() -> Self {
-        OsmSpace {
-            name: "Space 1".to_string(),
-            thermal_zone: None,
-            building_story: None,
-            x_position: Some(0.0),
-            y_position: Some(0.0),
-            z_position: Some(0.0),
-            direction_of_relative_north: Some(0.0),
-            building_unit: None,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmSurface {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Surface {
+    pub handle: String,
     pub name: String,
     pub surface_type: String,
-    pub construction: Option<String>,
-    pub space: String,
-    pub outside_boundary_condition: String,
+    pub construction_handle: Option<String>,
+    pub building_boundary: Option<String>,
+    pub outside_boundary_condition: Option<String>,
     pub sun_exposure: Option<String>,
     pub wind_exposure: Option<String>,
-    pub vertices: Vec<OsmVertex>,
+    pub area: Option<f64>,
+    pub vertices: Vec<Vertex>,
+    pub adjacent_space_handle: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmVertex {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Vertex {
     pub x: f64,
     pub y: f64,
     pub z: f64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmSubSurface {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SubSurface {
+    pub handle: String,
     pub name: String,
-    pub surface: String,
-    pub surface_type: String,
-    pub construction: Option<String>,
-    pub vertices: Vec<OsmVertex>,
+    pub surface_handle: String,
+    pub construction_handle: Option<String>,
+    pub window_type: Option<String>,
+    pub area: Option<f64>,
+    pub vertices: Vec<Vertex>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmMaterial {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Construction {
+    pub handle: String,
     pub name: String,
-    pub material_type: Option<String>,
+    pub layer_handles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Layer {
+    pub handle: String,
+    pub name: String,
+    pub material_handles: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Material {
+    pub handle: String,
+    pub name: String,
+    pub roughness: Option<String>,
     pub thickness: Option<f64>,
     pub conductivity: Option<f64>,
     pub density: Option<f64>,
     pub specific_heat: Option<f64>,
-    pub roughness: Option<String>,
-    pub thermal_absorptance: Option<f64>,
-    pub solar_absorptance: Option<f64>,
-    pub visible_absorptance: Option<f64>,
+    pub emissivity: Option<f64>,
+    pub absorptance: Option<f64>,
+    pub vapor_transmission: Option<f64>,
 }
 
-impl Default for OsmMaterial {
-    fn default() -> Self {
-        OsmMaterial {
-            name: "Material".to_string(),
-            material_type: Some("StandardOpaqueMaterial".to_string()),
-            thickness: Some(0.1),
-            conductivity: Some(1.0),
-            density: Some(1000.0),
-            specific_heat: Some(1000.0),
-            roughness: Some("MediumRough".to_string()),
-            thermal_absorptance: Some(0.9),
-            solar_absorptance: Some(0.7),
-            visible_absorptance: Some(0.7),
-        }
+impl Material {
+    pub fn to_construction_layer(&self) -> Option<crate::sim::construction::ConstructionLayer> {
+        let conductivity = self.conductivity?;
+        let density = self.density?;
+        let specific_heat = self.specific_heat?;
+        let thickness = self.thickness?;
+
+        Some(crate::sim::construction::ConstructionLayer::new(
+            self.name.clone(),
+            conductivity,
+            density,
+            specific_heat,
+            thickness,
+        ))
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmConstruction {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ThermalZone {
+    pub handle: String,
     pub name: String,
-    pub layers: Vec<String>,
+    pub thermostat_handle: Option<String>,
+    pub multiplier: Option<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmLayer {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BuildingUnit {
+    pub handle: String,
     pub name: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmSchedule {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Site {
+    pub handle: String,
+    pub name: String,
+    pub latitude: Option<f64>,
+    pub longitude: Option<f64>,
+    pub elevation: Option<f64>,
+    pub time_zone: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Building {
+    pub handle: String,
+    pub name: String,
+    pub building_story_handles: Vec<String>,
+    pub zone_handles: Vec<String>,
+    pub area: Option<f64>,
+    pub number_of_floors: Option<i32>,
+    pub floor_height: Option<f64>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Schedule {
+    pub handle: String,
     pub name: String,
     pub schedule_type: String,
     pub values: Vec<f64>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmSite {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Thermostat {
+    pub handle: String,
     pub name: String,
-    pub latitude: Option<f64>,
-    pub longitude: Option<f64>,
-    pub time_zone: Option<f64>,
-    pub elevation: Option<f64>,
-    pub terrain: Option<String>,
-}
-
-impl Default for OsmSite {
-    fn default() -> Self {
-        OsmSite {
-            name: "Site".to_string(),
-            latitude: Some(39.7392),
-            longitude: Some(-104.9903),
-            time_zone: Some(-7.0),
-            elevation: Some(1609.0),
-            terrain: Some("Suburbs".to_string()),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmWeatherFile {
-    pub file_name: String,
-    pub path_type: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OsmThermostat {
-    pub name: String,
-    pub heating_setpoint: f64,
-    pub cooling_setpoint: f64,
-}
-
-impl Default for OsmThermostat {
-    fn default() -> Self {
-        OsmThermostat {
-            name: "Thermostat".to_string(),
-            heating_setpoint: 20.0,
-            cooling_setpoint: 24.0,
-        }
-    }
+    pub heating_setpoint: Option<f64>,
+    pub cooling_setpoint: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct OsmModel {
-    pub version: String,
-    pub building: Option<OsmBuilding>,
-    pub site: Option<OsmSite>,
-    pub weather_file: Option<OsmWeatherFile>,
-    pub thermal_zones: Vec<OsmThermalZone>,
-    pub spaces: Vec<OsmSpace>,
-    pub surfaces: Vec<OsmSurface>,
-    pub sub_surfaces: Vec<OsmSubSurface>,
-    pub materials: Vec<OsmMaterial>,
-    pub constructions: Vec<OsmConstruction>,
-    pub schedules: Vec<OsmSchedule>,
-    pub thermostats: Vec<OsmThermostat>,
+pub struct People {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: Option<String>,
+    pub number_of_people: Option<f64>,
+    pub people_per_area: Option<f64>,
+    pub fraction_radiant: Option<f64>,
+    pub schedule_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Lights {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: Option<String>,
+    pub watts_per_zone_floor_area: Option<f64>,
+    pub fraction_radiant: Option<f64>,
+    pub fraction_visible: Option<f64>,
+    pub schedule_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ElectricEquipment {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: Option<String>,
+    pub watts_per_zone_floor_area: Option<f64>,
+    pub fraction_radiant: Option<f64>,
+    pub schedule_handle: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ZoneHVACEquipment {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: String,
+    pub equipment: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Zone {
+    pub handle: String,
+    pub name: String,
+    pub zone_handle: Option<String>,
+    pub multiplier: Option<f64>,
+    pub volume: Option<f64>,
+}
+
+pub struct OsmContext {
+    pub materials: HashMap<String, Material>,
+    pub layers: HashMap<String, Layer>,
+    pub constructions: HashMap<String, Construction>,
+    pub thermal_zones: HashMap<String, ThermalZone>,
+    pub spaces: HashMap<String, Space>,
+    pub building_stories: HashMap<String, BuildingStory>,
+    pub surfaces: HashMap<String, Surface>,
+    pub sub_surfaces: HashMap<String, SubSurface>,
+    pub schedules: HashMap<String, Schedule>,
+    pub thermostats: HashMap<String, Thermostat>,
+    pub people: HashMap<String, People>,
+    pub lights: HashMap<String, Lights>,
+    pub electric_equipment: HashMap<String, ElectricEquipment>,
+    pub site: Option<Site>,
+    pub building: Option<Building>,
+}
+
+impl Default for OsmContext {
+    fn default() -> Self {
+        OsmContext {
+            materials: HashMap::new(),
+            layers: HashMap::new(),
+            constructions: HashMap::new(),
+            thermal_zones: HashMap::new(),
+            spaces: HashMap::new(),
+            building_stories: HashMap::new(),
+            surfaces: HashMap::new(),
+            sub_surfaces: HashMap::new(),
+            schedules: HashMap::new(),
+            thermostats: HashMap::new(),
+            people: HashMap::new(),
+            lights: HashMap::new(),
+            electric_equipment: HashMap::new(),
+            site: None,
+            building: None,
+        }
+    }
 }
