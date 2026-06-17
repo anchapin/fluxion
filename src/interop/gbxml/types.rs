@@ -310,6 +310,7 @@ impl Default for Location {
 }
 
 impl CADBuildingSurfaceType {
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Self {
         match s {
             "InteriorWall" => CADBuildingSurfaceType::InteriorWall,

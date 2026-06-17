@@ -81,17 +81,14 @@ impl OsmReader {
             if line.starts_with("OS:") || line.starts_with("OSM:") {
                 let obj = self.parse_object(&mut lines, &mut i)?;
                 objects.push(obj);
-            } else if line.starts_with("Version,") || line.starts_with("Version,") {
-                i += 1;
-            } else {
-                i += 1;
             }
+            i += 1;
         }
 
         Ok(objects)
     }
 
-    fn parse_object(&self, lines: &mut Vec<&str>, idx: &mut usize) -> Result<OsmObject, OsmError> {
+    fn parse_object(&self, lines: &mut [&str], idx: &mut usize) -> Result<OsmObject, OsmError> {
         let first_line = lines[*idx].trim();
         let object_type = self.extract_object_type(first_line)?;
 
@@ -115,7 +112,8 @@ impl OsmReader {
             }
 
             if line.starts_with('!') {
-                obj.comments.push(line[1..].trim().to_string());
+                obj.comments
+                    .push(line.strip_prefix('!').unwrap().trim().to_string());
                 continue;
             }
 
@@ -149,7 +147,7 @@ impl OsmReader {
         let line = line.trim_end_matches(',').trim();
 
         if line.ends_with(';') {
-            let value = &line[..line.len() - 1];
+            let value = line.strip_suffix(';').unwrap();
             return Ok(value.trim().to_string());
         }
 
@@ -386,10 +384,11 @@ impl OsmReader {
     fn parse_construction(&self, obj: &OsmObject) -> Construction {
         let mut layer_handles = Vec::new();
         for (key, val) in &obj.fields {
-            if key.starts_with("layer") || key == "outside_layer" || key == "inside_layer" {
-                if !val.is_empty() && val != "OS:Material" {
-                    layer_handles.push(val.clone());
-                }
+            if key.starts_with("layer")
+                || key == "outside_layer"
+                || key == "inside_layer" && !val.is_empty() && val != "OS:Material"
+            {
+                layer_handles.push(val.clone());
             }
         }
         if layer_handles.is_empty() && obj.fields.len() > 2 {
@@ -628,7 +627,7 @@ impl OsmReader {
             .and_then(|b| b.number_of_floors)
             .unwrap_or(1) as usize;
 
-        for (handle, space) in &self.ctx.spaces {
+        for space in self.ctx.spaces.values() {
             let zone_name = space
                 .zone_handle
                 .as_ref()
@@ -691,7 +690,7 @@ impl OsmReader {
         let mut layers = Vec::new();
         let mut window = None;
 
-        for (_, surface) in &self.ctx.surfaces {
+        for surface in self.ctx.surfaces.values() {
             if surface.surface_type.contains(surface_type) || surface.name.contains(surface_type) {
                 if let Some(const_handle) = &surface.construction_handle {
                     if let Some(construction) = self.ctx.constructions.get(const_handle) {
@@ -743,7 +742,7 @@ impl OsmReader {
         let mut heating_setpoint = 20.0;
         let mut cooling_setpoint = 24.0;
 
-        for (_, thermostat) in &self.ctx.thermostats {
+        for thermostat in self.ctx.thermostats.values() {
             if let Some(hsp) = thermostat.heating_setpoint {
                 heating_setpoint = hsp;
             }

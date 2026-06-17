@@ -284,7 +284,7 @@ impl OsmWriter {
         writeln!(writer, "  {}, !- Name", name)
             .map_err(|e| OsmError::ExportError(e.to_string()))?;
 
-        for (i, layer) in surface.layers.iter().enumerate() {
+        for (i, _layer) in surface.layers.iter().enumerate() {
             let mat_handle = format!("{{mat-{}{}}}", &name[..1].to_lowercase(), i);
             if i == surface.layers.len() - 1 {
                 writeln!(writer, "  {}; !- Layer {}", mat_handle, i + 1)
@@ -354,7 +354,7 @@ impl OsmWriter {
         let perimeter = (total_area * 4.0).sqrt() * 4.0;
         let wall_height = schema.geometry.floor_height;
 
-        let wall_area = perimeter * wall_height / 4.0;
+        let _wall_area = perimeter * wall_height / 4.0;
         let wall_types = ["West Wall", "North Wall", "East Wall", "South Wall"];
 
         for (i, wall_type) in wall_types.iter().enumerate() {
@@ -378,7 +378,7 @@ impl OsmWriter {
             writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         }
 
-        let roof_area = total_area;
+        let _roof_area = total_area;
         writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer, "  {{surf-r0}}, !- Handle")
             .map_err(|e| OsmError::ExportError(e.to_string()))?;

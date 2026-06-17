@@ -44,18 +44,18 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
 
     let mut doc = GbXmlDocument::default();
     let mut stack: Vec<String> = Vec::new();
-    let mut current_element = String::new();
+    let mut _current_element = String::new();
     let mut text_content = String::new();
     let mut buf = Vec::new();
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                stack.push(current_element.clone());
+                _current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                stack.push(_current_element.clone());
                 text_content.clear();
 
-                parse_start_element(&mut doc, &current_element, &e)?;
+                parse_start_element(&mut doc, &_current_element, &e)?;
             }
             Ok(Event::Text(e)) => {
                 text_content = e.unescape().unwrap_or_default().to_string();
@@ -74,8 +74,8 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
                 text_content.clear();
             }
             Ok(Event::Empty(e)) => {
-                current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
-                parse_start_element(&mut doc, &current_element, &e)?;
+                _current_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                parse_start_element(&mut doc, &_current_element, &e)?;
             }
             Ok(Event::Eof) => break,
             Ok(_) => {}
@@ -376,6 +376,7 @@ fn get_surface_count(doc: &GbXmlDocument) -> usize {
 }
 
 /// GbXmlReader for parsing gbXML files.
+#[allow(dead_code)]
 pub struct GbXmlReader {
     construction_map: HashMap<String, Construction>,
     layer_map: HashMap<String, Layer>,

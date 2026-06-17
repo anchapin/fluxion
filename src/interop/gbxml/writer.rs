@@ -15,22 +15,15 @@
 //! writer.export_gbxml(&schema, "output.xml")?;
 //! ```
 
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
 
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Writer;
-use std::io::Cursor;
 
-use crate::api::schema::{
-    ConstructionSet, ControlSet, Geometry, SchemaMetadata, SimulationOutput, SimulationSchemaV1,
-    SurfaceConstruction, WeatherData, WindowSpec, ZoneGeometry,
-};
+use crate::api::schema::{ConstructionSet, SimulationSchemaV1, WeatherData, ZoneGeometry};
 use crate::interop::gbxml::error::GbXmlError;
-use crate::interop::gbxml::types::*;
-use crate::sim::construction::ConstructionLayer;
 
 /// Export a SimulationSchema to gbXML file.
 pub fn export_gbxml(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Result<(), GbXmlError> {
@@ -43,6 +36,7 @@ pub fn export_gbxml(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Resu
 }
 
 /// GbXmlWriter for exporting to gbXML format.
+#[allow(dead_code)]
 pub struct GbXmlWriter {
     construction_counter: usize,
     layer_counter: usize,
@@ -170,8 +164,8 @@ impl GbXmlWriter {
     fn write_space<W: std::io::Write>(
         &mut self,
         zone: &ZoneGeometry,
-        zone_idx: usize,
-        schema: &SimulationSchemaV1,
+        _zone_idx: usize,
+        _schema: &SimulationSchemaV1,
         writer: &mut Writer<W>,
     ) -> Result<(), GbXmlError> {
         self.space_counter += 1;
@@ -212,11 +206,10 @@ impl GbXmlWriter {
             zone.floor_area,
         ];
 
-        for (surf_idx, ((name, surf_type), area)) in surface_names
+        for ((name, surf_type), area) in surface_names
             .iter()
             .zip(surface_types.iter())
             .zip(areas.iter())
-            .enumerate()
         {
             self.surface_counter += 1;
             let surf_id = format!("surface{}", self.surface_counter);
@@ -238,7 +231,7 @@ impl GbXmlWriter {
             writer.write_event(Event::Start(geom))?;
 
             // CartesianPoint
-            let mut point = BytesStart::new("CartesianPoint");
+            let point = BytesStart::new("CartesianPoint");
             writer.write_event(Event::Start(point))?;
             write_text_element(writer, "Coordinate", "0.0")?;
             write_text_element(writer, "Coordinate", "0.0")?;
@@ -261,7 +254,7 @@ impl GbXmlWriter {
 
     fn write_constructions<W: std::io::Write>(
         &mut self,
-        constructions: &ConstructionSet,
+        _constructions: &ConstructionSet,
         writer: &mut Writer<W>,
     ) -> Result<(), GbXmlError> {
         // Write wall construction
@@ -306,7 +299,7 @@ impl GbXmlWriter {
     ) -> Result<(), GbXmlError> {
         // Write layers and materials first
         let mut layer_ids: Vec<String> = Vec::new();
-        for (layer_name, mat_name, thickness, conductivity, density, specific_heat) in &layers {
+        for (_layer_name, mat_name, thickness, conductivity, density, specific_heat) in &layers {
             self.layer_counter += 1;
             let layer_id = format!("layer_{}_{}", construction_id, self.layer_counter);
             layer_ids.push(layer_id.clone());
