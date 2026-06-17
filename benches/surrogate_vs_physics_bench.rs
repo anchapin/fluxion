@@ -63,8 +63,7 @@ fn bench_surrogate_onnx_batched_inference(c: &mut Criterion) {
 
         group.bench_function("batched_inference", |b| {
             b.iter(|| {
-                let _ = surrogate
-                    .predict_loads_batched(black_box(&batch));
+                let _ = surrogate.predict_loads_batched(black_box(&batch));
             })
         });
 
@@ -88,8 +87,7 @@ fn bench_physics_step_multi_zone(c: &mut Criterion) {
     for &zones in &zone_counts {
         let mut model = ThermalModel::<VectorField>::new(zones);
 
-        let mut group =
-            c.benchmark_group(format!("physics_step_{}_zones", zones));
+        let mut group = c.benchmark_group(format!("physics_step_{}_zones", zones));
         group.throughput(Throughput::Elements(zones as u64));
         group.sample_size(1000);
 

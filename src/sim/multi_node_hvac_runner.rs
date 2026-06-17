@@ -503,12 +503,14 @@ impl MultiNodeHvacRunner {
         // Set per-surface exterior boundary temperatures (Issue #859)
         // This ensures wall, roof, and floor each use their own sol-air temperature
         // instead of the uniform outdoor temperature used in step()
-        self.solver.set_surface_exterior_temperatures(exterior_temps.clone());
+        self.solver
+            .set_surface_exterior_temperatures(exterior_temps.clone());
 
         // Use average exterior temperature for T_free computation to maintain
         // compatibility with the single-h_tr_is air balance
         let t_out_avg =
-            (exterior_temps.t_ext_wall + exterior_temps.t_ext_roof + exterior_temps.t_ext_floor) / 3.0;
+            (exterior_temps.t_ext_wall + exterior_temps.t_ext_roof + exterior_temps.t_ext_floor)
+                / 3.0;
 
         // Per-surface solar gains go directly to envelope mass nodes
         // Internal radiative gains (50% of total per ISO 13790) go to internal mass
@@ -532,14 +534,13 @@ impl MultiNodeHvacRunner {
             t_out_avg
         };
 
-        let (t_air_target, hvac_active, hvac_setpoint) =
-            if t_free_safe < self.heating_setpoint {
-                (self.heating_setpoint, true, self.heating_setpoint)
-            } else if t_free_safe > self.cooling_setpoint {
-                (self.cooling_setpoint, true, self.cooling_setpoint)
-            } else {
-                (t_free, false, t_free)
-            };
+        let (t_air_target, hvac_active, hvac_setpoint) = if t_free_safe < self.heating_setpoint {
+            (self.heating_setpoint, true, self.heating_setpoint)
+        } else if t_free_safe > self.cooling_setpoint {
+            (self.cooling_setpoint, true, self.cooling_setpoint)
+        } else {
+            (t_free, false, t_free)
+        };
 
         self.solver.set_zone_temperature(t_air_target);
         self.prev_zone_temp = t_air_target;
