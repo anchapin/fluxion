@@ -1,0 +1,160 @@
+# ASHRAE 140 Annual Re-Validation Schedule
+
+## Overview
+
+This document describes the annual re-validation process for ASHRAE Standard 140
+building energy simulation validation. The re-validation ensures that Fluxion's
+ASHRAE 140 blind validation pass rate is maintained above the 80% threshold as
+code evolves.
+
+## Schedule
+
+**Re-validation Window:** Every January (January 1 - January 31)
+**Last Day of Validation:** January 31
+**Responsible Team:** Fluxion Validation Team
+
+## Prerequisites
+
+Before running re-validation:
+
+1. Access to latest ASHRAE 140 reference data from official sources
+2. Valid EnergyPlus installation (version 23.2 or later)
+3. Access to ESP-r and TRNSYS reference implementations (optional)
+4. All CI workflows passing on main branch
+
+## Process
+
+### Phase 1: Reference Data Update
+
+1. **Source latest ASHRAE 140 reference data:**
+   - EnergyPlus: https://energyplus.net/downloads (NREL)
+   - ESP-r: University of Strathclyde distribution
+   - TRNSYS: Thermal Energy System Specialists
+
+2. **Update data directory:**
+   ```bash
+   # Update EnergyPlus reference data
+   cp -r /path/to/latest/energyplus/reference/data \
+     tests/reference_data/energyplus/
+
+   # Update ESP-r reference data
+   cp -r /path/to/latest/esp-r/reference \
+     tests/reference_data/esp-r/
+
+   # Update TRNSYS reference data
+   cp -r /path/to/latest/trnsys/reference \
+     tests/reference_data/trnsys/
+   ```
+
+3. **Document reference data version in `docs/ashrae_140/reference_data_versions.md`**
+
+### Phase 2: Run Full Validation Suite
+
+1. **Execute validation:**
+   ```bash
+   cargo test --test ashrae_140_validation --release
+   ```
+
+2. **Collect results:**
+   - Pass rate
+   - Failed cases list
+   - Mean Absolute Error (MAE)
+   - Per-case heating/cooling energy values
+
+3. **Generate validation report:**
+   ```bash
+   ./scripts/generate_ashrae_report.sh
+   ```
+
+### Phase 3: Analysis and Sign-off
+
+1. **Review failed cases:**
+   - Document root cause for each failure
+   - Determine if failure is due to:
+     - Code regression (needs fixing)
+     - Reference data update (acceptable drift)
+     - Known limitation (document and accept)
+
+2. **Calculate metrics:**
+   - Overall pass rate (must be >= 80%)
+   - Mean Absolute Error
+   - Comparison with previous year's results
+
+3. **Sign-off requirements:**
+   - [ ] All critical regressions fixed or accepted
+   - [ ] Pass rate >= 80%
+   - [ ] Validation report generated and archived
+   - [ ] Reference data versions documented
+
+### Phase 4: Milestone Completion
+
+1. **Create milestone:**
+   ```bash
+   gh milestone create "ASHRAE-140-YYYY-Annual-Revalidation" \
+     --description "Annual ASHRAE 140 re-validation for YYYY" \
+     --due-date YYYY-02-15
+   ```
+
+2. **Close issues and update documentation:**
+   - Update this document with any process changes
+   - Archive validation report in `docs/ashrae_140/annual_reports/`
+   - Update `ARCHITECTURE.md` if module interfaces changed
+
+## Automated Script
+
+The annual re-validation process can be automated using:
+
+```bash
+./scripts/annual_ashrae_revalidation.sh --year YYYY --dry-run
+```
+
+See `scripts/annual_ashrae_revalidation.sh` for full documentation.
+
+## Success Criteria
+
+| Criterion | Target | Acceptable Range |
+|-----------|--------|------------------|
+| Pass Rate | >= 80% | 80-100% |
+| Mean Absolute Error | < 5% | 0-5% |
+| Failed Cases | 0 | 0-20% of total |
+
+## Failed Case Handling
+
+### If Pass Rate < 80%
+
+1. **Immediate action:**
+   - Block all PRs to main until resolved
+   - Create issue for each failed case
+   - Prioritize fixes by severity
+
+2. **Root cause categories:**
+   - **Regression:** Code change caused failure → revert or fix
+   - **Reference Drift:** Reference data changed → update tolerance or document
+   - **Physics Limitation:** Model limitation → document as known issue
+
+### If Pass Rate >= 80%
+
+1. **Archive results**
+2. **Update status dashboard**
+3. **Proceed with normal development**
+
+## Reference Sources
+
+| Source | Organization | URL |
+|--------|--------------|-----|
+| EnergyPlus | NREL | https://energyplus.net |
+| ESP-r | University of Strathclyde | https://www.esru.strath.ac.uk/ESP-r |
+| TRNSYS | TESS | https://www.trnsys.com |
+
+## Change Log
+
+| Date | Change | Author |
+|------|--------|--------|
+| YYYY-MM-DD | Initial version | - |
+
+## See Also
+
+- [ASHRAE 140 Mathematical Model](../ashrae_140/mathematical_model.md)
+- [ASHRAE 140 Test Cases](../ashrae_140/cases/)
+- [CI Gate Workflow](../../.github/workflows/ashrae_validation.yml)
+- [Validation Results Dashboard](https://github.com/anchapin/fluxion/actions/workflows/ashrae_validation.yml)
