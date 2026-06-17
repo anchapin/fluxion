@@ -39,8 +39,8 @@
 
 pub mod fmi;
 pub mod gbxml;
-// osm module is temporarily disabled due to compilation errors
-// pub mod osm;
+pub mod osm;
 
 pub use fmi::{FmiConfig, FmiExporter, FmiMode};
 pub use gbxml::{export_gbxml, import_gbxml, GbXmlError, GbXmlReader, GbXmlWriter};
+pub use osm::{OsmError, OsmReader, OsmWriter, import_osm, export_osm};
