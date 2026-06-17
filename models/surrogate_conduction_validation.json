@@ -1,0 +1,14 @@
+{
+  "component": "conduction",
+  "model_path": "models/surrogate_conduction.onnx",
+  "physics_baseline": "synthetic_physics",
+  "n_test_samples": 100,
+  "rmse": 1336.0323977435523,
+  "rmse_normalized": 0.19535597690039025,
+  "mae": 958.0928452415138,
+  "r2": -0.01445977535359888,
+  "max_error": 3709.7723899848643,
+  "inference_time_ms": 0.08849401492625475,
+  "inference_time_p95_ms": 3.765735810156911,
+  "rmse_target_met": false,
+  "inference_target_met": 

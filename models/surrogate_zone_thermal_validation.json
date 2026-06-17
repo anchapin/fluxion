@@ -1,0 +1,14 @@
+{
+  "component": "zone_thermal",
+  "model_path": "models/surrogate_zone_thermal.onnx",
+  "physics_baseline": "synthetic_physics",
+  "n_test_samples": 100,
+  "rmse": 1466.4194142740557,
+  "rmse_normalized": 48.081887326799226,
+  "mae": 1213.1116707127053,
+  "r2": -35780.07431452903,
+  "max_error": 3096.6701144571575,
+  "inference_time_ms": 0.048184534534811974,
+  "inference_time_p95_ms": 3.1422477797605097,
+  "rmse_target_met": false,
+  "inference_target_met": 

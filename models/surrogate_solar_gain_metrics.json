@@ -1,0 +1,51 @@
+{
+  "component": "solar_gain",
+  "model_version": "3.0.0",
+  "training_samples": 800,
+  "test_samples": 200,
+  "train_rmse": 40.34655780314474,
+  "test_rmse": 64.10773936190348,
+  "test_mae": 47.01072311401367,
+  "test_r2": 0.8172848224639893,
+  "rmse_normalized": 0.0854551074167882,
+  "training_time_seconds": 0.19307684898376465,
+  "n_iterations": 100,
+  "scaler_mean": [
+    37.36509141683578,
+    -95.85189883232117,
+    186.705,
+    11.485,
+    44.775,
+    177.40783851095068,
+    510.7276082442887,
+    151.8939150413871
+  ],
+  "scaler_std": [
+    7.112471128202225,
+    14.408631820786116,
+    105.68842403499072,
+    6.915726642949387,
+    29.364295922088772,
+    101.15990768133709,
+    301.13738973753703,
+    85.5039787691746
+  ],
+  "input_features": [
+    "latitude",
+    "longitude",
+    "day_of_year",
+    "hour_of_day",
+    "surface_tilt",
+    "surface_azimuth",
+    "direct_normal_irradiance",
+    "diffuse_horizontal_irradiance"
+  ],
+  "output_features": [
+    "solar_gain_W"
+  ],
+  "hidden_layer_sizes": [
+    64,
+    32
+  ],
+  "onnx_opset": 17
+}
