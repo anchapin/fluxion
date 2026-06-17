@@ -124,6 +124,7 @@ num-traits = "0.2.19"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 
 # OpenStudio OSM file parsing/serialization
+# XML parsing for gbXML import/export
 quick-xml = "0.31"
 
 [build-dependencies]
