@@ -374,8 +374,8 @@ fn write_text_element<W: std::io::Write>(
 mod tests {
     use super::*;
     use crate::api::schema::{
-        ConstructionSet, ControlSet, Geometry, SchemaMetadata, SchemaVersion, SimulationSchemaV1,
-        SimulationOutput, WeatherData, ZoneGeometry,
+        ConstructionSet, ControlSet, Geometry, SchemaMetadata, SchemaVersion, SimulationOutput,
+        SimulationSchemaV1, WeatherData, ZoneGeometry,
     };
 
     fn create_test_schema() -> SimulationSchemaV1 {
