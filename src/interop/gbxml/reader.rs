@@ -44,7 +44,7 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
 
     let mut doc = GbXmlDocument::default();
     let mut stack: Vec<String> = Vec::new();
-    let mut current_element = String::new();
+    let mut current_element;
     let mut text_content = String::new();
     let mut buf = Vec::new();
 
@@ -377,18 +377,18 @@ fn get_surface_count(doc: &GbXmlDocument) -> usize {
 
 /// GbXmlReader for parsing gbXML files.
 pub struct GbXmlReader {
-    construction_map: HashMap<String, Construction>,
-    layer_map: HashMap<String, Layer>,
-    material_map: HashMap<String, Material>,
+    _construction_map: HashMap<String, Construction>,
+    _layer_map: HashMap<String, Layer>,
+    _material_map: HashMap<String, Material>,
 }
 
 impl GbXmlReader {
     /// Create a new GbXmlReader.
     pub fn new() -> Self {
         GbXmlReader {
-            construction_map: HashMap::new(),
-            layer_map: HashMap::new(),
-            material_map: HashMap::new(),
+            _construction_map: HashMap::new(),
+            _layer_map: HashMap::new(),
+            _material_map: HashMap::new(),
         }
     }
 
