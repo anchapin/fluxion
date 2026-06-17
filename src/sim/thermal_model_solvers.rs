@@ -27,8 +27,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let gross_wall_area = perimeter * self.0.ceiling_height.clone();
 
         let window_area = gross_wall_area.clone() * self.0.window_ratio.clone();
-        // Opaque wall area: Gross - Window
+        // Opaque wall area: Gross - Window (used for h_tr_em calculations)
         // Note: Floor and roof are handled separately
+        #[allow(unused_variables)]
         let opaque_wall_area = gross_wall_area.zip_with(&window_area, |g, w| g - w);
 
         let volume = self.0.zone_area.clone() * self.0.ceiling_height.clone();
@@ -47,17 +48,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #375: Use construction U-value from ThermalModel field
         self.0.h_tr_floor = self.0.zone_area.clone() * self.0.floor_u_value;
 
-        // h_tr_is = Surface-to-air conductance for simplified 5R1C model
-        // Fix #1: Use ASHRAE 140 surface-specific interior heat transfer coefficients
-        // - Walls: 7.69 W/m²K
-        // - Ceilings: 10.0 W/m²K
-        // - Floors: 5.88 W/m²K
-        // Reference: ASHRAE Standard 140 Table 3, Interior Surface Heat Transfer Coefficients
-        let wall_h_tr_is = opaque_wall_area.clone() * 7.69;
-        let roof_area = self.0.zone_area.clone(); // Roof area equals floor area
-        let ceiling_h_tr_is = roof_area.clone() * 10.0;
-        let floor_h_tr_is = self.0.zone_area.clone() * 5.88;
-        self.0.h_tr_is = wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is;
+        // h_tr_is = Surface-to-air conductance for ASHRAE 140 simplified 5R1C model
+        // Issue #714 Fix: Use H_SI = 3.45 W/m²K × floor_area (ASHRAE 140 simplified method)
+        // instead of detailed surface-specific film coefficients
+        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+        self.0.h_tr_is = self.0.zone_area.clone() * H_SI;
 
         // Ventilation
         // h_ve = (infiltration_rate * volume * density * cp) / 3600

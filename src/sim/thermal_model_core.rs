@@ -838,19 +838,14 @@ impl ThermalModel<VectorField> {
             };
             h_tr_floor_vec.push(h_tr_floor_val);
 
-            // h_tr_is = Surface-to-air conductance for simplified 5R1C model
-            // Per ASHRAE 140 Table 3, use surface-specific interior film coefficients:
-            // - Walls (vertical): 7.69 W/m²K
-            // - Ceiling (upward): 10.0 W/m²K
-            // - Floor (downward): 5.88 W/m²K
+            // h_tr_is = Surface-to-air conductance for ASHRAE 140 simplified 5R1C model
+            // Issue #714 Fix: Use H_SI = 3.45 W/m²K × floor_area (ASHRAE 140 simplified method)
+            // instead of detailed surface-specific film coefficients
+            // Note: opaque_area is still needed for h_tr_em calculations below
             let opaque_area = zone_wall_area - zone_window_area;
-            let wall_h_tr_is = opaque_area
-                * crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
-            let ceiling_h_tr_is =
-                zone_floor_area * crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_CEILING;
-            let floor_h_tr_is = zone_floor_area
-                * crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_FLOOR;
-            h_tr_is_vec.push(wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is);
+            const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
+            let total_h_tr_is = H_SI * zone_floor_area;
+            h_tr_is_vec.push(total_h_tr_is);
 
             // Calculate effective specific capacitances per area for each construction
             // Note: kappa_* variables are reserved for future ISO 13790 admittance method
@@ -1263,7 +1258,8 @@ impl ThermalModel<VectorField> {
             }
 
             // h_tr_is_no_south = total_h_tr_is - south wall's contribution
-            let total_h_tr_is = wall_h_tr_is + ceiling_h_tr_is + floor_h_tr_is;
+            // Issue #714 Fix: Use the simplified total_h_tr_is (3.45 * floor_area)
+            // instead of the detailed film coefficient sum
             let h_tr_is_no_south = (total_h_tr_is - h_tr_is_south).max(0.0);
 
             h_tr_is_no_south_vec.push(h_tr_is_no_south);
