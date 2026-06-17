@@ -1975,6 +1975,19 @@ impl ThermalModel<VectorField> {
             .map(|&vol| Some(IdealLoadsSystem::new(vol, ventilation_ach)))
             .collect();
 
+        // Issue #913: Enable CTF by default for high-mass 900FF cases
+        // The high-mass wall construction requires CTF for accurate heat conduction modeling
+        // Use the same wall layers as the test for consistency
+        if spec.case_id == "900FF" {
+            use crate::physics::ctf_coefficients::CTFMaterial;
+            let wall_layers = vec![
+                CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
+                CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
+                CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
+            ];
+            model.enable_ctf(&wall_layers, 3600.0, 50);
+        }
+
         model
     }
 
