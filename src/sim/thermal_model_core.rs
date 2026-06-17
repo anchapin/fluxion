@@ -432,14 +432,6 @@ impl ThermalModel<VectorField> {
         // Physics-based: No correction factors needed
         // The thermal network physics should produce correct results without empirical adjustments
         // τ = Cm / (h_tr_ms + h_tr_me) is determined by actual construction properties (Issue 693 fix)
-        model.time_constant_sensitivity_correction = 1.0;
-        model.cooling_sensitivity_correction = 1.0;
-
-        // Issue #665 fix: 6R2C correction factors disabled
-        // The empirically-derived 5.2 and 1.74 correction factors were papering over
-        // calculation errors. Now using physics-based values directly.
-        model.time_constant_sensitivity_correction_6r2c = 1.0;
-        model.cooling_sensitivity_correction_6r2c = 1.0;
 
         // Access first element for single-zone cases
         let geometry = &spec.geometry[0];
@@ -780,9 +772,6 @@ impl ThermalModel<VectorField> {
 
         // === SESSION 33: REMOVED mode-specific factors ===
         // Using physics-based parameters only, no case-specific tuning.
-
-        // NOTE: time_constant_sensitivity_correction is already set in from_spec()
-        // No need to set it again here - doing so would be redundant
 
         for zone_idx in 0..num_zones {
             let zone_floor_area = if zone_idx < spec.geometry.len() {
@@ -2342,11 +2331,6 @@ impl ThermalModel<VectorField> {
             convective_fraction: 0.4,
             solar_distribution_to_air: 0.1,
             solar_beam_to_mass_fraction: 0.6, // Calibrated for ASHRAE 140 (60% to mass)
-            thermal_mass_coupling_enhancement: 1.0, // Default: no coupling enhancement
-            time_constant_sensitivity_correction: 1.0, // Default: no correction
-            cooling_sensitivity_correction: 1.0, // Default: no correction
-            time_constant_sensitivity_correction_6r2c: 1.0, // Default: no correction for 6R2C
-            cooling_sensitivity_correction_6r2c: 1.0, // Default: no correction for 6R2C cooling
             // Mode-specific factors removed - using physics-based conductances
             // h_tr_em_heating_factor, h_tr_em_cooling_factor removed
             // h_tr_ms_heating_factor, h_tr_ms_cooling_factor removed
@@ -2387,14 +2371,6 @@ impl ThermalModel<VectorField> {
             // Separate heating and cooling energy tracking (Plan 03-08d: Diagnostic)
             annual_heating_energy: 0.0, // Cumulative heating energy in kWh
             annual_cooling_energy: 0.0, // Cumulative cooling energy in kWh
-
-            // CTF thermal mass correction tracking
-            ctf_annual_heating_joules: 0.0,
-            ctf_annual_cooling_joules: 0.0,
-
-            // FD thermal mass correction tracking
-            fd_annual_heating_joules: 0.0,
-            fd_annual_cooling_joules: 0.0,
 
             // Electrical energy tracking for HVAC equipment (Plan 18-08)
             annual_electrical_energy: 0.0, // Cumulative electrical energy consumption in kWh
