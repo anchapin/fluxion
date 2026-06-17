@@ -1571,7 +1571,14 @@ fn main() -> Result<()> {
             measures_only,
             postprocess_only,
         } => {
-            run_workflow(workflow.as_deref(), debug, measures_only, postprocess_only)?;
+<<<<<<< HEAD
+            run_workflow(
+                workflow.as_deref(),
+                debug,
+                measures_only,
+                postprocess_only,
+            )?;
+>>>>>>> 43fff2d (fix(fluxion): correct EpwWeatherSource::from_file and remove bool dereferences)
         }
 
         Commands::Measure { command } => {
