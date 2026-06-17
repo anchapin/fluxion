@@ -1,0 +1,48 @@
+{
+  "component": "zone_thermal",
+  "model_version": "3.0.0",
+  "training_samples": 800,
+  "test_samples": 200,
+  "train_rmse": 0.39292410413000756,
+  "test_rmse": 0.5487794413304624,
+  "test_mae": 0.43250107765197754,
+  "test_r2": 0.9955677390098572,
+  "rmse_normalized": 0.015489791377497534,
+  "training_time_seconds": 0.18083429336547852,
+  "n_iterations": 93,
+  "scaler_mean": [
+    15.09876933476713,
+    22.042063312530516,
+    404.0806287643313,
+    50.11852262973785,
+    2.452135572512052,
+    1.05125,
+    3.835196715997154
+  ],
+  "scaler_std": [
+    14.422727807038962,
+    2.299291787182631,
+    229.35131161890723,
+    16.726141255687047,
+    1.4330990046946577,
+    0.8268152378252361,
+    2.3145024770878764
+  ],
+  "input_features": [
+    "exterior_temp",
+    "zone_temp",
+    "solar_rad",
+    "humidity",
+    "occupancy",
+    "hvac_mode",
+    "climate_zone_encoded"
+  ],
+  "output_features": [
+    "thermal_load"
+  ],
+  "hidden_layer_sizes": [
+    64,
+    32
+  ],
+  "onnx_opset": 17
+}

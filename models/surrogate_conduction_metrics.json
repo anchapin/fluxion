@@ -1,0 +1,45 @@
+{
+  "component": "conduction",
+  "model_version": "3.0.0",
+  "training_samples": 800,
+  "test_samples": 200,
+  "train_rmse": 109.62022954985316,
+  "test_rmse": 136.95926344628901,
+  "test_mae": 99.39051055908203,
+  "test_r2": 0.9914363622665405,
+  "rmse_normalized": 0.013862185937213355,
+  "training_time_seconds": 0.20015406608581543,
+  "n_iterations": 100,
+  "scaler_mean": [
+    15.399662979759741,
+    21.94187115907669,
+    1.2583628673292697,
+    54.82680210828781,
+    273.48991446971894,
+    0.823491589576006
+  ],
+  "scaler_std": [
+    14.405322620252678,
+    2.3136530371044746,
+    0.6947861352627442,
+    26.173737338524738,
+    130.19166288415298,
+    0.07357427543142488
+  ],
+  "input_features": [
+    "exterior_temp",
+    "interior_temp",
+    "wall_u_value",
+    "wall_area",
+    "wall_mass",
+    "surface_emissivity"
+  ],
+  "output_features": [
+    "conduction_flux_W"
+  ],
+  "hidden_layer_sizes": [
+    64,
+    32
+  ],
+  "onnx_opset": 17
+}

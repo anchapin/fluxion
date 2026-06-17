@@ -1,0 +1,14 @@
+{
+  "component": "ventilation",
+  "model_path": "models/surrogate_ventilation.onnx",
+  "physics_baseline": "synthetic_physics",
+  "n_test_samples": 100,
+  "rmse": 13723.070688433361,
+  "rmse_normalized": 1280.755937254095,
+  "mae": 11558.962888779475,
+  "r2": -46665476.38750954,
+  "max_error": 29107.403687228685,
+  "inference_time_ms": 0.0597106758505106,
+  "inference_time_p95_ms": 6.158245948608965,
+  "rmse_target_met": false,
+  "inference_target_met": 

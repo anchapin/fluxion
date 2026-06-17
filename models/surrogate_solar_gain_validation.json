@@ -1,0 +1,14 @@
+{
+  "component": "solar_gain",
+  "model_path": "models/surrogate_solar_gain.onnx",
+  "physics_baseline": "synthetic_physics",
+  "n_test_samples": 100,
+  "rmse": 178.91902791181926,
+  "rmse_normalized": 0.1958446090536584,
+  "mae": 146.64524048994545,
+  "r2": -0.21854343285885203,
+  "max_error": 684.4628814077907,
+  "inference_time_ms": 0.06015868857502937,
+  "inference_time_p95_ms": 2.9625899740494788,
+  "rmse_target_met": false,
+  "inference_target_met": 

@@ -1,0 +1,45 @@
+{
+  "component": "ventilation",
+  "model_version": "3.0.0",
+  "training_samples": 800,
+  "test_samples": 200,
+  "train_rmse": 1.970866140800903,
+  "test_rmse": 1.999510466746403,
+  "test_mae": 1.6190942525863647,
+  "test_r2": 0.0012817978858947754,
+  "rmse_normalized": 0.2031830605455234,
+  "training_time_seconds": 0.06010866165161133,
+  "n_iterations": 27,
+  "scaler_mean": [
+    15.399662979759741,
+    21.94187115907669,
+    4.826511950016866,
+    100245.18908203125,
+    248.322127096653,
+    4.939663583218462
+  ],
+  "scaler_std": [
+    14.405322620252678,
+    2.3136530371044746,
+    2.8949422293544216,
+    727.0482633012979,
+    144.65740272171644,
+    2.9429709975459617
+  ],
+  "input_features": [
+    "exterior_temp",
+    "interior_temp",
+    "wind_speed",
+    "indoor_pressure",
+    "ventilation_rate",
+    "ach"
+  ],
+  "output_features": [
+    "ventilation_load_W"
+  ],
+  "hidden_layer_sizes": [
+    64,
+    32
+  ],
+  "onnx_opset": 17
+}
