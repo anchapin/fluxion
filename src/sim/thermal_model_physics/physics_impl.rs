@@ -1115,11 +1115,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 if i < slice.len() {
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_ctf = q_flux * area;
-                    slice[i] += q_ctf;
-                    if q_ctf > 0.0 {
-                        self.0.ctf_annual_heating_joules += q_ctf * dt;
+
+                    // Issue #739 fix: Compute net CTF flux (CTF - 6R2C baseline) for consistent tracking
+                    // When ctf_primary=true, h_tr_ms coupling is disabled (zeroed), so h_tr_ms[i] ≈ 0
+                    // and net_ctf_flux ≈ q_ctf. This makes tracking consistent with 5R1C and 9R4C paths.
+                    let h_tr_ms_i = self.0.h_tr_ms.as_ref().get(i).copied().unwrap_or(0.0);
+                    let t_em_i = self
+                        .0
+                        .envelope_mass_temperatures
+                        .as_ref()
+                        .get(i)
+                        .copied()
+                        .unwrap_or(20.0);
+                    let q_6r2c_baseline = h_tr_ms_i * t_em_i;
+                    let net_ctf_flux = q_ctf - q_6r2c_baseline;
+
+                    slice[i] += net_ctf_flux;
+                    if net_ctf_flux > 0.0 {
+                        self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
                     } else {
-                        self.0.ctf_annual_cooling_joules += (-q_ctf) * dt;
+                        self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
                     }
                 }
             }
