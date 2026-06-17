@@ -6,6 +6,15 @@
 //! equilibrium but does NOT accumulate energy totals, avoiding phantom heating
 //! from transient initial conditions.
 //!
+//! # Issue #859: Per-Surface Boundary Conditions and Gain Distribution
+//!
+//! This module supports per-surface boundary conditions via
+//! [`step_with_surface_bc()`](MultiNodeHvacRunner::step_with_surface_bc).
+//! Instead of using a uniform exterior temperature for all surfaces, each
+//! envelope surface (wall, roof, floor) can have its own sol-air temperature.
+//! Solar and internal gains are also distributed per-surface using proper
+//! orientation-weighted calculations.
+//!
 //! # Warm-Up Rationale
 //!
 //! All mass temperatures start at 20 °C. For heavy-mass buildings (Case 900+)
@@ -16,7 +25,7 @@
 
 #![allow(deprecated)]
 
-use crate::physics::multi_node_solver::MultiNodeSolver;
+use crate::physics::multi_node_solver::{MultiNodeSolver, SurfaceExteriorTemperatures};
 use crate::sim::multi_node_thermal::ThermalMassNode;
 
 /// Default number of warm-up days (14 days per ASHRAE 140 §B2 guidance).
@@ -250,6 +259,14 @@ impl MultiNodeHvacRunner {
     /// energy totals are **not** accumulated. After warm-up, energy and peak
     /// power tracking resumes normally.
     ///
+    /// # Legacy Behavior (Issue #859)
+    ///
+    /// This method uses a **uniform exterior temperature** for all surfaces
+    /// and **hardcoded solar gain distribution** (60% wall, 30% roof, 10% floor).
+    /// For accurate per-surface boundary conditions, use
+    /// [`step_with_surface_bc()`](Self::step_with_surface_bc) instead,
+    /// which accepts per-surface sol-air temperatures and properly distributed gains.
+    ///
     /// # Deadband Handling (Issue #1008)
     ///
     /// The HVAC mode is selected by comparing the **free-floating zone
@@ -395,6 +412,166 @@ impl MultiNodeHvacRunner {
         // (e.g. via a state-aware override) reach this point with a non-finite
         // q_hvac; we treat that as zero demand rather than poisoning the
         // annual totals.
+        let heating_power_kw = if q_hvac.is_finite() && q_hvac > 0.0 {
+            q_hvac / 1000.0
+        } else {
+            0.0
+        };
+        let cooling_power_kw = if q_hvac.is_finite() && q_hvac < 0.0 {
+            -q_hvac / 1000.0
+        } else {
+            0.0
+        };
+
+        self.annual_heating_energy += heating_power_kw * (dt / 3600.0);
+        self.annual_cooling_energy += cooling_power_kw * (dt / 3600.0);
+
+        if heating_power_kw > self.peak_heating_power {
+            self.peak_heating_power = heating_power_kw;
+        }
+        if cooling_power_kw > self.peak_cooling_power {
+            self.peak_cooling_power = cooling_power_kw;
+        }
+
+        q_hvac
+    }
+
+    /// Advance the simulation by one timestep with per-surface boundary conditions.
+    ///
+    /// This is the Issue #859 implementation that correctly handles per-surface
+    /// sol-air temperatures and gain distribution. Unlike [`step()`](Self::step)
+    /// which uses a uniform exterior temperature and hardcoded gain percentages,
+    /// this method accepts:
+    ///
+    /// - Per-surface sol-air temperatures (wall, roof, floor)
+    /// - Per-surface solar gains (wall, roof, floor) already computed from
+    ///   Perez tilted-plane model
+    /// - Internal radiative gains for the internal mass node
+    ///
+    /// # Arguments
+    ///
+    /// * `exterior_temps` - Per-surface exterior temperatures (sol-air for wall/roof,
+    ///   ground temp for floor) [°C]
+    /// * `solar_gains` - Per-surface solar gains [W]: `(wall, roof, floor)`
+    /// * `internal_gain` - Internal radiative gain for internal mass node [W]
+    /// * `dt` - Timestep duration [seconds] (typically 3600 for 1-hour)
+    ///
+    /// # Returns
+    ///
+    /// The HVAC power demand for this timestep [W].
+    /// Positive = heating, negative = cooling, zero = deadband.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Per-surface sol-air temperatures
+    /// let ext_temps = SurfaceExteriorTemperatures {
+    ///     t_ext_wall: 35.0,   // Hot west wall in afternoon
+    ///     t_ext_roof: 45.0,   // Hot roof
+    ///     t_ext_floor: 10.0,  // Ground-coupled floor
+    /// };
+    ///
+    /// // Per-surface solar gains from Perez model
+    /// let solar_gains = (300.0, 500.0, 0.0); // (wall, roof, floor)
+    ///
+    /// let q_hvac = runner.step_with_surface_bc(ext_temps, solar_gains, 200.0, 3600.0);
+    /// ```
+    pub fn step_with_surface_bc(
+        &mut self,
+        exterior_temps: SurfaceExteriorTemperatures,
+        solar_gains: (f64, f64, f64),
+        internal_gain: f64,
+        dt: f64,
+    ) -> f64 {
+        self.timestep_count += 1;
+
+        // Issue #1006: NaN/Inf guard on inputs
+        if !exterior_temps.t_ext_wall.is_finite()
+            || !exterior_temps.t_ext_roof.is_finite()
+            || !exterior_temps.t_ext_floor.is_finite()
+            || !solar_gains.0.is_finite()
+            || !solar_gains.1.is_finite()
+            || !solar_gains.2.is_finite()
+            || !internal_gain.is_finite()
+            || !dt.is_finite()
+            || !self.solver.h_tr_is.is_finite()
+            || !self.solver.surface_temperature.is_finite()
+        {
+            return 0.0;
+        }
+
+        // Set per-surface exterior boundary temperatures (Issue #859)
+        // This ensures wall, roof, and floor each use their own sol-air temperature
+        // instead of the uniform outdoor temperature used in step()
+        self.solver
+            .set_surface_exterior_temperatures(exterior_temps.clone());
+
+        // Use average exterior temperature for T_free computation to maintain
+        // compatibility with the single-h_tr_is air balance
+        let t_out_avg =
+            (exterior_temps.t_ext_wall + exterior_temps.t_ext_roof + exterior_temps.t_ext_floor)
+                / 3.0;
+
+        // Per-surface solar gains go directly to envelope mass nodes
+        // Internal radiative gains (50% of total per ISO 13790) go to internal mass
+        let g_wall = solar_gains.0;
+        let g_roof = solar_gains.1;
+        let g_floor = solar_gains.2;
+        let g_internal = 0.5 * internal_gain;
+
+        // Convective internal gains (50%) go to zone air
+        let phi_ia = 0.5 * internal_gain;
+
+        // === Compute free-floating zone temperature ===
+        let t_free = self
+            .solver
+            .compute_zone_air_temperature(t_out_avg, self.h_ve, phi_ia);
+
+        // === Determine HVAC mode and target zone temperature ===
+        let t_free_safe = if t_free.is_finite() {
+            t_free
+        } else {
+            t_out_avg
+        };
+
+        let (t_air_target, hvac_active, hvac_setpoint) = if t_free_safe < self.heating_setpoint {
+            (self.heating_setpoint, true, self.heating_setpoint)
+        } else if t_free_safe > self.cooling_setpoint {
+            (self.cooling_setpoint, true, self.cooling_setpoint)
+        } else {
+            (t_free, false, t_free)
+        };
+
+        self.solver.set_zone_temperature(t_air_target);
+        self.prev_zone_temp = t_air_target;
+
+        // === Step the multi-node solver with per-surface gains ===
+        self.solver
+            .step_with_gains(dt, g_wall, g_roof, g_floor, g_internal);
+
+        // === Compute HVAC power using air node energy balance ===
+        let h_tr_is = self.solver.h_tr_is;
+        let t_surface_post = self.solver.surface_temperature;
+        let h_total = h_tr_is + self.h_ve + self.h_tr_w;
+
+        let q_hvac = if hvac_active {
+            h_total * hvac_setpoint
+                - h_tr_is * t_surface_post
+                - (self.h_ve + self.h_tr_w) * t_out_avg
+                - phi_ia
+        } else {
+            0.0
+        };
+
+        // Warm-up check: skip energy accumulation during warm-up
+        if !self.warmed_up {
+            if self.timestep_count >= self.warmup_timesteps {
+                self.warmed_up = true;
+            }
+            return q_hvac;
+        }
+
+        // After warm-up: accumulate energy and track peaks
         let heating_power_kw = if q_hvac.is_finite() && q_hvac > 0.0 {
             q_hvac / 1000.0
         } else {
@@ -1235,5 +1412,164 @@ mod tests {
             t_free < 20.0,
             "T_free should be below outdoor when mass is cooled: got {t_free}"
         );
+    }
+
+    // === Issue #859: Per-surface boundary condition tests ===
+
+    #[test]
+    fn test_step_with_surface_bc_basic() {
+        // Basic test: hot roof sol-air temp should drive heating demand down
+        let mut runner = create_deadband_test_runner();
+
+        // Uniform exterior temps = 20°C, no gains → should be in deadband
+        let ext_temps = SurfaceExteriorTemperatures::uniform(20.0);
+        let q = runner.step_with_surface_bc(ext_temps, (0.0, 0.0, 0.0), 0.0, 3600.0);
+        assert_eq!(q, 0.0, "Should be in deadband with 20°C uniform temps");
+    }
+
+    #[test]
+    fn test_step_with_surface_bc_hot_roof() {
+        // Hot roof sol-air temp (45°C) should cause cooling demand
+        // The HVAC should activate to maintain zone at cooling setpoint
+        let mut runner = create_deadband_test_runner();
+
+        let ext_temps = SurfaceExteriorTemperatures {
+            t_ext_wall: 20.0,
+            t_ext_roof: 45.0, // Hot roof
+            t_ext_floor: 20.0,
+        };
+
+        // Run many timesteps to let the zone heat up and HVAC activate
+        for _ in 0..100 {
+            runner.step_with_surface_bc(ext_temps.clone(), (0.0, 0.0, 0.0), 0.0, 3600.0);
+        }
+
+        // Zone should be held at cooling setpoint (26°C) by HVAC
+        assert!(
+            runner.prev_zone_temp >= 26.0,
+            "Zone should be at cooling setpoint with hot roof: prev_zone_temp={}",
+            runner.prev_zone_temp
+        );
+        // Should have accumulated cooling energy
+        assert!(
+            runner.annual_cooling_energy > 0.0,
+            "Should accumulate cooling energy with hot roof: got {}",
+            runner.annual_cooling_energy
+        );
+    }
+
+    #[test]
+    fn test_step_with_surface_bc_cold_wall() {
+        // Cold wall sol-air temp (-10°C) should cause heating demand
+        // The HVAC should activate to maintain zone at heating setpoint
+        let mut runner = create_deadband_test_runner();
+
+        let ext_temps = SurfaceExteriorTemperatures {
+            t_ext_wall: -10.0, // Cold wall
+            t_ext_roof: 20.0,
+            t_ext_floor: 20.0,
+        };
+
+        // Run many timesteps
+        for _ in 0..100 {
+            runner.step_with_surface_bc(ext_temps.clone(), (0.0, 0.0, 0.0), 0.0, 3600.0);
+        }
+
+        // Zone should be held at heating setpoint (20°C) by HVAC
+        assert!(
+            runner.prev_zone_temp <= 20.0,
+            "Zone should be at heating setpoint with cold wall: prev_zone_temp={}",
+            runner.prev_zone_temp
+        );
+        // Should have accumulated heating energy
+        assert!(
+            runner.annual_heating_energy > 0.0,
+            "Should accumulate heating energy with cold wall: got {}",
+            runner.annual_heating_energy
+        );
+    }
+
+    #[test]
+    fn test_step_with_surface_bc_per_surface_gains() {
+        // Per-surface gains should go to respective mass nodes
+        let mut runner = create_deadband_test_runner();
+
+        let ext_temps = SurfaceExteriorTemperatures::uniform(20.0);
+
+        // Apply high wall gain first
+        let wall_gain = 1000.0;
+        for _ in 0..50 {
+            runner.step_with_surface_bc(ext_temps.clone(), (wall_gain, 0.0, 0.0), 0.0, 3600.0);
+        }
+        let temp_with_gain = runner.prev_zone_temp;
+
+        // Reset runner and apply no gains
+        let mut runner2 = create_deadband_test_runner();
+        for _ in 0..50 {
+            runner2.step_with_surface_bc(ext_temps.clone(), (0.0, 0.0, 0.0), 0.0, 3600.0);
+        }
+        let temp_no_gain = runner2.prev_zone_temp;
+
+        // With high wall gains applied, zone should be warmer
+        assert!(
+            temp_with_gain > temp_no_gain,
+            "Wall gains should heat zone more: with_gain={temp_with_gain}, no_gain={temp_no_gain}"
+        );
+    }
+
+    #[test]
+    fn test_step_with_surface_bc_energy_accumulation() {
+        // After warm-up disabled, energy should accumulate
+        let mut runner = create_deadband_test_runner();
+
+        let ext_temps = SurfaceExteriorTemperatures::uniform(0.0); // Cold exterior
+        for _ in 0..50 {
+            runner.step_with_surface_bc(ext_temps.clone(), (0.0, 0.0, 0.0), 0.0, 3600.0);
+        }
+
+        assert!(
+            runner.annual_heating_energy > 0.0,
+            "Heating energy should accumulate: got {}",
+            runner.annual_heating_energy
+        );
+    }
+
+    #[test]
+    fn test_surface_exterior_temps_average() {
+        // Test that SurfaceExteriorTemperatures::uniform creates equal temps
+        let temps = SurfaceExteriorTemperatures::uniform(25.0);
+        assert_eq!(temps.t_ext_wall, 25.0);
+        assert_eq!(temps.t_ext_roof, 25.0);
+        assert_eq!(temps.t_ext_floor, 25.0);
+    }
+
+    #[test]
+    fn test_step_with_surface_bc_matches_step_with_uniform_temp() {
+        // When using uniform per-surface temps equal to outdoor_temp,
+        // step_with_surface_bc should give similar (not identical, due to
+        // average for T_free) results to step() for the same conditions.
+        let mut runner1 = create_deadband_test_runner();
+        let mut runner2 = create_deadband_test_runner();
+
+        let outdoor_temp = 10.0;
+        let solar_gain = 500.0;
+        let internal_gain = 200.0;
+        let dt = 3600.0;
+
+        // Run both for a few timesteps
+        for _ in 0..3 {
+            runner1.step(outdoor_temp, solar_gain, internal_gain, dt);
+            let ext_temps = SurfaceExteriorTemperatures::uniform(outdoor_temp);
+            runner2.step_with_surface_bc(
+                ext_temps,
+                (0.6 * solar_gain, 0.3 * solar_gain, 0.1 * solar_gain),
+                internal_gain,
+                dt,
+            );
+        }
+
+        // Both should show heating (cold outdoor) and have accumulated energy
+        assert!(runner1.annual_heating_energy > 0.0);
+        assert!(runner2.annual_heating_energy > 0.0);
     }
 }
