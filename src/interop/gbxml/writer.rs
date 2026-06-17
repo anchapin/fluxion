@@ -25,8 +25,8 @@ use quick_xml::Writer;
 use std::io::Cursor;
 
 use crate::api::schema::{
-    ConstructionSet, ControlSet, Geometry, SchemaMetadata, SimulationOutput,
-    SimulationSchemaV1, SurfaceConstruction, WeatherData, WindowSpec, ZoneGeometry,
+    ConstructionSet, ControlSet, Geometry, SchemaMetadata, SimulationOutput, SimulationSchemaV1,
+    SurfaceConstruction, WeatherData, WindowSpec, ZoneGeometry,
 };
 use crate::interop::gbxml::error::GbXmlError;
 use crate::interop::gbxml::types::*;
@@ -120,12 +120,11 @@ impl GbXmlWriter {
         // Get location name from weather or schema
         let location_name = match &schema.weather {
             WeatherData::TmyLocation { location } => location.clone(),
-            WeatherData::EpwFile { path } => {
-                path.file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("Unknown")
-                    .to_string()
-            }
+            WeatherData::EpwFile { path } => path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("Unknown")
+                .to_string(),
             WeatherData::Inline { .. } => "Inline".to_string(),
         };
 
@@ -188,8 +187,22 @@ impl GbXmlWriter {
 
         // Write default wall construction for each surface
         // In a full implementation, we'd look up actual constructions
-        let surface_names = ["North Wall", "East Wall", "South Wall", "West Wall", "Roof", "Floor"];
-        let surface_types = ["ExteriorWall", "ExteriorWall", "ExteriorWall", "ExteriorWall", "Roof", "Floor"];
+        let surface_names = [
+            "North Wall",
+            "East Wall",
+            "South Wall",
+            "West Wall",
+            "Roof",
+            "Floor",
+        ];
+        let surface_types = [
+            "ExteriorWall",
+            "ExteriorWall",
+            "ExteriorWall",
+            "ExteriorWall",
+            "Roof",
+            "Floor",
+        ];
         let areas = [
             zone.floor_area * 0.25,
             zone.floor_area * 0.25,
@@ -199,7 +212,8 @@ impl GbXmlWriter {
             zone.floor_area,
         ];
 
-        for (surf_idx, ((name, surf_type), area)) in surface_names.iter()
+        for (surf_idx, ((name, surf_type), area)) in surface_names
+            .iter()
             .zip(surface_types.iter())
             .zip(areas.iter())
             .enumerate()
@@ -276,9 +290,7 @@ impl GbXmlWriter {
         self.write_simple_construction(
             "construction_floor",
             "Standard Floor",
-            vec![
-                ("layer_floor_1", "Concrete", 0.15, 1.4, 2300.0, 840.0),
-            ],
+            vec![("layer_floor_1", "Concrete", 0.15, 1.4, 2300.0, 840.0)],
             writer,
         )?;
 
@@ -368,7 +380,7 @@ fn write_text_element<W: std::io::Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::schema::{SimulationSchemaV1, SchemaMetadata, SchemaVersion};
+    use crate::api::schema::{SchemaMetadata, SchemaVersion, SimulationSchemaV1};
 
     fn create_test_schema() -> SimulationSchemaV1 {
         SimulationSchemaV1 {
@@ -407,7 +419,9 @@ mod tests {
         let schema = create_test_schema();
         let mut output = Vec::new();
         let mut writer = GbXmlWriter::new();
-        writer.write_schema(&schema, &mut output).expect("Should export");
+        writer
+            .write_schema(&schema, &mut output)
+            .expect("Should export");
 
         let xml_str = String::from_utf8(output).expect("Should be valid UTF-8");
         assert!(xml_str.contains("gbXML"));
@@ -420,7 +434,9 @@ mod tests {
         let schema = create_test_schema();
         let mut output = Vec::new();
         let mut writer = GbXmlWriter::new();
-        writer.write_schema(&schema, &mut output).expect("Should export");
+        writer
+            .write_schema(&schema, &mut output)
+            .expect("Should export");
 
         let xml_str = String::from_utf8(output).expect("Should be valid UTF-8");
 
