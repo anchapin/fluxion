@@ -362,14 +362,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Net CTF contribution (CTF - 5R1C)
                     let net_ctf_flux = q_ctf - q_5r1c;
                     slice[i] += net_ctf_flux;
-
-                    // Track CTF energy for thermal mass correction
-                    // Positive net flux = heating contribution, negative = cooling
-                    if net_ctf_flux > 0.0 {
-                        self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
-                    } else {
-                        self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
-                    }
                 }
             }
         }
@@ -401,13 +393,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Add net FD flux (FD - 5R1C)
                     let net_fd_flux = q_fd - q_5r1c;
                     slice[i] += net_fd_flux;
-
-                    // Track FD energy for thermal mass correction
-                    if net_fd_flux > 0.0 {
-                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
-                    } else {
-                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
-                    }
                 }
             }
         }
@@ -1147,11 +1132,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let area = self.0.zone_area.as_ref().get(i).copied().unwrap_or(1.0);
                     let q_ctf = q_flux * area;
                     slice[i] += q_ctf;
-                    if q_ctf > 0.0 {
-                        self.0.ctf_annual_heating_joules += q_ctf * dt;
-                    } else {
-                        self.0.ctf_annual_cooling_joules += (-q_ctf) * dt;
-                    }
                 }
             }
         }
@@ -1175,11 +1155,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_fd_flux = q_fd - q_5r1c;
                     slice[i] += net_fd_flux;
-                    if net_fd_flux > 0.0 {
-                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
-                    } else {
-                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
-                    }
                 }
             }
         }
@@ -1920,11 +1895,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_ctf_flux = q_ctf - q_5r1c;
                     slice[i] += net_ctf_flux;
-                    if net_ctf_flux > 0.0 {
-                        self.0.ctf_annual_heating_joules += net_ctf_flux * dt;
-                    } else {
-                        self.0.ctf_annual_cooling_joules += (-net_ctf_flux) * dt;
-                    }
                 }
             }
         }
@@ -1948,11 +1918,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     let q_5r1c = h_tr_em_i * (t_sol_air_i - t_mass);
                     let net_fd_flux = q_fd - q_5r1c;
                     slice[i] += net_fd_flux;
-                    if net_fd_flux > 0.0 {
-                        self.0.fd_annual_heating_joules += net_fd_flux * dt;
-                    } else {
-                        self.0.fd_annual_cooling_joules += (-net_fd_flux) * dt;
-                    }
                 }
             }
         }
