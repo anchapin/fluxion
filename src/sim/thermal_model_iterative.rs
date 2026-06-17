@@ -9,11 +9,11 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
-use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::holiday;
 use crate::sim::shading::ShadeFin;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
+use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::timestep_solver::StepParameters;
 use crate::validation::ashrae_140_cases::{GeometrySpec, Orientation, WindowArea};
 use crate::weather::HourlyWeatherData;
@@ -60,7 +60,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         "Both ONNX and analytical fallback failed: {}. Using analytical mode.",
                         e
                     );
-                    self.calc_analytical_loads(timestep, step_params.use_analytical_gains, dt_seconds);
+                    self.calc_analytical_loads(
+                        timestep,
+                        step_params.use_analytical_gains,
+                        dt_seconds,
+                    );
                 }
             }
         } else {
@@ -314,7 +318,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                             _ => format!("wall_{}", orientation.prefix()),
                         };
                         if opaque_area > 0.0 {
-                            let entry = self.0.incident_solar_per_surface
+                            let entry = self
+                                .0
+                                .incident_solar_per_surface
                                 .entry(opaque_surface_id.clone())
                                 .or_insert_with(IncidentSolarAccumulator::new);
                             entry.accumulate(irradiance.total_wm2, opaque_area, dt_seconds);
@@ -323,7 +329,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // Window surface: "window_{N/E/S/W}"
                         if win_area > 0.0 {
                             let window_surface_id = format!("window_{}", orientation.prefix());
-                            let window_entry = self.0.incident_solar_per_surface
+                            let window_entry = self
+                                .0
+                                .incident_solar_per_surface
                                 .entry(window_surface_id)
                                 .or_insert_with(IncidentSolarAccumulator::new);
                             window_entry.accumulate(irradiance.total_wm2, win_area, dt_seconds);

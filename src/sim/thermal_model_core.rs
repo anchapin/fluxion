@@ -333,7 +333,9 @@ where
     ///
     /// Returns a reference to the HashMap containing incident solar data per surface.
     /// Keys are surface identifiers (e.g., "wall_N", "roof", "window_S").
-    pub fn get_incident_solar(&self) -> &std::collections::HashMap<String, IncidentSolarAccumulator> {
+    pub fn get_incident_solar(
+        &self,
+    ) -> &std::collections::HashMap<String, IncidentSolarAccumulator> {
         &self.0.incident_solar_per_surface
     }
 
