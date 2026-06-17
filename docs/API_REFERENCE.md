@@ -707,6 +707,8 @@ pub struct ValidationResult {
     pub per_program: Option<HashMap<String, ValidationStatus>>,  // Per-program statuses
     pub peak_date: Option<String>, // Date of peak value occurrence (e.g., "Jan 15")
     pub peak_hour: Option<u32>,    // Hour of peak value occurrence (0-23)
+    // Issue #761: ASHRAE 140-2023 Section 8.2.2 - peak timestamp (month, day, hour)
+    pub peak_timestamp: Option<(u32, u32, u32)>,
 }
 ```
 
@@ -724,10 +726,11 @@ pub struct ValidationResult {
 | `per_program` | `Option<HashMap<String, ValidationStatus>>` | Per-program validation statuses |
 | `peak_date` | `Option<String>` | Date of peak value occurrence (e.g., "Jan 15") for peak metrics |
 | `peak_hour` | `Option<u32>` | Hour of peak value occurrence (0-23) for peak metrics |
+| `peak_timestamp` | `Option<(u32, u32, u32)>` | Peak timestamp (month, day, hour) for peak metrics, per ASHRAE 140-2023 Section 8.2.2 |
 
 **ASHRAE 140 Section 8 Compliance:**
 
-The `peak_date` and `peak_hour` fields capture when peak heating or cooling loads occur, supporting ASHRAE 140 Section 8 gap analysis for peak load timestamp validation.
+The `peak_date`, `peak_hour`, and `peak_timestamp` fields capture when peak heating or cooling loads occur, supporting ASHRAE 140 Section 8.2.2 gap analysis for peak load timestamp validation. The `peak_timestamp` field provides the month, day, and hour as a tuple `(month, day, hour)`.
 
 ### Incident Solar Radiation per Surface (Issue #762)
 
