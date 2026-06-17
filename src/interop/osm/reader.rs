@@ -31,16 +31,15 @@ use std::fs;
 use std::path::Path;
 
 use crate::api::schema::{
-    ConstructionSet, ControlConfig, ControlSet, Geometry,
-    SchemaMetadata, ScheduleSet, SimulationOutput, SimulationSchemaV1, SurfaceConstruction,
-    WeatherData, WindowSpec, ZoneGeometry, SchemaVersion,
+    ConstructionSet, ControlConfig, ControlSet, Geometry, ScheduleSet, SchemaMetadata,
+    SchemaVersion, SimulationOutput, SimulationSchemaV1, SurfaceConstruction, WeatherData,
+    WindowSpec, ZoneGeometry,
 };
 use crate::interop::osm::error::OsmError;
 use crate::interop::osm::types::*;
 
 pub fn import_osm(path: impl AsRef<Path>) -> Result<SimulationSchemaV1, OsmError> {
-    let content = fs::read_to_string(path.as_ref())
-        .map_err(|e| OsmError::IoError(e))?;
+    let content = fs::read_to_string(path.as_ref()).map_err(|e| OsmError::IoError(e))?;
 
     let mut reader = OsmReader::new();
     reader.parse(&content)
@@ -132,7 +131,10 @@ impl OsmReader {
     fn extract_object_type(&self, line: &str) -> Result<String, OsmError> {
         let parts: Vec<&str> = line.split(',').collect();
         if parts.is_empty() {
-            return Err(OsmError::parse_error(self.current_line, "Empty object type"));
+            return Err(OsmError::parse_error(
+                self.current_line,
+                "Empty object type",
+            ));
         }
 
         let obj_type = parts[0].trim();
@@ -296,7 +298,9 @@ impl OsmReader {
                 "OS:BuildingStory" => {
                     let story = self.parse_building_story(&obj);
                     if !story.handle.is_empty() {
-                        self.ctx.building_stories.insert(story.handle.clone(), story);
+                        self.ctx
+                            .building_stories
+                            .insert(story.handle.clone(), story);
                     }
                 }
                 "OS:Space" => {
@@ -448,7 +452,11 @@ impl OsmReader {
         SubSurface {
             handle: obj.fields.get("handle").cloned().unwrap_or_default(),
             name: obj.fields.get("name").cloned().unwrap_or_default(),
-            surface_handle: obj.fields.get("surface_handle").cloned().unwrap_or_default(),
+            surface_handle: obj
+                .fields
+                .get("surface_handle")
+                .cloned()
+                .unwrap_or_default(),
             construction_handle: obj.fields.get("construction_handle").cloned(),
             window_type: obj.fields.get("window_type").cloned(),
             area: self.parse_f64(obj.fields.get("area")),
@@ -483,7 +491,10 @@ impl OsmReader {
             building_story_handles: Vec::new(),
             zone_handles: Vec::new(),
             area: self.parse_f64(obj.fields.get("area")),
-            number_of_floors: obj.fields.get("number_of_floors").and_then(|s| s.parse().ok()),
+            number_of_floors: obj
+                .fields
+                .get("number_of_floors")
+                .and_then(|s| s.parse().ok()),
             floor_height: self.parse_f64(obj.fields.get("floor_height")),
         }
     }
@@ -533,7 +544,9 @@ impl OsmReader {
     }
 
     fn parse_schedule(&self, obj: &OsmObject) -> Schedule {
-        let value = obj.fields.get("value")
+        let value = obj
+            .fields
+            .get("value")
             .and_then(|s| s.parse().ok())
             .unwrap_or(0.0);
 
@@ -578,7 +591,9 @@ impl OsmReader {
     }
 
     fn extract_metadata(&self) -> Result<SchemaMetadata, OsmError> {
-        let name = self.ctx.building
+        let name = self
+            .ctx
+            .building
             .as_ref()
             .map(|b| b.name.clone())
             .unwrap_or_else(|| "Imported OSM Model".to_string());
@@ -606,13 +621,16 @@ impl OsmReader {
         let mut zones: Vec<ZoneGeometry> = Vec::new();
         let mut total_floor_area = 0.0;
         let mut total_volume = 0.0;
-        let number_of_floors = self.ctx.building
+        let number_of_floors = self
+            .ctx
+            .building
             .as_ref()
             .and_then(|b| b.number_of_floors)
             .unwrap_or(1) as usize;
 
         for (handle, space) in &self.ctx.spaces {
-            let zone_name = space.zone_handle
+            let zone_name = space
+                .zone_handle
                 .as_ref()
                 .and_then(|zh| self.ctx.thermal_zones.get(zh))
                 .map(|tz| tz.name.clone())
@@ -666,7 +684,10 @@ impl OsmReader {
         })
     }
 
-    fn build_surface_construction_for_type(&self, surface_type: &str) -> Result<SurfaceConstruction, OsmError> {
+    fn build_surface_construction_for_type(
+        &self,
+        surface_type: &str,
+    ) -> Result<SurfaceConstruction, OsmError> {
         let mut layers = Vec::new();
         let mut window = None;
 
@@ -842,7 +863,10 @@ OS:Surface,
         let result = reader.parse(SAMPLE_OSM);
         assert!(result.is_ok(), "Should parse OSM without error");
         let schema = result.unwrap();
-        assert!(!schema.geometry.zones.is_empty(), "Should have at least one zone");
+        assert!(
+            !schema.geometry.zones.is_empty(),
+            "Should have at least one zone"
+        );
     }
 
     #[test]

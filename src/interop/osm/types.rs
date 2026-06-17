@@ -35,9 +35,13 @@ impl OsmObject {
         self.fields.get(key).map(|s| s.as_str())
     }
 
-    pub fn get_required_field(&self, key: &str) -> Result<&str, crate::interop::osm::error::OsmError> {
-        self.fields.get(key).map(|s| s.as_str())
-            .ok_or_else(|| crate::interop::osm::error::OsmError::missing_field(&self.object_type, key))
+    pub fn get_required_field(
+        &self,
+        key: &str,
+    ) -> Result<&str, crate::interop::osm::error::OsmError> {
+        self.fields.get(key).map(|s| s.as_str()).ok_or_else(|| {
+            crate::interop::osm::error::OsmError::missing_field(&self.object_type, key)
+        })
     }
 }
 

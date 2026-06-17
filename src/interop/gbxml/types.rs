@@ -371,7 +371,10 @@ mod tests {
 
     #[test]
     fn test_cad_surface_type_as_str() {
-        assert_eq!(CADBuildingSurfaceType::ExteriorWall.as_str(), "ExteriorWall");
+        assert_eq!(
+            CADBuildingSurfaceType::ExteriorWall.as_str(),
+            "ExteriorWall"
+        );
         assert_eq!(CADBuildingSurfaceType::Roof.as_str(), "Roof");
     }
 

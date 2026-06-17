@@ -55,10 +55,10 @@
 //! - Window geometry not fully exported
 
 pub mod error;
-pub mod types;
 pub mod reader;
+pub mod types;
 pub mod writer;
 
 pub use error::OsmError;
-pub use reader::{OsmReader, import_osm};
-pub use writer::{OsmWriter, export_osm};
+pub use reader::{import_osm, OsmReader};
+pub use writer::{export_osm, OsmWriter};

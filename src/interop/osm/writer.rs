@@ -50,9 +50,12 @@ impl OsmWriter {
         }
     }
 
-    pub fn export_osm(&mut self, schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Result<(), OsmError> {
-        let file = File::create(path.as_ref())
-            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+    pub fn export_osm(
+        &mut self,
+        schema: &SimulationSchemaV1,
+        path: impl AsRef<Path>,
+    ) -> Result<(), OsmError> {
+        let file = File::create(path.as_ref()).map_err(|e| OsmError::ExportError(e.to_string()))?;
         let mut writer = BufWriter::new(file);
 
         self.write_header(&mut writer)?;
@@ -65,72 +68,120 @@ impl OsmWriter {
         self.write_spaces(&mut writer, schema)?;
         self.write_surfaces(&mut writer, schema)?;
 
-        writer.flush()
+        writer
+            .flush()
             .map_err(|e| OsmError::ExportError(e.to_string()))?;
 
         Ok(())
     }
 
     fn write_header(&mut self, writer: &mut dyn Write) -> Result<(), OsmError> {
-        writeln!(writer, "================================================================================").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, " FLUXION MODEL - Generated OpenStudio Model File").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "================================================================================").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "================================================================================"
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, " FLUXION MODEL - Generated OpenStudio Model File")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "================================================================================"
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
     fn write_version(&mut self, writer: &mut dyn Write) -> Result<(), OsmError> {
         writeln!(writer, "OS:Version,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{version}}, !- Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  3.6.0; !- Version Identifier").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{version}}, !- Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  3.6.0; !- Version Identifier")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
-    fn write_site(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_site(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         let lat = match &schema.weather {
-            crate::api::schema::WeatherData::TmyLocation { location } => {
-                location.split(',').next()
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(39.739)
-            }
+            crate::api::schema::WeatherData::TmyLocation { location } => location
+                .split(',')
+                .next()
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(39.739),
             _ => 39.739,
         };
 
         let lon = match &schema.weather {
-            crate::api::schema::WeatherData::TmyLocation { location } => {
-                location.split(',').nth(1)
-                    .and_then(|s| s.trim().parse::<f64>().ok())
-                    .unwrap_or(-104.984)
-            }
+            crate::api::schema::WeatherData::TmyLocation { location } => location
+                .split(',')
+                .nth(1)
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(-104.984),
             _ => -104.984,
         };
 
         writeln!(writer, "OS:Site,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{site-{}}}, !- Handle", self.handle_counter()).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Name", schema.metadata.name).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Latitude", lat).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Longitude", lon).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  1609; !- Elevation {{m}}").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{site-{}}}, !- Handle", self.handle_counter())
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", schema.metadata.name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Latitude", lat)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Longitude", lon)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  1609; !- Elevation {{m}}")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
-    fn write_building(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_building(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         writeln!(writer, "OS:Building,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{bldg-{}}}, !- Handle", self.handle_counter()).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Name", schema.metadata.name).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  , !- Building Story Names").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  , !- Thermal Zone Names").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Floor Area {{m2}}", schema.geometry.total_floor_area).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Number of Floors", schema.geometry.number_of_floors).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Floor Height {{m}}", schema.geometry.floor_height).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{bldg-{}}}, !- Handle", self.handle_counter())
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", schema.metadata.name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Building Story Names")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Thermal Zone Names")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Floor Area {{m2}}",
+            schema.geometry.total_floor_area
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Number of Floors",
+            schema.geometry.number_of_floors
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Floor Height {{m}}",
+            schema.geometry.floor_height
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer, "  ;").map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
-    fn write_materials(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_materials(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         let mut material_handles: Vec<String> = Vec::new();
 
         for (i, layer) in schema.constructions.wall.layers.iter().enumerate() {
@@ -152,83 +203,153 @@ impl OsmWriter {
         Ok(())
     }
 
-    fn write_material(&mut self, writer: &mut dyn Write, handle: &str, layer: &ConstructionLayer) -> Result<(), OsmError> {
+    fn write_material(
+        &mut self,
+        writer: &mut dyn Write,
+        handle: &str,
+        layer: &ConstructionLayer,
+    ) -> Result<(), OsmError> {
         writeln!(writer, "OS:Material,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Handle", handle).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Name", layer.name).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  MediumRough, !- Roughness").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Thickness {{m}}", layer.thickness).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Conductivity {{W/m-K}}", layer.conductivity).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Density {{kg/m3}}", layer.density).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Specific Heat {{J/kg-K}}", layer.specific_heat).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}; !- Emissivity", layer.emissivity).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Handle", handle)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", layer.name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  MediumRough, !- Roughness")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Thickness {{m}}", layer.thickness)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Conductivity {{W/m-K}}",
+            layer.conductivity
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Density {{kg/m3}}", layer.density)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Specific Heat {{J/kg-K}}",
+            layer.specific_heat
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}; !- Emissivity", layer.emissivity)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
-    fn write_constructions(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_constructions(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         self.write_construction(writer, "ExtWall", &schema.constructions.wall)?;
 
-        if schema.constructions.wall.layers.len() != schema.constructions.roof.layers.len() ||
-           schema.constructions.wall.layers.iter().zip(schema.constructions.roof.layers.iter())
-               .any(|(a, b)| a.name != b.name) {
+        if schema.constructions.wall.layers.len() != schema.constructions.roof.layers.len()
+            || schema
+                .constructions
+                .wall
+                .layers
+                .iter()
+                .zip(schema.constructions.roof.layers.iter())
+                .any(|(a, b)| a.name != b.name)
+        {
             self.write_construction(writer, "Roof", &schema.constructions.roof)?;
         }
 
-        if schema.constructions.wall.layers.len() != schema.constructions.floor.layers.len() ||
-           schema.constructions.wall.layers.iter().zip(schema.constructions.floor.layers.iter())
-               .any(|(a, b)| a.name != b.name) {
+        if schema.constructions.wall.layers.len() != schema.constructions.floor.layers.len()
+            || schema
+                .constructions
+                .wall
+                .layers
+                .iter()
+                .zip(schema.constructions.floor.layers.iter())
+                .any(|(a, b)| a.name != b.name)
+        {
             self.write_construction(writer, "Floor", &schema.constructions.floor)?;
         }
 
         Ok(())
     }
 
-    fn write_construction(&mut self, writer: &mut dyn Write, name: &str, surface: &crate::api::schema::SurfaceConstruction) -> Result<(), OsmError> {
+    fn write_construction(
+        &mut self,
+        writer: &mut dyn Write,
+        name: &str,
+        surface: &crate::api::schema::SurfaceConstruction,
+    ) -> Result<(), OsmError> {
         writeln!(writer, "OS:Construction,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{cons-{}}}, !- Handle", self.handle_counter()).map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {}, !- Name", name).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{cons-{}}}, !- Handle", self.handle_counter())
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
 
         for (i, layer) in surface.layers.iter().enumerate() {
             let mat_handle = format!("{{mat-{}{}}}", &name[..1].to_lowercase(), i);
             if i == surface.layers.len() - 1 {
-                writeln!(writer, "  {}; !- Layer {}", mat_handle, i + 1).map_err(|e| OsmError::ExportError(e.to_string()))?;
+                writeln!(writer, "  {}; !- Layer {}", mat_handle, i + 1)
+                    .map_err(|e| OsmError::ExportError(e.to_string()))?;
             } else {
-                writeln!(writer, "  {}, !- Layer {}", mat_handle, i + 1).map_err(|e| OsmError::ExportError(e.to_string()))?;
+                writeln!(writer, "  {}, !- Layer {}", mat_handle, i + 1)
+                    .map_err(|e| OsmError::ExportError(e.to_string()))?;
             }
         }
 
         Ok(())
     }
 
-    fn write_thermal_zones(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_thermal_zones(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         for (i, zone) in schema.geometry.zones.iter().enumerate() {
-            writeln!(writer, "OS:ThermalZone,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {{zone-{}}}, !- Handle", i).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {}, !- Name", zone.name).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  , !- Thermostat Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  1; !- Multiplier").map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "OS:ThermalZone,")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{zone-{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", zone.name)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Thermostat Handle")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  1; !- Multiplier")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         }
         Ok(())
     }
 
-    fn write_spaces(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_spaces(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         for (i, zone) in schema.geometry.zones.iter().enumerate() {
             writeln!(writer, "OS:Space,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {{space-{}}}, !- Handle", i).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {}, !- Name", zone.name).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {{zone-{}}}, !- Zone Handle", i).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  , !- Building Story Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  0, !- X Origin {{m}}").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  0, !- Y Origin {{m}}").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  0; !- Z Origin {{m}}").map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{space-{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", zone.name)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{zone-{}}}, !- Zone Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Building Story Handle")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  0, !- X Origin {{m}}")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  0, !- Y Origin {{m}}")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  0; !- Z Origin {{m}}")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         }
         Ok(())
     }
 
-    fn write_surfaces(&mut self, writer: &mut dyn Write, schema: &SimulationSchemaV1) -> Result<(), OsmError> {
+    fn write_surfaces(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
         let total_area = schema.geometry.total_floor_area;
         let perimeter = (total_area * 4.0).sqrt() * 4.0;
         let wall_height = schema.geometry.floor_height;
@@ -238,38 +359,60 @@ impl OsmWriter {
 
         for (i, wall_type) in wall_types.iter().enumerate() {
             writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {{surf-w{}}}, !- Handle", i).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {}, !- Name", wall_type).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  Wall, !- Surface Type").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  {{cons-w0}}, !- Construction Handle",).map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  , !- Building Boundary Type").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  Outdoors, !- Outside Boundary Condition").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  , !- Sun Exposure").map_err(|e| OsmError::ExportError(e.to_string()))?;
-            writeln!(writer, "  ; !- Wind Exposure").map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{surf-w{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", wall_type)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  Wall, !- Surface Type")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{cons-w0}}, !- Construction Handle",)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Building Boundary Type")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  Outdoors, !- Outside Boundary Condition")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Sun Exposure")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  ; !- Wind Exposure")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
             writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         }
 
         let roof_area = total_area;
         writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{surf-r0}}, !- Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{surf-r0}}, !- Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer, "  Roof, !- Name").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  RoofCeiling, !- Surface Type").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{cons-r0}}, !- Construction Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  , !- Building Boundary Type").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  Outdoors, !- Outside Boundary Condition").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  , !- Sun Exposure").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  ; !- Wind Exposure").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  RoofCeiling, !- Surface Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{cons-r0}}, !- Construction Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Building Boundary Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Outdoors, !- Outside Boundary Condition")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Sun Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  ; !- Wind Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
 
         writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{surf-f0}}, !- Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{surf-f0}}, !- Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer, "  Floor, !- Name").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  Floor, !- Surface Type").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  {{cons-f0}}, !- Construction Handle").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  , !- Building Boundary Type").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  Ground, !- Outside Boundary Condition").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  NoSun, !- Sun Exposure").map_err(|e| OsmError::ExportError(e.to_string()))?;
-        writeln!(writer, "  NoWind; !- Wind Exposure").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Floor, !- Surface Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{cons-f0}}, !- Construction Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Building Boundary Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Ground, !- Outside Boundary Condition")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  NoSun, !- Sun Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  NoWind; !- Wind Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
         writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
 
         Ok(())
@@ -290,7 +433,10 @@ impl Default for OsmWriter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::schema::{SimulationSchemaV1, Geometry, ZoneGeometry, SchemaMetadata, ConstructionSet, SurfaceConstruction, WeatherData, ControlSet, SimulationOutput, SchemaVersion};
+    use crate::api::schema::{
+        ConstructionSet, ControlSet, Geometry, SchemaMetadata, SchemaVersion, SimulationOutput,
+        SimulationSchemaV1, SurfaceConstruction, WeatherData, ZoneGeometry,
+    };
 
     fn create_test_schema() -> SimulationSchemaV1 {
         SimulationSchemaV1 {

@@ -43,4 +43,4 @@ pub mod osm;
 
 pub use fmi::{FmiConfig, FmiExporter, FmiMode};
 pub use gbxml::{export_gbxml, import_gbxml, GbXmlError, GbXmlReader, GbXmlWriter};
-pub use osm::{OsmError, OsmReader, OsmWriter, import_osm, export_osm};
+pub use osm::{export_osm, import_osm, OsmError, OsmReader, OsmWriter};
