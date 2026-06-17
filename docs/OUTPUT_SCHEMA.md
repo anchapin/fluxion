@@ -219,6 +219,7 @@ pub struct ValidationResult {
     pub percent_error: f64,       // Percent error from reference midpoint
     pub status: ValidationStatus, // PASS or FAIL
     pub per_program: Option<HashMap<String, f64>>,  // Per-program breakdown
+    pub peak_timestamp: Option<DateTime<Utc>>,  // Timestamp of peak value (for peak metrics)
 }
 ```
 

@@ -4,7 +4,7 @@
 //! validation reports, including pass/fail determination, delta analysis,
 //! and multiple export formats (Markdown, HTML, CSV).
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json;
 use std::collections::HashMap;
@@ -22,12 +22,68 @@ use plotters::style::colors::WHITE;
 use crate::validation::multi_reference::{MultiReferenceDB, ProgramRange};
 use crate::validation::statistical::{StatisticalMetrics, ValidationGroup};
 
+/// ASHRAE 140-2023 Section 8.1 compliance report header.
+///
+/// Required fields as specified by ASHRAE 140-2023 Section 8.1 for
+/// compliance reporting.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportHeader {
+    /// Program name (e.g., "fluxion")
+    pub program_name: String,
+    /// Program version (e.g., "1.0.0")
+    pub program_version: String,
+    /// Developer name/organization (configurable)
+    pub developer: String,
+    /// Simulation run timestamp
+    pub run_date: DateTime<Utc>,
+    /// ASHRAE 140 standard edition (e.g., "ASHRAE 140-2023")
+    pub ashrae_edition: String,
+    /// Weather file identification (from EPW header)
+    pub weather_file_id: String,
+}
+
+impl ReportHeader {
+    /// Creates a new report header with current timestamp.
+    ///
+    /// Uses the crate version from Cargo.toml and the default developer "Fluxion Development Team".
+    /// Weather file ID is extracted from the EPW header for ASHRAE 140 validation.
+    pub fn new(weather_file_id: String) -> Self {
+        Self {
+            program_name: "fluxion".to_string(),
+            program_version: env!("CARGO_PKG_VERSION").to_string(),
+            developer: "Fluxion Development Team".to_string(),
+            run_date: Utc::now(),
+            ashrae_edition: "ASHRAE 140-2023".to_string(),
+            weather_file_id,
+        }
+    }
+
+    /// Creates a report header with custom developer name.
+    pub fn with_developer(mut self, developer: &str) -> Self {
+        self.developer = developer.to_string();
+        self
+    }
+}
+
+impl Default for ReportHeader {
+    fn default() -> Self {
+        Self {
+            program_name: "fluxion".to_string(),
+            program_version: env!("CARGO_PKG_VERSION").to_string(),
+            developer: "Fluxion Development Team".to_string(),
+            run_date: Utc::now(),
+            ashrae_edition: "ASHRAE 140-2023".to_string(),
+            weather_file_id: "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY".to_string(),
+        }
+    }
+}
+
 /// Types of validation metrics for ASHRAE 140.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum MetricType {
-    /// Annual heating energy consumption (MWh)
+    /// Annual heating energy consumption (kWh)
     AnnualHeating,
-    /// Annual cooling energy consumption (MWh)
+    /// Annual cooling energy consumption (kWh)
     AnnualCooling,
     /// Peak heating load (kW)
     PeakHeating,
@@ -37,27 +93,90 @@ pub enum MetricType {
     MinFreeFloat,
     /// Maximum free-floating temperature (°C)
     MaxFreeFloat,
+    /// Incident solar radiation per surface orientation (kWh/m²).
+    /// Per ASHRAE 140-2023 Section 8.2.3, outputs annual and peak solar per orientation.
+    IncidentSolar {
+        /// Surface identifier (e.g., "roof", "N", "S", "E", "W")
+        surface_id: String,
+        /// Surface orientation
+        orientation: crate::validation::ashrae_140_cases::Orientation,
+    },
+}
+
+impl PartialOrd for MetricType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for MetricType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // Explicit ordering: base variants alphabetically, IncidentSolar last
+        match (self, other) {
+            (MetricType::AnnualHeating, MetricType::AnnualHeating) => std::cmp::Ordering::Equal,
+            (MetricType::AnnualHeating, _) => std::cmp::Ordering::Less,
+            (_, MetricType::AnnualHeating) => std::cmp::Ordering::Greater,
+            (MetricType::AnnualCooling, MetricType::AnnualCooling) => std::cmp::Ordering::Equal,
+            (MetricType::AnnualCooling, _) => std::cmp::Ordering::Less,
+            (_, MetricType::AnnualCooling) => std::cmp::Ordering::Greater,
+            (MetricType::PeakHeating, MetricType::PeakHeating) => std::cmp::Ordering::Equal,
+            (MetricType::PeakHeating, _) => std::cmp::Ordering::Less,
+            (_, MetricType::PeakHeating) => std::cmp::Ordering::Greater,
+            (MetricType::PeakCooling, MetricType::PeakCooling) => std::cmp::Ordering::Equal,
+            (MetricType::PeakCooling, _) => std::cmp::Ordering::Less,
+            (_, MetricType::PeakCooling) => std::cmp::Ordering::Greater,
+            (MetricType::MinFreeFloat, MetricType::MinFreeFloat) => std::cmp::Ordering::Equal,
+            (MetricType::MinFreeFloat, _) => std::cmp::Ordering::Less,
+            (_, MetricType::MinFreeFloat) => std::cmp::Ordering::Greater,
+            (MetricType::MaxFreeFloat, MetricType::MaxFreeFloat) => std::cmp::Ordering::Equal,
+            (MetricType::MaxFreeFloat, _) => std::cmp::Ordering::Less,
+            (_, MetricType::MaxFreeFloat) => std::cmp::Ordering::Greater,
+            (
+                MetricType::IncidentSolar {
+                    surface_id: a_sid,
+                    orientation: a_ori,
+                },
+                MetricType::IncidentSolar {
+                    surface_id: b_sid,
+                    orientation: b_ori,
+                },
+            ) => a_sid.cmp(b_sid).then_with(|| a_ori.cmp(b_ori)),
+        }
+    }
 }
 
 impl MetricType {
     /// Returns the display name for this metric type (ASHRAE 140 compliant).
     pub fn display_name(&self) -> &str {
         match self {
-            MetricType::AnnualHeating => "Annual Heating Energy (MWh)",
-            MetricType::AnnualCooling => "Annual Cooling Energy (MWh)",
+            MetricType::AnnualHeating => "Annual Heating Energy (kWh)",
+            MetricType::AnnualCooling => "Annual Cooling Energy (kWh)",
             MetricType::PeakHeating => "Peak Heating Load (kW)",
             MetricType::PeakCooling => "Peak Cooling Load (kW)",
             MetricType::MinFreeFloat => "Minimum Free-Floating Temperature (°C)",
             MetricType::MaxFreeFloat => "Maximum Free-Floating Temperature (°C)",
+            MetricType::IncidentSolar { .. } => "Incident Solar Radiation (kWh/m²)",
         }
     }
 
     /// Returns the units for this metric type.
     pub fn units(&self) -> &str {
         match self {
-            MetricType::AnnualHeating | MetricType::AnnualCooling => "MWh",
+            MetricType::AnnualHeating | MetricType::AnnualCooling => "kWh",
             MetricType::PeakHeating | MetricType::PeakCooling => "kW",
             MetricType::MinFreeFloat | MetricType::MaxFreeFloat => "°C",
+            MetricType::IncidentSolar { .. } => "kWh/m²",
+        }
+    }
+
+    /// Converts internal MWh storage to Section 8 compliant kWh output.
+    ///
+    /// Issue #749: Section 8 requires kWh but internal storage is MWh.
+    /// This method multiplies annual energy values by 1000 to convert MWh→kWh.
+    pub fn to_output_units(&self, value: f64) -> f64 {
+        match self {
+            MetricType::AnnualHeating | MetricType::AnnualCooling => value * 1000.0,
+            _ => value,
         }
     }
 }
@@ -267,6 +386,7 @@ impl BenchmarkData {
                     None
                 }
             }
+            MetricType::IncidentSolar { .. } => None,
         }
     }
 
@@ -304,6 +424,9 @@ impl Default for Case960Report {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         };
 
         Self {
@@ -328,6 +451,9 @@ impl Default for Case970Report {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         };
 
         Self {
@@ -375,6 +501,16 @@ pub struct ValidationResult {
     /// Per-program validation statuses for multi-reference comparison
     #[serde(skip_serializing_if = "Option::is_none")]
     pub per_program: Option<HashMap<String, ValidationStatus>>,
+    /// Date of peak value occurrence (e.g., "Jan 15") for peak metrics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_date: Option<String>,
+    /// Hour of peak value occurrence (0-23) for peak metrics
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_hour: Option<u32>,
+    /// Issue #761: Peak timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
+    /// Only populated for PeakHeating and PeakCooling metrics.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub peak_timestamp: Option<(u32, u32, u32)>,
 }
 
 impl ValidationResult {
@@ -426,6 +562,9 @@ impl ValidationResult {
             percent_error,
             status,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         }
     }
 
@@ -505,6 +644,9 @@ impl Default for Interpretation {
 /// Comprehensive validation report for ASHRAE 140 test cases.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BenchmarkReport {
+    /// Section 8.1 compliance report header
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub report_header: Option<ReportHeader>,
     /// All validation results
     pub results: Vec<ValidationResult>,
     /// Benchmark data for each case
@@ -563,7 +705,18 @@ pub struct SensitivityResult {
 impl BenchmarkReport {
     /// Creates a new empty validation report.
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            report_header: None,
+            results: Vec::new(),
+            benchmark_data: HashMap::new(),
+            interpretations: HashMap::new(),
+            start_time: None,
+            end_time: None,
+            statistical_metrics: None,
+            statistical_p_values: None,
+            statistical_corrected: None,
+            group_validation: None,
+        }
     }
 
     /// Generates a JSON report.
@@ -586,6 +739,23 @@ impl BenchmarkReport {
         ref_max: f64,
     ) {
         let result = ValidationResult::new(case_id, metric, fluxion_value, ref_min, ref_max);
+        self.add_result(result);
+    }
+
+    /// Adds a result with an optional peak timestamp (month, day, hour).
+    ///
+    /// Issue #761: ASHRAE 140-2023 Section 8.2.2 requires tracking peak load timestamps.
+    pub fn add_result_with_peak_timestamp(
+        &mut self,
+        case_id: &str,
+        metric: MetricType,
+        fluxion_value: f64,
+        ref_min: f64,
+        ref_max: f64,
+        peak_timestamp: Option<(u32, u32, u32)>,
+    ) {
+        let mut result = ValidationResult::new(case_id, metric, fluxion_value, ref_min, ref_max);
+        result.peak_timestamp = peak_timestamp;
         self.add_result(result);
     }
 
@@ -689,6 +859,9 @@ impl BenchmarkReport {
             percent_error,
             status: overall_status,
             per_program: Some(per_program),
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         };
         self.add_result(result);
     }
@@ -732,7 +905,7 @@ impl BenchmarkReport {
                 let mut temp_report = BenchmarkReport::new();
                 temp_report.add_result_with_multi(
                     &result.case_id,
-                    result.metric,
+                    result.metric.clone(),
                     result.fluxion_value,
                     db,
                 );
@@ -763,11 +936,12 @@ impl BenchmarkReport {
         for result in &self.results {
             if result.case_id != baseline_case {
                 // Find matching metric in baseline
-                if let Some(baseline) = baseline_results.iter().find(|b| b.metric == result.metric)
+                if let Some(baseline) = baseline_results.iter().find(|b| result.metric == b.metric)
                 {
-                    let delta = result.fluxion_value - baseline.fluxion_value;
+                    let delta_mwh = result.fluxion_value - baseline.fluxion_value;
+                    let delta_output = result.metric.to_output_units(delta_mwh);
                     let key = format!("{} - {}", result.case_id, result.metric.display_name());
-                    deltas.insert(key, delta);
+                    deltas.insert(key, delta_output);
                 }
             }
         }
@@ -857,8 +1031,29 @@ impl BenchmarkReport {
     pub fn to_markdown(&self) -> String {
         let mut output = String::new();
 
-        // Title
-        output.push_str("# ASHRAE 140 Validation Report\n\n");
+        // Section 8.1 Compliance Header
+        if let Some(ref header) = self.report_header {
+            output.push_str("# ASHRAE 140 Validation Report\n\n");
+            output.push_str("## Section 8.1 Compliance Information\n\n");
+            output.push_str("| Field | Value |\n");
+            output.push_str("|-------|-------|\n");
+            output.push_str(&format!("| Program Name | {} |\n", header.program_name));
+            output.push_str(&format!(
+                "| Program Version | {} |\n",
+                header.program_version
+            ));
+            output.push_str(&format!("| Developer | {} |\n", header.developer));
+            output.push_str(&format!(
+                "| Run Date | {} |\n",
+                header.run_date.format("%Y-%m-%d %H:%M UTC")
+            ));
+            output.push_str(&format!("| ASHRAE Edition | {} |\n", header.ashrae_edition));
+            output.push_str(&format!("| Weather File | {} |\n", header.weather_file_id));
+            output.push_str("\n---\n\n");
+        } else {
+            // Fallback header when no report_header is set
+            output.push_str("# ASHRAE 140 Validation Report\n\n");
+        }
 
         // Summary statistics
         output.push_str("## Summary\n\n");
@@ -885,13 +1080,16 @@ impl BenchmarkReport {
         output.push_str("|------|--------|---------|---------|---------|-----------|--------|\n");
 
         for result in &self.results {
+            let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+            let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+            let ref_max_kwh = result.metric.to_output_units(result.ref_max);
             output.push_str(&format!(
                 "| {} | {} | {:.2} | {:.2} | {:.2} | {} | {} |\n",
                 result.case_id,
                 result.metric,
-                result.fluxion_value,
-                result.ref_min,
-                result.ref_max,
+                fluxion_kwh,
+                ref_min_kwh,
+                ref_max_kwh,
                 result.deviation_string(),
                 result.status
             ));
@@ -1088,12 +1286,16 @@ impl BenchmarkReport {
                 "negative"
             };
 
+            let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+            let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+            let ref_max_kwh = result.metric.to_output_units(result.ref_max);
+
             html.push_str("    <tr>\n");
             html.push_str(&format!("      <td>{}</td>\n", result.case_id));
             html.push_str(&format!("      <td>{}</td>\n", result.metric));
-            html.push_str(&format!("      <td>{:.2}</td>\n", result.fluxion_value));
-            html.push_str(&format!("      <td>{:.2}</td>\n", result.ref_min));
-            html.push_str(&format!("      <td>{:.2}</td>\n", result.ref_max));
+            html.push_str(&format!("      <td>{:.2}</td>\n", fluxion_kwh));
+            html.push_str(&format!("      <td>{:.2}</td>\n", ref_min_kwh));
+            html.push_str(&format!("      <td>{:.2}</td>\n", ref_max_kwh));
             html.push_str(&format!(
                 "      <td class=\"{}\">{}</td>\n",
                 deviation_class,
@@ -1188,13 +1390,16 @@ impl BenchmarkReport {
 
         // Data rows
         for result in &self.results {
+            let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+            let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+            let ref_max_kwh = result.metric.to_output_units(result.ref_max);
             csv.push_str(&format!(
                 "{},{},{:.4},{:.4},{:.4},{:.2},{}\n",
                 result.case_id,
                 result.metric,
-                result.fluxion_value,
-                result.ref_min,
-                result.ref_max,
+                fluxion_kwh,
+                ref_min_kwh,
+                ref_max_kwh,
                 result.percent_error,
                 result.status
             ));
@@ -1361,12 +1566,15 @@ impl BenchmarkReport {
             output.push_str("|--------|---------|---------|---------|-----------|--------|\n");
 
             for result in case_960_results {
+                let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+                let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+                let ref_max_kwh = result.metric.to_output_units(result.ref_max);
                 output.push_str(&format!(
                     "| {} | {:.2} | {:.2} | {:.2} | {} | {} |\n",
                     result.metric,
-                    result.fluxion_value,
-                    result.ref_min,
-                    result.ref_max,
+                    fluxion_kwh,
+                    ref_min_kwh,
+                    ref_max_kwh,
                     result.deviation_string(),
                     result.status
                 ));
@@ -1385,12 +1593,15 @@ impl BenchmarkReport {
             output.push_str("|--------|---------|---------|---------|-----------|--------|\n");
 
             for result in case_970_results {
+                let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
+                let ref_min_kwh = result.metric.to_output_units(result.ref_min);
+                let ref_max_kwh = result.metric.to_output_units(result.ref_max);
                 output.push_str(&format!(
                     "| {} | {:.2} | {:.2} | {:.2} | {} | {} |\n",
                     result.metric,
-                    result.fluxion_value,
-                    result.ref_min,
-                    result.ref_max,
+                    fluxion_kwh,
+                    ref_min_kwh,
+                    ref_max_kwh,
                     result.deviation_string(),
                     result.status
                 ));
@@ -1479,9 +1690,9 @@ impl BenchmarkReport {
                 "{},{},{:.4},{:.4},{:.4},{:.2},{},{}\n",
                 result.case_id,
                 result.metric,
-                result.fluxion_value,
-                result.ref_min,
-                result.ref_max,
+                result.metric.to_output_units(result.fluxion_value),
+                result.metric.to_output_units(result.ref_min),
+                result.metric.to_output_units(result.ref_max),
                 result.percent_error,
                 result.status,
                 case_type
@@ -1515,14 +1726,14 @@ impl BenchmarkReport {
             .results
             .iter()
             .filter(|r| r.case_id == "960")
-            .map(|r| r.metric)
+            .map(|r| r.metric.clone())
             .collect();
 
         let case_970_metrics: std::collections::HashSet<_> = self
             .results
             .iter()
             .filter(|r| r.case_id == "970")
-            .map(|r| r.metric)
+            .map(|r| r.metric.clone())
             .collect();
 
         let common_metrics: Vec<_> = case_960_metrics.intersection(&case_970_metrics).collect();
@@ -1538,10 +1749,12 @@ impl BenchmarkReport {
                 .find(|r| r.case_id == "970" && r.metric == *metric);
 
             if let (Some(r960), Some(r970)) = (case_960_result, case_970_result) {
-                let difference = r970.fluxion_value - r960.fluxion_value;
+                let fluxion_960_kwh = r960.metric.to_output_units(r960.fluxion_value);
+                let fluxion_970_kwh = r970.metric.to_output_units(r970.fluxion_value);
+                let difference = fluxion_970_kwh - fluxion_960_kwh;
                 table.push_str(&format!(
                     "| {} | {:.2} | {:.2} | {:+.2} |\n",
-                    metric, r960.fluxion_value, r970.fluxion_value, difference
+                    metric, fluxion_960_kwh, fluxion_970_kwh, difference
                 ));
             }
         }
@@ -1560,6 +1773,9 @@ impl BenchmarkReport {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         };
 
         Case960Report {
@@ -1603,6 +1819,9 @@ impl BenchmarkReport {
             percent_error: 0.0,
             status: ValidationStatus::Fail,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         };
 
         Case970Report {
@@ -2064,7 +2283,7 @@ impl ValidationSuite {
         let mut summary: HashMap<MetricType, (usize, usize, usize)> = HashMap::new();
 
         for result in &self.results {
-            let entry = summary.entry(result.metric).or_insert((0, 0, 0));
+            let entry = summary.entry(result.metric.clone()).or_insert((0, 0, 0));
 
             if result.passed() {
                 entry.0 += 1;
@@ -2166,6 +2385,10 @@ impl ValidationSuite {
                         {
                             benchmark.max_free_float_max = result.ref_max;
                         }
+                    }
+                    MetricType::IncidentSolar { .. } => {
+                        // Incident solar metrics are not aggregated into benchmark data
+                        // They are per-orientation and handled separately
                     }
                 }
             }
@@ -2490,6 +2713,9 @@ impl ValidationSuite {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         }
     }
 
@@ -2828,9 +3054,9 @@ mod tests {
     fn test_metric_type_display() {
         assert_eq!(
             MetricType::AnnualHeating.display_name(),
-            "Annual Heating Energy (MWh)"
+            "Annual Heating Energy (kWh)"
         );
-        assert_eq!(MetricType::AnnualCooling.units(), "MWh");
+        assert_eq!(MetricType::AnnualCooling.units(), "kWh");
         assert_eq!(MetricType::PeakHeating.units(), "kW");
     }
 
@@ -3247,7 +3473,7 @@ mod tests {
         assert!(report.statistical_p_values.is_some());
         assert_eq!(report.statistical_p_values.as_ref().unwrap().len(), 3);
         assert!(report.statistical_corrected.is_some());
-        assert_eq!(report.statistical_corrected.as_ref().unwrap()[0], true);
+        assert!(report.statistical_corrected.as_ref().unwrap()[0]);
 
         // Test 3: BenchmarkReport can hold group validation results
         let mut group_results = std::collections::HashMap::new();
@@ -3517,8 +3743,8 @@ mod tests {
 
         let deltas = report.delta_analysis("600");
         assert!(!deltas.is_empty());
-        assert!(deltas.contains_key("610 - Annual Heating Energy (MWh)"));
-        assert!((deltas["610 - Annual Heating Energy (MWh)"] - 0.5).abs() < 0.01);
+        assert!(deltas.contains_key("610 - Annual Heating Energy (kWh)"));
+        assert!((deltas["610 - Annual Heating Energy (kWh)"] - 500.0).abs() < 0.01);
     }
 
     #[test]

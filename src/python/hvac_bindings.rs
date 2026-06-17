@@ -2,11 +2,11 @@
 //!
 //! This module provides PyO3 bindings for zone setpoints, control, and schedule functionality
 
-use crate::hvac::schedule::{DailySchedule, HVACSchedule, ScheduleType};
-use crate::hvac::zone_control::{HVACStatus, ZoneControl};
-use crate::hvac::zone_setpoints::ZoneSetpoints;
 use crate::physics::cta::VectorField;
 use crate::python::bindings::PyMultiZoneThermalModel;
+use crate::sim::hvac::zones::schedule::{DailySchedule, HVACSchedule, ScheduleType};
+use crate::sim::hvac::zones::zone_control::{HVACStatus, ZoneControl};
+use crate::sim::hvac::zones::zone_setpoints::ZoneSetpoints;
 use crate::thermal::thermal_model::ThermalModel;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;

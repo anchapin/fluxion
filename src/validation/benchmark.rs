@@ -2,7 +2,18 @@
 //!
 //! This module provides reference data from EnergyPlus, ESP-r, TRNSYS, and DOE2
 //! for all ASHRAE 140 test cases.
+//!
+//! # Provenance
+//!
+//! Reference data is loaded from `data/ashrae140_reference.json` which contains
+//! ASHRAE 140-2023 inter-program comparison ranges sourced from:
+//! - ASHRAE 140-2023 Tables B8-1 through B8-5
+//! - Programs: BSIMAC 9.0.74, CSE 0.861.1, DeST 2.0, EnergyPlus 9.0.1, ESP-r 13.3, TRNSYS 18.01.0001
+//! - Reference: Std140_TF_Results.pdf (TESS, 19-Aug-2024)
+//!
+//! SHA-256 hash verification is used to detect corruption or accidental modification.
 
+use super::reference_loader;
 use super::report::BenchmarkData;
 use std::collections::HashMap;
 
@@ -105,7 +116,8 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== Low Mass Cases (600 Series) ====================
 
     // Case 600 - Baseline (Low Mass)
-    // Note: These ranges are calibrated for the 5R1C thermal network model
+    // TODO-BLIND-VALIDATION: These ranges are calibrated for the 5R1C thermal network model
+    // For blind validation: use raw ASHRAE 140-2023 reference values instead of calibrated ranges
     // The ASHRAE 140 reference values are based on detailed hourly simulation
     // Our model uses simplified 5R1C thermal network with different solar distribution
     data.insert(
@@ -468,8 +480,48 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
 /// Returns benchmark data for a specific case.
 ///
 /// Returns `None` if the case is not found in the reference database.
+/// Prefer使用 JSON 文件中的数据（如果存在），否则回退到硬编码值。
 pub fn get_benchmark_data(case_id: &str) -> Option<BenchmarkData> {
+    if let Ok(Some(case_ref)) = reference_loader::get_reference_case(case_id) {
+        return Some(convert_case_reference_to_benchmark_data(&case_ref));
+    }
     get_all_benchmark_data().get(case_id).cloned()
+}
+
+/// Convert CaseReference from JSON to BenchmarkData
+fn convert_case_reference_to_benchmark_data(
+    case_ref: &reference_loader::CaseReference,
+) -> BenchmarkData {
+    BenchmarkData {
+        annual_heating_min: case_ref.annual_heating_MWh.min,
+        annual_heating_max: case_ref.annual_heating_MWh.max,
+        annual_cooling_min: case_ref.annual_cooling_MWh.min,
+        annual_cooling_max: case_ref.annual_cooling_MWh.max,
+        peak_heating_min: case_ref.peak_heating_kW.min,
+        peak_heating_max: case_ref.peak_heating_kW.max,
+        peak_cooling_min: case_ref.peak_cooling_kW.min,
+        peak_cooling_max: case_ref.peak_cooling_kW.max,
+        min_free_float_min: case_ref
+            .ff_min_zone_temp_C
+            .as_ref()
+            .map(|r| r.min)
+            .unwrap_or(0.0),
+        min_free_float_max: case_ref
+            .ff_min_zone_temp_C
+            .as_ref()
+            .map(|r| r.max)
+            .unwrap_or(0.0),
+        max_free_float_min: case_ref
+            .ff_max_zone_temp_C
+            .as_ref()
+            .map(|r| r.min)
+            .unwrap_or(0.0),
+        max_free_float_max: case_ref
+            .ff_max_zone_temp_C
+            .as_ref()
+            .map(|r| r.max)
+            .unwrap_or(0.0),
+    }
 }
 
 /// Returns a list of all available case IDs.
@@ -639,6 +691,7 @@ mod tests {
         assert!(data_900.annual_heating_max < data_600.annual_heating_min);
     }
 
+    #[allow(clippy::items_after_test_module)]
     #[cfg(test)]
     mod case_960_tests {
         use super::*;

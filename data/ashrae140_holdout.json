@@ -1,0 +1,1222 @@
+{
+  "_schema": {
+    "version": "1.0",
+    "generated": "2026-05-12",
+    "ashrae_standard": "ASHRAE 140-2023",
+    "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+    "feature_spec": "Issue #764 \u2014 Phase 4a MLP SurrogateInputs 23-feature schema",
+    "purpose": "Identifies BESTEST ASHRAE 140 Section 7 cases as holdout/validation points in the ML Phase 3 LHC sweep. Cases in this file must be withheld from training data and used as physics-ground-truth validation targets for the MLP surrogate.",
+    "total_cases": 18,
+    "feature_dimensions": {
+      "boundary_conditions": "4 features \u2014 vary per timestep (exterior_temp, solar_rad_global, humidity, wind_speed); source: Denver TMY3 725650TY.CSV",
+      "interior_conditions": "3 features \u2014 zone_temp_setpoint, occupancy_density, internal_gains (case-specific values below)",
+      "temporal": "4 features \u2014 computed from simulation timestamp: hour_sin/cos, doy_sin/cos",
+      "envelope_6": "6 features \u2014 building config holdout values specified per case below",
+      "climate_zone_onehot_6": "6 one-hot features \u2014 [4A, 5A, 5B, 6A, 6B, 7A]; all BESTEST cases: Denver = 5B \u2192 [0,0,1,0,0,0]",
+      "total": "23 features (17 continuous + 6 one-hot)"
+    },
+    "lhc_holdout_note": "During LHC sweep (#719), any parameter sample within the following per-case tolerance bands should be flagged as holdout: wall_u_value \u00b10.05 W/(m\u00b2K), window_to_wall_ratio \u00b10.02, window_shgc \u00b10.02, floor_area \u00b12.0 m\u00b2, thermal_mass_index \u00b10.05, infiltration_ach \u00b10.05, AND climate_zone == '5B'.",
+    "reference_source": "ASHRAE 140-2023 Annex B normative case parameters (Tables B1-1 through B1-3)",
+    "weather_file": "725650TY.CSV \u2014 Denver International Airport TMY3, normative Annex A1"
+  },
+  "cases": [
+    {
+      "case_id": "600",
+      "description": "Low mass base case \u2014 south window, ideal HVAC",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "610",
+      "description": "Low mass \u2014 south overhang + added west window",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1984,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 3.0,
+          "north_m2": 0.0,
+          "total_m2": 15.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "south overhang 1.0m depth; west fin 1.0m depth",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "620",
+      "description": "Low mass \u2014 east+west windows only (no south window)",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 0.0,
+          "east_m2": 6.0,
+          "west_m2": 6.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "630",
+      "description": "Low mass \u2014 east+west windows + overhangs+fins",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 0.0,
+          "east_m2": 6.0,
+          "west_m2": 6.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "east+west overhangs 1.0m depth + vertical fins 1.0m depth",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "640",
+      "description": "Low mass \u2014 thermostat setback (nighttime heating 10\u00b0C)",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "night_setback_heating_degC": 10.0,
+      "special_notes": "Heating setback to 10\u00b0C during 23:00\u201307:00; daytime setpoint 21\u00b0C",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "650",
+      "description": "Low mass \u2014 night ventilation cooling (40 ACH night)",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 40.0
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": null,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "special_notes": "Night ventilation 40 ACH during 18:00\u201307:00; daytime 0.5 ACH; no heating",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "660",
+      "description": "Low mass \u2014 low-E double pane south window",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.321,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 1.8,
+        "shgc": 0.321,
+        "type": "double_pane_low_e"
+      },
+      "shading_devices": "none",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "670",
+      "description": "Low mass \u2014 single pane south window",
+      "series": "low_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.86,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 5.9,
+        "shgc": 0.86,
+        "type": "single_pane"
+      },
+      "shading_devices": "none",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "600FF",
+      "description": "Low mass free-float \u2014 no HVAC, south window",
+      "series": "low_mass_free_float",
+      "has_hvac": false,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": null,
+        "zone_temp_setpoint_cooling": null,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "special_notes": "No HVAC \u2014 outputs are free-float zone temperatures (max/min annual)",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "650FF",
+      "description": "Low mass free-float \u2014 night ventilation, no HVAC",
+      "series": "low_mass_free_float",
+      "has_hvac": false,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.514,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.15,
+        "infiltration_ach": 40.0
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": null,
+        "zone_temp_setpoint_cooling": null,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "special_notes": "No HVAC; night ventilation 40 ACH 18:00\u201307:00; daytime 0.5 ACH",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "900",
+      "description": "High mass base case \u2014 south window, ideal HVAC",
+      "series": "high_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "910",
+      "description": "High mass \u2014 south overhang + west window",
+      "series": "high_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1984,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 3.0,
+          "north_m2": 0.0,
+          "total_m2": 15.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "south overhang 1.0m depth; west fin 1.0m depth",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "920",
+      "description": "High mass \u2014 east+west windows only",
+      "series": "high_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 0.0,
+          "east_m2": 6.0,
+          "west_m2": 6.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "930",
+      "description": "High mass \u2014 east+west windows + overhangs+fins",
+      "series": "high_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 0.0,
+          "east_m2": 6.0,
+          "west_m2": 6.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "east+west overhangs 1.0m depth + vertical fins 1.0m depth",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "940",
+      "description": "High mass \u2014 thermostat setback (nighttime heating 10\u00b0C)",
+      "series": "high_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": 21.0,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "night_setback_heating_degC": 10.0,
+      "special_notes": "Heating setback to 10\u00b0C during 23:00\u201307:00; daytime setpoint 21\u00b0C",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "950",
+      "description": "High mass \u2014 night ventilation cooling (40 ACH night)",
+      "series": "high_mass",
+      "has_hvac": true,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 40.0
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": null,
+        "zone_temp_setpoint_cooling": 27.0,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "special_notes": "Night ventilation 40 ACH during 18:00\u201307:00; daytime 0.5 ACH; no heating",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "900FF",
+      "description": "High mass free-float \u2014 no HVAC, south window",
+      "series": "high_mass_free_float",
+      "has_hvac": false,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 0.5
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": null,
+        "zone_temp_setpoint_cooling": null,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "special_notes": "No HVAC \u2014 outputs are free-float zone temperatures (max/min/mean annual)",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    },
+    {
+      "case_id": "950FF",
+      "description": "High mass free-float \u2014 night ventilation, no HVAC",
+      "series": "high_mass_free_float",
+      "has_hvac": false,
+      "ashrae_section": "Section 7 \u2014 Building Thermal Envelope and Fabric Load Tests",
+      "ashrae_standard": "ASHRAE 140-2023",
+      "envelope_features": {
+        "wall_u_value": 0.519,
+        "window_to_wall_ratio": 0.1587,
+        "window_shgc": 0.787,
+        "floor_area": 48.0,
+        "thermal_mass_index": 0.85,
+        "infiltration_ach": 40.0
+      },
+      "interior_conditions": {
+        "zone_temp_setpoint": null,
+        "zone_temp_setpoint_cooling": null,
+        "occupancy_density": 0.0,
+        "internal_gains": 4.167
+      },
+      "climate": {
+        "climate_zone": "5B",
+        "climate_zone_onehot": [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        "latitude_deg": 39.833,
+        "longitude_deg": -104.65,
+        "weather_file": "725650TY.CSV"
+      },
+      "geometry": {
+        "floor_area_m2": 48.0,
+        "zone_height_m": 2.7,
+        "total_wall_area_m2": 75.6,
+        "glazing_by_facade": {
+          "south_m2": 12.0,
+          "east_m2": 0.0,
+          "west_m2": 0.0,
+          "north_m2": 0.0,
+          "total_m2": 12.0
+        }
+      },
+      "window_properties": {
+        "u_value_wm2k": 3.0,
+        "shgc": 0.787,
+        "type": "double_pane_clear"
+      },
+      "shading_devices": "none",
+      "special_notes": "No HVAC; night ventilation 40 ACH 18:00\u201307:00; daytime 0.5 ACH",
+      "reference_outputs": {
+        "_status": "pending \u2014 will be populated from ASHRAE 140-2023 Tables B8-1 through B8-5",
+        "_source": "ASHRAE 140-2023 Annex B8, Section B8.1 inter-program comparison",
+        "_programs": [
+          "BSIMAC 9.0.74",
+          "CSE 0.861.1",
+          "DeST 2.0",
+          "EnergyPlus 9.0.1",
+          "ESP-r 13.3",
+          "TRNSYS 18.01.0001"
+        ]
+      }
+    }
+  ]
+}

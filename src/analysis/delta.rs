@@ -1,11 +1,13 @@
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::CaseSpec;
 use crate::validation::diagnostic::HourlyData;
-use crate::weather::denver::DenverTmyWeather;
+use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use anyhow::Result;
 use csv::WriterBuilder;
+use log::info;
 use serde::{Deserialize, Serialize};
 use serde_yaml;
 use std::collections::HashMap;
@@ -16,6 +18,16 @@ use std::path::Path;
 pub struct DeltaConfig {
     pub base: CaseSpec,
     pub variants: Vec<Variant>,
+    /// Number of warm-up years before collecting results (Issue #744).
+    /// Runs the full 8760-hour simulation this many times, using the final
+    /// state of each run as the initial condition for the next. Only the
+    /// last year's results are reported. Default: 2.
+    #[serde(default = "default_warm_up_years")]
+    pub warm_up_years: u32,
+}
+
+fn default_warm_up_years() -> u32 {
+    2
 }
 
 /// A variant applies a patch (direct field modifications) and/or a sweep (parametric sweep over values).
@@ -211,7 +223,14 @@ pub fn generate_sweep_combinations(
 }
 
 /// Run a simulation for a given CaseSpec and return annual/peak metrics plus optional hourly data.
-fn run_simulation(spec: &CaseSpec, collect_hourly: bool) -> Result<SimulationResult> {
+///
+/// Uses convergence-based warm-up per Issue #744: runs `warm_up_years` full-year
+/// iterations before collecting results, ensuring periodic steady-state.
+fn run_simulation(
+    spec: &CaseSpec,
+    collect_hourly: bool,
+    warm_up_years: u32,
+) -> Result<SimulationResult> {
     // Build model from spec
     let mut model = ThermalModel::<VectorField>::from_spec(spec);
     model.reset_peak_power();
@@ -236,8 +255,33 @@ fn run_simulation(spec: &CaseSpec, collect_hourly: bool) -> Result<SimulationRes
     }
     model.hvac_enabled = VectorField::new(hvac_enabled_vals.clone());
 
-    // Prepare weather (Denver TMY)
-    let weather = DenverTmyWeather::new();
+    // Prepare weather (Denver EPW)
+    let weather = EpwWeatherSource::from_file(
+        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+    )
+    .expect("Failed to load EPW weather data");
+
+    // --- Warm-up / pre-conditioning (Issue #744) ---
+    // Run convergence-based warm-up: iterate full years until temperatures
+    // at Jan 1 match Dec 31 within the convergence threshold (0.1°C per ASHRAE 140).
+    // `warm_up_years` controls the max full-year iterations (default: 2).
+    let warmup_config = WarmupConfig::convergence()
+        .with_warmup_days(14)
+        .with_max_iterations(warm_up_years as usize)
+        .with_convergence_threshold(0.1);
+    let warmup_result = run_warmup(&mut model, &weather, &warmup_config);
+    info!(
+        "Warm-up complete: {} (max_dT={:.4}°C)",
+        warmup_result, warmup_result.max_temperature_change
+    );
+    if !warmup_result.converged {
+        info!(
+            "Warning: warm-up did not fully converge after {} iterations (max_dT={:.4}°C)",
+            warmup_result.iterations, warmup_result.max_temperature_change
+        );
+    }
+    // Reset peak power tracking after warm-up so peaks reflect only the reporting year
+    model.reset_peak_power();
 
     // Accumulators
     let mut annual_heating_joules: f64 = 0.0;
@@ -665,16 +709,18 @@ fn export_hourly_deltas_csv(report: &DeltaReport, path: &Path) -> Result<()> {
 /// Run the comparison between a base case and multiple variants.
 ///
 /// Returns the DeltaReport and the base SimulationResult (for report generation).
+/// Uses `warm_up_years` years of pre-conditioning per Issue #744.
 pub fn run_comparison(
     base: &CaseSpec,
     variants: &[(String, CaseSpec)],
     include_hourly: bool,
+    warm_up_years: u32,
 ) -> Result<(DeltaReport, SimulationResult)> {
-    let base_result = run_simulation(base, include_hourly)?;
+    let base_result = run_simulation(base, include_hourly, warm_up_years)?;
     let mut variant_results = Vec::new();
 
     for (name, spec) in variants {
-        let var_result = run_simulation(spec, include_hourly)?;
+        let var_result = run_simulation(spec, include_hourly, warm_up_years)?;
         let hourly_differences = if include_hourly {
             let base_hourly = base_result
                 .hourly_data
@@ -713,7 +759,12 @@ pub fn run_and_report(config: DeltaConfig, output_dir: &Path, include_hourly: bo
     if variants.is_empty() {
         anyhow::bail!("No variants defined");
     }
-    let (report, base_result) = run_comparison(&config.base, &variants, include_hourly)?;
+    let (report, base_result) = run_comparison(
+        &config.base,
+        &variants,
+        include_hourly,
+        config.warm_up_years,
+    )?;
 
     // Write markdown report
     let md_path = output_dir.join("delta_report.md");
@@ -764,6 +815,7 @@ mod tests {
                     }),
                 },
             ],
+            warm_up_years: 2,
         };
         // Serialize to YAML and write to a temporary file
         let yaml = serde_yaml::to_string(&config).expect("Failed to serialize config to YAML");
@@ -806,6 +858,7 @@ mod tests {
                 }),
                 sweep: None,
             }],
+            warm_up_years: 2,
         };
         let expanded = expand_variants(&config).unwrap();
         assert_eq!(expanded.len(), 1);
@@ -828,6 +881,7 @@ mod tests {
                     map
                 }),
             }],
+            warm_up_years: 2,
         };
         let expanded = expand_variants(&config).unwrap();
         assert_eq!(expanded.len(), 3);
@@ -840,7 +894,7 @@ mod tests {
     #[test]
     fn test_run_simulation_basic() {
         let spec = ASHRAE140Case::Case600.spec();
-        let result = run_simulation(&spec, false).unwrap();
+        let result = run_simulation(&spec, false, 0).unwrap();
         assert!(result.annual_heating_mwh > 0.0);
         assert!(result.annual_cooling_mwh > 0.0);
         assert!(result.peak_heating_kw > 0.0);
@@ -851,7 +905,7 @@ mod tests {
     #[test]
     fn test_run_simulation_with_hourly() {
         let spec = ASHRAE140Case::Case600.spec();
-        let result = run_simulation(&spec, true).unwrap();
+        let result = run_simulation(&spec, true, 0).unwrap();
         assert!(result.hourly_data.is_some());
         let hourly = result.hourly_data.as_ref().unwrap();
         assert_eq!(hourly.len(), 8760);
@@ -866,7 +920,7 @@ mod tests {
         // Case600 default window U is around 3.0; change to 5.0
         variant_spec.window_properties.u_value = 5.0;
         let variants = vec![("high_u_window".to_string(), variant_spec)];
-        let (report, base_result) = run_comparison(&base_spec, &variants, true).unwrap();
+        let (report, base_result) = run_comparison(&base_spec, &variants, true, 0).unwrap();
         assert_eq!(report.variants.len(), 1);
         let var_res = &report.variants[0];
         // Check that annual heating differs from base (non-zero difference)

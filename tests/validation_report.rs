@@ -39,12 +39,21 @@ fn test_compute_status_negative_values() {
 
 #[test]
 fn test_metric_type_units() {
-    assert_eq!(MetricType::AnnualHeating.units(), "MWh");
-    assert_eq!(MetricType::AnnualCooling.units(), "MWh");
+    assert_eq!(MetricType::AnnualHeating.units(), "kWh");
+    assert_eq!(MetricType::AnnualCooling.units(), "kWh");
     assert_eq!(MetricType::PeakHeating.units(), "kW");
     assert_eq!(MetricType::PeakCooling.units(), "kW");
     assert_eq!(MetricType::MinFreeFloat.units(), "°C");
     assert_eq!(MetricType::MaxFreeFloat.units(), "°C");
+    // IncidentSolar per ASHRAE 140-2023 Section 8.2.3
+    assert_eq!(
+        MetricType::IncidentSolar {
+            surface_id: "roof".to_string(),
+            orientation: fluxion::validation::ashrae_140_cases::Orientation::Up,
+        }
+        .units(),
+        "kWh/m²"
+    );
 }
 
 #[test]

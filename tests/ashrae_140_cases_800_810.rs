@@ -44,7 +44,7 @@ fn test_ashrae_800() {
         model.peak_power_heating, model.peak_power_cooling
     );
     assert!(
-        total_energy >= 14_000.0 && total_energy <= 22_000.0,
+        (14_000.0..=22_000.0).contains(&total_energy),
         "Case 800 energy {} kWh outside reference range [14,000, 22,000] kWh",
         total_energy
     );
@@ -55,12 +55,12 @@ fn test_ashrae_800() {
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 800 COP: {}, EER: {}", cop, eer);
         assert!(
-            cop >= 3.0 && cop <= 4.0,
+            (3.0..=4.0).contains(&cop),
             "Case 800 COP {} outside reference range [3.0, 4.0]",
             cop
         );
         assert!(
-            eer >= 10.0 && eer <= 14.0,
+            (10.0..=14.0).contains(&eer),
             "Case 800 EER {} outside reference range [10.0, 14.0]",
             eer
         );
@@ -108,7 +108,7 @@ fn test_ashrae_801() {
     // Case 800 consumes ~14.8 MWh, so Case 801 should consume ~12.6-13.3 MWh
     println!("Case 801 total energy: {} kWh", total_energy);
     assert!(
-        total_energy >= 12_000.0 && total_energy <= 20_000.0,
+        (12_000.0..=20_000.0).contains(&total_energy),
         "Case 801 energy {} kWh outside reference range [12,000, 20,000] kWh",
         total_energy
     );
@@ -119,12 +119,12 @@ fn test_ashrae_801() {
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 801 COP: {}, EER: {}", cop, eer);
         assert!(
-            cop >= 3.2 && cop <= 4.2,
+            (3.2..=4.2).contains(&cop),
             "Case 801 COP {} outside reference range [3.2, 4.2]",
             cop
         );
         assert!(
-            eer >= 10.5 && eer <= 14.5,
+            (10.5..=14.5).contains(&eer),
             "Case 801 EER {} outside reference range [10.5, 14.5]",
             eer
         );
@@ -170,7 +170,7 @@ fn test_ashrae_802() {
     // Validate against reference ranges (annual electrical: 12-20 MWh)
     println!("Case 802 total energy: {} kWh", total_energy);
     assert!(
-        total_energy >= 12_000.0 && total_energy <= 20_000.0,
+        (12_000.0..=20_000.0).contains(&total_energy),
         "Case 802 energy {} kWh outside reference range [12,000, 20,000] kWh",
         total_energy
     );
@@ -184,12 +184,12 @@ fn test_ashrae_802() {
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 802 COP: {}, EER: {}", cop, eer);
         assert!(
-            cop >= 2.8 && cop <= 3.2,
+            (2.8..=3.2).contains(&cop),
             "Case 802 COP {} outside expected range [2.8, 3.2] (polynomial curve output)",
             cop
         );
         assert!(
-            eer >= 9.5 && eer <= 10.5,
+            (9.5..=10.5).contains(&eer),
             "Case 802 EER {} outside expected range [9.5, 10.5] (polynomial curve output)",
             eer
         );
@@ -237,18 +237,14 @@ fn test_ashrae_803() {
     // Actual energy: 16.4 MWh (within 14-18 MWh range)
     // Reference data (8-12 MWh) contradicts thermodynamics - COP 4.5 should use LESS energy than COP 2.93 heat pump (14.7 MWh)
     println!("Case 803 total energy: {} kWh", total_energy);
-    assert!(
-        total_energy >= 14_000.0 && total_energy <= 18_000.0,
-        "Case 803 energy {} kWh outside expected range [14,000, 18,000] kWh (COP 4.5 chiller physics)",
-        total_energy
-    );
+    assert!((14_000.0..=18_000.0).contains(&total_energy), "Case 803 energy {} kWh outside expected range [14,000, 18,000] kWh (COP 4.5 chiller physics)", total_energy);
 
     // Validate chiller efficiency (COP 4.0-5.0)
     if let Some(equipment) = &model.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 803 COP: {}", cop);
         assert!(
-            cop >= 4.0 && cop <= 5.0,
+            (4.0..=5.0).contains(&cop),
             "Case 803 COP {} outside reference range [4.0, 5.0]",
             cop
         );
@@ -296,18 +292,14 @@ fn test_ashrae_804() {
     // Energy should be similar to Case 803 since total capacity and COP are identical
     // Use same 14-18 MWh range as Case 803 for physics consistency
     println!("Case 804 total energy: {} kWh", total_energy);
-    assert!(
-        total_energy >= 14_000.0 && total_energy <= 18_000.0,
-        "Case 804 energy {} kWh outside expected range [14,000, 18,000] kWh (COP 4.5 chillers, multiple units same total capacity as single)",
-        total_energy
-    );
+    assert!((14_000.0..=18_000.0).contains(&total_energy), "Case 804 energy {} kWh outside expected range [14,000, 18,000] kWh (COP 4.5 chillers, multiple units same total capacity as single)", total_energy);
 
     // Validate chiller efficiency (similar to Case 803)
     if let Some(equipment) = &model.hvac_equipment {
         let cop = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 804 COP: {}", cop);
         assert!(
-            cop >= 4.0 && cop <= 5.0,
+            (4.0..=5.0).contains(&cop),
             "Case 804 COP {} outside expected range [4.0, 5.0] (COP 4.5 chiller physics)",
             cop
         );
@@ -359,7 +351,7 @@ fn test_ashrae_805() {
     // not gas consumption.
     println!("Case 805 total energy: {} kWh", total_energy);
     assert!(
-        total_energy >= 0.0 && total_energy <= 100.0,
+        (0.0..=100.0).contains(&total_energy),
         "Case 805 electrical energy {} kWh outside reasonable range [0, 100] kWh",
         total_energy
     );
@@ -369,7 +361,7 @@ fn test_ashrae_805() {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         println!("Case 805 COP: {}", cop);
         assert!(
-            cop >= 0.80 && cop <= 0.90,
+            (0.80..=0.90).contains(&cop),
             "Case 805 COP {} outside reference range [0.80, 0.90]",
             cop
         );
@@ -424,7 +416,7 @@ fn test_ashrae_806() {
     // not gas consumption.
     println!("Case 806 total energy: {} kWh", total_energy);
     assert!(
-        total_energy >= 0.0 && total_energy <= 100.0,
+        (0.0..=100.0).contains(&total_energy),
         "Case 806 electrical energy {} kWh outside reasonable range [0, 100] kWh",
         total_energy
     );
@@ -434,7 +426,7 @@ fn test_ashrae_806() {
         let cop = equipment.calculate_efficiency(1.0, -5.0, HVACMode::Heating);
         println!("Case 806 COP: {}", cop);
         assert!(
-            cop >= 0.80 && cop <= 0.90,
+            (0.80..=0.90).contains(&cop),
             "Case 806 COP {} outside expected range [0.80, 0.90] (COP 0.85 boiler physics)",
             cop
         );
@@ -486,11 +478,7 @@ fn test_ashrae_807() {
     // Boiler: ~1-2 MWh electrical (controls/pumps only), gas not metered
     // Total electrical: ~14-20 MWh (heat pump dominates)
     println!("Case 807 total energy: {} kWh", total_energy);
-    assert!(
-        total_energy >= 14_000.0 && total_energy <= 20_000.0,
-        "Case 807 electrical energy {} kWh outside expected range [14,000, 20,000] kWh (heat pump + boiler controls/pumps, gas not metered)",
-        total_energy
-    );
+    assert!((14_000.0..=20_000.0).contains(&total_energy), "Case 807 electrical energy {} kWh outside expected range [14,000, 20,000] kWh (heat pump + boiler controls/pumps, gas not metered)", total_energy);
 
     // Validate equipment efficiency (HP primary, low heating energy)
     // Note: Hybrid system uses heat pump with polynomial efficiency curve
@@ -500,12 +488,12 @@ fn test_ashrae_807() {
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 807 COP: {}, EER: {}", cop, eer);
         assert!(
-            cop >= 2.8 && cop <= 3.2,
+            (2.8..=3.2).contains(&cop),
             "Case 807 COP {} outside expected range [2.8, 3.2] (polynomial curve output)",
             cop
         );
         assert!(
-            eer >= 9.5 && eer <= 10.5,
+            (9.5..=10.5).contains(&eer),
             "Case 807 EER {} outside expected range [9.5, 10.5] (polynomial curve output)",
             eer
         );
@@ -553,11 +541,7 @@ fn test_ashrae_808() {
     // Economizer mode: free cooling when outdoor conditions favorable
     // Expected: Lower than constant volume systems (~14-18 MWh)
     println!("Case 808 total energy: {} kWh", total_energy);
-    assert!(
-        total_energy >= 14_000.0 && total_energy <= 18_000.0,
-        "Case 808 energy {} kWh outside expected range [14,000, 18,000] kWh (VAV + economizer efficiency)",
-        total_energy
-    );
+    assert!((14_000.0..=18_000.0).contains(&total_energy), "Case 808 energy {} kWh outside expected range [14,000, 18,000] kWh (VAV + economizer efficiency)", total_energy);
 
     // Validate equipment efficiency
     // Note: Case 808 uses VAV system with heat recovery, which may have different efficiency characteristics
@@ -620,7 +604,7 @@ fn test_ashrae_809() {
     // Expected: Higher than VAV (~30-35 MWh) due to constant fan operation
     println!("Case 809 total energy: {} kWh", total_energy);
     assert!(
-        total_energy >= 30_000.0 && total_energy <= 35_000.0,
+        (30_000.0..=35_000.0).contains(&total_energy),
         "Case 809 energy {} kWh outside expected range [30,000, 35,000] kWh (CAV + economizer)",
         total_energy
     );
@@ -686,11 +670,7 @@ fn test_ashrae_810() {
     // Predictive control: thermal inertia reduces cycling, improves efficiency
     // Expected: Optimized system (~14-18 MWh) based on actual equipment behavior
     println!("Case 810 total energy: {} kWh", total_energy);
-    assert!(
-        total_energy >= 14_000.0 && total_energy <= 18_000.0,
-        "Case 810 energy {} kWh outside expected range [14,000, 18,000] kWh (comprehensive multi-equipment system with optimization)",
-        total_energy
-    );
+    assert!((14_000.0..=18_000.0).contains(&total_energy), "Case 810 energy {} kWh outside expected range [14,000, 18,000] kWh (comprehensive multi-equipment system with optimization)", total_energy);
 
     // Validate equipment efficiency
     // Note: Comprehensive system uses heat pump with polynomial efficiency curve
@@ -700,12 +680,12 @@ fn test_ashrae_810() {
         let eer = equipment.calculate_efficiency(1.0, 35.0, HVACMode::Cooling);
         println!("Case 810 COP: {}, EER: {}", cop, eer);
         assert!(
-            cop >= 2.8 && cop <= 3.2,
+            (2.8..=3.2).contains(&cop),
             "Case 810 COP {} outside expected range [2.8, 3.2] (polynomial curve output)",
             cop
         );
         assert!(
-            eer >= 9.5 && eer <= 10.5,
+            (9.5..=10.5).contains(&eer),
             "Case 810 EER {} outside expected range [9.5, 10.5] (polynomial curve output)",
             eer
         );
@@ -803,11 +783,8 @@ fn test_cycling_losses_startup_penalty() {
     // Verify that cycling tracker was active
     // (Note: May not have startup events in 100 timesteps depending on conditions)
     let startup_count = model.cycling_tracker.startup_count;
-    // Allow for minimal cycling in short simulation
-    assert!(startup_count >= 0, "startup_count should be non-negative");
-    // Remove useless comparison that always evaluates to true
-    #[allow(clippy::absurd_extreme_comparisons)]
-    let _ = startup_count >= 0;
+    // startup_count is a usize, always >= 0, just verify it's tracked
+    let _ = startup_count;
 
     // Verify cumulative runtime was tracked
     let runtime_hours = model.cycling_tracker.cumulative_runtime_hours;

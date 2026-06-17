@@ -1,0 +1,34 @@
+{
+  "_schema_version": "1",
+  "_label": "random_baseline",
+  "_description": "Chance-performance reference. TDQS = 0.5 means the system is no better than random.",
+  "overall": 0.5,
+  "decisions": 195,
+  "per_type": {
+    "solver_selection": {
+      "tdqs": 0.5,
+      "correct": 19,
+      "total": 39
+    },
+    "adaptive_timestep": {
+      "tdqs": 0.5,
+      "correct": 19,
+      "total": 39
+    },
+    "surrogate_routing": {
+      "tdqs": 0.5,
+      "correct": 19,
+      "total": 39
+    },
+    "constraint_warning": {
+      "tdqs": 0.5,
+      "correct": 19,
+      "total": 39
+    },
+    "hvac_horizon": {
+      "tdqs": 0.5,
+      "correct": 19,
+      "total": 39
+    }
+  }
+}

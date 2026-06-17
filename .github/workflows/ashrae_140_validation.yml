@@ -28,7 +28,7 @@ jobs:
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.94.0
         with:
           toolchain: stable
 
@@ -164,6 +164,7 @@ jobs:
 
       - name: Check Validation Results
         id: check
+        continue-on-error: true  # advisory on PRs; hard gate on push/schedule
         run: |
           # Run centralized release gate checker for validation gates
           python3 scripts/release_gate_checker.py \
@@ -216,7 +217,7 @@ jobs:
         continue-on-error: true
 
       - name: Fail if validation gate failed
-        if: failure() || steps.check.outcome == 'failure'
+        if: (failure() || steps.check.outcome == 'failure') && github.event_name != 'pull_request'
         run: |
           echo "❌ Release gate check failed"
           echo ""

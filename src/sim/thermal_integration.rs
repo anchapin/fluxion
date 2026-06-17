@@ -35,15 +35,15 @@ pub enum ThermalIntegrationMethod {
 
 /// Selects the appropriate integration method based on thermal capacitance.
 ///
-/// For high thermal capacitance (> 500 J/K), uses implicit methods to ensure
-/// numerical stability. For low thermal capacitance, explicit Euler is sufficient
-/// and computationally faster.
+/// For high thermal capacitance (> 500 J/K), uses Crank-Nicolson for
+/// 2nd-order accuracy and unconditional stability per ISO 13790 §C.4.
+/// For low thermal capacitance, explicit Euler is sufficient and faster.
 ///
 /// # Arguments
 /// * `cm` - Thermal capacitance (J/K)
 ///
 /// # Returns
-/// * `BackwardEuler` if cm > 500 J/K
+/// * `CrankNicolson` if cm > 500 J/K (ISO 13790 recommended)
 /// * `ExplicitEuler` otherwise
 ///
 /// # Example
@@ -51,14 +51,15 @@ pub enum ThermalIntegrationMethod {
 /// use fluxion::sim::thermal_integration::select_integration_method;
 ///
 /// let method = select_integration_method(1000.0);
-/// assert_eq!(method, ThermalIntegrationMethod::BackwardEuler);
+/// assert_eq!(method, ThermalIntegrationMethod::CrankNicolson);
 /// ```
 pub fn select_integration_method(cm: f64) -> ThermalIntegrationMethod {
-    // Threshold from research: explicit Euler becomes unstable for Cm > 500 J/K
+    // ISO 13790 §C.4 recommends Crank-Nicolson for high thermal mass
+    // Crank-Nicolson is unconditionally stable (A-stable) and 2nd-order accurate
     const HIGH_MASS_THRESHOLD: f64 = 500.0;
 
     if cm > HIGH_MASS_THRESHOLD {
-        ThermalIntegrationMethod::BackwardEuler
+        ThermalIntegrationMethod::CrankNicolson
     } else {
         ThermalIntegrationMethod::ExplicitEuler
     }
@@ -130,6 +131,172 @@ pub fn backward_euler_update(
 
     // Calculate numerator: Cm/dt * Tm_old + h_tr_em * t_ext + h_tr_ms * t_surface + phi_m
     let numer = cm / dt * tm_old + h_tr_em * t_ext + h_tr_ms * t_surface + phi_m;
+
+    // Return new temperature
+    numer / denom
+}
+
+/// ISO 13790 Crank-Nicolson mass temperature update (§C.4).
+///
+/// The Crank-Nicolson scheme averages the conductance terms between old and new
+/// time steps for 2nd-order accuracy. The mass energy balance is:
+///
+///   Cm/dt × (Tm_new − Tm_old) = H_tr_em × (t_ext − Tm_avg) + H_tr_3 × (t_sup − Tm_avg) + phi_m
+///
+/// where Tm_avg = 0.5 × (Tm_old + Tm_new). Rearranged:
+///
+///   Tm_new = [Tm_old × (Cm/dt − ½(H_tr_em + H_tr_3)) + H_tr_em × t_ext + H_tr_3 × t_sup + phi_m]
+///            / [Cm/dt + ½(H_tr_em + H_tr_3)]
+///
+/// Issue #917 fix: the previous version omitted the H_tr_em × t_ext + H_tr_3 × t_sup
+/// driving terms, leaving the mass node coupled only to phi_m (solar gains). This
+/// suppressed all free-floating temperatures by ~30 °C.
+///
+/// # Arguments
+/// * `tm_prev` - Previous mass temperature (°C)
+/// * `dt` - Time step in seconds
+/// * `cm` - Thermal capacitance of mass (J/K)
+/// * `h_tr_3` - ISO 13790 combined conductance H_tr_3 (W/K)
+/// * `h_tr_em` - Mass-to-exterior conductance (W/K)
+/// * `t_ext` - Exterior (sol-air) temperature driving the h_tr_em path (°C)
+/// * `t_sup` - Supply / surface temperature driving the h_tr_3 path (°C)
+/// * `phi_m_tot` - Total heat flow to mass node (W), includes HVAC via network
+#[allow(clippy::too_many_arguments)]
+pub fn crank_nicolson_iso13790(
+    tm_prev: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_3: f64,
+    h_tr_em: f64,
+    t_ext: f64,
+    t_sup: f64,
+    phi_m_tot: f64,
+) -> f64 {
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    let cm_dt = cm / dt;
+    let half_cond = 0.5 * (h_tr_3 + h_tr_em);
+
+    let denom = cm_dt + half_cond;
+    let numer = tm_prev * (cm_dt - half_cond) + h_tr_em * t_ext + h_tr_3 * t_sup + phi_m_tot;
+
+    // Check for negative denominator (can happen if conductances > Cm/dt)
+    if denom <= 0.0 {
+        // Fall back to forward Euler to avoid instability
+        return tm_prev
+            + dt / cm * (h_tr_em * (t_ext - tm_prev) + h_tr_3 * (t_sup - tm_prev) + phi_m_tot);
+    }
+
+    numer / denom
+}
+
+/// Backward Euler solver for thermal mass with 2 conductances (no exterior path).
+///
+/// For 6R2C envelope mass: h_tr_em is NOT included in the heat balance.
+/// The envelope mass receives heat from:
+///   - T_s via h_tr_ms (surface-to-mass conductance)
+///   - Tm_int via h_tr_me (internal-to-envelope-mass conductance)
+///
+/// Heat balance:
+/// Cm * (Tm_new - Tm_old) / dt = h_tr_ms * (T_s - Tm_new) + h_tr_me * (Tm_int - Tm_new) + phi_m
+///
+/// Rearranged:
+/// (Cm/dt + h_tr_ms + h_tr_me) * Tm_new = Cm/dt * Tm_old + h_tr_ms * T_s + h_tr_me * Tm_int + phi_m
+///
+/// # Arguments
+/// * `tm_old` - Previous mass temperature (°C)
+/// * `dt` - Time step (seconds)
+/// * `cm` - Thermal capacitance (J/K)
+/// * `h_tr_ms` - Surface-to-mass conductance (W/K)
+/// * `h_tr_me` - Internal-mass-to-envelope-mass conductance (W/K)
+/// * `t_surface` - Surface temperature (°C)
+/// * `t_int` - Internal mass temperature (°C)
+/// * `phi_m` - Direct gains to thermal mass (W)
+///
+/// # Returns
+/// * New mass temperature (°C)
+#[allow(clippy::too_many_arguments)]
+pub fn backward_euler_update_2cond(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_ms: f64,
+    h_tr_me: f64,
+    t_surface: f64,
+    t_int: f64,
+    phi_m: f64,
+) -> f64 {
+    // Check for invalid inputs
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    // Calculate denominator: (Cm/dt + h_tr_ms + h_tr_me)
+    let denom = cm / dt + h_tr_ms + h_tr_me;
+
+    // Calculate numerator: Cm/dt * Tm_old + h_tr_ms * t_surface + h_tr_me * t_int + phi_m
+    let numer = cm / dt * tm_old + h_tr_ms * t_surface + h_tr_me * t_int + phi_m;
+
+    // Return new temperature
+    numer / denom
+}
+
+/// Backward Euler solver for thermal mass with 2 conductances using H_tr_3.
+///
+/// For high-mass envelopes (Case 900+), the correct thermal coupling is through
+/// H_tr_3 (the combined air-side conductance ≈ 40 W/K), NOT h_tr_ms + h_tr_me
+/// (which gives ≈ 1450 W/K and a time constant of ~1.9 hours instead of ~69 hours).
+///
+/// This function replaces `backward_euler_update_2cond` for high-mass cases where
+/// the envelope mass should be thermally coupled to the zone air through the slow
+/// H_tr_3 path, not the fast surface-to-mass path.
+///
+/// Heat balance:
+/// Cm * (Tm_new - Tm_old) / dt = h_tr_3 * (t_zone - Tm_new) + phi_m
+///
+/// Rearranged:
+/// (Cm/dt + h_tr_3) * Tm_new = Cm/dt * Tm_old + h_tr_3 * t_zone + phi_m
+///
+/// # Arguments
+/// * `tm_old` - Previous mass temperature (°C)
+/// * `dt` - Time step (seconds)
+/// * `cm` - Thermal capacitance (J/K)
+/// * `h_tr_3` - ISO 13790 combined conductance H_tr_3 (W/K) ≈ 40 W/K for Case 900
+/// * `t_zone` - Zone air temperature (°C)
+/// * `phi_m` - Direct gains to thermal mass (W)
+///
+/// # Returns
+/// * New mass temperature (°C)
+#[allow(clippy::too_many_arguments)]
+pub fn backward_euler_update_2cond_h_tr3(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_3: f64,
+    t_zone: f64,
+    phi_m: f64,
+) -> f64 {
+    // Check for invalid inputs
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    // Calculate denominator: (Cm/dt + h_tr_3)
+    let denom = cm / dt + h_tr_3;
+
+    // Calculate numerator: Cm/dt * Tm_old + h_tr_3 * t_zone + phi_m
+    let numer = cm / dt * tm_old + h_tr_3 * t_zone + phi_m;
 
     // Return new temperature
     numer / denom
@@ -208,6 +375,75 @@ pub fn crank_nicolson_update(
 
     // Calculate constant term (independent of Tm_new)
     let b = h_tr_em * t_ext + h_tr_ms * t_surface + phi_m;
+
+    // Calculate denominator: (Cm/dt + 0.5 * a)
+    let denom = cm / dt + 0.5 * a;
+
+    // Calculate numerator: Cm/dt * Tm_old + 0.5 * q_old + 0.5 * b
+    let numer = cm / dt * tm_old + 0.5 * q_old + 0.5 * b;
+
+    // Return new temperature
+    numer / denom
+}
+
+/// Crank-Nicolson solver for semi-implicit thermal mass update with THREE conductances.
+///
+/// For 6R2C model, the envelope mass receives heat from:
+/// - Exterior (h_tr_em, t_ext = sol-air temperature)
+/// - Surface (h_tr_ms, t_surface = surface temperature)
+/// - Internal mass (h_tr_me, t_int = internal mass temperature)
+///
+/// Uses average of old and new heat fluxes for 2nd-order accuracy:
+/// Cm * (Tm_new - Tm_old) / dt = 0.5 * (Q_old + Q_new)
+///
+/// Where Q_old = h_tr_em*(t_ext-Tm_old) + h_tr_ms*(t_surface-Tm_old) + h_tr_me*(t_int-Tm_old) + phi_m
+///
+/// # Arguments
+/// * `tm_old` - Previous mass temperature (°C)
+/// * `dt` - Time step (seconds)
+/// * `cm` - Thermal capacitance (J/K)
+/// * `h_tr_em` - Exterior-to-mass conductance (W/K)
+/// * `h_tr_ms` - Mass-to-surface conductance (W/K)
+/// * `h_tr_me` - Mass-to-internal-mass conductance (W/K)
+/// * `t_ext` - Exterior temperature/sol-air (°C)
+/// * `t_surface` - Surface temperature (°C)
+/// * `t_int` - Internal mass temperature (°C)
+/// * `phi_m` - Direct gains to thermal mass (W)
+///
+/// # Returns
+/// * New mass temperature (°C)
+#[allow(clippy::too_many_arguments)]
+pub fn crank_nicolson_update_3cond(
+    tm_old: f64,
+    dt: f64,
+    cm: f64,
+    h_tr_em: f64,
+    h_tr_ms: f64,
+    h_tr_me: f64,
+    t_ext: f64,
+    t_surface: f64,
+    t_int: f64,
+    phi_m: f64,
+) -> f64 {
+    // Check for invalid inputs
+    if dt <= 0.0 {
+        panic!("Time step dt must be positive, got {}", dt);
+    }
+    if cm <= 0.0 {
+        panic!("Thermal capacitance cm must be positive, got {}", cm);
+    }
+
+    // Calculate old heat flux from all three paths
+    let q_old = h_tr_em * (t_ext - tm_old)
+        + h_tr_ms * (t_surface - tm_old)
+        + h_tr_me * (t_int - tm_old)
+        + phi_m;
+
+    // Calculate total conductance
+    let a = h_tr_em + h_tr_ms + h_tr_me;
+
+    // Calculate constant term (independent of Tm_new)
+    let b = h_tr_em * t_ext + h_tr_ms * t_surface + h_tr_me * t_int + phi_m;
 
     // Calculate denominator: (Cm/dt + 0.5 * a)
     let denom = cm / dt + 0.5 * a;
@@ -331,23 +567,23 @@ mod tests {
 
     #[test]
     fn test_select_integration_method_high_mass() {
-        // High thermal mass: use implicit method
+        // High thermal mass: use CrankNicolson (ISO 13790 compliant)
         assert_eq!(
             select_integration_method(1000.0),
-            ThermalIntegrationMethod::BackwardEuler
+            ThermalIntegrationMethod::CrankNicolson
         );
     }
 
     #[test]
     fn test_select_integration_method_threshold() {
-        // At threshold: use implicit for safety
+        // At threshold: explicit Euler for low mass, CrankNicolson for high mass (ISO 13790)
         assert_eq!(
             select_integration_method(500.0),
             ThermalIntegrationMethod::ExplicitEuler
         );
         assert_eq!(
             select_integration_method(501.0),
-            ThermalIntegrationMethod::BackwardEuler
+            ThermalIntegrationMethod::CrankNicolson
         );
     }
 

@@ -1,5 +1,20 @@
 # Fluxion: AI Copilot Instructions
 
+## MANDATORY: Session Initialization
+
+**Before starting any work, you MUST read `CODEBASE_MAP.md`** at the repository root. This establishes cross-language context (Rust/Python/Node.js FFI contracts), module boundaries, and data serialization formats.
+
+To read it:
+```
+Read CODEBASE_MAP.md
+```
+
+This is especially critical for:
+- Understanding FFI data formats (population vector semantics, return types)
+- Identifying correct module boundaries for changes
+- Knowing trait hierarchies for ML surrogate swap points
+- Understanding memory ownership rules across Python/Node.js/Rust
+
 ## Project Overview
 
 **Fluxion** is a Rust-based Building Energy Modeling (BEM) engine with a **Neuro-Symbolic hybrid architecture**. It combines physics-based thermal networks with AI surrogates for 100x speedups, designed to serve as a high-throughput oracle for quantum optimization and genetic algorithms.

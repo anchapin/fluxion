@@ -389,6 +389,9 @@ mod tests {
                     percent_error: 0.0,
                     status: ValidationStatus::Pass,
                     per_program: None,
+                    peak_date: None,
+                    peak_hour: None,
+                    peak_timestamp: None,
                 },
                 ValidationResult {
                     case_id: "900".to_string(),
@@ -399,6 +402,9 @@ mod tests {
                     percent_error: 0.0,
                     status: ValidationStatus::Pass,
                     per_program: None,
+                    peak_date: None,
+                    peak_hour: None,
+                    peak_timestamp: None,
                 },
             ],
             ..BenchmarkReport::default()

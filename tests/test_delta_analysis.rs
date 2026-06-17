@@ -6,7 +6,7 @@
 use fluxion::analysis::delta::{
     apply_patch, expand_variants, generate_sweep_combinations, set_nested, DeltaConfig, Variant,
 };
-use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+
 use std::collections::HashMap;
 
 /// Create a minimal valid CaseSpec for testing delta analysis

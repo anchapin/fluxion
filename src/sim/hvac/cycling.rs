@@ -144,7 +144,7 @@ mod tests {
 
         // Shutdown
         let (_mult, penalty) = tracker.calculate_cycling_loss(false, 0.0);
-        assert_eq!(tracker.was_on, false);
+        assert!(!tracker.was_on);
         assert_eq!(penalty, 0.0);
         assert_eq!(tracker.current_runtime_timesteps, 2); // Not incremented
 
@@ -243,6 +243,6 @@ mod tests {
         assert_eq!(tracker.startup_count, 0);
         assert_eq!(tracker.cumulative_runtime_hours, 0.0);
         assert_eq!(tracker.current_runtime_timesteps, 0);
-        assert_eq!(tracker.was_on, false);
+        assert!(!tracker.was_on);
     }
 }

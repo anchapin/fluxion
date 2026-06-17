@@ -140,7 +140,7 @@ impl QualityMetrics {
 
                 metrics.deviations.push(MetricDeviation {
                     case_id: result.case_id.clone(),
-                    metric: result.metric,
+                    metric: result.metric.clone(),
                     actual: result.fluxion_value,
                     reference: ref_mid,
                     error_pct,
@@ -366,7 +366,7 @@ impl Analyzer {
             // Show top 30 worst errors
             let ref_range = if let Some(data) = crate::validation::get_benchmark_data(&dev.case_id)
             {
-                if let Some((min, max)) = data.get_range(dev.metric) {
+                if let Some((min, max)) = data.get_range(dev.metric.clone()) {
                     format!("{:.2}-{:.2}", min, max)
                 } else {
                     "N/A".to_string()
@@ -376,7 +376,7 @@ impl Analyzer {
             };
 
             // Determine issue category (simple heuristic)
-            let issue = classify_deviation_issue(&dev.case_id, dev.metric);
+            let issue = classify_deviation_issue(&dev.case_id, dev.metric.clone());
 
             output.push_str(&format!(
                 "| {} | {} | {:.2} | {} | {:.1}% | {} |\n",
@@ -469,6 +469,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_basic() {
         let mut report = BenchmarkReport {
+            report_header: None,
             results: Vec::new(),
             benchmark_data: get_all_benchmark_data(),
             interpretations: HashMap::new(),
@@ -490,6 +491,9 @@ mod tests {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         });
 
         let metrics = QualityMetrics::from_benchmark_report(&report);
@@ -506,11 +510,11 @@ mod tests {
     #[test]
     fn test_quality_metrics_mae_calculation() {
         // Use ValidationResult::new() to compute status and percent_error automatically
+        // Two metrics for case 600: one fails (22.5 outside tolerance), one warns (13.5 inside range but >=10% error)
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![
-                // 50% error: fluxion=22.5, ref [10,20] -> mid=15 -> (22.5-15)/15 = 0.5 -> Fail (outside range)
                 ValidationResult::new("600", MetricType::AnnualHeating, 22.5, 10.0, 20.0),
-                // 10% error: fluxion=13.5, ref [10,20] -> mid=15 -> (13.5-15)/15 = -0.1 -> Warning (within range but >=10% error)
                 ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
             ],
             benchmark_data: HashMap::new(),
@@ -525,10 +529,10 @@ mod tests {
 
         let metrics = QualityMetrics::from_benchmark_report(&report);
 
-        // MAE should be (|50%| + |10%|) / 2 = 30%
-        // Note: The exact values depend on ref_min/ref_max. We used [10,20] giving midpoint 15.
-        // For 22.5: error = (22.5-15)/15 *100 = 50%
-        // For 13.5: error = (13.5-15)/15 *100 = -10%
+        // MAE = (|50%| + |10%|) / 2 = 30%
+        // ref [10,20] → midpoint=15
+        // 22.5: error = |22.5-15|/15 * 100 = 50% → outside tolerance [9.5,21] → Fail
+        // 13.5: error = |13.5-15|/15 * 100 = 10% → inside ref range but >=10% error → Warning
         assert!((metrics.mae - 30.0).abs() < 0.01);
         assert_eq!(metrics.max_deviation, 50.0);
         // Case 600 fails (one metric fails, one warns) => case fails overall
@@ -613,6 +617,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_empty_report() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![],
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),
@@ -636,6 +641,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_multiple_cases() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![
                 ValidationResult::new("600", MetricType::AnnualHeating, 6.5, 5.5, 7.5),
                 ValidationResult::new("610", MetricType::AnnualHeating, 7.0, 5.8, 7.8),
@@ -662,6 +668,7 @@ mod tests {
     #[test]
     fn test_quality_metrics_warning_status_propagation() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![
                 ValidationResult::new("600", MetricType::AnnualHeating, 6.5, 5.5, 7.5),
                 ValidationResult::new("600", MetricType::AnnualCooling, 13.5, 10.0, 20.0),
@@ -798,6 +805,7 @@ mod tests {
         let analyzer = Analyzer::new(config);
 
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![ValidationResult::new(
                 "600",
                 MetricType::AnnualHeating,
@@ -832,6 +840,7 @@ mod tests {
         let analyzer = Analyzer::new(config);
 
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![ValidationResult::new(
                 "600",
                 MetricType::AnnualHeating,
@@ -869,6 +878,7 @@ mod tests {
             interpretations: HashMap::new(),
             start_time: None,
             end_time: None,
+            report_header: None,
             statistical_metrics: None,
             statistical_p_values: None,
             statistical_corrected: None,
@@ -882,12 +892,13 @@ mod tests {
     #[test]
     fn test_quality_metrics_case_with_only_warning() {
         let report = BenchmarkReport {
+            report_header: None,
             results: vec![ValidationResult::new(
                 "600",
                 MetricType::AnnualHeating,
-                14.5,
-                10.0,
-                20.0,
+                6.5,
+                5.5,
+                7.5,
             )],
             benchmark_data: HashMap::new(),
             interpretations: HashMap::new(),

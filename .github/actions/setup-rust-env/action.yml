@@ -1,5 +1,8 @@
 name: Setup Rust Environment
-description: Install Rust toolchain with caching
+description: |
+  Install Rust toolchain with unified cargo caching and optional sccache.
+  Use `extra-apt-packages` to inject additional Linux apt packages into the
+  same install invocation as the base deps (avoids an extra apt-get update).
 
 inputs:
   components:
@@ -10,6 +13,18 @@ inputs:
     description: 'Rust toolchain version'
     required: false
     default: 'stable'
+  sccache:
+    description: |
+      Enable sccache compiler caching via GHA cache backend.
+      Sets RUSTC_WRAPPER=sccache and SCCACHE_GHA_ENABLED=true.
+      When true, the target/ directory is NOT cached separately
+      (sccache provides finer-grained content-addressed caching).
+    required: false
+    default: 'true'
+  extra-apt-packages:
+    description: 'Additional Linux apt packages to install alongside base deps'
+    required: false
+    default: ''
 
 runs:
   using: composite
@@ -19,30 +34,50 @@ runs:
       shell: bash
       run: |
         sudo apt-get update
-        sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+        # shellcheck disable=SC2086
+        sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig ${{ inputs.extra-apt-packages }}
       env:
         DEBIAN_FRONTEND: noninteractive
 
     - name: Install Rust (${{ inputs.toolchain }})
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.94.0
       with:
         toolchain: ${{ inputs.toolchain }}
         components: ${{ inputs.components }}
 
-    - name: Cache cargo registry
+    # sccache: content-addressed compiler cache backed by GHA cache API.
+    # Caches individual compilation units; no stale-cache issues on Cargo.lock changes.
+    - name: Set up sccache
+      if: inputs.sccache == 'true'
+      uses: mozilla-actions/sccache-action@v0.0.9
+
+    - name: Enable sccache as rustc wrapper
+      if: inputs.sccache == 'true'
+      shell: bash
+      run: |
+        echo "RUSTC_WRAPPER=sccache" >> "$GITHUB_ENV"
+        echo "SCCACHE_GHA_ENABLED=true" >> "$GITHUB_ENV"
+
+    # Cargo registry/git cache — covers downloaded crate source and metadata.
+    # target/ caching is intentionally omitted when sccache is enabled because
+    # sccache replaces it with finer-grained content-addressed caching.
+    - name: Cache cargo registry and git
       uses: actions/cache@v4
       with:
-        path: ~/.cargo/registry
-        key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+        path: |
+          ~/.cargo/registry/index
+          ~/.cargo/registry/cache
+          ~/.cargo/git/db
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-
 
-    - name: Cache cargo index
-      uses: actions/cache@v4
-      with:
-        path: ~/.cargo/git
-        key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
-
-    - name: Cache cargo build
+    # Fallback target/ cache for jobs that disable sccache
+    - name: Cache cargo build target
+      if: inputs.sccache == 'false'
       uses: actions/cache@v4
       with:
         path: target
-        key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+        key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-target-

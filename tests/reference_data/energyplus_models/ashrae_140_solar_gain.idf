@@ -1,0 +1,264 @@
+Version, 25.2;
+
+! ── Simulation Control ──────────────────────────────────────────────────
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+RunPeriod,
+  AnnualRun,  ! Name
+  1,   ! Start Month
+  1,   ! Start Day of Month
+  ,    ! Start Year
+  12,  ! End Month
+  31,  ! End Day of Month
+  ,    ! End Year
+  Tuesday,  ! Day of Week for Start Day
+  Yes,      ! Use Weather File Holidays and Special Days
+  Yes,      ! Use Weather File Daylight Saving Period
+  No,       ! Apply Weekend Holiday Rule
+  Yes,      ! Use Weather File Rain Indicators
+  Yes;      ! Use Weather File Snow Indicators
+
+Timestep, 1;
+
+! ── Building ───────────────────────────────────────────────────────────
+Building,
+  RefBox_SolarVent,  ! Name
+  0.0,               ! North Axis {deg}
+  City,              ! Terrain
+  0.04,              ! Loads Convergence Tolerance Value
+  0.4,               ! Temperature Convergence Tolerance Value {deltaC}
+  FullExterior,      ! Solar Distribution
+  25;                ! Maximum Number of Warmup Days
+
+! ── Zone ────────────────────────────────────────────────────────────────
+Zone,
+  ZONE1,   ! Name
+  0,       ! Direction of Relative North {deg}
+  0,       ! X Origin {m}
+  0,       ! Y Origin {m}
+  0,       ! Z Origin {m}
+  1,       ! Type
+  1,       ! Multiplier
+  ,        ! Ceiling Height {m}
+  129.6,   ! Volume {m3}
+  ,        ! Floor Area {m2}
+  ;        ! Zone Inside Convection Algorithm
+
+! ── Materials (lightweight — steel-stud wall with minimal thermal mass) ──
+Material,
+  EXT_GYP,          ! Name
+  MediumRough,      ! Roughness
+  0.016,            ! Thickness {m}
+  0.16,             ! Conductivity {W/m-K}
+  800,              ! Density {kg/m3}
+  1090;             ! Specific Heat {J/kg-K}
+
+Material,
+  EXT_INSULATION,   ! Name
+  MediumRough,      ! Roughness
+  0.050,            ! Thickness {m}
+  0.04,             ! Conductivity {W/m-K}
+  12,               ! Density {kg/m3}
+  840;              ! Specific Heat {J/kg-K}
+
+Material,
+  INT_GYP,          ! Name
+  MediumSmooth,     ! Roughness
+  0.013,            ! Thickness {m}
+  0.16,             ! Conductivity {W/m-K}
+  800,              ! Density {kg/m3}
+  1090;             ! Specific Heat {J/kg-K}
+
+Construction,
+  EXTWALL,          ! Name
+  EXT_GYP,          ! Outside Layer
+  EXT_INSULATION,   ! Layer 2
+  INT_GYP;          ! Layer 3
+
+Material,
+  ROOF_INSUL,       ! Name
+  MediumRough,      ! Roughness
+  0.080,            ! Thickness {m}
+  0.04,             ! Conductivity {W/m-K}
+  12,               ! Density {kg/m3}
+  840;              ! Specific Heat {J/kg-K}
+
+Construction,
+  ROOF,             ! Name
+  ROOF_INSUL;       ! Outside Layer
+
+Material,
+  FLOOR_INSUL,      ! Name
+  MediumRough,      ! Roughness
+  0.080,            ! Thickness {m}
+  0.04,             ! Conductivity {W/m-K}
+  12,               ! Density {kg/m3}
+  840;              ! Specific Heat {J/kg-K}
+
+Construction,
+  FLOOR,            ! Name
+  FLOOR_INSUL;      ! Outside Layer
+
+! ── Global Geometry Rules ───────────────────────────────────────────────
+GlobalGeometryRules,
+  UpperLeftCorner,   ! Starting Vertex Position
+  ClockWise,         ! Vertex Entry Direction
+  World;             ! Coordinate System
+
+! ── Surfaces ────────────────────────────────────────────────────────────
+! South wall (Y=0 plane)
+BuildingSurface:Detailed,
+  SouthWall,         ! Name
+  Wall,              ! Surface Type
+  EXTWALL,           ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Outdoors,          ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  SunExposed,        ! Sun Exposure
+  WindExposed,       ! Wind Exposure
+  0.5,               ! View Factor to Ground
+  4,                 ! Number of Vertices
+  0, 0, 2.7,         ! V1
+  6, 0, 2.7,         ! V2
+  6, 0, 0,           ! V3
+  0, 0, 0;           ! V4
+
+! North wall (Y=8)
+BuildingSurface:Detailed,
+  NorthWall,         ! Name
+  Wall,              ! Surface Type
+  EXTWALL,           ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Outdoors,          ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  SunExposed,        ! Sun Exposure
+  WindExposed,       ! Wind Exposure
+  0.5,               ! View Factor to Ground
+  4,                 ! Number of Vertices
+  6, 8, 2.7,
+  0, 8, 2.7,
+  0, 8, 0,
+  6, 8, 0;
+
+! East wall (X=6)
+BuildingSurface:Detailed,
+  EastWall,          ! Name
+  Wall,              ! Surface Type
+  EXTWALL,           ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Outdoors,          ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  SunExposed,        ! Sun Exposure
+  WindExposed,       ! Wind Exposure
+  0.5,               ! View Factor to Ground
+  4,                 ! Number of Vertices
+  6, 0, 2.7,
+  6, 8, 2.7,
+  6, 8, 0,
+  6, 0, 0;
+
+! West wall (X=0)
+BuildingSurface:Detailed,
+  WestWall,          ! Name
+  Wall,              ! Surface Type
+  EXTWALL,           ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Outdoors,          ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  SunExposed,        ! Sun Exposure
+  WindExposed,       ! Wind Exposure
+  0.5,               ! View Factor to Ground
+  4,                 ! Number of Vertices
+  0, 8, 2.7,
+  0, 0, 2.7,
+  0, 0, 0,
+  0, 8, 0;
+
+! Roof
+BuildingSurface:Detailed,
+  Roof,              ! Name
+  Roof,              ! Surface Type
+  ROOF,              ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Outdoors,          ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  SunExposed,        ! Sun Exposure
+  WindExposed,       ! Wind Exposure
+  ,                  ! View Factor to Ground
+  4,                 ! Number of Vertices
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  0, 8, 2.7;
+
+! Floor (ground contact)
+BuildingSurface:Detailed,
+  Floor,             ! Name
+  Floor,             ! Surface Type
+  FLOOR,             ! Construction Name
+  ZONE1,             ! Zone Name
+  ,                  ! Space Name
+  Ground,            ! Outside Boundary Condition
+  ,                  ! Outside Boundary Condition Object
+  NoSun,             ! Sun Exposure
+  NoWind,            ! Wind Exposure
+  ,                  ! View Factor to Ground
+  4,                 ! Number of Vertices
+  0, 0, 0,
+  6, 0, 0,
+  6, 8, 0,
+  0, 8, 0;
+
+! ── Ground temperature (18°C constant) ──────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+! ── Infiltration ────────────────────────────────────────────────────────
+ZoneInfiltration:DesignFlowRate,
+  Infil_Z1_ACH,          ! Name
+  ZONE1,                 ! Zone or Space Name
+  ,                      ! Schedule Name (always on = 1.0)
+  AirChanges/Hour,       ! Design Flow Rate Calculation Method
+  ,                      ! Design Flow Rate {m3/s}
+  ,                      ! Flow Rate per Floor Area {m3/s-m2}
+  ,                      ! Flow Rate per Exterior Surface Area {m3/s-m2}
+  0.5,                   ! Air Changes per Hour {1/h}
+  ;                      ! Constant Term Coefficient (default 1)
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+! Per-surface incident solar (W/m2) — beam + ground diffuse + sky diffuse
+! For each of the 5 sun-exposed surfaces
+Output:Variable, SouthWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, SouthWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, SouthWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, NorthWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, NorthWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, NorthWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, EastWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, EastWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, EastWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, WestWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, WestWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, WestWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, Roof, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, Roof, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, Roof, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+! Zone transmitted solar (what gets through windows — all windows are shaded in this box)
+Output:Variable, ZONE1, Zone Transmitted Solar Radiation Rate, Hourly;

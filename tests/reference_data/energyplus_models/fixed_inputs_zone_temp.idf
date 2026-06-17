@@ -1,0 +1,303 @@
+Version, 25.2;
+
+! ── Simulation Control ──────────────────────────────────────────────────
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+! Annual run for 8760 hours
+RunPeriod,
+  AnnualRun,
+  1,    ! Start Month
+  1,    ! Start Day of Month
+  ,
+  12,   ! End Month
+  31,   ! End Day of Month
+  ,
+  Tuesday,
+  No,   ! Use Weather File Holidays
+  No,   ! Use Weather File Daylight Saving
+  No,   ! Apply Weekend Holiday Rule
+  No,   ! Use Weather File Rain
+  No;   ! Use Weather File Snow
+
+Timestep, 1;  ! Hourly timesteps
+
+! ── Building ────────────────────────────────────────────────────────────
+Building,
+  RefBox_ZoneBalance,
+  0.0,
+  City,
+  0.04,
+  0.4,
+  FullExterior,
+  25;
+
+! ── Zone ────────────────────────────────────────────────────────────────
+Zone,
+  ZONE1,
+  0, 0, 0, 0, 1, 1, , , , ;
+
+! ── Zone Equipment Connections ───────────────────────────────────────────
+ZoneHVAC:EquipmentConnections,
+  ZONE1,  ! Zone Name
+  ZONE1_Equip,  ! Zone Equipment List Name
+  ZONE1_Inlet Node,  ! Zone Supply Air Node Name
+  ZONE1_Exhaust Node,  ! Zone Exhaust Air Node Name
+  ZONE1_Zone Air Node,  ! Zone Air Node Name
+  ZONE1_Return Air Node;  ! Zone Return Air Node Name
+
+! ── Materials ────────────────────────────────────────────────────────────
+! Lightweight insulation (R-20 approximation, 0.4 m thick)
+Material,
+  INSUL_R20,
+  MediumRough,
+  0.400,       ! Thickness {m}
+  0.020,       ! Conductivity {W/m-K}  → R = 0.4/0.02 = 20 m²K/W
+  50,          ! Density {kg/m3}
+  1200;        ! Specific Heat {J/kg-K}
+
+! Floor slab
+Material,
+  SLAB_100,
+  MediumRough,
+  0.100,
+  1.730,
+  2300,
+  840;
+
+! ── Constructions ───────────────────────────────────────────────────────
+Construction,
+  INSULATED_WALL,
+  INSUL_R20;
+
+Construction,
+  FLOOR_SLAB,
+  SLAB_100;
+
+! ── Ground temperature ──────────────────────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+! ── Global Geometry Rules ───────────────────────────────────────────────
+GlobalGeometryRules,
+  UpperLeftCorner,
+  ClockWise,
+  World;
+
+! ── Surfaces ────────────────────────────────────────────────────────────
+! South wall — NoSun, NoWind to decouple from solar and wind
+BuildingSurface:Detailed,
+  SouthWall,
+  Wall,
+  INSULATED_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 0, 0,
+  0, 0, 0;
+
+! North wall
+BuildingSurface:Detailed,
+  NorthWall,
+  Wall,
+  INSULATED_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  6, 8, 2.7,
+  0, 8, 2.7,
+  0, 8, 0,
+  6, 8, 0;
+
+! East wall
+BuildingSurface:Detailed,
+  EastWall,
+  Wall,
+  INSULATED_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  6, 8, 0,
+  6, 0, 0;
+
+! West wall
+BuildingSurface:Detailed,
+  WestWall,
+  Wall,
+  INSULATED_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  0, 8, 2.7,
+  0, 0, 2.7,
+  0, 0, 0,
+  0, 8, 0;
+
+! Roof
+BuildingSurface:Detailed,
+  Roof,
+  Roof,
+  INSULATED_WALL,
+  ZONE1,
+  ,
+  Outdoors,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  0, 8, 2.7;
+
+! Floor — ground contact
+BuildingSurface:Detailed,
+  Floor,
+  Floor,
+  FLOOR_SLAB,
+  ZONE1,
+  ,
+  Ground,
+  ,
+  NoSun,
+  NoWind,
+  ,
+  4,
+  0, 0, 0,
+  6, 0, 0,
+  6, 8, 0,
+  0, 8, 0;
+
+! ── Thermostat ──────────────────────────────────────────────────────────
+! Schedule for heating setpoint (20°C constant)
+ScheduleTypeLimits,
+  Temperature,
+  -100,   ! Lower Limit
+  200,    ! Upper Limit
+  Continuous;
+
+Schedule:Compact,
+  HeatingSetpointSchedule,
+  Temperature,
+  Through: 12/31,
+  For: AllDays,
+  Until: 24:00,
+  20.0;
+
+! Schedule for cooling setpoint (20°C constant)
+Schedule:Compact,
+  CoolingSetpointSchedule,
+  Temperature,
+  Through: 12/31,
+  For: AllDays,
+  Until: 24:00,
+  20.0;
+
+! Control type schedule: value 4 = ThermostatSetpoint:DualSetpoint
+ScheduleTypeLimits,
+  Control Type,
+  0.0,
+  4.0,
+  Discrete;
+
+Schedule:Compact,
+  DualSetpointSchedule,
+  Control Type,
+  Through: 12/31,
+  For: AllDays,
+  Until: 24:00,
+  4;
+
+ZoneControl:Thermostat,
+  ZONE1_Thermostat,
+  ZONE1,
+  DualSetpointSchedule,
+  ThermostatSetpoint:DualSetpoint,
+  DualSetpointSchedule;
+
+ThermostatSetpoint:DualSetpoint,
+  DualSetpointSchedule,
+  HeatingSetpointSchedule,  ! Heating Setpoint Schedule Name
+  CoolingSetpointSchedule;   ! Cooling Setpoint Schedule Name
+
+! ── Ideal Loads Air System ───────────────────────────────────────────────
+ZoneHVAC:EquipmentList,
+  ZONE1_Equip,
+  SequentialLoad,
+  ZoneHVAC:IdealLoadsAirSystem,
+  ZONE1_IdealLoads,
+  1,  ! Zone Equipment 1 Cooling Sequence
+  1;  ! Zone Equipment 1 Heating or No-Load Sequence
+
+ZoneHVAC:IdealLoadsAirSystem,
+  ZONE1_IdealLoads,
+  ,  ! Availability Schedule Name (default: always on)
+  ZONE1_Inlet Node,  ! Zone Supply Air Node Name
+  ZONE1_Exhaust Node,  ! Zone Exhaust Air Node Name
+  ,  ! System Inlet Air Node Name
+  50,   ! Maximum Heating Supply Air Temperature {°C}
+  13,   ! Minimum Cooling Supply Air Temperature {°C}
+  0.0156,  ! Maximum Heating Supply Air Humidity Ratio
+  0.0077,  ! Minimum Cooling Supply Air Humidity Ratio
+  NoLimit,  ! Heating Limit
+  ,  ! Maximum Heating Air Flow Rate {m³/s}
+  ,  ! Maximum Sensible Heating Capacity {W}
+  NoLimit,  ! Cooling Limit
+  ,  ! Maximum Cooling Air Flow Rate {m³/s}
+  ,  ! Maximum Total Cooling Capacity {W}
+  ,  ! Heating Availability Schedule Name
+  ,  ! Cooling Availability Schedule Name
+  ConstantSensibleHeatRatio,  ! Dehumidification Control Type
+  0.7,   ! Cooling Sensible Heat Ratio (N9)
+  None,  ! Humidification Control Type
+  ,  ! Demand Controlled Ventilation
+  ,  ! Outdoor Air Economizer Type
+  ,  ! Heat Recovery Cooling Effectiveness
+  ,  ! Heat Recovery Heating Effectiveness
+  ;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+! Timestep output variables
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Conduction Heat Transfer Rate, Timestep;
+Output:Variable, NorthWall, Surface Inside Face Conduction Heat Transfer Rate, Timestep;
+Output:Variable, EastWall, Surface Inside Face Conduction Heat Transfer Rate, Timestep;
+Output:Variable, WestWall, Surface Inside Face Conduction Heat Transfer Rate, Timestep;
+Output:Variable, Roof, Surface Inside Face Conduction Heat Transfer Rate, Timestep;
+Output:Variable, Floor, Surface Inside Face Conduction Heat Transfer Rate, Timestep;
+
+! Hourly meter output for heating/cooling energy
+Output:Variable, ZONE1, Zone Air System Sensible Heating Energy, Hourly;
+Output:Variable, ZONE1, Zone Air System Sensible Cooling Energy, Hourly;

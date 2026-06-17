@@ -29,6 +29,7 @@ const REFERENCE_TOTAL_MIN: f64 = 3.30; // MWh (sum of heating + cooling ranges)
 const REFERENCE_TOTAL_MAX: f64 = 5.71; // MWh
 
 /// Tolerance for annual energy validation (±15% as per ASHRAE 140)
+#[allow(dead_code)]
 const ANNUAL_ENERGY_TOLERANCE: f64 = 0.15;
 
 #[test]
@@ -198,8 +199,8 @@ fn test_case_900_separate_heating_cooling_energy() {
     println!();
 
     // Verify peak loads are correct
-    let peak_heating_ok = peak_heating_kw >= 1.10 && peak_heating_kw <= 2.10;
-    let peak_cooling_ok = peak_cooling_kw >= 2.10 && peak_cooling_kw <= 3.70;
+    let peak_heating_ok = (1.10..=2.10).contains(&peak_heating_kw);
+    let peak_cooling_ok = (2.10..=3.70).contains(&peak_cooling_kw);
 
     println!("=== Peak Load Verification ===");
     println!(

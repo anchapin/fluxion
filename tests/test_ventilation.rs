@@ -6,6 +6,8 @@
 //! - ACH to conductance conversion
 //! - Edge cases and boundary conditions
 
+use uom::si::thermal_conductance::watt_per_kelvin;
+
 use fluxion::sim::ventilation::{
     ach_to_conductance, ConstantVentilation, ScheduledVentilation, VentilationSchedule,
 };
@@ -172,20 +174,20 @@ fn test_ach_to_conductance_basic() {
 
     // Q = (1 * 100 * 1.2 * 1005) / 3600 = 33.5 W/K
     let expected = (1.0 * 100.0 * 1.2 * 1005.0) / 3600.0;
-    assert!((conductance - expected).abs() < 1e-10);
-    assert!((conductance - 33.5).abs() < 0.1);
+    assert!((conductance.get::<watt_per_kelvin>() - expected).abs() < 1e-10);
+    assert!((conductance.get::<watt_per_kelvin>() - 33.5).abs() < 0.1);
 }
 
 #[test]
 fn test_ach_to_conductance_zero_ach() {
     let conductance = ach_to_conductance(0.0, 100.0, 1.2, 1005.0);
-    assert!(conductance.abs() < 1e-10);
+    assert!(conductance.get::<watt_per_kelvin>().abs() < 1e-10);
 }
 
 #[test]
 fn test_ach_to_conductance_zero_volume() {
     let conductance = ach_to_conductance(1.0, 0.0, 1.2, 1005.0);
-    assert!(conductance.abs() < 1e-10);
+    assert!(conductance.get::<watt_per_kelvin>().abs() < 1e-10);
 }
 
 #[test]
@@ -199,8 +201,8 @@ fn test_ach_to_conductance_proportional_to_ach() {
     let c3 = ach_to_conductance(2.0, volume, rho, cp);
 
     // Should be linear with ACH
-    assert!((c2 - 2.0 * c1).abs() < 1e-10);
-    assert!((c3 - 2.0 * c2).abs() < 1e-10);
+    assert!((c2.get::<watt_per_kelvin>() - 2.0 * c1.get::<watt_per_kelvin>()).abs() < 1e-10);
+    assert!((c3.get::<watt_per_kelvin>() - 2.0 * c2.get::<watt_per_kelvin>()).abs() < 1e-10);
 }
 
 #[test]
@@ -214,8 +216,8 @@ fn test_ach_to_conductance_proportional_to_volume() {
     let c3 = ach_to_conductance(ach, 200.0, rho, cp);
 
     // Should be linear with volume
-    assert!((c2 - 2.0 * c1).abs() < 1e-10);
-    assert!((c3 - 2.0 * c2).abs() < 1e-10);
+    assert!((c2.get::<watt_per_kelvin>() - 2.0 * c1.get::<watt_per_kelvin>()).abs() < 1e-10);
+    assert!((c3.get::<watt_per_kelvin>() - 2.0 * c2.get::<watt_per_kelvin>()).abs() < 1e-10);
 }
 
 #[test]
@@ -229,7 +231,7 @@ fn test_ach_to_conductance_typical_values() {
     let conductance = ach_to_conductance(ach, volume, rho, cp);
 
     // Expected: (0.5 * 250 * 1.2 * 1005) / 3600 ≈ 41.9 W/K
-    assert!((conductance - 41.9).abs() < 0.5);
+    assert!((conductance.get::<watt_per_kelvin>() - 41.9).abs() < 0.5);
 }
 
 #[test]
@@ -243,7 +245,7 @@ fn test_ach_to_conductance_large_building() {
     let conductance = ach_to_conductance(ach, volume, rho, cp);
 
     // Expected: (1.0 * 10000 * 1.2 * 1005) / 3600 ≈ 3350 W/K
-    assert!((conductance - 3350.0).abs() < 10.0);
+    assert!((conductance.get::<watt_per_kelvin>() - 3350.0).abs() < 10.0);
 }
 
 #[test]
@@ -260,7 +262,7 @@ fn test_ach_to_conductance_different_air_properties() {
     assert!(c_altitude < c_sea_level);
 
     // Ratio should match density ratio
-    let ratio = c_sea_level / c_altitude;
+    let ratio = c_sea_level.get::<watt_per_kelvin>() / c_altitude.get::<watt_per_kelvin>();
     assert!((ratio - 1.2).abs() < 0.01);
 }
 
@@ -285,8 +287,8 @@ fn test_ventilation_very_high_ach() {
     assert_eq!(vent.get_ach(0), 50.0);
 
     let conductance = ach_to_conductance(50.0, 100.0, 1.2, 1005.0);
-    assert!(conductance > 0.0);
-    assert!(conductance < 10000.0); // Should be reasonable
+    assert!(conductance.get::<watt_per_kelvin>() > 0.0);
+    assert!(conductance.get::<watt_per_kelvin>() < 10000.0); // Should be reasonable
 }
 
 #[test]
@@ -339,7 +341,7 @@ fn test_ach_to_conductance_unit_consistency() {
     let conductance = ach_to_conductance(ach, volume, rho, cp);
 
     // Expected: (1 * 1 * 1 * 3600) / 3600 = 1.0 W/K
-    assert!((conductance - 1.0).abs() < 1e-10);
+    assert!((conductance.get::<watt_per_kelvin>() - 1.0).abs() < 1e-10);
 }
 
 #[test]

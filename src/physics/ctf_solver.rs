@@ -68,8 +68,8 @@ impl CTFSolverConfig {
             timestep,
             history_size,
             surface_area: 1.0,
-            h_interior: 8.0,
-            h_exterior: 25.0,
+            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
             alpha_solar: 0.7,
         }
     }
@@ -79,9 +79,9 @@ impl CTFSolverConfig {
         Self {
             timestep,
             history_size: 50,
-            surface_area: 97.2, // 4 walls × 8m × 2.7m - windows
-            h_interior: 8.0,
-            h_exterior: 25.0,
+            surface_area: 63.6, // m² (corrected: 2(8+6)×2.7 - 12m² window = 63.6, was 97.2)
+            h_interior: 8.29,   // ASHRAE 140 Section 5.2
+            h_exterior: 29.3,   // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
             alpha_solar: 0.7,
         }
     }
@@ -392,9 +392,16 @@ mod tests {
         let config = CTFSolverConfig::new(3600.0, 50);
         let solver = CTFSolver::new(coeffs, config);
 
-        assert_eq!(solver.t_interior_history.len(), 50);
-        assert_eq!(solver.t_exterior_history.len(), 50);
-        assert_eq!(solver.q_interior_history.len(), 50);
+        // Phase D update: the solver history length is
+        //   max(config.history_size, coefficients.num_coeffs)
+        // (the larger of the two — we need at least num_coeffs entries
+        // for the CTF evaluation, and at least config.history_size for
+        // user expectations). The second argument to CTFSolverConfig::new
+        // is a LOWER BOUND on history size.
+        let expected_len = 50_usize.max(solver.coefficients.num_coeffs);
+        assert_eq!(solver.t_interior_history.len(), expected_len);
+        assert_eq!(solver.t_exterior_history.len(), expected_len);
+        assert_eq!(solver.q_interior_history.len(), expected_len);
     }
 
     #[test]
@@ -501,9 +508,9 @@ mod tests {
 
         assert_eq!(config.timestep, 3600.0);
         assert_eq!(config.history_size, 50);
-        assert!((config.surface_area - 97.2).abs() < 0.1);
-        assert_eq!(config.h_interior, 8.0);
-        assert_eq!(config.h_exterior, 25.0);
+        assert!((config.surface_area - 63.6).abs() < 0.1);
+        assert_eq!(config.h_interior, 8.29);
+        assert_eq!(config.h_exterior, 29.3);
     }
 
     #[test]
@@ -673,8 +680,8 @@ mod tests {
         assert_eq!(cloned.timestep, 3600.0);
         assert_eq!(cloned.history_size, 50);
         assert_eq!(cloned.surface_area, 1.0);
-        assert_eq!(cloned.h_interior, 8.0);
-        assert_eq!(cloned.h_exterior, 25.0);
+        assert_eq!(cloned.h_interior, 8.29);
+        assert_eq!(cloned.h_exterior, 29.3);
     }
 
     #[test]
@@ -700,7 +707,7 @@ mod tests {
 
         assert_eq!(solver.config.timestep, 3600.0);
         assert_eq!(solver.config.history_size, 50);
-        assert!((solver.config.surface_area - 97.2).abs() < 0.1);
+        assert!((solver.config.surface_area - 63.6).abs() < 0.1);
     }
 
     #[test]

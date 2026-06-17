@@ -439,7 +439,7 @@ mod tests {
         };
 
         let cloned = result.clone();
-        assert_eq!(cloned.passed, true);
+        assert!(cloned.passed);
         assert_eq!(cloned.energy_balance_error, 5.0);
         assert_eq!(cloned.temperature_violations.len(), 1);
         assert_eq!(cloned.messages.len(), 1);

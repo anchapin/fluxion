@@ -196,7 +196,7 @@ pub fn calculate_peak_attribution_for_case(case_spec: &ASHRAE140Case) -> PeakLoa
     let diag = model
         .get_diagnostics()
         .expect("Diagnostics should be attached");
-    calculate_peak_attribution(&diag)
+    calculate_peak_attribution(diag)
 }
 
 #[test]

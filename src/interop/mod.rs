@@ -38,5 +38,9 @@
 //! ```
 
 pub mod fmi;
+pub mod gbxml;
+pub mod osm;
 
 pub use fmi::{FmiConfig, FmiExporter, FmiMode};
+pub use gbxml::{export_gbxml, import_gbxml, GbXmlError, GbXmlReader, GbXmlWriter};
+pub use osm::{export_osm, import_osm, OsmError, OsmReader, OsmWriter};

@@ -194,8 +194,7 @@ mod tests {
             let handle = thread::spawn(move || {
                 let input = vec![20.0 + i as f64, 21.0 + i as f64];
                 let rx = service.submit(input.clone());
-                let output = rx.recv().expect("Failed to receive output");
-                output
+                rx.recv().expect("Failed to receive output")
             });
             handles.push(handle);
         }

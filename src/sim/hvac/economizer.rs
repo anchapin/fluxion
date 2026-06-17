@@ -168,7 +168,7 @@ mod tests {
             None,
             24.0, // Cooling setpoint
         );
-        assert_eq!(active, false);
+        assert!(!active);
     }
 
     #[test]
@@ -182,7 +182,7 @@ mod tests {
             None,
             24.0, // Cooling setpoint
         );
-        assert_eq!(active, true);
+        assert!(active);
     }
 
     #[test]
@@ -196,7 +196,7 @@ mod tests {
             None,
             24.0, // Cooling setpoint
         );
-        assert_eq!(active, false);
+        assert!(!active);
     }
 
     #[test]
@@ -283,8 +283,8 @@ mod tests {
             Some(70.0),
             24.0,
         );
-        assert_eq!(
-            active_no_outdoor, false,
+        assert!(
+            !active_no_outdoor,
             "Enthalpy mode should be inactive without outdoor enthalpy"
         );
 
@@ -296,8 +296,8 @@ mod tests {
             None, // Missing zone enthalpy
             24.0,
         );
-        assert_eq!(
-            active_no_zone, false,
+        assert!(
+            !active_no_zone,
             "Enthalpy mode should be inactive without zone enthalpy"
         );
 
@@ -309,8 +309,8 @@ mod tests {
             None, // Missing zone enthalpy
             24.0,
         );
-        assert_eq!(
-            active_none, false,
+        assert!(
+            !active_none,
             "Enthalpy mode should be inactive without enthalpy data"
         );
     }

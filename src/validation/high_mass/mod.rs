@@ -35,6 +35,9 @@ pub fn run_all_high_mass_cases() -> Vec<crate::validation::report::ValidationRes
                     percent_error: 0.0,
                     status: crate::validation::report::ValidationStatus::Fail,
                     per_program: None,
+                    peak_date: None,
+                    peak_hour: None,
+                    peak_timestamp: None,
                 });
             }
         }

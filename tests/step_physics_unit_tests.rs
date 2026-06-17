@@ -8,10 +8,16 @@
 //! 2. Single timestep behavior
 //! 3. Multi-timestep stability
 //! 4. Temperature bounds verification
+//!
+//! # NaN Checking
+//!
+//! Uses `noisy_float::N64` to catch silent NaN propagation.
+//! N64 wraps f64 and panics if NaN is passed to `new()`.
 
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+use noisy_float::prelude::*;
 
 // ============================================================================
 // Basic Sanity Checks
@@ -25,6 +31,9 @@ fn test_step_physics_finite_case_600() {
 
     // Run a single timestep
     let hvac_kwh = model.step_physics(0, 10.0, 3600.0);
+
+    // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+    let _hvac_kwh_checked = n64(hvac_kwh);
 
     assert!(
         hvac_kwh.is_finite(),
@@ -41,6 +50,9 @@ fn test_step_physics_finite_case_900() {
 
     // Run a single timestep
     let hvac_kwh = model.step_physics(0, 10.0, 3600.0);
+
+    // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+    let _hvac_kwh_checked = n64(hvac_kwh);
 
     assert!(
         hvac_kwh.is_finite(),
@@ -59,10 +71,14 @@ fn test_step_physics_reasonable_range_case_600() {
     for outdoor_temp in [-10.0, 0.0, 10.0, 20.0, 30.0, 40.0] {
         let hvac_kwh = model.step_physics(0, outdoor_temp, 3600.0);
 
+        // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+        let hvac_kwh_checked = n64(hvac_kwh);
+
         // HVAC demand should be within ±100 kWh per hour for a small building
         // (equivalent to ±100 kW, which is very generous for a 20m² zone)
+        // Using arithmetic on N64 to ensure NaN would propagate
         assert!(
-            hvac_kwh >= -100.0 && hvac_kwh <= 100.0,
+            (hvac_kwh_checked - 0.0).abs() <= 100.0,
             "Case 600 step_physics returned extreme value {:.2} kWh at outdoor_temp {:.1}°C",
             hvac_kwh,
             outdoor_temp
@@ -80,9 +96,13 @@ fn test_step_physics_reasonable_range_case_900() {
     for outdoor_temp in [-10.0, 0.0, 10.0, 20.0, 30.0, 40.0] {
         let hvac_kwh = model.step_physics(0, outdoor_temp, 3600.0);
 
+        // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+        let hvac_kwh_checked = n64(hvac_kwh);
+
         // HVAC demand should be within ±100 kWh per hour
+        // Using arithmetic on N64 to ensure NaN would propagate
         assert!(
-            hvac_kwh >= -100.0 && hvac_kwh <= 100.0,
+            (hvac_kwh_checked - 0.0).abs() <= 100.0,
             "Case 900 step_physics returned extreme value {:.2} kWh at outdoor_temp {:.1}°C",
             hvac_kwh,
             outdoor_temp
@@ -109,8 +129,13 @@ fn test_temperature_stability_case_600() {
 
         // Check zone temperature is within reasonable bounds
         let zone_temp = model.temperatures.as_ref()[0];
+
+        // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
+        let zone_temp_checked = n64(zone_temp);
+
+        // Using arithmetic to ensure NaN would propagate
         assert!(
-            zone_temp > -40.0 && zone_temp < 60.0,
+            zone_temp_checked > -40.0 && zone_temp_checked < 60.0,
             "Case 600 zone temperature out of range at step {}: {:.2}°C",
             step,
             zone_temp
@@ -133,8 +158,12 @@ fn test_temperature_stability_case_900() {
 
         // Check zone temperature is within reasonable bounds
         let zone_temp = model.temperatures.as_ref()[0];
+
+        // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
+        let zone_temp_checked = n64(zone_temp);
+
         assert!(
-            zone_temp > -40.0 && zone_temp < 60.0,
+            zone_temp_checked > -40.0 && zone_temp_checked < 60.0,
             "Case 900 zone temperature out of range at step {}: {:.2}°C",
             step,
             zone_temp
@@ -174,12 +203,16 @@ fn test_free_floating_stability_case_600ff() {
         model.step_physics(step, outdoor_temp, 3600.0);
 
         let zone_temp = model.temperatures.as_ref()[0];
+
+        // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
+        let zone_temp_checked = n64(zone_temp);
+
         min_temp = min_temp.min(zone_temp);
         max_temp = max_temp.max(zone_temp);
 
         // Check zone temperature is within reasonable bounds
         assert!(
-            zone_temp > -40.0 && zone_temp < 80.0,
+            zone_temp_checked > -40.0 && zone_temp_checked < 80.0,
             "Case 600FF zone temperature out of range at step {}: {:.2}°C",
             step,
             zone_temp
@@ -206,12 +239,16 @@ fn test_free_floating_stability_case_900ff() {
         model.step_physics(step, outdoor_temp, 3600.0);
 
         let zone_temp = model.temperatures.as_ref()[0];
+
+        // Wrap in N64 to catch NaN - will panic if zone_temp is NaN
+        let zone_temp_checked = n64(zone_temp);
+
         min_temp = min_temp.min(zone_temp);
         max_temp = max_temp.max(zone_temp);
 
         // Check zone temperature is within reasonable bounds
         assert!(
-            zone_temp > -40.0 && zone_temp < 80.0,
+            zone_temp_checked > -40.0 && zone_temp_checked < 80.0,
             "Case 900FF zone temperature out of range at step {}: {:.2}°C",
             step,
             zone_temp
@@ -273,8 +310,11 @@ fn test_hvac_heating_mode_detection() {
     // Cold outdoor temperature should trigger heating
     let hvac_kwh = model.step_physics(0, -10.0, 3600.0);
 
+    // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+    let hvac_kwh_checked = n64(hvac_kwh);
+
     assert!(
-        hvac_kwh > 0.0,
+        hvac_kwh_checked > 0.0,
         "Expected heating (positive hvac_kwh) at -10°C, got {:.4} kWh",
         hvac_kwh
     );
@@ -286,12 +326,23 @@ fn test_hvac_cooling_mode_detection() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
 
-    // Hot outdoor temperature should trigger cooling
-    let hvac_kwh = model.step_physics(0, 35.0, 3600.0);
+    // Warm up the zone for several hours before checking cooling activation.
+    // With corrected h_ext=29.3 W/m²K (ASHRAE 140 Sec. 5.2), the model
+    // initialises at a lower equilibrium temperature than with the old h=25.0,
+    // so a single step at 35°C is insufficient to push the zone above the
+    // cooling setpoint.  Running 6 hours of warm-up ensures steady-state
+    // hot-weather operation before the assertion.
+    for ts in 0..6 {
+        model.step_physics(ts, 35.0, 3600.0);
+    }
+    let hvac_kwh = model.step_physics(6, 35.0, 3600.0);
+
+    // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+    let hvac_kwh_checked = n64(hvac_kwh);
 
     assert!(
-        hvac_kwh < 0.0,
-        "Expected cooling (negative hvac_kwh) at 35°C, got {:.4} kWh",
+        hvac_kwh_checked < 0.0,
+        "Expected cooling (negative hvac_kwh) at 35°C after warm-up, got {:.4} kWh",
         hvac_kwh
     );
 }
@@ -306,9 +357,12 @@ fn test_hvac_deadband() {
     // Then test at moderate outdoor temperature
     let hvac_kwh = model.step_physics(0, 20.0, 3600.0);
 
+    // Wrap in N64 to catch NaN - will panic if hvac_kwh is NaN
+    let hvac_kwh_checked = n64(hvac_kwh);
+
     // At 20°C outdoor with 20°C heating setpoint, expect minimal HVAC
     assert!(
-        hvac_kwh.abs() < 1.0,
+        hvac_kwh_checked.abs() < 1.0,
         "Expected minimal HVAC at 20°C outdoor, got {:.4} kWh",
         hvac_kwh
     );

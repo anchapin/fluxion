@@ -34,7 +34,12 @@ Prerequisites:
 
 | File | Description | Rows | Columns |
 |------|-------------|------|---------|
-| `infiltration_denver.csv` | Hourly outdoor temp, wind, infiltration ACH, vent conductance | 8760 | hour, T_out, wind_speed, ACH, C_vent |
+| `infiltration_denver.csv` | Denver, 0.5 ACH — original single scenario | 8760 | hour, T_out, wind_speed, ACH, C_vent |
+| `infiltration_denver_05ach.csv` | Denver, 0.5 ACH — expanded (verify) | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
+| `infiltration_denver_10ach.csv` | Denver, 1.0 ACH | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
+| `infiltration_denver_01ach.csv` | Denver, 0.1 ACH (tight envelope) | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
+| `infiltration_tampa_05ach.csv` | Tampa FL (hot-humid), 0.5 ACH | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
+| `infiltration_dulles_05ach.csv` | Dulles VA (cold), 0.5 ACH | 8760 | hour, T_out, wind_speed, ACH, C_vent, Q_vent |
 
 ### Weather (`weather/`)
 

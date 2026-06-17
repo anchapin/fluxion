@@ -34,7 +34,8 @@ use std::f64::consts::PI;
 pub const STEFAN_BOLTZMANN: f64 = 5.67e-8;
 
 /// Solar constant (W/m²)
-pub const SOLAR_CONSTANT: f64 = 1366.1;
+/// ASHRAE 140-2022 Appendix C specifies 1361.0 W/m²
+pub const SOLAR_CONSTANT: f64 = 1361.0;
 
 /// Default surface emissivity for building materials
 /// Most building materials have emissivity 0.85-0.95
@@ -1348,19 +1349,19 @@ mod tests {
 
     #[test]
     fn test_calculate_clearness_index_zero_ghi() {
-        let kt = calculate_clearness_index(0.0, 0.5, 1366.1);
+        let kt = calculate_clearness_index(0.0, 0.5, SOLAR_CONSTANT);
         assert!((kt - 0.0).abs() < 0.01);
     }
 
     #[test]
     fn test_calculate_clearness_index_zenith_90() {
-        let kt = calculate_clearness_index(500.0, std::f64::consts::PI / 2.0, 1366.1);
+        let kt = calculate_clearness_index(500.0, std::f64::consts::PI / 2.0, SOLAR_CONSTANT);
         assert!(kt >= 0.0 && kt <= 1.0);
     }
 
     #[test]
     fn test_calculate_clear_sky_ghi_zenith_90() {
-        let ghi = calculate_clear_sky_ghi(std::f64::consts::PI / 2.0, 1366.1);
+        let ghi = calculate_clear_sky_ghi(std::f64::consts::PI / 2.0, SOLAR_CONSTANT);
         assert!(ghi > 0.0);
     }
 

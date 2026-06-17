@@ -1,7 +1,6 @@
 pub mod adaptive_timestep;
 pub mod assembly;
 pub mod boundary;
-pub mod components;
 pub mod construction;
 pub mod demand_response;
 pub mod diagnostics;
@@ -10,17 +9,37 @@ pub mod engine;
 pub mod equipment;
 pub mod holiday;
 pub mod hvac;
+pub mod hvac_controller;
 pub mod interzone;
 pub mod interzone_radiation;
+pub mod invariant_checker;
 pub mod lighting;
+pub mod multi_node_hvac_runner;
+pub mod multi_node_thermal;
 pub mod occupancy;
+pub mod per_surface_conduction;
 pub mod profiles;
 pub mod schedule;
 pub mod shading;
 pub mod sky_radiation;
 pub mod solar;
+pub mod surface_flux_provider;
+pub mod thermal_model;
+pub mod thermal_model_5r1c;
+pub mod thermal_model_core;
+pub mod thermal_model_data;
+pub mod thermal_model_hvac;
+pub mod thermal_model_iterative;
+pub mod thermal_model_mock;
+pub mod thermal_model_network;
+pub mod thermal_model_physics;
+pub mod thermal_model_solvers;
+pub mod timestep_solver;
+pub mod warmup;
 
 pub mod thermal_integration;
-pub mod thermal_model;
 pub mod ventilation;
 pub mod view_factors;
+
+#[cfg(feature = "pr821-diag")]
+pub mod pr821_diag;

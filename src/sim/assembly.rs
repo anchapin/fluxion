@@ -189,6 +189,33 @@ impl ConcreteMaterial {
             emissivity: 0.9,
         }
     }
+
+    /// Create ASHRAE 140 heavyweight (medium-density) concrete per Table B1-3.
+    ///
+    /// **Properties per ASHRAE 140 Table B1-3:**
+    /// - k = 0.51 W/mK (NOT 1.4 — medium-density block, not normal-weight concrete)
+    /// - ρ = 1400 kg/m³ (NOT 2300 — medium-density)
+    /// - Cp = 840 J/kgK
+    /// - κ = ρ·Cp·d = 1400 × 840 × thickness [J/m²K]
+    ///
+    /// Use this constructor for all 900-series ASHRAE 140 wall construction.
+    /// Use  only for generic normal-weight concrete.
+    ///
+    /// # Arguments
+    /// *  - Layer thickness in meters
+    pub fn ashrae_140_heavyweight(thickness: f64) -> Self {
+        use crate::physics::constants::thermal::ashrae_140::materials::{
+            EXTERIOR_SURFACE_ABSORPTANCE, HW_CONCRETE_CP, HW_CONCRETE_K, HW_CONCRETE_RHO,
+        };
+        Self {
+            thickness,
+            conductivity: HW_CONCRETE_K,
+            density: HW_CONCRETE_RHO,
+            specific_heat: HW_CONCRETE_CP,
+            absorptance: EXTERIOR_SURFACE_ABSORPTANCE, // 0.6 per ASHRAE 140 Table B1-3
+            emissivity: 0.9,
+        }
+    }
 }
 
 impl MaterialLayer for ConcreteMaterial {
@@ -296,6 +323,31 @@ impl InsulationMaterial {
             emissivity: 0.9,
         }
     }
+
+    /// Create ASHRAE 140 foam board insulation per Table B1-3.
+    ///
+    /// **Properties per ASHRAE 140 Table B1-3 (900-series outer insulation):**
+    /// - k = 0.040 W/mK
+    /// - ρ = 10 kg/m³ (very low density foam board)
+    /// - Cp = 1400 J/kgK (NOT 840 — foam board has higher specific heat)
+    ///
+    /// Use this constructor for the insulation layer in 900-series walls.
+    ///
+    /// # Arguments
+    /// *  - Layer thickness in meters (0.0615 m for ASHRAE 140 standard)
+    pub fn ashrae_140_foam_board(thickness: f64) -> Self {
+        use crate::physics::constants::thermal::ashrae_140::materials::{
+            FOAM_BOARD_CP, FOAM_BOARD_K, FOAM_BOARD_RHO,
+        };
+        Self {
+            thickness,
+            conductivity: FOAM_BOARD_K,
+            density: FOAM_BOARD_RHO,
+            specific_heat: FOAM_BOARD_CP,
+            absorptance: 0.5,
+            emissivity: 0.9,
+        }
+    }
 }
 
 impl MaterialLayer for InsulationMaterial {
@@ -399,6 +451,31 @@ impl GypsumMaterial {
             conductivity: 0.17,
             density: 960.0,
             specific_heat: 840.0,
+            absorptance: 0.3,
+            emissivity: 0.9,
+        }
+    }
+
+    /// Create ASHRAE 140 gypsum board per Table B1-3.
+    ///
+    /// **Properties per ASHRAE 140 Table B1-3 (600-series interior finish):**
+    /// - k = 0.16 W/mK
+    /// - ρ = 784 kg/m³ (NOT 960 — ASHRAE 140 specifies standard 12mm board density)
+    /// - Cp = 840 J/kgK
+    ///
+    /// Use this constructor for 600-series ASHRAE 140 wall construction.
+    ///
+    /// # Arguments
+    /// *  - Layer thickness in meters (0.012 m for standard board)
+    pub fn ashrae_140(thickness: f64) -> Self {
+        use crate::physics::constants::thermal::ashrae_140::materials::{
+            GYPSUM_CP, GYPSUM_K, GYPSUM_RHO,
+        };
+        Self {
+            thickness,
+            conductivity: GYPSUM_K,
+            density: GYPSUM_RHO,
+            specific_heat: GYPSUM_CP,
             absorptance: 0.3,
             emissivity: 0.9,
         }

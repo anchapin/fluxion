@@ -1,6 +1,7 @@
 use crate::physics::cta::VectorField;
 use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::sim::engine::{IdealHVACController, ThermalModel};
+use crate::sim::warmup::{run_warmup, WarmupConfig};
 use crate::validation::ashrae_140_cases::{ASHRAE140Case, CaseSpec, ConstructionType};
 use crate::validation::benchmark;
 use crate::validation::diagnostic::{
@@ -9,11 +10,34 @@ use crate::validation::diagnostic::{
 };
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::validation::multi_reference::MultiReferenceDB;
-use crate::validation::report::{BenchmarkData, BenchmarkReport, MetricType, ValidationStatus};
-use crate::weather::denver::DenverTmyWeather;
+use crate::validation::report::{
+    BenchmarkData, BenchmarkReport, MetricType, ReportHeader, ValidationStatus,
+};
+use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
 use std::path::Path;
+
+/// Validation mode for ASHRAE 140 testing.
+///
+/// Determines whether corrections and calibrated values are applied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ValidationMode {
+    /// Informed mode (default): Uses case ID to apply known corrections and calibrated ranges.
+    /// This matches the current "informed" validation approach where corrections are applied
+    /// post-simulation to match reference values.
+    Informed,
+    /// Blind mode: No case ID exposed to validation logic, no corrections applied.
+    /// Uses only CaseSpec and raw ASHRAE 140 reference values.
+    /// Used for true blind validation per ASHRAE 140 Blind Validation Plan v1.3.
+    Blind,
+}
+
+impl Default for ValidationMode {
+    fn default() -> Self {
+        ValidationMode::Informed
+    }
+}
 
 /// Result of a single ASHRAE 140 case validation.
 ///
@@ -24,6 +48,12 @@ pub struct FreeFloatValidationResult {
     pub free_float_min_temp: f64,
     /// Maximum zone temperature (°C) for free-floating cases
     pub free_float_max_temp: f64,
+    /// Issue #827: opt-in hourly zone-0 air temperature profile (°C),
+    /// one entry per simulated step (8760 for an annual run).
+    /// Populated only for free-floating cases (case_id ending in `FF`);
+    /// `None` for HVAC-controlled cases. Allocated once per FF case
+    /// (~70 KB), so non-FF cases pay no allocation cost.
+    pub hourly_temperatures: Option<Vec<f64>>,
 }
 
 /// ASHRAE Standard 140 validation for building energy programs.
@@ -55,6 +85,8 @@ pub struct FreeFloatValidationResult {
 ///
 /// See docs/ASHRAE140_VALIDATION.md for details.
 pub struct ASHRAE140Validator {
+    /// Validation mode (informed vs blind)
+    validation_mode: ValidationMode,
     /// Diagnostic configuration
     diagnostic_config: DiagnosticConfig,
     /// Diagnostic collector for detailed output
@@ -105,8 +137,24 @@ pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
 impl ASHRAE140Validator {
     /// Creates a new ASHRAE 140 validator.
     pub fn new() -> Self {
+        Self::with_mode(ValidationMode::Informed)
+    }
+
+    /// Creates a new ASHRAE 140 validator with specified validation mode.
+    ///
+    /// # Arguments
+    /// * `mode` - Validation mode (Informed or Blind)
+    ///
+    /// # Example
+    /// ```rust
+    /// use fluxion::validation::ashrae_140_validator::{ASHRAE140Validator, ValidationMode};
+    ///
+    /// let blind_validator = ASHRAE140Validator::with_mode(ValidationMode::Blind);
+    /// ```
+    pub fn with_mode(mode: ValidationMode) -> Self {
         let config = DiagnosticConfig::from_env();
         let mut validator = Self {
+            validation_mode: mode,
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
@@ -144,6 +192,27 @@ impl ASHRAE140Validator {
         validator
     }
 
+    /// Returns the current validation mode.
+    pub fn validation_mode(&self) -> ValidationMode {
+        self.validation_mode
+    }
+
+    /// Sets the validation mode.
+    ///
+    /// # Arguments
+    /// * `mode` - Validation mode (Informed or Blind)
+    ///
+    /// # Example
+    /// ```rust
+    /// use fluxion::validation::ashrae_140_validator::{ASHRAE140Validator, ValidationMode};
+    ///
+    /// let mut validator = ASHRAE140Validator::new();
+    /// validator.set_validation_mode(ValidationMode::Blind);
+    /// ```
+    pub fn set_validation_mode(&mut self, mode: ValidationMode) {
+        self.validation_mode = mode;
+    }
+
     /// Sets the multi-reference database for per-program validation.
     ///
     /// # Arguments
@@ -166,6 +235,7 @@ impl ASHRAE140Validator {
     /// Creates a validator with diagnostic output enabled.
     pub fn with_diagnostics(config: DiagnosticConfig) -> Self {
         let mut validator = Self {
+            validation_mode: ValidationMode::Informed,
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
@@ -189,6 +259,7 @@ impl ASHRAE140Validator {
     pub fn with_full_diagnostics() -> Self {
         let config = DiagnosticConfig::full();
         let mut validator = Self {
+            validation_mode: ValidationMode::Informed,
             diagnostic_config: config.clone(),
             diagnostic: DiagnosticCollector::new(config),
             use_simulation_diagnostics: false,
@@ -339,7 +410,17 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         let mut diagnostic_report = DiagnosticReport::new(self.diagnostic_config.clone());
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
+
+        // Populate Section 8.1 compliance report header
+        let weather_file_id = weather
+            .location()
+            .unwrap_or_else(|| "USA_CO_Denver-Stapleton.Intl.AP.724690_TMY".to_string());
+        report.report_header =
+            Some(ReportHeader::new(weather_file_id).with_developer("Fluxion Development Team"));
 
         // Cases to validate - all 18 ASHRAE 140 cases
         let cases = vec![
@@ -428,6 +509,10 @@ impl ASHRAE140Validator {
                     if self.diagnostic_config.output_temperature_profiles {
                         diagnostic_report.add_temperature_profile(case_diagnostic.temp_profile);
                     }
+                    // Issue #763: Store 8760-hour zone temperature profile for FF cases
+                    if let Some(ref temps) = results.hourly_temperatures {
+                        diagnostic_report.add_hourly_temperature_profile(&case_id, temps.clone());
+                    }
                 } else {
                     if self.diagnostic_config.verbose {
                         println!(
@@ -478,13 +563,15 @@ impl ASHRAE140Validator {
                     ));
 
                     // Add peak loads if reference data is available
+                    // Issue #761: ASHRAE 140-2023 Section 8.2.2 requires tracking peak timestamps
                     if data.peak_heating_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &case_id,
                             MetricType::PeakHeating,
                             results.peak_heating_kw,
                             data.peak_heating_min,
                             data.peak_heating_max,
+                            results.peak_heating_timestamp,
                         );
 
                         diagnostic_report.add_comparison_row(ComparisonRow::new(
@@ -497,12 +584,13 @@ impl ASHRAE140Validator {
                     }
 
                     if data.peak_cooling_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &case_id,
                             MetricType::PeakCooling,
                             results.peak_cooling_kw,
                             data.peak_cooling_min,
                             data.peak_cooling_max,
+                            results.peak_cooling_timestamp,
                         );
 
                         diagnostic_report.add_comparison_row(ComparisonRow::new(
@@ -538,6 +626,17 @@ impl ASHRAE140Validator {
             }
         }
 
+        // Issue #763: Export hourly zone temperature profiles for FF cases
+        // ASHRAE 140-2023 Section 8.2.4 requires 8760-hour profiles for free-float cases
+        if self.diagnostic_config.output_temperature_profiles {
+            if let Some(ref path) = self.diagnostic_config.hourly_output_path {
+                let ff_path = path.replace(".csv", "_ff_temps.csv");
+                if let Err(e) = diagnostic_report.export_hourly_temperature_profiles_csv(&ff_path) {
+                    eprintln!("Failed to export FF temperature profiles: {}", e);
+                }
+            }
+        }
+
         diagnostic_report.print_summary();
 
         // Enrich results with multi-reference per-program status if configured
@@ -563,7 +662,10 @@ impl ASHRAE140Validator {
     pub fn validate_with_ideal_control(&mut self, case: ASHRAE140Case) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         let case_id = case.number();
         if let Some(data) = benchmark_data.get(&case_id) {
@@ -618,22 +720,24 @@ impl ASHRAE140Validator {
                 );
 
                 if data.peak_heating_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakHeating,
                         results.peak_heating_kw,
                         data.peak_heating_min,
                         data.peak_heating_max,
+                        results.peak_heating_timestamp,
                     );
                 }
 
                 if data.peak_cooling_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakCooling,
                         results.peak_cooling_kw,
                         data.peak_cooling_min,
                         data.peak_cooling_max,
+                        results.peak_cooling_timestamp,
                     );
                 }
             }
@@ -653,7 +757,7 @@ impl ASHRAE140Validator {
     fn simulate_case_with_ideal_control(
         &self,
         spec: &CaseSpec,
-        weather: &DenverTmyWeather,
+        weather: &EpwWeatherSource,
         controller: &IdealHVACController,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
@@ -700,6 +804,13 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -794,8 +905,19 @@ impl ASHRAE140Validator {
 
             if is_free_floating {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
+                    // DEBUG: Print when max changes significantly
+                    if zone_0_temp > 30.0 || zone_0_temp < -20.0 {
+                        eprintln!(
+                            "DEBUG_900FF_VAL step={} zone_0_temp={:.2}",
+                            step, zone_0_temp
+                        );
+                    }
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
         }
@@ -821,6 +943,11 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         }
     }
 
@@ -864,7 +991,10 @@ impl ASHRAE140Validator {
     ) -> (BenchmarkReport, DiagnosticCollector) {
         let mut report = BenchmarkReport::new();
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         let case_id = case.number();
         if let Some(data) = benchmark_data.get(&case_id) {
@@ -917,22 +1047,24 @@ impl ASHRAE140Validator {
                 );
 
                 if data.peak_heating_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakHeating,
                         results.peak_heating_kw,
                         data.peak_heating_min,
                         data.peak_heating_max,
+                        results.peak_heating_timestamp,
                     );
                 }
 
                 if data.peak_cooling_min >= 0.0 {
-                    report.add_result_simple(
+                    report.add_result_with_peak_timestamp(
                         &case_id,
                         MetricType::PeakCooling,
                         results.peak_cooling_kw,
                         data.peak_cooling_min,
                         data.peak_cooling_max,
+                        results.peak_cooling_timestamp,
                     );
                 }
             }
@@ -990,7 +1122,10 @@ impl ASHRAE140Validator {
         let mut report = BenchmarkReport::new();
         report.set_start(); // Record start time
         let benchmark_data = benchmark::get_all_benchmark_data();
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Cases to validate - baseline cases + diagnostic cases
         // Skip baseline cases if skip_baseline_cases is true (Phase 18)
@@ -1058,59 +1193,12 @@ impl ASHRAE140Validator {
 
         // Sequential post-processing: print results and accumulate into report
         for partial in partials {
-            if let (Some(data), Some(mut results)) = (partial.data, partial.results) {
-                // === SESSION 81: TDD Empirical Correction Factors ===
-                // These factors compensate for known model formulation gaps while
-                // physics-based fixes are being implemented. Each factor is documented
-                // with its physical basis and target for removal.
-                //
-                // Root causes being addressed:
-                // 1. Thermal mass coupling conductances need calibration
-                // 2. Solar gain distribution to thermal mass incomplete
-                // 3. CTF zone air coupling solver integration pending
-                // 4. Night ventilation modeling incomplete
-                //
-                // Target: Gradually reduce factors to 1.0 as physics improvements land.
+            if let (Some(data), Some(results)) = (partial.data, partial.results) {
+                // Raw simulation results — no post-simulation correction factors applied.
+                // Issue #724: Removed all empirical correction factors. Raw outputs are
+                // compared directly against ASHRAE 140 reference values.
 
-                // Session 78/79: Heating overprediction correction
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                let heating_correction = 1.0;
-
-                // Session 78/79: Cooling underprediction correction
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                let cooling_correction = 1.0;
-
-                // Apply corrections
-                if heating_correction != 1.0 && results.annual_heating_mwh > 0.0 {
-                    results.annual_heating_mwh /= heating_correction;
-                }
-                if cooling_correction != 1.0 && results.annual_cooling_mwh > 0.0 {
-                    results.annual_cooling_mwh *= cooling_correction;
-                }
-
-                // Session 69: Peak load corrections
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                let peak_cooling_correction = 1.0;
-
-                let peak_heating_correction = 1.0;
-
-                if peak_cooling_correction != 1.0 {
-                    results.peak_cooling_kw *= peak_cooling_correction;
-                }
-                if peak_heating_correction != 1.0 {
-                    results.peak_heating_kw *= peak_heating_correction;
-                }
-
-                // Session 70: Case 960 sunspace COP correction
-                // Reset to 1.0 to measure Phase 30 physics fix performance
-                if partial.case_id == "960" {
-                    let cooling_cop = 1.0;
-                    let heating_efficiency = 1.0;
-                    results.annual_heating_mwh /= heating_efficiency;
-                    results.annual_cooling_mwh /= cooling_cop;
-                }
-
-                // Print corrected results for transparency
+                // Print results for transparency
 
                 if partial.is_free_floating {
                     println!(
@@ -1174,22 +1262,24 @@ impl ASHRAE140Validator {
                     );
 
                     if data.peak_heating_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &partial.case_id,
                             MetricType::PeakHeating,
                             results.peak_heating_kw,
                             data.peak_heating_min,
                             data.peak_heating_max,
+                            results.peak_heating_timestamp,
                         );
                     }
 
                     if data.peak_cooling_min >= 0.0 {
-                        report.add_result_simple(
+                        report.add_result_with_peak_timestamp(
                             &partial.case_id,
                             MetricType::PeakCooling,
                             results.peak_cooling_kw,
                             data.peak_cooling_min,
                             data.peak_cooling_max,
+                            results.peak_cooling_timestamp,
                         );
                     }
                 }
@@ -1412,7 +1502,7 @@ impl ASHRAE140Validator {
         }
     }
 
-    fn simulate_case(&self, spec: &CaseSpec, weather: &DenverTmyWeather) -> CaseResults {
+    fn simulate_case(&self, spec: &CaseSpec, weather: &EpwWeatherSource) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
 
         // Phase 29: Enable advanced solver (CTF/FD) for high-mass cases
@@ -1452,10 +1542,22 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         // SESSION 32: Run simulation loop and accumulate energy manually
         // Reset model's internal energy tracking to avoid interference with raw accumulation
         model.reset_heating_cooling_energy();
+
+        // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
+        // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
+        run_warmup(&mut model, weather, &WarmupConfig::default());
+
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
 
@@ -1576,10 +1678,6 @@ impl ASHRAE140Validator {
                     annual_heating_joules, annual_cooling_joules
                 );
                 println!("DEBUG Case 600: internal_heating_energy={} kWh, internal_cooling_energy={} kWh", model.annual_heating_energy, model.annual_cooling_energy);
-                println!(
-                    "DEBUG Case 600: correction_factor={}",
-                    model.time_constant_sensitivity_correction
-                );
             }
 
             // Track min/max temperatures for free-floating cases
@@ -1588,6 +1686,10 @@ impl ASHRAE140Validator {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
         }
@@ -1614,6 +1716,11 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         }
     }
 
@@ -1621,7 +1728,7 @@ impl ASHRAE140Validator {
     fn simulate_case_with_diagnostics_collector(
         &mut self,
         spec: &CaseSpec,
-        weather: &DenverTmyWeather,
+        weather: &EpwWeatherSource,
     ) -> CaseResults {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
         // Attach simulation diagnostics if requested (Phase 5)
@@ -1659,6 +1766,13 @@ impl ASHRAE140Validator {
 
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         for step in 0..STEPS {
             let hour_of_day = step % 24;
@@ -1760,6 +1874,10 @@ impl ASHRAE140Validator {
                 if let Some(&zone_0_temp) = model.temperatures.as_slice().first() {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
 
@@ -1819,6 +1937,11 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp: None,
+            peak_cooling_timestamp: None,
         }
     }
 }
@@ -1837,6 +1960,16 @@ pub struct CaseResults {
     pub min_temp_celsius: Option<f64>,
     /// Maximum zone temperature (°C) for free-floating cases
     pub max_temp_celsius: Option<f64>,
+    /// Issue #827: opt-in hourly zone-0 air temperature profile (°C),
+    /// one entry per simulated step (8760 for an annual run).
+    /// Populated only for free-floating cases; `None` for HVAC-controlled
+    /// cases. Allocated once per FF case (~70 KB), so non-FF cases pay no
+    /// allocation cost.
+    pub hourly_temperatures: Option<Vec<f64>>,
+    /// Issue #761: Peak heating timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
+    pub peak_heating_timestamp: Option<(u32, u32, u32)>,
+    /// Issue #761: Peak cooling timestamp (month, day, hour) per ASHRAE 140-2023 Section 8.2.2.
+    pub peak_cooling_timestamp: Option<(u32, u32, u32)>,
 }
 
 /// Diagnostic data collected during case simulation.
@@ -1914,7 +2047,7 @@ impl ASHRAE140Validator {
     pub fn simulate_case_with_diagnostics(
         &self,
         spec: &CaseSpec,
-        weather: &DenverTmyWeather,
+        weather: &impl WeatherSource,
         case_id: &str,
     ) -> (CaseResults, CaseDiagnostic) {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
@@ -1941,12 +2074,28 @@ impl ASHRAE140Validator {
             model.hvac_cooling_capacity = 0.0;
         }
 
-        let peak_heating_hour: usize = 0;
-        let peak_cooling_hour: usize = 0;
+        // Issue #744: Run warm-up period to reach periodic steady state per ASHRAE 140 §B2
+        // Warm-up uses wrapping weather data (hour % 8760) to simulate initial conditions
+        run_warmup(&mut model, weather, &WarmupConfig::default());
+
+        // Issue #761: Track peak power and timestamp
+        let mut peak_heating_power_kw: f64 = 0.0;
+        let mut peak_heating_hour: usize = 0;
+        let mut peak_heating_timestamp: Option<(u32, u32, u32)> = None;
+        let mut peak_cooling_power_kw: f64 = 0.0;
+        let mut peak_cooling_hour: usize = 0;
+        let mut peak_cooling_timestamp: Option<(u32, u32, u32)> = None;
         let mut annual_heating_joules = 0.0;
         let mut annual_cooling_joules = 0.0;
         let mut min_temp_celsius: f64 = f64::INFINITY;
         let mut max_temp_celsius: f64 = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
 
         // Track energy components
         let mut total_solar_gains_joules = 0.0;
@@ -2078,8 +2227,21 @@ impl ASHRAE140Validator {
             // step_physics() returns kWh, convert to Joules: kWh * 3.6e6 = Joules
             if hvac_kwh > 0.0 {
                 annual_heating_joules += hvac_kwh * 3.6e6;
+                // Issue #761: Track peak heating power and timestamp
+                if hvac_kwh > peak_heating_power_kw {
+                    peak_heating_power_kw = hvac_kwh;
+                    peak_heating_hour = step;
+                    peak_heating_timestamp = Some((_month as u32, day as u32, hour_of_day as u32));
+                }
             } else {
                 annual_cooling_joules += (-hvac_kwh) * 3.6e6;
+                // Issue #761: Track peak cooling power and timestamp
+                let abs_cooling_kw = -hvac_kwh;
+                if abs_cooling_kw > peak_cooling_power_kw {
+                    peak_cooling_power_kw = abs_cooling_kw;
+                    peak_cooling_hour = step;
+                    peak_cooling_timestamp = Some((_month as u32, day as u32, hour_of_day as u32));
+                }
             }
 
             // Track solar gains energy from model for diagnostics (convert W to Joules)
@@ -2099,6 +2261,10 @@ impl ASHRAE140Validator {
                     min_temp_celsius = min_temp_celsius.min(zone_0_temp);
                     max_temp_celsius = max_temp_celsius.max(zone_0_temp);
                     diagnostic.temp_profile.update(zone_0_temp);
+                    // Issue #827
+                    if let Some(v) = &mut hourly_temperatures {
+                        v.push(zone_0_temp);
+                    }
                 }
             }
 
@@ -2185,6 +2351,11 @@ impl ASHRAE140Validator {
             } else {
                 None
             },
+            // Issue #827
+            hourly_temperatures,
+            // Issue #761: ASHRAE 140-2023 Section 8.2.2 peak timestamps
+            peak_heating_timestamp,
+            peak_cooling_timestamp,
         };
 
         (results, diagnostic)
@@ -2213,7 +2384,10 @@ impl ASHRAE140Validator {
     /// ```
     pub fn validate_ashrae_140(spec: &CaseSpec) -> FreeFloatValidationResult {
         let mut model = ThermalModel::<VectorField>::from_spec(spec);
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // Reset tracking for clean simulation
         model.reset_peak_power();
@@ -2234,6 +2408,13 @@ impl ASHRAE140Validator {
         // Run simulation for one year (8760 hours)
         let mut min_temp = f64::INFINITY;
         let mut max_temp = f64::NEG_INFINITY;
+        // Issue #827: pre-allocate the hourly profile once for FF cases only
+        // (~70 KB). For non-FF cases the Option stays `None` — zero allocation.
+        let mut hourly_temperatures: Option<Vec<f64>> = if is_free_floating {
+            Some(Vec::with_capacity(8760))
+        } else {
+            None
+        };
         let num_zones = model.num_zones;
 
         for step in 0..8760 {
@@ -2273,11 +2454,16 @@ impl ASHRAE140Validator {
             let zone_temp = model.get_temperatures()[0];
             min_temp = min_temp.min(zone_temp);
             max_temp = max_temp.max(zone_temp);
+            // Issue #827: also push to the opt-in hourly profile when allocated
+            if let Some(v) = &mut hourly_temperatures {
+                v.push(zone_temp);
+            }
         }
 
         FreeFloatValidationResult {
             free_float_min_temp: min_temp,
             free_float_max_temp: max_temp,
+            hourly_temperatures,
         }
     }
 
@@ -2287,7 +2473,10 @@ impl ASHRAE140Validator {
     pub fn validate_case_960(&self) -> ValidationReport {
         let spec = ASHRAE140Case::Case960.spec();
         let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-        let weather = DenverTmyWeather::new();
+        let weather = EpwWeatherSource::from_file(
+            "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+        )
+        .expect("Failed to load EPW weather data");
 
         // SESSION 23 FIX: Enable 6R2C model for proper sunspace thermal dynamics
         // The 6R2C model (6 Resistances, 2 Capacitances) better represents:
@@ -2405,14 +2594,16 @@ impl ASHRAE140Validator {
         actual: f64,
         ref_min: f64,
         ref_max: f64,
-        tolerance: f64,
+        _tolerance: f64,
     ) -> ValidationResult {
+        // ASHRAE 140: pass if result falls within actual min-max range of reference ensemble
+        let in_range = (actual >= ref_min) && (actual <= ref_max);
         let ref_mid = (ref_min + ref_max) / 2.0;
-        let ref_half_range = (ref_max - ref_min) / 2.0;
-        let tolerance_range = ref_half_range * (1.0 + tolerance);
-        let in_range =
-            (actual >= ref_mid - tolerance_range) && (actual <= ref_mid + tolerance_range);
-        let error_pct = ((actual - ref_mid).abs() / ref_mid) * 100.0;
+        let error_pct = if ref_mid > 0.0 {
+            ((actual - ref_mid).abs() / ref_mid) * 100.0
+        } else {
+            0.0
+        };
 
         ValidationResult {
             in_range,
@@ -2475,7 +2666,10 @@ pub fn validate_case_with_diagnostics(
         model.set_diagnostics(Some(diag));
     }
 
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file(
+        "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+    )
+    .expect("Failed to load EPW weather data");
 
     // Simulation state
     let mut _annual_heating_joules = 0.0;

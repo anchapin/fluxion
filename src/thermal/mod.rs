@@ -7,4 +7,5 @@
 pub mod coupled_solver;
 pub mod inter_zone;
 pub mod mass;
+pub mod rom;
 pub mod thermal_model;

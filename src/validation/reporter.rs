@@ -86,18 +86,19 @@ impl ValidationReportGenerator {
             if let Some(per_prog) = &result.per_program {
                 let case_cell = result.case_id.to_string();
                 let metric_cell = result.metric.display_name().to_string();
+                let fluxion_kwh = result.metric.to_output_units(result.fluxion_value);
 
                 let ep = per_prog
                     .get("EnergyPlus")
-                    .map(|s| format!("{} ({:.2})", s, result.fluxion_value))
+                    .map(|s| format!("{} ({:.2})", s, fluxion_kwh))
                     .unwrap_or_else(|| "-".to_string());
                 let espr = per_prog
                     .get("ESP-r")
-                    .map(|s| format!("{} ({:.2})", s, result.fluxion_value))
+                    .map(|s| format!("{} ({:.2})", s, fluxion_kwh))
                     .unwrap_or_else(|| "-".to_string());
                 let trnsys = per_prog
                     .get("TRNSYS")
-                    .map(|s| format!("{} ({:.2})", s, result.fluxion_value))
+                    .map(|s| format!("{} ({:.2})", s, fluxion_kwh))
                     .unwrap_or_else(|| "-".to_string());
 
                 let overall = match result.status {
@@ -144,12 +145,33 @@ impl ValidationReportGenerator {
     ) -> Result<String, String> {
         let mut output = String::new();
 
-        // Header
-        output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
-        output.push_str(&format!(
-            "*Generated: {}*\n\n",
-            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
-        ));
+        // Section 8.1 Compliance Header
+        if let Some(ref header) = report.report_header {
+            output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+            output.push_str("## Section 8.1 Compliance Information\n\n");
+            output.push_str("| Field | Value |\n");
+            output.push_str("|-------|-------|\n");
+            output.push_str(&format!("| Program Name | {} |\n", header.program_name));
+            output.push_str(&format!(
+                "| Program Version | {} |\n",
+                header.program_version
+            ));
+            output.push_str(&format!("| Developer | {} |\n", header.developer));
+            output.push_str(&format!(
+                "| Run Date | {} |\n",
+                header.run_date.format("%Y-%m-%d %H:%M UTC")
+            ));
+            output.push_str(&format!("| ASHRAE Edition | {} |\n", header.ashrae_edition));
+            output.push_str(&format!("| Weather File | {} |\n", header.weather_file_id));
+            output.push_str("\n---\n\n");
+        } else {
+            // Fallback header when no report_header is set
+            output.push_str("# ASHRAE Standard 140 Validation Results\n\n");
+            output.push_str(&format!(
+                "*Generated: {}*\n\n",
+                chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+            ));
+        }
 
         // Summary Card
         output.push_str("## Summary\n\n");
@@ -407,7 +429,7 @@ impl ValidationReportGenerator {
 
         for result in &case_results {
             // Use benchmark data for reference values if available
-            let (ref_min, ref_max) = match (result.metric, benchmark) {
+            let (ref_min, ref_max) = match (result.metric.clone(), benchmark) {
                 (MetricType::AnnualHeating, Some(b)) => {
                     (b.annual_heating_min, b.annual_heating_max)
                 }
@@ -419,17 +441,21 @@ impl ValidationReportGenerator {
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
 
-            match result.metric {
+            match &result.metric {
                 MetricType::AnnualHeating => {
                     heating_str = format!(
-                        "{:.2} MWh (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, ref_min, ref_max
+                        "{:.2} kWh (Ref: {:.2}-{:.2})",
+                        result.metric.to_output_units(result.fluxion_value),
+                        result.metric.to_output_units(ref_min),
+                        result.metric.to_output_units(ref_max)
                     );
                 }
                 MetricType::AnnualCooling => {
                     cooling_str = format!(
-                        "{:.2} MWh (Ref: {:.2}-{:.2})",
-                        result.fluxion_value, ref_min, ref_max
+                        "{:.2} kWh (Ref: {:.2}-{:.2})",
+                        result.metric.to_output_units(result.fluxion_value),
+                        result.metric.to_output_units(ref_min),
+                        result.metric.to_output_units(ref_max)
                     );
                 }
                 MetricType::PeakHeating => {
@@ -494,13 +520,13 @@ impl ValidationReportGenerator {
 
         for result in &case_results {
             // Use benchmark data for reference values if available
-            let (ref_min, ref_max) = match (result.metric, benchmark) {
+            let (ref_min, ref_max) = match (result.metric.clone(), benchmark) {
                 (MetricType::MinFreeFloat, Some(b)) => (b.min_free_float_min, b.min_free_float_max),
                 (MetricType::MaxFreeFloat, Some(b)) => (b.max_free_float_min, b.max_free_float_max),
                 _ => (result.ref_min, result.ref_max), // Fallback to result values
             };
 
-            match result.metric {
+            match &result.metric {
                 MetricType::MinFreeFloat => {
                     min_str = format!(
                         "{:.2}°C (Ref: {:.2}-{:.2})",
@@ -546,7 +572,7 @@ impl ValidationReportGenerator {
         for result in &report.results {
             if result.failed() {
                 let key = format!("{} - {}", result.case_id, result.metric);
-                let issue = classify_issue(result.case_id.as_str(), result.metric);
+                let issue = classify_issue(result.case_id.as_str(), result.metric.clone());
                 map.insert(key, issue);
             }
         }
@@ -1103,6 +1129,9 @@ mod tests {
                 .into_iter()
                 .collect(),
             ),
+            peak_date: None,
+            peak_hour: None,
+            peak_timestamp: None,
         };
         report.add_result(result);
 
@@ -1120,7 +1149,7 @@ mod tests {
         assert!(markdown.contains("## Multi-Reference Comparison"));
         assert!(markdown.contains("| Case | Metric | EnergyPlus | ESP-r | TRNSYS | Overall |"));
         assert!(markdown.contains(
-            "| 600 | Annual Heating Energy (MWh) | PASS (6.00) | PASS (6.00) | WARN (6.00) | PASS |"
+            "| 600 | Annual Heating Energy (kWh) | PASS (6000.00) | PASS (6000.00) | WARN (6000.00) | PASS |"
         ));
 
         // Extract the Multi-Reference Comparison section to verify 900FF not included
@@ -1323,8 +1352,8 @@ mod tests {
             .contains("**Note:** Applied separately within each validation group (α = 0.05)"));
 
         // Test 2: Verify metric names are displayed
-        assert!(formatted.contains("Annual Heating Energy (MWh)"));
-        assert!(formatted.contains("Annual Cooling Energy (MWh)"));
+        assert!(formatted.contains("Annual Heating Energy (kWh)"));
+        assert!(formatted.contains("Annual Cooling Energy (kWh)"));
         assert!(formatted.contains("Peak Heating Load (kW)"));
         assert!(formatted.contains("Peak Cooling Load (kW)"));
         assert!(formatted.contains("Minimum Free-Floating Temperature (°C)"));
@@ -1397,15 +1426,15 @@ mod tests {
             ValidationReportGenerator::format_bh_correction(&p_values, &corrected, &metric_types);
 
         // Verify all metrics appear
-        assert!(formatted.contains("Annual Heating Energy (MWh)"));
+        assert!(formatted.contains("Annual Heating Energy (kWh)"));
         assert!(formatted.contains("Peak Heating Load (kW)"));
-        assert!(formatted.contains("Annual Cooling Energy (MWh)"));
+        assert!(formatted.contains("Annual Cooling Energy (kWh)"));
         assert!(formatted.contains("Peak Cooling Load (kW)"));
 
         // Verify ordering matches input
-        let annual_heating_pos = formatted.find("Annual Heating Energy (MWh)").unwrap();
+        let annual_heating_pos = formatted.find("Annual Heating Energy (kWh)").unwrap();
         let peak_heating_pos = formatted.find("Peak Heating Load (kW)").unwrap();
-        let annual_cooling_pos = formatted.find("Annual Cooling Energy (MWh)").unwrap();
+        let annual_cooling_pos = formatted.find("Annual Cooling Energy (kWh)").unwrap();
         let peak_cooling_pos = formatted.find("Peak Cooling Load (kW)").unwrap();
 
         assert!(annual_heating_pos < peak_heating_pos);
@@ -2000,7 +2029,7 @@ mod tests {
         let metric_types = vec![MetricType::AnnualHeating];
         let output =
             ValidationReportGenerator::format_bh_correction(&p_values, &corrected, &metric_types);
-        assert!(output.contains("Annual Heating Energy (MWh)"));
+        assert!(output.contains("Annual Heating Energy (kWh)"));
         assert!(output.contains("Metric 2"));
     }
 

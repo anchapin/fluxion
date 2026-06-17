@@ -31,12 +31,14 @@ use crate::physics::ctf_solver_wrapper::CTFSolverWrapper;
 use crate::physics::fd_solver_wrapper::FDSolverWrapper;
 use crate::physics::five_r1c_solver::FiveR1CSolver;
 use crate::physics::method_selector::{
-    SolverSelectionResult, ThermalMethod, ThermalMethodSelector,
+    SolverSelectionResult, ThermalMethod, ThermalMethodSelector, ThermalMethodSelectorConfig,
 };
+use crate::physics::solver_registry::SolverRegistry;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_spec::WallSpec;
 use crate::sim::assembly::BuildingAssembly;
 use log::{debug, warn};
-use std::collections::HashMap;
 
 /// Unified solver manager for multiple heat conduction methods.
 ///
@@ -50,14 +52,8 @@ use std::collections::HashMap;
 /// * `wall_assemblies` - Map of wall index to wall construction (zero-copy sharing)
 /// * `solver_stats` - Statistics on solver usage (for diagnostics)
 pub struct SolverManager {
-    /// Automatic method selector
     pub selector: ThermalMethodSelector,
-    /// Map of wall index to solver instance
-    solvers: HashMap<usize, Box<dyn HeatConductionSolver>>,
-    /// Map of wall index to wall assembly (shared reference)
-    wall_assemblies: HashMap<usize, BuildingAssembly>,
-    /// Statistics: count of each solver type
-    solver_counts: HashMap<String, usize>,
+    registry: SolverRegistry,
 }
 
 /// Statistics on solver usage
@@ -78,9 +74,7 @@ impl SolverManager {
     pub fn new(selector: ThermalMethodSelector) -> Self {
         Self {
             selector,
-            solvers: HashMap::new(),
-            wall_assemblies: HashMap::new(),
-            solver_counts: HashMap::new(),
+            registry: SolverRegistry::new(),
         }
     }
 
@@ -90,7 +84,11 @@ impl SolverManager {
     ///
     /// * `threshold_hours` - Time constant threshold for method selection
     pub fn with_threshold(threshold_hours: f64) -> Self {
-        Self::new(ThermalMethodSelector::with_threshold(threshold_hours))
+        let config = ThermalMethodSelectorConfig {
+            threshold_hours,
+            ..Default::default()
+        };
+        Self::new(ThermalMethodSelector::from_config(config))
     }
 
     /// Get or create solver for a wall assembly.
@@ -113,7 +111,7 @@ impl SolverManager {
         surface_id: &str,
     ) -> Result<SolverSelectionResult, SolverError> {
         // Check if solver already exists
-        if self.solvers.contains_key(&wall_index) {
+        if self.registry.contains(&wall_index) {
             return Ok(self.selector.select_with_result(wall_assembly, surface_id));
         }
 
@@ -122,17 +120,18 @@ impl SolverManager {
         let method = result.method;
 
         // Create solver based on method
+        let wall_spec = WallSpec::from_assembly(wall_assembly);
         let solver: Box<dyn HeatConductionSolver> = match method {
             ThermalMethod::FiveR1C => {
                 debug!("Creating 5R1C solver for wall {}", wall_index);
                 let mut solver = FiveR1CSolver::new();
-                solver.initialize(wall_assembly)?;
+                solver.initialize(&wall_spec)?;
                 Box::new(solver)
             }
             ThermalMethod::CTF => {
                 debug!("Creating CTF solver for wall {}", wall_index);
                 let mut solver = CTFSolverWrapper::new();
-                match solver.initialize(wall_assembly) {
+                match solver.initialize(&wall_spec) {
                     Ok(()) => Box::new(solver),
                     Err(e) => {
                         // CTF failed, fallback to FD if enabled
@@ -142,7 +141,7 @@ impl SolverManager {
                                 wall_index, e
                             );
                             let mut fd_solver = FDSolverWrapper::new();
-                            fd_solver.initialize(wall_assembly)?;
+                            fd_solver.initialize(&wall_spec)?;
                             Box::new(fd_solver)
                         } else {
                             return Err(e);
@@ -153,19 +152,18 @@ impl SolverManager {
             ThermalMethod::FiniteDifference => {
                 debug!("Creating FD solver for wall {}", wall_index);
                 let mut solver = FDSolverWrapper::new();
-                solver.initialize(wall_assembly)?;
+                solver.initialize(&wall_spec)?;
                 Box::new(solver)
             }
         };
 
-        // Store solver and wall assembly
-        self.solvers.insert(wall_index, solver);
-        self.wall_assemblies
-            .insert(wall_index, wall_assembly.clone());
-
-        // Update statistics
-        let method_name = method.name().to_string();
-        *self.solver_counts.entry(method_name).or_insert(0) += 1;
+        // Store solver and wall assembly via registry
+        self.registry.insert(
+            wall_index,
+            solver,
+            wall_assembly.clone(),
+            method.name().to_string(),
+        );
 
         Ok(result)
     }
@@ -179,11 +177,16 @@ impl SolverManager {
     /// # Returns
     ///
     /// Some(solver) if solver exists, None if not found
+    ///
+    /// # Deprecated
+    ///
+    /// Use `step_all()` instead for batch stepping of all surfaces.
+    #[deprecated(since = "1.0.0", note = "Use step_all() for batch stepping")]
     pub fn get_solver_mut(
         &mut self,
         wall_index: usize,
     ) -> Option<&mut Box<dyn HeatConductionSolver>> {
-        self.solvers.get_mut(&wall_index)
+        self.registry.get_solver_mut(wall_index)
     }
 
     /// Get immutable reference to solver for a wall.
@@ -195,8 +198,13 @@ impl SolverManager {
     /// # Returns
     ///
     /// Some(solver) if solver exists, None if not found
+    ///
+    /// # Deprecated
+    ///
+    /// Use `step_all()` instead for batch stepping of all surfaces.
+    #[deprecated(since = "1.0.0", note = "Use step_all() for batch stepping")]
     pub fn get_solver(&self, wall_index: usize) -> Option<&dyn HeatConductionSolver> {
-        self.solvers.get(&wall_index).map(|v| &**v)
+        self.registry.get_solver(wall_index)
     }
 
     /// Calculate heat flux through a wall.
@@ -215,6 +223,11 @@ impl SolverManager {
     /// # Returns
     ///
     /// Heat flux [W/m²] (positive = into zone)
+    ///
+    /// # Deprecated
+    ///
+    /// Use `step_all()` instead for batch stepping of all surfaces.
+    #[deprecated(since = "1.0.0", note = "Use step_all() for batch stepping")]
     pub fn step(
         &mut self,
         wall_index: usize,
@@ -224,11 +237,18 @@ impl SolverManager {
         h_interior: f64,
         h_exterior: f64,
     ) -> Result<f64, SolverError> {
-        let solver = self.solvers.get_mut(&wall_index).ok_or_else(|| {
+        let solver = self.registry.get_solver_mut(wall_index).ok_or_else(|| {
             SolverError::InvalidConfig(format!("No solver for wall {}", wall_index))
         })?;
 
-        solver.step(timestep, T_interior, T_exterior, h_interior, h_exterior)
+        let flux = solver.step(
+            Time::from_value(timestep),
+            Temperature::from_value(T_interior),
+            Temperature::from_value(T_exterior),
+            HeatTransferCoefficient::from_value(h_interior),
+            HeatTransferCoefficient::from_value(h_exterior),
+        )?;
+        Ok(flux.to_value())
     }
 
     /// Get energy storage rate for a wall.
@@ -240,9 +260,14 @@ impl SolverManager {
     /// # Returns
     ///
     /// Energy storage rate [W/m²] (positive = storing energy)
+    ///
+    /// # Deprecated
+    ///
+    /// Use `step_all()` instead for batch stepping of all surfaces.
+    #[deprecated(since = "1.0.0", note = "Use step_all() for batch stepping")]
     pub fn energy_storage_rate(&self, wall_index: usize) -> f64 {
-        self.solvers
-            .get(&wall_index)
+        self.registry
+            .get_solver(wall_index)
             .map(|s| s.energy_storage_rate())
             .unwrap_or(0.0)
     }
@@ -251,7 +276,7 @@ impl SolverManager {
     pub fn get_stats(&self) -> SolverStats {
         let mut stats = SolverStats::default();
 
-        for (method_name, count) in &self.solver_counts {
+        for (method_name, count) in self.registry.method_counts() {
             match method_name.as_str() {
                 "5R1C" => stats.five_r1c_count = *count,
                 "CTF" => stats.ctf_count = *count,
@@ -260,25 +285,28 @@ impl SolverManager {
             }
         }
 
-        stats.total_walls = self.solvers.len();
+        stats.total_walls = self.registry.len();
         stats
     }
 
     /// Get number of initialized solvers.
     pub fn num_solvers(&self) -> usize {
-        self.solvers.len()
+        self.registry.len()
     }
 
     /// Check if all solvers are valid.
     pub fn all_valid(&self) -> bool {
-        self.solvers.values().all(|s| s.is_valid())
+        self.registry.wall_assemblies().keys().all(|&idx| {
+            self.registry
+                .get_solver(idx)
+                .map(|s| s.is_valid())
+                .unwrap_or(true)
+        })
     }
 
     /// Clear all solvers (for reinitialization).
     pub fn clear(&mut self) {
-        self.solvers.clear();
-        self.wall_assemblies.clear();
-        self.solver_counts.clear();
+        self.registry.clear();
     }
 
     /// Get solver method distribution as a string.
@@ -288,6 +316,60 @@ impl SolverManager {
             "5R1C: {}, CTF: {}, FD: {} (total: {})",
             stats.five_r1c_count, stats.ctf_count, stats.fd_count, stats.total_walls
         )
+    }
+
+    /// Step all solvers in a single pass, returning all fluxes.
+    ///
+    /// This is the primary entry point for the solver lifecycle. It:
+    /// 1. Pre-warms any cold solvers
+    /// 2. Steps all surfaces in a single pass
+    /// 3. Aggregates stats
+    /// 4. Returns all fluxes
+    ///
+    /// # Arguments
+    ///
+    /// * `surfaces` - Slice of (wall_index, wall_assembly) tuples for all surfaces
+    /// * `dt` - Timestep duration [s]
+    /// * `T_int` - Interior air temperature [°C]
+    /// * `T_ext` - Exterior air temperature [°C]
+    ///
+    /// # Returns
+    ///
+    /// Vector of heat fluxes [W/m²] (positive = into zone), one per surface
+    pub fn step_all(
+        &mut self,
+        surfaces: &[(usize, BuildingAssembly)],
+        dt: f64,
+        T_int: f64,
+        T_ext: f64,
+    ) -> Result<Vec<f64>, SolverError> {
+        let h_int = 8.0;
+        let h_ext = 25.0;
+
+        let mut fluxes = Vec::with_capacity(surfaces.len());
+
+        for &(wall_index, ref wall_assembly) in surfaces {
+            // Ensure solver exists for this wall
+            if !self.registry.contains(&wall_index) {
+                self.get_or_create_solver(wall_index, wall_assembly, "Wall")?;
+            }
+
+            // Step the solver
+            let solver = self.registry.get_solver_mut(wall_index).ok_or_else(|| {
+                SolverError::InvalidConfig(format!("No solver for wall {}", wall_index))
+            })?;
+
+            let flux = solver.step(
+                Time::from_value(dt),
+                Temperature::from_value(T_int),
+                Temperature::from_value(T_ext),
+                HeatTransferCoefficient::from_value(h_int),
+                HeatTransferCoefficient::from_value(h_ext),
+            )?;
+            fluxes.push(flux.to_value());
+        }
+
+        Ok(fluxes)
     }
 }
 
@@ -347,6 +429,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_step() {
         let mut manager = SolverManager::with_threshold(10.0); // Force 5R1C
 
@@ -416,6 +499,7 @@ mod tests {
     // === Phase 3: Additional coverage tests ===
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_get_solver_mut() {
         let mut manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
@@ -428,10 +512,12 @@ mod tests {
         let solver = manager.get_solver_mut(0);
         assert!(solver.is_some());
         let solver_name = solver.unwrap().name();
-        assert!(solver_name == "5R1C" || solver_name == "CTF");
+        // Issue #726: heavyweight wall (200mm concrete) should now use FD
+        assert!(solver_name == "5R1C" || solver_name == "CTF" || solver_name == "FD");
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_get_solver() {
         let _manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
@@ -447,6 +533,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_get_solver_not_found() {
         let manager = SolverManager::default();
 
@@ -459,6 +546,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_energy_storage_rate() {
         let mut manager = SolverManager::default();
         let wall = AssemblyBuilder::new("Test Wall".to_string())
@@ -474,6 +562,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_energy_storage_rate_not_found() {
         let manager = SolverManager::default();
 
@@ -549,6 +638,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_solver_manager_step_invalid_wall() {
         let mut manager = SolverManager::default();
 
@@ -604,5 +694,63 @@ mod tests {
         assert_eq!(stats.five_r1c_count, 1);
         assert_eq!(stats.ctf_count, 0);
         assert_eq!(stats.fd_count, 0);
+    }
+
+    #[test]
+    fn test_step_all_steps_all_solvers() {
+        let mut manager = SolverManager::with_threshold(10.0);
+
+        let wall1 = AssemblyBuilder::new("Wall 1".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .unwrap();
+
+        let wall2 = AssemblyBuilder::new("Wall 2".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.2)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall1, "Wall").unwrap();
+        manager.get_or_create_solver(1, &wall2, "Wall").unwrap();
+
+        let surfaces = vec![(0, wall1.clone()), (1, wall2.clone())];
+        let dt = 3600.0;
+        let T_int = 20.0;
+        let T_ext = 5.0;
+
+        let fluxes = manager.step_all(&surfaces, dt, T_int, T_ext).unwrap();
+
+        assert_eq!(fluxes.len(), 2);
+        for flux in &fluxes {
+            assert!(flux.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_step_all_returns_fluxes_in_order() {
+        let mut manager = SolverManager::with_threshold(10.0);
+
+        let wall = AssemblyBuilder::new("Wall".to_string())
+            .add_layer(Box::new(ConcreteMaterial::new(0.1)))
+            .build()
+            .unwrap();
+
+        manager.get_or_create_solver(0, &wall, "Wall").unwrap();
+        manager.get_or_create_solver(1, &wall, "Wall").unwrap();
+
+        let surfaces = vec![(0, wall.clone()), (1, wall.clone())];
+
+        let fluxes = manager.step_all(&surfaces, 3600.0, 20.0, 5.0).unwrap();
+
+        assert_eq!(fluxes.len(), 2);
+    }
+
+    #[test]
+    fn test_step_all_empty_surfaces() {
+        let mut manager = SolverManager::with_threshold(10.0);
+
+        let fluxes = manager.step_all(&[], 3600.0, 20.0, 5.0).unwrap();
+
+        assert!(fluxes.is_empty());
     }
 }

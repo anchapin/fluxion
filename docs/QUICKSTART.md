@@ -2,20 +2,36 @@
 
 Get started with Fluxion in minutes.
 
+> **⚠️ Pre-release note**
+>
+> The `eui` returned by `model.simulate(...)` in the examples below is
+> currently a **raw cumulative temperature-departure metric**, not a
+> calibrated `kWh/m²/year` value. The label `kWh/m²/year` in the
+> examples is a placeholder that will become accurate after the
+> ASHRAE 140 physics calibration work in
+> [#749-G2](https://github.com/anchapin/fluxion/issues/749) lands. Do
+> not benchmark the raw metric against ASHRAE 90.1 / RESNET HERS until
+> then ([#767](https://github.com/anchapin/fluxion/issues/767)).
+
 ## Installation
 
-### From PyPI (recommended)
-
-```bash
-pip install fluxion
-```
-
-### From source
+### From source (recommended)
 
 ```bash
 git clone https://github.com/anchapin/fluxion.git
 cd fluxion
-pip install -e .
+pip install maturin
+maturin develop
+```
+
+### From PyPI (future — not yet published)
+
+The `fluxion` package is not yet on PyPI
+([#766](https://github.com/anchapin/fluxion/issues/766)).
+Once published, installation will be:
+
+```bash
+pip install fluxion
 ```
 
 ### With Docker
@@ -35,8 +51,11 @@ from fluxion import Model
 model = Model("config.json")
 
 # Run physics-based simulation
+# NOTE: `eui` is currently a raw cumulative temperature-departure
+# metric, not calibrated kWh/m²/year. See the pre-release notes at the
+# top of this document and issue #767 for context.
 eui = model.simulate(years=1, use_surrogates=False)
-print(f"EUI: {eui:.2f} kWh/m²/year")
+print(f"EUI (uncalibrated, see #767): {eui:.2f}")
 ```
 
 ### 2. Using Surrogates
@@ -50,8 +69,9 @@ model = Model("config.json")
 model.load_surrogate("loads_predictor.onnx")
 
 # Run with AI surrogates (~100x faster)
+# Same uncalibrated-metric caveat applies (see #767).
 eui = model.simulate(years=1, use_surrogates=True)
-print(f"EUI: {eui:.2f} kWh/m²/year")
+print(f"EUI (uncalibrated, see #767): {eui:.2f}")
 ```
 
 ### 3. Population Optimization

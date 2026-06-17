@@ -71,11 +71,7 @@ fn test_group_validation_80_percent() {
     // Check Baseline group validation
     if let Some(&baseline_pass) = report.group_validation.get(&ValidationGroup::Baseline) {
         println!("Baseline group validation result: {}", baseline_pass);
-        // Verify group validation result is a boolean
-        assert!(
-            baseline_pass == true || baseline_pass == false,
-            "Group validation should return boolean result"
-        );
+        assert!(baseline_pass);
     } else {
         // If Baseline group doesn't have enough cases, that's also valid
         println!("Baseline group not found in validation results");
@@ -95,7 +91,7 @@ fn test_cli_statistical_flag() {
 
     // Run CLI command with --statistical flag
     let output = Command::new("./target/release/fluxion")
-        .args(&["validate", "--all", "--statistical"])
+        .args(["validate", "--all", "--statistical"])
         .output()
         .expect("Failed to execute fluxion binary");
 
@@ -185,12 +181,8 @@ fn test_statistical_report_completeness() {
     );
 
     // Verify each group has boolean result
-    for (group, &result) in &report.group_validation {
-        assert!(
-            result == true || result == false,
-            "Group {:?} should have boolean result",
-            group
-        );
+    for &result in report.group_validation.values() {
+        assert!(result);
     }
 }
 
@@ -240,6 +232,8 @@ fn test_nmbe_calculation() {
         percent_error: 0.0,
         status: ValidationStatus::Pass,
         per_program: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -258,6 +252,8 @@ fn test_nmbe_calculation() {
         percent_error: 10.0,
         status: ValidationStatus::Pass,
         per_program: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -276,6 +272,8 @@ fn test_nmbe_calculation() {
         percent_error: -10.0,
         status: ValidationStatus::Pass,
         per_program: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -303,6 +301,8 @@ fn test_cv_rmse_calculation() {
         percent_error: 0.0,
         status: ValidationStatus::Pass,
         per_program: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let cv_rmse = calculate_cv_rmse(&results);
@@ -321,6 +321,8 @@ fn test_cv_rmse_calculation() {
         percent_error: 10.0,
         status: ValidationStatus::Pass,
         per_program: None,
+        peak_date: None,
+        peak_hour: None,
     }];
 
     let cv_rmse = calculate_cv_rmse(&results);
@@ -367,7 +369,7 @@ fn test_ci_nmbe_calculation() {
 
     // CI formula: nmbe ± t_{alpha/2, n-1} * std_error
 
-    let _results = vec![
+    let _results = [
         ValidationResult {
             case_id: "test1".to_string(),
             metric: MetricType::AnnualHeating,
@@ -377,6 +379,8 @@ fn test_ci_nmbe_calculation() {
             percent_error: 0.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
         },
         ValidationResult {
             case_id: "test2".to_string(),
@@ -387,11 +391,13 @@ fn test_ci_nmbe_calculation() {
             percent_error: 10.0,
             status: ValidationStatus::Pass,
             per_program: None,
+            peak_date: None,
+            peak_hour: None,
         },
     ];
 
     let nmbe = 5.0; // Average of 0% and 10%
-    let std_error = calculate_standard_error(&vec![10.0, 11.0], &vec![10.0, 10.0]);
+    let std_error = calculate_standard_error(&[10.0, 11.0], &[10.0, 10.0]);
     let (ci_lower, ci_upper) = calculate_ci_nmbe(nmbe, std_error, 2);
 
     assert!(ci_lower < nmbe, "CI lower bound should be less than NMBE");

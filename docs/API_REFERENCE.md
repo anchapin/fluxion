@@ -647,6 +647,128 @@ let loads = surrogates.predict_loads(&temperatures);
 
 ---
 
+## Output Data
+
+### Hourly Zone Temperature Profiles (Issue #763)
+
+After running a simulation with `solve_timesteps()` or `solve_timesteps_with_dt()`, the full hourly temperature profiles are available:
+
+```python
+# Get hourly temperatures after simulation
+hourly_temps = model.get_hourly_temperatures()
+if hourly_temps is not None:
+    # hourly_temps[zone_idx][timestep] -> temperature in °C
+    for zone_idx, zone_temps in enumerate(hourly_temps):
+        print(f"Zone {zone_idx}: {len(zone_temps)} timesteps, "
+              f"min={min(zone_temps):.1f}°C, max={max(zone_temps):.1f}°C")
+```
+
+**Data Format:** `Option<Vec<Vec<f64>>>` — `[num_zones][8760]` values in °C.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `hourly_zone_temperatures` | `Option<Vec<Vec<f64>>>` | `[zone][timestep]` zone temperatures (°C), indexed by zone then timestep |
+
+**Python Example:**
+```python
+model = Model(num_zones=2)
+model.simulate(years=1, use_surrogates=False)
+hourly = model.get_hourly_temperatures()
+if hourly:
+    zone0_temps = hourly[0]  # 8760 hourly values for zone 0
+    zone1_temps = hourly[1]  # 8760 hourly values for zone 1
+```
+
+**Rust Example:**
+```rust
+let hourly = model.get_hourly_temperatures();
+if let Some(temps) = hourly {
+    for (zone_idx, zone_temps) in temps.iter().enumerate() {
+        println!("Zone {}: {} timesteps", zone_idx, zone_temps.len());
+    }
+}
+```
+
+
+### ValidationResult (Issue #761)
+
+The `ValidationResult` struct contains a single validation result for a specific case and metric, including peak load timestamp information.
+
+**Rust Struct Definition:**
+```rust
+pub struct ValidationResult {
+    pub case_id: String,           // Case identifier (e.g., "600", "900", "600FF")
+    pub metric: MetricType,        // Metric type
+    pub fluxion_value: f64,        // Fluxion simulation value
+    pub ref_min: f64,              // Reference minimum value
+    pub ref_max: f64,              // Reference maximum value
+    pub percent_error: f64,        // Percent error from reference midpoint
+    pub status: ValidationStatus,  // Validation status
+    pub per_program: Option<HashMap<String, ValidationStatus>>,  // Per-program statuses
+    pub peak_date: Option<String>, // Date of peak value occurrence (e.g., "Jan 15")
+    pub peak_hour: Option<u32>,    // Hour of peak value occurrence (0-23)
+}
+```
+
+**Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `case_id` | `String` | Case identifier (e.g., "600", "900", "600FF") |
+| `metric` | `MetricType` | Metric type (heating, cooling, peak, etc.) |
+| `fluxion_value` | `f64` | Fluxion simulation value |
+| `ref_min` | `f64` | Reference minimum value |
+| `ref_max` | `f64` | Reference maximum value |
+| `percent_error` | `f64` | Percent error from reference midpoint |
+| `status` | `ValidationStatus` | Validation status (Pass, Warning, Fail) |
+| `per_program` | `Option<HashMap<String, ValidationStatus>>` | Per-program validation statuses |
+| `peak_date` | `Option<String>` | Date of peak value occurrence (e.g., "Jan 15") for peak metrics |
+| `peak_hour` | `Option<u32>` | Hour of peak value occurrence (0-23) for peak metrics |
+
+**ASHRAE 140 Section 8 Compliance:**
+
+The `peak_date` and `peak_hour` fields capture when peak heating or cooling loads occur, supporting ASHRAE 140 Section 8 gap analysis for peak load timestamp validation.
+
+### Incident Solar Radiation per Surface (Issue #762)
+
+Fluxion reports incident solar radiation on a per-surface basis using the `IncidentSolar` metric type. This metric captures the total annual solar radiation incident on each building surface orientation.
+
+```python
+# Get incident solar radiation results
+results = model.get_validation_results()
+for result in results:
+    if hasattr(result, 'metric') and result.metric.startswith('IncidentSolar'):
+        print(f"{result.metric}: {result.value} kWh/m²")
+```
+
+**Data Format:** `IncidentSolar` metric type with fields:
+- `surface_id`: Surface identifier (e.g., "roof", "N", "S", "E", "W")
+- `orientation`: Surface orientation (North, South, East, West, Roof)
+- `value`: Annual incident solar radiation in kWh/m²
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `surface_id` | `String` | Surface identifier |
+| `orientation` | `String` | Surface orientation (N/S/E/W/Roof) |
+| `annual_incident_solar` | `f64` | Annual incident solar radiation (kWh/m²) |
+
+**Rust Example:**
+```rust
+use fluxion::validation::report::{MetricType, ValidationResult};
+
+// IncidentSolar variant carries surface_id and orientation
+let metric = MetricType::IncidentSolar {
+    surface_id: "roof".to_string(),
+    orientation: crate::validation::ashrae_140_cases::Orientation::Roof,
+};
+let result = ValidationResult::new("600", metric, 180.5, 0.0, 0.0);
+println!("{}", result.metric.display_name()); // "Incident Solar Radiation (kWh/m²)"
+```
+
+**Metric Type:** `MetricType::IncidentSolar { surface_id, orientation }`
+
+---
+
 ## Error Handling
 
 All methods may raise exceptions:

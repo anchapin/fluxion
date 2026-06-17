@@ -1,10 +1,9 @@
 //! Dynamic batch inference optimization for improved throughput.
 //!
 //! This module provides utilities for dynamic batching of inference requests,
-//! optimizing batch size selection, and managing batch queues for maximum
-//! GPU/CPU utilization.
+//! optimizing batch size selection for maximum GPU/CPU utilization.
 
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 use std::time::Instant;
 
 /// Configuration for dynamic batching.
@@ -58,22 +57,6 @@ impl DynamicBatchConfig {
     }
 }
 
-/// A single inference request.
-#[derive(Clone, Debug)]
-pub struct BatchRequest {
-    /// Input data for the request
-    pub input: Vec<f64>,
-    /// Channel to send the response back
-    pub response_tx: std::sync::mpsc::Sender<Vec<f64>>,
-}
-
-/// Dynamic batch manager that collects requests and processes them in batches.
-pub struct DynamicBatchManager {
-    config: DynamicBatchConfig,
-    pending_requests: Mutex<Vec<BatchRequest>>,
-    stats: Mutex<BatchStats>,
-}
-
 /// Statistics for batch processing.
 #[derive(Clone, Debug, Default)]
 pub struct BatchStats {
@@ -110,61 +93,12 @@ impl BatchStats {
     }
 }
 
-impl DynamicBatchManager {
-    /// Create a new dynamic batch manager.
-    pub fn new(config: DynamicBatchConfig) -> Self {
-        DynamicBatchManager {
-            config,
-            pending_requests: Mutex::new(Vec::new()),
-            stats: Mutex::new(BatchStats::new()),
-        }
-    }
-
-    /// Add a request to the batch queue.
-    ///
-    /// Returns true if the batch should be processed immediately.
-    pub fn add_request(&self, request: BatchRequest) -> bool {
-        let mut pending = self.pending_requests.lock().unwrap();
-        pending.push(request);
-
-        pending.len() >= self.config.max_batch_size
-    }
-
-    /// Get pending requests for processing.
-    pub fn get_pending(&self, force: bool) -> Vec<BatchRequest> {
-        let mut pending = self.pending_requests.lock().unwrap();
-
-        if force || pending.len() >= self.config.min_batch_size {
-            let batch = pending.drain(..).collect();
-            batch
-        } else {
-            Vec::new()
-        }
-    }
-
-    /// Get the number of pending requests.
-    pub fn pending_count(&self) -> usize {
-        self.pending_requests.lock().unwrap().len()
-    }
-
-    /// Get current statistics.
-    pub fn get_stats(&self) -> BatchStats {
-        self.stats.lock().unwrap().clone()
-    }
-
-    /// Record batch processing for statistics.
-    pub fn record_batch(&self, batch_size: usize, inference_ms: u64) {
-        let mut stats = self.stats.lock().unwrap();
-        stats.record_batch(batch_size, inference_ms);
-    }
-}
-
 /// Batch processor that handles inference with optimizations.
 pub struct BatchProcessor {
     /// Configuration
     config: DynamicBatchConfig,
-    /// Pending batch queue
-    queue: Arc<DynamicBatchManager>,
+    /// Statistics for batch processing
+    stats: Mutex<BatchStats>,
 }
 
 impl BatchProcessor {
@@ -172,7 +106,7 @@ impl BatchProcessor {
     pub fn new(config: DynamicBatchConfig) -> Self {
         BatchProcessor {
             config,
-            queue: Arc::new(DynamicBatchManager::new(DynamicBatchConfig::default())),
+            stats: Mutex::new(BatchStats::new()),
         }
     }
 
@@ -203,7 +137,8 @@ impl BatchProcessor {
 
         let elapsed = start.elapsed().as_millis() as u64;
 
-        self.queue.record_batch(batch_size, elapsed);
+        let mut stats = self.stats.lock().unwrap();
+        stats.record_batch(batch_size, elapsed);
 
         results
     }
@@ -227,14 +162,14 @@ impl BatchProcessor {
         }
     }
 
-    /// Get queue statistics.
+    /// Get statistics.
     pub fn get_stats(&self) -> BatchStats {
-        self.queue.get_stats()
+        self.stats.lock().unwrap().clone()
     }
 
     /// Reset statistics.
     pub fn reset_stats(&self) {
-        let mut stats = self.queue.stats.lock().unwrap();
+        let mut stats = self.stats.lock().unwrap();
         *stats = BatchStats::new();
     }
 }
@@ -427,96 +362,6 @@ mod tests {
     }
 
     #[test]
-    fn test_batch_request_creation() {
-        let (tx, _rx) = std::sync::mpsc::channel();
-        let request = BatchRequest {
-            input: vec![1.0, 2.0, 3.0],
-            response_tx: tx,
-        };
-        assert_eq!(request.input.len(), 3);
-    }
-
-    #[test]
-    fn test_dynamic_batch_manager_add_request() {
-        let config = DynamicBatchConfig {
-            max_batch_size: 3,
-            min_batch_size: 1,
-            max_wait_ms: 10,
-            target_batch_size: 2,
-            enable_adaptation: true,
-        };
-        let manager = DynamicBatchManager::new(config);
-
-        let (tx1, _rx1) = std::sync::mpsc::channel();
-        assert!(!manager.add_request(BatchRequest {
-            input: vec![1.0],
-            response_tx: tx1,
-        }));
-
-        let (tx2, _rx2) = std::sync::mpsc::channel();
-        assert!(!manager.add_request(BatchRequest {
-            input: vec![2.0],
-            response_tx: tx2,
-        }));
-
-        let (tx3, _rx3) = std::sync::mpsc::channel();
-        assert!(manager.add_request(BatchRequest {
-            input: vec![3.0],
-            response_tx: tx3,
-        }));
-    }
-
-    #[test]
-    fn test_dynamic_batch_manager_get_pending_force() {
-        let config = DynamicBatchConfig::default();
-        let manager = DynamicBatchManager::new(config);
-
-        let (tx, _rx) = std::sync::mpsc::channel();
-        manager.add_request(BatchRequest {
-            input: vec![1.0],
-            response_tx: tx,
-        });
-
-        assert_eq!(manager.pending_count(), 1);
-
-        let pending = manager.get_pending(true);
-        assert_eq!(pending.len(), 1);
-        assert_eq!(manager.pending_count(), 0);
-    }
-
-    #[test]
-    fn test_dynamic_batch_manager_get_pending_no_force() {
-        let config = DynamicBatchConfig {
-            min_batch_size: 5,
-            ..DynamicBatchConfig::default()
-        };
-        let manager = DynamicBatchManager::new(config);
-
-        let (tx, _rx) = std::sync::mpsc::channel();
-        manager.add_request(BatchRequest {
-            input: vec![1.0],
-            response_tx: tx,
-        });
-
-        let pending = manager.get_pending(false);
-        assert!(pending.is_empty());
-        assert_eq!(manager.pending_count(), 1);
-    }
-
-    #[test]
-    fn test_dynamic_batch_manager_record_and_get_stats() {
-        let config = DynamicBatchConfig::default();
-        let manager = DynamicBatchManager::new(config);
-
-        manager.record_batch(10, 5);
-        manager.record_batch(20, 10);
-
-        let stats = manager.get_stats();
-        assert_eq!(stats.total_requests, 30);
-        assert_eq!(stats.total_batches, 2);
-    }
-
-    #[test]
     fn test_batch_processor_process_single() {
         let config = DynamicBatchConfig::default();
         let processor = BatchProcessor::new(config);
@@ -563,8 +408,7 @@ mod tests {
         let processor = BatchProcessor::new(config);
 
         let inputs: Vec<Vec<f64>> = vec![vec![1.0, 2.0]];
-        let result =
-            processor.process_batch(&inputs, |batch| batch.iter().map(|v| v.clone()).collect());
+        let result = processor.process_batch(&inputs, |batch| batch.to_vec());
 
         assert!(result.len() >= 4);
         assert_eq!(result[0], vec![1.0, 2.0]);
@@ -575,8 +419,7 @@ mod tests {
         let config = DynamicBatchConfig::default();
         let processor = BatchProcessor::new(config);
 
-        let mock_inference =
-            |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.iter().map(|v| v.clone()).collect() };
+        let mock_inference = |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.to_vec() };
 
         let inputs = vec![vec![1.0], vec![2.0], vec![3.0]];
         processor.process_batch(&inputs, mock_inference);
@@ -623,8 +466,7 @@ mod tests {
 
     #[test]
     fn test_batch_benchmark_large_sizes() {
-        let mock_inference =
-            |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.iter().map(|v| v.clone()).collect() };
+        let mock_inference = |inputs: &[Vec<f64>]| -> Vec<Vec<f64>> { inputs.to_vec() };
 
         let results = benchmark_batch_inference(mock_inference, 1024);
         assert!(!results.is_empty());

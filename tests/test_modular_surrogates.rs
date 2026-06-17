@@ -29,22 +29,57 @@ mod tests {
     }
 
     #[test]
-    fn test_composite_surrogate_two_components_sum() {
+    fn test_composite_surrogate_weighted_sum() {
         let manager1 = SurrogateManager::new().unwrap();
         let manager2 = SurrogateManager::new().unwrap();
         let comp1 = ComponentSurrogate::new("solar", manager1);
         let comp2 = ComponentSurrogate::new("hvac", manager2);
-        let composite = CompositeSurrogate::new(vec![comp1, comp2]);
+
+        let weights = vec![0.7, 0.3];
+        let composite = CompositeSurrogate::with_weights(vec![comp1, comp2], weights).unwrap();
 
         let temps = vec![20.0, 21.0, 22.0];
         let loads = composite.predict_loads(&temps);
 
-        // Both mock managers return 1.2, so sum = 2.4
-        assert_eq!(loads, vec![2.4, 2.4, 2.4]);
+        assert_eq!(loads, vec![1.2, 1.2, 1.2]);
     }
 
     #[test]
-    fn test_composite_surrogate_three_components() {
+    fn test_composite_surrogate_default_equal_weights() {
+        let manager = SurrogateManager::new().unwrap();
+        let comp = ComponentSurrogate::new("test", manager.clone());
+        let composite = CompositeSurrogate::new(vec![comp.clone(), comp]);
+
+        let temps = vec![20.0, 21.0, 22.0];
+        let loads = composite.predict_loads(&temps);
+
+        assert_eq!(loads, vec![1.2, 1.2, 1.2]);
+    }
+
+    #[test]
+    fn test_composite_surrogate_weights_must_sum_to_one() {
+        let manager = SurrogateManager::new().unwrap();
+        let comp1 = ComponentSurrogate::new("solar", manager.clone());
+        let comp2 = ComponentSurrogate::new("hvac", manager);
+
+        let result = CompositeSurrogate::with_weights(vec![comp1, comp2], vec![0.5, 0.3]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("must sum to 1.0"));
+    }
+
+    #[test]
+    fn test_composite_surrogate_weights_length_mismatch() {
+        let manager = SurrogateManager::new().unwrap();
+        let comp1 = ComponentSurrogate::new("solar", manager.clone());
+        let comp2 = ComponentSurrogate::new("hvac", manager);
+
+        let result = CompositeSurrogate::with_weights(vec![comp1, comp2], vec![0.5, 0.3, 0.2]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("length mismatch"));
+    }
+
+    #[test]
+    fn test_composite_surrogate_three_components_equal_weights() {
         let managers: Vec<_> = (0..3).map(|_| SurrogateManager::new().unwrap()).collect();
         let components = managers
             .into_iter()
@@ -56,10 +91,26 @@ mod tests {
         let temps = vec![20.0, 25.0, 30.0];
         let loads = composite.predict_loads(&temps);
 
-        // 3 * 1.2 = 3.6 (use tolerance for floating point)
         for &val in &loads {
-            assert!((val - 3.6).abs() < 1e-9, "Expected ~3.6, got {}", val);
+            assert!((val - 1.2).abs() < 1e-9, "Expected ~1.2, got {}", val);
         }
+    }
+
+    #[test]
+    fn test_composite_surrogate_three_components_custom_weights() {
+        let managers: Vec<_> = (0..3).map(|_| SurrogateManager::new().unwrap()).collect();
+        let components = managers
+            .into_iter()
+            .enumerate()
+            .map(|(i, m)| ComponentSurrogate::new(&format!("comp{}", i), m))
+            .collect();
+        let weights = vec![0.5, 0.3, 0.2];
+        let composite = CompositeSurrogate::with_weights(components, weights).unwrap();
+
+        let temps = vec![20.0, 25.0, 30.0];
+        let loads = composite.predict_loads(&temps);
+
+        assert_eq!(loads, vec![1.2, 1.2, 1.2]);
     }
 
     #[test]
@@ -90,6 +141,100 @@ mod tests {
         ];
         let composite = CompositeSurrogate::new(comps);
         assert_eq!(composite.num_components(), 3);
+    }
+
+    #[test]
+    fn test_predict_with_uncertainty_single_component() {
+        let manager = SurrogateManager::new().unwrap();
+        let comp = ComponentSurrogate::new("solar", manager);
+        let composite = CompositeSurrogate::new(vec![comp]);
+
+        let temps = vec![20.0, 21.0, 22.0];
+        let (mean, std) = composite.predict_with_uncertainty(&temps);
+
+        assert_eq!(mean, vec![1.2, 1.2, 1.2]);
+        assert_eq!(std, vec![0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_predict_with_uncertainty_identical_components() {
+        let manager1 = SurrogateManager::new().unwrap();
+        let manager2 = SurrogateManager::new().unwrap();
+        let comp1 = ComponentSurrogate::new("solar", manager1);
+        let comp2 = ComponentSurrogate::new("hvac", manager2);
+        let composite = CompositeSurrogate::new(vec![comp1, comp2]);
+
+        let temps = vec![20.0, 21.0];
+        let (mean, std) = composite.predict_with_uncertainty(&temps);
+
+        assert_eq!(mean, vec![1.2, 1.2]);
+        assert_eq!(std, vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn test_predict_with_confidence_intervals() {
+        let manager1 = SurrogateManager::new().unwrap();
+        let manager2 = SurrogateManager::new().unwrap();
+        let comp1 = ComponentSurrogate::new("solar", manager1);
+        let comp2 = ComponentSurrogate::new("hvac", manager2);
+        let composite = CompositeSurrogate::new(vec![comp1, comp2]);
+
+        let temps = vec![20.0, 21.0];
+        let (mean, lower, upper) = composite.predict_with_confidence(&temps);
+
+        assert_eq!(mean, vec![1.2, 1.2]);
+        for i in 0..mean.len() {
+            assert!(lower[i] <= mean[i], "lower bound should be <= mean");
+            assert!(upper[i] >= mean[i], "upper bound should be >= mean");
+        }
+    }
+
+    #[test]
+    fn test_component_confidence_scores() {
+        let manager1 = SurrogateManager::new().unwrap();
+        let manager2 = SurrogateManager::new().unwrap();
+        let comp1 = ComponentSurrogate::new("solar", manager1);
+        let comp2 = ComponentSurrogate::new("hvac", manager2);
+        let composite = CompositeSurrogate::new(vec![comp1, comp2]);
+
+        let temps = vec![20.0, 21.0];
+        let scores = composite.component_confidence_scores(&temps);
+
+        assert_eq!(scores.len(), 2);
+        let sum: f64 = scores.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 1e-9,
+            "scores should sum to 1, got {}",
+            sum
+        );
+    }
+
+    #[test]
+    fn test_component_confidence_scores_single_component() {
+        let manager = SurrogateManager::new().unwrap();
+        let comp = ComponentSurrogate::new("solar", manager);
+        let composite = CompositeSurrogate::new(vec![comp]);
+
+        let temps = vec![20.0, 21.0];
+        let scores = composite.component_confidence_scores(&temps);
+
+        assert_eq!(scores.len(), 1);
+        assert!((scores[0] - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_predict_loads_with_fallback() {
+        let manager1 = SurrogateManager::new().unwrap();
+        let manager2 = SurrogateManager::new().unwrap();
+        let comp1 = ComponentSurrogate::new("solar", manager1);
+        let comp2 = ComponentSurrogate::new("hvac", manager2);
+        let composite = CompositeSurrogate::new(vec![comp1, comp2]);
+
+        let temps = vec![20.0, 21.0];
+        let result = composite.predict_loads_with_fallback(&temps);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), vec![1.2, 1.2]);
     }
 
     #[test]
@@ -125,22 +270,19 @@ mod tests {
 
     #[test]
     fn test_surrogate_manager_predict_delegates_to_composite() {
-        // Create a composite with two mock managers
         let manager1 = SurrogateManager::new().unwrap();
         let manager2 = SurrogateManager::new().unwrap();
         let comp1 = ComponentSurrogate::new("comp1", manager1);
         let comp2 = ComponentSurrogate::new("comp2", manager2);
         let composite = CompositeSurrogate::new(vec![comp1, comp2]);
 
-        // Create a SurrogateManager with the composite
         let mut manager = SurrogateManager::new().unwrap();
         manager.composite = Some(composite);
 
         let temps = vec![20.0, 22.0];
         let loads = manager.predict_loads(&temps);
 
-        // Should sum two 1.2's = 2.4
-        assert_eq!(loads, vec![2.4, 2.4]);
+        assert_eq!(loads, vec![1.2, 1.2]);
     }
 
     #[test]
@@ -170,8 +312,8 @@ mod tests {
         let results = manager.predict_loads_batched(&batch);
 
         assert_eq!(results.len(), 2);
-        assert_eq!(results[0], vec![2.4, 2.4]);
-        assert_eq!(results[1], vec![2.4, 2.4]);
+        assert_eq!(results[0], vec![1.2, 1.2]);
+        assert_eq!(results[1], vec![1.2, 1.2]);
     }
 
     #[test]

@@ -45,6 +45,11 @@ wiring-tracing = []
 multi-zone = []
 # Feature flag for ASHRAE 140 v2021 support
 ashrae_140_v2021 = []
+# Feature flag for PR #821 diagnostics (writes hourly CSVs for 600FF/650FF debugging)
+pr821-diag = []
+# Feature flag for loom concurrency testing (Issue #1065)
+# Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
+loom = []
 
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
@@ -60,6 +65,7 @@ csv = "1.3"
 
 # Logging
 log = "0.4"
+tracing = "0.1"  # TDQS decision hooks (Issue #708)
 env_logger = "0.11"
 
 # Date/time handling for reports
@@ -71,6 +77,8 @@ sha2 = "0.10"
 
 # Numerical & Math
 faer = { version = "0.23.2", default-features = false, features = ["std"] }
+nalgebra = "0.33"  # Linear algebra - matrix operations
+uom = "0.35"  # Units of measurement - dimensional analysis
 # ndarray 0.16 uses pulp 0.21+ which has fixed the size assertion issue with num-complex
 ndarray = { version = "0.16", default-features = false, features = ["std", "serde"] }
 num-complex = "0.4"
@@ -115,6 +123,10 @@ num-traits = "0.2.19"
 # HTTP client for multi-reference updates
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 
+# OpenStudio OSM file parsing/serialization
+# XML parsing for gbXML import/export
+quick-xml = "0.31"
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 napi-build = { version = "2", optional = true }
@@ -126,9 +138,14 @@ approx = "0.5"
 rstest = "0.25"
 dhat = "0.3"
 proptest = "1.5"
+noisy_float = "0.2"
 
 # Mock HTTP server for tests
 mockito = "1.7"
+
+# Loom for concurrency and race condition testing (Issue #1065)
+# Run with: LOOM=1 cargo test --features loom --test loom_concurrency_tests
+loom = "0.1"
 
 [[bench]]
 name = "cta_bench"
@@ -166,6 +183,16 @@ harness = false
 name = "parallel_validation"
 harness = false
 
+[[bench]]
+name = "orchestration_decisions"
+path = "benches/orchestration_decisions/benchmark_runner.rs"
+harness = false
+
+[[bench]]
+name = "surrogate_vs_physics"
+path = "benches/surrogate_vs_physics_bench.rs"
+harness = false
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
@@ -194,6 +221,26 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# Fast CI build profile — use with `cargo test --profile ci`
+# Balances compile speed against runtime speed:
+#   opt-level=1   — significantly faster to compile than release (3), yet exercises
+#                   more code paths than pure debug (0); avoids misoptimisation bugs
+#   debug=0       — no debug info → smaller artifacts, faster linker invocation
+#   codegen-units — maximum parallelism to saturate CI runner cores
+#   incremental   — disabled: clean CI builds don't reuse incremental state
+[profile.ci]
+inherits = "dev"
+opt-level = 1
+debug = 0
+codegen-units = 256
+incremental = false
+
+# Compile proc-macro crates (serde, clap, pyo3-derive, etc.) at opt-level=3
+# even in dev/ci builds. Proc-macros run at compile time, so optimising them
+# speeds up every downstream incremental build.
+[profile.dev.build-override]
+opt-level = 3
 
 # Explicitly include Phase 6 performance optimization test targets
 [[test]]
@@ -247,6 +294,11 @@ path = "tests/integration/test_cli.rs"
 harness = true
 
 [[test]]
+name = "integration-fmi-cosimulation"
+path = "tests/integration/test_fmi_cosimulation.rs"
+harness = true
+
+[[test]]
 name = "solar_gain_unit_tests"
 path = "tests/solar_gain_unit_tests.rs"
 harness = true
@@ -264,4 +316,35 @@ harness = true
 [[test]]
 name = "validation_case_900_peak_attribution"
 path = "tests/validation/case_900_peak_attribution.rs"
+harness = true
+
+[[test]]
+name = "validation_hourly_ff_profile"
+path = "tests/validation/hourly_ff_profile.rs"
+harness = true
+
+[[test]]
+name = "validation_night_ventilation_air_side"
+path = "tests/validation/night_ventilation_air_side.rs"
+harness = true
+
+[[test]]
+name = "validation_empirical"
+path = "tests/validation/empirical_validation_test.rs"
+harness = true
+
+[[test]]
+name = "weather_epw_fields"
+path = "tests/weather_epw_fields.rs"
+harness = true
+
+# Loom concurrency tests (Issue #1065)
+[[test]]
+name = "loom_concurrency_tests"
+path = "tests/concurrency/loom_concurrency_tests.rs"
+harness = true
+
+[[test]]
+name = "case_900_determinism"
+path = "tests/case_900_determinism.rs"
 harness = true

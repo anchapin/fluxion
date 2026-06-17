@@ -77,7 +77,7 @@ use fluxion::validation::guardrails;
 use fluxion::validation::reporter::{BaselineMetrics, ValidationReportGenerator};
 use fluxion::validation::statistical::StatisticalValidator;
 use fluxion::validation::ASHRAE140Validator;
-use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::BatchOracle;
 use serde::Deserialize;
 use std::env;
@@ -243,11 +243,81 @@ fn load_diagnostics_csv(path: &Path) -> Result<TimeSeriesData> {
 }
 
 #[derive(Parser)]
-#[command(name = "fluxion")]
-#[command(about = "Fluxion Building Energy Modeling CLI", long_about = None)]
+#[command(
+    name = "fluxion",
+    about = "Fluxion Building Energy Modeling CLI",
+    long_about = "Fluxion is a Rust-based building energy modeling engine compatible with EnergyPlus and OpenStudio workflows.
+
+Direct Simulation Mode (EnergyPlus-compatible):
+  fluxion -w weather.epw input.flux
+  fluxion -w weather.epw -d output/ input.flux
+  fluxion --annual -w weather.epw input.flux
+
+Workflow Mode (OpenStudio-compatible):
+  fluxion run -w workflow.fwf
+
+Analysis Commands:
+  fluxion validate --case 600
+  fluxion sensitivity --config sens.yaml",
+    after_help = "Examples:
+  # Run annual simulation (EnergyPlus-style)
+  fluxion -w USA_CO_Denver.epw building.flux
+
+  # Run with custom output directory
+  fluxion -w weather.epw -d results/ building.flux
+
+  # Design day only
+  fluxion -w weather.epw -D building.flux
+
+  # Run workflow (OpenStudio-style)
+  fluxion run -w baseline.fwf
+
+  # ASHRAE 140 validation
+  fluxion validate --case 600"
+)]
 struct Cli {
+    /// Weather file path (EPW format)
+    #[arg(short = 'w', long = "weather", value_name = "PATH")]
+    weather: Option<String>,
+
+    /// Output directory for simulation results
+    #[arg(short = 'd', long = "output-directory", value_name = "PATH")]
+    output_directory: Option<String>,
+
+    /// Prefix for output file names
+    #[arg(short = 'p', long = "output-prefix", value_name = "PREFIX")]
+    output_prefix: Option<String>,
+
+    /// Output suffix style (L=Legacy, C=Capital, D=Dash)
+    #[arg(
+        short = 's',
+        long = "output-suffix",
+        value_name = "STYLE",
+        default_value = "L"
+    )]
+    output_suffix: String,
+
+    /// Force design day only simulation
+    #[arg(short = 'D', long = "design-day")]
+    design_day: bool,
+
+    /// Force annual simulation (default)
+    #[arg(short = 'a', long = "annual")]
+    annual: bool,
+
+    /// Number of parallel jobs for multi-threaded operations
+    #[arg(short = 'j', long = "jobs", value_name = "N")]
+    jobs: Option<usize>,
+
+    /// Run post-processing after simulation
+    #[arg(short = 'r', long = "readvars")]
+    readvars: bool,
+
+    /// Input file path (.flux format)
+    input: Option<String>,
+
     #[command(subcommand)]
-    command: Commands,
+    command: Option<Commands>,
 }
 
 #[derive(Subcommand)]
@@ -424,6 +494,93 @@ enum Commands {
         #[command(subcommand)]
         command: AutomationSubcommand,
     },
+
+    /// LLM-powered BEM input validation co-pilot
+    Copilot {
+        /// Path to building configuration JSON file
+        #[arg(short, long)]
+        config: PathBuf,
+
+        /// Ollama server URL (default: http://localhost:11434)
+        #[arg(short, long)]
+        ollama_url: Option<String>,
+
+        /// LLM model to use (default: llama3.2:latest)
+        #[arg(long)]
+        model: Option<String>,
+
+        /// Skip LLM and use only rule-based checks
+        #[arg(long)]
+        rule_only: bool,
+
+        /// Output results to JSON file
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+
+        /// Enable verbose output
+        #[arg(short, long)]
+        verbose: bool,
+    },
+
+    /// Run a simulation workflow (OpenStudio-compatible)
+    Run {
+        /// Workflow file path (.fwf format)
+        #[arg(short = 'w', long = "workflow", value_name = "PATH")]
+        workflow: Option<PathBuf>,
+
+        /// Debug mode - keep temporary files
+        #[arg(long)]
+        debug: bool,
+
+        /// Run only measures (skip EnergyPlus simulation)
+        #[arg(short = 'm', long = "measures-only")]
+        measures_only: bool,
+
+        /// Run only post-processing (use existing results)
+        #[arg(short = 'p', long = "postprocess-only")]
+        postprocess_only: bool,
+    },
+
+    /// Manage and query measures
+    Measure {
+        #[command(subcommand)]
+        command: MeasureSubcommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum MeasureSubcommand {
+    /// Update measure.xml and README for a measure directory
+    Update {
+        /// Path to measure directory
+        #[arg(required(true))]
+        measure_dir: PathBuf,
+    },
+
+    /// Update all measures in a directory
+    UpdateAll {
+        /// Path to measures directory
+        #[arg(required(true))]
+        measures_dir: PathBuf,
+    },
+
+    /// Compute arguments for a measure
+    ComputeArguments {
+        /// Path to model file (.flux)
+        #[arg(required(true))]
+        model: PathBuf,
+
+        /// Path to measure directory
+        #[arg(required(true))]
+        measure_dir: PathBuf,
+    },
+
+    /// Run tests for measures in a directory
+    RunTests {
+        /// Path to measures directory
+        #[arg(required(true))]
+        measures_dir: PathBuf,
+    },
 }
 
 /// Handle automation commands
@@ -589,7 +746,10 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
 
             // Run validation
             let validator = ASHRAE140Validator::new();
-            let weather = DenverTmyWeather::new();
+            let weather = EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data");
             let (results, _) = validator.simulate_case_with_diagnostics(&spec, &weather, case_spec);
 
             println!(
@@ -617,10 +777,239 @@ fn validate_diagnostic_case(case_spec: &str) -> Result<()> {
     Ok(())
 }
 
+/// Run a direct simulation (EnergyPlus-compatible mode)
+///
+/// This function handles the direct simulation mode where a user provides
+/// an input file and weather file without a subcommand, similar to:
+///   fluxion -w weather.epw input.flux
+fn run_direct_simulation(
+    input_file: &str,
+    weather: Option<&str>,
+    output_directory: Option<&str>,
+    output_prefix: Option<&str>,
+    output_suffix: &str,
+    design_day: bool,
+    annual: bool,
+    jobs: Option<usize>,
+    readvars: bool,
+) -> Result<()> {
+    // Validate required arguments
+    let weather_path = weather.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Weather file is required for simulation.\n\
+             Usage: fluxion -w weather.epw input.flux\n\
+             Use --help for more information."
+        )
+    })?;
+
+    // Validate input file exists
+    let input_path = Path::new(input_file);
+    if !input_path.exists() {
+        anyhow::bail!("Input file not found: {}", input_file);
+    }
+
+    // Validate weather file exists
+    let weather_path = Path::new(weather_path);
+    if !weather_path.exists() {
+        anyhow::bail!("Weather file not found: {}", weather_path.display());
+    }
+
+    // Determine output directory
+    let output_dir = output_directory
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+
+    // Create output directory if it doesn't exist
+    std::fs::create_dir_all(&output_dir)?;
+
+    // Determine output prefix
+    let prefix = output_prefix.unwrap_or("fluxion_out");
+
+    // Log simulation parameters
+    println!("Fluxion Building Energy Modeling Engine");
+    println!("======================================");
+    println!("Input file: {}", input_file);
+    println!("Weather file: {}", weather_path.display());
+    println!("Output directory: {}", output_dir.display());
+    println!("Output prefix: {}", prefix);
+    println!("Output suffix style: {}", output_suffix);
+
+    if design_day {
+        println!("Simulation mode: Design Day Only");
+    } else if annual {
+        println!("Simulation mode: Annual");
+    } else {
+        println!("Simulation mode: Annual (default)");
+    }
+
+    if let Some(n_jobs) = jobs {
+        println!("Parallel jobs: {}", n_jobs);
+    }
+
+    // Load the building model
+    println!("\nLoading building model...");
+    let model_content = std::fs::read_to_string(input_path)?;
+    let _model: serde_json::Value = serde_json::from_str(&model_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse input file as JSON: {}", e))?;
+
+    // Load weather data
+    println!("Loading weather data...");
+    let _weather = fluxion::weather::epw::EpwWeatherSource::from_file(weather_path)
+        .map_err(|e| anyhow::anyhow!("Failed to load weather file: {}", e))?;
+
+    // TODO: Implement actual simulation
+    // This is a stub that demonstrates the CLI structure
+    println!("\nSimulation configuration prepared.");
+    println!("Note: Full simulation engine integration pending.");
+
+    if readvars {
+        println!("Post-processing enabled (readvars)");
+    }
+
+    println!("\nSimulation would run here with:");
+    println!("  - Input: {}", input_file);
+    println!("  - Weather: {}", weather_path.display());
+    println!("  - Timesteps: 8760 (annual)");
+
+    Ok(())
+}
+
+/// Run a workflow (OpenStudio-compatible mode)
+fn run_workflow(
+    workflow_path: Option<&Path>,
+    debug: bool,
+    measures_only: bool,
+    postprocess_only: bool,
+) -> Result<()> {
+    let workflow_path = workflow_path.ok_or_else(|| {
+        anyhow::anyhow!(
+            "Workflow file is required for 'run' command.\n\
+             Usage: fluxion run -w workflow.fwf\n\
+             Use 'fluxion run --help' for more information."
+        )
+    })?;
+
+    if debug {
+        println!("Debug mode enabled - temporary files will be preserved");
+    }
+
+    if measures_only {
+        println!("Running measures only (skipping simulation)...");
+        // TODO: Implement measures-only workflow
+        anyhow::bail!("Measures-only workflow not yet implemented");
+    }
+
+    if postprocess_only {
+        println!("Running post-processing only (using existing results)...");
+        // TODO: Implement postprocess-only workflow
+        anyhow::bail!("Postprocess-only workflow not yet implemented");
+    }
+
+    // Load and parse workflow file
+    let workflow_content = std::fs::read_to_string(workflow_path)?;
+    let workflow: serde_json::Value = serde_json::from_str(&workflow_content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse workflow file: {}", e))?;
+
+    println!("Fluxion Workflow Runner");
+    println!("======================");
+    println!("Workflow file: {}", workflow_path.display());
+
+    if let Some(name) = workflow.get("name").and_then(|v| v.as_str()) {
+        println!("Workflow name: {}", name);
+    }
+    if let Some(desc) = workflow.get("description").and_then(|v| v.as_str()) {
+        println!("Description: {}", desc);
+    }
+
+    // Extract workflow steps
+    if let Some(steps) = workflow.get("steps").and_then(|v| v.as_array()) {
+        println!("\nWorkflow steps: {}", steps.len());
+        for (i, step) in steps.iter().enumerate() {
+            let measure_type = step
+                .get("measure_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let measure_name = step
+                .get("measure_dir_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed");
+            println!("  {}. [{}] {}", i + 1, measure_type, measure_name);
+        }
+    }
+
+    // TODO: Implement actual workflow execution
+    println!("\nWorkflow execution not yet implemented.");
+    println!("This structure supports future measure-based workflows.");
+
+    Ok(())
+}
+
+/// Handle measure subcommands
+fn run_measure_command(command: &MeasureSubcommand) -> Result<()> {
+    match command {
+        MeasureSubcommand::Update { measure_dir } => {
+            println!("Updating measure at: {}", measure_dir.display());
+            // TODO: Implement measure update
+            anyhow::bail!("Measure update not yet implemented");
+        }
+        MeasureSubcommand::UpdateAll { measures_dir } => {
+            println!("Updating all measures in: {}", measures_dir.display());
+            // TODO: Implement measure update all
+            anyhow::bail!("Measure update all not yet implemented");
+        }
+        MeasureSubcommand::ComputeArguments { model, measure_dir } => {
+            println!("Computing arguments for measure:");
+            println!("  Model: {}", model.display());
+            println!("  Measure: {}", measure_dir.display());
+            // TODO: Implement compute arguments
+            anyhow::bail!("Compute arguments not yet implemented");
+        }
+        MeasureSubcommand::RunTests { measures_dir } => {
+            println!("Running tests for measures in: {}", measures_dir.display());
+            // TODO: Implement measure tests
+            anyhow::bail!("Measure tests not yet implemented");
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
+    // Handle direct simulation mode (EnergyPlus-compatible)
+    // When input file is provided without a subcommand
+    if let Some(input_file) = &cli.input {
+        return run_direct_simulation(
+            input_file,
+            cli.weather.as_deref(),
+            cli.output_directory.as_deref(),
+            cli.output_prefix.as_deref(),
+            &cli.output_suffix,
+            cli.design_day,
+            cli.annual,
+            cli.jobs,
+            cli.readvars,
+        );
+    }
+
+    // Handle subcommand mode
+    let command = cli.command.ok_or_else(|| {
+        anyhow::anyhow!(
+            "No input file or subcommand specified.\n\
+             \n\
+             Direct Simulation (EnergyPlus-style):\n\
+               fluxion -w weather.epw input.flux\n\
+             \n\
+             Workflow Mode (OpenStudio-style):\n\
+               fluxion run -w workflow.fwf\n\
+             \n\
+             Analysis Commands:\n\
+               fluxion validate --case 600\n\
+             \n\
+             Use 'fluxion --help' for more information."
+        )
+    })?;
+
+    match command {
         Commands::References { command } => match command {
             ReferenceCommands::Update { url } => {
                 update_references(url.as_deref())?;
@@ -1032,7 +1421,10 @@ fn main() -> Result<()> {
             let spec = case_id_to_spec(&case)
                 .ok_or_else(|| anyhow::anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
-            let weather = DenverTmyWeather::new();
+            let weather = EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
             let breakdown = diagnostic.energy_breakdown;
             let entries =
@@ -1051,7 +1443,10 @@ fn main() -> Result<()> {
             let spec = case_id_to_spec(&case)
                 .ok_or_else(|| anyhow::anyhow!("Unknown case ID: {}", case))?;
             let validator = ASHRAE140Validator::new();
-            let weather = DenverTmyWeather::new();
+            let weather = EpwWeatherSource::from_file(
+                "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
+            )
+            .expect("Failed to load EPW weather data");
             let (_, diagnostic) = validator.simulate_case_with_diagnostics(&spec, &weather, &case);
             // Ensure temperature profile has data (free-floating case)
             if diagnostic.temp_profile.hourly_temps.is_empty() {
@@ -1108,6 +1503,80 @@ fn main() -> Result<()> {
         Commands::Automation { command } => {
             handle_automation_command(&command)?;
         }
+
+        Commands::Copilot {
+            config,
+            ollama_url,
+            model,
+            rule_only,
+            output,
+            verbose,
+        } => {
+            use fluxion::validation::copilot::{Copilot, CopilotConfig};
+            use tokio::runtime::Runtime;
+
+            // Build copilot config
+            let mut copilot_config = CopilotConfig::default();
+            if let Some(url) = ollama_url {
+                copilot_config = copilot_config.with_ollama_url(url);
+            }
+            if let Some(m) = model {
+                copilot_config = copilot_config.with_model(m);
+            }
+            if rule_only {
+                copilot_config = copilot_config.rule_based_only();
+            }
+            if verbose {
+                copilot_config = copilot_config.verbose();
+            }
+
+            // Read configuration file
+            let config_content = std::fs::read_to_string(config)
+                .map_err(|e| anyhow::anyhow!("Failed to read config file: {}", e))?;
+
+            // Run copilot analysis
+            let rt = Runtime::new()?;
+            let mut copilot = Copilot::new(copilot_config);
+
+            if verbose {
+                eprintln!("[Copilot] Checking Ollama availability...");
+                let available = rt.block_on(copilot.is_ollama_available());
+                if available {
+                    eprintln!("[Copilot] Ollama is available");
+                } else {
+                    eprintln!("[Copilot] Ollama not available - using rule-based only");
+                }
+            }
+
+            let result = rt.block_on(copilot.analyze(&config_content))?;
+
+            // Output results
+            if let Some(ref output_path) = output {
+                let json = serde_json::to_string_pretty(&result)?;
+                std::fs::write(output_path, json)?;
+                println!("Results written to {}", output_path.display());
+            } else {
+                result.print_summary();
+            }
+
+            // Exit with error code if validation failed
+            if !result.is_valid() {
+                std::process::exit(1);
+            }
+        }
+
+        Commands::Run {
+            workflow,
+            debug,
+            measures_only,
+            postprocess_only,
+        } => {
+            run_workflow(workflow.as_deref(), debug, measures_only, postprocess_only)?;
+        }
+
+        Commands::Measure { command } => {
+            run_measure_command(&command)?;
+        }
     }
 
     Ok(())
@@ -1120,7 +1589,7 @@ mod tests {
     #[test]
     fn test_validate_statistical_flag_accepted() {
         // Test that --statistical flag is accepted
-        let args = vec!["fluxion", "validate", "--statistical"];
+        let args = ["fluxion", "validate", "--statistical"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --statistical flag");
     }
@@ -1128,7 +1597,7 @@ mod tests {
     #[test]
     fn test_validate_alpha_flag_accepted() {
         // Test that --alpha flag is accepted
-        let args = vec!["fluxion", "validate", "--statistical", "--alpha", "0.01"];
+        let args = ["fluxion", "validate", "--statistical", "--alpha", "0.01"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --alpha flag");
     }
@@ -1136,11 +1605,11 @@ mod tests {
     #[test]
     fn test_validate_default_behavior_unchanged() {
         // Test that default behavior (no --statistical) works
-        let args = vec!["fluxion", "validate"];
+        let args = ["fluxion", "validate"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should work without --statistical flag");
 
-        if let Commands::Validate { statistical, .. } = cli.unwrap().command {
+        if let Some(Commands::Validate { statistical, .. }) = cli.unwrap().command {
             assert!(!statistical, "Default should have statistical=false");
         }
     }
@@ -1148,11 +1617,11 @@ mod tests {
     #[test]
     fn test_validate_statistical_flag_sets_true() {
         // Test that --statistical flag sets statistical to true
-        let args = vec!["fluxion", "validate", "--statistical"];
+        let args = ["fluxion", "validate", "--statistical"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --statistical flag");
 
-        if let Commands::Validate { statistical, .. } = cli.unwrap().command {
+        if let Some(Commands::Validate { statistical, .. }) = cli.unwrap().command {
             assert!(statistical, "--statistical should set statistical=true");
         }
     }
@@ -1160,11 +1629,11 @@ mod tests {
     #[test]
     fn test_validate_alpha_default_value() {
         // Test that --alpha has default value of 0.05
-        let args = vec!["fluxion", "validate", "--statistical"];
+        let args = ["fluxion", "validate", "--statistical"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --statistical flag");
 
-        if let Commands::Validate { alpha, .. } = cli.unwrap().command {
+        if let Some(Commands::Validate { alpha, .. }) = cli.unwrap().command {
             assert_eq!(alpha, 0.05, "Default alpha should be 0.05");
         }
     }
@@ -1172,11 +1641,11 @@ mod tests {
     #[test]
     fn test_validate_alpha_custom_value() {
         // Test that --alpha accepts custom values
-        let args = vec!["fluxion", "validate", "--statistical", "--alpha", "0.01"];
+        let args = ["fluxion", "validate", "--statistical", "--alpha", "0.01"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should accept --alpha flag");
 
-        if let Commands::Validate { alpha, .. } = cli.unwrap().command {
+        if let Some(Commands::Validate { alpha, .. }) = cli.unwrap().command {
             assert_eq!(alpha, 0.01, "Custom alpha should be 0.01");
         }
     }
@@ -1185,11 +1654,11 @@ mod tests {
     fn test_validate_alpha_boundary_values() {
         // Test that --alpha accepts boundary values 0.0 and 1.0
         for alpha_val in ["0.0", "1.0"] {
-            let args = vec!["fluxion", "validate", "--statistical", "--alpha", alpha_val];
+            let args = ["fluxion", "validate", "--statistical", "--alpha", alpha_val];
             let cli = Cli::try_parse_from(args.iter());
             assert!(cli.is_ok(), "CLI should accept alpha={}", alpha_val);
 
-            if let Commands::Validate { alpha, .. } = cli.unwrap().command {
+            if let Some(Commands::Validate { alpha, .. }) = cli.unwrap().command {
                 let expected = alpha_val.parse::<f64>().unwrap();
                 assert_eq!(alpha, expected, "Alpha should be {}", alpha_val);
             }
@@ -1199,7 +1668,7 @@ mod tests {
     #[test]
     fn test_validate_alpha_too_large_rejected() {
         // Test that alpha > 1.0 is rejected
-        let args = vec!["fluxion", "validate", "--statistical", "--alpha", "1.5"];
+        let args = ["fluxion", "validate", "--statistical", "--alpha", "1.5"];
         let cli = Cli::try_parse_from(args.iter());
         // This test verifies CLI parsing only; runtime validation is separate
         assert!(
@@ -1211,7 +1680,7 @@ mod tests {
     #[test]
     fn test_validate_statistical_flag_integration() {
         // Test that --statistical flag integrates with other flags
-        let args = vec![
+        let args = [
             "fluxion",
             "validate",
             "--statistical",
@@ -1226,12 +1695,12 @@ mod tests {
             "CLI should accept --statistical with other flags"
         );
 
-        if let Commands::Validate {
+        if let Some(Commands::Validate {
             statistical,
             alpha,
             format: fmt,
             ..
-        } = cli.unwrap().command
+        }) = cli.unwrap().command
         {
             assert!(statistical, "--statistical should be true");
             assert_eq!(alpha, 0.05, "alpha should be 0.05");
@@ -1242,18 +1711,51 @@ mod tests {
     #[test]
     fn test_validate_without_statistical_backward_compatible() {
         // Test that validation works without --statistical flag
-        let args = vec!["fluxion", "validate", "--format", "csv"];
+        let args = ["fluxion", "validate", "--format", "csv"];
         let cli = Cli::try_parse_from(args.iter());
         assert!(cli.is_ok(), "CLI should work without --statistical");
 
-        if let Commands::Validate {
+        if let Some(Commands::Validate {
             statistical,
             format: fmt,
             ..
-        } = cli.unwrap().command
+        }) = cli.unwrap().command
         {
             assert!(!statistical, "statistical should be false by default");
             assert_eq!(fmt, "csv", "format should be csv");
+        }
+    }
+
+    #[test]
+    fn test_direct_simulation_mode_energyplus_style() {
+        // Test EnergyPlus-compatible direct simulation mode
+        let args = [
+            "fluxion",
+            "-w",
+            "weather.epw",
+            "-d",
+            "output/",
+            "input.flux",
+        ];
+        let cli = Cli::try_parse_from(args.iter());
+        assert!(
+            cli.is_ok(),
+            "CLI should accept EnergyPlus-style direct simulation"
+        );
+        let cli = cli.unwrap();
+        assert_eq!(cli.weather, Some("weather.epw".to_string()));
+        assert_eq!(cli.input, Some("input.flux".to_string()));
+        assert_eq!(cli.output_directory, Some("output/".to_string()));
+    }
+
+    #[test]
+    fn test_run_subcommand() {
+        // Test OpenStudio-compatible run subcommand
+        let args = ["fluxion", "run", "-w", "workflow.fwf"];
+        let cli = Cli::try_parse_from(args.iter());
+        assert!(cli.is_ok(), "CLI should accept run subcommand");
+        if let Some(Commands::Run { workflow, .. }) = cli.unwrap().command {
+            assert!(workflow.is_some());
         }
     }
 }

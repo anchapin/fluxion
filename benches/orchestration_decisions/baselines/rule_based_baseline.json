@@ -1,0 +1,40 @@
+{
+  "_schema_version": "1",
+  "_label": "rule_based_baseline",
+  "_description": "Current fluxion rule-based system. Known weakness: solver_selection on 900-series uses CTF instead of FD (Issue #726). Expected improvement after Issue #726 fix: TDQS \u2248 0.83+.",
+  "_note": "Update this file by running: python3 benches/orchestration_decisions/dataset/generate_dataset.py followed by: cargo bench --bench orchestration_decisions",
+  "overall": 0.700909,
+  "decisions": 195,
+  "per_type": {
+    "solver_selection": {
+      "tdqs": 0.666667,
+      "correct": 26,
+      "total": 39
+    },
+    "adaptive_timestep": {
+      "tdqs": 1.0,
+      "correct": 39,
+      "total": 39
+    },
+    "surrogate_routing": {
+      "tdqs": 0.666667,
+      "correct": 26,
+      "total": 39
+    },
+    "constraint_warning": {
+      "tdqs": 1.0,
+      "correct": 39,
+      "total": 39
+    },
+    "hvac_horizon": {
+      "tdqs": 0.820513,
+      "correct": 32,
+      "total": 39
+    }
+  },
+  "known_gaps": [
+    "solver_selection: 900-series heavy-mass cases use CTF instead of FD (Issue #726, planned Wave 1 fix)",
+    "surrogate_routing: always routes to physics (surrogate not yet deployed, v2.1+ feature)",
+    "hvac_horizon: fixed 24h; should use 72h when weather_forecast_confidence > 0.70 (Issue #728)"
+  ]
+}

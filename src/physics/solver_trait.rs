@@ -3,6 +3,28 @@
 //! This module defines the trait interface for heat conduction solvers,
 //! enabling unified treatment of 5R1C, CTF, and finite difference methods.
 //!
+//! # Unified Solver Architecture (Issue #624)
+//!
+//! This trait is part of a consolidated solver architecture that prevents
+//! solver proliferation. Rather than creating separate solver types for each
+//! use case, we use a single trait with runtime dispatch via SolverManager.
+//!
+//! ## Design Principles
+//!
+//! 1. **Single Interface**: All heat conduction solvers implement this trait
+//! 2. **Explicit Selection**: SolverManager selects the appropriate method
+//! 3. **No Duplication**: CTF, FD, and 5R1C share the same lifecycle pattern
+//! 4. **Validation Required**: New solvers only if existing ones fail validation
+//!
+//! ## Solver Lifecycle
+//!
+//! ```text
+//! +-------------+     +---------------------+     +-------------+
+//! | HeatConduction|-->|   SolverManager     |-->| 5R1C/CTF/FD |
+//! |    Trait     |   | (automatic select)  |     |  Wrappers  |
+//! +-------------+     +---------------------+     +-------------+
+//! ```
+//!
 //! # Overview
 //!
 //! The `HeatConductionSolver` trait provides a common interface for:
@@ -15,45 +37,44 @@
 //! ```rust
 //! use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
 //! use fluxion::physics::five_r1c_solver::FiveR1CSolver;
+//! use fluxion::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
 //!
 //! let mut solver = FiveR1CSolver::new();
-//! solver.initialize(&wall_assembly)?;
+//! solver.initialize(&wall_spec)?;
 //!
-//! let flux = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0)?;
+//! let flux = solver.step(
+//!     Time::from_value(3600.0),
+//!     Temperature::from_value(20.0),
+//!     Temperature::from_value(5.0),
+//!     HeatTransferCoefficient::from_value(8.0),
+//!     HeatTransferCoefficient::from_value(25.0),
+//! )?;
 //! ```
 
-use crate::sim::assembly::BuildingAssembly;
-use std::error::Error;
-use std::fmt;
+#[allow(unused_imports)]
+use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_spec::WallSpec;
+use thiserror::Error;
 
 /// Error type for solver operations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum SolverError {
     /// Invalid configuration parameters
+    #[error("Invalid configuration: {0}")]
     InvalidConfig(String),
     /// Coefficient calculation failed
+    #[error("Coefficient error: {0}")]
     CoefficientError(String),
     /// Numerical instability detected
+    #[error("Numerical instability: {0}")]
     Instability(String),
     /// Convergence failure
+    #[error("Convergence error: {0}")]
     ConvergenceError(String),
     /// Invalid wall construction
+    #[error("Construction error: {0}")]
     ConstructionError(String),
 }
-
-impl fmt::Display for SolverError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            SolverError::InvalidConfig(msg) => write!(f, "Invalid configuration: {}", msg),
-            SolverError::CoefficientError(msg) => write!(f, "Coefficient error: {}", msg),
-            SolverError::Instability(msg) => write!(f, "Numerical instability: {}", msg),
-            SolverError::ConvergenceError(msg) => write!(f, "Convergence error: {}", msg),
-            SolverError::ConstructionError(msg) => write!(f, "Construction error: {}", msg),
-        }
-    }
-}
-
-impl Error for SolverError {}
 
 /// Common trait for all heat conduction solvers.
 ///
@@ -71,19 +92,26 @@ impl Error for SolverError {}
 ///
 /// ```rust
 /// # use fluxion::physics::solver_trait::{HeatConductionSolver, SolverError};
+/// # use fluxion::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time};
 /// # struct MySolver;
 /// # impl MySolver { fn new() -> Self { MySolver } }
 /// # impl HeatConductionSolver for MySolver {
 /// #     fn name(&self) -> &str { "test" }
-/// #     fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> { Ok(()) }
-/// #     fn step(&mut self, dt: f64, T_int: f64, T_ext: f64, h_int: f64, h_ext: f64) -> Result<f64, SolverError> { Ok(0.0) }
+/// #     fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> { Ok(()) }
+/// #     fn step(&mut self, dt: Time, T_int: Temperature, T_ext: Temperature, h_int: HeatTransferCoefficient, h_ext: HeatTransferCoefficient) -> Result<HeatFlux, SolverError> { Ok(HeatFlux::from_value(0.0)) }
 /// #     fn energy_storage_rate(&self) -> f64 { 0.0 }
 /// #     fn is_valid(&self) -> bool { true }
 /// # }
 /// let mut solver = MySolver::new();
 /// solver.initialize(&wall)?;
 ///
-/// let flux = solver.step(3600.0, T_zone, T_outdoor, h_int, h_ext)?;
+/// let flux = solver.step(
+///     Time::from_value(3600.0),
+///     Temperature::from_value(T_zone),
+///     Temperature::from_value(T_outdoor),
+///     HeatTransferCoefficient::from_value(h_int),
+///     HeatTransferCoefficient::from_value(h_ext),
+/// )?;
 /// ```
 pub trait HeatConductionSolver: Send + Sync {
     /// Get solver name/type identifier
@@ -92,11 +120,11 @@ pub trait HeatConductionSolver: Send + Sync {
     /// Initialize solver with wall construction
     ///
     /// # Arguments
-    /// * `wall` - Wall assembly with material layers and properties
+    /// * `wall` - Wall specification with material layers and properties
     ///
     /// # Returns
     /// Ok if initialization successful, Err if construction is invalid
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError>;
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError>;
 
     /// Advance solver by one timestep
     ///
@@ -111,12 +139,12 @@ pub trait HeatConductionSolver: Send + Sync {
     /// Heat flux through wall [W/m²] (positive = heat flowing into zone)
     fn step(
         &mut self,
-        timestep: f64,
-        T_interior: f64,
-        T_exterior: f64,
-        h_interior: f64,
-        h_exterior: f64,
-    ) -> Result<f64, SolverError>;
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError>;
 
     /// Get current energy storage rate in wall [W/m²]
     ///
@@ -131,6 +159,7 @@ pub trait HeatConductionSolver: Send + Sync {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
 
     #[test]
     fn test_solver_error_display_invalid_config() {
@@ -188,6 +217,10 @@ mod tests {
 
     #[test]
     fn test_heat_conduction_solver_trait_can_be_implemented() {
+        use crate::physics::units::{
+            FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time,
+        };
+
         struct TestSolver {
             valid: bool,
             storage_rate: f64,
@@ -198,19 +231,19 @@ mod tests {
                 "TestSolver"
             }
 
-            fn initialize(&mut self, _wall: &BuildingAssembly) -> Result<(), SolverError> {
+            fn initialize(&mut self, _wall: &WallSpec) -> Result<(), SolverError> {
                 Ok(())
             }
 
             fn step(
                 &mut self,
-                _timestep: f64,
-                _T_interior: f64,
-                _T_exterior: f64,
-                _h_interior: f64,
-                _h_exterior: f64,
-            ) -> Result<f64, SolverError> {
-                Ok(42.0)
+                _timestep: Time,
+                _T_interior: Temperature,
+                _T_exterior: Temperature,
+                _h_interior: HeatTransferCoefficient,
+                _h_exterior: HeatTransferCoefficient,
+            ) -> Result<HeatFlux, SolverError> {
+                Ok(HeatFlux::from_value(42.0))
             }
 
             fn energy_storage_rate(&self) -> f64 {
@@ -231,13 +264,23 @@ mod tests {
         assert!(solver.is_valid());
         assert_eq!(solver.energy_storage_rate(), 10.0);
 
-        let result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
+        let result = solver.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), 42.0);
+        assert_eq!(result.unwrap().to_value(), 42.0);
     }
 
     #[test]
     fn test_heat_conduction_solver_can_return_error() {
+        use crate::physics::units::{
+            FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time,
+        };
+
         struct FailingSolver;
 
         impl HeatConductionSolver for FailingSolver {
@@ -245,18 +288,18 @@ mod tests {
                 "FailingSolver"
             }
 
-            fn initialize(&mut self, _wall: &BuildingAssembly) -> Result<(), SolverError> {
+            fn initialize(&mut self, _wall: &WallSpec) -> Result<(), SolverError> {
                 Err(SolverError::ConstructionError("bad wall".to_string()))
             }
 
             fn step(
                 &mut self,
-                _timestep: f64,
-                _T_interior: f64,
-                _T_exterior: f64,
-                _h_interior: f64,
-                _h_exterior: f64,
-            ) -> Result<f64, SolverError> {
+                _timestep: Time,
+                _T_interior: Temperature,
+                _T_exterior: Temperature,
+                _h_interior: HeatTransferCoefficient,
+                _h_exterior: HeatTransferCoefficient,
+            ) -> Result<HeatFlux, SolverError> {
                 Err(SolverError::Instability("NaN detected".to_string()))
             }
 
@@ -272,8 +315,14 @@ mod tests {
         let mut solver = FailingSolver;
         assert!(!solver.is_valid());
 
-        // Note: initialize() returns error before needing BuildingAssembly
-        let step_result = solver.step(3600.0, 20.0, 5.0, 8.0, 25.0);
+        // Note: initialize() returns error before needing WallSpec
+        let step_result = solver.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(5.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(step_result.is_err());
         assert!(step_result.unwrap_err().to_string().contains("instability"));
     }

@@ -26,7 +26,9 @@
 use crate::physics::fd_discretization::{MaterialLayer, WallDiscretization};
 use crate::physics::fd_solver::{ImplicitFDSolver, SurfaceBC};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_properties::WallProperties;
+use crate::physics::wall_spec::WallSpec;
 
 /// Finite difference solver wrapper implementing the common HeatConductionSolver trait.
 ///
@@ -85,39 +87,33 @@ impl FDSolverWrapper {
         }
     }
 
-    /// Convert BuildingAssembly to material layers.
-    fn assembly_to_material_layers(assembly: &BuildingAssembly) -> Vec<MaterialLayer> {
-        assembly
+    /// Convert WallProperties to material layers.
+    ///
+    /// This hides BuildingAssembly internals from the solver. If BuildingAssembly
+    /// changes its layer structure, only WallProperties::from_assembly() needs updating.
+    fn wall_properties_to_material_layers(wall_props: &WallProperties) -> Vec<MaterialLayer> {
+        wall_props
             .layers
             .iter()
             .map(|layer| {
                 MaterialLayer::new(
-                    layer.name(),
-                    layer.thickness(),
-                    layer.conductivity(),
-                    layer.density(),
-                    layer.specific_heat(),
+                    &layer.name,
+                    layer.thickness_m,
+                    layer.conductivity_w_mk,
+                    layer.density_kg_m3,
+                    layer.specific_heat_j_kgk,
                 )
             })
             .collect()
     }
 
-    /// Calculate surface heat flux from temperature profile.
-    fn calculate_surface_flux(
-        _solver: &ImplicitFDSolver,
-        _discretization: &WallDiscretization,
-        T_interior: f64,
-        h_interior: f64,
-    ) -> f64 {
-        // Get surface temperature (first node)
-        // Note: ImplicitFDSolver doesn't expose temperatures directly
-        // We'll use a simplified approach - assume surface temp is close to interior temp
-        // In a real implementation, we'd need to query the solver for surface temperature
-        let T_surface = 20.0; // Placeholder - would need proper access to solver state
-
-        // Calculate convective flux at interior surface
-        // q = h * (T_zone - T_surface)
-        // Positive flux = heat flowing into zone
+    /// Calculate interior surface heat flux from solver state.
+    ///
+    /// Uses the FD solver's actual surface temperature:
+    /// q = h * (T_zone - T_surface)
+    /// Positive flux = heat flowing into zone
+    fn calculate_surface_flux(solver: &ImplicitFDSolver, T_interior: f64, h_interior: f64) -> f64 {
+        let T_surface = solver.interior_surface_temp();
         h_interior * (T_interior - T_surface)
     }
 }
@@ -133,9 +129,12 @@ impl HeatConductionSolver for FDSolverWrapper {
         "FD"
     }
 
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
-        // Convert assembly to material layers
-        let materials = Self::assembly_to_material_layers(wall);
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        // Convert WallSpec to wall properties (the seam)
+        let wall_props = wall.to_wall_properties();
+
+        // Convert wall properties to material layers
+        let materials = Self::wall_properties_to_material_layers(&wall_props);
 
         if materials.is_empty() {
             return Err(SolverError::ConstructionError(
@@ -169,12 +168,12 @@ impl HeatConductionSolver for FDSolverWrapper {
 
     fn step(
         &mut self,
-        timestep: f64,
-        T_interior: f64,
-        T_exterior: f64,
-        h_interior: f64,
-        h_exterior: f64,
-    ) -> Result<f64, SolverError> {
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError> {
         if !self.initialized {
             return Err(SolverError::InvalidConfig(
                 "FD solver not initialized. Call initialize() first.".to_string(),
@@ -187,26 +186,24 @@ impl HeatConductionSolver for FDSolverWrapper {
             ));
         }
 
-        // Get mutable references to solver and discretization
+        // Get mutable reference to solver
         let solver = self.solver.as_mut().ok_or_else(|| {
             SolverError::InvalidConfig("FD solver is None after initialization".to_string())
         })?;
 
-        let discretization = self.discretization.as_ref().ok_or_else(|| {
-            SolverError::InvalidConfig("FD discretization is None after initialization".to_string())
-        })?;
-
         // Create boundary conditions
-        let interior_bc = SurfaceBC::new_interior(h_interior, T_interior);
-        let exterior_bc = SurfaceBC::new_exterior(h_exterior, T_exterior, 0.0);
+        let interior_bc = SurfaceBC::new_interior(h_interior.to_value(), T_interior.to_value());
+        let exterior_bc =
+            SurfaceBC::new_exterior(h_exterior.to_value(), T_exterior.to_value(), 0.0);
 
         // Advance FD solver by one timestep
-        solver.step(timestep, &interior_bc, &exterior_bc);
+        solver.step(timestep.to_value(), &interior_bc, &exterior_bc);
 
-        // Calculate surface heat flux
-        self.q_flux = Self::calculate_surface_flux(solver, discretization, T_interior, h_interior);
+        // Calculate surface heat flux using actual solver state
+        self.q_flux =
+            Self::calculate_surface_flux(solver, T_interior.to_value(), h_interior.to_value());
 
-        Ok(self.q_flux)
+        Ok(HeatFlux::from_value(self.q_flux))
     }
 
     fn energy_storage_rate(&self) -> f64 {
@@ -223,13 +220,18 @@ impl HeatConductionSolver for FDSolverWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::units::{
+        FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
+    };
+    use crate::physics::wall_spec::WallSpec;
     use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 
-    fn create_test_wall() -> BuildingAssembly {
-        AssemblyBuilder::new("Test Wall".to_string())
+    fn create_test_wall() -> WallSpec {
+        let assembly = AssemblyBuilder::new("Test Wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.2))) // 200mm concrete
             .build()
-            .unwrap()
+            .unwrap();
+        WallSpec::from_assembly(&assembly)
     }
 
     #[test]
@@ -267,10 +269,18 @@ mod tests {
         wrapper.initialize(&wall).unwrap();
 
         // Calculate flux for 20°C interior, 0°C exterior
-        let flux = wrapper.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+        let flux = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
 
         // Flux should be finite
-        assert!(flux.is_finite());
+        assert!(flux.to_value().is_finite());
     }
 
     #[test]
@@ -278,7 +288,13 @@ mod tests {
         let mut wrapper = FDSolverWrapper::new();
 
         // Should fail if not initialized
-        let result = wrapper.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+        let result = wrapper.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(result.is_err());
     }
 
@@ -293,8 +309,16 @@ mod tests {
         let mut total_flux = 0.0;
         for hour in 0..24 {
             let t_ext = 10.0 + 10.0 * ((hour as f64 - 6.0) * std::f64::consts::PI / 12.0).sin();
-            let flux = wrapper.step(3600.0, 20.0, t_ext, 8.0, 25.0).unwrap();
-            total_flux += flux;
+            let flux = wrapper
+                .step(
+                    Time::from_value(3600.0),
+                    Temperature::from_value(20.0),
+                    Temperature::from_value(t_ext),
+                    HeatTransferCoefficient::from_value(8.0),
+                    HeatTransferCoefficient::from_value(25.0),
+                )
+                .unwrap();
+            total_flux += flux.to_value();
         }
 
         // Total flux should be reasonable
@@ -362,8 +386,16 @@ mod tests {
 
         let timesteps = [300.0, 600.0, 1800.0, 3600.0];
         for dt in timesteps {
-            let flux = wrapper.step(dt, 20.0, 10.0, 8.0, 25.0).unwrap();
-            assert!(flux.is_finite());
+            let flux = wrapper
+                .step(
+                    Time::from_value(dt),
+                    Temperature::from_value(20.0),
+                    Temperature::from_value(10.0),
+                    HeatTransferCoefficient::from_value(8.0),
+                    HeatTransferCoefficient::from_value(25.0),
+                )
+                .unwrap();
+            assert!(flux.to_value().is_finite());
         }
     }
 
@@ -374,12 +406,28 @@ mod tests {
         wrapper.initialize(&wall).unwrap();
 
         // Cold extreme
-        let flux_cold = wrapper.step(3600.0, -10.0, -20.0, 8.0, 25.0).unwrap();
-        assert!(flux_cold.is_finite());
+        let flux_cold = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(-10.0),
+                Temperature::from_value(-20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(flux_cold.to_value().is_finite());
 
         // Hot extreme
-        let flux_hot = wrapper.step(3600.0, 40.0, 50.0, 8.0, 25.0).unwrap();
-        assert!(flux_hot.is_finite());
+        let flux_hot = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(40.0),
+                Temperature::from_value(50.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(flux_hot.to_value().is_finite());
     }
 
     #[test]
@@ -389,12 +437,28 @@ mod tests {
         wrapper.initialize(&wall).unwrap();
 
         // Low convection
-        let flux_low = wrapper.step(3600.0, 20.0, 10.0, 1.0, 1.0).unwrap();
-        assert!(flux_low.is_finite());
+        let flux_low = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(10.0),
+                HeatTransferCoefficient::from_value(1.0),
+                HeatTransferCoefficient::from_value(1.0),
+            )
+            .unwrap();
+        assert!(flux_low.to_value().is_finite());
 
         // High convection
-        let flux_high = wrapper.step(3600.0, 20.0, 10.0, 50.0, 100.0).unwrap();
-        assert!(flux_high.is_finite());
+        let flux_high = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(10.0),
+                HeatTransferCoefficient::from_value(50.0),
+                HeatTransferCoefficient::from_value(100.0),
+            )
+            .unwrap();
+        assert!(flux_high.to_value().is_finite());
     }
 
     #[test]
@@ -424,12 +488,34 @@ mod tests {
         wrapper.initialize(&wall).unwrap();
 
         // Interior hotter than exterior - flux should be positive (into zone)
-        let flux_heating = wrapper.step(3600.0, 25.0, 15.0, 8.0, 25.0).unwrap();
-        assert!(flux_heating > 0.0, "Heating flux should be positive");
+        let flux_heating = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(25.0),
+                Temperature::from_value(15.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(
+            flux_heating.to_value() > 0.0,
+            "Heating flux should be positive"
+        );
 
         // Exterior hotter than interior - flux should be negative (out of zone)
-        let flux_cooling = wrapper.step(3600.0, 15.0, 25.0, 8.0, 25.0).unwrap();
-        assert!(flux_cooling < 0.0, "Cooling flux should be negative");
+        let flux_cooling = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(15.0),
+                Temperature::from_value(25.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(
+            flux_cooling.to_value() < 0.0,
+            "Cooling flux should be negative"
+        );
     }
 
     #[test]
@@ -438,10 +524,18 @@ mod tests {
         let wall = create_test_wall();
         wrapper.initialize(&wall).unwrap();
 
-        let flux = wrapper.step(0.0, 20.0, 10.0, 8.0, 25.0).unwrap();
+        let flux = wrapper
+            .step(
+                Time::from_value(0.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(10.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
         // Zero timestep should give zero flux (no time for heat transfer)
         assert!(
-            flux.abs() < 1e-10,
+            flux.to_value().abs() < 1e-10,
             "Zero timestep should give near-zero flux"
         );
     }

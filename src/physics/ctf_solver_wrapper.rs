@@ -26,7 +26,9 @@
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFCoefficients, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
-use crate::sim::assembly::BuildingAssembly;
+use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_properties::WallProperties;
+use crate::physics::wall_spec::WallSpec;
 
 /// CTF solver wrapper implementing the common HeatConductionSolver trait.
 ///
@@ -75,18 +77,21 @@ impl CTFSolverWrapper {
         }
     }
 
-    /// Convert BuildingAssembly to CTF materials.
-    fn assembly_to_ctf_materials(assembly: &BuildingAssembly) -> Vec<CTFMaterial> {
-        assembly
+    /// Convert WallProperties to CTF materials.
+    ///
+    /// This hides BuildingAssembly internals from the solver. If BuildingAssembly
+    /// changes its layer structure, only WallProperties::from_assembly() needs updating.
+    fn wall_properties_to_ctf_materials(wall_props: &WallProperties) -> Vec<CTFMaterial> {
+        wall_props
             .layers
             .iter()
             .map(|layer| {
                 CTFMaterial::new(
-                    layer.name(),
-                    layer.thickness(),
-                    layer.conductivity(),
-                    layer.density(),
-                    layer.specific_heat(),
+                    &layer.name,
+                    layer.thickness_m,
+                    layer.conductivity_w_mk,
+                    layer.density_kg_m3,
+                    layer.specific_heat_j_kgk,
                 )
             })
             .collect()
@@ -112,9 +117,12 @@ impl HeatConductionSolver for CTFSolverWrapper {
         "CTF"
     }
 
-    fn initialize(&mut self, wall: &BuildingAssembly) -> Result<(), SolverError> {
-        // Convert assembly to CTF materials
-        let materials = Self::assembly_to_ctf_materials(wall);
+    fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        // Convert WallSpec to wall properties (the seam)
+        let wall_props = wall.to_wall_properties();
+
+        // Convert wall properties to CTF materials
+        let materials = Self::wall_properties_to_ctf_materials(&wall_props);
 
         if materials.is_empty() {
             return Err(SolverError::ConstructionError(
@@ -137,8 +145,16 @@ impl HeatConductionSolver for CTFSolverWrapper {
         // Create solver configuration
         let config = CTFSolverConfig::new(timestep, 50);
 
-        // Create and initialize solver
-        self.solver = Some(CTFSolver::new(coeffs.clone(), config));
+        // Create and initialize solver with warmup
+        // Use with_warmup() to initialize history buffers with realistic values
+        // instead of zero flux/uniform temperature which causes unphysical transients
+        self.solver = Some(CTFSolver::with_warmup(
+            coeffs.clone(),
+            config,
+            20.0, // t_interior_initial
+            20.0, // t_exterior_initial
+            7,    // warmup_days
+        ));
         self.coefficients = Some(coeffs);
         self.initialized = true;
         self.valid = true;
@@ -148,12 +164,12 @@ impl HeatConductionSolver for CTFSolverWrapper {
 
     fn step(
         &mut self,
-        timestep: f64,
-        T_interior: f64,
-        T_exterior: f64,
-        _h_interior: f64,
-        _h_exterior: f64,
-    ) -> Result<f64, SolverError> {
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        _h_interior: HeatTransferCoefficient,
+        _h_exterior: HeatTransferCoefficient,
+    ) -> Result<HeatFlux, SolverError> {
         if !self.initialized {
             return Err(SolverError::InvalidConfig(
                 "CTF solver not initialized. Call initialize() first.".to_string(),
@@ -173,20 +189,23 @@ impl HeatConductionSolver for CTFSolverWrapper {
 
         // Verify timestep matches CTF configuration
         let solver_timestep = solver.config.timestep;
-        if (timestep - solver_timestep).abs() > 1.0 {
+        let timestep_s = timestep.to_value();
+        if (timestep_s - solver_timestep).abs() > 1.0 {
             // Timestep mismatch - could interpolate or warn
             // For now, just proceed with CTF's native timestep
             log::warn!(
                 "CTF timestep ({:.0}s) differs from model timestep ({:.0}s)",
                 solver_timestep,
-                timestep
+                timestep_s
             );
         }
 
-        // Approximate surface temperature accounting for convection resistance
-        // T_surface = T_air - q_conv/h (where q_conv = q_flux)
-        let t_interior_surface = T_interior - self.prev_q_flux / self.h_interior;
-        let t_exterior_surface = T_exterior; // T_exterior assumed to be surface temperature
+        // The CTF coefficients already include film resistance scaling
+        // (R_SI=0.125, R_SE=0.044). Input temperatures should be AIR temperatures,
+        // not surface temperatures — applying a surface correction would double-count
+        // the film resistance and cause instability.
+        let t_interior_surface = T_interior.to_value();
+        let t_exterior_surface = T_exterior.to_value();
 
         // Step the CTF solver with surface temperatures
         let q_flux = solver.step(t_interior_surface, t_exterior_surface);
@@ -194,7 +213,7 @@ impl HeatConductionSolver for CTFSolverWrapper {
         // Store flux for next timestep approximation
         self.prev_q_flux = q_flux;
 
-        Ok(q_flux)
+        Ok(HeatFlux::from_value(q_flux))
     }
 
     fn energy_storage_rate(&self) -> f64 {
@@ -211,13 +230,18 @@ impl HeatConductionSolver for CTFSolverWrapper {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::physics::units::{
+        FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
+    };
+    use crate::physics::wall_spec::WallSpec;
     use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 
-    fn create_test_wall() -> BuildingAssembly {
-        AssemblyBuilder::new("Test Wall".to_string())
+    fn create_test_wall() -> WallSpec {
+        let assembly = AssemblyBuilder::new("Test Wall".to_string())
             .add_layer(Box::new(ConcreteMaterial::new(0.2))) // 200mm concrete
             .build()
-            .unwrap()
+            .unwrap();
+        WallSpec::from_assembly(&assembly)
     }
 
     #[test]
@@ -245,13 +269,21 @@ mod tests {
         wrapper.initialize(&wall).unwrap();
 
         // Calculate flux for 20°C interior, 0°C exterior
-        let flux = wrapper.step(3600.0, 20.0, 0.0, 8.0, 25.0).unwrap();
+        let flux = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(0.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
 
         // Flux should be finite
-        assert!(flux.is_finite());
+        assert!(flux.to_value().is_finite());
 
         // Flux should be negative (heat flowing out)
-        assert!(flux < 0.0);
+        assert!(flux.to_value() < 0.0);
     }
 
     #[test]
@@ -259,7 +291,13 @@ mod tests {
         let mut wrapper = CTFSolverWrapper::new();
 
         // Should fail if not initialized
-        let result = wrapper.step(3600.0, 20.0, 0.0, 8.0, 25.0);
+        let result = wrapper.step(
+            Time::from_value(3600.0),
+            Temperature::from_value(20.0),
+            Temperature::from_value(0.0),
+            HeatTransferCoefficient::from_value(8.0),
+            HeatTransferCoefficient::from_value(25.0),
+        );
         assert!(result.is_err());
     }
 
@@ -274,8 +312,16 @@ mod tests {
         let mut total_flux = 0.0;
         for hour in 0..24 {
             let t_ext = 10.0 + 10.0 * ((hour as f64 - 6.0) * std::f64::consts::PI / 12.0).sin();
-            let flux = wrapper.step(3600.0, 20.0, t_ext, 8.0, 25.0).unwrap();
-            total_flux += flux;
+            let flux = wrapper
+                .step(
+                    Time::from_value(3600.0),
+                    Temperature::from_value(20.0),
+                    Temperature::from_value(t_ext),
+                    HeatTransferCoefficient::from_value(8.0),
+                    HeatTransferCoefficient::from_value(25.0),
+                )
+                .unwrap();
+            total_flux += flux.to_value();
         }
 
         // Total flux should be reasonable
@@ -340,18 +386,102 @@ mod tests {
     }
 
     #[test]
+    fn test_ctf_wrapper_warmup_initializes_flux_history() {
+        let mut wrapper = CTFSolverWrapper::new();
+        let wall = create_test_wall();
+        wrapper.initialize(&wall).unwrap();
+
+        // After warmup, history should contain non-zero flux values
+        // from the diurnal warmup cycles, not the zero initial state
+        let solver = wrapper.solver.as_ref().expect("solver should exist");
+        let interior_flux = solver.interior_flux();
+        let exterior_flux = solver.exterior_flux();
+
+        // Warmup cycles should have established realistic flux values
+        // The exterior flux should reflect the diurnal cycling during warmup
+        assert!(
+            exterior_flux.is_finite(),
+            "Exterior flux should be finite after warmup"
+        );
+        assert!(
+            interior_flux.is_finite(),
+            "Interior flux should be finite after warmup"
+        );
+    }
+
+    #[test]
+    fn test_ctf_wrapper_without_warmup_vs_with_warmup() {
+        use crate::physics::ctf_coefficients::CTFCalculator;
+
+        let wall = create_test_wall();
+        let wall_props = wall.to_wall_properties();
+        let materials = CTFSolverWrapper::wall_properties_to_ctf_materials(&wall_props);
+        let timestep = 3600.0;
+        let coeffs = CTFCalculator::with_defaults(&materials, timestep).compute_coefficients();
+        let config = CTFSolverConfig::new(timestep, 50);
+
+        // Create wrapper (should now use warmup internally)
+        let mut wrapper = CTFSolverWrapper::new();
+        wrapper.initialize(&wall).unwrap();
+        let wrapper_flux = wrapper.solver.as_ref().unwrap().exterior_flux();
+
+        // Create solver WITHOUT warmup (old behavior)
+        let solver_no_warmup = CTFSolver::new(coeffs.clone(), config.clone());
+        let flux_no_warmup = solver_no_warmup.exterior_flux();
+
+        // Create solver WITH warmup (expected behavior)
+        let solver_with_warmup = CTFSolver::with_warmup(coeffs, config, 20.0, 20.0, 7);
+        let flux_with_warmup = solver_with_warmup.exterior_flux();
+
+        // Verify all fluxes are finite
+        assert!(wrapper_flux.is_finite(), "Wrapper flux should be finite");
+        assert!(
+            flux_no_warmup.is_finite(),
+            "Flux without warmup should be finite"
+        );
+        assert!(
+            flux_with_warmup.is_finite(),
+            "Flux with warmup should be finite"
+        );
+
+        // Key assertion: wrapper should use warmup, not zero-init
+        // Wrapper flux should match with_warmup flux, not no_warmup flux
+        assert_eq!(
+            wrapper_flux, flux_with_warmup,
+            "Wrapper should use warmup - expected wrapper flux ({}) to match warmup flux ({})",
+            wrapper_flux, flux_with_warmup
+        );
+    }
+
+    #[test]
     fn test_ctf_wrapper_step_extreme_temperatures() {
         let mut wrapper = CTFSolverWrapper::new();
         let wall = create_test_wall();
         wrapper.initialize(&wall).unwrap();
 
         // Cold extreme
-        let flux_cold = wrapper.step(3600.0, -10.0, -20.0, 8.0, 25.0).unwrap();
-        assert!(flux_cold.is_finite());
+        let flux_cold = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(-10.0),
+                Temperature::from_value(-20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(flux_cold.to_value().is_finite());
 
         // Hot extreme
-        let flux_hot = wrapper.step(3600.0, 40.0, 50.0, 8.0, 25.0).unwrap();
-        assert!(flux_hot.is_finite());
+        let flux_hot = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(40.0),
+                Temperature::from_value(50.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+        assert!(flux_hot.to_value().is_finite());
     }
 
     #[test]
@@ -362,8 +492,16 @@ mod tests {
 
         // Convection parameters are ignored by the step function
         // Should still work with any h_interior, h_exterior values
-        let flux = wrapper.step(3600.0, 20.0, 10.0, 100.0, 200.0).unwrap();
-        assert!(flux.is_finite());
+        let flux = wrapper
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(10.0),
+                HeatTransferCoefficient::from_value(100.0),
+                HeatTransferCoefficient::from_value(200.0),
+            )
+            .unwrap();
+        assert!(flux.to_value().is_finite());
     }
 
     #[test]

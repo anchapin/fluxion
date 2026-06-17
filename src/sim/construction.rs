@@ -18,7 +18,12 @@
 //! - **Area Multipliers**: Each mass class has an associated effective mass area
 //!   multiplier (A_m factor) used in 5R1C thermal network calculations.
 
+use crate::physics::continuous::ContinuousField;
+use crate::sim::shading::{Overhang, ShadeFin};
+use crate::validation::ashrae_140_cases::Orientation;
+use num_traits::Zero;
 use serde::{Deserialize, Serialize};
+use std::ops::{Add, AddAssign, Mul};
 // Use constants from physics module instead of hardcoded values
 pub use crate::physics::constants::thermal::ashrae_140::{
     EXTERIOR_FILM_COEFF, EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF,
@@ -94,6 +99,65 @@ pub fn exterior_film_coeff(wind_speed: f64) -> f64 {
 /// Interior film coefficient in W/m²K
 pub const fn interior_film_coeff() -> f64 {
     INTERIOR_FILM_COEFF
+}
+
+/// Represents a wall surface in a thermal zone.
+#[derive(Clone, Debug)]
+pub struct WallSurface {
+    /// Total area of the surface in square meters (m²).
+    pub area: f64,
+    /// Window area on this surface in square meters (m²).
+    pub window_area: f64,
+    /// Thermal transmittance of the surface (W/m²K).
+    pub u_value: f64,
+    /// Orientation of the surface.
+    pub orientation: Orientation,
+    /// Optional overhang shading device.
+    pub overhang: Option<Overhang>,
+    /// List of vertical shade fins.
+    pub fins: Vec<ShadeFin>,
+}
+
+impl WallSurface {
+    /// Create a new WallSurface.
+    pub fn new(area: f64, u_value: f64, orientation: Orientation) -> Self {
+        WallSurface {
+            area,
+            window_area: 0.0,
+            u_value,
+            orientation,
+            overhang: None,
+            fins: Vec::new(),
+        }
+    }
+
+    /// Create a new WallSurface with a window.
+    pub fn with_window(mut self, window_area: f64) -> Self {
+        self.window_area = window_area;
+        self
+    }
+
+    /// Set an overhang for this surface.
+    pub fn with_overhang(mut self, overhang: Overhang) -> Self {
+        self.overhang = Some(overhang);
+        self
+    }
+
+    /// Add a shade fin to this surface.
+    pub fn with_fin(mut self, fin: ShadeFin) -> Self {
+        self.fins.push(fin);
+        self
+    }
+
+    /// Calculate heat gain for this surface given a continuous field representing
+    /// the heat flux (W/m²) or similar potential over the surface.
+    pub fn calculate_heat_gain<T>(&self, field: &impl ContinuousField<T>) -> T
+    where
+        T: Add<Output = T> + AddAssign + Mul<f64, Output = T> + Zero + Clone,
+    {
+        let integral = field.integrate(0.0, 1.0, 0.0, 1.0);
+        integral * self.area
+    }
 }
 
 /// A single layer in a multi-layer construction assembly.
@@ -677,15 +741,16 @@ impl Construction {
         // Mass-to-surface conductance represents thermal coupling between
         // thermal mass and interior surface of building envelope
         //
-        // For simplified 5R1C model with low-mass construction, this is typically
-        // 1.5-2.5 W/m²K times surface area
+        // The h_ms coefficient depends on mass class per ISO 13790:
+        // - VeryLight/Light: 2.0 W/m²K (furniture/internal mass dominates)
+        // - Medium/Heavy/VeryHeavy: 9.1 W/m²K (envelope mass dominates)
         //
-        // Based on ASHRAE 140 Case 600 reference values and typical construction:
-        // h_tr_ms ≈ 2.0 W/m²K for low-mass buildings
+        // Using the construction's iso_13790_mass_class() gives the correct
+        // h_ms coefficient for both low-mass and high-mass buildings.
         //
         // Units: W/m²K × m² = W/K
-        const H_MS: f64 = 2.0; // W/m²K - typical value for low-mass construction
-        H_MS * surface_area
+        let h_ms = self.iso_13790_mass_class().h_ms_coeff();
+        h_ms * surface_area
     }
 
     /// Calculates surface-to-interior conductance (h_tr_is) for 5R1C thermal network.
@@ -825,6 +890,32 @@ impl MassClass {
             MassClass::VeryHeavy => (370_000.0, f64::INFINITY),
         }
     }
+
+    /// Returns the thermal coupling coefficient (h_ms) for t_i_free calculation.
+    ///
+    /// For low-mass buildings (VeryLight/Light), the ISO 13790 admittance method
+    /// produces h_ms values that are too large, causing t_i_free to be dominated
+    /// by mass temperature instead of tracking outdoor conditions.
+    ///
+    /// Per ISO 13790 Table C.2, the admittance method is calibrated for
+    /// medium+ mass classes. For VeryLight/Light, we use a reduced coefficient
+    /// that allows proper thermal coupling in the t_i_free formula.
+    ///
+    /// # Returns
+    /// h_ms coefficient in W/(m²·K)
+    ///
+    /// # Physical Basis
+    /// - VeryLight/Light: h_ms = 2.0 W/(m²·K) — furniture and lightweight internal mass
+    /// - Medium+: h_ms = 9.1 W/(m²·K) — ISO 13790 full admittance method
+    pub fn h_ms_coeff(&self) -> f64 {
+        match self {
+            MassClass::VeryLight => 2.0,
+            MassClass::Light => 2.0,
+            MassClass::Medium => 9.1,
+            MassClass::Heavy => 9.1,
+            MassClass::VeryHeavy => 9.1,
+        }
+    }
 }
 
 /// Pre-defined material properties for common building materials.
@@ -836,7 +927,7 @@ pub struct Materials;
 impl Materials {
     /// Plasterboard (gypsum board)
     pub fn plasterboard(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Plasterboard", 0.16, 950.0, 840.0, thickness)
+        ConstructionLayer::new("Plasterboard", 0.16, 784.0, 840.0, thickness)
     }
 
     /// Fiberglass insulation
@@ -846,7 +937,7 @@ impl Materials {
 
     /// Wood siding
     pub fn wood_siding(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Wood Siding", 0.14, 500.0, 1300.0, thickness)
+        ConstructionLayer::new("Wood Siding", 0.14, 530.0, 900.0, thickness)
     }
 
     /// Concrete (normal weight)
@@ -859,12 +950,12 @@ impl Materials {
     /// Concrete blocks have lower thermal conductivity (k=0.51 W/mK) than normal concrete (k=1.13 W/mK).
     /// This is specified in ASHRAE 140 Table 7-27 for high-mass construction.
     pub fn concrete_block(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 1000.0, thickness)
+        ConstructionLayer::new("Concrete Block", 0.51, 1400.0, 840.0, thickness)
     }
 
     /// Foam insulation
     pub fn foam(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Foam", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Foam", 0.04, 14.0, 1400.0, thickness)
     }
 
     /// Timber/wood framing
@@ -878,13 +969,43 @@ impl Materials {
     }
 
     /// Concrete slab (heavy mass)
+    ///
+    /// **Note:** these are normal-weight slab properties (k=1.13, ρ=1400, cp=1000).
+    /// For ASHRAE 140-2023 Case 900-series construction, use
+    /// [`Materials::concrete_heavyweight`] instead, which carries the medium-density
+    /// values from Table B1-3 (Issue #730).
     pub fn concrete_slab(thickness: f64) -> ConstructionLayer {
         ConstructionLayer::new("Concrete Slab", 1.13, 1400.0, 1000.0, thickness)
     }
 
+    /// Heavyweight (medium-density) concrete per ASHRAE 140-2023 Table B1-3.
+    ///
+    /// Used for the 900-series high-mass floor slab and (eventually) other
+    /// BESTEST heavyweight constructions. Values are the BESTEST medium-density
+    /// concrete spec — NOT normal-weight structural concrete.
+    ///
+    /// | Property | Value | Source |
+    /// |----------|-------|--------|
+    /// | k        | 0.51 W/m·K | ASHRAE 140-2023 Table B1-3 |
+    /// | ρ        | 1400 kg/m³ | ASHRAE 140-2023 Table B1-3 |
+    /// | cp       | 840 J/kg·K | ASHRAE 140-2023 Table B1-3 |
+    ///
+    /// Reference: Judkoff & Neymark (1995), NREL/TP-472-6231, §4.2.2.
+    /// Closes Issue #730 (medium-density vs normal-weight concrete confusion).
+    pub fn concrete_heavyweight(thickness: f64) -> ConstructionLayer {
+        // ASHRAE 140-2023 Table B1-3, BESTEST heavyweight (medium-density) concrete.
+        ConstructionLayer::new(
+            "Concrete (ASHRAE 140 heavyweight)",
+            0.51,
+            1400.0,
+            840.0,
+            thickness,
+        )
+    }
+
     /// Insulation for floor/walls
     pub fn insulation_high_mass(thickness: f64) -> ConstructionLayer {
-        ConstructionLayer::new("Insulation", 0.04, 10.0, 1400.0, thickness)
+        ConstructionLayer::new("Insulation", 0.04, 14.0, 1400.0, thickness)
     }
 }
 
@@ -912,12 +1033,20 @@ impl Assemblies {
         ])
     }
 
-    /// High mass wall construction (ASHRAE 140 Case 900).
+    /// High mass wall construction (ASHRAE 140 Table 7-27).
+    ///
+    /// Layers ordered from INTERIOR to EXTERIOR per ASHRAE 140:
+    /// - Interior: wood_siding (12mm)
+    /// - Middle: foam insulation (61.5mm)
+    /// - Exterior: concrete block (100mm)
+    ///
+    /// The 200mm air gap in Table 7-27 refers to the cavity created by the
+    /// concrete block construction method (stacked blocks with mortar).
     pub fn high_mass_wall() -> Construction {
         Construction::new(vec![
-            Materials::concrete_block(0.100), // ASHRAE 140: k=0.51 W/mK
-            Materials::foam(0.0615),          // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m
-            Materials::wood_siding(0.009),    // ASHRAE 140: k=0.16 W/mK
+            Materials::wood_siding(0.009), // ASHRAE 140: k=0.16 W/mK (interior layer)
+            Materials::foam(0.0615), // ASHRAE 140: k=0.04 W/mK, thickness=0.0615m (insulation)
+            Materials::concrete_block(0.100), // ASHRAE 140: k=0.51 W/mK (exterior layer)
         ])
     }
 
@@ -949,9 +1078,12 @@ impl Assemblies {
     }
 
     /// High mass floor construction (ASHRAE 140 Case 900).
+    ///
+    /// Slab uses [`Materials::concrete_heavyweight`] per ASHRAE 140-2023 Table B1-3
+    /// (k=0.51, ρ=1400, cp=840). Closes Issue #730.
     pub fn high_mass_floor() -> Construction {
         Construction::new(vec![
-            Materials::concrete_slab(0.080),
+            Materials::concrete_heavyweight(0.080),
             Materials::insulation_high_mass(0.201), // Adjusted for U=0.190
         ])
     }
@@ -1113,15 +1245,15 @@ mod tests {
         let construction = Assemblies::low_mass_wall();
 
         // Calculate expected R-value
-        // R_int = 1 / 8.29 = 0.120627
+        // R_int = 1 / 8.29 ≈ 0.120627 m²K/W (ASHRAE 140 Sec. 5.2)
         // R_plasterboard = 0.012 / 0.16 = 0.075
         // R_fiberglass = 0.066 / 0.04 = 1.65
-        // R_siding = 0.009 / 0.14 = 0.064286
-        // R_ext = 1 / 25.0 = 0.04
-        // R_total = 0.120627 + 0.075 + 1.65 + 0.064286 + 0.04 = 1.949913
+        // R_siding = 0.009 / 0.14 ≈ 0.064286
+        // R_ext = 1 / 29.3 ≈ 0.034130 m²K/W (ASHRAE 140 Sec. 5.2, was 1/25.0 = 0.04)
+        // R_total ≈ 0.120627 + 0.075 + 1.65 + 0.064286 + 0.034130 = 1.944043
         let r_total = construction.r_value_total(None, None);
 
-        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 25.0;
+        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 29.3;
         assert!((r_total - expected_r).abs() < EPSILON);
 
         // Check that U = 1/R
@@ -1510,7 +1642,7 @@ mod tests {
     fn test_materials_plasterboard() {
         let layer = Materials::plasterboard(0.012);
         assert_eq!(layer.conductivity, 0.16);
-        assert_eq!(layer.density, 950.0);
+        assert_eq!(layer.density, 784.0);
         assert_eq!(layer.specific_heat, 840.0);
         assert_eq!(layer.thickness, 0.012);
     }
@@ -1528,8 +1660,8 @@ mod tests {
     fn test_materials_wood_siding() {
         let layer = Materials::wood_siding(0.009);
         assert_eq!(layer.conductivity, 0.14);
-        assert_eq!(layer.density, 500.0);
-        assert_eq!(layer.specific_heat, 1300.0);
+        assert_eq!(layer.density, 530.0);
+        assert_eq!(layer.specific_heat, 900.0);
         assert_eq!(layer.thickness, 0.009);
     }
 
@@ -1546,7 +1678,7 @@ mod tests {
     fn test_materials_foam() {
         let layer = Materials::foam(0.0615);
         assert_eq!(layer.conductivity, 0.04);
-        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.density, 14.0);
         assert_eq!(layer.specific_heat, 1400.0);
         assert_eq!(layer.thickness, 0.0615);
     }
@@ -1578,10 +1710,10 @@ mod tests {
         let wall = Assemblies::high_mass_wall();
         assert_eq!(wall.layer_count(), 3);
 
-        // Check layer properties
-        assert_eq!(wall.layers[0].thickness, 0.100); // Concrete
-        assert_eq!(wall.layers[1].thickness, 0.0615); // Foam (ASHRAE 140: thickness=0.0615m)
-        assert_eq!(wall.layers[2].thickness, 0.009); // Siding
+        // Check layer properties - ordered INTERIOR to EXTERIOR per ASHRAE 140 Table 7-27
+        assert_eq!(wall.layers[0].thickness, 0.009); // Wood siding (interior)
+        assert_eq!(wall.layers[1].thickness, 0.0615); // Foam (insulation)
+        assert_eq!(wall.layers[2].thickness, 0.100); // Concrete block (exterior)
     }
 
     #[test]
@@ -1615,7 +1747,7 @@ mod tests {
         // Fiberglass: 12 × 0.066 × 840 = 665.28
         // Siding: 500 × 0.009 × 1300 = 5850
         // Total: 9576 + 665.28 + 5850 = 16091.28 J/m²K
-        let expected_c = 950.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected_c = 784.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((c_per_area - expected_c).abs() < EPSILON);
     }
 
@@ -1731,7 +1863,7 @@ mod tests {
     fn test_iso_13790_effective_capacitance() {
         let wall = Assemblies::low_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 950.0 * 0.012 * 840.0 + 500.0 * 0.009 * 1300.0;
+        let expected = 784.0 * 0.012 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1739,7 +1871,7 @@ mod tests {
     fn test_iso_13790_effective_capacitance_high_mass() {
         let wall = Assemblies::high_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 1400.0 * 0.100 * 1000.0 + 500.0 * 0.009 * 1300.0;
+        let expected = 1400.0 * 0.100 * 840.0 + 530.0 * 0.009 * 900.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1878,7 +2010,8 @@ mod tests {
     fn test_high_mass_floor() {
         let floor = Assemblies::high_mass_floor();
         assert_eq!(floor.layer_count(), 2);
-        assert_eq!(floor.layers[0].name, "Concrete Slab");
+        // Issue #730: ASHRAE 140-2023 Table B1-3 heavyweight (medium-density) concrete.
+        assert_eq!(floor.layers[0].name, "Concrete (ASHRAE 140 heavyweight)");
         assert_eq!(floor.layers[1].name, "Insulation");
     }
 
@@ -1902,7 +2035,7 @@ mod tests {
         let layer = Materials::concrete_block(0.1);
         assert_eq!(layer.conductivity, 0.51);
         assert_eq!(layer.density, 1400.0);
-        assert_eq!(layer.specific_heat, 1000.0);
+        assert_eq!(layer.specific_heat, 840.0);
     }
 
     #[test]
@@ -1930,10 +2063,47 @@ mod tests {
     }
 
     #[test]
+    fn test_materials_concrete_heavyweight_matches_ashrae_140_table_b1_3() {
+        // ASHRAE 140-2023 Table B1-3 — BESTEST heavyweight (medium-density) concrete.
+        // Reference: Judkoff & Neymark (1995), NREL/TP-472-6231, §4.2.2.
+        let layer = Materials::concrete_heavyweight(0.200);
+        assert_eq!(layer.conductivity, 0.51, "k must match Table B1-3");
+        assert_eq!(layer.density, 1400.0, "rho must match Table B1-3");
+        assert_eq!(layer.specific_heat, 840.0, "cp must match Table B1-3");
+        assert_eq!(layer.thickness, 0.200);
+        // Areal heat capacity per Table B1-3: kappa = rho * cp * d = 1400 * 840 * 0.200
+        let kappa = layer.density * layer.specific_heat * layer.thickness;
+        assert!(
+            (kappa - 235_200.0).abs() < 1.0,
+            "kappa must be 235.2 kJ/m^2K"
+        );
+    }
+
+    #[test]
+    fn test_high_mass_floor_uses_ashrae_140_heavyweight_concrete() {
+        // Issue #730: high_mass_floor() must source its slab from
+        // Materials::concrete_heavyweight, not normal-weight Materials::concrete_slab.
+        let floor = Assemblies::high_mass_floor();
+        let slab = &floor.layers[0];
+        assert_eq!(
+            slab.conductivity, 0.51,
+            "slab k must be ASHRAE 140 Table B1-3 value"
+        );
+        assert_eq!(
+            slab.density, 1400.0,
+            "slab rho must be ASHRAE 140 Table B1-3 value"
+        );
+        assert_eq!(
+            slab.specific_heat, 840.0,
+            "slab cp must be ASHRAE 140 Table B1-3 value"
+        );
+    }
+
+    #[test]
     fn test_materials_insulation_high_mass() {
         let layer = Materials::insulation_high_mass(0.1);
         assert_eq!(layer.conductivity, 0.04);
-        assert_eq!(layer.density, 10.0);
+        assert_eq!(layer.density, 14.0);
         assert_eq!(layer.specific_heat, 1400.0);
     }
 
@@ -2058,5 +2228,103 @@ mod tests {
         let u_floor = floor.u_value(Some(SurfaceType::Floor), None);
         let u_default = floor.u_value(None, None);
         assert!(u_floor != u_default);
+    }
+
+    #[test]
+    fn test_wall_surface_heat_gain() {
+        let surface = WallSurface::new(10.0, 0.5, Orientation::South);
+        let field = crate::physics::continuous::ConstantField { value: 2.0 };
+        let heat_gain = surface.calculate_heat_gain(&field);
+        assert!((heat_gain - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wall_surface_new_defaults() {
+        let surface = WallSurface::new(25.0, 1.5, Orientation::North);
+        assert!((surface.area - 25.0).abs() < 1e-6);
+        assert!((surface.window_area - 0.0).abs() < 1e-6);
+        assert!((surface.u_value - 1.5).abs() < 1e-6);
+        assert!(surface.overhang.is_none());
+        assert!(surface.fins.is_empty());
+    }
+
+    #[test]
+    fn test_wall_surface_with_window() {
+        let surface = WallSurface::new(20.0, 0.8, Orientation::East).with_window(5.0);
+        assert!((surface.window_area - 5.0).abs() < 1e-6);
+        assert!((surface.area - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wall_surface_with_overhang() {
+        let overhang = Overhang {
+            depth: 1.0,
+            distance_above: 0.5,
+            extension: 0.0,
+        };
+        let surface = WallSurface::new(15.0, 1.2, Orientation::South).with_overhang(overhang);
+        assert!(surface.overhang.is_some());
+        assert!((surface.overhang.as_ref().unwrap().depth - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wall_surface_with_fin() {
+        let fin = ShadeFin {
+            depth: 0.5,
+            distance_from_edge: 0.0,
+            side: crate::sim::shading::Side::Left,
+        };
+        let surface = WallSurface::new(12.0, 0.9, Orientation::West).with_fin(fin);
+        assert_eq!(surface.fins.len(), 1);
+        assert!((surface.fins[0].depth - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_wall_surface_with_multiple_fins() {
+        let fin1 = ShadeFin {
+            depth: 0.3,
+            distance_from_edge: 0.0,
+            side: crate::sim::shading::Side::Left,
+        };
+        let fin2 = ShadeFin {
+            depth: 0.6,
+            distance_from_edge: 1.0,
+            side: crate::sim::shading::Side::Right,
+        };
+        let surface = WallSurface::new(10.0, 1.0, Orientation::South)
+            .with_fin(fin1)
+            .with_fin(fin2);
+        assert_eq!(surface.fins.len(), 2);
+    }
+
+    #[test]
+    fn test_wall_surface_builder_chain() {
+        let overhang = Overhang {
+            depth: 2.0,
+            distance_above: 1.0,
+            extension: 0.5,
+        };
+        let fin = ShadeFin {
+            depth: 0.8,
+            distance_from_edge: 0.5,
+            side: crate::sim::shading::Side::Left,
+        };
+        let surface = WallSurface::new(30.0, 2.0, Orientation::North)
+            .with_window(8.0)
+            .with_overhang(overhang)
+            .with_fin(fin);
+        assert!((surface.window_area - 8.0).abs() < 1e-6);
+        assert!(surface.overhang.is_some());
+        assert_eq!(surface.fins.len(), 1);
+    }
+
+    #[test]
+    fn test_wall_surface_clone_debug() {
+        let surface = WallSurface::new(10.0, 0.5, Orientation::East);
+        let cloned = surface.clone();
+        assert!((cloned.area - surface.area).abs() < 1e-6);
+        assert_eq!(cloned.orientation, surface.orientation);
+        let debug_str = format!("{:?}", surface);
+        assert!(debug_str.contains("WallSurface"));
     }
 }

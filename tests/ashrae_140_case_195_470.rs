@@ -117,12 +117,11 @@ fn test_case_198_occupancy_diagnostics() {
 
 /// ASHRAE 140 Case 200: Combined internal loads
 ///
-/// Tests combined effects of lighting + equipment + occupancy.
+/// Validates that combined internal loads are correctly aggregated.
 /// All internal loads active at standard office levels:
 /// - Lighting: 10 W/m²
 /// - Equipment: 20 W/m²
 /// - Occupancy: 0.05 people/m²
-/// Validates that combined internal loads are correctly aggregated.
 #[test]
 fn test_case_200_combined_internal_loads() {
     let spec = ASHRAE140Case::Case200.spec();

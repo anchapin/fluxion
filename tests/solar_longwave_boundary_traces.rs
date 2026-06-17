@@ -23,9 +23,7 @@ use fluxion::sim::sky_radiation::{
     SolAirTemperature,
 };
 use fluxion::sim::solar::{
-    calculate_day_of_year, calculate_hourly_solar, calculate_solar_position,
-    calculate_surface_irradiance, calculate_window_solar_gain, SolarPosition, SurfaceIrradiance,
-    WindowProperties,
+    calculate_day_of_year, calculate_hourly_solar, calculate_solar_position, WindowProperties,
 };
 use fluxion::validation::ashrae_140_cases::Orientation;
 
@@ -38,9 +36,12 @@ const TOLERANCE: f64 = 0.001;
 struct SolarTracePoint {
     hour: f64,
     solar_gain_w: f64,
+    #[allow(dead_code)]
     total_irradiance_wm2: f64,
     sky_temperature_c: f64,
+    #[allow(dead_code)]
     altitude_deg: f64,
+    #[allow(dead_code)]
     azimuth_deg: f64,
 }
 
@@ -86,7 +87,7 @@ fn generate_solar_trace(
     orientation: Orientation,
 ) -> SolarTrace {
     let mut trace = SolarTrace::new();
-    let day_of_year = calculate_day_of_year(year, month, day);
+    let _day_of_year = calculate_day_of_year(year, month, day);
 
     for hour in 0..24 {
         let (sun_pos, irradiance, gain) = calculate_hourly_solar(
@@ -132,7 +133,7 @@ mod solar_gain_traces {
 
         let hours_with_gain = trace.hours_with_solar_gain();
         assert!(
-            hours_with_gain >= 10 && hours_with_gain <= 16,
+            (10..=16).contains(&hours_with_gain),
             "Summer solstice should have 10-16 hours of solar gain, got {}",
             hours_with_gain
         );
@@ -162,7 +163,7 @@ mod solar_gain_traces {
 
         let hours_with_gain = trace.hours_with_solar_gain();
         assert!(
-            hours_with_gain >= 8 && hours_with_gain <= 12,
+            (8..=12).contains(&hours_with_gain),
             "Winter solstice should have 8-12 hours of solar gain, got {}",
             hours_with_gain
         );
@@ -185,7 +186,7 @@ mod solar_gain_traces {
 
         let hours_with_gain = trace.hours_with_solar_gain();
         assert!(
-            hours_with_gain >= 10 && hours_with_gain <= 14,
+            (10..=14).contains(&hours_with_gain),
             "Equinox should have 10-14 hours of solar gain, got {}",
             hours_with_gain
         );
@@ -259,7 +260,7 @@ mod sky_temperature_traces {
         );
 
         let first_point = &trace.points[0];
-        let midday_point = &trace.points[12];
+        let _midday_point = &trace.points[12];
         assert!(
             first_point.sky_temperature_c < 20.0,
             "Night sky temperature should be below ambient, got {:.1}°C",
@@ -272,7 +273,7 @@ mod sky_temperature_traces {
         let mut trace_temps = Vec::new();
 
         for hour in 0..24 {
-            let ir = if hour >= 6 && hour <= 18 {
+            let ir = if (6..=18).contains(&hour) {
                 300.0 + (hour as f64 - 6.0) * 30.0
             } else {
                 150.0
@@ -324,7 +325,7 @@ mod sky_temperature_traces {
         for kt in clearness_values {
             let emissivity = calculate_sky_emissivity_with_clouds(dry_bulb, kt);
             assert!(
-                emissivity >= 0.6 && emissivity <= 1.0,
+                (0.6..=1.0).contains(&emissivity),
                 "Sky emissivity should be in [0.6, 1.0], got {:.3} for kt={}",
                 emissivity,
                 kt
@@ -350,7 +351,7 @@ mod sky_temperature_traces {
         for cloud_cover in cloud_covers {
             let emissivity = estimate_sky_emissivity(humidity, cloud_cover);
             assert!(
-                emissivity >= 0.6 && emissivity <= 0.98,
+                (0.6..=0.98).contains(&emissivity),
                 "Sky emissivity should be in [0.6, 0.98], got {:.3}",
                 emissivity
             );
@@ -371,7 +372,7 @@ mod sky_temperature_traces {
         let mut trace_temps = Vec::new();
 
         for hour in 0..24 {
-            let solar = if hour >= 6 && hour <= 18 {
+            let solar = if (6..=18).contains(&hour) {
                 600.0 * ((hour as f64 - 6.0) / 12.0) * (1.0 - (hour as f64 - 6.0) / 12.0)
             } else {
                 0.0
@@ -673,12 +674,15 @@ mod solar_constant_verification {
     fn test_solar_constant_value() {
         const EXPECTED_SOLAR_CONSTANT: f64 = 1361.0;
         let dni_day182 = extraterrestrial_irradiance(182);
+        let expected_at_aphelion = EXPECTED_SOLAR_CONSTANT * 0.967;
 
+        let deviation = (dni_day182 - expected_at_aphelion).abs();
         assert!(
-            (dni_day182 - EXPECTED_SOLAR_CONSTANT).abs() < 50.0,
-            "Solar constant at mean distance (day 182) should be ~{} W/m², got {:.1}",
-            EXPECTED_SOLAR_CONSTANT,
-            dni_day182
+            deviation < 10.0,
+            "Solar constant at aphelion (day 182) should be ~{:.0} W/m² (solar constant * 0.967), got {:.1} (deviation: {:.1})",
+            expected_at_aphelion,
+            dni_day182,
+            deviation
         );
     }
 
@@ -832,7 +836,7 @@ mod window_solar_gain_traces {
 
         assert!(south_peak.is_some(), "Should have south peak gain");
 
-        for (orient, gain) in &peak_gains {
+        for (_orient, gain) in &peak_gains {
             assert!(
                 *gain > 0.0,
                 "All orientations should have positive peak gain"

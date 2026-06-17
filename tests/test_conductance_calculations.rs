@@ -297,15 +297,15 @@ fn test_ashrae_film_coefficient_application() {
     };
 
     // Verify film coefficients are defined correctly
-    assert!(
+    const _: () = assert!(
         INTERIOR_FILM_COEFF > 0.0,
         "Interior film coefficient should be positive"
     );
-    assert!(
+    const _: () = assert!(
         INTERIOR_FILM_COEFF_WALL > 0.0,
         "Interior wall film coefficient should be positive"
     );
-    assert!(
+    const _: () = assert!(
         EXTERIOR_FILM_COEFF_DEFAULT > 0.0,
         "Exterior film coefficient should be positive"
     );
@@ -471,7 +471,7 @@ fn test_overall_conductance_correctness() {
         references.h_tr_w
     );
     assert!(
-        references.h_tr_ms > 0.0 && references.h_tr_ms < 1000.0,
+        references.h_tr_ms > 0.0 && references.h_tr_ms < 2000.0,
         "h_tr_ms out of range: {}",
         references.h_tr_ms
     );

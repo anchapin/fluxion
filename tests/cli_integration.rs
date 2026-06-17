@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::tempdir;
 
-use serde_yaml;
-
 fn fluxion_bin() -> PathBuf {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".into());
-    let release = PathBuf::from(&manifest_dir).join("target/release/fluxion");
-    if release.exists() {
-        return release;
+    if PathBuf::from(&manifest_dir)
+        .join("target/release/fluxion")
+        .exists()
+    {
+        PathBuf::from(&manifest_dir).join("target/release/fluxion")
+    } else {
+        PathBuf::from(manifest_dir).join("target/debug/fluxion")
     }
-    let debug = PathBuf::from(manifest_dir).join("target/debug/fluxion");
-    debug
 }
 
 #[test]
@@ -74,6 +74,7 @@ fn test_delta_command() {
             patch: Some(patch),
             sweep: None,
         }],
+        warm_up_years: 2,
     };
     let yaml = serde_yaml::to_string(&delta_config).unwrap();
     let config_path = temp_dir.path().join("delta.yaml");

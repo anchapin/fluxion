@@ -115,16 +115,6 @@ impl PhysicsThermalModel {
             mode: ThermalModelMode::Physics,
         }
     }
-
-    /// Get mutable reference to inner thermal model
-    pub fn inner_mut(&mut self) -> &mut crate::sim::engine::ThermalModel<VectorField> {
-        &mut self.inner
-    }
-
-    /// Get reference to inner thermal model
-    pub fn inner(&self) -> &crate::sim::engine::ThermalModel<VectorField> {
-        &self.inner
-    }
 }
 
 impl ThermalModelTrait for PhysicsThermalModel {
@@ -236,16 +226,6 @@ impl SurrogateThermalModel {
     pub fn with_fallback(mut self, fallback: bool) -> Self {
         self.fallback_to_physics = fallback;
         self
-    }
-
-    /// Get mutable reference to inner thermal model
-    pub fn inner_mut(&mut self) -> &mut crate::sim::engine::ThermalModel<VectorField> {
-        &mut self.inner
-    }
-
-    /// Get reference to inner thermal model
-    pub fn inner(&self) -> &crate::sim::engine::ThermalModel<VectorField> {
-        &self.inner
     }
 }
 
@@ -371,16 +351,6 @@ impl UnifiedThermalModel {
     /// Check if currently using surrogates
     pub fn is_using_surrogates(&self) -> bool {
         self.use_surrogates
-    }
-
-    /// Get reference to inner thermal model
-    pub fn inner(&self) -> &crate::sim::engine::ThermalModel<VectorField> {
-        &self.inner
-    }
-
-    /// Get mutable reference to inner thermal model
-    pub fn inner_mut(&mut self) -> &mut crate::sim::engine::ThermalModel<VectorField> {
-        &mut self.inner
     }
 }
 
@@ -847,9 +817,9 @@ mod tests {
     #[test]
     fn test_builder_mode_sets_use_surrogates() {
         let builder = ThermalModelBuilder::new().mode(ThermalModelMode::Surrogate);
-        assert_eq!(builder.use_surrogates, true);
+        assert!(builder.use_surrogates);
         let builder = ThermalModelBuilder::new().mode(ThermalModelMode::Physics);
-        assert_eq!(builder.use_surrogates, false);
+        assert!(!builder.use_surrogates);
     }
 
     #[test]
@@ -871,36 +841,6 @@ mod tests {
     }
 
     #[test]
-    fn test_physics_model_inner_access() {
-        let mut model = PhysicsThermalModel::new(1);
-        let inner_ref = model.inner();
-        assert_eq!(inner_ref.num_zones, 1);
-        let inner_mut = model.inner_mut();
-        inner_mut.num_zones = 2;
-        assert_eq!(model.num_zones(), 2);
-    }
-
-    #[test]
-    fn test_surrogate_model_inner_access() {
-        let mut model = SurrogateThermalModel::new(3);
-        let inner_ref = model.inner();
-        assert_eq!(inner_ref.num_zones, 3);
-        let inner_mut = model.inner_mut();
-        inner_mut.num_zones = 5;
-        assert_eq!(model.num_zones(), 5);
-    }
-
-    #[test]
-    fn test_unified_model_inner_access() {
-        let mut model = UnifiedThermalModel::new(2);
-        let inner_ref = model.inner();
-        assert_eq!(inner_ref.num_zones, 2);
-        let inner_mut = model.inner_mut();
-        inner_mut.num_zones = 4;
-        assert_eq!(model.num_zones(), 4);
-    }
-
-    #[test]
     fn test_solve_timesteps_uses_mode_flag() {
         let mut model = PhysicsThermalModel::new(1);
         model.set_mode(ThermalModelMode::Surrogate);
@@ -910,8 +850,31 @@ mod tests {
     #[test]
     fn test_thermal_model_result_type() {
         let result: ThermalModelResult<i32> = Ok(42);
-        assert_eq!(result.unwrap(), 42);
+        assert!(result.is_ok());
+        if let Ok(val) = result {
+            assert_eq!(val, 42);
+        }
         let err: ThermalModelResult<i32> = Err("test error".into());
         assert!(err.is_err());
+    }
+
+    #[test]
+    fn test_trait_object_cannot_access_inner() {
+        let model: Box<dyn ThermalModelTrait> = Box::new(PhysicsThermalModel::new(1));
+        // Cannot call inner() on trait object - compile error if uncommented
+        // model.inner() // This would not compile
+        assert_eq!(model.num_zones(), 1);
+    }
+
+    #[test]
+    fn test_trait_object_behavior_via_trait_only() {
+        let mut model: Box<dyn ThermalModelTrait> = Box::new(PhysicsThermalModel::new(1));
+        assert_eq!(model.num_zones(), 1);
+        model.set_temperatures(&[25.0]);
+        assert_eq!(model.get_temperatures(), vec![25.0]);
+        model.apply_parameters(&[1.5, 20.0, 26.0]);
+        assert_eq!(model.heating_setpoint(), 20.0);
+        assert_eq!(model.cooling_setpoint(), 26.0);
+        assert!(model.is_valid());
     }
 }

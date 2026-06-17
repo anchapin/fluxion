@@ -76,6 +76,36 @@ pub struct SurfaceSolverConfig {
     pub method: ThermalMethod,
 }
 
+/// Configuration struct for ThermalMethodSelector.
+///
+/// This replaces the builder pattern with a simple data structure that can be
+/// easily constructed, serialized, and tested.
+#[derive(Debug, Clone)]
+pub struct ThermalMethodSelectorConfig {
+    /// Selection threshold: τ > threshold → CTF/FD (default: 24.0 hours)
+    pub threshold_hours: f64,
+    /// Manual override (None = auto, Some = force method)
+    pub override_method: Option<ThermalMethod>,
+    /// Enable fallback (CTF → FD on failure)
+    pub enable_fallback: bool,
+    /// Enable automatic selection based on thermal mass
+    pub enable_automatic_selection: bool,
+    /// Enable per-surface explicit solver selection
+    pub per_surface_selection: bool,
+}
+
+impl Default for ThermalMethodSelectorConfig {
+    fn default() -> Self {
+        Self {
+            threshold_hours: 24.0,
+            override_method: None,
+            enable_fallback: true,
+            enable_automatic_selection: true,
+            per_surface_selection: false,
+        }
+    }
+}
+
 impl SurfaceSolverConfig {
     /// Create a new surface solver config.
     pub fn new(surface_id: impl Into<String>, method: ThermalMethod) -> Self {
@@ -158,8 +188,8 @@ impl SolverSelectionResult {
 /// * `threshold_hours` - Time constant threshold for method selection (default: 2.0 hours)
 /// * `override_method` - Manual override (None = auto, Some = force method)
 /// * `enable_fallback` - Enable CTF → FD fallback (default: true)
-/// * `h_interior` - Interior convective coefficient [W/m²·K] (default: 8.0)
-/// * `h_exterior` - Exterior convective coefficient [W/m²·K] (default: 25.0)
+/// * `h_interior` - Interior convective coefficient [W/m²·K] (default: 8.29 per ASHRAE 140 Sec. 5.2)
+/// * `h_exterior` - Exterior convective coefficient [W/m²·K] (default: 29.3 per ASHRAE 140 Sec. 5.2)
 #[derive(Debug, Clone)]
 pub struct ThermalMethodSelector {
     /// Selection threshold: τ > threshold → CTF/FD (default: 2.0 hours)
@@ -180,6 +210,28 @@ impl ThermalMethodSelector {
     /// Create a new method selector with default settings.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a method selector from a config struct.
+    pub fn from_config(config: ThermalMethodSelectorConfig) -> Self {
+        Self {
+            threshold_hours: config.threshold_hours,
+            override_method: config.override_method,
+            enable_fallback: config.enable_fallback,
+            h_interior: 8.29, // ASHRAE 140 Section 5.2
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2 at 6.7 m/s wind speed
+            selection_config: if config.per_surface_selection {
+                SolverSelectionConfig::PerSurface(vec![])
+            } else if config.enable_automatic_selection {
+                SolverSelectionConfig::Automatic
+            } else {
+                SolverSelectionConfig::ForceMethod(
+                    config
+                        .override_method
+                        .unwrap_or(ThermalMethod::FiniteDifference),
+                )
+            },
+        }
     }
 
     /// Create selector with custom threshold.
@@ -278,6 +330,13 @@ impl ThermalMethodSelector {
     pub fn select_method(&self, wall: &BuildingAssembly) -> ThermalMethod {
         // Check for manual override
         if let Some(method) = self.override_method {
+            tracing::info!(
+                decision_type = "solver_selection",
+                chosen = method.name(),
+                reason = "manual_override",
+                wall = %wall.name,
+                "Solver selection decision"
+            );
             return method;
         }
 
@@ -285,11 +344,25 @@ impl ThermalMethodSelector {
         let tau = self.calculate_time_constant(wall);
 
         // Select method based on thermal mass
-        if tau < self.threshold_hours {
+        // Issue #726: CTF is architecturally wrong for high-mass constructions
+        // (900-series). For high thermal mass, FD is more appropriate because
+        // the thermal wave penetrates deeply into the construction.
+        let method = if tau < self.threshold_hours {
             ThermalMethod::FiveR1C // Low mass: use fast 5R1C
         } else {
-            ThermalMethod::CTF // High mass: use accurate CTF
-        }
+            ThermalMethod::FiniteDifference // High mass: use FD (Issue #726)
+        };
+
+        tracing::info!(
+            decision_type = "solver_selection",
+            chosen = method.name(),
+            tau_hours = tau,
+            threshold_hours = self.threshold_hours,
+            wall = %wall.name,
+            "Solver selection decision"
+        );
+
+        method
     }
 
     /// Select method with CTF → FD fallback.
@@ -391,30 +464,6 @@ impl ThermalMethodSelector {
         self.selection_config = config;
     }
 
-    /// Create selector with automatic selection mode.
-    pub fn with_automatic_selection() -> Self {
-        Self {
-            selection_config: SolverSelectionConfig::Automatic,
-            ..Self::default()
-        }
-    }
-
-    /// Create selector with forced method.
-    pub fn with_forced_method(method: ThermalMethod) -> Self {
-        Self {
-            selection_config: SolverSelectionConfig::ForceMethod(method),
-            ..Self::default()
-        }
-    }
-
-    /// Create selector with per-surface explicit configuration.
-    pub fn with_per_surface_selection(configs: Vec<SurfaceSolverConfig>) -> Self {
-        Self {
-            selection_config: SolverSelectionConfig::PerSurface(configs),
-            ..Self::default()
-        }
-    }
-
     /// Validate CTF coefficients.
     ///
     /// # Arguments
@@ -512,8 +561,8 @@ impl Default for ThermalMethodSelector {
             threshold_hours: 2.0, // ISO 13790 guidance
             override_method: None,
             enable_fallback: true,
-            h_interior: 8.0,  // Typical interior film coefficient
-            h_exterior: 25.0, // Typical exterior film coefficient
+            h_interior: 8.29, // ASHRAE 140 Section 5.2: h_int = 8.29 W/m²K
+            h_exterior: 29.3, // ASHRAE 140 Section 5.2: h_ext = 29.3 W/m²K at 6.7 m/s wind speed
             selection_config: SolverSelectionConfig::Automatic,
         }
     }
@@ -591,7 +640,8 @@ mod tests {
 
         let method = selector.select_method(&wall);
 
-        assert_eq!(method, ThermalMethod::CTF);
+        // Issue #726: FD should be used for high-mass constructions
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -607,16 +657,20 @@ mod tests {
 
     #[test]
     fn test_fallback_invalid_ctf() {
+        // Use a heavyweight wall to test CTF→FD fallback
+        // Issue #726: For heavyweight walls, select_method now returns FD directly,
+        // so we test the fallback path by verifying behavior when ctf_valid=false.
         let selector = ThermalMethodSelector::default();
         let wall = create_heavyweight_wall();
 
-        // CTF invalid → should fall back to FD
+        // When CTF is invalid and fallback enabled, should get FD
         let method = selector.select_with_fallback(&wall, false);
         assert_eq!(method, ThermalMethod::FiniteDifference);
 
-        // CTF valid → should use CTF
+        // When ctf_valid=true but select_method returns FD (heavyweight after fix),
+        // the fallback logic is not triggered - select_with_fallback returns FD
         let method = selector.select_with_fallback(&wall, true);
-        assert_eq!(method, ThermalMethod::CTF);
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -627,9 +681,10 @@ mod tests {
         };
         let wall = create_heavyweight_wall();
 
-        // CTF invalid but fallback disabled → should still return CTF
+        // After Issue #726 fix: heavyweight walls return FD directly,
+        // so fallback disabled doesn't affect the result
         let method = selector.select_with_fallback(&wall, false);
-        assert_eq!(method, ThermalMethod::CTF);
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -676,7 +731,8 @@ mod tests {
 
         assert!(report.contains("Total walls: 3"));
         assert!(report.contains("5R1C: 1 walls"));
-        assert!(report.contains("CTF:  2 walls"));
+        // Issue #726: Heavyweight walls now use FD instead of CTF
+        assert!(report.contains("FD:   2 walls"));
     }
 
     #[test]
@@ -692,8 +748,8 @@ mod tests {
         assert_eq!(selector.threshold_hours, 2.0);
         assert!(selector.override_method.is_none());
         assert!(selector.enable_fallback);
-        assert_eq!(selector.h_interior, 8.0);
-        assert_eq!(selector.h_exterior, 25.0);
+        assert_eq!(selector.h_interior, 8.29);
+        assert_eq!(selector.h_exterior, 29.3);
     }
 
     #[test]
@@ -796,9 +852,10 @@ mod tests {
         };
         let wall = create_heavyweight_wall();
 
-        // Even with CTF invalid, fallback disabled should return CTF
+        // Issue #726: Heavyweight walls now use FD directly from select_method,
+        // so fallback disabled doesn't change the result
         let method = selector.select_with_fallback(&wall, false);
-        assert_eq!(method, ThermalMethod::CTF);
+        assert_eq!(method, ThermalMethod::FiniteDifference);
     }
 
     #[test]
@@ -854,15 +911,31 @@ mod tests {
         assert!(result.reason.contains("Explicit force"));
     }
 
+    // === ARCH-007: Config struct API tests (replaced deprecated builder methods) ===
+
     #[test]
-    fn test_with_automatic_selection() {
-        let selector = ThermalMethodSelector::with_automatic_selection();
+    fn test_config_automatic_selection() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            enable_automatic_selection: true,
+            ..Default::default()
+        };
+        let selector = ThermalMethodSelector::from_config(config);
         assert_eq!(selector.selection_config, SolverSelectionConfig::Automatic);
     }
 
     #[test]
-    fn test_with_forced_method() {
-        let selector = ThermalMethodSelector::with_forced_method(ThermalMethod::CTF);
+    fn test_config_forced_method() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            enable_automatic_selection: false,
+            enable_fallback: true,
+            ..Default::default()
+        };
+        let mut selector = ThermalMethodSelector::from_config(config);
+        selector.set_selection_config(SolverSelectionConfig::ForceMethod(ThermalMethod::CTF));
         assert_eq!(
             selector.selection_config,
             SolverSelectionConfig::ForceMethod(ThermalMethod::CTF)
@@ -870,12 +943,19 @@ mod tests {
     }
 
     #[test]
-    fn test_with_per_surface_selection() {
+    fn test_config_per_surface_selection() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
         let configs = vec![
             SurfaceSolverConfig::wall(ThermalMethod::FiveR1C),
             SurfaceSolverConfig::roof(ThermalMethod::CTF),
         ];
-        let selector = ThermalMethodSelector::with_per_surface_selection(configs.clone());
+        let config = ThermalMethodSelectorConfig {
+            per_surface_selection: true,
+            ..Default::default()
+        };
+        let mut selector = ThermalMethodSelector::from_config(config);
+        selector.set_selection_config(SolverSelectionConfig::PerSurface(configs.clone()));
         assert_eq!(
             selector.selection_config,
             SolverSelectionConfig::PerSurface(configs)
@@ -936,5 +1016,68 @@ mod tests {
             selector.selection_config(),
             &SolverSelectionConfig::ForceMethod(ThermalMethod::FiniteDifference)
         );
+    }
+
+    // === ARCH-007: Config struct tests ===
+
+    #[test]
+    fn test_config_struct_default() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig::default();
+
+        assert_eq!(config.threshold_hours, 24.0);
+        assert!(config.override_method.is_none());
+        assert!(config.enable_fallback);
+        assert!(config.enable_automatic_selection);
+        assert!(!config.per_surface_selection);
+    }
+
+    #[test]
+    fn test_config_struct_custom_values() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            threshold_hours: 3.5,
+            override_method: Some(ThermalMethod::FiniteDifference),
+            enable_fallback: false,
+            enable_automatic_selection: true,
+            per_surface_selection: true,
+        };
+
+        assert_eq!(config.threshold_hours, 3.5);
+        assert_eq!(
+            config.override_method,
+            Some(ThermalMethod::FiniteDifference)
+        );
+        assert!(!config.enable_fallback);
+        assert!(config.enable_automatic_selection);
+        assert!(config.per_surface_selection);
+    }
+
+    #[test]
+    fn test_selector_from_config() {
+        use crate::physics::method_selector::ThermalMethodSelectorConfig;
+
+        let config = ThermalMethodSelectorConfig {
+            threshold_hours: 5.0,
+            override_method: None,
+            enable_fallback: true,
+            enable_automatic_selection: false,
+            per_surface_selection: false,
+        };
+
+        let selector = ThermalMethodSelector::from_config(config);
+
+        assert_eq!(selector.threshold_hours, 5.0);
+    }
+
+    #[test]
+    fn test_with_threshold_using_config() {
+        let selector = ThermalMethodSelector::with_threshold(3.0);
+        assert_eq!(selector.threshold_hours, 3.0);
+        // Other fields use defaults
+        assert_eq!(selector.override_method, None);
+        assert!(selector.enable_fallback);
     }
 }

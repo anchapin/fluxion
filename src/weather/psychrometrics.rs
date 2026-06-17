@@ -438,6 +438,7 @@ pub fn enthalpy_from_weather(weather: &HourlyWeatherData) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     #[test]
     fn test_saturation_vapor_pressure_reference_values() {
@@ -715,6 +716,100 @@ mod tests {
                 );
                 assert!(!dp.is_nan(), "Dew point is NaN at {}°C, {}% RH", t, rh);
             }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Property-Based Tests (proptest)
+    // Issue #1062: Property-based testing for core math & parsers
+    //
+    // These tests verify physical invariants across random inputs:
+    // - Temperature range: -50°C to 60°C (building operating range)
+    // - Pressure range: 70-110 kPa (altitude range)
+    // - Humidity range: 0-100% RH
+    // -------------------------------------------------------------------------
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+        #[test]
+        fn prop_saturation_vapor_pressure_bounds(temperature in -50.0_f64..60.0) {
+            let p_sat = saturation_vapor_pressure(temperature);
+            prop_assert!(p_sat > 0.0, "Saturation pressure must be positive");
+            prop_assert!(p_sat.is_finite(), "Saturation pressure must be finite");
+            // At -50°C, p_sat ≈ 1 Pa; at 60°C, p_sat ≈ 19 kPa
+            prop_assert!(p_sat < 30_000.0, "Saturation pressure unreasonable at {}", temperature);
+        }
+
+        #[test]
+        fn prop_dew_point_never_exceeds_dry_bulb(
+            dry_bulb in -50.0_f64..60.0,
+            relative_humidity in 0.0_f64..100.0,
+            pressure_pa in 70_000.0_f64..110_000.0,
+        ) {
+            let dp = calculate_dew_point(dry_bulb, relative_humidity, pressure_pa);
+            prop_assert!(dp <= dry_bulb + 1e-6, "Dew point {} exceeds dry bulb {}", dp, dry_bulb);
+            prop_assert!(dp.is_finite(), "Dew point must be finite");
+        }
+
+        #[test]
+        fn prop_wet_bulb_between_dew_point_and_dry_bulb(
+            dry_bulb in -50.0_f64..60.0,
+            relative_humidity in 0.0_f64..100.0,
+            pressure_pa in 70_000.0_f64..110_000.0,
+        ) {
+            let wb = calculate_wet_bulb(dry_bulb, relative_humidity, pressure_pa);
+            let dp = calculate_dew_point(dry_bulb, relative_humidity, pressure_pa);
+            prop_assert!(wb >= dp - 1e-4, "Wet bulb {} below dew point {}", wb, dp);
+            prop_assert!(wb <= dry_bulb + 1e-4, "Wet bulb {} exceeds dry bulb {}", wb, dry_bulb);
+            prop_assert!(wb.is_finite(), "Wet bulb must be finite");
+        }
+
+        #[test]
+        fn prop_humidity_ratio_positive_and_bounded(
+            dry_bulb in -50.0_f64..60.0,
+            relative_humidity in 0.0_f64..100.0,
+            pressure_pa in 70_000.0_f64..110_000.0,
+        ) {
+            let omega = calculate_humidity_ratio(dry_bulb, relative_humidity, pressure_pa);
+            prop_assert!(omega >= 0.0, "Humidity ratio must be non-negative");
+            prop_assert!(omega < 0.30, "Humidity ratio {} unreasonably high", omega);
+            prop_assert!(omega.is_finite(), "Humidity ratio must be finite");
+        }
+
+        #[test]
+        fn prop_enthalpy_increases_with_temperature(
+            temp1 in -50.0_f64..60.0,
+            temp2 in -50.0_f64..60.0,
+            relative_humidity in 0.0_f64..100.0,
+            pressure_pa in 70_000.0_f64..110_000.0,
+        ) {
+            let h1 = calculate_enthalpy(temp1, relative_humidity, pressure_pa);
+            let h2 = calculate_enthalpy(temp2, relative_humidity, pressure_pa);
+            if temp2 > temp1 {
+                prop_assert!(h2 >= h1 - 1e-10, "Enthalpy must increase with temperature");
+            }
+        }
+
+        #[test]
+        fn prop_enthalpy_increases_with_humidity(
+            temperature in -50.0_f64..60.0,
+            rh1 in 0.0_f64..100.0,
+            rh2 in 0.0_f64..100.0,
+            pressure_pa in 70_000.0_f64..110_000.0,
+        ) {
+            let h1 = calculate_enthalpy(temperature, rh1, pressure_pa);
+            let h2 = calculate_enthalpy(temperature, rh2, pressure_pa);
+            if rh2 > rh1 {
+                prop_assert!(h2 >= h1 - 1e-10, "Enthalpy must increase with RH");
+            }
+        }
+
+        #[test]
+        fn prop_saturation_pressure_monotonically_increasing(temperature in -50.0_f64..60.0) {
+            let p_sat = saturation_vapor_pressure(temperature);
+            let p_sat_higher = saturation_vapor_pressure(temperature + 0.1);
+            prop_assert!(p_sat_higher > p_sat, "Saturation pressure must increase with temperature");
         }
     }
 

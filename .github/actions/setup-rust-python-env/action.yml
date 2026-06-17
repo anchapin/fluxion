@@ -1,5 +1,12 @@
 name: Rust + Python Environment
-description: Complete Rust and Python environment setup with all dependencies
+description: |
+  Rust + Python environment setup. Delegates all Rust setup to
+  setup-rust-env (toolchain, sccache, cargo cache, sys deps), then
+  adds Python and pip caching on top.
+
+  Migration note: `cache: 'false'` callers can be cleaned up at your
+  convenience — the input is now deprecated (no-op) and caching is
+  always-on.
 
 inputs:
   python-version:
@@ -10,18 +17,36 @@ inputs:
     description: 'Rust components to install (e.g., rustfmt,clippy)'
     required: false
     default: ''
+  sccache:
+    description: 'Enable sccache compiler caching (passed through to setup-rust-env)'
+    required: false
+    default: 'true'
   cache:
-    description: 'Enable pip caching'
+    description: >
+      Deprecated — pip caching is now always-on. Accepted for backward
+      compatibility only; has no effect. Remove from callers at your
+      convenience.
     required: false
     default: 'true'
 
 runs:
   using: composite
   steps:
-    - uses: actions/checkout@v4
+    # Rust toolchain, sccache, cargo registry cache, and Linux base deps
+    # (libssl-dev, pkg-config, libfontconfig1-dev, fontconfig, python3-dev)
+    - name: Setup Rust environment
+      uses: ./.github/actions/setup-rust-env
+      with:
+        components: ${{ inputs.rust-components }}
+        sccache: ${{ inputs.sccache }}
+        extra-apt-packages: python3-dev
 
+    # setup-python cache: 'pip' registers a post-run cache-save step at
+    # job startup. That post-step fails if ~/.cache/pip (Linux) or
+    # ~/AppData/Local/pip/Cache (Windows) doesn't exist yet — which is
+    # always true on a fresh runner before any pip install has run.
+    # Pre-create the directory here so the post-run step never errors.
     - name: Create pip cache directory
-      if: inputs.cache == 'true'
       shell: bash
       run: |
         if [ "$RUNNER_OS" == "Windows" ]; then
@@ -31,22 +56,14 @@ runs:
         fi
 
     - name: Set up Python ${{ inputs.python-version }}
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
         python-version: ${{ inputs.python-version }}
-        cache: ${{ inputs.cache == 'true' && 'pip' || '' }}
+        cache: 'pip'
         cache-dependency-path: 'requirements-dev.txt'
 
-    - name: Install system dependencies (Linux)
+    - name: Export PKG_CONFIG_PATH for Python bindings (Linux)
       if: runner.os == 'Linux'
       shell: bash
       run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev pkg-config python3-dev libfontconfig1-dev
-      env:
-        DEBIAN_FRONTEND: noninteractive
-
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: ${{ inputs.rust-components }}
+        echo "PKG_CONFIG_PATH=/usr/lib/pkgconfig:/usr/lib/x86_64-linux-gnu/pkgconfig:${PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
