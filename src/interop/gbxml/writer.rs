@@ -36,7 +36,9 @@ pub fn export_gbxml(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Resu
 }
 
 /// GbXmlWriter for exporting to gbXML format.
+#[allow(dead_code)]
 pub struct GbXmlWriter {
+    construction_counter: usize,
     layer_counter: usize,
     material_counter: usize,
     space_counter: usize,
@@ -47,6 +49,7 @@ impl GbXmlWriter {
     /// Create a new GbXmlWriter.
     pub fn new() -> Self {
         GbXmlWriter {
+            construction_counter: 0,
             layer_counter: 0,
             material_counter: 0,
             space_counter: 0,
@@ -370,9 +373,7 @@ fn write_text_element<W: std::io::Write>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::schema::{
-        ControlSet, Geometry, SchemaMetadata, SchemaVersion, SimulationOutput, SimulationSchemaV1,
-    };
+    use crate::api::schema::{SchemaMetadata, SchemaVersion, SimulationSchemaV1};
 
     fn create_test_schema() -> SimulationSchemaV1 {
         SimulationSchemaV1 {
