@@ -446,3 +446,74 @@ fn test_benchmark_report_empty_outputs() {
     assert!(!report.to_csv().is_empty());
     assert!(!report.to_markdown().is_empty());
 }
+
+#[test]
+fn test_add_result_with_peak_timestamp() {
+    let mut report = BenchmarkReport::new();
+    // Issue #761: ASHRAE 140-2023 Section 8.2.2 requires peak timestamp tracking
+    report.add_result_with_peak_timestamp(
+        "case_600",
+        MetricType::PeakHeating,
+        12.5,
+        10.0,
+        15.0,
+        Some((1, 15, 8)), // January 15, 8AM
+    );
+    assert_eq!(report.results.len(), 1);
+    let result = &report.results[0];
+    assert_eq!(result.case_id, "case_600");
+    assert!(matches!(result.metric, MetricType::PeakHeating));
+    assert_eq!(result.fluxion_value, 12.5);
+    assert_eq!(result.peak_timestamp, Some((1, 15, 8)));
+}
+
+#[test]
+fn test_add_result_with_peak_timestamp_cooling() {
+    let mut report = BenchmarkReport::new();
+    report.add_result_with_peak_timestamp(
+        "case_900",
+        MetricType::PeakCooling,
+        25.0,
+        20.0,
+        30.0,
+        Some((7, 22, 14)), // July 22, 2PM
+    );
+    assert_eq!(report.results.len(), 1);
+    let result = &report.results[0];
+    assert_eq!(result.peak_timestamp, Some((7, 22, 14)));
+}
+
+#[test]
+fn test_add_result_with_peak_timestamp_none() {
+    let mut report = BenchmarkReport::new();
+    // Non-peak metrics should have None timestamp
+    report.add_result_with_peak_timestamp(
+        "case_600",
+        MetricType::AnnualHeating,
+        50.0,
+        40.0,
+        60.0,
+        None,
+    );
+    assert_eq!(report.results.len(), 1);
+    let result = &report.results[0];
+    assert_eq!(result.peak_timestamp, None);
+}
+
+#[test]
+fn test_validation_result_with_peak_timestamp_serialization() {
+    let mut report = BenchmarkReport::new();
+    report.add_result_with_peak_timestamp(
+        "case_600",
+        MetricType::PeakHeating,
+        12.5,
+        10.0,
+        15.0,
+        Some((3, 20, 10)), // March 20, 10AM
+    );
+    let json = report.to_json();
+    // Verify JSON contains the peak_timestamp field
+    // Tuples serialize as arrays in JSON with values on separate lines
+    assert!(json.contains("peak_timestamp"));
+    assert!(json.contains("\"peak_timestamp\": [\n        3,\n        20,\n        10\n      ]"));
+}
