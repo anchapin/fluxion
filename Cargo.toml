@@ -184,6 +184,11 @@ name = "orchestration_decisions"
 path = "benches/orchestration_decisions/benchmark_runner.rs"
 harness = false
 
+[[bench]]
+name = "surrogate_vs_physics"
+path = "benches/surrogate_vs_physics_bench.rs"
+harness = false
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
