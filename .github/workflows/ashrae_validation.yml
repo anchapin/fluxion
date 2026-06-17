@@ -1,0 +1,198 @@
+name: ASHRAE 140 CI Gate
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ashrae-ci-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: ASHRAE 140 Blind Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run ASHRAE 140 Validation Tests
+        id: validation
+        run: |
+          cargo test --test ashrae_140_validation --release 2>&1 | tee validation_output.txt
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+
+      - name: Extract Validation Results
+        if: always()
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import json
+
+          with open('validation_output.txt', 'r') as f:
+              output = f.read()
+
+          pass_rate = None
+          passed = None
+          failed = None
+          mae = None
+
+          rate_pattern = r"Pass Rate:\s*([0-9.]+)%"
+          rate_match = re.search(rate_pattern, output)
+          if rate_match:
+              pass_rate = float(rate_match.group(1))
+
+          passed_pattern = r"Passed:\s*([0-9]+)"
+          passed_match = re.search(passed_pattern, output)
+          if passed_match:
+              passed = int(passed_match.group(1))
+
+          failed_pattern = r"Failed:\s*([0-9]+)"
+          failed_match = re.search(failed_pattern, output)
+          if failed_match:
+              failed = int(failed_match.group(1))
+
+          mae_pattern = r"Mean Absolute Error:\s*([0-9.]+)%"
+          mae_match = re.search(mae_pattern, output)
+          if mae_match:
+              mae = float(mae_match.group(1))
+
+          results = {
+              'pass_rate': pass_rate,
+              'passed': passed,
+              'failed': failed,
+              'mae': mae
+          }
+
+          with open('validation_summary.json', 'w') as f:
+              json.dump(results, f, indent=2)
+
+          print(f"Pass Rate: {pass_rate}%")
+          print(f"Passed: {passed}")
+          print(f"Failed: {failed}")
+          print(f"MAE: {mae}%")
+          PYEOF
+
+      - name: Generate PR Comment
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 << 'PYEOF'
+          import json
+          import subprocess
+
+          with open('validation_summary.json', 'r') as f:
+              summary = json.load(f)
+
+          pass_rate = summary.get('pass_rate', 0) or 0
+          passed = summary.get('passed', 0) or 0
+          failed = summary.get('failed', 0) or 0
+          mae = summary.get('mae', 0) or 0
+
+          if pass_rate >= 80:
+              status_emoji = "PASS"
+              status_text = "PASSED"
+              status_detail = "All ASHRAE 140 test cases are within acceptable tolerance. CI gate passed."
+          else:
+              status_emoji = "FAIL"
+              status_text = "FAILED"
+              status_detail = "Blind validation pass rate is below 80%. Please review failed cases before merging."
+
+          lines = [
+              "## ASHRAE 140 CI Gate Results [" + status_emoji + "]",
+              "",
+              "### Validation Summary",
+              "",
+              "- **Pass Rate**: " + str(pass_rate) + "% (threshold: 80%)",
+              "- **Cases Passed**: " + str(passed),
+              "- **Cases Failed**: " + str(failed),
+              "- **Mean Absolute Error**: " + str(mae) + "%",
+              "",
+              "### Status: " + status_text,
+              "",
+              status_detail,
+              "",
+              "---",
+              "*This is an automated comment from the ASHRAE 140 CI Gate workflow.*"
+          ]
+
+          with open('pr_comment.md', 'w') as f:
+              f.write('\n'.join(lines))
+
+          subprocess.run(
+              ['gh', 'pr', 'comment', '--body-file', 'pr_comment.md'],
+              check=False
+          )
+          PYEOF
+
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ashrae-validation-results-${{ github.run_id }}
+          path: |
+            validation_output.txt
+            validation_summary.json
+            pr_comment.md
+          retention-days: 30
+
+      - name: CI Gate Check
+        if: always()
+        run: |
+          python3 << 'PYEOF'
+          import json
+          import sys
+
+          with open('validation_summary.json', 'r') as f:
+              summary = json.load(f)
+
+          pass_rate = summary.get('pass_rate', 0) or 0
+          failed = summary.get('failed', 0) or 0
+
+          print(f"CI Gate Check: Pass rate = {pass_rate}%, Failed = {failed}")
+
+          if pass_rate < 80:
+              print(f"::error::CI gate failed: pass rate {pass_rate:.1f}% is below 80% threshold")
+              print(f"::error::{failed} case(s) failed ASHRAE 140 blind validation")
+              sys.exit(1)
+          else:
+              print(f"::notice::CI gate passed: {pass_rate:.1f}% pass rate")
+              sys.exit(0)
+          PYEOF
+
+      - name: Add PR Review Request
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f validation_summary.json ]; then
+            PASS_RATE=$(python3 -c "import json; print(json.load(open('validation_summary.json')).get('pass_rate', 0))")
+            if (( $(echo "$PASS_RATE < 80" | bc -l) )); then
+              echo "::warning::ASHRAE 140 validation below 80% threshold - PR review required"
+            fi
+          fi
