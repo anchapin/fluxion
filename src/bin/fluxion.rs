@@ -289,7 +289,12 @@ struct Cli {
     output_prefix: Option<String>,
 
     /// Output suffix style (L=Legacy, C=Capital, D=Dash)
-    #[arg(short = 's', long = "output-suffix", value_name = "STYLE", default_value = "L")]
+    #[arg(
+        short = 's',
+        long = "output-suffix",
+        value_name = "STYLE",
+        default_value = "L"
+    )]
     output_suffix: String,
 
     /// Force design day only simulation
@@ -849,7 +854,7 @@ fn run_direct_simulation(
 
     // Load weather data
     println!("Loading weather data...");
-    let _weather = fluxion::weather::epw::EpwWeatherSource::from_path(weather_path)
+    let _weather = fluxion::weather::epw::EpwWeatherSource::from_file(weather_path)
         .map_err(|e| anyhow::anyhow!("Failed to load weather file: {}", e))?;
 
     // TODO: Implement actual simulation
@@ -920,8 +925,14 @@ fn run_workflow(
     if let Some(steps) = workflow.get("steps").and_then(|v| v.as_array()) {
         println!("\nWorkflow steps: {}", steps.len());
         for (i, step) in steps.iter().enumerate() {
-            let measure_type = step.get("measure_type").and_then(|v| v.as_str()).unwrap_or("unknown");
-            let measure_name = step.get("measure_dir_name").and_then(|v| v.as_str()).unwrap_or("unnamed");
+            let measure_type = step
+                .get("measure_type")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unknown");
+            let measure_name = step
+                .get("measure_dir_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed");
             println!("  {}. [{}] {}", i + 1, measure_type, measure_name);
         }
     }
@@ -1560,12 +1571,7 @@ fn main() -> Result<()> {
             measures_only,
             postprocess_only,
         } => {
-            run_workflow(
-                workflow.as_deref(),
-                *debug,
-                *measures_only,
-                *postprocess_only,
-            )?;
+            run_workflow(workflow.as_deref(), debug, measures_only, postprocess_only)?;
         }
 
         Commands::Measure { command } => {
@@ -1723,9 +1729,19 @@ mod tests {
     #[test]
     fn test_direct_simulation_mode_energyplus_style() {
         // Test EnergyPlus-compatible direct simulation mode
-        let args = ["fluxion", "-w", "weather.epw", "-d", "output/", "input.flux"];
+        let args = [
+            "fluxion",
+            "-w",
+            "weather.epw",
+            "-d",
+            "output/",
+            "input.flux",
+        ];
         let cli = Cli::try_parse_from(args.iter());
-        assert!(cli.is_ok(), "CLI should accept EnergyPlus-style direct simulation");
+        assert!(
+            cli.is_ok(),
+            "CLI should accept EnergyPlus-style direct simulation"
+        );
         let cli = cli.unwrap();
         assert_eq!(cli.weather, Some("weather.epw".to_string()));
         assert_eq!(cli.input, Some("input.flux".to_string()));
