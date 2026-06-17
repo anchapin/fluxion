@@ -126,12 +126,35 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // This gives ~69 hour time constant instead of ~1.9 hours with h_tr_ms
         let h_tr_sum = if is_high_mass {
             // Use derived_h_tr_3 for high-mass cases
-            // Fall back to h_tr_ms if derived_h_tr_3 hasn't been computed yet (model not initialized)
+            // derived_h_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms) where H_tr_2 includes
+            // ventilation and interior surface series, plus window in parallel.
+            // If derived_h_tr_3 hasn't been computed yet (model not initialized),
+            // compute it inline using the ISO 13790 formula.
             let derived = self.0.derived_h_tr_3.as_ref().iter().sum::<f64>();
             if derived > 1e-6 {
                 derived
             } else {
-                self.0.h_tr_ms.as_ref().iter().sum::<f64>()
+                // Issue #914 fix: derived_h_tr_3 is not yet computed.
+                // Compute H_tr_3 inline using ISO 13790 series formula:
+                // H_tr_1 = h_ve * h_tr_is / (h_ve + h_tr_is)  [series]
+                // H_tr_2 = H_tr_1 + h_tr_w                      [parallel with windows]
+                // H_tr_3 = H_tr_2 * h_tr_ms / (H_tr_2 + h_tr_ms) [series with mass]
+                let h_tr_ms_sum: f64 = self.0.h_tr_ms.as_ref().iter().sum();
+                let h_tr_is_sum: f64 = self.0.h_tr_is.as_ref().iter().sum();
+                let h_tr_w_sum: f64 = self.0.h_tr_w.as_ref().iter().sum();
+                let h_ve_sum: f64 = self.0.h_ve.as_ref().iter().sum();
+
+                if h_tr_ms_sum > 0.0 && h_tr_is_sum > 0.0 && h_ve_sum > 0.0 {
+                    let h_tr_1 = (h_ve_sum * h_tr_is_sum) / (h_ve_sum + h_tr_is_sum);
+                    let h_tr_2 = h_tr_1 + h_tr_w_sum;
+                    if h_tr_2 > 0.0 {
+                        (h_tr_2 * h_tr_ms_sum) / (h_tr_2 + h_tr_ms_sum)
+                    } else {
+                        h_tr_ms_sum
+                    }
+                } else {
+                    h_tr_ms_sum
+                }
             }
         } else {
             // Standard: use h_tr_ms for surface-to-mass coupling
