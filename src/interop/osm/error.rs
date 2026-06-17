@@ -1,42 +1,50 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! OpenStudio OSM file error types.
+//! Error types for OSM parsing and writing.
 
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+#[derive(Error, Debug)]
 pub enum OsmError {
-    #[error("Failed to parse OSM XML: {0}")]
-    Parse(String),
+    #[error("Failed to read file: {0}")]
+    IoError(#[from] std::io::Error),
 
-    #[error("Missing required OSM object: {0}")]
-    MissingRequired(String),
+    #[error("Parse error at line {line}: {message}")]
+    ParseError { line: usize, message: String },
 
-    #[error("Unsupported OSM version: {0}")]
-    UnsupportedVersion(String),
-
-    #[error("Invalid geometry: {0}")]
-    InvalidGeometry(String),
-
-    #[error("Invalid material layer at index {index}: {message}")]
-    InvalidMaterialLayer { index: usize, message: String },
+    #[error("Invalid object: {0}")]
+    InvalidObject(String),
 
     #[error("Missing required field '{field}' in {object}")]
-    MissingField { field: String, object: String },
+    MissingField { object: String, field: String },
 
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
+    #[error("Unknown object type: {0}")]
+    UnknownObjectType(String),
 
-    #[error("XML error: {0}")]
-    Xml(#[from] quick_xml::Error),
+    #[error("Conversion error: {0}")]
+    ConversionError(String),
 
-    #[error("Serialization error: {0}")]
-    Serialization(String),
+    #[error("Export error: {0}")]
+    ExportError(String),
 }
 
-impl From<serde_json::Error> for OsmError {
-    fn from(err: serde_json::Error) -> Self {
-        OsmError::Serialization(err.to_string())
+impl OsmError {
+    pub fn parse_error(line: usize, message: impl Into<String>) -> Self {
+        OsmError::ParseError {
+            line,
+            message: message.into(),
+        }
+    }
+
+    pub fn missing_field(object: impl Into<String>, field: impl Into<String>) -> Self {
+        OsmError::MissingField {
+            object: object.into(),
+            field: field.into(),
+        }
+    }
+
+    pub fn invalid_object(msg: impl Into<String>) -> Self {
+        OsmError::InvalidObject(msg.into())
     }
 }

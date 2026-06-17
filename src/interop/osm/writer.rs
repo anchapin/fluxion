@@ -1,500 +1,505 @@
 // Copyright 2026 Fluxion. All rights reserved.
 // SPDX-License-Identifier: MIT
 
-//! OpenStudio OSM file writer.
+//! OSM file writer - exports fluxion schema to OpenStudio Model files.
 //!
-//! This module provides functionality to serialize Fluxion's SimulationSchema
-//! into OpenStudio Model (OSM) XML files.
+//! This module provides functionality to serialize fluxion's [`SimulationSchemaV1`]
+//! format into OSM (OpenStudio Model) files for interoperability with the
+//! OpenStudio SDK ecosystem.
+//!
+//! # Example
+//!
+//! ```ignore
+//! use fluxion::interop::osm::{export_osm, OsmWriter};
+//!
+//! let writer = OsmWriter::new();
+//! writer.export_osm(&schema, "output.osm")?;
+//! ```
+//!
+//! # Limitations
+//!
+//! This is an initial implementation with the following known limitations:
+//! - Limited HVAC system export
+//! - Basic schedule representation
+//! - Simplified construction export
 
+use std::fs::File;
+use std::io::{BufWriter, Write};
 use std::path::Path;
 
-use quick_xml::events::{BytesEnd, BytesStart, Event};
-use quick_xml::Writer;
-use std::io::Cursor;
+use crate::api::schema::SimulationSchemaV1;
+use crate::interop::osm::error::OsmError;
+use crate::sim::construction::ConstructionLayer;
 
-use crate::api::schema::{
-    ConstructionSet, ControlSet, Geometry, SimulationSchema,
-    WeatherData,
-};
-use crate::sim::schedule::HVACSchedule;
-
-use super::error::OsmError;
-use crate::interop::osm::types::{
-    OsmBuilding, OsmConstruction, OsmMaterial, OsmModel,
-    OsmSite, OsmSpace, OsmThermostat, OsmThermalZone,
-    OsmWeatherFile,
-};
+pub fn export_osm(schema: &SimulationSchemaV1, path: impl AsRef<Path>) -> Result<(), OsmError> {
+    let mut writer = OsmWriter::new();
+    writer.export_osm(schema, path)
+}
 
 pub struct OsmWriter {
-    indent: bool,
+    #[allow(dead_code)]
+    indent: usize,
+    handle_counter: usize,
 }
 
 impl OsmWriter {
     pub fn new() -> Self {
-        OsmWriter { indent: true }
+        OsmWriter {
+            indent: 0,
+            handle_counter: 0,
+        }
     }
 
-    pub fn write(&self, schema: &SimulationSchema, path: &Path) -> Result<(), OsmError> {
-        let xml = self.to_string(schema)?;
-        std::fs::write(path, xml)?;
+    pub fn export_osm(
+        &mut self,
+        schema: &SimulationSchemaV1,
+        path: impl AsRef<Path>,
+    ) -> Result<(), OsmError> {
+        let file = File::create(path.as_ref()).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        let mut writer = BufWriter::new(file);
+
+        self.write_header(&mut writer)?;
+        self.write_version(&mut writer)?;
+        self.write_site(&mut writer, schema)?;
+        self.write_building(&mut writer, schema)?;
+        self.write_materials(&mut writer, schema)?;
+        self.write_constructions(&mut writer, schema)?;
+        self.write_thermal_zones(&mut writer, schema)?;
+        self.write_spaces(&mut writer, schema)?;
+        self.write_surfaces(&mut writer, schema)?;
+
+        writer
+            .flush()
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+
         Ok(())
     }
 
-    pub fn to_string(&self, schema: &SimulationSchema) -> Result<String, OsmError> {
-        let model = self.schema_to_osm_model(schema)?;
-        self.model_to_xml(&model)
+    fn write_header(&mut self, writer: &mut dyn Write) -> Result<(), OsmError> {
+        writeln!(
+            writer,
+            "================================================================================"
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, " FLUXION MODEL - Generated OpenStudio Model File")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "================================================================================"
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        Ok(())
     }
 
-    fn schema_to_osm_model(&self, schema: &SimulationSchema) -> Result<OsmModel, OsmError> {
-        let (geometry, constructions, controls, weather) = match schema {
-            SimulationSchema::V1(s) => (
-                &s.geometry,
-                &s.constructions,
-                &s.controls,
-                &s.weather,
-            ),
+    fn write_version(&mut self, writer: &mut dyn Write) -> Result<(), OsmError> {
+        writeln!(writer, "OS:Version,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{version}}, !- Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  3.6.0; !- Version Identifier")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        Ok(())
+    }
+
+    fn write_site(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
+        let lat = match &schema.weather {
+            crate::api::schema::WeatherData::TmyLocation { location } => location
+                .split(',')
+                .next()
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(39.739),
+            _ => 39.739,
         };
 
-        let mut model = OsmModel::default();
-        model.version = "1.0.0".to_string();
+        let lon = match &schema.weather {
+            crate::api::schema::WeatherData::TmyLocation { location } => location
+                .split(',')
+                .nth(1)
+                .and_then(|s| s.trim().parse::<f64>().ok())
+                .unwrap_or(-104.984),
+            _ => -104.984,
+        };
 
-        model.building = Some(self.geometry_to_building(geometry));
-        model.site = Some(self.geometry_to_site());
-        model.weather_file = self.extract_weather_file(weather);
-        model.thermal_zones = self.geometry_to_thermal_zones(geometry);
-        model.spaces = self.geometry_to_spaces(geometry);
-        model.materials = self.constructions_to_materials(constructions);
-        model.constructions = self.constructions_to_constructions(constructions)?;
-        model.thermostats = vec![self.controls_to_thermostat(controls)];
-
-        Ok(model)
-    }
-
-    fn geometry_to_building(&self, geometry: &Geometry) -> OsmBuilding {
-        OsmBuilding {
-            name: "Building".to_string(),
-            north_axis: 0.0,
-            terrain: "Suburbs".to_string(),
-            floorspaces_stories: Some(geometry.number_of_floors as i32),
-            floor_area: Some(geometry.total_floor_area),
-            building_type: Some("Office".to_string()),
-        }
-    }
-
-    fn geometry_to_site(&self) -> OsmSite {
-        OsmSite {
-            name: "Site".to_string(),
-            latitude: Some(39.7392),
-            longitude: Some(-104.9903),
-            time_zone: Some(-7.0),
-            elevation: Some(1609.0),
-            terrain: Some("Suburbs".to_string()),
-        }
-    }
-
-    fn extract_weather_file(&self, weather: &WeatherData) -> Option<OsmWeatherFile> {
-        match weather {
-            WeatherData::EpwFile { path } => Some(OsmWeatherFile {
-                file_name: path.to_string_lossy().to_string(),
-                path_type: Some("absolute".to_string()),
-            }),
-            _ => None,
-        }
-    }
-
-    fn geometry_to_thermal_zones(&self, geometry: &Geometry) -> Vec<OsmThermalZone> {
-        geometry
-            .zones
-            .iter()
-            .map(|z| OsmThermalZone {
-                name: z.name.clone(),
-                zone_name: Some(z.name.clone()),
-                multiplier: Some(1),
-                volume: Some(z.volume),
-                floor_area: Some(z.floor_area),
-            })
-            .collect()
-    }
-
-    fn geometry_to_spaces(&self, geometry: &Geometry) -> Vec<OsmSpace> {
-        geometry
-            .zones
-            .iter()
-            .map(|z| OsmSpace {
-                name: format!("{} Space", z.name),
-                thermal_zone: Some(z.name.clone()),
-                building_story: None,
-                x_position: Some(0.0),
-                y_position: Some(0.0),
-                z_position: Some(0.0),
-                direction_of_relative_north: Some(0.0),
-                building_unit: None,
-            })
-            .collect()
-    }
-
-    fn constructions_to_materials(&self, constructions: &ConstructionSet) -> Vec<OsmMaterial> {
-        let mut materials = Vec::new();
-
-        for (idx, layer) in constructions.wall.layers.iter().enumerate() {
-            materials.push(OsmMaterial {
-                name: format!("Wall Material {}", idx),
-                material_type: Some("StandardOpaqueMaterial".to_string()),
-                thickness: Some(layer.thickness),
-                conductivity: Some(layer.conductivity),
-                density: Some(layer.density),
-                specific_heat: Some(layer.specific_heat),
-                roughness: Some("MediumRough".to_string()),
-                thermal_absorptance: Some(0.9),
-                solar_absorptance: Some(0.7),
-                visible_absorptance: Some(0.7),
-            });
-        }
-
-        if constructions.wall.window.is_some() {
-            materials.push(OsmMaterial {
-                name: "Window Material".to_string(),
-                material_type: Some("StandardOpaqueMaterial".to_string()),
-                thickness: Some(0.006),
-                conductivity: Some(2.5 * 0.006),
-                density: Some(2500.0),
-                specific_heat: Some(840.0),
-                roughness: None,
-                thermal_absorptance: None,
-                solar_absorptance: None,
-                visible_absorptance: None,
-            });
-        }
-
-        for (idx, layer) in constructions.roof.layers.iter().enumerate() {
-            materials.push(OsmMaterial {
-                name: format!("Roof Material {}", idx),
-                material_type: Some("StandardOpaqueMaterial".to_string()),
-                thickness: Some(layer.thickness),
-                conductivity: Some(layer.conductivity),
-                density: Some(layer.density),
-                specific_heat: Some(layer.specific_heat),
-                roughness: Some("MediumRough".to_string()),
-                thermal_absorptance: Some(0.9),
-                solar_absorptance: Some(0.7),
-                visible_absorptance: Some(0.7),
-            });
-        }
-
-        for (idx, layer) in constructions.floor.layers.iter().enumerate() {
-            materials.push(OsmMaterial {
-                name: format!("Floor Material {}", idx),
-                material_type: Some("StandardOpaqueMaterial".to_string()),
-                thickness: Some(layer.thickness),
-                conductivity: Some(layer.conductivity),
-                density: Some(layer.density),
-                specific_heat: Some(layer.specific_heat),
-                roughness: Some("MediumRough".to_string()),
-                thermal_absorptance: Some(0.9),
-                solar_absorptance: Some(0.7),
-                visible_absorptance: Some(0.7),
-            });
-        }
-
-        materials
-    }
-
-    fn constructions_to_constructions(
-        &self,
-        constructions: &ConstructionSet,
-    ) -> Result<Vec<OsmConstruction>, OsmError> {
-        let mut result = Vec::new();
-
-        let wall_layer_names: Vec<String> = constructions
-            .wall
-            .layers
-            .iter()
-            .enumerate()
-            .map(|(idx, _)| format!("Wall Material {}", idx))
-            .collect();
-
-        result.push(OsmConstruction {
-            name: constructions.wall.name.clone(),
-            layers: wall_layer_names.clone(),
-        });
-
-        if constructions.wall.window.is_some() {
-            let mut win_layers = wall_layer_names.clone();
-            win_layers.push("Window Material".to_string());
-            result.push(OsmConstruction {
-                name: format!("{} with Windows", constructions.wall.name),
-                layers: win_layers,
-            });
-        }
-
-        let roof_layer_names: Vec<String> = constructions
-            .roof
-            .layers
-            .iter()
-            .enumerate()
-            .map(|(idx, _)| format!("Roof Material {}", idx))
-            .collect();
-        result.push(OsmConstruction {
-            name: constructions.roof.name.clone(),
-            layers: roof_layer_names,
-        });
-
-        let floor_layer_names: Vec<String> = constructions
-            .floor
-            .layers
-            .iter()
-            .enumerate()
-            .map(|(idx, _)| format!("Floor Material {}", idx))
-            .collect();
-        result.push(OsmConstruction {
-            name: constructions.floor.name.clone(),
-            layers: floor_layer_names,
-        });
-
-        Ok(result)
-    }
-
-    fn controls_to_thermostat(&self, controls: &ControlSet) -> OsmThermostat {
-        OsmThermostat {
-            name: "Thermostat".to_string(),
-            heating_setpoint: controls.zone_control.heating_setpoint,
-            cooling_setpoint: controls.zone_control.cooling_setpoint,
-        }
-    }
-
-    fn model_to_xml(&self, model: &OsmModel) -> Result<String, OsmError> {
-        let mut writer = Writer::new_with_indent(Cursor::new(Vec::new()), b' ', 2);
-
-        writer.write_event(Event::Decl(quick_xml::events::BytesDecl::new(
-            "1.0",
-            Some("UTF-8"),
-            None,
-        )))?;
-
-        let mut root = BytesStart::new("OpenStudioApplication");
-        root.push_attribute(("version", "1.0.0"));
-        root.push_attribute(("schemaVersion", "1.0.0"));
-        writer.write_event(Event::Start(root.clone()))?;
-
-        let version_elem = BytesStart::new("OS:Version");
-        let mut version_elem = version_elem;
-        version_elem.push_attribute(("version", model.version.as_str()));
-        writer.write_event(Event::Empty(version_elem))?;
-
-        if let Some(ref site) = model.site {
-            self.write_site(&mut writer, site)?;
-        }
-
-        if let Some(ref weather) = model.weather_file {
-            self.write_weather_file(&mut writer, weather)?;
-        }
-
-        if let Some(ref building) = model.building {
-            self.write_building(&mut writer, building)?;
-        }
-
-        for zone in &model.thermal_zones {
-            self.write_thermal_zone(&mut writer, zone)?;
-        }
-
-        for space in &model.spaces {
-            self.write_space(&mut writer, space)?;
-        }
-
-        for material in &model.materials {
-            self.write_material(&mut writer, material)?;
-        }
-
-        for construction in &model.constructions {
-            self.write_construction(&mut writer, construction)?;
-        }
-
-        for thermostat in &model.thermostats {
-            self.write_thermostat(&mut writer, thermostat)?;
-        }
-
-        writer.write_event(Event::End(BytesEnd::new("OpenStudioApplication")))?;
-
-        let result = writer.into_inner().into_inner();
-        let xml = String::from_utf8(result).map_err(|e| OsmError::Parse(e.to_string()))?;
-
-        Ok(xml)
-    }
-
-    fn write_site(&self, writer: &mut Writer<Cursor<Vec<u8>>>, site: &OsmSite) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:Site");
-        elem.push_attribute(("name", site.name.as_str()));
-        if let Some(lat) = site.latitude {
-            elem.push_attribute(("latitude", format!("{:.6}", lat).as_str()));
-        }
-        if let Some(lon) = site.longitude {
-            elem.push_attribute(("longitude", format!("{:.6}", lon).as_str()));
-        }
-        if let Some(tz) = site.time_zone {
-            elem.push_attribute(("time_Zone", format!("{:.1}", tz).as_str()));
-        }
-        if let Some(elev) = site.elevation {
-            elem.push_attribute(("elevation", format!("{:.1}", elev).as_str()));
-        }
-        if let Some(ref terrain) = site.terrain {
-            elem.push_attribute(("terrain", terrain.as_str()));
-        }
-        writer.write_event(Event::Empty(elem))?;
-        Ok(())
-    }
-
-    fn write_weather_file(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        weather: &OsmWeatherFile,
-    ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:WeatherFile");
-        elem.push_attribute(("file_Name", weather.file_name.as_str()));
-        if let Some(ref path_type) = weather.path_type {
-            elem.push_attribute(("path_Type", path_type.as_str()));
-        }
-        writer.write_event(Event::Empty(elem))?;
+        writeln!(writer, "OS:Site,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{site-{}}}, !- Handle", self.handle_counter())
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", schema.metadata.name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Latitude", lat)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Longitude", lon)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  1609; !- Elevation {{m}}")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
     fn write_building(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        building: &OsmBuilding,
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
     ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:Building");
-        elem.push_attribute(("name", building.name.as_str()));
-        elem.push_attribute(("north_Axis", format!("{:.1}", building.north_axis).as_str()));
-        elem.push_attribute(("terrain", building.terrain.as_str()));
-        if let Some(stories) = building.floorspaces_stories {
-            elem.push_attribute(("floorspaces_Story", stories.to_string().as_str()));
-        }
-        if let Some(area) = building.floor_area {
-            elem.push_attribute(("floor_Area", format!("{:.2}", area).as_str()));
-        }
-        if let Some(ref btype) = building.building_type {
-            elem.push_attribute(("buildingType", btype.as_str()));
-        }
-        writer.write_event(Event::Empty(elem))?;
+        writeln!(writer, "OS:Building,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{bldg-{}}}, !- Handle", self.handle_counter())
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", schema.metadata.name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Building Story Names")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Thermal Zone Names")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Floor Area {{m2}}",
+            schema.geometry.total_floor_area
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Number of Floors",
+            schema.geometry.number_of_floors
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Floor Height {{m}}",
+            schema.geometry.floor_height
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  ;").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
         Ok(())
     }
 
-    fn write_thermal_zone(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        zone: &OsmThermalZone,
+    fn write_materials(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
     ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:ThermalZone");
-        elem.push_attribute(("name", zone.name.as_str()));
-        if let Some(ref zone_name) = zone.zone_name {
-            elem.push_attribute(("zone_Name", zone_name.as_str()));
-        }
-        if let Some(mult) = zone.multiplier {
-            elem.push_attribute(("multiplier", mult.to_string().as_str()));
-        }
-        if let Some(vol) = zone.volume {
-            elem.push_attribute(("volume", format!("{:.2}", vol).as_str()));
-        }
-        if let Some(area) = zone.floor_area {
-            elem.push_attribute(("floor_Area", format!("{:.2}", area).as_str()));
-        }
-        writer.write_event(Event::Empty(elem))?;
-        Ok(())
-    }
+        let mut material_handles: Vec<String> = Vec::new();
 
-    fn write_space(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        space: &OsmSpace,
-    ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:Space");
-        elem.push_attribute(("name", space.name.as_str()));
-        if let Some(ref tz) = space.thermal_zone {
-            elem.push_attribute(("thermal_Zone", tz.as_str()));
+        for (i, layer) in schema.constructions.wall.layers.iter().enumerate() {
+            let handle = format!("{{mat-w{}}}", i);
+            material_handles.push(handle.clone());
+            self.write_material(writer, &handle, layer)?;
         }
-        if let Some(x) = space.x_position {
-            elem.push_attribute(("x_Position", format!("{:.3}", x).as_str()));
+
+        for (i, layer) in schema.constructions.roof.layers.iter().enumerate() {
+            let handle = format!("{{mat-r{}}}", i);
+            self.write_material(writer, &handle, layer)?;
         }
-        if let Some(y) = space.y_position {
-            elem.push_attribute(("y_Position", format!("{:.3}", y).as_str()));
+
+        for (i, layer) in schema.constructions.floor.layers.iter().enumerate() {
+            let handle = format!("{{mat-f{}}}", i);
+            self.write_material(writer, &handle, layer)?;
         }
-        if let Some(z) = space.z_position {
-            elem.push_attribute(("z_Position", format!("{:.3}", z).as_str()));
-        }
-        writer.write_event(Event::Empty(elem))?;
+
         Ok(())
     }
 
     fn write_material(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        material: &OsmMaterial,
+        &mut self,
+        writer: &mut dyn Write,
+        handle: &str,
+        layer: &ConstructionLayer,
     ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:Material");
-        elem.push_attribute(("name", material.name.as_str()));
-        if let Some(ref mtype) = material.material_type {
-            elem.push_attribute(("material_Type", mtype.as_str()));
+        writeln!(writer, "OS:Material,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Handle", handle)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", layer.name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  MediumRough, !- Roughness")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Thickness {{m}}", layer.thickness)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Conductivity {{W/m-K}}",
+            layer.conductivity
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Density {{kg/m3}}", layer.density)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(
+            writer,
+            "  {}, !- Specific Heat {{J/kg-K}}",
+            layer.specific_heat
+        )
+        .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}; !- Emissivity", layer.emissivity)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        Ok(())
+    }
+
+    fn write_constructions(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
+        self.write_construction(writer, "ExtWall", &schema.constructions.wall)?;
+
+        if schema.constructions.wall.layers.len() != schema.constructions.roof.layers.len()
+            || schema
+                .constructions
+                .wall
+                .layers
+                .iter()
+                .zip(schema.constructions.roof.layers.iter())
+                .any(|(a, b)| a.name != b.name)
+        {
+            self.write_construction(writer, "Roof", &schema.constructions.roof)?;
         }
-        if let Some(thick) = material.thickness {
-            elem.push_attribute(("thickness", format!("{:.4}", thick).as_str()));
+
+        if schema.constructions.wall.layers.len() != schema.constructions.floor.layers.len()
+            || schema
+                .constructions
+                .wall
+                .layers
+                .iter()
+                .zip(schema.constructions.floor.layers.iter())
+                .any(|(a, b)| a.name != b.name)
+        {
+            self.write_construction(writer, "Floor", &schema.constructions.floor)?;
         }
-        if let Some(cond) = material.conductivity {
-            elem.push_attribute(("conductivity", format!("{:.4}", cond).as_str()));
-        }
-        if let Some(dens) = material.density {
-            elem.push_attribute(("density", format!("{:.2}", dens).as_str()));
-        }
-        if let Some(sh) = material.specific_heat {
-            elem.push_attribute(("specific_Heat", format!("{:.2}", sh).as_str()));
-        }
-        if let Some(ref rough) = material.roughness {
-            elem.push_attribute(("roughness", rough.as_str()));
-        }
-        writer.write_event(Event::Empty(elem))?;
+
         Ok(())
     }
 
     fn write_construction(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        construction: &OsmConstruction,
+        &mut self,
+        writer: &mut dyn Write,
+        name: &str,
+        surface: &crate::api::schema::SurfaceConstruction,
     ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:Construction");
-        elem.push_attribute(("name", construction.name.as_str()));
-        writer.write_event(Event::Start(elem.clone()))?;
+        writeln!(writer, "OS:Construction,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{cons-{}}}, !- Handle", self.handle_counter())
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {}, !- Name", name)
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
 
-        for layer_name in &construction.layers {
-            let mut layer_elem = BytesStart::new("OS:Layer");
-            layer_elem.push_attribute(("name", layer_name.as_str()));
-            writer.write_event(Event::Empty(layer_elem))?;
+        for (i, _layer) in surface.layers.iter().enumerate() {
+            let mat_handle = format!("{{mat-{}{}}}", &name[..1].to_lowercase(), i);
+            if i == surface.layers.len() - 1 {
+                writeln!(writer, "  {}; !- Layer {}", mat_handle, i + 1)
+                    .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            } else {
+                writeln!(writer, "  {}, !- Layer {}", mat_handle, i + 1)
+                    .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            }
         }
 
-        writer.write_event(Event::End(BytesEnd::new("OS:Construction")))?;
         Ok(())
     }
 
-    fn write_thermostat(
-        &self,
-        writer: &mut Writer<Cursor<Vec<u8>>>,
-        thermostat: &OsmThermostat,
+    fn write_thermal_zones(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
     ) -> Result<(), OsmError> {
-        let mut elem = BytesStart::new("OS:ThermostatSetpointDualSetpoint");
-        elem.push_attribute(("name", thermostat.name.as_str()));
-        elem.push_attribute((
-            "heating_Setpoint_Temperature",
-            format!("{:.1}", thermostat.heating_setpoint).as_str(),
-        ));
-        elem.push_attribute((
-            "cooling_Setpoint_Temperature",
-            format!("{:.1}", thermostat.cooling_setpoint).as_str(),
-        ));
-        writer.write_event(Event::Empty(elem))?;
+        for (i, zone) in schema.geometry.zones.iter().enumerate() {
+            writeln!(writer, "OS:ThermalZone,")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{zone-{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", zone.name)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Thermostat Handle")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  1; !- Multiplier")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        }
         Ok(())
+    }
+
+    fn write_spaces(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
+        for (i, zone) in schema.geometry.zones.iter().enumerate() {
+            writeln!(writer, "OS:Space,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{space-{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", zone.name)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{zone-{}}}, !- Zone Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Building Story Handle")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  0, !- X Origin {{m}}")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  0, !- Y Origin {{m}}")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  0; !- Z Origin {{m}}")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn write_surfaces(
+        &mut self,
+        writer: &mut dyn Write,
+        schema: &SimulationSchemaV1,
+    ) -> Result<(), OsmError> {
+        let total_area = schema.geometry.total_floor_area;
+        let perimeter = (total_area * 4.0).sqrt() * 4.0;
+        let wall_height = schema.geometry.floor_height;
+
+        let _wall_area = perimeter * wall_height / 4.0;
+        let wall_types = ["West Wall", "North Wall", "East Wall", "South Wall"];
+
+        for (i, wall_type) in wall_types.iter().enumerate() {
+            writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{surf-w{}}}, !- Handle", i)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {}, !- Name", wall_type)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  Wall, !- Surface Type")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  {{cons-w0}}, !- Construction Handle",)
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Building Boundary Type")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  Outdoors, !- Outside Boundary Condition")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  , !- Sun Exposure")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer, "  ; !- Wind Exposure")
+                .map_err(|e| OsmError::ExportError(e.to_string()))?;
+            writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+        }
+
+        let _roof_area = total_area;
+        writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{surf-r0}}, !- Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Roof, !- Name").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  RoofCeiling, !- Surface Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{cons-r0}}, !- Construction Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Building Boundary Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Outdoors, !- Outside Boundary Condition")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Sun Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  ; !- Wind Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+
+        writeln!(writer, "OS:Surface,").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{surf-f0}}, !- Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Floor, !- Name").map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Floor, !- Surface Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  {{cons-f0}}, !- Construction Handle")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  , !- Building Boundary Type")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  Ground, !- Outside Boundary Condition")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  NoSun, !- Sun Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer, "  NoWind; !- Wind Exposure")
+            .map_err(|e| OsmError::ExportError(e.to_string()))?;
+        writeln!(writer).map_err(|e| OsmError::ExportError(e.to_string()))?;
+
+        Ok(())
+    }
+
+    fn handle_counter(&mut self) -> usize {
+        self.handle_counter += 1;
+        self.handle_counter
     }
 }
 
 impl Default for OsmWriter {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api::schema::{
+        ConstructionSet, ControlSet, Geometry, SchemaMetadata, SchemaVersion, SimulationOutput,
+        SimulationSchemaV1, SurfaceConstruction, WeatherData, ZoneGeometry,
+    };
+
+    fn create_test_schema() -> SimulationSchemaV1 {
+        SimulationSchemaV1 {
+            version: SchemaVersion::V1,
+            metadata: SchemaMetadata {
+                name: "Test Building".to_string(),
+                description: "Test OSM export".to_string(),
+                author: None,
+                created_at: Some("2026-01-01".to_string()),
+                schema_version: SchemaVersion::V1,
+            },
+            geometry: Geometry {
+                zones: vec![ZoneGeometry {
+                    name: "Zone 1".to_string(),
+                    floor_area: 100.0,
+                    volume: 270.0,
+                    height: 2.7,
+                }],
+                total_floor_area: 100.0,
+                total_volume: 270.0,
+                number_of_floors: 1,
+                floor_height: 2.7,
+            },
+            constructions: ConstructionSet::default(),
+            schedules: crate::api::schema::ScheduleSet::default(),
+            weather: WeatherData::TmyLocation {
+                location: "40.0, -105.0".to_string(),
+            },
+            controls: ControlSet::default(),
+            output: SimulationOutput::default(),
+        }
+    }
+
+    #[test]
+    fn test_export_osm() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let mut writer = OsmWriter::new();
+        let schema = create_test_schema();
+
+        let path = temp_dir.path().join("test_export.osm");
+        writer.export_osm(&schema, &path).expect("Should export");
+
+        let content = std::fs::read_to_string(&path).expect("Should read");
+        assert!(content.contains("Test Building"));
+        assert!(content.contains("OS:Material"));
+        assert!(content.contains("OS:Construction"));
+        assert!(content.contains("OS:ThermalZone"));
+    }
+
+    #[test]
+    fn test_export_osm_to_file() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().expect("Failed to create temp dir");
+        let mut writer = OsmWriter::new();
+        let schema = create_test_schema();
+
+        let path = temp_dir.path().join("test_export.osm");
+        writer.export_osm(&schema, &path).expect("Should export");
+
+        let content = std::fs::read_to_string(&path).expect("Should read");
+        assert!(content.contains("Test Building"));
     }
 }
