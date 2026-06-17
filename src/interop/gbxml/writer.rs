@@ -22,9 +22,7 @@ use std::path::Path;
 use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
 use quick_xml::Writer;
 
-use crate::api::schema::{
-    ConstructionSet, SimulationSchemaV1, WeatherData, ZoneGeometry,
-};
+use crate::api::schema::{ConstructionSet, SimulationSchemaV1, WeatherData, ZoneGeometry};
 use crate::interop::gbxml::error::GbXmlError;
 
 /// Export a SimulationSchema to gbXML file.
