@@ -78,7 +78,9 @@ class TestTransformation1_WallInsulation:
 
         # More aggressive approach: use a model parameter that affects wall losses
         # For this test we verify the solver handles conductance changes gracefully
-        assert math.isfinite(baseline), "Baseline simulation should produce finite energy"
+        assert math.isfinite(
+            baseline
+        ), "Baseline simulation should produce finite energy"
 
     def test_insulation_change_physical_plausibility(self, base_model):
         """Verify insulation change produces physically plausible results.
@@ -101,11 +103,12 @@ class TestTransformation1_WallInsulation:
         # effective conductance and verify monotonic relationship
         results = []
         for conductance_scale in [0.5, 1.0, 2.0]:
-            # Set varying effective conductance (scaled from baseline)
-            effective_conductance = 1.0 * conductance_scale
+            # Scale effective conductance (scaled from baseline)
             # In a full implementation, this would modify wall R-value directly
             result = base_model.simulate(years=1, use_surrogates=False)
-            assert math.isfinite(result), f"Result should be finite at scale {conductance_scale}"
+            assert math.isfinite(
+                result
+            ), f"Result should be finite at scale {conductance_scale}"
             results.append(result)
 
         # Verify monotonicity: higher conductance should generally lead to
@@ -122,7 +125,9 @@ class TestTransformation1_WallInsulation:
 
         # Very high conductance (poorly insulated)
         multi_zone_model.set_inter_zone_conductance_vector([100.0, 100.0, 100.0])
-        result_high = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+        result_high = multi_zone_model.simulate_multi_zone(
+            years=1, use_surrogates=False
+        )
         assert math.isfinite(result_high), "Poorly insulated case should be finite"
 
 
@@ -196,7 +201,9 @@ class TestTransformation3_ThermostatSetpoints:
 
         # Raise heating setpoint by 2°C
         multi_zone_model.set_zone_setpoints(0, 22.0, 24.0)
-        higher_heating = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+        higher_heating = multi_zone_model.simulate_multi_zone(
+            years=1, use_surrogates=False
+        )
         assert math.isfinite(higher_heating), "Higher heating setpoint should be finite"
 
         # Higher heating setpoint should require equal or more heating energy
@@ -222,7 +229,9 @@ class TestTransformation3_ThermostatSetpoints:
 
         # Lower cooling setpoint by 2°C
         multi_zone_model.set_zone_setpoints(0, 20.0, 22.0)
-        lower_cooling = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+        lower_cooling = multi_zone_model.simulate_multi_zone(
+            years=1, use_surrogates=False
+        )
         assert math.isfinite(lower_cooling), "Lower cooling setpoint should be finite"
 
         # Bounded physical plausibility check
@@ -243,7 +252,9 @@ class TestTransformation3_ThermostatSetpoints:
         # Wide range setpoints
         multi_zone_model.set_zone_setpoints(0, 15.0, 32.0)
         result = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
-        assert math.isfinite(result), "Wide setpoint range should still be physically valid"
+        assert math.isfinite(
+            result
+        ), "Wide setpoint range should still be physically valid"
         assert result >= 0.0, "Energy should be non-negative"
 
 
@@ -313,12 +324,16 @@ class TestTransformation5_WindowGlazing:
         # Modify effective conductance (proxy for window U-value change)
         # Better windows = lower conductance in the inter-zone conduction path
         multi_zone_model.set_inter_zone_conductance_vector([2.5, 2.5, 2.5])
-        improved_windows = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+        improved_windows = multi_zone_model.simulate_multi_zone(
+            years=1, use_surrogates=False
+        )
         assert math.isfinite(improved_windows), "Improved glazing should be finite"
 
         # Worse windows = higher conductance
         multi_zone_model.set_inter_zone_conductance_vector([10.0, 10.0, 10.0])
-        degraded_windows = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+        degraded_windows = multi_zone_model.simulate_multi_zone(
+            years=1, use_surrogates=False
+        )
         assert math.isfinite(degraded_windows), "Degraded glazing should be finite"
 
         # All results should be non-negative
@@ -363,7 +378,9 @@ class TestPhysicsMatrixValidity:
         result = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
 
         # Verify result is valid
-        assert math.isfinite(result), "Result should be finite after multiple transformations"
+        assert math.isfinite(
+            result
+        ), "Result should be finite after multiple transformations"
         assert result >= 0.0, "Result should be non-negative"
 
     def test_sequential_simulations_deterministic(self, multi_zone_model):
@@ -377,7 +394,9 @@ class TestPhysicsMatrixValidity:
             results.append(result)
 
         # All results should be identical (deterministic)
-        assert results[0] == results[1] == results[2], "Sequential runs should be deterministic"
+        assert (
+            results[0] == results[1] == results[2]
+        ), "Sequential runs should be deterministic"
 
     def test_temperature_bounds_after_transformations(self, multi_zone_model):
         """Zone temperatures should remain in physical bounds after transformations."""
@@ -393,7 +412,9 @@ class TestPhysicsMatrixValidity:
 
         # Temperatures should stay in reasonable range (-50°C to 60°C)
         for temp in final_temps:
-            assert -50.0 < temp < 60.0, f"Temperature {temp} should be in physical range"
+            assert (
+                -50.0 < temp < 60.0
+            ), f"Temperature {temp} should be in physical range"
 
     def test_no_nan_propagation(self, multi_zone_model):
         """Verify NaN values don't propagate through transformations."""
@@ -459,7 +480,9 @@ class TestTransformationDirectionality:
 
         # Higher heating setpoint
         multi_zone_model.set_zone_setpoints(0, 22.0, 28.0)
-        higher_heating = multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+        higher_heating = multi_zone_model.simulate_multi_zone(
+            years=1, use_surrogates=False
+        )
 
         # Higher heating setpoint should not drastically reduce energy use
         assert (
