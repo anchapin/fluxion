@@ -38,5 +38,7 @@
 //! ```
 
 pub mod fmi;
+pub mod osm;
 
 pub use fmi::{FmiConfig, FmiExporter, FmiMode};
+pub use osm::{OsmError, OsmReader, OsmWriter};
