@@ -7,23 +7,22 @@
 //! into OpenStudio Model (OSM) XML files.
 
 use std::path::Path;
-use std::str;
 
-use quick_xml::events::{BytesEnd, BytesStart, BytesText, Event};
+use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::Writer;
 use std::io::Cursor;
 
 use crate::api::schema::{
-    ConstructionSet, ControlConfig, ControlSet, Geometry, SimulationSchema,
-    SimulationSchemaV1, SurfaceConstruction, WeatherData, ZoneGeometry,
+    ConstructionSet, ControlSet, Geometry, SimulationSchema,
+    WeatherData,
 };
-use crate::sim::construction::ConstructionLayer;
+use crate::sim::schedule::HVACSchedule;
 
 use super::error::OsmError;
-use super::types::{
-    OsmBuilding, OsmConstruction, OsmMaterial, OsmModel, OsmSchedule,
-    OsmSite, OsmSpace, OsmSubSurface, OsmSurface, OsmThermostat, OsmThermalZone,
-    OsmVertex, OsmWeatherFile,
+use crate::interop::osm::types::{
+    OsmBuilding, OsmConstruction, OsmMaterial, OsmModel,
+    OsmSite, OsmSpace, OsmThermostat, OsmThermalZone,
+    OsmWeatherFile,
 };
 
 pub struct OsmWriter {
