@@ -310,7 +310,7 @@ impl Default for Location {
 }
 
 impl CADBuildingSurfaceType {
-    pub fn from_str(s: &str) -> Self {
+    pub fn from_xml_str(s: &str) -> Self {
         match s {
             "InteriorWall" => CADBuildingSurfaceType::InteriorWall,
             "ExteriorWall" => CADBuildingSurfaceType::ExteriorWall,
@@ -354,24 +354,27 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cad_surface_type_from_str() {
+    fn test_cad_surface_type_from_xml_str() {
         assert_eq!(
-            CADBuildingSurfaceType::from_str("ExteriorWall"),
+            CADBuildingSurfaceType::from_xml_str("ExteriorWall"),
             CADBuildingSurfaceType::ExteriorWall
         );
         assert_eq!(
-            CADBuildingSurfaceType::from_str("Roof"),
+            CADBuildingSurfaceType::from_xml_str("Roof"),
             CADBuildingSurfaceType::Roof
         );
         assert_eq!(
-            CADBuildingSurfaceType::from_str("Unknown"),
+            CADBuildingSurfaceType::from_xml_str("Unknown"),
             CADBuildingSurfaceType::Undefined
         );
     }
 
     #[test]
     fn test_cad_surface_type_as_str() {
-        assert_eq!(CADBuildingSurfaceType::ExteriorWall.as_str(), "ExteriorWall");
+        assert_eq!(
+            CADBuildingSurfaceType::ExteriorWall.as_str(),
+            "ExteriorWall"
+        );
         assert_eq!(CADBuildingSurfaceType::Roof.as_str(), "Roof");
     }
 

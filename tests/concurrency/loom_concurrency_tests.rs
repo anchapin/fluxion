@@ -69,6 +69,7 @@ impl SharedBoundaryCondition {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_solver_manager_concurrent_access() {
     let mut manager = SolverManager::new(ThermalMethodSelector::default());
 
@@ -226,6 +227,7 @@ fn test_step_all_concurrent_updates() {
 }
 
 #[test]
+#[allow(deprecated)]
 fn test_clear_while_accessing() {
     let manager_reader = StdArc::new(StdMutex::new(SolverManager::new(
         ThermalMethodSelector::default(),

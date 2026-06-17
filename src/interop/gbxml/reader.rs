@@ -44,7 +44,7 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
 
     let mut doc = GbXmlDocument::default();
     let mut stack: Vec<String> = Vec::new();
-    let mut current_element = String::new();
+    let mut current_element;
     let mut text_content = String::new();
     let mut buf = Vec::new();
 
@@ -86,7 +86,11 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
     Ok(doc)
 }
 
-fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::events::BytesStart) -> Result<(), GbXmlError> {
+fn parse_start_element(
+    doc: &mut GbXmlDocument,
+    element: &str,
+    e: &quick_xml::events::BytesStart,
+) -> Result<(), GbXmlError> {
     match element {
         "gbXML" => {
             for attr in e.attributes().flatten() {
@@ -102,12 +106,15 @@ fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::ev
         }
         "Location" => {}
         "Building" => {
-            doc.campus.building.id = get_attribute(e, "id").unwrap_or_else(|| "building1".to_string());
+            doc.campus.building.id =
+                get_attribute(e, "id").unwrap_or_else(|| "building1".to_string());
             doc.campus.building.name = get_attribute(e, "name").unwrap_or_default();
         }
         "BuildingStorey" => {
             let storey = BuildingStorey {
-                id: get_attribute(e, "id").unwrap_or_else(|| format!("storey{}", doc.campus.building.building_storeys.len() + 1)),
+                id: get_attribute(e, "id").unwrap_or_else(|| {
+                    format!("storey{}", doc.campus.building.building_storeys.len() + 1)
+                }),
                 name: get_attribute(e, "name").unwrap_or_default(),
                 level: get_attribute(e, "level")
                     .and_then(|s| s.parse::<f64>().ok())
@@ -118,7 +125,8 @@ fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::ev
         }
         "Space" => {
             let space = Space {
-                id: get_attribute(e, "id").unwrap_or_else(|| format!("space{}", get_space_count(doc))),
+                id: get_attribute(e, "id")
+                    .unwrap_or_else(|| format!("space{}", get_space_count(doc))),
                 name: get_attribute(e, "name").unwrap_or_default(),
                 area: None,
                 volume: None,
@@ -130,9 +138,11 @@ fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::ev
         }
         "Surface" => {
             let surface = Surface {
-                id: get_attribute(e, "id").unwrap_or_else(|| format!("surface{}", get_surface_count(doc))),
+                id: get_attribute(e, "id")
+                    .unwrap_or_else(|| format!("surface{}", get_surface_count(doc))),
                 name: get_attribute(e, "name").unwrap_or_default(),
-                surface_type: get_attribute(e, "surfaceType").unwrap_or_else(|| "Undefined".to_string()),
+                surface_type: get_attribute(e, "surfaceType")
+                    .unwrap_or_else(|| "Undefined".to_string()),
                 area: None,
                 construction_id_ref: get_attribute(e, "constructionIdRef"),
                 rectangular_geometry: RectangularGeometry::default(),
@@ -146,24 +156,26 @@ fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::ev
         }
         "Construction" => {
             let construction = Construction {
-                id: get_attribute(e, "id").unwrap_or_else(|| format!("construction{}", doc.constructions.len() + 1)),
+                id: get_attribute(e, "id")
+                    .unwrap_or_else(|| format!("construction{}", doc.constructions.len() + 1)),
                 name: get_attribute(e, "name").unwrap_or_default(),
-                layer_count: get_attribute(e, "layerCount")
-                    .and_then(|s| s.parse::<usize>().ok()),
+                layer_count: get_attribute(e, "layerCount").and_then(|s| s.parse::<usize>().ok()),
                 layer_id_refs: Vec::new(),
             };
             doc.constructions.push(construction);
         }
         "Layer" => {
             let layer = Layer {
-                id: get_attribute(e, "id").unwrap_or_else(|| format!("layer{}", doc.layers.len() + 1)),
+                id: get_attribute(e, "id")
+                    .unwrap_or_else(|| format!("layer{}", doc.layers.len() + 1)),
                 material_id_refs: Vec::new(),
             };
             doc.layers.push(layer);
         }
         "Material" => {
             let material = Material {
-                id: get_attribute(e, "id").unwrap_or_else(|| format!("material{}", doc.materials.len() + 1)),
+                id: get_attribute(e, "id")
+                    .unwrap_or_else(|| format!("material{}", doc.materials.len() + 1)),
                 name: get_attribute(e, "name").unwrap_or_default(),
                 thickness: None,
                 conductivity: None,
@@ -178,10 +190,10 @@ fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::ev
             if let Some(storey) = doc.campus.building.building_storeys.last_mut() {
                 if let Some(space) = storey.spaces.last_mut() {
                     if let Some(surface) = space.surfaces.last_mut() {
-                        surface.rectangular_geometry.azimuth = get_attribute(e, "Azimuth")
-                            .and_then(|s| s.parse::<f64>().ok());
-                        surface.rectangular_geometry.tilt = get_attribute(e, "Tilt")
-                            .and_then(|s| s.parse::<f64>().ok());
+                        surface.rectangular_geometry.azimuth =
+                            get_attribute(e, "Azimuth").and_then(|s| s.parse::<f64>().ok());
+                        surface.rectangular_geometry.tilt =
+                            get_attribute(e, "Tilt").and_then(|s| s.parse::<f64>().ok());
                     }
                 }
             }
@@ -192,9 +204,9 @@ fn parse_start_element(doc: &mut GbXmlDocument, element: &str, e: &quick_xml::ev
                 if let Some(storey) = doc.campus.building.building_storeys.last_mut() {
                     if let Some(space) = storey.spaces.last_mut() {
                         if let Some(surface) = space.surfaces.last_mut() {
-                            surface.adjacent_space_ids.push(AdjacentSpaceId {
-                                space_id_ref,
-                            });
+                            surface
+                                .adjacent_space_ids
+                                .push(AdjacentSpaceId { space_id_ref });
                         }
                     }
                 }
@@ -223,7 +235,11 @@ fn parse_end_element(doc: &mut GbXmlDocument, element: &str, text: &str) -> Resu
     match element {
         "Name" => {
             let storey_count = doc.campus.building.building_storeys.len();
-            let in_space_context = doc.campus.building.building_storeys.last()
+            let in_space_context = doc
+                .campus
+                .building
+                .building_storeys
+                .last()
                 .map(|s| !s.spaces.is_empty())
                 .unwrap_or(false);
 
@@ -317,7 +333,11 @@ fn parse_end_element(doc: &mut GbXmlDocument, element: &str, text: &str) -> Resu
                 if let Some(storey) = doc.campus.building.building_storeys.last_mut() {
                     if let Some(space) = storey.spaces.last_mut() {
                         if let Some(surface) = space.surfaces.last_mut() {
-                            surface.rectangular_geometry.cartesian_point.coordinates.push(coord);
+                            surface
+                                .rectangular_geometry
+                                .cartesian_point
+                                .coordinates
+                                .push(coord);
                         }
                     }
                 }
@@ -338,31 +358,37 @@ fn get_attribute(e: &quick_xml::events::BytesStart, key: &str) -> Option<String>
 }
 
 fn get_space_count(doc: &GbXmlDocument) -> usize {
-    doc.campus.building.building_storeys.iter()
+    doc.campus
+        .building
+        .building_storeys
+        .iter()
         .map(|s| s.spaces.len())
         .sum()
 }
 
 fn get_surface_count(doc: &GbXmlDocument) -> usize {
-    doc.campus.building.building_storeys.iter()
+    doc.campus
+        .building
+        .building_storeys
+        .iter()
         .map(|s| s.spaces.iter().map(|sp| sp.surfaces.len()).sum::<usize>())
         .sum()
 }
 
 /// GbXmlReader for parsing gbXML files.
 pub struct GbXmlReader {
-    construction_map: HashMap<String, Construction>,
-    layer_map: HashMap<String, Layer>,
-    material_map: HashMap<String, Material>,
+    _construction_map: HashMap<String, Construction>,
+    _layer_map: HashMap<String, Layer>,
+    _material_map: HashMap<String, Material>,
 }
 
 impl GbXmlReader {
     /// Create a new GbXmlReader.
     pub fn new() -> Self {
         GbXmlReader {
-            construction_map: HashMap::new(),
-            layer_map: HashMap::new(),
-            material_map: HashMap::new(),
+            _construction_map: HashMap::new(),
+            _layer_map: HashMap::new(),
+            _material_map: HashMap::new(),
         }
     }
 
@@ -450,7 +476,9 @@ impl GbXmlReader {
         };
 
         let weather = if location_name != "Unknown" && location_name.is_empty() {
-            WeatherData::TmyLocation { location: location_name }
+            WeatherData::TmyLocation {
+                location: location_name,
+            }
         } else {
             WeatherData::TmyLocation {
                 location: "Denver, CO".to_string(),
@@ -544,7 +572,9 @@ mod tests {
     #[test]
     fn test_import_gbxml() {
         let reader = GbXmlReader::new();
-        let schema = reader.parse(SAMPLE_GBXML).expect("Should convert to schema");
+        let schema = reader
+            .parse(SAMPLE_GBXML)
+            .expect("Should convert to schema");
         assert_eq!(schema.geometry.zones.len(), 1);
         assert_eq!(schema.geometry.zones[0].name, "Zone 1");
         assert_eq!(schema.geometry.total_floor_area, 48.0);
