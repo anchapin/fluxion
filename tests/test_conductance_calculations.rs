@@ -471,7 +471,7 @@ fn test_overall_conductance_correctness() {
         references.h_tr_w
     );
     assert!(
-        references.h_tr_ms > 0.0 && references.h_tr_ms < 1000.0,
+        references.h_tr_ms > 0.0 && references.h_tr_ms < 2000.0,
         "h_tr_ms out of range: {}",
         references.h_tr_ms
     );

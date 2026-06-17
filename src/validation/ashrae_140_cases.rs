@@ -1727,64 +1727,91 @@ impl CaseSpec {
     /// Other cases have different conductances due to different geometries,
     /// window areas, and construction types.
     pub fn case600_reference_conductances(&self) -> ConductanceReferences {
-        // ASHRAE 140 Case 600 reference conductances
-        // Calculated from physics-based formulas using material properties and geometry.
-        //
-        // Case 600 geometry: 8.0m × 6.0m × 2.7m (W×D×H)
-        // Volume: 129.6 m³
-        // South window: 12.0 m² (double_clear_glass, U=2.10 W/m²K)
-        // ACH: 0.5
-        //
-        // Construction (low-mass wall):
-        // - Plasterboard: k=0.16 W/mK, d=0.012m
-        // - Fiberglass: k=0.04 W/mK, d=0.066m
-        // - Wood siding: k=0.14 W/mK, d=0.009m
+        CaseSpec::calculate_iso13790_conductances(self)
+    }
 
-        // === Geometry ===
-        let width = 8.0;
-        let depth = 6.0;
-        let height = 2.7;
-        let volume = width * depth * height; // 129.6 m³
-        let floor_area = width * depth; // 48.0 m²
+    /// Calculate ISO 13790 / ASHRAE 140 compliant conductances from case geometry and materials.
+    ///
+    /// This function replaces placeholder values with physics-based calculations per the
+    /// ISO 13790 5R1C thermal network model:
+    ///
+    /// - **H_tr_em** (opaque envelope to external): Series combination of opaque U-values
+    ///   using ISO 13790 Eq. 64: h_em = 1 / (1/h_op - 1/h_ms)
+    /// - **H_tr_w** (windows): U_window × A_window
+    /// - **H_tr_ms** (mass-to-surface coupling): h_ms_coeff × A_m where h_ms_coeff=9.1 W/m²K (ISO 13790)
+    ///   and A_m = 2.5 × A_f (effective mass area per ISO 13790 Table C.2)
+    /// - **H_tr_is** (surface-to-indoor air): Σ(h_is × A_surface) for all interior surfaces
+    /// - **H_ve** (ventilation): ρ_air × c_p × V̇ where V̇ = ACH/3600 × V_zone
+    ///
+    /// # Arguments
+    /// * `case_spec` - The ASHRAE 140 case specification with geometry and construction
+    ///
+    /// # Returns
+    /// `ConductanceReferences` with all conductances in W/K
+    ///
+    /// # Calculation Details
+    ///
+    /// For Case 600 (low-mass baseline):
+    /// - Geometry: 8.0m × 6.0m × 2.7m (W×D×H)
+    /// - Floor area: 48.0 m², Volume: 129.6 m³
+    /// - Wall area: 75.6 m² (gross), 63.6 m² (opaque, 12 m² windows)
+    /// - Roof area: 48.0 m²
+    /// - Windows: 12.0 m² south-facing (double clear glass, U=2.10 W/m²K)
+    /// - ACH: 0.5
+    ///
+    /// Construction U-values (from material properties):
+    /// - Wall: 0.5119 W/m²K (plasterboard + fiberglass + wood siding)
+    /// - Roof: 0.3198 W/m²K (plasterboard + fiberglass + roof deck)
+    /// - Floor: 0.1837 W/m²K (timber + fiberglass, with ground coupling)
+    pub fn calculate_iso13790_conductances(case_spec: &CaseSpec) -> ConductanceReferences {
+        let geo = &case_spec.geometry[0];
+        let width = geo.width;
+        let depth = geo.depth;
+        let height = geo.height;
+        let floor_area = width * depth;
+        let volume = floor_area * height;
+        let gross_wall_area = 2.0 * (width + depth) * height;
+        let window_area = case_spec.total_window_area();
+        let opaque_wall_area = (gross_wall_area - window_area).max(0.0);
+        let roof_area = floor_area;
 
-        // Wall areas (4 walls total)
-        let wall_area_total = 2.0 * (width * height + depth * height); // 75.6 m²
-
-        // === Window properties (double_clear_glass) ===
-        let window_area = 12.0;
-        let window_u = 2.10; // W/m²K from WindowSpec::double_clear_glass()
-
-        // === Ventilation conductance ===
-        // h_ve = ρ × cp × (ACH/3600) × V
         let rho_air = crate::physics::constants::AIR_DENSITY_SEA_LEVEL;
         let cp_air = crate::physics::constants::AIR_SPECIFIC_HEAT;
-        let ach = 0.5;
-        let h_ve = rho_air * cp_air * (ach / 3600.0) * volume;
+        let h_ve = rho_air * cp_air * (case_spec.infiltration_ach / 3600.0) * volume;
 
-        // === Window conductance ===
-        // h_tr_w = U_window × A_window
+        let window_u = case_spec.window_properties.u_value;
         let h_tr_w = window_u * window_area;
 
-        // === Surface-to-interior conductance ===
-        // h_tr_is = H_SI × A_floor (ASHRAE 140 simplified 5R1C value H_SI=3.45)
-        const H_SI: f64 = 3.45; // W/m²K - ASHRAE 140 simplified 5R1C value
-        let h_tr_is = H_SI * floor_area;
+        let wall_u = case_spec.construction.wall.u_value(None, None);
+        let roof_u = case_spec.construction.roof.u_value(None, None);
 
-        // === Mass-to-surface conductance ===
-        // h_tr_ms = h_ms × A_floor
-        // h_ms = 2.0 W/m²K for low-mass (VeryLight/Light per ISO 13790)
-        let h_ms = 2.0; // W/m²K for low-mass construction
-        let h_tr_ms = h_ms * floor_area;
+        let h_op_walls = wall_u * opaque_wall_area;
+        let h_op_roof = roof_u * roof_area;
+        let h_op_total = h_op_walls + h_op_roof;
 
-        // === Exterior-to-mass conductance ===
-        // h_tr_em = U_wall × A_walls + h_tr_w
-        // Calculate wall U-value from material properties
-        let wall = Assemblies::low_mass_wall();
-        let u_wall = wall.u_value(None, None);
-        let h_tr_em = u_wall * wall_area_total + h_tr_w;
+        let a_m = 2.5 * floor_area;
+        let h_ms_coeff = 9.1;
+        let h_ms_iso = h_ms_coeff * a_m;
+
+        let h_tr_em = if h_op_total > 0.0 && h_op_total < h_ms_iso {
+            1.0 / (1.0 / h_op_total - 1.0 / h_ms_iso)
+        } else {
+            h_op_total + h_tr_w
+        };
+
+        let h_is_wall =
+            crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
+        let h_is_ceiling =
+            crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_CEILING;
+        let h_is_floor =
+            crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_FLOOR;
+        let h_tr_is =
+            h_is_wall * gross_wall_area + h_is_ceiling * roof_area + h_is_floor * floor_area;
+
+        let h_tr_ms = h_ms_iso;
 
         ConductanceReferences {
-            h_tr_em,
+            h_tr_em: h_tr_em.max(0.1),
             h_tr_w,
             h_tr_ms,
             h_tr_is,
