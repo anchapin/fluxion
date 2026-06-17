@@ -123,6 +123,9 @@ num-traits = "0.2.19"
 # HTTP client for multi-reference updates
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
 
+# OpenStudio OSM file parsing/serialization
+quick-xml = "0.31"
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 napi-build = { version = "2", optional = true }
