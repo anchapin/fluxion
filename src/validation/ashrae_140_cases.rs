@@ -986,6 +986,19 @@ impl Orientation {
             Orientation::Up | Orientation::Down | Orientation::Horizontal => -1.0,
         }
     }
+
+    /// Returns a short prefix identifier for surface naming (e.g., "N", "S", "E", "W", "Up", "Down", "H").
+    pub fn prefix(&self) -> &'static str {
+        match self {
+            Orientation::North => "N",
+            Orientation::East => "E",
+            Orientation::South => "S",
+            Orientation::West => "W",
+            Orientation::Up => "Up",
+            Orientation::Down => "Down",
+            Orientation::Horizontal => "H",
+        }
+    }
 }
 
 /// Window specification with area and orientation.

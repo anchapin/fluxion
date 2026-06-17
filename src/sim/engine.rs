@@ -109,7 +109,7 @@ mod tests {
         };
         let energy1 = model1.solve_single_step(0, 20.0, &step_params, 3600.0);
 
-        model2.calc_analytical_loads(0, true);
+        model2.calc_analytical_loads(0, true, 3600.0);
         let energy2 = model2.step_physics(0, 20.0, 3600.0);
 
         assert!(
@@ -203,7 +203,7 @@ mod tests {
         let mut model = ThermalModel::<VectorField>::new(5);
         model.loads = VectorField::from_scalar(10.0, 5);
 
-        model.calc_analytical_loads(12, true);
+        model.calc_analytical_loads(12, true, 3600.0);
 
         assert!(model.solar_gains.iter().all(|&l| l > 0.0));
         assert!(model.loads.iter().all(|&l| (l - 10.0).abs() < 1e-9));
@@ -281,7 +281,7 @@ mod tests {
     #[test]
     fn test_calc_analytical_loads_mutation() {
         let mut model = ThermalModel::<VectorField>::new(10);
-        model.calc_analytical_loads(0, true);
+        model.calc_analytical_loads(0, true, 3600.0);
         for &load in model.loads.iter() {
             assert!(load >= 0.0);
         }
