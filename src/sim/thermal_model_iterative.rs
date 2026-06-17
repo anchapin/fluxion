@@ -9,6 +9,7 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,
 };
+use crate::sim::thermal_model_data::IncidentSolarAccumulator;
 use crate::sim::holiday;
 use crate::sim::shading::ShadeFin;
 use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
@@ -59,11 +60,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         "Both ONNX and analytical fallback failed: {}. Using analytical mode.",
                         e
                     );
-                    self.calc_analytical_loads(timestep, step_params.use_analytical_gains);
+                    self.calc_analytical_loads(timestep, step_params.use_analytical_gains, dt_seconds);
                 }
             }
         } else {
-            self.calc_analytical_loads(timestep, step_params.use_analytical_gains);
+            self.calc_analytical_loads(timestep, step_params.use_analytical_gains, dt_seconds);
         }
 
         // 1.5. Add Internal Loads (lighting, equipment, occupancy) - Plan 17-04
@@ -162,10 +163,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// This method integrates the solar module to calculate realistic solar gains
     /// based on actual solar position, weather data, and window characteristics.
     fn calculate_zone_solar_gain(
-        &self,
+        &mut self,
         zone_idx: usize,
         timestep: usize,
         weather: &HourlyWeatherData,
+        dt_seconds: f64,
     ) -> (f64, f64) {
         // Get window properties for this zone
         let window_props = if zone_idx < self.0.window_properties.len() {
@@ -301,6 +303,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     if opaque_area > 0.0 {
                         total_opaque_gain +=
                             opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
+                    }
+
+                    // Issue #762: Accumulate per-surface incident solar for ASHRAE 140-2023 Section 8.2.3
+                    // Incident solar is accumulated per surface identifier (e.g., "wall_N", "roof", "window_S")
+                    if irradiance.total_wm2 > 0.0 {
+                        // Opaque surface: walls use "wall_{N/E/S/W}", roof uses "roof"
+                        let opaque_surface_id = match orientation {
+                            Orientation::Up => "roof".to_string(),
+                            _ => format!("wall_{}", orientation.prefix()),
+                        };
+                        if opaque_area > 0.0 {
+                            let entry = self.0.incident_solar_per_surface
+                                .entry(opaque_surface_id.clone())
+                                .or_insert_with(IncidentSolarAccumulator::new);
+                            entry.accumulate(irradiance.total_wm2, opaque_area, dt_seconds);
+                        }
+
+                        // Window surface: "window_{N/E/S/W}"
+                        if win_area > 0.0 {
+                            let window_surface_id = format!("window_{}", orientation.prefix());
+                            let window_entry = self.0.incident_solar_per_surface
+                                .entry(window_surface_id)
+                                .or_insert_with(IncidentSolarAccumulator::new);
+                            window_entry.accumulate(irradiance.total_wm2, win_area, dt_seconds);
+                        }
                     }
                 }
             }
@@ -495,19 +522,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     /// When weather data is available, this uses the solar module to calculate
     /// realistic solar gains based on solar position, DNI, DHI, and window properties.
     /// Falls back to trivial sine-wave approximation if weather data is not available.
-    pub(crate) fn calc_analytical_loads(&mut self, timestep: usize, use_analytical_gains: bool) {
+    pub(crate) fn calc_analytical_loads(
+        &mut self,
+        timestep: usize,
+        use_analytical_gains: bool,
+        dt_seconds: f64,
+    ) {
         // Diagnostic: Check if calc_analytical_loads is being called (removed for release performance)
 
         if use_analytical_gains {
             // Try to use weather data for solar gain calculation (Issue #278)
-            if let Some(ref weather) = self.0.weather {
+            if let Some(weather) = self.0.weather.clone() {
                 // Calculate solar gain for each zone using weather data
                 let mut zone_solar_gains = Vec::with_capacity(self.0.num_zones);
                 let mut zone_opaque_gains = Vec::with_capacity(self.0.num_zones);
 
                 for zone_idx in 0..self.0.num_zones {
                     let (window_gain_watts, opaque_gain_watts) =
-                        self.calculate_zone_solar_gain(zone_idx, timestep, weather);
+                        self.calculate_zone_solar_gain(zone_idx, timestep, &weather, dt_seconds);
                     let floor_area = self.0.zone_area.as_ref()[zone_idx];
                     let solar_gain_normalized = window_gain_watts / floor_area;
                     let opaque_gain_normalized = opaque_gain_watts / floor_area;

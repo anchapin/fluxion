@@ -16,7 +16,7 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::WindowProperties;
-use crate::sim::thermal_model_data::ThermalModelData;
+use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
 use crate::validation::config::{validate_assembly, validate_constants};
@@ -327,6 +327,14 @@ where
     /// Get cumulative electrical energy consumption in kilowatt-hours (kWh)
     pub fn get_electrical_energy_kwh(&self) -> f64 {
         self.0.annual_electrical_energy
+    }
+
+    /// Get per-surface incident solar accumulation for ASHRAE 140-2023 Section 8.2.3.
+    ///
+    /// Returns a reference to the HashMap containing incident solar data per surface.
+    /// Keys are surface identifiers (e.g., "wall_N", "roof", "window_S").
+    pub fn get_incident_solar(&self) -> &std::collections::HashMap<String, IncidentSolarAccumulator> {
+        &self.0.incident_solar_per_surface
     }
 
     /// Reset heating and cooling energy tracking (Plan 03-08d)
@@ -2475,6 +2483,9 @@ impl ThermalModel<VectorField> {
 
             // Issue #763 — hourly zone temperature profiles
             hourly_temperatures: None,
+
+            // Issue #762 — per-surface incident solar tracking
+            incident_solar_per_surface: std::collections::HashMap::new(),
         });
 
         model.update_derived_parameters();
