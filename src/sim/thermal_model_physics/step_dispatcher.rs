@@ -36,7 +36,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
         if self.0.weather.is_some() {
-            self.calc_analytical_loads(timestep, true);
+            self.calc_analytical_loads(timestep, true, dt_seconds);
         }
 
         // Branch based on thermal model type
