@@ -10,8 +10,6 @@ use std::path::Path;
 
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
-use quick_xml::Writer;
-use std::io::Cursor;
 
 use crate::api::schema::{
     ConstructionSet, ControlConfig, ControlSet, Geometry,
@@ -22,7 +20,7 @@ use crate::sim::construction::ConstructionLayer;
 use crate::sim::schedule::{DailySchedule, HVACSchedule};
 
 use super::error::OsmError;
-use super::types::{
+use crate::interop::osm::types::{
     OsmBuilding, OsmConstruction, OsmMaterial, OsmModel, OsmSchedule, OsmSite,
     OsmSpace, OsmSubSurface, OsmSurface, OsmThermostat, OsmThermalZone,
     OsmVertex, OsmWeatherFile,
