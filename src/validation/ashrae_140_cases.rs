@@ -1799,10 +1799,14 @@ impl CaseSpec {
             h_op_total + h_tr_w
         };
 
-        let h_is_wall = crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
-        let h_is_ceiling = crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_CEILING;
-        let h_is_floor = crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_FLOOR;
-        let h_tr_is = h_is_wall * gross_wall_area + h_is_ceiling * roof_area + h_is_floor * floor_area;
+        let h_is_wall =
+            crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_WALL;
+        let h_is_ceiling =
+            crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_CEILING;
+        let h_is_floor =
+            crate::physics::constants::thermal::ashrae_140::v2023::INTERIOR_FILM_COEFF_FLOOR;
+        let h_tr_is =
+            h_is_wall * gross_wall_area + h_is_ceiling * roof_area + h_is_floor * floor_area;
 
         let h_tr_ms = h_ms_iso;
 
