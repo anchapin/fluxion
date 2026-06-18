@@ -43,7 +43,7 @@ jobs:
       - name: Run ASHRAE 140 Validation Tests
         id: validation
         run: |
-          cargo test --test ashrae_140_validation --release 2>&1 | tee validation_output.txt
+          cargo test --test ashrae_140_validation --release -- --nocapture 2>&1 | tee validation_output.txt
           echo "exit_code=$?" >> $GITHUB_OUTPUT
 
       - name: Extract Validation Results
@@ -101,10 +101,12 @@ jobs:
         if: always() && github.event_name == 'pull_request'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           python3 << 'PYEOF'
           import json
           import subprocess
+          import os
 
           with open('validation_summary.json', 'r') as f:
               summary = json.load(f)
@@ -144,10 +146,14 @@ jobs:
           with open('pr_comment.md', 'w') as f:
               f.write('\n'.join(lines))
 
-          subprocess.run(
-              ['gh', 'pr', 'comment', '--body-file', 'pr_comment.md'],
-              check=False
-          )
+          pr_number = os.getenv('PR_NUMBER')
+          if pr_number:
+              subprocess.run(
+                  ['gh', 'pr', 'comment', pr_number, '--body-file', 'pr_comment.md'],
+                  check=False
+              )
+          else:
+              print("Warning: PR_NUMBER not found in environment")
           PYEOF
 
       - name: Upload Artifacts
