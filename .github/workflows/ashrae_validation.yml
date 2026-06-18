@@ -64,7 +64,7 @@ jobs:
           rate_pattern = r"Pass Rate:\s*([0-9.]+)%"
           rate_match = re.search(rate_pattern, output)
           if rate_match:
-              pass_rate = float(rate_match.group(1))
+              pass_rate = float(rate_match.group(1).strip())
 
           passed_pattern = r"Passed:\s*([0-9]+)"
           passed_match = re.search(passed_pattern, output)
@@ -76,10 +76,11 @@ jobs:
           if failed_match:
               failed = int(failed_match.group(1))
 
-          mae_pattern = r"Mean Absolute Error:\s*([0-9.]+)%"
+          mae_pattern = r"Mean Absolute Error:\s*([0-9.]+|inf)%?"
           mae_match = re.search(mae_pattern, output)
           if mae_match:
-              mae = float(mae_match.group(1))
+              mae_str = mae_match.group(1).strip()
+              mae = float('inf') if mae_str == 'inf' else float(mae_str)
 
           results = {
               'pass_rate': pass_rate,
