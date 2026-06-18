@@ -1016,7 +1016,17 @@ impl ThermalModel<VectorField> {
             // the mass-to-exterior coupling, which reduces peak zone temperature swing.
             let h_ms_coeff = match spec.construction_type {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 13.4,
+                // Issue #1141: h_ms_coeff=13.4 caused thermal runaway in 900FF free-float
+                // because h_tr_ms = 13.4 * a_m ≈ 1608 W/K (too large). Even 9.1 still diverges.
+                // The 5R1C model has a structural issue where h_tr_ms (mass-to-surface coupling)
+                // and h_tr_w (window conductance) are both large, creating an unstable
+                // feedback loop with the outdoor temperature through the windows.
+                // For stability, we need h_ms_coeff = 2.0, which gives h_tr_ms ≈ 240 W/K
+                // for case 900FF - similar to case 600FF. This sacrifices ASHRAE reference
+                // accuracy but ensures physical stability.
+                // TODO: A proper fix would restructure the 5R1C model to properly
+                // separate window heat transfer from thermal mass coupling.
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 2.0,
                 crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
@@ -1970,18 +1980,18 @@ impl ThermalModel<VectorField> {
             .map(|&vol| Some(IdealLoadsSystem::new(vol, ventilation_ach)))
             .collect();
 
-        // Issue #913: Enable CTF by default for high-mass 900FF cases
-        // The high-mass wall construction requires CTF for accurate heat conduction modeling
-        // Use the same wall layers as the test for consistency
-        if spec.case_id == "900FF" {
-            use crate::physics::ctf_coefficients::CTFMaterial;
-            let wall_layers = vec![
-                CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
-                CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
-                CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
-            ];
-            model.enable_ctf(&wall_layers, 3600.0, 50);
-        }
+        // Issue #913 + #1141: DISABLED CTF for 900FF due to numerical instability
+        // CTF produces oscillating flux values that cause divergence in free-floating tests.
+        // Re-enable once CTF solver/coupling is fixed.
+        // if spec.case_id == "900FF" {
+        //     use crate::physics::ctf_coefficients::CTFMaterial;
+        //     let wall_layers = vec![
+        //         CTFMaterial::new("Concrete Block", 0.100, 0.51, 1400.0, 1000.0),
+        //         CTFMaterial::new("Foam Insulation", 0.0615, 0.04, 10.0, 1400.0),
+        //         CTFMaterial::new("Wood Siding", 0.009, 0.14, 500.0, 1300.0),
+        //     ];
+        //     model.enable_ctf(&wall_layers, 3600.0, 50);
+        // }
 
         model
     }
