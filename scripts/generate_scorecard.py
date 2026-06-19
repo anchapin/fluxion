@@ -4,6 +4,14 @@ Fluxion Release Scorecard Generator
 
 Generates SCORECARD.md with pass rates, benchmark status, and release readiness.
 
+Data sources (in priority order):
+  1. validation_results.json  -- canonical JSON written by the validation suite.
+  2. validation_report.md     -- markdown report; its ``## Summary`` table is parsed.
+
+If neither source is available the generator prints a clear error and exits with
+a non-zero status. It will NOT silently fall back to ``docs/QUALITY_METRICS.md``,
+which is a historical dashboard that can hold stale or corrupt data (issue #1167).
+
 Usage:
     python scripts/generate_scorecard.py
     python scripts/generate_scorecard.py --output SCORECARD.md
@@ -64,6 +72,10 @@ class ScorecardGenerator:
         self.benchmark = BenchmarkMetrics()
         self.tests = TestSummary()
         self.issues = IssueSummary()
+        # Human-readable path of the validation data source actually used.
+        # Remains None when no authoritative source was found, which causes
+        # main() to refuse generating a scorecard (no silent stale fallback).
+        self.validation_source: Optional[str] = None
 
     def log(self, msg: str):
         if self.verbose:
@@ -85,30 +97,165 @@ class ScorecardGenerator:
         except Exception as e:
             return f"Error: {e}", -1
 
+    def _resolve_validation_source(self) -> Optional[Path]:
+        """Return the first available authoritative validation data source.
+
+        Priority:
+          1. ``validation_results.json`` (canonical JSON written by the
+             validation suite).
+          2. ``validation_report.md`` (markdown report; its Summary table is
+             parsed as a fallback).
+
+        ``docs/QUALITY_METRICS.md`` is intentionally **not** consulted. It is a
+        historical dashboard that can hold stale or corrupt values (e.g.
+        ``-inf%`` MAE) and must never be used as a silent fallback. See
+        issue #1167.
+        """
+        json_path = self.project_root / "validation_results.json"
+        if json_path.exists():
+            return json_path
+        md_path = self.project_root / "validation_report.md"
+        if md_path.exists():
+            return md_path
+        return None
+
     def load_validation_results(self) -> bool:
-        results_path = self.project_root / "validation_results.json"
-        if results_path.exists():
-            self.log("Loading validation_results.json")
-            try:
-                with open(results_path) as f:
-                    data = json.load(f)
-                summary = data.get("summary", {})
-                self.validation.total = summary.get("passed", 0) + summary.get(
-                    "failed", 0
-                )
-                self.validation.passed = summary.get("passed", 0)
-                self.validation.failed = summary.get("failed", 0)
-                self.validation.pass_rate = summary.get("pass_rate", 0.0)
-                self.validation.mae = summary.get("mae", 0.0)
-                self.log(
-                    f"Loaded: {self.validation.passed}/{self.validation.total} passed, {self.validation.pass_rate}% pass rate"
-                )
-                return True
-            except (json.JSONDecodeError, IOError) as e:
-                self.log(f"Error loading: {e}")
-        else:
-            self.log("validation_results.json not found")
-        return False
+        """Load validation metrics from the first available authoritative source.
+
+        Returns True when a valid source was loaded, False otherwise. The
+        chosen source path is recorded in ``self.validation_source`` for
+        logging and for the generated scorecard.
+        """
+        source = self._resolve_validation_source()
+        if source is None:
+            self.log("No validation data source found (json or report)")
+            return False
+        if source.suffix == ".json":
+            return self._load_validation_from_json(source)
+        return self._load_validation_from_report(source)
+
+    def _load_validation_from_json(self, json_path: Path) -> bool:
+        self.log(f"Loading validation_results.json from {json_path}")
+        try:
+            with open(json_path) as f:
+                data = json.load(f)
+        except (json.JSONDecodeError, IOError) as e:
+            self.log(f"Error loading {json_path}: {e}")
+            return False
+        summary = data.get("summary", {})
+        self.validation.total = summary.get("passed", 0) + summary.get("failed", 0)
+        self.validation.passed = summary.get("passed", 0)
+        self.validation.failed = summary.get("failed", 0)
+        self.validation.warnings = summary.get("warnings", 0)
+        self.validation.pass_rate = summary.get("pass_rate", 0.0)
+        self.validation.mae = summary.get("mae", 0.0)
+        self.validation.max_deviation = summary.get("max_deviation", 0.0)
+        self.validation_source = str(json_path)
+        self.log(
+            f"Loaded from JSON: {self.validation.passed}/{self.validation.total} "
+            f"passed, {self.validation.pass_rate}% pass rate"
+        )
+        return True
+
+    def _load_validation_from_report(self, report_path: Path) -> bool:
+        """Parse the ``## Summary`` markdown table from validation_report.md."""
+        self.log(f"Loading validation_report.md from {report_path}")
+        try:
+            content = report_path.read_text()
+        except OSError as e:
+            self.log(f"Error reading {report_path}: {e}")
+            return False
+
+        metrics = self._parse_report_summary(content)
+        if not metrics:
+            self.log(f"Could not parse a Summary table from {report_path}")
+            return False
+
+        self.validation.total = int(
+            metrics.get("total", metrics.get("passed", 0) + metrics.get("failed", 0))
+        )
+        self.validation.passed = int(metrics.get("passed", 0))
+        self.validation.failed = int(metrics.get("failed", 0))
+        self.validation.warnings = int(metrics.get("warnings", 0))
+        self.validation.pass_rate = metrics.get("pass_rate", 0.0)
+        self.validation.mae = metrics.get("mae", 0.0)
+        self.validation.max_deviation = metrics.get("max_deviation", 0.0)
+        self.validation_source = str(report_path)
+        self.log(
+            f"Loaded from report: {self.validation.passed}/{self.validation.total} "
+            f"passed, {self.validation.pass_rate}% pass rate, "
+            f"{self.validation.mae}% MAE"
+        )
+        return True
+
+    @staticmethod
+    def _parse_report_summary(content: str) -> dict:
+        """Parse the ``## Summary`` table of ``validation_report.md``.
+
+        Returns a dict with keys: ``total``, ``passed``, ``failed``,
+        ``warnings``, ``pass_rate``, ``mae``, ``max_deviation``. Returns an
+        empty dict if the Summary table cannot be located or parsed.
+        """
+        in_summary = False
+        raw_values: dict = {}
+        for line in content.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("## "):
+                # Entering a new section; only the "Summary" section is parsed.
+                in_summary = stripped.lower().startswith("## summary")
+                continue
+            if not in_summary or not stripped.startswith("|"):
+                continue
+            if set(stripped.replace("|", "").strip()) <= {"-", ":"}:
+                # Skip the markdown table separator row (e.g. |---|---|).
+                continue
+            cells = [c.strip() for c in stripped.strip("|").split("|")]
+            if len(cells) < 2:
+                continue
+            key = cells[0].lower()
+            num = ScorecardGenerator._parse_numeric(cells[1])
+            if num is not None:
+                raw_values[key] = num
+
+        if not raw_values:
+            return {}
+
+        def pick(*keys, default=0.0):
+            for k in keys:
+                if k in raw_values:
+                    return raw_values[k]
+            return default
+
+        return {
+            "total": pick("total results", "total"),
+            "passed": pick("passed"),
+            "failed": pick("failed"),
+            "warnings": pick("warnings"),
+            "pass_rate": pick("pass rate", "pass_rate"),
+            "mae": pick("mean absolute error", "mae"),
+            "max_deviation": pick("max deviation", "max_deviation"),
+        }
+
+    @staticmethod
+    def _parse_numeric(raw: str) -> Optional[float]:
+        """Parse a leading numeric value from a markdown table cell.
+
+        Strips surrounding whitespace, ``%`` signs, thousands separators and
+        trailing unit text (e.g. ``"6.2%"`` -> 6.2, ``"64"`` -> 64.0).
+        Returns None if no number can be extracted.
+        """
+        if raw is None:
+            return None
+        text = raw.replace("%", "").strip()
+        if not text:
+            return None
+        # Take the first whitespace-delimited token so values like
+        # "0 / 18 cases" resolve to the leading number.
+        token = text.split()[0].replace(",", "")
+        try:
+            return float(token)
+        except ValueError:
+            return None
 
     def run_rust_tests(self) -> bool:
         self.log("Running cargo test --release --lib")
@@ -238,41 +385,37 @@ class ScorecardGenerator:
         return False
 
     def load_quality_metrics(self) -> bool:
-        metrics_path = self.project_root / "docs" / "QUALITY_METRICS.md"
-        if metrics_path.exists():
-            self.log("Loading QUALITY_METRICS.md")
-            with open(metrics_path) as f:
-                content = f.read()
+        """Deprecated: QUALITY_METRICS.md is no longer used for validation metrics.
 
-            for line in content.split("\n"):
-                if "Pass Rate:" in line:
-                    try:
-                        rate = line.split("**Pass Rate:**")[1].split("%")[0].strip()
-                        qm_rate = float(rate)
-                        if self.validation.pass_rate == 0.0:
-                            self.validation.pass_rate = qm_rate
-                            self.log(f"Using QUALITY_METRICS pass_rate: {qm_rate}%")
-                        elif qm_rate > self.validation.pass_rate:
-                            self.validation.pass_rate = qm_rate
-                            self.log(
-                                f"Updated to QUALITY_METRICS pass_rate: {qm_rate}%"
-                            )
-                    except (IndexError, ValueError):
-                        pass
-                if "MAE:" in line and self.validation.mae == 0.0:
-                    try:
-                        mae = line.split("**MAE:**")[1].split("%")[0].strip()
-                        self.validation.mae = float(mae)
-                        self.log(f"Using QUALITY_METRICS MAE: {mae}%")
-                    except (IndexError, ValueError):
-                        pass
-            return True
+        Historically this method silently overwrote validation metrics with
+        values from ``docs/QUALITY_METRICS.md``. That file is a historical
+        dashboard and can hold stale or corrupt data (``0.0%`` pass rate,
+        ``-inf%`` MAE), which produced misleading scorecards (issue #1167).
+
+        This stub is retained (unused) to keep the public surface stable and
+        to document *why* the fallback was removed. It always returns False.
+        """
+        self.log(
+            "load_quality_metrics() is deprecated and intentionally unused; "
+            "QUALITY_METRICS.md is not a valid validation data source"
+        )
         return False
 
     def collect_all(self) -> bool:
+        """Resolve data sources and collect all metrics.
+
+        Returns False (and skips the expensive cargo/benchmark steps) when no
+        authoritative validation source is available, so main() can fail fast
+        with a clear error instead of stalling on ``cargo test``.
+        """
         self.log("Collecting all metrics...")
+        # Validation data is loaded from validation_results.json or
+        # validation_report.md. If neither is present, validation_source stays
+        # None and main() refuses to emit a scorecard (no stale fallback).
         self.load_validation_results()
-        self.load_quality_metrics()
+        if self.validation_source is None:
+            self.log("Skipping cargo/benchmark collection: no validation source")
+            return False
         self.run_rust_tests()
         self.estimate_benchmark()
         self.count_issues()
@@ -287,6 +430,14 @@ class ScorecardGenerator:
         )
 
         test_pass_rate = self.tests.pass_rate if self.tests.total > 0 else 99.65
+
+        # Human-readable label + status for the Data Sources section.
+        source_label = (
+            Path(self.validation_source).name
+            if self.validation_source
+            else "(none — no authoritative source)"
+        )
+        validation_status = "parsed" if self.validation_source else "missing"
 
         release_ready = (
             "✅ Ready" if self.validation.pass_rate >= 12.5 else "❌ Not Ready"
@@ -382,17 +533,27 @@ Root cause: Solar gain issues (SOLAR-01, SOLAR-02) and high-mass thermal modelin
 
 ---
 
-## Conflicting Metrics Resolution
+## Data Sources
 
-The following metrics show conflicting trends between different measurement approaches:
+Validation metrics are read from a single authoritative source. The generator
+never falls back to ``QUALITY_METRICS.md`` because that dashboard can hold
+stale or corrupt data (e.g. ``-inf%`` MAE) and previously produced misleading
+scorecards (issue #1167).
 
-| Metric | validation_results.json | QUALITY_METRICS.md | Resolution |
-|--------|-------------------------|-------------------|------------|
-| Case 900 Annual Heating | 1.35 MWh | 1.17-2.04 range | Use validation_results.json as authoritative |
-| High-Mass Pass Rate | 16.7% | 0.0% | Different counting methods - standardization needed |
+| Metric Category | Source | Status |
+|-----------------|--------|--------|
+| ASHRAE 140 Validation | {source_label} | {validation_status} |
+| Unit Tests | `cargo test --lib` | live |
+| Benchmark Throughput | `throughput_benchmark` test | live |
+| Known Issues | docs/KNOWN_ISSUES.md | parsed |
 
-**Action:** Standardize on `validation_results.json` as authoritative source.
-Update `QUALITY_METRICS.md` to use consistent reference data and counting.
+**Validation source used:** `{self.validation_source}`
+
+Source resolution order:
+1. `validation_results.json` (canonical JSON from the validation suite)
+2. `validation_report.md` (parsed ``## Summary`` table)
+
+If neither source is found, generation aborts with a non-zero exit code.
 
 ---
 
@@ -442,6 +603,21 @@ def main():
     generator = ScorecardGenerator(verbose=args.verbose)
     generator.collect_all()
 
+    # Refuse to emit a scorecard when no authoritative validation data was
+    # found. We must NOT silently fall back to stale QUALITY_METRICS.md data
+    # (issue #1167).
+    if generator.validation_source is None:
+        print(
+            "ERROR: No validation data source found.\n"
+            "Expected one of:\n"
+            "  - validation_results.json  (canonical JSON from the validation suite)\n"
+            "  - validation_report.md     (parsed markdown summary)\n"
+            "Refusing to generate SCORECARD.md from stale QUALITY_METRICS.md data.\n"
+            "Run the ASHRAE 140 validation suite to produce a data source.",
+            file=sys.stderr,
+        )
+        return 2
+
     scorecard = generator.generate_scorecard()
 
     output_path = Path(args.output)
@@ -449,6 +625,7 @@ def main():
         f.write(scorecard)
 
     print(f"✓ Scorecard generated: {output_path}")
+    print(f"  - Validation data source: {generator.validation_source}")
     print(f"  - ASHRAE 140 Pass Rate: {generator.validation.pass_rate:.1f}%")
     print(f"  - Test Pass Rate: {generator.tests.pass_rate:.1f}%")
     print(f"  - Benchmark Throughput: {generator.benchmark.throughput:.0f} configs/sec")
