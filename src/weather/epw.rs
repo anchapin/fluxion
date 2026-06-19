@@ -153,7 +153,9 @@ fn is_epw_header_line(line: &str) -> bool {
         "COMMENTS 2",
         "DATA PERIODS",
     ];
-    HEADER_PREFIXES.iter().any(|prefix| line.starts_with(prefix))
+    HEADER_PREFIXES
+        .iter()
+        .any(|prefix| line.starts_with(prefix))
 }
 
 /// Detect EPW file version from header.
@@ -997,7 +999,9 @@ mod tests {
         assert!(super::is_epw_header_line(
             "GROUND TEMPERATURES,3,.5,,,,1.34,5.12"
         ));
-        assert!(super::is_epw_header_line("HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0"));
+        assert!(super::is_epw_header_line(
+            "HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0"
+        ));
         assert!(super::is_epw_header_line("COMMENTS 1,Custom/User Format"));
         assert!(super::is_epw_header_line("COMMENTS 2, -- Ground temps"));
         assert!(super::is_epw_header_line(
