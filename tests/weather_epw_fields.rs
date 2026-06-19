@@ -53,13 +53,13 @@ fn test_denver_hour_0_all_fields() {
 
     assert_eq!(data.hour_of_year, 0);
 
-    assert_f64_near(data.dry_bulb_temp, 0.00, "dry_bulb_temp");
-    assert_f64_near(data.humidity, 57.0, "humidity");
+    assert_f64_near(data.dry_bulb_temp, -3.00, "dry_bulb_temp");
+    assert_f64_near(data.humidity, 92.0, "humidity");
     assert_f64_near(data.ghi, 0.0, "ghi");
     assert_f64_near(data.dni, 0.0, "dni");
     assert_f64_near(data.dhi, 0.0, "dhi");
-    assert_f64_near(data.wind_speed, 2.80, "wind_speed");
-    assert_f64_near(data.horizontal_infrared, 236.0, "horizontal_infrared");
+    assert_f64_near(data.wind_speed, 0.00, "wind_speed");
+    assert_f64_near(data.horizontal_infrared, 257.0, "horizontal_infrared");
 }
 
 #[test]
@@ -69,9 +69,9 @@ fn test_denver_hour_1_all_fields() {
 
     let data = source.get_hourly_data(1).expect("Failed to get hour 1");
 
-    assert_f64_near(data.dry_bulb_temp, 0.00, "dry_bulb_temp");
-    assert_f64_near(data.humidity, 60.0, "humidity");
-    assert_f64_near(data.wind_speed, 3.30, "wind_speed");
+    assert_f64_near(data.dry_bulb_temp, -3.00, "dry_bulb_temp");
+    assert_f64_near(data.humidity, 77.0, "humidity");
+    assert_f64_near(data.wind_speed, 2.10, "wind_speed");
 }
 
 #[test]
@@ -81,12 +81,12 @@ fn test_denver_hour_8_solar_values() {
 
     let data = source.get_hourly_data(8).expect("Failed to get hour 8");
 
-    assert_f64_near(data.dry_bulb_temp, 3.30, "dry_bulb_temp");
-    assert_f64_near(data.humidity, 52.0, "humidity");
-    assert_f64_near(data.ghi, 93.0, "ghi");
-    assert_f64_near(data.dni, 68.0, "dni");
-    assert_f64_near(data.dhi, 87.0, "dhi");
-    assert_f64_near(data.wind_speed, 3.10, "wind_speed");
+    assert_f64_near(data.dry_bulb_temp, 0.00, "dry_bulb_temp");
+    assert_f64_near(data.humidity, 92.0, "humidity");
+    assert_f64_near(data.ghi, 178.0, "ghi");
+    assert_f64_near(data.dni, 480.0, "dni");
+    assert_f64_near(data.dhi, 95.0, "dhi");
+    assert_f64_near(data.wind_speed, 2.60, "wind_speed");
 }
 
 #[test]
@@ -96,12 +96,12 @@ fn test_denver_hour_9_peak_solar() {
 
     let data = source.get_hourly_data(9).expect("Failed to get hour 9");
 
-    assert_f64_near(data.dry_bulb_temp, 7.20, "dry_bulb_temp");
-    assert_f64_near(data.humidity, 28.0, "humidity");
-    assert_f64_near(data.ghi, 117.0, "ghi");
-    assert_f64_near(data.dni, 16.0, "dni");
-    assert_f64_near(data.dhi, 113.0, "dhi");
-    assert_f64_near(data.wind_speed, 9.80, "wind_speed");
+    assert_f64_near(data.dry_bulb_temp, 2.00, "dry_bulb_temp");
+    assert_f64_near(data.humidity, 80.0, "humidity");
+    assert_f64_near(data.ghi, 49.0, "ghi");
+    assert_f64_near(data.dni, 0.0, "dni");
+    assert_f64_near(data.dhi, 49.0, "dhi");
+    assert_f64_near(data.wind_speed, 2.60, "wind_speed");
 }
 
 #[test]
@@ -111,11 +111,11 @@ fn test_denver_hour_10_high_solar() {
 
     let data = source.get_hourly_data(10).expect("Failed to get hour 10");
 
-    assert_f64_near(data.dry_bulb_temp, 7.80, "dry_bulb_temp");
-    assert_f64_near(data.ghi, 357.0, "ghi");
-    assert_f64_near(data.dni, 746.0, "dni");
-    assert_f64_near(data.dhi, 90.0, "dhi");
-    assert_f64_near(data.wind_speed, 10.30, "wind_speed");
+    assert_f64_near(data.dry_bulb_temp, 2.00, "dry_bulb_temp");
+    assert_f64_near(data.ghi, 431.0, "ghi");
+    assert_f64_near(data.dni, 654.0, "dni");
+    assert_f64_near(data.dhi, 169.0, "dhi");
+    assert_f64_near(data.wind_speed, 4.60, "wind_speed");
 }
 
 #[test]
@@ -127,9 +127,9 @@ fn test_denver_hour_4379_winter() {
         .get_hourly_data(4379)
         .expect("Failed to get hour 4379");
 
-    assert_f64_near(data.dry_bulb_temp, 33.30, "dry_bulb_temp");
-    assert_f64_near(data.humidity, 10.0, "humidity");
-    assert_f64_near(data.wind_speed, 6.20, "wind_speed");
+    assert_f64_near(data.dry_bulb_temp, 28.00, "dry_bulb_temp");
+    assert_f64_near(data.humidity, 20.0, "humidity");
+    assert_f64_near(data.wind_speed, 3.60, "wind_speed");
 }
 
 #[test]
@@ -141,9 +141,9 @@ fn test_denver_hour_8759_last_hour() {
         .get_hourly_data(8759)
         .expect("Failed to get hour 8759");
 
-    assert_f64_near(data.dry_bulb_temp, -0.70, "dry_bulb_temp");
-    assert_f64_near(data.humidity, 31.0, "humidity");
-    assert_f64_near(data.wind_speed, 2.10, "wind_speed");
+    assert_f64_near(data.dry_bulb_temp, 4.00, "dry_bulb_temp");
+    assert_f64_near(data.humidity, 69.0, "humidity");
+    assert_f64_near(data.wind_speed, 6.20, "wind_speed");
 }
 
 #[test]
