@@ -70,83 +70,59 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         h_is_to_boundary + h_ve
     }
 
-    /// Compute HVAC demand using total building heat transfer conductance.
+    /// Compute HVAC demand using the symmetric ASHRAE 140 ideal HVAC
+    /// sensitivity formulation.
     ///
-    /// For ASHRAE 140 Case 600-series (low-mass buildings), the IdealLoadsSystem
-    /// was giving ~21.7 W/K (ventilation only) instead of the building's actual
-    /// total conductance (≈98.65 W/K after the Norton-equivalent fix, Issue #907).
-    ///
-    /// This caused zones to never reach setpoint because HVAC demand was severely
-    /// underestimated.
-    ///
-    /// # Issue #908 — corrected cooling formula
-    ///
-    /// The previous formula had two problems:
-    ///
-    /// 1. **Zone-temperature-driven steady-state term**: `Q = -h_coeff × (T_zone − T_cool_sp)`.
-    ///    When the zone is held at the cooling setpoint (T_zone ≈ T_cool_sp), this term
-    ///    becomes zero — even though the thermal mass may be significantly hotter and
-    ///    continuously releasing heat to the zone.
-    ///
-    /// 2. **Separate mass_heat_release term**: Added as `-h_tr_ms × (T_mass − T_cool_sp)`
-    ///    in the "zone above setpoint" branch and as a standalone deadband branch. This
-    ///    term was CAPPED at `h_coeff × 10 ≈ 930 W` for Case 900, far below the physical
-    ///    mass heat release rate (~3.3 kW for T_mass = 30°C, h_tr_ms = 1092 W/K). The cap
-    ///    was intended to suppress 5R1C numerical divergence but also suppressed valid
-    ///    high-mass cooling demand.
-    ///
-    /// The corrected formula unifies both branches into a single expression:
+    /// For both heating and cooling, the demand is:
     ///
     /// ```text
-    /// Q_cooling = -h_coeff × (T_mass − T_cool_sp)
+    /// Q_HVAC = h_coeff × (T_setpoint − T_free)
     /// ```
     ///
-    /// **Derivation**: At steady state for the zone air node:
+    /// where `T_free` is the **free-floating zone air temperature** (`t_i_free`
+    /// at the call sites) — the equilibrium temperature the zone would reach
+    /// with HVAC disabled. `T_free` already includes every heat flow at the
+    /// air node: solar gains, internal gains, envelope conduction, ventilation,
+    /// AND the dynamic mass heat-release term `h_ms_is_prod × T_mass` that
+    /// couples the thermal mass to the air node via the 5R1C heat balance
+    /// (see `num_tm` in `step_physics_5r1c`). Using `T_free` therefore does
+    /// NOT miss the mass heat release — it captures it exactly once, through
+    /// the heat balance.
     ///
-    /// ```text
-    /// Heat in  = Heat out
-    /// h_tr_ms × (T_mass − T_zone) + h_coeff × (T_zone − T_cool_sp) = Q
-    /// ```
+    /// # Why the symmetric formula (Issue #1163)
     ///
-    /// The Norton equivalent satisfies `h_tr_ms × (T_mass − T_zone) = h_coeff × (T_mass − T_zone)`,
-    /// so substituting:
+    /// The previous implementation used an asymmetric cooling formula
+    /// `-h_coeff × (T_mass − T_cool_sp)` based on a derivation that claimed
+    /// `h_tr_ms × (T_mass − T_zone) = h_coeff × (T_mass − T_zone)`. That
+    /// identity holds only if `h_tr_ms = h_coeff`, but in practice they differ
+    /// by more than an order of magnitude (`h_tr_ms ≈ 893 W/K` vs
+    /// `h_coeff ≈ 70 W/K` for Case 600). The substitution was invalid, and the
+    /// resulting cooling formula systematically under-predicted cooling load
+    /// (sim/ref_mid ≈ 0.42 — only 42% of the reference). The 44 percentage-point
+    /// gap between cooling MAE (69%) and heating MAE (25%) in the blind
+    /// validation suite (#1148) was the direct signature of this bug.
     ///
-    /// ```text
-    /// Q = h_coeff × (T_mass − T_zone) + h_coeff × (T_zone − T_cool_sp)
-    ///   = h_coeff × (T_mass − T_cool_sp)
-    /// ```
-    ///
-    /// This formula:
-    /// - Is non-zero whenever T_mass > T_cool_sp (regardless of T_zone)
-    /// - Embeds the mass contribution through the Norton equivalent h_coeff (no separate
-    ///   mass term, no cap needed)
-    /// - Reduces to the correct limit when T_mass = T_zone (gives the old formula)
-    /// - Requires no deadband branch — the unified formula handles all cooling cases
-    ///
-    /// **Heating** continues to use `Q = h_coeff × (T_heat_sp − T_zone)`. The mass
-    /// absorption term is omitted for heating (Issue #900): for the 5R1C Case 900 the
-    /// mass is typically colder than the heating setpoint, so adding the term would
-    /// increase demand beyond the ASHRAE 140 reference.
+    /// The corrected symmetric formula matches:
+    ///   - The heating branch in this same function
+    ///   - `MultiNodeSolver::compute_hvac_demand` (`physics/multi_node_solver.rs`),
+    ///     which has always used the symmetric `T_air_free` formulation
+    ///   - The ASHRAE 140 "ideal HVAC" assumption (infinite-capacity system
+    ///     that holds the zone at the setpoint)
     ///
     /// Returns a VectorField of power values:
     /// - Positive = heating demand (W)
     /// - Negative = cooling demand (W)
     ///
     /// # Arguments
-    /// * `zone_temps` - Current zone temperatures (°C)
-    /// * `heating_setpoint` - Single heating setpoint (°C) applied to all zones
-    /// * `cooling_setpoint` - Single cooling setpoint (°C) applied to all zones
-    /// * `mass_temperatures` - Per-zone thermal mass temperatures (°C).
-    ///   Used as the driving temperature for the cooling formula.
-    ///   For the multi-node (9R4C) path, pass a representative mass node
-    ///   temperature (e.g. envelope weighted average). The 5R1C lumped mass is
-    ///   acceptable when the multi-node solver is unavailable.
+    /// * `zone_temps` - Free-floating zone air temperatures `t_i_free` (°C).
+    ///   This is the driving temperature for BOTH heating and cooling.
+    /// * `heating_setpoint` - Heating setpoint (°C) applied to all zones.
+    /// * `cooling_setpoint` - Cooling setpoint (°C) applied to all zones.
     pub(crate) fn compute_zone_hvac_load(
         &self,
         zone_temps: &[f64],
         heating_setpoint: f64,
         cooling_setpoint: f64,
-        mass_temperatures: &[f64],
     ) -> T {
         let enabled_vec = self.0.hvac_enabled.as_ref();
 
@@ -161,37 +137,37 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 continue;
             }
 
-            // Issue #907: Use the full 5R1C/6R2C Norton equivalent at the air node
+            // Issue #907: Norton-equivalent heat-transfer coefficient at the air node
             // (see `compute_hvac_coefficient` doc-comment for derivation).
             let h_coeff = self.compute_hvac_coefficient(zone_idx);
 
-            let t_zone = zone_temps[zone_idx];
-            // Use mass temperature as the driving temperature for cooling.
-            // If the caller passed a shorter slice, default to the zone temperature
-            // (the term becomes zero in that case).
-            let t_mass = mass_temperatures.get(zone_idx).copied().unwrap_or(t_zone);
+            // Issue #1163: Both branches use the free-floating zone air temperature
+            // (T_free), which is the correct driving temperature for the ASHRAE 140
+            // ideal HVAC sensitivity formulation. T_free already embeds the mass
+            // heat-release term via the 5R1C heat balance (`num_tm` in
+            // `step_physics_5r1c`), so the mass contribution is captured exactly
+            // once — not zero times, not twice.
+            let t_free = zone_temps[zone_idx];
 
-            let demand = if t_zone <= heating_setpoint {
-                // Heating: Q = h_coeff × (T_heat_sp − T_zone).
-                // Use <= to activate heating when zone is AT setpoint (needs heat to maintain).
-                // Mass absorption term intentionally omitted (Issue #900).
-                h_coeff * (heating_setpoint - t_zone)
-            } else if t_zone >= cooling_setpoint {
-                // Cooling (zone at or above cooling setpoint):
-                // Q = -h_coeff × (T_mass − T_cool_sp)  [Issue #908 corrected formula]
-                //
-                // The corrected formula uses mass temperature instead of zone temperature
-                // because the thermal mass stores/releases heat that drives HVAC demand
-                // even when the zone is at setpoint. When T_mass > T_cool_sp, the mass
-                // is releasing heat to the zone, requiring cooling.
-                -h_coeff * (t_mass - cooling_setpoint)
+            let demand = if t_free <= heating_setpoint {
+                // Heating: Q = h_coeff × (T_heat_sp − T_free).
+                // Use <= so the system actively maintains the setpoint (a zone
+                // exactly at the heating setpoint still needs heat input to
+                // offset envelope losses).
+                h_coeff * (heating_setpoint - t_free)
+            } else if t_free >= cooling_setpoint {
+                // Cooling: Q = -h_coeff × (T_free − T_cool_sp).
+                // Symmetric with heating. The mass heat-release contribution is
+                // already in T_free via `num_tm = h_ms_is_prod × T_mass`.
+                -h_coeff * (t_free - cooling_setpoint)
             } else {
-                // Deadband: zone between heating and cooling setpoints — no HVAC demand.
-                // The corrected formula is NOT applied here because:
-                // - t_mass > t_cool_sp would incorrectly produce cooling demand
-                //   when zone is in deadband (e.g., zone=23.5°C, mass=28°C, cool_sp=27°C)
-                // - t_mass < t_cool_sp would incorrectly produce heating demand
-                //   when zone is in deadband (e.g., zone=23.5°C, mass=20°C, cool_sp=27°C)
+                // Deadband: T_heat_sp < T_free < T_cool_sp — no HVAC demand.
+                // This is the correct ASHRAE 140 behavior: the ideal HVAC system
+                // is off when the zone is within the deadband, regardless of the
+                // mass temperature. The mass may be warmer than the cooling
+                // setpoint, but that heat reaches the zone through the 5R1C
+                // coupling and will be removed NEXT timestep once T_free crosses
+                // T_cool_sp. Cooling during deadband would violate ASHRAE 140.
                 0.0
             };
 
