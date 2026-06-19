@@ -174,6 +174,8 @@ graph TD
 - `surface_irradiance_south.csv` — hour, beam, diffuse, ground_reflected
 - `solar_gain_distribution.csv` — per-surface solar gain distribution (#1119)
 
+**Isolation test**: `tests/solar_isolation.rs` — position within 0.5°, beam annual energy within 1%, ground-reflected mean within 1%, sol-air temperature analytical (#1146).
+
 ---
 
 ### Module 3: Conduction & Thermal Mass
