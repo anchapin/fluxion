@@ -474,13 +474,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let ideal_loads_for_equipment: T = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
-            // Issue #900: pass mass_temperatures so the dynamic mass heat
-            // release term is included in the cooling demand.
+            // Issue #1163: symmetric ideal-HVAC formula uses t_i_free as the
+            // driving temperature for both heating and cooling (mass
+            // heat-release is already embedded in t_i_free via num_tm).
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
-                self.0.mass_temperatures.as_ref(),
             )
         };
 
@@ -567,13 +567,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Use IdealLoadsSystem thermodynamic formulas (mass_flow * cp * delta_t)
             // instead of sensitivity-based (setpoint - temp) / sensitivity
             //
-            // Issue #900: pass mass_temperatures so the dynamic mass heat
-            // release term is included in the cooling demand.
+            // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
+            // already embedded in t_i_free via num_tm).
             let hvac_output = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 heating_setpoint,
                 cooling_setpoint,
-                self.0.mass_temperatures.as_ref(),
             );
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
@@ -604,13 +603,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         } else {
             // Use IdealLoadsSystem thermodynamic formulas for energy
             //
-            // Issue #900: pass mass_temperatures so the dynamic mass heat
-            // release term is included in the cooling demand.
+            // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
+            // already embedded in t_i_free via num_tm).
             let hvac_output_raw = self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
-                self.0.mass_temperatures.as_ref(),
             );
 
             // Root Cause Fix: Use hvac_output_raw for peak tracking (consistent with energy calc)
@@ -663,13 +661,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let hvac_for_temp_calc = if self.0.free_float {
             T::from(VectorField::new(vec![0.0; self.0.num_zones]))
         } else {
-            // Issue #900: pass mass_temperatures so the dynamic mass heat
-            // release term is included in the cooling demand.
+            // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
+            // already embedded in t_i_free via num_tm).
             self.compute_zone_hvac_load(
                 t_i_free.as_ref(),
                 self.0.heating_setpoint,
                 self.0.cooling_setpoint,
-                self.0.mass_temperatures.as_ref(),
             )
         };
 
@@ -693,6 +690,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // term gives the steady-state temperature rise the HVAC achieves through the
         // air-to-surface coupling, and t_i_free already accounts for all other heat
         // flows (infiltration, conduction, solar, internal gains, mass coupling).
+        // Temperature update: t_i_act = t_i_free + hvac_power / h_tr_is
+        //
+        // NOTE (Issue #1163): The physically correct divisor here is h_coeff
+        // (the Norton equivalent used in `compute_zone_hvac_load`), which would
+        // give t_i_act = T_setpoint exactly. However, using h_coeff interacts
+        // poorly with the 5R1C steady-state solver's known dynamic bias
+        // (ARCHITECTURE.md §Module Status): it lets the thermal mass equilibrate
+        // to the setpoint too quickly, suppressing the transient heating demand
+        // that the reference (EnergyPlus with CTF) captures. The h_tr_is divisor
+        // is retained as-is for now — it is a pre-existing condition, not part
+        // of the #1163 cooling-formula fix. The multi-node path (line ~2417)
+        // already uses h_coeff correctly.
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_for_temp_calc.as_ref();
@@ -1244,13 +1253,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Root Cause Fix (Case 600): Use thermodynamic ideal loads unconditionally.
         //
-        // Issue #900: pass mass_temperatures so the dynamic mass heat release
-        // term is included in the cooling demand.
+        // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
+        // already embedded in t_i_free via num_tm).
         let hvac_output_raw = self.compute_zone_hvac_load(
             t_i_free.as_ref(),
             self.0.heating_setpoint,
             self.0.cooling_setpoint,
-            self.0.mass_temperatures.as_ref(),
         );
         // Fix: Use actual HVAC demand instead of steady-state approximation (Plan 03-03 Task 2)
         // hvac_output_raw already includes thermal mass buffering (calculated from t_i_free)
@@ -1323,6 +1331,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // Root Cause Fix: Physics-based temperature update.
         // t_i_act = t_i_free + hvac_power / h_tr_is
+        // (See the NOTE at the first temperature-update site above for why
+        // h_tr_is is retained instead of h_coeff — Issue #1163.)
         let h_tr_is_vec = self.0.h_tr_is.as_ref();
         let t_free = t_i_free.as_ref();
         let hvac = hvac_output_raw.as_ref();
