@@ -39,9 +39,9 @@ fn w_tol(_w: f64) -> f64 {
 
 #[test]
 fn test_saturation_vapor_pressure_minus_20c() {
-    // ASHRAE Table 3: p_sat(-20°C) ≈ 103.0 Pa
+    // ASHRAE Table 3 (Hyland-Wexler ice): p_sat(-20°C) ≈ 103.3 Pa
     let t = -20.0;
-    let expected = 103.0;
+    let expected = 103.3;
     let p_sat = saturation_vapor_pressure(t);
     let tol = p_tol(expected);
     assert!(
@@ -257,13 +257,13 @@ fn test_wet_bulb_temperature_30c_80rh() {
 
 #[test]
 fn test_wet_bulb_temperature_35c_20rh() {
-    // Hot dry condition: 35°C, 20% RH => Twb ≈ 20°C (dry conditions)
+    // Hot dry condition: 35°C, 20% RH => Twb ≈ 18.7°C (ASHRAE thermodynamic wet-bulb)
     let t = 35.0;
     let rh = 20.0;
     let p = STANDARD_ATMOSPHERIC_PRESSURE_Pa;
 
     let wb = calculate_wet_bulb(t, rh, p);
-    let expected = 20.0;
+    let expected = 18.7;
 
     assert!(
         (wb - expected).abs() <= t_tol(expected) * 5.0,
@@ -528,17 +528,20 @@ fn test_enthalpy_increases_with_temperature() {
 // DENSITY OF MOIST AIR TESTS
 // =============================================================================
 
-/// Calculates density of moist air (kg/m³) using ideal gas law.
+/// Calculates density of moist air (kg/m³) using the ideal gas law for a mixture.
 ///
 /// Formula:
-/// ρ = (P / (287.055 × (T + 273.15))) × (1 / (1 + ω)) × (1 + ω × 1.6078)
+/// ```text
+/// p_v = ω × P / (0.62198 + ω)
+/// ρ   = (P − p_v) / (R_da × T_K) + p_v / (R_v × T_K)
+/// ```
 ///
 /// Where:
 /// - P = atmospheric pressure (Pa)
-/// - T = temperature (°C)
-/// - ω = humidity ratio (kg/kg)
-/// - 287.055 = specific gas constant for dry air (J/(kg·K))
-/// - 1.6078 = ratio of molecular weights (H2O / dry air)
+/// - T_K = temperature (K)
+/// - ω = humidity ratio (kg_water_vapor / kg_dry_air)
+/// - 0.62198 = molecular weight ratio (H2O / dry air)
+/// - R_da = 287.055 J/(kg·K) (dry air), R_v = 461.495 J/(kg·K) (water vapor)
 ///
 /// # Arguments
 ///
@@ -551,7 +554,7 @@ fn test_enthalpy_increases_with_temperature() {
 /// Density of moist air in kg/m³
 fn density_moist_air(temperature: f64, humidity_ratio: f64, pressure: f64) -> f64 {
     const R_DRY_AIR: f64 = 287.055; // J/(kg·K)
-    const RATIO_MW: f64 = 1.6078; // H2O / dry_air molecular weight ratio
+    const RATIO_MW: f64 = 0.62198; // H2O / dry_air molecular weight ratio
 
     let t_kelvin = temperature + 273.15;
     let partial_pressure_vapor = humidity_ratio * pressure / (RATIO_MW + humidity_ratio);
@@ -581,14 +584,14 @@ fn test_density_moist_air_20c_0rh() {
 
 #[test]
 fn test_density_moist_air_25c_50rh() {
-    // ASHRAE reference: 25°C, 50% RH => ρ ≈ 1.170 kg/m³
+    // ASHRAE reference: 25°C, 50% RH => ρ ≈ 1.177 kg/m³
     let t = 25.0;
     let rh = 50.0;
     let p = STANDARD_ATMOSPHERIC_PRESSURE_Pa;
 
     let w = calculate_humidity_ratio(t, rh, p);
     let rho = density_moist_air(t, w, p);
-    let expected = 1.170;
+    let expected = 1.177;
 
     assert!(
         (rho - expected).abs() <= 0.01,
@@ -600,14 +603,14 @@ fn test_density_moist_air_25c_50rh() {
 
 #[test]
 fn test_density_moist_air_35c_80rh() {
-    // Hot humid: 35°C, 80% RH => ρ ≈ 1.090 kg/m³
+    // Hot humid: 35°C, 80% RH => ρ ≈ 1.126 kg/m³
     let t = 35.0;
     let rh = 80.0;
     let p = STANDARD_ATMOSPHERIC_PRESSURE_Pa;
 
     let w = calculate_humidity_ratio(t, rh, p);
     let rho = density_moist_air(t, w, p);
-    let expected = 1.090;
+    let expected = 1.126;
 
     assert!(
         (rho - expected).abs() <= 0.01,

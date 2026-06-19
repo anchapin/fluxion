@@ -5,7 +5,7 @@
 //!
 //! # Calculations Provided
 //!
-//! - **Saturation vapor pressure**: Using Magnus-Tetens formula
+//! - **Saturation vapor pressure**: Magnus-Tetens (≥0°C) + ASHRAE Hyland-Wexler ice (<0°C)
 //! - **Dew point temperature**: Newton-Raphson iteration
 //! - **Wet-bulb temperature**: Psychrometric equation solving
 //! - **Humidity ratio**: kg_water_vapor / kg_dry_air
@@ -31,21 +31,31 @@ pub const STANDARD_ATMOSPHERIC_PRESSURE_Pa: f64 = 101325.0;
 
 /// Calculates saturation vapor pressure at a given temperature.
 ///
-/// Uses the Magnus-Tetens formula, which is accurate for temperatures
-/// between -40°C and 60°C.
+/// Matches the ASHRAE Handbook of Fundamentals (Chapter 1) saturation table
+/// within 0.1% across the building operating range (-40°C to 60°C).
 ///
-/// # Formula
+/// - For `T >= 0°C`, uses the Magnus-Tetens approximation, which reproduces the
+///   ASHRAE saturation-over-water values to within ~0.1%.
+/// - For `T < 0°C`, uses the ASHRAE Hyland-Wexler saturation-over-ice equation
+///   (ASHRAE HoF Eq. 6), since Tetens diverges by >20% for sub-zero conditions
+///   (e.g. ASHRAE p_ws(-20°C) = 103 Pa; Tetens gives 125 Pa).
+///
+/// # Formula (T >= 0°C)
 ///
 /// ```text
 /// p_sat = A × exp((B × T) / (T + C))
 /// ```
 ///
+/// # Formula (T < 0°C, Hyland-Wexler ice, T_K in Kelvin)
+///
+/// ```text
+/// ln(p_sat) = C1/T_K + C2 + C3·T_K + C4·T_K² + C5·T_K³ + C6·T_K⁴ + C7·ln(T_K)
+/// ```
+///
 /// Where:
 /// - `p_sat` = saturation vapor pressure (Pa)
-/// - `T` = temperature (°C)
-/// - `A = 610.78 Pa` (constant)
-/// - `B = 17.27` (dimensionless)
-/// - `C = 237.3°C` (constant)
+/// - `T` = temperature (°C), `T_K` = temperature (K)
+/// - `A = 610.78 Pa`, `B = 17.27`, `C = 237.3°C` (Tetens)
 ///
 /// # Arguments
 ///
@@ -62,13 +72,35 @@ pub const STANDARD_ATMOSPHERIC_PRESSURE_Pa: f64 = 101325.0;
 ///
 /// let p_sat = saturation_vapor_pressure(20.0);
 /// assert!((p_sat - 2339.0).abs() < 5.0); // ~2339 Pa at 20°C
+/// // ASHRAE saturation-over-ice value at -20°C is ~103 Pa
+/// assert!((saturation_vapor_pressure(-20.0) - 103.0).abs() < 1.0);
 /// ```
 pub fn saturation_vapor_pressure(temperature: f64) -> f64 {
-    const A: f64 = 610.78; // Pa
-    const B: f64 = 17.27;
-    const C: f64 = 237.3;
+    if temperature < 0.0 {
+        const C1: f64 = -5674.5359;
+        const C2: f64 = 6.3925247;
+        const C3: f64 = -9.677843e-3;
+        const C4: f64 = 6.2215701e-7;
+        const C5: f64 = 2.0747825e-9;
+        const C6: f64 = -9.484024e-13;
+        const C7: f64 = 4.1635019;
 
-    A * ((B * temperature) / (temperature + C)).exp()
+        let tk = temperature + 273.15;
+        (C1 / tk
+            + C2
+            + C3 * tk
+            + C4 * tk.powi(2)
+            + C5 * tk.powi(3)
+            + C6 * tk.powi(4)
+            + C7 * tk.ln())
+        .exp()
+    } else {
+        const A: f64 = 610.78;
+        const B: f64 = 17.27;
+        const C: f64 = 237.3;
+
+        A * ((B * temperature) / (temperature + C)).exp()
+    }
 }
 
 /// Calculates dew point temperature from dry bulb and relative humidity.
@@ -80,7 +112,8 @@ pub fn saturation_vapor_pressure(temperature: f64) -> f64 {
 ///
 /// 1. Calculate water vapor pressure: p_water = p_sat(T) × (RH/100)
 /// 2. Newton-Raphson iteration: Td_{n+1} = Td_n - (p_sat(Td_n) - p_water) / (dp_sat/dT)
-/// 3. Derivative: dp_sat/dT = p_sat × (B × C) / (T + C)²
+/// 3. Derivative: central finite difference of `saturation_vapor_pressure` (branch-consistent
+///    for both the Tetens water curve and the Hyland-Wexler ice curve below 0°C)
 /// 4. Initial guess: Td = dry_bulb
 /// 5. Convergence tolerance: 1e-6
 /// 6. Max iterations: 20 (prevent infinite loops)
@@ -107,8 +140,7 @@ pub fn saturation_vapor_pressure(temperature: f64) -> f64 {
 pub fn calculate_dew_point(dry_bulb: f64, relative_humidity: f64, _pressure: f64) -> f64 {
     const MAX_ITERATIONS: usize = 20;
     const TOLERANCE: f64 = 1e-6;
-    const B: f64 = 17.27;
-    const C: f64 = 237.3;
+    const DERIV_EPSILON: f64 = 1e-4;
 
     // Calculate water vapor pressure
     let p_sat = saturation_vapor_pressure(dry_bulb);
@@ -125,8 +157,11 @@ pub fn calculate_dew_point(dry_bulb: f64, relative_humidity: f64, _pressure: f64
             break;
         }
 
-        // Derivative of saturation vapor pressure
-        let derivative = p_sat_td * (B * C) / (td + C).powi(2);
+        // Central finite-difference derivative of saturation_vapor_pressure
+        // (consistent with whichever saturation branch is active).
+        let derivative = (saturation_vapor_pressure(td + DERIV_EPSILON)
+            - saturation_vapor_pressure(td - DERIV_EPSILON))
+            / (2.0 * DERIV_EPSILON);
 
         // Prevent division by zero
         if derivative.abs() < 1e-10 {
