@@ -1,0 +1,11 @@
+# EnergyPlus Reference: ASHRAE 140 Case 600 — Annual + Peak Energy
+# Source: ASHRAE Standard 140-2023 Annex B (validated across BEM programs incl. EnergyPlus)
+# EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
+# Model: Low-mass 6x8x2.7m, 12m² south window, 0.5 ACH, 20°C heat / 27°C cool
+# Tolerance: ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147)
+# Hourly E+ output: regenerate via generate_case_600_900_energy.py
+metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
+annual_heating,MWh,4.36,5.79,5.075,15,4.314,5.836,Low-mass south-facing window baseline
+annual_cooling,MWh,3.92,6.14,5.030,15,4.275,5.784,Passive solar gains dominate summer load
+peak_heating,kW,2.8,3.8,3.300,15,2.805,3.795,Winter peak after cold clear night
+peak_cooling,kW,1.9,2.5,2.200,15,1.870,2.530,Summer peak at solar noon
