@@ -866,10 +866,21 @@ impl ThermalModel<VectorField> {
             // dominant insulation contribute to effective thermal mass. This prevents
             // exterior-only mass (e.g., roof deck behind fiberglass) from inflating Cm,
             // which would cause warm night minimums (building retains too much heat).
-            let wall_cap = spec.construction.wall.iso_13790_effective_capacitance_per_area() * opaque_area;
-            let roof_cap = spec.construction.roof.iso_13790_effective_capacitance_per_area() * zone_floor_area;
-            let floor_cap =
-                spec.construction.floor.iso_13790_effective_capacitance_per_area() * zone_floor_area;
+            let wall_cap = spec
+                .construction
+                .wall
+                .iso_13790_effective_capacitance_per_area()
+                * opaque_area;
+            let roof_cap = spec
+                .construction
+                .roof
+                .iso_13790_effective_capacitance_per_area()
+                * zone_floor_area;
+            let floor_cap = spec
+                .construction
+                .floor
+                .iso_13790_effective_capacitance_per_area()
+                * zone_floor_area;
             let air_cap = zone_volume * 1.2 * 1005.0;
             let _total_thermal_cap = wall_cap + roof_cap + floor_cap + air_cap;
 
@@ -959,9 +970,18 @@ impl ThermalModel<VectorField> {
             // stored on the per-surface vectors below — they feed the 9R4C multi-node
             // solver (Issue #715), where each surface has its own mass node.
 
-            let kappa_wall = spec.construction.wall.iso_13790_effective_capacitance_per_area();
-            let kappa_roof = spec.construction.roof.iso_13790_effective_capacitance_per_area();
-            let kappa_floor = spec.construction.floor.iso_13790_effective_capacitance_per_area();
+            let kappa_wall = spec
+                .construction
+                .wall
+                .iso_13790_effective_capacitance_per_area();
+            let kappa_roof = spec
+                .construction
+                .roof
+                .iso_13790_effective_capacitance_per_area();
+            let kappa_floor = spec
+                .construction
+                .floor
+                .iso_13790_effective_capacitance_per_area();
 
             let a_kappa_sum =
                 opaque_area * kappa_wall + zone_floor_area * (kappa_roof + kappa_floor);
@@ -1656,15 +1676,9 @@ impl ThermalModel<VectorField> {
         //   HighMass air=0.10: Max=38.17°C (ref 41.8-46.4) ~3°C low, nearest pass
         {
             let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => {
-                    (0.80, 0.05)
-                }
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
-                    (0.40, 0.30)
-                }
-                crate::validation::ashrae_140_cases::ConstructionType::Special => {
-                    (0.10, 0.50)
-                }
+                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.80, 0.05),
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.40, 0.30),
+                crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };
             model.solar_distribution_to_air = air_frac;
             model.solar_beam_to_mass_fraction = mass_frac_of_remaining;

@@ -9,7 +9,6 @@ use crate::physics::constants::thermal::ashrae_140::INTERIOR_FILM_COEFF;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::ctf_coefficients::{CTFCalculator, CTFMaterial};
 use crate::physics::ctf_solver::{CTFSolver, CTFSolverConfig};
-use crate::physics::ctf_zone_coupling::CtfZoneCouplingSolver;
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};

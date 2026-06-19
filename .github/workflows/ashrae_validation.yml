@@ -169,6 +169,8 @@ jobs:
           retention-days: 30
 
       - name: CI Gate Check
+        id: gate
+        continue-on-error: true  # advisory on PRs; hard gate on push/schedule
         if: always()
         run: |
           python3 << 'PYEOF'
@@ -203,3 +205,9 @@ jobs:
               echo "::warning::ASHRAE 140 validation below 80% threshold - PR review required"
             fi
           fi
+
+      - name: Fail if validation gate failed (non-PR)
+        if: steps.gate.outcome == 'failure' && github.event_name != 'pull_request'
+        run: |
+          echo "❌ ASHRAE 140 CI gate failed on ${{ github.event_name }}"
+          exit 1

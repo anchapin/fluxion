@@ -1453,6 +1453,12 @@ impl ASHRAE140Validator {
                 // Return early - don't enable CTF for Case 960 (produces zero energy)
                 return;
             }
+            // Skip CTF for free-floating cases: the explicit coupling feedback loop
+            // (q_ctf depends on T_zone, T_zone depends on q_ctf) diverges without the
+            // damping that HVAC provides, producing inf temperatures in 900FF/950FF.
+            if spec.is_free_floating() {
+                return;
+            }
             // Convert wall construction layers to FD materials (compatible with both CTFand FD)
             let fd_layers: Vec<crate::physics::fd_discretization::MaterialLayer> = spec
                 .construction

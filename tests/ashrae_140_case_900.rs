@@ -602,11 +602,7 @@ fn test_case_900_annual_cooling_energy_with_correction() {
     println!("=== Final HVAC Energy Calculation (Plan 03-04) ===");
     println!("Annual cooling energy: {:.2} MWh", cooling_mwh);
     println!("Reference range: [2.13, 3.67] MWh");
-    println!("Method: model.annual_cooling_energy (6R2C corrected)");
-    println!(
-        "Correction factor applied: {}",
-        model.cooling_sensitivity_correction_6r2c
-    );
+    println!("Method: model.annual_cooling_energy");
 
     // Verify annual cooling energy is within reference range
     assert!(

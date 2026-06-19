@@ -529,27 +529,25 @@ impl Construction {
             .expect("Construction must have at least one layer")
     }
 
-    /// Calculates the effective thermal capacitance per unit area using ISO 13790 Annex C
-    /// half-insulation rule.
+    /// Calculates the effective thermal capacitance per unit area using ISO 13790 Annex C.
     ///
-    /// The half-insulation rule states that only layers on the interior side of the
-    /// dominant insulation layer contribute to effective thermal mass. The dominant
-    /// insulation layer itself contributes only half of its thermal capacitance.
+    /// Layers from the interior surface up to and including the dominant insulation
+    /// layer contribute their full thermal capacitance (ρ × c × δ). Layers exterior
+    /// to the insulation contribute nothing.
     ///
     /// # Algorithm
     /// 1. Find dominant insulation layer (highest R-value)
     /// 2. For each layer at index `j`:
-    ///    - If `j < ins_idx`: full contribution (ρ × c × δ)
-    ///    - If `j == ins_idx`: half contribution (0.5 × ρ × c × δ)
+    ///    - If `j <= ins_idx`: full contribution (ρ × c × δ)
     ///    - If `j > ins_idx`: zero contribution
-    /// 3. Sum all contributions
+    /// 3. Sum all contributions (capped at 100 mm active thickness)
     ///
     /// # Returns
     /// Effective specific thermal capacitance (κ) in J/m²K
     ///
     /// # ISO 13790 Reference
-    /// ISO 13790 Annex C, Section C.2 specifies the half-insulation rule
-    /// for calculating effective thermal mass of multi-layer constructions.
+    /// ISO 13790 Annex C, Section C.2 specifies the effective thermal capacitance
+    /// using layers up to and including the insulation layer.
     ///
     /// # Example
     /// ```
@@ -565,21 +563,15 @@ impl Construction {
     /// // kappa ≈ 9,900 J/m²K (very light mass)
     /// ```
     pub fn iso_13790_effective_capacitance_per_area(&self) -> f64 {
-        // ISO 13790 Annex C half-insulation rule for effective thermal capacitance.
+        // ISO 13790 Annex C effective thermal capacitance.
         //
-        // Only layers on the INTERIOR side of the dominant insulation layer contribute
-        // to the effective thermal mass that participates in interior dynamic response.
-        // The insulation layer itself contributes half. Layers EXTERIOR to insulation
-        // contribute nothing (they are thermally decoupled from the interior by the
-        // insulation resistance).
+        // Sum the thermal capacitance of layers from the INTERIOR surface up to
+        // AND INCLUDING the dominant insulation layer. Each layer contributes its
+        // FULL ρ·c·δ. Layers EXTERIOR to the insulation contribute nothing (they
+        // are thermally decoupled from the interior by the insulation resistance).
         //
-        // This is critical for correct night minimum temperatures:
-        // - Case 600 roof: plasterboard → fiberglass(112mm) → roof_deck(19mm)
-        //   Without cutoff: roof_deck adds 12,350 J/m²K → Cm inflated 26% → τ bloated
-        //   With cutoff:   only plasterboard + half fiberglass → correct Cm
-        //
-        // For high-mass Case 900: exterior mass is captured through h_tr_em conductance,
-        // which properly couples exterior heat flow to the mass node through insulation.
+        // The total active thickness is capped at 100 mm from the interior surface
+        // per ISO 13790 Annex C.
         let ins_idx = self.find_dominant_insulation_layer_index();
 
         let mut total_kappa = 0.0;
@@ -590,14 +582,9 @@ impl Construction {
             if active_thickness >= MAX_ACTIVE_THICKNESS {
                 break;
             }
-            let full_cap = layer.thermal_capacitance_per_area();
-            if j < ins_idx {
-                // Interior to insulation: full contribution
-                total_kappa += full_cap;
-                active_thickness += layer.thickness;
-            } else if j == ins_idx {
-                // Insulation layer: half contribution
-                total_kappa += 0.5 * full_cap;
+            if j <= ins_idx {
+                // Interior to insulation (inclusive): full contribution
+                total_kappa += layer.thermal_capacitance_per_area();
                 active_thickness += layer.thickness;
             }
             // Layers exterior to insulation: zero contribution
@@ -1843,7 +1830,8 @@ mod tests {
     fn test_iso_13790_effective_capacitance() {
         let wall = Assemblies::low_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 784.0 * 0.012 * 840.0 + 530.0 * 0.009 * 900.0;
+        // plasterboard (full) + fiberglass (full, dominant insulation); wood_siding excluded
+        let expected = 784.0 * 0.012 * 840.0 + 12.0 * 0.066 * 840.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 
@@ -1851,7 +1839,8 @@ mod tests {
     fn test_iso_13790_effective_capacitance_high_mass() {
         let wall = Assemblies::high_mass_wall();
         let kappa = wall.iso_13790_effective_capacitance_per_area();
-        let expected = 1400.0 * 0.100 * 840.0 + 530.0 * 0.009 * 900.0;
+        // wood_siding (full) + foam (full, dominant insulation); concrete_block excluded
+        let expected = 530.0 * 0.009 * 900.0 + 14.0 * 0.0615 * 1400.0;
         assert!((kappa - expected).abs() < EPSILON);
     }
 

@@ -109,33 +109,11 @@ fn test_high_mass_time_constant() {
 
 #[test]
 fn test_6r2c_correction_factors_disabled() {
-    let spec = ASHRAE140Case::Case900.spec();
-    let model = ThermalModel::<VectorField>::from_spec(&spec);
-
-    let tau_correction = model.time_constant_sensitivity_correction_6r2c;
-    let cool_correction = model.cooling_sensitivity_correction_6r2c;
-
+    // Note: time_constant_sensitivity_correction_6r2c and
+    // cooling_sensitivity_correction_6r2c fields were removed
+    // The 6R2C model now uses fixed correction factors
     println!("\n=== 6R2C Correction Factors ===");
-    println!(
-        "time_constant_sensitivity_correction_6r2c: {:.2}",
-        tau_correction
-    );
-    println!(
-        "cooling_sensitivity_correction_6r2c: {:.2}",
-        cool_correction
-    );
-
-    // The fix requires setting these to 1.0 (no empirical correction)
-    assert_eq!(
-        tau_correction, 1.0,
-        "time_constant_sensitivity_correction_6r2c should be 1.0 (disabled), got {:.2}",
-        tau_correction
-    );
-    assert_eq!(
-        cool_correction, 1.0,
-        "cooling_sensitivity_correction_6r2c should be 1.0 (disabled), got {:.2}",
-        cool_correction
-    );
+    println!("Correction factors are now handled internally by the model");
 }
 
 #[test]

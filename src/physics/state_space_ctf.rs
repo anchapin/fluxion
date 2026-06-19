@@ -2684,16 +2684,19 @@ mod expm_debug_tests {
             exp_pade[0][0], exp_taylor[0][0]
         );
         eprintln!(
-            "Padé exp[0][5] = {:.10}, Taylor = {:.10}",
-            exp_pade[0][5], exp_taylor[0][5]
+            "Padé exp[0][n-1] = {:.10}, Taylor = {:.10}",
+            exp_pade[0][n - 1],
+            exp_taylor[0][n - 1]
         );
         eprintln!(
-            "Padé exp[5][0] = {:.10}, Taylor = {:.10}",
-            exp_pade[5][0], exp_taylor[5][0]
+            "Padé exp[n-1][0] = {:.10}, Taylor = {:.10}",
+            exp_pade[n - 1][0],
+            exp_taylor[n - 1][0]
         );
         eprintln!(
-            "Padé exp[5][5] = {:.10}, Taylor = {:.10}",
-            exp_pade[5][5], exp_taylor[5][5]
+            "Padé exp[n-1][n-1] = {:.10}, Taylor = {:.10}",
+            exp_pade[n - 1][n - 1],
+            exp_taylor[n - 1][n - 1]
         );
 
         // Column sums of exp(A*t) should give (exp(A*t)) * ones
@@ -2722,8 +2725,13 @@ mod expm_debug_tests {
         .unwrap();
         writeln!(f, "Padé exp[0][0] = {:.15}", exp_pade[0][0]).unwrap();
         writeln!(f, "Taylor exp[0][0] = {:.15}", exp_taylor[0][0]).unwrap();
-        writeln!(f, "Padé exp[5][5] = {:.15}", exp_pade[5][5]).unwrap();
-        writeln!(f, "Taylor exp[5][5] = {:.15}", exp_taylor[5][5]).unwrap();
+        writeln!(f, "Padé exp[n-1][n-1] = {:.15}", exp_pade[n - 1][n - 1]).unwrap();
+        writeln!(
+            f,
+            "Taylor exp[n-1][n-1] = {:.15}",
+            exp_taylor[n - 1][n - 1]
+        )
+        .unwrap();
         for j in 0..n {
             let cs_pade: f64 = (0..n).map(|i| exp_pade[i][j]).sum();
             let cs_taylor: f64 = (0..n).map(|i| exp_taylor[i][j]).sum();

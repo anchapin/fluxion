@@ -101,9 +101,9 @@ fn test_surface_kind_different_thermal_response() {
 
     // Run 10 timesteps
     for _ in 0..10 {
-        solver_wall.update_all(dt, t_mass, t_ext);
-        solver_roof.update_all(dt, t_mass, t_ext);
-        solver_floor.update_all(dt, t_mass, t_ext);
+        solver_wall.update_all(dt, t_mass, t_ext, 0.0);
+        solver_roof.update_all(dt, t_mass, t_ext, 0.0);
+        solver_floor.update_all(dt, t_mass, t_ext, 0.0);
     }
 
     // All should have moved from initial temperature
@@ -165,7 +165,7 @@ fn test_backward_euler_single_step() {
     let q_net = q_ms - q_em;
     let expected = 20.0 + dt * q_net / 2_300_000.0;
 
-    surface.update(dt, t_mass, t_ext);
+    surface.update(dt, t_mass, t_ext, 0.0);
     let actual = surface.temperature;
 
     assert!(
@@ -205,7 +205,7 @@ fn test_backward_euler_stability_large_dt() {
 
     // Run for many large steps
     for _ in 0..100 {
-        surface.update(dt, t_mass, t_ext);
+        surface.update(dt, t_mass, t_ext, 0.0);
     }
 
     // Surface should still be finite (no NaN, no Inf)
@@ -258,7 +258,7 @@ fn test_backward_euler_convergence() {
 
     // Run for 24 hours (1440 steps)
     for _ in 0..1440 {
-        surface.update(dt, t_mass, t_ext);
+        surface.update(dt, t_mass, t_ext, 0.0);
         // Surface should never exceed mass temperature (heat comes from mass)
         assert!(surface.temperature <= t_mass + 0.01);
         last_temp = surface.temperature;
@@ -299,7 +299,7 @@ fn test_backward_euler_monotonicity() {
 
     let mut prev_temp = surface.temperature;
     for _ in 0..100 {
-        surface.update(dt, t_mass, t_ext);
+        surface.update(dt, t_mass, t_ext, 0.0);
         // Surface should be monotonically increasing (no overshoot due to backward Euler)
         assert!(
             surface.temperature >= prev_temp - 1e-10,
@@ -338,7 +338,7 @@ fn test_indoor_boundary_air_coupling() {
 
     // Run 200 timesteps to approach steady state
     for _ in 0..200 {
-        surface.update(3600.0, t_mass, t_ext);
+        surface.update(3600.0, t_mass, t_ext, 0.0);
     }
 
     // Surface should converge toward a stable, finite value within the physical range
@@ -390,7 +390,7 @@ fn test_outdoor_boundary_sol_air() {
 
     // Run a few steps with sol-air temperature as exterior
     for _ in 0..10 {
-        surface.update(3600.0, 20.0, t_sol_air);
+        surface.update(3600.0, 20.0, t_sol_air, 0.0);
     }
 
     // Surface should be cooling because T_sol_air (56) > T_surface (30)
@@ -433,7 +433,7 @@ fn test_indoor_outdoor_balance_no_solar() {
     let t_s_steady = (10.0 * t_mass + 10.0 * t_ext) / (10.0 + 10.0);
 
     for _ in 0..1000 {
-        surface.update(dt, t_mass, t_ext);
+        surface.update(dt, t_mass, t_ext, 0.0);
     }
 
     let diff = (surface.temperature - t_s_steady).abs();
@@ -464,7 +464,7 @@ fn test_heat_flow_reverses_at_equilibrium() {
 
     // Cold exterior: surface should cool (heat flows out)
     for _ in 0..5 {
-        surface_cool.update(3600.0, 20.0, 0.0);
+        surface_cool.update(3600.0, 20.0, 0.0, 0.0);
     }
     // Heat flow should be negative (heat leaving surface)
     assert!(
@@ -488,7 +488,7 @@ fn test_heat_flow_reverses_at_equilibrium() {
 
     // Hot exterior: surface should warm (heat flows in)
     for _ in 0..5 {
-        surface_warm.update(3600.0, 20.0, 30.0);
+        surface_warm.update(3600.0, 20.0, 30.0, 0.0);
     }
     // Heat flow should be positive (heat entering surface)
     assert!(
@@ -523,7 +523,7 @@ fn test_energy_conservation_24h_cycle() {
     for i in 0..n_steps {
         let t_hours = (i as f64) * dt / 3600.0;
         let t_ext = t_mean + t_amplitude * (2.0 * std::f64::consts::PI * t_hours / 24.0).sin();
-        solver.update_all(dt, t_mass, t_ext);
+        solver.update_all(dt, t_mass, t_ext, 0.0);
         let q = solver.heat_flows()[0];
         if q > 0.0 {
             total_q_in += q * dt;
@@ -559,7 +559,7 @@ fn test_energy_imbalance_bounded() {
     let t_mass = 22.0;
     let t_ext = 2.0;
 
-    solver.update_all(dt, t_mass, t_ext);
+    solver.update_all(dt, t_mass, t_ext, 0.0);
     let imbalance = solver.energy_imbalance(t_mass, t_ext);
 
     // Imbalance should be small relative to the heat flow magnitudes
@@ -704,7 +704,7 @@ fn test_ashrae_140_case_900_thermal_lag() {
     // Run for one time constant
     let n_steps = (tau / dt) as i32;
     for _ in 0..n_steps {
-        surface.update(dt, t_mass, t_ext);
+        surface.update(dt, t_mass, t_ext, 0.0);
     }
 
     let diff = (surface.temperature - expected_temp).abs();
@@ -756,7 +756,7 @@ fn test_ashrae_140_case_960_window_response() {
     let initial = window.temperature;
     // Run for 1 hour
     for _ in 0..60 {
-        window.update(dt, t_mass, t_sol_air);
+        window.update(dt, t_mass, t_sol_air, 0.0);
     }
 
     // Window should warm significantly due to solar gain
@@ -792,7 +792,7 @@ fn test_zero_capacitance_no_update() {
     );
 
     let initial_temp = surface.temperature;
-    surface.update(3600.0, 25.0, 0.0);
+    surface.update(3600.0, 25.0, 0.0, 0.0);
 
     // With zero capacitance, no temperature change
     assert_eq!(
@@ -821,7 +821,7 @@ fn test_nan_protection_extreme_conditions() {
     let dt = 3600.0;
     for i in 0..100 {
         let t_ext = if i % 2 == 0 { 100.0 } else { -100.0 };
-        surface.update(dt, 20.0, t_ext);
+        surface.update(dt, 20.0, t_ext, 0.0);
         assert!(
             surface.temperature.is_finite(),
             "Surface temperature must be finite, got {} at step {}",
@@ -844,7 +844,7 @@ fn test_multi_surface_independence() {
     assert_eq!(initial.len(), 3);
 
     // Update all with same boundary conditions
-    solver.update_all(3600.0, 20.0, 0.0);
+    solver.update_all(3600.0, 20.0, 0.0, 0.0);
 
     let after = solver.surface_temperatures();
 

@@ -41,6 +41,7 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         },
         // Pass
         ValidationResult {
@@ -54,6 +55,7 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         },
         // Warning (within range but high deviation)
         ValidationResult {
@@ -67,6 +69,7 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         },
         // Fail
         ValidationResult {
@@ -80,6 +83,7 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         },
     ];
 

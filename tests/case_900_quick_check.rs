@@ -14,10 +14,6 @@ fn test_case_900_cooling_with_thermal_mass_correction() {
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
     let weather = DenverTmyWeather::new();
 
-    println!(
-        "Correction factor applied: {}",
-        model.time_constant_sensitivity_correction
-    );
     println!("Expected: 4.0 (symmetric thermal mass correction)");
 
     // Run 365 days (8760 hours)
