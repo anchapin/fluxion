@@ -2726,12 +2726,7 @@ mod expm_debug_tests {
         writeln!(f, "Padé exp[0][0] = {:.15}", exp_pade[0][0]).unwrap();
         writeln!(f, "Taylor exp[0][0] = {:.15}", exp_taylor[0][0]).unwrap();
         writeln!(f, "Padé exp[n-1][n-1] = {:.15}", exp_pade[n - 1][n - 1]).unwrap();
-        writeln!(
-            f,
-            "Taylor exp[n-1][n-1] = {:.15}",
-            exp_taylor[n - 1][n - 1]
-        )
-        .unwrap();
+        writeln!(f, "Taylor exp[n-1][n-1] = {:.15}", exp_taylor[n - 1][n - 1]).unwrap();
         for j in 0..n {
             let cs_pade: f64 = (0..n).map(|i| exp_pade[i][j]).sum();
             let cs_taylor: f64 = (0..n).map(|i| exp_taylor[i][j]).sum();
