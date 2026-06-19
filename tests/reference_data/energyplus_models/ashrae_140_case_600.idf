@@ -1,0 +1,245 @@
+Version, 25.2;
+
+! ── ASHRAE 140 Case 600 — Low-Mass Building with South Window ──────────
+! Reference: ASHRAE Standard 140-2023 Annex B
+!   - 6m x 8m x 2.7m single-zone box
+!   - Lightweight walls (wood frame + insulation + gypsum)
+!   - South-facing window (12m², double-pane, SHGC ≈ 0.7)
+!   - Heating setpoint: 20°C, Cooling setpoint: 27°C
+!   - Infiltration: 0.5 ACH constant
+!   - No internal gains, no mechanical ventilation (only infiltration)
+!
+! Run with EnergyPlus against the Golden-NREL TMY3 EPW to regenerate the
+! reference CSV at tests/reference_data/zone_balance/case_600_energy_hourly.csv
+! using generate_case_600_900_energy.py.
+
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+RunPeriod,
+  AnnualRun,
+  1, 1, , 12, 31, ,
+  Tuesday,
+  No, No, No, No, No;
+
+Timestep, 1;
+
+Building,
+  ASHRAE140_Case600,
+  0.0,
+  City,
+  0.04,
+  0.4,
+  FullExterior,
+  25;
+
+Zone,
+  ZONE1,
+  0, 0, 0, 0, 1, 1, , , , ;
+
+ZoneHVAC:EquipmentConnections,
+  ZONE1, ZONE1_Equip,
+  ZONE1_Inlet Node, ZONE1_Exhaust Node,
+  ZONE1_Zone Air Node, ZONE1_Return Air Node;
+
+! ── Materials — Lightweight ASHRAE 140 Case 600 construction ────────────
+Material,
+  OUTR_WOOD,             ! 10mm wood siding
+  MediumSmooth,
+  0.010, 0.115, 540, 1210;
+
+Material,
+  INSUL_R7,              ! 90mm cavity insulation (R-7 ≈ 0.04 * 0.09 wait — 0.04 W/mK * 0.09 m = R-2.25)
+  MediumRough,
+  0.090, 0.040, 30, 840;
+
+Material,
+  GYP_13,                ! 13mm gypsum
+  MediumSmooth,
+  0.013, 0.160, 800, 1090;
+
+Material,
+  FLOOR_SLAB,            ! 100mm concrete floor
+  MediumRough,
+  0.100, 1.730, 2243, 837;
+
+Construction,
+  LIGHT_WALL,
+  OUTR_WOOD,
+  INSUL_R7,
+  GYP_13;
+
+Construction,
+  FLOOR,
+  FLOOR_SLAB;
+
+! ── Window (ASHRAE 140 Case 600 glazing) ────────────────────────────────
+Material,
+  GLASS_DBL_CLEAR,
+  Glass,
+  0.003,   ! Thickness
+  0.9,     ! Conductivity
+  2500,    ! Density
+  840;     ! Specific Heat
+
+WindowMaterial:Glazing,
+  DblClear_Glazing,
+  SpectralAverage,
+  0.003,           ! Thickness
+  0.837,           ! Solar Transmittance at Normal Incidence
+  0.075,           ! Front Side Solar Reflectance
+  0.075,           ! Back Side Solar Reflectance
+  0.837,           ! Visible Transmittance
+  0.075,           ! Front Side Visible Reflectance
+  0.075,           ! Back Side Visible Reflectance
+  0.0,             ! Infrared Transmittance
+  0.84,            ! Front Side Infrared Hemispherical Emissivity
+  0.84,            ! Back Side Infrared Hemispherical Emissivity
+  0.9;             ! Conductivity
+
+WindowMaterial:Gas,
+  DblClear_Gas,
+  Air,
+  0.0127;          ! Thickness
+
+Construction,
+  DblClear_Window,
+  DblClear_Glazing,
+  DblClear_Gas,
+  DblClear_Glazing;
+
+! ── Ground temperature ──────────────────────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner,
+  ClockWise,
+  World;
+
+! ── Surfaces (6m wide x 8m deep x 2.7m tall, south-facing window) ───────
+BuildingSurface:Detailed,
+  SouthWall, Wall, LIGHT_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 0, 0,
+  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, LIGHT_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  6, 8, 2.7,
+  0, 8, 2.7,
+  0, 8, 0,
+  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, LIGHT_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  6, 8, 0,
+  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, LIGHT_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 8, 2.7,
+  0, 0, 2.7,
+  0, 0, 0,
+  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, LIGHT_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, FLOOR, ZONE1, , Ground, , NoSun, NoWind, ,
+  4,
+  0, 0, 0,
+  6, 0, 0,
+  6, 8, 0,
+  0, 8, 0;
+
+! ── South window (12m², double-pane) ────────────────────────────────────
+FenestrationSurface:Detailed,
+  SouthWindow,
+  Window,
+  DblClear_Window,
+  SouthWall,
+  , ,
+  0.0,                ! Frame
+  Outside,
+  4,
+  0.5, 0.0, 2.0,      ! Window vertices (12 m² opening within south wall)
+  5.5, 0.0, 2.0,
+  5.5, 0.0, 0.0,
+  0.5, 0.0, 0.0;
+
+! ── Infiltration: 0.5 ACH constant ──────────────────────────────────────
+ZoneInfiltration:DesignFlowRate,
+  ZONE1_Infil,
+  ZONE1,
+  AlwaysOn,
+  0.02207,            ! Flow per Zone Floor Area {m³/s-m²} (0.5 ACH * 48 m² * 2.7 m / 3600 s)
+  0, 0, 0;            ! No wind/stack coefficient (constant flow)
+
+Schedule:Compact, AlwaysOn, Fraction, Through: 12/31, For: AllDays, Until: 24:00, 1.0;
+ScheduleTypeLimits, Fraction, 0.0, 1.0, Continuous;
+
+! ── Thermostat: 20°C heating, 27°C cooling ──────────────────────────────
+ScheduleTypeLimits, Temperature, -100, 200, Continuous;
+
+Schedule:Compact,
+  HeatSP,
+  Temperature,
+  Through: 12/31, For: AllDays, Until: 24:00, 20.0;
+
+Schedule:Compact,
+  CoolSP,
+  Temperature,
+  Through: 12/31, For: AllDays, Until: 24:00, 27.0;
+
+ZoneControl:Thermostat,
+  ZONE1_Tstat, ZONE1, DualSP_Sched,
+  ThermostatSetpoint:DualSetpoint,
+  DualSP_Sched;
+
+ScheduleTypeLimits, ControlType, 0.0, 4.0, Discrete;
+Schedule:Compact, DualSP_Sched, ControlType, Through: 12/31, For: AllDays, Until: 24:00, 4;
+
+ThermostatSetpoint:DualSetpoint,
+  DualSP_Sched, HeatSP, CoolSP;
+
+! ── Ideal Loads Air System (metered heating/cooling) ────────────────────
+ZoneHVAC:EquipmentList,
+  ZONE1_Equip,
+  SequentialLoad,
+  ZoneHVAC:IdealLoadsAirSystem, ZONE1_IdealLoads, 1, 1;
+
+ZoneHVAC:IdealLoadsAirSystem,
+  ZONE1_IdealLoads,
+  , ZONE1_Inlet Node, ZONE1_Exhaust Node, ,
+  50, 13, 0.0156, 0.0077,
+  NoLimit, , , NoLimit, , ,
+  , , ConstantSensibleHeatRatio, 0.7, None, , , , , ;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, ZONE1, Zone Air System Sensible Heating Energy, Hourly;
+Output:Variable, ZONE1, Zone Air System Sensible Cooling Energy, Hourly;
+Output:Variable, ZONE1, Zone Infiltration Sensible Heat Loss, Timestep;
+Output:Variable, ZONE1, Zone Infiltration Sensible Heat Gain, Timestep;
+Output:Variable, SouthWindow, Surface Window Transmitted Solar Radiation Rate, Timestep;
