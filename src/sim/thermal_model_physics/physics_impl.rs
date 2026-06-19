@@ -569,11 +569,8 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             //
             // Issue #1163: symmetric ideal-HVAC formula (mass heat-release is
             // already embedded in t_i_free via num_tm).
-            let hvac_output = self.compute_zone_hvac_load(
-                t_i_free.as_ref(),
-                heating_setpoint,
-                cooling_setpoint,
-            );
+            let hvac_output =
+                self.compute_zone_hvac_load(t_i_free.as_ref(), heating_setpoint, cooling_setpoint);
 
             // Track peak heating/cooling based on per-zone HVAC demand (Plan 18-08)
             // Physics-based: No calibration factors - track actual HVAC demand

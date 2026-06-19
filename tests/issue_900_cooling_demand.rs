@@ -51,12 +51,7 @@ use fluxion::weather::WeatherSource;
 
 /// Compute the HVAC demand for a single zone using the corrected Issue #1163
 /// symmetric formula. Mirrors `compute_zone_hvac_load` (hvac.rs) for unit testing.
-fn demand_for_zone(
-    h_coeff: f64,
-    t_free: f64,
-    heat_sp: f64,
-    cool_sp: f64,
-) -> f64 {
+fn demand_for_zone(h_coeff: f64, t_free: f64, heat_sp: f64, cool_sp: f64) -> f64 {
     if t_free <= heat_sp {
         // Heating: Q = h_coeff × (T_heat_sp − T_free).
         h_coeff * (heat_sp - t_free)
@@ -153,7 +148,7 @@ fn issue_1163_no_phantom_heating_in_cooling_branch() {
     //
     // Scenario: T_free = 35°C (hot zone, above cool_sp), which under the old
     // formula with T_mass = 25°C would have given +140 W (phantom heating).
-    let h_coeff = 70.0;  // Case 600 Norton equivalent
+    let h_coeff = 70.0; // Case 600 Norton equivalent
     let cool_sp = 27.0;
 
     let q = demand_for_zone(h_coeff, 35.0, 20.0, cool_sp);
