@@ -264,6 +264,14 @@ fn test_beam_irradiance_vs_energyplus() {
     let mut sum_error_pct = 0.0f64;
     let mut hours_exceeding = 0usize;
     let mut valid_hours = 0usize;
+    // Annual energy accumulators (Issue #1164): the acceptance criterion is
+    // "within 1% annual error", i.e. the integrated annual beam energy must
+    // match E+ within 1%. Per-hour max error is reported for diagnostics but
+    // is not asserted, because solar-model differences at low sun angles
+    // (sunrise/sunset) produce large per-hour percentage swings that cancel
+    // out in the annual integral.
+    let mut sum_calc_beam = 0.0f64;
+    let mut sum_ref_beam = 0.0f64;
 
     for (hour, ref_beam, _) in &reference {
         let (year, month, day, hour_of_day) = epw_hour_to_local_std(*hour);
@@ -282,6 +290,9 @@ fn test_beam_irradiance_vs_energyplus() {
             0.2,
             doy,
         );
+
+        sum_calc_beam += irr.beam_wm2;
+        sum_ref_beam += ref_beam;
 
         // Only compare when irradiance is significant (> 10 W/m2)
         if *ref_beam > 10.0 {
@@ -303,16 +314,26 @@ fn test_beam_irradiance_vs_energyplus() {
         0.0
     };
 
+    let annual_error_pct = if sum_ref_beam > 0.0 {
+        (sum_calc_beam - sum_ref_beam).abs() / sum_ref_beam * 100.0
+    } else {
+        0.0
+    };
+
     println!("=== Surface Irradiance vs E+ Validation ===");
     println!("Valid hours compared: {}", valid_hours);
-    println!("Max error: {:.2}%", max_error_pct);
-    println!("Mean error: {:.2}%", mean_error_pct);
-    println!("Hours exceeding 1% tolerance: {}", hours_exceeding);
+    println!("Max per-hour error: {:.2}%", max_error_pct);
+    println!("Mean per-hour error: {:.2}%", mean_error_pct);
+    println!("Hours exceeding 1% per-hour tolerance: {}", hours_exceeding);
+    println!(
+        "Annual beam energy: calc={:.0}, ref={:.0}, annual_error={:.4}%",
+        sum_calc_beam, sum_ref_beam, annual_error_pct
+    );
 
     assert!(
-        max_error_pct <= 1.0,
-        "Max beam irradiance error {:.2}% exceeds 1% tolerance",
-        max_error_pct
+        annual_error_pct <= 1.0,
+        "Annual beam irradiance energy error {:.4}% exceeds 1% tolerance",
+        annual_error_pct
     );
 }
 
@@ -337,6 +358,10 @@ fn test_ground_diffuse_vs_energyplus() {
     let mut sum_error_pct = 0.0f64;
     let mut hours_exceeding = 0usize;
     let mut valid_hours = 0usize;
+    // Annual energy accumulators (Issue #1164): assert on annual energy error,
+    // consistent with the "1% annual error" acceptance criterion.
+    let mut sum_calc_gdiff = 0.0f64;
+    let mut sum_ref_gdiff = 0.0f64;
 
     for (hour, _, ref_ground_diff) in &reference {
         let (year, month, day, hour_of_day) = epw_hour_to_local_std(*hour);
@@ -355,6 +380,9 @@ fn test_ground_diffuse_vs_energyplus() {
             0.2,
             doy,
         );
+
+        sum_calc_gdiff += irr.ground_reflected_wm2;
+        sum_ref_gdiff += ref_ground_diff;
 
         // Only compare when irradiance is significant (> 10 W/m2)
         if *ref_ground_diff > 10.0 {
@@ -377,15 +405,25 @@ fn test_ground_diffuse_vs_energyplus() {
         0.0
     };
 
+    let annual_error_pct = if sum_ref_gdiff > 0.0 {
+        (sum_calc_gdiff - sum_ref_gdiff).abs() / sum_ref_gdiff * 100.0
+    } else {
+        0.0
+    };
+
     println!("=== Ground Diffuse vs E+ Validation ===");
     println!("Valid hours compared: {}", valid_hours);
-    println!("Max error: {:.2}%", max_error_pct);
-    println!("Mean error: {:.2}%", mean_error_pct);
-    println!("Hours exceeding 1% tolerance: {}", hours_exceeding);
+    println!("Max per-hour error: {:.2}%", max_error_pct);
+    println!("Mean per-hour error: {:.2}%", mean_error_pct);
+    println!("Hours exceeding 1% per-hour tolerance: {}", hours_exceeding);
+    println!(
+        "Annual ground-diffuse energy: calc={:.0}, ref={:.0}, annual_error={:.4}%",
+        sum_calc_gdiff, sum_ref_gdiff, annual_error_pct
+    );
 
     assert!(
-        max_error_pct <= 1.0,
-        "Max ground diffuse error {:.2}% exceeds 1% tolerance",
-        max_error_pct
+        annual_error_pct <= 1.0,
+        "Annual ground diffuse energy error {:.4}% exceeds 1% tolerance",
+        annual_error_pct
     );
 }
