@@ -741,10 +741,10 @@ const CASE_900_REF: EnergyReference = EnergyReference {
 ///
 /// This is the core isolation helper: it proves the engine produces its
 /// results from the physics spec alone, not from any case-aware code path.
-fn run_blind_annual_energy(spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
-                           epw_path: &str)
-    -> (f64, f64, f64, f64)
-{
+fn run_blind_annual_energy(
+    spec: &fluxion::validation::ashrae_140_cases::CaseSpec,
+    epw_path: &str,
+) -> (f64, f64, f64, f64) {
     let mut model = ThermalModel::<VectorField>::from_spec(spec);
     let weather = fluxion::weather::epw::EpwWeatherSource::from_file(epw_path)
         .expect("EPW weather file must be present in assets/weather/");
@@ -807,10 +807,8 @@ fn read_reference_band(csv_name: &str, metric: &str) -> (f64, f64) {
 #[test]
 fn test_case_600_blind_energy_infrastructure() {
     let spec = ASHRAE140Case::Case600.spec();
-    let (h, c, ph, pc) = run_blind_annual_energy(
-        &spec,
-        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
-    );
+    let (h, c, ph, pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
 
     println!(
         "[#1147 Case 600 blind] H={h:.3} MWh, C={c:.3} MWh, \
@@ -829,9 +827,7 @@ fn test_case_600_blind_energy_infrastructure() {
     // Reference CSV must parse (proves the data file is well-formed).
     let (h_lo, h_hi) = read_reference_band("case_600_energy_reference.csv", "annual_heating");
     let (c_lo, c_hi) = read_reference_band("case_600_energy_reference.csv", "annual_cooling");
-    println!(
-        "[#1147 Case 600 ref] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh"
-    );
+    println!("[#1147 Case 600 ref] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh");
     assert!(h_lo > 0.0 && h_hi > h_lo, "malformed heating reference");
     assert!(c_lo > 0.0 && c_hi > c_lo, "malformed cooling reference");
 }
@@ -849,10 +845,8 @@ fn test_case_600_blind_energy_infrastructure() {
 #[ignore = "blocked by cooling-load physics gap; see ARCHITECTURE.md Zone Balance status"]
 fn test_case_600_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case600.spec();
-    let (h, c, _ph, _pc) = run_blind_annual_energy(
-        &spec,
-        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
-    );
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
 
     let (h_lo, h_hi) = CASE_600_REF.annual_heating_band();
     let (c_lo, c_hi) = CASE_600_REF.annual_cooling_band();
@@ -877,10 +871,8 @@ fn test_case_600_annual_energy_ashrae140_tolerance() {
 #[test]
 fn test_case_900_blind_energy_infrastructure() {
     let spec = ASHRAE140Case::Case900.spec();
-    let (h, c, ph, pc) = run_blind_annual_energy(
-        &spec,
-        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
-    );
+    let (h, c, ph, pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
 
     println!(
         "[#1147 Case 900 blind] H={h:.3} MWh, C={c:.3} MWh, \
@@ -906,9 +898,7 @@ fn test_case_900_blind_energy_infrastructure() {
 
     let (h_lo, h_hi) = read_reference_band("case_900_energy_reference.csv", "annual_heating");
     let (c_lo, c_hi) = read_reference_band("case_900_energy_reference.csv", "annual_cooling");
-    println!(
-        "[#1147 Case 900 ref] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh"
-    );
+    println!("[#1147 Case 900 ref] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh");
     assert!(h_lo > 0.0 && h_hi > h_lo, "malformed heating reference");
     assert!(c_lo > 0.0 && c_hi > c_lo, "malformed cooling reference");
 }
@@ -918,10 +908,8 @@ fn test_case_900_blind_energy_infrastructure() {
 #[ignore = "blocked by cooling-load physics gap; see ARCHITECTURE.md Zone Balance status"]
 fn test_case_900_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case900.spec();
-    let (h, c, _ph, _pc) = run_blind_annual_energy(
-        &spec,
-        "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw",
-    );
+    let (h, c, _ph, _pc) =
+        run_blind_annual_energy(&spec, "assets/weather/USA_CO_Golden-NREL.724666_TMY3.epw");
 
     let (h_lo, h_hi) = CASE_900_REF.annual_heating_band();
     let (c_lo, c_hi) = CASE_900_REF.annual_cooling_band();
@@ -947,8 +935,16 @@ fn test_case_900_annual_energy_ashrae140_tolerance() {
 #[test]
 fn test_reference_csv_files_present_and_parseable() {
     let cases = [
-        ("case_600_energy_reference.csv", "annual_heating", "annual_cooling"),
-        ("case_900_energy_reference.csv", "annual_heating", "annual_cooling"),
+        (
+            "case_600_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
+        (
+            "case_900_energy_reference.csv",
+            "annual_heating",
+            "annual_cooling",
+        ),
     ];
     for (csv, h_metric, c_metric) in cases {
         let (h_lo, h_hi) = read_reference_band(csv, h_metric);
