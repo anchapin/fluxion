@@ -134,6 +134,8 @@ graph TD
 - `HourlyWeatherData` in `weather/mod.rs`
 - `WeatherSource` trait in `weather/mod.rs`
 
+**EPW parsing contract** (#1164): All EPW parsers (`parse`, `parse_epw_v3`, `parse_epw_amy`, `parse_epw_iwec`) must skip all 8 standard EPW header lines before the data section (LOCATION, DESIGN CONDITIONS, TYPICAL/EXTREME PERIODS, GROUND TEMPERATURES, HOLIDAYS/DAYLIGHT SAVINGS, COMMENTS 1, COMMENTS 2, DATA PERIODS). The `is_epw_header_line()` helper performs this check by prefix. This is required because `GROUND TEMPERATURES` carries 35+ comma-separated monthly values and would otherwise pass the field-count guard, inserting a spurious first record that shifts all real data by one position. The returned `Vec` is time-aligned: index `i` corresponds to EPW hour `i+1` (row `i` represents the period `(i mod 24):00`–`(i mod 24)+1:00`), so direct indexing by callers yields correct data without additional offset.
+
 **Reference data**: `tests/reference_data/weather/denver_tmy3_reference.csv` (8760 rows; columns: hour, dry_bulb_temp_c, humidity_rh_pct, dni_wm2, dhi_wm2, ghi_wm2, wind_speed_ms, humidity_ratio_kgkg). Station mismatch corrected in #1142 (now Golden-NREL TMY3). The derived `humidity_ratio_kgkg` column uses the same saturation curve as `psychrometrics.rs` (Magnus-Tetens ≥0°C, ASHRAE Hyland-Wexler ice <0°C) so it is EnergyPlus-consistent across the full temperature range (#1145).
 
 ---

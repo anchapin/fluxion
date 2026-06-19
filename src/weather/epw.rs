@@ -119,6 +119,43 @@ fn parse_optional_field(field: &str, default: f64) -> f64 {
     trimmed.parse::<f64>().unwrap_or(default)
 }
 
+/// Returns `true` if the given line is an EPW header line that must be skipped
+/// during data parsing.
+///
+/// Standard EPW files contain exactly 8 header lines before the data section:
+///
+/// 1. `LOCATION`
+/// 2. `DESIGN CONDITIONS`
+/// 3. `TYPICAL/EXTREME PERIODS`
+/// 4. `GROUND TEMPERATURES`
+/// 5. `HOLIDAYS/DAYLIGHT SAVINGS`
+/// 6. `COMMENTS 1`
+/// 7. `COMMENTS 2`
+/// 8. `DATA PERIODS`
+///
+/// Most of these have fewer than 35 comma-separated fields and are naturally
+/// filtered out by the `fields.len() < 35` guard in the parse loops. However,
+/// the `GROUND TEMPERATURES` header carries monthly temperatures at multiple
+/// soil depths and can easily contain 35+ fields. Without this prefix check it
+/// is mis-parsed as a data record, inserting a spurious first row that shifts
+/// every subsequent record by one position (Issue #1164).
+///
+/// EPW data lines always begin with a 4-digit year, so no legitimate data line
+/// can start with any of these prefixes.
+fn is_epw_header_line(line: &str) -> bool {
+    const HEADER_PREFIXES: &[&str] = &[
+        "LOCATION",
+        "DESIGN CONDITIONS",
+        "TYPICAL/EXTREME PERIODS",
+        "GROUND TEMPERATURES",
+        "HOLIDAYS/DAYLIGHT SAVINGS",
+        "COMMENTS 1",
+        "COMMENTS 2",
+        "DATA PERIODS",
+    ];
+    HEADER_PREFIXES.iter().any(|prefix| line.starts_with(prefix))
+}
+
 /// Detect EPW file version from header.
 ///
 /// EPW files identify their format in the first few lines. This function
@@ -364,13 +401,12 @@ impl EpwWeatherSource {
         for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
 
-            // Skip header lines (start with "LOCATION", "DESIGN CONDITIONS", etc.)
-            if line.starts_with("LOCATION") || line.starts_with("DESIGN CONDITIONS") {
-                continue;
-            }
-
-            // Skip data period lines
-            if line.starts_with("DATA PERIODS") || line.is_empty() {
+            // Skip all 8 EPW header lines and empty lines.
+            // Issue #1164: previously only LOCATION/DESIGN CONDITIONS/DATA PERIODS were
+            // skipped by prefix; the GROUND TEMPERATURES header (35+ fields) slipped
+            // through the field-count guard and became a spurious first record,
+            // shifting all real data by one position.
+            if is_epw_header_line(&line) || line.is_empty() {
                 continue;
             }
 
@@ -431,13 +467,8 @@ impl EpwWeatherSource {
         for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
 
-            // Skip header lines (start with "LOCATION", "DESIGN CONDITIONS", etc.)
-            if line.starts_with("LOCATION") || line.starts_with("DESIGN CONDITIONS") {
-                continue;
-            }
-
-            // Skip data period lines
-            if line.starts_with("DATA PERIODS") || line.is_empty() {
+            // Skip all 8 EPW header lines and empty lines (Issue #1164).
+            if is_epw_header_line(&line) || line.is_empty() {
                 continue;
             }
 
@@ -497,13 +528,8 @@ impl EpwWeatherSource {
         for line in buffered.lines() {
             let line = line.map_err(|e| WeatherError::IoError(e.to_string()))?;
 
-            // Skip header lines (start with "LOCATION", "DESIGN CONDITIONS", etc.)
-            if line.starts_with("LOCATION") || line.starts_with("DESIGN CONDITIONS") {
-                continue;
-            }
-
-            // Skip data period lines
-            if line.starts_with("DATA PERIODS") || line.is_empty() {
+            // Skip all 8 EPW header lines and empty lines (Issue #1164).
+            if is_epw_header_line(&line) || line.is_empty() {
                 continue;
             }
 
@@ -958,6 +984,112 @@ mod tests {
 
         // Test with invalid number (should use default)
         assert_eq!(super::parse_optional_field("invalid", 50.0), 50.0);
+    }
+
+    #[test]
+    fn test_is_epw_header_line() {
+        // All 8 standard EPW header prefixes are recognised.
+        assert!(super::is_epw_header_line(
+            "LOCATION,Denver,CO,USA,TMY3,724666,39.74,-105.18,-7.0,1829.0"
+        ));
+        assert!(super::is_epw_header_line("DESIGN CONDITIONS,1"));
+        assert!(super::is_epw_header_line("TYPICAL/EXTREME PERIODS,6"));
+        assert!(super::is_epw_header_line(
+            "GROUND TEMPERATURES,3,.5,,,,1.34,5.12"
+        ));
+        assert!(super::is_epw_header_line("HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0"));
+        assert!(super::is_epw_header_line("COMMENTS 1,Custom/User Format"));
+        assert!(super::is_epw_header_line("COMMENTS 2, -- Ground temps"));
+        assert!(super::is_epw_header_line(
+            "DATA PERIODS,1,1,Data,Sunday, 1/ 1,12/31"
+        ));
+
+        // Data lines (start with a 4-digit year) are NOT headers.
+        assert!(!super::is_epw_header_line(
+            "1999,1,1,1,0,?9?9?9?9E0,-3.0,-4.0,92,80600,0,0,257,0,0,0,0,0,0,0,0,0.0,9,8,16.1"
+        ));
+        assert!(!super::is_epw_header_line(""));
+    }
+
+    /// Builds a minimal EPW string that includes a `GROUND TEMPERATURES`
+    /// header with 35+ fields — the exact shape that triggered Issue #1164.
+    fn create_epw_with_ground_temps_header() -> String {
+        let location = "LOCATION,Denver,CO,USA,TMY3,724666,39.74,-105.18,-7.0,1829.0";
+        let design = "DESIGN CONDITIONS,1";
+        let typical = "TYPICAL/EXTREME PERIODS,6";
+        // GROUND TEMPERATURES with 3 depths × 12 monthly values = 36+ fields.
+        let ground = "GROUND TEMPERATURES,3,0.5,,,,-0.6,1.3,5.1,8.7,15.5,19.0,20.0,18.2,14.0,8.8,3.7,0.3,2,2.1,2.6,4.7,7.1,12.3,15.6,17.3,16.9,14.5,10.9,6.9,3.7,4,4.8,4.5,5.5,6.8";
+        let holidays = "HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0";
+        let comments1 = "COMMENTS 1,Test data";
+        let comments2 = "COMMENTS 2,Issue 1164 regression";
+        let data_periods = "DATA PERIODS,1,1,Data,Sunday, 1/ 1,12/31";
+
+        // Two real data rows.
+        let data = [
+            "1999,1,1,1,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9*9*9,-3.0,-4.0,92,80600,0,0,257,0,0,0,0,0,0,0,0,0.0,9,8,16.1,3300,9,999999999,89,0.0310,0,88,0.330,999.0,99.0",
+            "1999,1,1,2,0,?9?9?9?9E0?9?9?9?9?9?9?9?9?9?9?9?9?9?9?9*9*9?9*9*9,-2.0,-6.0,77,80600,0,0,261,0,0,0,0,0,0,0,170,2.1,10,9,16.1,3000,9,999999999,89,0.0310,0,88,0.330,999.0,99.0",
+        ];
+
+        format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n{}\n",
+            location,
+            design,
+            typical,
+            ground,
+            holidays,
+            comments1,
+            comments2,
+            data_periods,
+            data.join("\n")
+        )
+    }
+
+    #[test]
+    fn test_parse_epw_v3_skips_ground_temps_header() {
+        // Issue #1164 regression test: the GROUND TEMPERATURES header line
+        // has 35+ fields and must NOT be parsed as a data record.
+        let epw = create_epw_with_ground_temps_header();
+        let records = EpwWeatherSource::parse_epw_v3(Cursor::new(epw)).unwrap();
+
+        // Exactly 2 data rows, NOT 3 (the header must not sneak in).
+        assert_eq!(
+            records.len(),
+            2,
+            "GROUND TEMPERATURES header must not be parsed as a data record"
+        );
+
+        // First record must be the real hour-1 row, not the header garbage.
+        assert_eq!(records[0].year, 1999);
+        assert_eq!(records[0].month, 1);
+        assert_eq!(records[0].day, 1);
+        assert_eq!(records[0].hour, 1, "first record must be EPW hour 1");
+        assert_eq!(records[0].dry_bulb_temp, -3.0);
+        assert_eq!(records[0].hour, 1);
+    }
+
+    #[test]
+    fn test_parse_epw_v3_matches_trait_path() {
+        // parse_epw_v3 and the WeatherSource trait path (parse) must produce
+        // identical field values at matching indices for the same file.
+        let epw_data = include_bytes!("../../tests/test_data/denver.epw");
+        let v3 = EpwWeatherSource::parse_epw_v3(Cursor::new(&epw_data[..])).unwrap();
+        let source = EpwWeatherSource::from_file("tests/test_data/denver.epw").unwrap();
+
+        // Same record count (8760) — no spurious header record in parse_epw_v3.
+        assert_eq!(v3.len(), source.record_count());
+        assert_eq!(v3.len(), 8760);
+
+        // Spot-check DNI/DHI/temperature alignment at several hours.
+        for &h in &[0usize, 1, 7, 100, 1000, 5000, 8759] {
+            let trait_data = source.get_hourly_data(h).unwrap();
+            assert_eq!(v3[h].dni, trait_data.dni, "DNI mismatch at hour {}", h);
+            assert_eq!(v3[h].dhi, trait_data.dhi, "DHI mismatch at hour {}", h);
+            assert_eq!(
+                v3[h].dry_bulb_temp, trait_data.dry_bulb_temp,
+                "dry_bulb_temp mismatch at hour {}",
+                h
+            );
+        }
     }
 
     #[test]
