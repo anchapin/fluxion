@@ -93,7 +93,7 @@ pub fn saturation_vapor_pressure(temperature: f64) -> f64 {
             + C5 * tk.powi(3)
             + C6 * tk.powi(4)
             + C7 * tk.ln())
-            .exp()
+        .exp()
     } else {
         const A: f64 = 610.78;
         const B: f64 = 17.27;
@@ -159,9 +159,9 @@ pub fn calculate_dew_point(dry_bulb: f64, relative_humidity: f64, _pressure: f64
 
         // Central finite-difference derivative of saturation_vapor_pressure
         // (consistent with whichever saturation branch is active).
-        let derivative =
-            (saturation_vapor_pressure(td + DERIV_EPSILON) - saturation_vapor_pressure(td - DERIV_EPSILON))
-                / (2.0 * DERIV_EPSILON);
+        let derivative = (saturation_vapor_pressure(td + DERIV_EPSILON)
+            - saturation_vapor_pressure(td - DERIV_EPSILON))
+            / (2.0 * DERIV_EPSILON);
 
         // Prevent division by zero
         if derivative.abs() < 1e-10 {
