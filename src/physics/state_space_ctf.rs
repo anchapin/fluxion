@@ -28,11 +28,16 @@ const R_SE: f64 = 0.044; // Exterior film
 
 /// Minimum and maximum nodes per material layer.
 ///
-/// E+ uses 6-18, but with films in the state-space and a 1-hour timestep,
-/// too many nodes causes the matrix exponential eigenvalues to approach 1,
-/// making Φ > 1 (unstable). 6 nodes per layer gives stable coefficients
-/// with exact DC gain via the standard Seem formulation.
-const MIN_NODES: usize = 6;
+/// E+ uses 1-18 nodes per layer, based on the Fourier number criterion
+/// N = max(1, ceil(thickness / sqrt(2*alpha*timestep))).
+///
+/// Previous MIN_NODES=6 caused artificially high surface conductances for thin
+/// layers (e.g. Wood Siding at 0.009m → dx=0.0015m → h_surf=108.9 W/m²K,
+/// 195x larger than U=0.556). This made Y₀ explode and caused Newton-Raphson
+/// divergence in the CTF coupling solver.
+///
+/// With MIN_NODES=1, thin low-mass layers get 1 node, matching EnergyPlus.
+const MIN_NODES: usize = 1;
 const MAX_NODES: usize = 18;
 
 /// Convergence limit for CTF coefficient iteration (ratio).
@@ -2679,16 +2684,19 @@ mod expm_debug_tests {
             exp_pade[0][0], exp_taylor[0][0]
         );
         eprintln!(
-            "Padé exp[0][5] = {:.10}, Taylor = {:.10}",
-            exp_pade[0][5], exp_taylor[0][5]
+            "Padé exp[0][n-1] = {:.10}, Taylor = {:.10}",
+            exp_pade[0][n - 1],
+            exp_taylor[0][n - 1]
         );
         eprintln!(
-            "Padé exp[5][0] = {:.10}, Taylor = {:.10}",
-            exp_pade[5][0], exp_taylor[5][0]
+            "Padé exp[n-1][0] = {:.10}, Taylor = {:.10}",
+            exp_pade[n - 1][0],
+            exp_taylor[n - 1][0]
         );
         eprintln!(
-            "Padé exp[5][5] = {:.10}, Taylor = {:.10}",
-            exp_pade[5][5], exp_taylor[5][5]
+            "Padé exp[n-1][n-1] = {:.10}, Taylor = {:.10}",
+            exp_pade[n - 1][n - 1],
+            exp_taylor[n - 1][n - 1]
         );
 
         // Column sums of exp(A*t) should give (exp(A*t)) * ones
@@ -2717,8 +2725,8 @@ mod expm_debug_tests {
         .unwrap();
         writeln!(f, "Padé exp[0][0] = {:.15}", exp_pade[0][0]).unwrap();
         writeln!(f, "Taylor exp[0][0] = {:.15}", exp_taylor[0][0]).unwrap();
-        writeln!(f, "Padé exp[5][5] = {:.15}", exp_pade[5][5]).unwrap();
-        writeln!(f, "Taylor exp[5][5] = {:.15}", exp_taylor[5][5]).unwrap();
+        writeln!(f, "Padé exp[n-1][n-1] = {:.15}", exp_pade[n - 1][n - 1]).unwrap();
+        writeln!(f, "Taylor exp[n-1][n-1] = {:.15}", exp_taylor[n - 1][n - 1]).unwrap();
         for j in 0..n {
             let cs_pade: f64 = (0..n).map(|i| exp_pade[i][j]).sum();
             let cs_taylor: f64 = (0..n).map(|i| exp_taylor[i][j]).sum();

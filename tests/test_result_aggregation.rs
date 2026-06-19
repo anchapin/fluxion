@@ -40,6 +40,7 @@ fn test_pass_rate_all_passed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -52,6 +53,7 @@ fn test_pass_rate_all_passed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -83,6 +85,7 @@ fn test_pass_rate_all_failed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -95,6 +98,7 @@ fn test_pass_rate_all_failed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -126,6 +130,7 @@ fn test_pass_rate_mixed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -138,6 +143,7 @@ fn test_pass_rate_mixed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -150,6 +156,7 @@ fn test_pass_rate_mixed() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -199,6 +206,7 @@ fn test_mae_simple() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -211,6 +219,7 @@ fn test_mae_simple() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -261,6 +270,7 @@ fn test_max_deviation_simple() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -273,6 +283,7 @@ fn test_max_deviation_simple() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -285,6 +296,7 @@ fn test_max_deviation_simple() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -317,6 +329,7 @@ fn test_fail_count() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -329,6 +342,7 @@ fn test_fail_count() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "600".to_string(),
@@ -341,6 +355,7 @@ fn test_fail_count() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),
@@ -374,6 +389,7 @@ fn test_worst_cases() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "900".to_string(),
@@ -386,6 +402,7 @@ fn test_worst_cases() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
             ValidationResult {
                 case_id: "195".to_string(),
@@ -398,6 +415,7 @@ fn test_worst_cases() {
                 per_program: None,
                 peak_date: None,
                 peak_hour: None,
+                peak_timestamp: None,
             },
         ],
         benchmark_data: std::collections::HashMap::new(),

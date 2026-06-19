@@ -207,7 +207,7 @@ impl CtfZoneCouplingSolver {
             // For stability, we use the linearized conductance:
             // ΔT_si = residual / (h_ci + h_ri + Z₀)
             //
-            // Note: Z₀ is always positive, so (h_i + Z₀) > h_i
+            // Note: Z₀ should be positive for stable CTF coefficients
             let z0 = solver.coefficients.z.first().copied().unwrap_or(1.0);
             let effective_conductance = self.coefficients.h_i + z0;
 

@@ -991,6 +991,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let loads_ref = self.0.loads.as_ref();
         let solar_ref = self.0.solar_gains.as_ref();
+        let opaque_solar_ref = self.0.opaque_solar_gains.as_ref();
         let area_ref = self.0.zone_area.as_ref();
 
         let mut phi_ia_data = Vec::with_capacity(self.0.num_zones);
@@ -1001,12 +1002,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         for i in 0..self.0.num_zones {
             let load_w = loads_ref[i] * area_ref[i];
             let sol_w = solar_ref[i] * area_ref[i];
+            let opaque_sol_w = opaque_solar_ref[i] * area_ref[i];
 
             // SESSION 76 FIX: Include solar_distribution_to_air in 6R2C (was missing!)
             // This sends a fraction of solar directly to zone air (immediate heating/cooling)
             phi_ia_data.push(load_w * conv_frac + sol_w * sol_to_air_frac);
             phi_st_data.push(load_w * st_int_frac + sol_w * st_sol_frac);
-            phi_m_env_data.push(load_w * m_air_frac + sol_w * m_env_sol_frac);
+            // LEAKY BUCKET FIX: Add opaque solar gains to envelope mass node
+            // Opaque surfaces (walls, roof, floor) absorb solar radiation and transfer
+            // it to the thermal mass. Without this, solar heat bypasses thermal mass.
+            phi_m_env_data.push(load_w * m_air_frac + sol_w * m_env_sol_frac + opaque_sol_w);
             phi_m_int_data.push(sol_w * m_int_sol_frac);
         }
 
@@ -2080,6 +2085,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // - phi_ia (convective to air): handled via compute_zone_air_temperature
             let _zone_area_val = self.0.zone_area.as_ref()[zone_idx];
             let phi_st_zone = phi_st.as_ref()[zone_idx];
+            // phi_m contains all solar gains (window + opaque) to mass
             let phi_m_zone = phi_m.as_ref()[zone_idx];
             // Distribute phi_st to envelope nodes proportional to h_tr_ms
             let h_ms_w = solver.mass.wall.h_tr_ms;

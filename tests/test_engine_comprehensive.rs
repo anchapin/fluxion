@@ -144,9 +144,6 @@ fn test_thermal_mass_integration() {
     let mut model = ThermalModel::<VectorField>::new(1);
     let surrogates = SurrogateManager::default();
 
-    // Enable thermal mass coupling enhancement
-    model.thermal_mass_coupling_enhancement = 2.0;
-
     // Run a step (should use thermal mass)
     let step_params = StepParameters {
         use_ai: false,

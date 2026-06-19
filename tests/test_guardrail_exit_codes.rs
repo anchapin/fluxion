@@ -22,6 +22,7 @@ fn make_report(
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         });
     }
     // Add benchmark data for throughput (though not used by guardrails)

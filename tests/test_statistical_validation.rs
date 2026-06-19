@@ -234,6 +234,7 @@ fn test_nmbe_calculation() {
         per_program: None,
         peak_date: None,
         peak_hour: None,
+        peak_timestamp: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -254,6 +255,7 @@ fn test_nmbe_calculation() {
         per_program: None,
         peak_date: None,
         peak_hour: None,
+        peak_timestamp: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -274,6 +276,7 @@ fn test_nmbe_calculation() {
         per_program: None,
         peak_date: None,
         peak_hour: None,
+        peak_timestamp: None,
     }];
 
     let nmbe = calculate_nmbe(&results);
@@ -303,6 +306,7 @@ fn test_cv_rmse_calculation() {
         per_program: None,
         peak_date: None,
         peak_hour: None,
+        peak_timestamp: None,
     }];
 
     let cv_rmse = calculate_cv_rmse(&results);
@@ -323,6 +327,7 @@ fn test_cv_rmse_calculation() {
         per_program: None,
         peak_date: None,
         peak_hour: None,
+        peak_timestamp: None,
     }];
 
     let cv_rmse = calculate_cv_rmse(&results);
@@ -381,6 +386,7 @@ fn test_ci_nmbe_calculation() {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         },
         ValidationResult {
             case_id: "test2".to_string(),
@@ -393,6 +399,7 @@ fn test_ci_nmbe_calculation() {
             per_program: None,
             peak_date: None,
             peak_hour: None,
+            peak_timestamp: None,
         },
     ];
 
