@@ -1216,11 +1216,11 @@ mod tests {
         // R_plasterboard = 0.012 / 0.16 = 0.075
         // R_fiberglass = 0.066 / 0.04 = 1.65
         // R_siding = 0.009 / 0.14 ≈ 0.064286
-        // R_ext = 1 / 29.3 ≈ 0.034130 m²K/W (ASHRAE 140 Sec. 5.2, was 1/25.0 = 0.04)
-        // R_total ≈ 0.120627 + 0.075 + 1.65 + 0.064286 + 0.034130 = 1.944043
+        // R_ext = 1 / 18.3 ≈ 0.054645 m²K/W (ASHRAE 140 Sec. 5.2)
+        // R_total ≈ 0.120627 + 0.075 + 1.65 + 0.064286 + 0.054645 = 1.964558
         let r_total = construction.r_value_total(None, None);
 
-        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 29.3;
+        let expected_r = 1.0 / 8.29 + 0.012 / 0.16 + 0.066 / 0.04 + 0.009 / 0.14 + 1.0 / 18.3;
         assert!((r_total - expected_r).abs() < EPSILON);
 
         // Check that U = 1/R
