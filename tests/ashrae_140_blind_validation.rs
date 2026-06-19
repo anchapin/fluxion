@@ -417,7 +417,8 @@ struct MonthlyValidationResult {
 /// artifact is unavailable. Matches the CSV-loading convention used in
 /// `tests/zone_balance_eplus_isolation.rs`.
 fn load_monthly_reference(case_id: &str) -> Option<MonthlyReference> {
-    let filename = format!("tests/reference_data/ashrae140/monthly/case_{case_id}_monthly_reference.csv");
+    let filename =
+        format!("tests/reference_data/ashrae140/monthly/case_{case_id}_monthly_reference.csv");
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/");
     let full = format!("{path}{filename}");
     let data = match std::fs::read_to_string(&full) {
@@ -461,9 +462,7 @@ fn load_monthly_reference(case_id: &str) -> Option<MonthlyReference> {
             Some(i) => i,
             None => continue,
         };
-        let parse = |s: &str| -> f64 {
-            s.trim().parse::<f64>().unwrap_or(0.0)
-        };
+        let parse = |s: &str| -> f64 { s.trim().parse::<f64>().unwrap_or(0.0) };
         ref_data.heating_mid_mwh[m_idx] = parse(cols[1]);
         ref_data.heating_accept_min_mwh[m_idx] = parse(cols[2]);
         ref_data.heating_accept_max_mwh[m_idx] = parse(cols[3]);
@@ -535,8 +534,7 @@ fn build_monthly_results(
             // Clamp negative simulated energy (numerical noise) to 0 for the
             // in-window test; negative energy is physically meaningless.
             let value_clamped = value.max(0.0);
-            let within_tolerance =
-                value_clamped >= accept_min && value_clamped <= accept_max;
+            let within_tolerance = value_clamped >= accept_min && value_clamped <= accept_max;
 
             out.push(MonthlyValidationResult {
                 case_id: case_id.to_string(),
@@ -568,10 +566,7 @@ fn print_monthly_breakdown(results: &[MonthlyValidationResult]) {
         {
             current_case = Some(r.case_id.clone());
             current_metric = Some(r.metric.to_string());
-            println!(
-                "\nCase {} Monthly {}:",
-                r.case_id, r.metric
-            );
+            println!("\nCase {} Monthly {}:", r.case_id, r.metric);
         }
         let status = if r.within_tolerance { "PASS" } else { "FAIL" };
         println!(
@@ -588,9 +583,7 @@ fn print_monthly_breakdown(results: &[MonthlyValidationResult]) {
     println!("----------------------------------------------------------------------------------------------------");
 }
 
-fn compute_monthly_summary(
-    results: &[MonthlyValidationResult],
-) -> (usize, usize, f64, f64) {
+fn compute_monthly_summary(results: &[MonthlyValidationResult]) -> (usize, usize, f64, f64) {
     let total = results.len();
     let passed = results.iter().filter(|r| r.within_tolerance).count();
     let failed = total.saturating_sub(passed);
