@@ -292,11 +292,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.ctf_enabled = true;
         self.0.ctf_timestep = timestep;
 
-        // === SESSION 77: Initialize CTF-Zone Air Coupling Solver ===
-        // The coupling solver iteratively finds interior surface temperature that satisfies
-        // both the CTF conduction equation and the surface heat balance.
-        // This provides more accurate surface temperature and heat flux calculations.
-        self.0.ctf_zone_coupling_solver = Some(CtfZoneCouplingSolver::new());
+        // === SESSION 77: CTF-Zone Air Coupling Solver ===
+        // DISABLED: The iterative coupling solver creates an explicit feedback loop
+        // between T_zone and T_si, causing exponential divergence (oscillation with
+        // growing amplitude ~3.1x per timestep). The non-iterative solver.step()
+        // path is stable and provides correct CTF flux without coupling instability.
+        // The coupling solver would need implicit (simultaneous) solving of T_zone
+        // and T_si to be stable, which is a future enhancement.
+        // self.0.ctf_zone_coupling_solver = Some(CtfZoneCouplingSolver::new());
     }
 
     /// Disable CTF solver and revert to 5R1C conduction calculation.

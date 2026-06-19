@@ -565,62 +565,42 @@ impl Construction {
     /// // kappa ≈ 9,900 J/m²K (very light mass)
     /// ```
     pub fn iso_13790_effective_capacitance_per_area(&self) -> f64 {
-        // === SESSION 88 FIX: Use ALL mass layers, not half-insulation rule ===
+        // ISO 13790 Annex C half-insulation rule for effective thermal capacitance.
         //
-        // Problem: The half-insulation rule was designed for internally-insulated constructions
-        // (insulation near interior surface). For ASHRAE 140 high-mass walls like Case 900:
-        // - concrete_block (interior) → foam → wood_siding (exterior)
+        // Only layers on the INTERIOR side of the dominant insulation layer contribute
+        // to the effective thermal mass that participates in interior dynamic response.
+        // The insulation layer itself contributes half. Layers EXTERIOR to insulation
+        // contribute nothing (they are thermally decoupled from the interior by the
+        // insulation resistance).
         //
-        // The half-insulation rule classifies these as "Light" (kappa ≈ 140,000 J/m²K)
-        // because only the interior layer counts. But ASHRAE 140 specifies these as
-        // "high-mass" buildings requiring different thermal behavior.
+        // This is critical for correct night minimum temperatures:
+        // - Case 600 roof: plasterboard → fiberglass(112mm) → roof_deck(19mm)
+        //   Without cutoff: roof_deck adds 12,350 J/m²K → Cm inflated 26% → τ bloated
+        //   With cutoff:   only plasterboard + half fiberglass → correct Cm
         //
-        // Fix: Sum ALL layers' thermal capacitance, treating high-density materials
-        // (concrete, brick, stone) as contributing fully and low-density materials
-        // (foam, fiberglass) as contributing 0%.
-        //
-        // This better represents the actual thermal mass of high-mass constructions
-        // where both interior concrete and exterior mass layers store heat.
+        // For high-mass Case 900: exterior mass is captured through h_tr_em conductance,
+        // which properly couples exterior heat flow to the mass node through insulation.
+        let ins_idx = self.find_dominant_insulation_layer_index();
 
         let mut total_kappa = 0.0;
-        for layer in &self.layers {
-            let full_capacitance = layer.thermal_capacitance_per_area();
-            let density = layer.density; // Access field directly
+        let mut active_thickness = 0.0;
+        const MAX_ACTIVE_THICKNESS: f64 = 0.10; // ISO 13790: cap at 10cm from interior
 
-            // === SESSION 88 FIX (v2): Include all mass layers with adjusted thresholds ===
-            //
-            // Problem: Half-insulation rule misclassifies ASHRAE 140 high-mass walls.
-            // Solution: Use density-based contribution with lower thresholds to include
-            // wood/lighter materials that still provide significant thermal mass.
-            //
-            // Density thresholds:
-            // - > 400 kg/m³: Heavy mass (concrete, brick, stone) - full contribution
-            // - > 100 kg/m³: Medium mass (wood, roof deck) - full contribution
-            // - <= 100 kg/m³: Low mass (foam, fiberglass) - 0% contribution
-            //
-            // With these thresholds:
-            // - High-mass wall: 140,000 (concrete) + 11,520 (wood) = ~152,000 J/m²K → Light
-            //   Still not Heavy enough!
-            //
-            // === SESSION 88 FIX (v3): Include wood FULLY, lower Heavy threshold ===
-            //
-            // For ASHRAE 140 Case 900 high-mass walls, we need kappa >= 260,000 for Heavy.
-            // With concrete_block + wood_siding contributing:
-            // - 140,000 (concrete, density=1400) + 23,040 (wood siding, density=500) = ~163,000
-            // Still not enough for Heavy!
-            //
-            // FINAL FIX: Use ALL layers' thermal capacitance for high-mass constructions,
-            // regardless of density. For ASHRAE 140, the construction "type" (concrete vs timber)
-            // determines high vs low mass, not just the kappa value.
-
-            if density > 400.0 {
-                // Heavy mass layer (concrete, brick, stone): full contribution
-                total_kappa += full_capacitance;
-            } else if density > 100.0 {
-                // Medium mass layer (wood, roof deck): full contribution
-                total_kappa += full_capacitance;
+        for (j, layer) in self.layers.iter().enumerate() {
+            if active_thickness >= MAX_ACTIVE_THICKNESS {
+                break;
             }
-            // Low density (<= 100 kg/m³, e.g., foam, fiberglass): 0% contribution
+            let full_cap = layer.thermal_capacitance_per_area();
+            if j < ins_idx {
+                // Interior to insulation: full contribution
+                total_kappa += full_cap;
+                active_thickness += layer.thickness;
+            } else if j == ins_idx {
+                // Insulation layer: half contribution
+                total_kappa += 0.5 * full_cap;
+                active_thickness += layer.thickness;
+            }
+            // Layers exterior to insulation: zero contribution
         }
 
         total_kappa

@@ -28,11 +28,16 @@ const R_SE: f64 = 0.044; // Exterior film
 
 /// Minimum and maximum nodes per material layer.
 ///
-/// E+ uses 6-18, but with films in the state-space and a 1-hour timestep,
-/// too many nodes causes the matrix exponential eigenvalues to approach 1,
-/// making Φ > 1 (unstable). 6 nodes per layer gives stable coefficients
-/// with exact DC gain via the standard Seem formulation.
-const MIN_NODES: usize = 6;
+/// E+ uses 1-18 nodes per layer, based on the Fourier number criterion
+/// N = max(1, ceil(thickness / sqrt(2*alpha*timestep))).
+///
+/// Previous MIN_NODES=6 caused artificially high surface conductances for thin
+/// layers (e.g. Wood Siding at 0.009m → dx=0.0015m → h_surf=108.9 W/m²K,
+/// 195x larger than U=0.556). This made Y₀ explode and caused Newton-Raphson
+/// divergence in the CTF coupling solver.
+///
+/// With MIN_NODES=1, thin low-mass layers get 1 node, matching EnergyPlus.
+const MIN_NODES: usize = 1;
 const MAX_NODES: usize = 18;
 
 /// Convergence limit for CTF coefficient iteration (ratio).

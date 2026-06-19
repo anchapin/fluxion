@@ -13,7 +13,7 @@
 use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::validation::ashrae_140_cases::{ASHRAE140Case, HvacSchedule};
-use fluxion::weather::denver::DenverTmyWeather;
+use fluxion::weather::epw::EpwWeatherSource;
 use fluxion::weather::WeatherSource;
 
 /// Reference ranges for ASHRAE 140 free-floating cases
@@ -55,7 +55,10 @@ mod reference {
 fn simulate_free_float_case(case: ASHRAE140Case) -> (f64, f64) {
     let spec = case.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    // Use real Denver TMY3 EPW data instead of parametric weather generator.
+    // WD600.epw = Denver Intl AP TMY3 (WMO 725650), matching ASHRAE 140 DRYCOLD reference.
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw")
+        .expect("Failed to load WD600.epw — run from project root");
 
     // Verify this is a free-floating case
     assert!(spec.is_free_floating(), "Case should be free-floating");
@@ -698,7 +701,7 @@ fn test_issue_924_ti_free_mass_dominance_regression() {
 fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
     let spec = case.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // Verify this is a free-floating case
     assert!(spec.is_free_floating(), "Case should be free-floating");
@@ -727,7 +730,7 @@ fn simulate_free_float_with_time_series(case: ASHRAE140Case) -> Vec<f64> {
 /// Calculate thermal lag in hours for high-mass building
 /// Thermal lag is the time delay between outdoor temperature peak and indoor temperature peak
 fn calculate_thermal_lag(temperatures: &[f64]) -> f64 {
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // Find outdoor temperature peak (typically around 15:00-16:00 in summer)
     let mut outdoor_temps = Vec::with_capacity(8760);
@@ -778,7 +781,7 @@ where
 {
     let spec = case.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // Verify this is a free-floating case
     assert!(spec.is_free_floating(), "Case should be free-floating");
@@ -908,7 +911,7 @@ fn test_900ff_with_5r1c_model() {
     // Case A: Standard 900FF (high-mass materials + 6R2C + CTF)
     let spec_900ff = ASHRAE140Case::Case900FF.spec();
     let mut model_900ff_6r2c = ThermalModel::<VectorField>::from_spec(&spec_900ff);
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // Disable HVAC
     model_900ff_6r2c.heating_setpoint = -999.0;
@@ -1013,7 +1016,7 @@ fn test_900ff_with_5r1c_model() {
 #[test]
 fn test_900ff_without_ctf() {
     let spec_900ff = ASHRAE140Case::Case900FF.spec();
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // === Case A: 900FF with 6R2C + CTF (CTF enabled by default for 900FF - Issue #913) ===
     let mut model_with_ctf = ThermalModel::<VectorField>::from_spec(&spec_900ff);
@@ -1240,7 +1243,7 @@ fn test_900ff_without_ctf() {
 fn test_mass_temperatures_differ_between_600ff_and_900ff() {
     let spec_600ff = ASHRAE140Case::Case600FF.spec();
     let spec_900ff = ASHRAE140Case::Case900FF.spec();
-    let weather = DenverTmyWeather::new();
+    let weather = EpwWeatherSource::from_file("assets/weather/WD600.epw").expect("Failed to load WD600.epw");
 
     // === Simulate 600FF ===
     let mut model_600ff = ThermalModel::<VectorField>::from_spec(&spec_600ff);
