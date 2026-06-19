@@ -73,7 +73,10 @@ fn diagnose_free_float_network_and_temps() {
         println!("  h_ext = h_w + h_ve       : {:>10.2} W/K", h_ext);
         println!("  Cm (mass capacitance)    : {:>10.2e} J/K", cm);
         println!("  ---- derived (used in t_i_free) ----");
-        println!("  h_ms_is_prod (h_ms*h_is) : {:>10.2} W^2/K^2", h_ms_is_prod);
+        println!(
+            "  h_ms_is_prod (h_ms*h_is) : {:>10.2} W^2/K^2",
+            h_ms_is_prod
+        );
         println!("  term_rest_1 (h_ms+h_is)  : {:>10.2} W/K", term_rest_1);
         println!("  den (t_i_free denom)     : {:>10.2} W^2/K^2", den);
         println!("  h_tr_3 (dynamic mass)    : {:>10.2} W/K", h_tr_3);
@@ -83,7 +86,10 @@ fn diagnose_free_float_network_and_temps() {
             "  H_air_mass / h_ext ratio : {:>10.3}  (>1 => air tracks sluggish mass)",
             h_air_mass_ss / h_ext.max(1e-9)
         );
-        println!("  tau_mass (Cm/(h_em+h3))  : {:>10.2} hours", tau_mass_hours);
+        println!(
+            "  tau_mass (Cm/(h_em+h3))  : {:>10.2} hours",
+            tau_mass_hours
+        );
 
         // ---- Run free-float for the year ----
         // Warm up (2 years) to reach periodic steady state for high-mass cases.
@@ -120,9 +126,24 @@ fn diagnose_free_float_network_and_temps() {
         }
 
         println!("  ---- free-float annual results ----");
-        println!("  Outdoor swing            : {:.1} to {:.1} C  (Δ{:.1})", min_out, max_out, max_out - min_out);
-        println!("  AIR temp swing           : {:.1} to {:.1} C  (Δ{:.1})", min_air, max_air, max_air - min_air);
-        println!("  MASS temp swing          : {:.1} to {:.1} C  (Δ{:.1})", min_mass, max_mass, max_mass - min_mass);
+        println!(
+            "  Outdoor swing            : {:.1} to {:.1} C  (Δ{:.1})",
+            min_out,
+            max_out,
+            max_out - min_out
+        );
+        println!(
+            "  AIR temp swing           : {:.1} to {:.1} C  (Δ{:.1})",
+            min_air,
+            max_air,
+            max_air - min_air
+        );
+        println!(
+            "  MASS temp swing          : {:.1} to {:.1} C  (Δ{:.1})",
+            min_mass,
+            max_mass,
+            max_mass - min_mass
+        );
         println!(
             "  Mass swing / Air swing   : {:.3}  (<1 => mass damps air)",
             (max_mass - min_mass) / (max_air - min_air).max(1e-9)
