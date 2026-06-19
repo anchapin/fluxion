@@ -1,0 +1,57 @@
+# EnergyPlus Reference: ASHRAE 140 Case 900 — Monthly Heating/Cooling Energy (INTERIM)
+#
+# !!! STATUS: INTERIM / PLACEHOLDER — pending direct EnergyPlus monthly output !!!
+#
+# This file is consumed by tests/ashrae_140_blind_validation.rs (monthly metric
+# infrastructure added in issue #1165). See monthly/README.md for the full
+# provenance, methodology, caveats, and the TODO to replace these values with
+# direct EnergyPlus monthly totals.
+#
+# Case 900: High-mass 6x8x2.7m (200mm concrete), 12m² south window, 0.5 ACH,
+# 20°C heat / 27°C cool. EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw.
+#
+# METHODOLOGY (interim, fully reproducible):
+#   monthly_mid = ANNUAL_AUTHORITY_MID × MONTHLY_FRACTION
+#   where ANNUAL_AUTHORITY_MID = midpoint of the ASHRAE 140-2023 Annex B
+#   reference band across BEM programs (same source as the annual band in
+#   tests/reference_data/zone_balance/case_900_energy_reference.csv and
+#   src/validation/benchmark.rs Case 900):
+#       annual_heating 1.17..2.04 MWh -> mid 1.605 MWh
+#       annual_cooling 8.00..10.50 MWh -> mid 9.250 MWh
+#   and MONTHLY_FRACTION is the heating/cooling degree-day share computed from
+#   the repository's own hourly weather file
+#   tests/reference_data/weather/denver_tmy3_reference.csv (balance point 18.3°C,
+#   ASHRAE Fundamentals degree-day method). Fractions sum to 1.0; monthly values
+#   therefore sum to the authoritative annual midpoint.
+#
+# ACCEPTANCE WINDOW (Phase D, issue #668 / #1165): ±10% around the monthly
+# midpoint, i.e. accept_min = mid × 0.90, accept_max = mid × 1.10.
+#
+# CAVEAT: degree-day shape is a temperature-driven approximation and does NOT
+# capture high-mass thermal lag. Case 900 stores daytime solar gains in the
+# 200mm concrete and releases them overnight/shoulder-hours, so the true monthly
+# cooling shape is flatter and shifted vs. the pure CDD distribution used here.
+# Treat values as a reporting baseline only until direct E+ monthly output
+# replaces them.
+#
+# Columns:
+#   month                       Jan..Dec (TMY non-leap year)
+#   heating_mid_mwh             interim reference midpoint (MWh)
+#   heating_accept_min_mwh      Phase D lower bound (mid - 10%) (MWh)
+#   heating_accept_max_mwh      Phase D upper bound (mid + 10%) (MWh)
+#   cooling_mid_mwh             interim reference midpoint (MWh)
+#   cooling_accept_min_mwh      Phase D lower bound (mid - 10%) (MWh)
+#   cooling_accept_max_mwh      Phase D upper bound (mid + 10%) (MWh)
+month,heating_mid_mwh,heating_accept_min_mwh,heating_accept_max_mwh,cooling_mid_mwh,cooling_accept_min_mwh,cooling_accept_max_mwh
+Jan,0.2401,0.2161,0.2641,0.0000,0.0000,0.0000
+Feb,0.2475,0.2227,0.2722,0.0000,0.0000,0.0000
+Mar,0.2131,0.1918,0.2345,0.0601,0.0541,0.0661
+Apr,0.1380,0.1242,0.1518,0.1850,0.1665,0.2035
+May,0.0888,0.0799,0.0976,0.7520,0.6768,0.8272
+Jun,0.0302,0.0272,0.0332,1.7371,1.5634,1.9109
+Jul,0.0177,0.0159,0.0194,2.4438,2.1995,2.6882
+Aug,0.0109,0.0098,0.0120,2.5983,2.3385,2.8582
+Sep,0.0446,0.0402,0.0491,1.2552,1.1297,1.3807
+Oct,0.1294,0.1164,0.1423,0.1998,0.1798,0.2198
+Nov,0.2133,0.1920,0.2346,0.0176,0.0158,0.0193
+Dec,0.2314,0.2083,0.2546,0.0009,0.0008,0.0010
