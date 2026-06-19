@@ -47,11 +47,11 @@
 //! - [x] Sol-air temperature validated analytically
 //! - [x] Tests pass: `cargo test --test solar_isolation`
 
+use fluxion::sim::sky_radiation::sol_air_temperature_simple;
 use fluxion::solar::calculate_day_of_year;
 use fluxion::solar::calculate_solar_position;
 use fluxion::solar::calculate_surface_irradiance;
 use fluxion::solar::surface_irradiance::Orientation;
-use fluxion::sim::sky_radiation::sol_air_temperature_simple;
 use std::time::Instant;
 
 const DENVER_LAT: f64 = 39.74;
@@ -193,7 +193,11 @@ fn test_reference_data_loads() {
     assert_eq!(position[0].hour, 1);
 
     let irradiance = load_irradiance_reference();
-    assert_eq!(irradiance.len(), 8760, "irradiance CSV should have 8760 rows");
+    assert_eq!(
+        irradiance.len(),
+        8760,
+        "irradiance CSV should have 8760 rows"
+    );
 
     let weather = load_weather_reference();
     assert_eq!(weather.len(), 8760, "weather CSV should have 8760 rows");
@@ -219,24 +223,65 @@ fn test_solar_position_vs_energyplus() {
         let az_err = azimuth_error(sun.azimuth_deg, row.azimuth).abs();
         let zen_err = (sun.zenith_deg - row.zenith).abs();
 
-        alt_max = alt_max.max(alt_err); alt_sum += alt_err; alt_cnt += 1;
-        az_max = az_max.max(az_err); az_sum += az_err; az_cnt += 1;
-        zen_max = zen_max.max(zen_err); zen_sum += zen_err; zen_cnt += 1;
-        if alt_err > TOLERANCE_ALTITUDE_DEG { alt_over += 1; }
-        if az_err > TOLERANCE_AZIMUTH_DEG { az_over += 1; }
+        alt_max = alt_max.max(alt_err);
+        alt_sum += alt_err;
+        alt_cnt += 1;
+        az_max = az_max.max(az_err);
+        az_sum += az_err;
+        az_cnt += 1;
+        zen_max = zen_max.max(zen_err);
+        zen_sum += zen_err;
+        zen_cnt += 1;
+        if alt_err > TOLERANCE_ALTITUDE_DEG {
+            alt_over += 1;
+        }
+        if az_err > TOLERANCE_AZIMUTH_DEG {
+            az_over += 1;
+        }
     }
 
-    println!("=== Solar Position vs E+ (8760h, {:?}) ===", start.elapsed());
-    println!("Altitude: max={:.3}° mean={:.3}° over_tol={}", alt_max, alt_sum / alt_cnt as f64, alt_over);
-    println!("Azimuth:  max={:.3}° mean={:.3}° over_tol={}", az_max, az_sum / az_cnt as f64, az_over);
-    println!("Zenith:   max={:.3}° mean={:.3}°", zen_max, zen_sum / zen_cnt as f64);
+    println!(
+        "=== Solar Position vs E+ (8760h, {:?}) ===",
+        start.elapsed()
+    );
+    println!(
+        "Altitude: max={:.3}° mean={:.3}° over_tol={}",
+        alt_max,
+        alt_sum / alt_cnt as f64,
+        alt_over
+    );
+    println!(
+        "Azimuth:  max={:.3}° mean={:.3}° over_tol={}",
+        az_max,
+        az_sum / az_cnt as f64,
+        az_over
+    );
+    println!(
+        "Zenith:   max={:.3}° mean={:.3}°",
+        zen_max,
+        zen_sum / zen_cnt as f64
+    );
 
-    assert!(alt_max <= TOLERANCE_ALTITUDE_DEG,
-        "Altitude max error {:.3}° exceeds {}° ({} hours over)", alt_max, TOLERANCE_ALTITUDE_DEG, alt_over);
-    assert!(az_max <= TOLERANCE_AZIMUTH_DEG,
-        "Azimuth max error {:.3}° exceeds {}° ({} hours over)", az_max, TOLERANCE_AZIMUTH_DEG, az_over);
-    assert!(zen_max <= TOLERANCE_ZENITH_DEG,
-        "Zenith max error {:.3}° exceeds {}°", zen_max, TOLERANCE_ZENITH_DEG);
+    assert!(
+        alt_max <= TOLERANCE_ALTITUDE_DEG,
+        "Altitude max error {:.3}° exceeds {}° ({} hours over)",
+        alt_max,
+        TOLERANCE_ALTITUDE_DEG,
+        alt_over
+    );
+    assert!(
+        az_max <= TOLERANCE_AZIMUTH_DEG,
+        "Azimuth max error {:.3}° exceeds {}° ({} hours over)",
+        az_max,
+        TOLERANCE_AZIMUTH_DEG,
+        az_over
+    );
+    assert!(
+        zen_max <= TOLERANCE_ZENITH_DEG,
+        "Zenith max error {:.3}° exceeds {}°",
+        zen_max,
+        TOLERANCE_ZENITH_DEG
+    );
 }
 
 // ===========================================================================
@@ -261,7 +306,13 @@ fn test_beam_irradiance_vs_energyplus() {
         let w = &weather[row.hour - 1];
 
         let irr = calculate_surface_irradiance(
-            &sun, w.dni, w.dhi, Some(w.ghi), Orientation::South, 0.2, doy,
+            &sun,
+            w.dni,
+            w.dhi,
+            Some(w.ghi),
+            Orientation::South,
+            0.2,
+            doy,
         );
 
         annual_calc += irr.beam_wm2;
@@ -277,18 +328,36 @@ fn test_beam_irradiance_vs_energyplus() {
     per_hour_errors.sort_by(|a, b| a.partial_cmp(b).unwrap());
     let n = per_hour_errors.len();
     let median = if n > 0 { per_hour_errors[n / 2] } else { 0.0 };
-    let p90 = if n > 0 { per_hour_errors[(n as f64 * 0.9) as usize] } else { 0.0 };
+    let p90 = if n > 0 {
+        per_hour_errors[(n as f64 * 0.9) as usize]
+    } else {
+        0.0
+    };
 
     println!("=== Beam Irradiance vs E+ (south vertical wall) ===");
-    println!("Annual incident energy: calc={:.0} ref={:.0} kWh/m2 diff={:.2}%",
-        annual_calc / 1000.0, annual_ref / 1000.0, energy_err_pct);
-    println!("Per-hour (n={}, E+ beam>{}): median={:.2}% p90={:.2}%",
-        n, BEAM_MIN_FOR_COMPARE as i32, median, p90);
+    println!(
+        "Annual incident energy: calc={:.0} ref={:.0} kWh/m2 diff={:.2}%",
+        annual_calc / 1000.0,
+        annual_ref / 1000.0,
+        energy_err_pct
+    );
+    println!(
+        "Per-hour (n={}, E+ beam>{}): median={:.2}% p90={:.2}%",
+        n, BEAM_MIN_FOR_COMPARE as i32, median, p90
+    );
 
-    assert!(energy_err_pct <= BEAM_ENERGY_TOLERANCE_PCT,
-        "Beam annual energy error {:.2}% exceeds {}%", energy_err_pct, BEAM_ENERGY_TOLERANCE_PCT);
-    assert!(median <= BEAM_MEDIAN_TOLERANCE_PCT,
-        "Beam per-hour median error {:.2}% exceeds {}%", median, BEAM_MEDIAN_TOLERANCE_PCT);
+    assert!(
+        energy_err_pct <= BEAM_ENERGY_TOLERANCE_PCT,
+        "Beam annual energy error {:.2}% exceeds {}%",
+        energy_err_pct,
+        BEAM_ENERGY_TOLERANCE_PCT
+    );
+    assert!(
+        median <= BEAM_MEDIAN_TOLERANCE_PCT,
+        "Beam per-hour median error {:.2}% exceeds {}%",
+        median,
+        BEAM_MEDIAN_TOLERANCE_PCT
+    );
 }
 
 // ===========================================================================
@@ -312,21 +381,34 @@ fn test_ground_reflected_irradiance_vs_energyplus() {
         let w = &weather[row.hour - 1];
 
         let irr = calculate_surface_irradiance(
-            &sun, w.dni, w.dhi, Some(w.ghi), Orientation::South, 0.2, doy,
+            &sun,
+            w.dni,
+            w.dhi,
+            Some(w.ghi),
+            Orientation::South,
+            0.2,
+            doy,
         );
 
-        let pct = ((irr.ground_reflected_wm2 - row.ground_diffuse) / row.ground_diffuse * 100.0).abs();
+        let pct =
+            ((irr.ground_reflected_wm2 - row.ground_diffuse) / row.ground_diffuse * 100.0).abs();
         sum += pct;
         cnt += 1;
-        if pct > max_err { max_err = pct; }
+        if pct > max_err {
+            max_err = pct;
+        }
     }
 
     let mean = if cnt > 0 { sum / cnt as f64 } else { 0.0 };
     println!("=== Ground-Reflected Irradiance vs E+ (n={}) ===", cnt);
     println!("Mean error: {:.2}%  Max: {:.2}%", mean, max_err);
 
-    assert!(mean <= GROUND_REFLECTED_MEAN_TOLERANCE_PCT,
-        "Ground-reflected mean error {:.2}% exceeds {}%", mean, GROUND_REFLECTED_MEAN_TOLERANCE_PCT);
+    assert!(
+        mean <= GROUND_REFLECTED_MEAN_TOLERANCE_PCT,
+        "Ground-reflected mean error {:.2}% exceeds {}%",
+        mean,
+        GROUND_REFLECTED_MEAN_TOLERANCE_PCT
+    );
 }
 
 // ===========================================================================
@@ -351,23 +433,38 @@ fn test_sol_air_temperature_analytical() {
         let t_sol = sol_air_temperature_simple(t_out, i_tot, alpha, h_ext);
         let err = (t_sol - expected).abs();
         max_err = max_err.max(err);
-        println!("T_out={:>5.1} I={:>5.0} alpha={:.1} h={:>5.1} -> T_sol={:>6.2} (expected {:.2})",
-            t_out, i_tot, alpha, h_ext, t_sol, expected);
+        println!(
+            "T_out={:>5.1} I={:>5.0} alpha={:.1} h={:>5.1} -> T_sol={:>6.2} (expected {:.2})",
+            t_out, i_tot, alpha, h_ext, t_sol, expected
+        );
     }
 
-    assert!(max_err < 1e-9, "Sol-air temp max analytical error {} exceeds 1e-9", max_err);
+    assert!(
+        max_err < 1e-9,
+        "Sol-air temp max analytical error {} exceeds 1e-9",
+        max_err
+    );
 }
 
 #[test]
 fn test_sol_air_physical_consistency() {
     let base = sol_air_temperature_simple(20.0, 0.0, 0.7, 20.0);
-    assert!((base - 20.0).abs() < 1e-9, "No sun → sol-air = outdoor temp");
+    assert!(
+        (base - 20.0).abs() < 1e-9,
+        "No sun → sol-air = outdoor temp"
+    );
 
     let heated = sol_air_temperature_simple(20.0, 800.0, 0.9, 18.0);
-    assert!(heated > 50.0, "Strong sun, dark surface should raise sol-air well above outdoor");
+    assert!(
+        heated > 50.0,
+        "Strong sun, dark surface should raise sol-air well above outdoor"
+    );
 
     let light = sol_air_temperature_simple(20.0, 800.0, 0.3, 18.0);
-    assert!(light < heated, "Light surface (low alpha) should have lower sol-air than dark");
+    assert!(
+        light < heated,
+        "Light surface (low alpha) should have lower sol-air than dark"
+    );
 }
 
 #[test]
@@ -390,25 +487,49 @@ fn test_sol_air_from_real_weather_conditions() {
         let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
         let doy = calculate_day_of_year(year, month, day);
         let irr = calculate_surface_irradiance(
-            &sun, w.dni, w.dhi, Some(w.ghi), Orientation::South, 0.2, doy,
+            &sun,
+            w.dni,
+            w.dhi,
+            Some(w.ghi),
+            Orientation::South,
+            0.2,
+            doy,
         );
         let t_sol = sol_air_temperature_simple(w.dry_bulb, irr.total_wm2, alpha, h_ext);
 
         if sun.is_above_horizon() {
-            assert!(t_sol >= w.dry_bulb - 1e-9,
+            assert!(
+                t_sol >= w.dry_bulb - 1e-9,
                 "h{}: daytime sol-air ({:.1}) must be >= outdoor ({:.1})",
-                row.hour, t_sol, w.dry_bulb);
+                row.hour,
+                t_sol,
+                w.dry_bulb
+            );
             day_count += 1;
         } else {
-            assert!((t_sol - w.dry_bulb).abs() < 1e-9,
+            assert!(
+                (t_sol - w.dry_bulb).abs() < 1e-9,
                 "h{}: below-horizon sol-air ({:.1}) must equal outdoor ({:.1})",
-                row.hour, t_sol, w.dry_bulb);
+                row.hour,
+                t_sol,
+                w.dry_bulb
+            );
             night_count += 1;
         }
     }
 
     println!("=== Sol-Air from Real Weather ===");
-    println!("Daytime hours validated (sol-air >= outdoor): {}", day_count);
-    println!("Night/zero-sun hours validated (sol-air = outdoor): {}", night_count);
-    assert!(day_count > 2000, "Expected >2000 daytime hours, got {}", day_count);
+    println!(
+        "Daytime hours validated (sol-air >= outdoor): {}",
+        day_count
+    );
+    println!(
+        "Night/zero-sun hours validated (sol-air = outdoor): {}",
+        night_count
+    );
+    assert!(
+        day_count > 2000,
+        "Expected >2000 daytime hours, got {}",
+        day_count
+    );
 }
