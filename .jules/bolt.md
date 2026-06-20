@@ -30,3 +30,6 @@
 ## 2026-06-12 - Ensure step_physics_6r2c doesn't print debugging output in hot loops
 **Learning:** Found debug `println!` output within the `step_physics_6r2c` hot loop which blocked IO and lowered throughput.
 **Action:** Removed these debug `println!` macros since they should not be compiled in standard performance builds.
+## 2026-06-20 - Avoided Double Tensors Allocations during Add operations
+**Learning:** Replaced chained `VectorField` mutations/operations like `a.clone() + b.clone()` and `c.clone() * d.clone()` with `a.zip_with(&b, |x, y| x + y)` in `step_physics_6r2c`'s thermal mass energy loop to avoid redundant array allocations.
+**Action:** Always favor `.zip_with` closures instead of `.clone() +` or `.clone() *` in core physics loop when applying scalar or vector combinations across Tensor arrays to minimize runtime vector memory fragmentation.

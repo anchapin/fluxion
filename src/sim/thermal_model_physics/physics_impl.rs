@@ -1598,20 +1598,28 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #272, #274, #275: Calculate thermal mass energy change for 6R2C
         // For 6R2C, we track energy changes in both envelope and internal masses
         // Envelope mass energy change (Cm × (Tm_new - Tm_old))
-        let env_mass_temp_change =
-            self.0.envelope_mass_temperatures.clone() - old_env_mass_temperatures.clone();
-        let env_mass_energy_change =
-            self.0.envelope_thermal_capacitance.clone() * env_mass_temp_change;
+        let env_mass_temp_change = self
+            .0
+            .envelope_mass_temperatures
+            .zip_with(&old_env_mass_temperatures, |a, b| a - b);
+        let env_mass_energy_change = self
+            .0
+            .envelope_thermal_capacitance
+            .zip_with(&env_mass_temp_change, |a, b| a * b);
 
         // Internal mass energy change (Cm × (Tm_new - Tm_old))
-        let int_mass_temp_change =
-            self.0.internal_mass_temperatures.clone() - old_int_mass_temperatures.clone();
-        let int_mass_energy_change =
-            self.0.internal_thermal_capacitance.clone() * int_mass_temp_change;
+        let int_mass_temp_change = self
+            .0
+            .internal_mass_temperatures
+            .zip_with(&old_int_mass_temperatures, |a, b| a - b);
+        let int_mass_energy_change = self
+            .0
+            .internal_thermal_capacitance
+            .zip_with(&int_mass_temp_change, |a, b| a * b);
 
         // Total mass energy change for this timestep
         let mass_energy_change_for_step_6r2c =
-            env_mass_energy_change.clone() + int_mass_energy_change;
+            env_mass_energy_change.zip_with(&int_mass_energy_change, |a, b| a + b);
 
         // Track cumulative mass energy change
         let mass_energy_change_for_step_total =
@@ -1619,13 +1627,23 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.mass_energy_change_cumulative += mass_energy_change_for_step_total;
 
         // Plan 03-04: Update single mass temperature for backward compatibility (average of two masses)
-        let total_cap = self.0.envelope_thermal_capacitance.clone()
-            + self.0.internal_thermal_capacitance.clone();
-        self.0.mass_temperatures = (self.0.envelope_mass_temperatures.clone()
-            * self.0.envelope_thermal_capacitance.clone()
-            + self.0.internal_mass_temperatures.clone()
-                * self.0.internal_thermal_capacitance.clone())
-            / total_cap;
+        let total_cap = self
+            .0
+            .envelope_thermal_capacitance
+            .zip_with(&self.0.internal_thermal_capacitance, |a, b| a + b);
+
+        self.0.mass_temperatures = self
+            .0
+            .envelope_mass_temperatures
+            .zip_with(&self.0.envelope_thermal_capacitance, |a, b| a * b)
+            .zip_with(
+                &self
+                    .0
+                    .internal_mass_temperatures
+                    .zip_with(&self.0.internal_thermal_capacitance, |a, b| a * b),
+                |a, b| a + b,
+            )
+            .zip_with(&total_cap, |a, b| a / b);
 
         // DEBUG: Print t_i_act before storing
         self.0.temperatures = t_i_act;
