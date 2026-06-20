@@ -215,6 +215,15 @@ pub trait HeatConductionSolver: Send + Sync {
 **Selector**: `SolverManager` auto-selects based on thermal mass.
 **Per-surface solver**: `sim/per_surface_conduction.rs` provides independent backward-Euler per-surface solving for the multi-node thermal model (#857/#856).
 
+> **Architecture note (ADR-002)** — there are *two* code paths both historically called "5R1C", and they must not be conflated:
+>
+> | Path | Location | Dynamic? | Drives free-float / HVAC? |
+> |------|----------|---------|---------------------------|
+> | **Per-wall steady-state solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **No** — `step()` ignores `timestep`; steady-state `Q = ΔT/R_total`, `energy_storage_rate() == 0` (documented in `tests/conduction_5r1c_isolation.rs`) | No (Module 3 isolation only) |
+> | **Zone-level ISO 13790 thermal network** (5R1C / 6R2C / 9R4C) | `sim/thermal_model_core.rs` + `sim/thermal_model_physics/` (Module 5) | **Yes** (coefficient-tuned 5R1C / backward-Euler 9R4C) | **Yes** — this is the network that produces zone air temperature, heating/cooling loads, and free-floating temperatures |
+>
+> ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is unchanged (steady-state, isolation-tested).
+
 **Validation target**: Inside surface heat flux within 1% of E+ for step-change temperature test on 200mm concrete wall.
 
 ---
@@ -296,7 +305,16 @@ pub trait ThermalModelTrait: Send + Sync {
 
 **ML Surrogate Path**: `SurrogateThermalModel` implements `ThermalModelTrait` — the zone solver doesn't know whether physics or ML is computing the result. v3.0 surrogate training and ONNX export landed in #1139 (`src/ai/surrogate.rs`, `src/ai/modular_surrogate.rs`).
 
-**Multi-node HVAC**: The 9R4C multi-node thermal model (`sim/multi_node_thermal.rs`) separates thermal mass into 4 nodes (wall, roof, floor, internal) for heavy-mass buildings (Case 900+ series, #715). Multi-node HVAC validation against ASHRAE 140 Case 900 is in place.
+**Multi-node HVAC & free-float (ADR-002 selection rule)**: The zone-level thermal network has two solver paths, selected by construction type in `thermal_model_core.rs::from_spec`:
+
+| Construction | Zone solver | Air-temperature source | Solar→air fraction |
+|--------------|-------------|------------------------|--------------------|
+| **Low-mass** (Case 600-series) | ISO 13790 5R1C single mass node (`FiveROneC`) | `t_i_free` closed-form (coefficient-tuned `h_ms_coeff = 2.0·A_m`) | 0.80 (5R1C compensation; unchanged) |
+| **High-mass** (Case 900+ series) | **9R4C multi-node** (`NineRFourC`) — ADR-002 | `compute_zone_air_temperature` from backward-Euler-stepped wall/roof/floor/internal mass nodes; physics-based per-surface `h_tr_ms = k·A/d` | free-float **0.0** (ASHRAE-140: solar → surfaces/mass); HVAC 0.40 (baseline-validated; HVAC clamps the air node) |
+
+The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) separates thermal mass into 4 nodes (wall, roof, floor, internal) for heavy-mass buildings (#715). Per ADR-002, the 9R4C path is the **sole** driver of high-mass free-float **and** HVAC — the legacy coefficient-tuned `h_ms_coeff` (13.4) no longer drives the high-mass air temperature. The free-float commit in `physics_impl.rs::step_physics` writes the 9R4C multi-node air temperature (`t_i_free_mn`) for high-mass zones (and the 5R1C `t_i_free` for low-mass zones). CTF remains available as a secondary dynamic path but is non-default (CTF↔5R1C coupling instability for 900FF, per #1152).
+
+**Known residual (high-mass free-float night min)**: The 9R4C free-float minimum is ~0.6°C warm vs the ASHRAE 140 band because the air node lacks a direct longwave-to-sky radiative path and the ground-coupled floor node retains heat (ISSUE_1168_ROOT_CAUSE.md, recommended fix #2 — a separate Module 2 enhancement, out of ADR-002 scope).
 
 **Validation target**: Zone temperature within 0.5C of E+ when all sub-modules are verified.
 

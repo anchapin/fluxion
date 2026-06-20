@@ -1373,52 +1373,60 @@ fn test_mass_temperatures_differ_between_600ff_and_900ff() {
     );
 
     // === Assertions ===
-    // 1. Mass temperatures must be different between 600FF and 900FF
-    //    The absolute difference in max mass temperature must be > 5°C
-    let mass_max_diff = (mass_max_600ff - mass_max_900ff).abs();
+    // ADR-002 (#1175): The 9R4C multi-node model is now the SOLE thermal solver for
+    // high-mass (Case 900FF). Consequently the authoritative observable for "thermal
+    // mass buffers the zone" is the ZONE AIR temperature swing — not the 5R1C
+    // single lumped-mass node (`model.mass_temperatures`), which for high-mass is a
+    // vestigial field that the 9R4C path no longer uses to drive the air temperature.
+    //
+    // Previously (pre-ADR-002) this test asserted that the 5R1C lumped-mass max of
+    // 900FF was >5°C cooler than 600FF. That held only because the coefficient-tuned
+    // 5R1C coupling over-damped the high-mass mass/air response (ISSUE_1168_ROOT_CAUSE:
+    // 900FF max 35.5°C vs reference [41.8, 46.4]). Once 9R4C routes solar to the mass
+    // nodes physics-correctly (solar → surfaces/mass, none directly to air), the
+    // sunlit high-mass surfaces reach realistic peak temperatures, so the lumped-mass
+    // max no longer differentiates the two cases by >5°C. The physically-correct
+    // post-ADR-002 invariant is that high-mass dampens the AIR swing, verified below.
+
+    // 1. Air temperature swing must be materially smaller for high-mass (900FF).
+    let air_swing_diff = air_swing_600ff - air_swing_900ff;
     assert!(
-        mass_max_diff > 5.0,
-        "Mass max temperatures must differ by >5°C between 600FF and 900FF. \
-         600FF mass max={:.2}°C, 900FF mass max={:.2}°C, diff={:.2}°C",
-        mass_max_600ff,
-        mass_max_900ff,
-        mass_max_diff
+        air_swing_diff > 5.0,
+        "Low-mass (600FF) should have a larger AIR swing than high-mass (900FF). \
+         600FF air swing={:.2}°C, 900FF air swing={:.2}°C, diff={:.2}°C",
+        air_swing_600ff,
+        air_swing_900ff,
+        air_swing_diff
     );
 
-    // 2. Mass temperature swings must be different
-    //    Low-mass should have LARGER mass swing than high-mass
-    //    (high-mass thermal storage dampens mass temperature response)
-    let swing_diff = mass_swing_600ff - mass_swing_900ff;
+    // 2. High-mass air max must be lower than low-mass air max (mass buffers peaks).
     assert!(
-        swing_diff > 5.0,
-        "Low-mass (600FF) should have larger mass swing than high-mass (900FF). \
-         600FF mass swing={:.2}°C, 900FF mass swing={:.2}°C, diff={:.2}°C",
-        mass_swing_600ff,
-        mass_swing_900ff,
-        swing_diff
+        air_max_900ff < air_max_600ff,
+        "High-mass (900FF) air max ({:.2}°C) should be lower than low-mass (600FF) air max ({:.2}°C)",
+        air_max_900ff, air_max_600ff
     );
 
-    // 3. High-mass should have lower mass max temperature
-    //    (thermal storage prevents mass from getting as hot)
+    // 3. High-mass air min must be higher than low-mass air min (mass retains heat at night).
     assert!(
-        mass_max_900ff < mass_max_600ff,
-        "High-mass (900FF) mass max ({:.2}°C) should be lower than low-mass (600FF) mass max ({:.2}°C)",
-        mass_max_900ff, mass_max_600ff
+        air_min_900ff > air_min_600ff,
+        "High-mass (900FF) air min ({:.2}°C) should be higher than low-mass (600FF) air min ({:.2}°C)",
+        air_min_900ff, air_min_600ff
     );
 
-    // 4. High-mass should have higher mass min temperature
-    //    (thermal storage keeps mass warmer at night)
-    assert!(
-        mass_min_900ff > mass_min_600ff,
-        "High-mass (900FF) mass min ({:.2}°C) should be higher than low-mass (600FF) mass min ({:.2}°C)",
-        mass_min_900ff, mass_min_600ff
-    );
+    // (Mass-temperature statistics above are still printed for diagnostics; they are
+    // no longer asserted because the 5R1C lumped mass is not authoritative for the
+    // 9R4C-driven high-mass case post-ADR-002.)
 
     println!();
-    println!("✅ Mass temperatures correctly differ between 600FF and 900FF (Issue #923)");
     println!(
-        "   - Mass max diff: {:.2}°C (low-mass hotter)",
-        mass_max_diff
+        "✅ Air temperature swing correctly smaller for high-mass 900FF (ADR-002 / Issue #1175)"
     );
-    println!("   - Mass swing diff: {:.2}°C (low-mass wider)", swing_diff);
+    println!(
+        "   - Air swing diff: {:.2}°C (low-mass wider): 600FF={:.2}°C, 900FF={:.2}°C",
+        air_swing_diff, air_swing_600ff, air_swing_900ff
+    );
+    println!(
+        "   - (info) 5R1C lumped-mass max diff: {:.2}°C (no longer asserted; vestigial for 9R4C)",
+        (mass_max_600ff - mass_max_900ff).abs()
+    );
 }

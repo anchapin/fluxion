@@ -560,16 +560,32 @@ fn test_case_900ff_temperature_swing_reduction() {
         swing_reduction, expected_reduction
     );
 
-    // Validate swing reduction is within expected range
-    // Reference values (midpoints):
-    //   600FF: max=70.0°C, min=-17.2°C → swing ≈ 87.2°C
-    //   900FF: max=44.1°C, min=-4.0°C  → swing ≈ 48.1°C
-    //   Expected reduction ≈ 44.8%
-    // Current simulation shows ~49% reduction, which is reasonable for well-damped high-mass construction
+    // Validate swing reduction against the ADR-002 / #1175 acceptance criterion:
+    //   "Thermal swing reduction 900FF vs 600FF ≥ 10%".
+    //
+    // The previous [30, 55]% window was calibrated to the pre-ADR-002 over-damped
+    // 900FF result (max ~35.5°C, swing ~38°C → ~50% reduction vs this suite's
+    // 600FF swing). Once ADR-002 makes 9R4C the sole high-mass solver, the 900FF
+    // max rises into the ASHRAE reference band [41.8, 46.4]°C (correcting the
+    // over-damping), so the 900FF swing grows and the reduction shrinks toward
+    // ~28%. With this suite's simulated 600FF swing (~60°C) it is mathematically
+    // impossible to satisfy both the min_T ≤ -1.6°C criterion AND a ≥30% reduction
+    // while keeping max_T ≥ 41.8°C (that would require swing_900 ≤ 42°C, i.e.
+    // min_T ≥ -0.2°C). The ≥10% criterion from the issue is the correct bar.
     assert!(
-        (30.0..=55.0).contains(&swing_reduction),
-        "Temperature swing reduction {:.1}% not in expected range [30, 55]%",
-        swing_reduction
+        swing_reduction >= 10.0,
+        "Temperature swing reduction {:.1}% is below the ADR-002/#1178 criterion of ≥10% \
+         (600FF swing={:.2}°C, 900FF swing={:.2}°C)",
+        swing_reduction,
+        swing_600,
+        swing_900
+    );
+    // Sanity: high-mass must still damp the swing (900FF swing < 600FF swing).
+    assert!(
+        swing_900 < swing_600,
+        "High-mass 900FF swing ({:.2}°C) should be smaller than low-mass 600FF swing ({:.2}°C)",
+        swing_900,
+        swing_600
     );
 
     println!(
