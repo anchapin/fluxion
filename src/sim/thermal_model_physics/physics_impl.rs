@@ -2198,7 +2198,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 t_i_free_data.push(t_i_free.as_ref()[zone_idx]);
             }
         }
-        let _t_i_free_mn = T::from(VectorField::new(t_i_free_data));
+        let t_i_free_mn = T::from(VectorField::new(t_i_free_data));
 
         // (#872) Do NOT write multi-node mass temperatures back to self.0.
         // The multi-node solver keeps its own internal state. Writing back would
@@ -2292,11 +2292,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // from the 9R4C thermal balance (wall/roof/floor nodes → surface → air).
         // This is more accurate than the 5R1C t_i_free which uses a lumped mass.
         let (hvac_for_temp_calc, t_i_act) = if self.0.free_float {
-            // Free-float: no HVAC, t_i_act = t_i_free
-            let t_i_free_vec = t_i_free_5r1c.as_ref().to_vec();
+            // Free-float: no HVAC. `t_i_act` feeds ONLY the 5R1C lumped-mass update
+            // below, so it keeps the 5R1C-consistent `t_i_free_5r1c` to preserve the
+            // lumped-mass evolution (the lumped mass is the 5R1C mass node and must
+            // stay self-consistent with the 5R1C air node).
+            //
+            // (ADR-002, #1175) The COMMITTED zone temperature for high-mass free-float
+            // is the 9R4C multi-node air temperature (`t_i_free_mn`), applied in the
+            // free-float commit block below — NOT `t_i_act`. That makes 9R4C the sole
+            // driver of high-mass free-float, bypassing the coefficient-tuned
+            // `h_ms_coeff` coupling. The lumped mass continues to evolve on its own
+            // 5R1C dynamics (it no longer drives the high-mass air temperature).
+            // Low-mass behaviour is unchanged (low-mass has no MultiNodeSolver, so
+            // `t_i_free_mn` equals `t_i_free_5r1c` and the commit is a no-op change).
             (
                 T::from(VectorField::new(vec![0.0; self.0.num_zones])),
-                T::from(VectorField::new(t_i_free_vec)),
+                t_i_free_5r1c.clone(),
             )
         } else {
             // HVAC mode: use multi-node t_air (from _t_i_free_mn) when available
@@ -2311,7 +2322,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         // Use multi-node computed free-float temperature (available at line 2534)
                         // The multi-node t_air uses conductance-weighted envelope node temperatures
                         // and the air energy balance: T_air = (h_tr_is*T_surface + h_ve*T_out + phi_ia)/(h_tr_is + h_ve)
-                        _t_i_free_mn.as_ref().get(i).copied().unwrap_or_else(|| {
+                        t_i_free_mn.as_ref().get(i).copied().unwrap_or_else(|| {
                             t_i_free_5r1c.as_ref().get(i).copied().unwrap_or(20.0)
                         })
                     } else {
@@ -2524,15 +2535,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             self.0.previous_mass_temperatures = old_mass_temperatures;
         }
 
-        // Issue #738: Free-float mode must completely disable HVAC output
+        // Issue #738 / ADR-002 (#1175): Free-float mode disables HVAC output.
+        //
+        // The COMMITTED zone temperature is `t_i_free_mn`, which holds, per zone:
+        //   - high-mass (has a MultiNodeSolver): the 9R4C multi-node air temperature
+        //     from `compute_zone_air_temperature` (mass/surface nodes stepped by
+        //     backward Euler, sol-air driven, physics-based per-surface `h_tr_ms`);
+        //   - low-mass (no MultiNodeSolver): the legacy 5R1C `t_i_free`.
+        // This makes 9R4C the sole thermal solver for high-mass free-float: the
+        // result is governed by the multi-node network's physics-based `h_tr_ms`
+        // (k·A/d), not the legacy coefficient-tuned `h_ms_coeff`. The 5R1C lumped
+        // mass (updated above from `t_i_act = t_i_free_5r1c`) continues to evolve on
+        // its own dynamics but no longer drives the high-mass air temperature.
+        // Low-mass free-float is unchanged.
         if self.0.free_float {
-            // (#872) For free-floating zones, use the 5R1C t_i_free computed from
-            // uncorrupted mass temperatures (saved before multi-node solver overwrite).
-            // The 5R1C formula correctly captures the phi_st → mass coupling that
-            // produces the correct 42.87°C for 900FF. The multi-node solver's
-            // temperature (33°C) is too low because it lacks per-node solar injection (#873).
             let temps_slice = self.0.temperatures.as_mut();
-            for (i, t_val) in t_i_free_5r1c.as_ref().iter().enumerate() {
+            for (i, t_val) in t_i_free_mn.as_ref().iter().enumerate() {
                 if i < temps_slice.len() {
                     temps_slice[i] = *t_val;
                 }

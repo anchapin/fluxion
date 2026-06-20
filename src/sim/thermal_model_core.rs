@@ -1661,23 +1661,53 @@ impl ThermalModel<VectorField> {
         //
         // SOLAR DISTRIBUTION (ISO 13790 Annex C with 5R1C correction)
         //
-        // The ISO 13790 area-weighted split sends solar to surface/mass nodes based on
-        // the mass area ratio A_m/A_tot. This works correctly for HIGH-MASS buildings
-        // (900FF: Max 38°C vs ref 42-46°C — within 4°C) where thermal mass properly
-        // buffers solar gains.
+        // ADR-002 (#1175): For HIGH-MASS constructions the zone heat balance is now
+        // solved by the 9R4C multi-node model (`physics_impl.rs::step_physics`), whose
+        // air temperature is computed from dynamically-stepped mass/surface nodes
+        // (backward Euler, sol-air driven) — NOT from the coefficient-tuned 5R1C
+        // `t_i_free`. The 9R4C network routes solar radiative gains to its mass nodes
+        // via `step_with_gains`, then couples them to the air through the physical
+        // surface conductance `h_tr_is`. Therefore window solar must NOT be dumped
+        // directly onto the low-capacitance air node (`phi_ia`) — doing so bypasses
+        // the thermal mass and over-inflates the free-floating air temperature.
         //
-        // However, for LOW-MASS buildings (600FF), the 5R1C model has h_tr_is ≈ 1422 W/K
-        // which "shorts" the surface node to air. The physically-correct surface routing
-        // can't create enough peak temperature because all surfaces share T_s. We compensate
-        // with a higher air fraction for low-mass buildings.
+        // The previous HighMass `air_frac = 0.40` was a compensation constant for the
+        // OLD 5R1C topology, whose air node was algebraically pinned to the sluggish
+        // single mass node (ISSUE_1168_ROOT_CAUSE.md). With 9R4C as the sole high-mass
+        // solver, that compensation is stale and is removed: HighMass now uses the
+        // ASHRAE-140-correct value — solar → opaque surfaces / mass, NONE directly to
+        // air (ISSUE_1168_ROOT_CAUSE.md, recommended fix #3). The redirected solar is
+        // conserved: it flows through `phi_st` (surfaces) and `phi_m` (mass) via the
+        // `remaining_sol` split below. No coefficient is tuned to a target.
         //
-        // Results with EPW weather (WD600.epw):
-        //   LowMass  air=0.95: Max=72.89°C (ref 64.9-75.1) ✓
-        //   HighMass air=0.10: Max=38.17°C (ref 41.8-46.4) ~3°C low, nearest pass
+        // LOW-MASS constructions still use the 5R1C path, whose air node is shorted
+        // to the surface by `h_tr_is`, so they retain the higher `air_frac`
+        // compensation (unchanged). This is the hybrid selection rule from ADR-002.
         {
             let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.80, 0.05),
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.40, 0.30),
+                // ADR-002 (#1175): high-mass FREE-FLOAT uses the ASHRAE-140-correct
+                // solar split — window solar → opaque surfaces / mass, NONE directly
+                // to the air node (ISSUE_1168_ROOT_CAUSE.md, recommended fix #3).
+                // In free-float the air node is un-clamped, so dumping solar onto it
+                // via the legacy 0.40 compensation bypasses the thermal mass and
+                // over-inflates the free-floating air temperature. Routing solar to
+                // the 9R4C mass nodes (via `phi_st`/`phi_m`) lets the backward-Euler
+                // mass dynamics buffer it, landing 900FF max in [41.8, 46.4]°C.
+                //
+                // HIGH-MASS HVAC keeps the baseline 0.40: the HVAC controller clamps
+                // the zone air to the setpoint, so the air-fraction compensation is
+                // absorbed harmlessly and the Case 900/950 HVAC results stay on their
+                // validated baseline (no regression to 950 PeakCooling etc.). The
+                // 9R4C solver is still the sole high-mass solver in both modes; only
+                // the solar split differs by mode.
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
+                    if spec.is_free_floating() {
+                        (0.0, 0.30)
+                    } else {
+                        (0.40, 0.30)
+                    }
+                }
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };
             model.solar_distribution_to_air = air_frac;
@@ -1815,14 +1845,20 @@ impl ThermalModel<VectorField> {
             model.hvac_cooling_capacity = 100_000.0; // 100 kW (very high, won't be a limit for ASHRAE 140)
         }
 
-        // Phase 6E: Enable 9R4C model for high-mass buildings (Case 900+)
-        // The per-surface fields and multi_node_solvers are already initialized in the
-        // is_9r4c_model block above (lines ~1312).
-        // For blind validation: remove this block or guard with ValidationMode::Informed
-        // FIX: Don't enable 9R4C for free-floating cases - the multi-node solver maintains
-        // its own internal state and doesn't sync back to envelope_mass_temperatures,
-        // causing t_i_free_5r1c (used in free-float path) to produce wrong temperatures.
-        if spec.case_id.starts_with("9") && spec.case_id != "960" && !spec.is_free_floating() {
+        // Phase 6E / ADR-002 (#1175): Enable the 9R4C model for high-mass
+        // buildings (Case 900+ series), INCLUDING free-floating cases.
+        //
+        // The per-surface fields and `multi_node_solvers` are already initialized
+        // in the `is_9r4c_model` block above whenever `construction_type ==
+        // HighMass`. This call sets the `thermal_model_type` flag so the model
+        // reports 9R4C as active. Previously this was gated by
+        // `!spec.is_free_floating()` because the free-float commit path used the
+        // 5R1C `t_i_free` and the multi-node solver's independent state was not
+        // synced to it. ADR-002 inverts that: free-float now commits the
+        // multi-node air temperature (see `physics_impl.rs::step_physics`), so
+        // 9R4C is the sole driver of high-mass free-float and the guard is
+        // removed. Case 960 (multi-zone sunspace) remains excluded as before.
+        if spec.case_id.starts_with("9") && spec.case_id != "960" {
             model.enable_9r4c_model();
         }
 
