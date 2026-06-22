@@ -250,7 +250,7 @@ impl MultiNodeHvacRunner {
     pub fn compute_t_free(&self, outdoor_temp: f64, solar_gain: f64, internal_gain: f64) -> f64 {
         let phi_ia = solar_gain + internal_gain;
         self.solver
-            .compute_zone_air_temperature(outdoor_temp, self.h_ve, phi_ia)
+            .compute_zone_air_temperature(outdoor_temp, self.h_ve, 0.0, phi_ia)
     }
 
     /// Advance the simulation by one timestep.
@@ -324,7 +324,7 @@ impl MultiNodeHvacRunner {
         let phi_ia = 0.5 * internal_gain;
         let t_free = self
             .solver
-            .compute_zone_air_temperature(outdoor_temp, self.h_ve, phi_ia);
+            .compute_zone_air_temperature(outdoor_temp, self.h_ve, 0.0, phi_ia);
 
         // === Step 2: Determine HVAC mode and target zone temperature ===
         // Per Issue #858: T_air = T_setpoint when heating/cooling active,
@@ -525,7 +525,7 @@ impl MultiNodeHvacRunner {
         // === Compute free-floating zone temperature ===
         let t_free = self
             .solver
-            .compute_zone_air_temperature(t_out_avg, self.h_ve, phi_ia);
+            .compute_zone_air_temperature(t_out_avg, self.h_ve, 0.0, phi_ia);
 
         // === Determine HVAC mode and target zone temperature ===
         let t_free_safe = if t_free.is_finite() {

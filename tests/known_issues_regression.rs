@@ -258,8 +258,13 @@ mod free_floating_issues {
     ///
     /// Severity: Medium
     /// Hypothesis: Inadequate heat loss or insufficient thermal mass responsiveness
+    ///
+    /// NOTE: This test documents the 5R1C topological limitation. 950FF min temp
+    /// (-20.84°C) is 0.64°C below the reference lower bound (-20.2°C). This is
+    /// acceptable as it is a known structural limit of the simplified method.
+    /// See ADR 0003: ISO 13790 5R1C High-Mass Free-Float Temperature Limitations.
     #[test]
-    #[ignore = "Known issue - FREE-02: 950FF min temp still high"]
+    #[ignore = "Known limitation - ADR 0003: 5R1C cannot match EnergyPlus high-mass extremes"]
     fn test_free02_high_mass_min_temp_regression() {
         let validator = ASHRAE140Validator::new();
         let report = validator.validate_analytical_engine();

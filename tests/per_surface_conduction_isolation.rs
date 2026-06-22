@@ -999,7 +999,7 @@ fn test_multi_node_with_per_surface_integration() {
     assert!(solver.surface_temperature.is_finite());
 
     // Air node temperature should be computable
-    let t_air = solver.compute_zone_air_temperature(0.0, 5.0, 0.0);
+    let t_air = solver.compute_zone_air_temperature(0.0, 5.0, 0.0, 0.0);
     assert!(
         t_air.is_finite(),
         "Zone air temperature must be finite, got {}",

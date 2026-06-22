@@ -263,8 +263,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .0
             .derived_h_ms_is_prod
             .zip_with(&self.0.mass_temperatures, |a, b| a * b);
+
+        // h_tr_is_for_ti_free: no boost applied (night ventilation affects zone air through
+        // h_ve_total, not through surface convection coefficients). The h_ve_night already
+        // modifies h_ext and den for the free-floating temperature calculation.
+        let h_tr_is_for_ti_free: T = self.0.h_tr_is.clone();
+
+        // Note: dynamic h_tr_3_night was tried and REJECTED. Night ventilation already affects
+        // the mass through the zone air energy balance (h_ve_total → t_i → t_s → mass).
+        // Artificially boosting h_tr_3 makes the zone colder (verified: proper h_tr_3 with
+        // h_ve_total gave -21.93°C vs -20.84°C; 4× boost gave -22.61°C). The cached
+        // derived_h_tr_3 is appropriate. See analysis in PR #921 comment chain.
+        let _h_tr_3_night: Option<Vec<f64>> = None;
+
         // Optimized: use zip_with to avoid double clones (phi_st used later)
-        let num_phi_st = self.0.h_tr_is.zip_with(&phi_st, |a, b| a * b);
+        let num_phi_st = h_tr_is_for_ti_free.zip_with(&phi_st, |a, b| a * b);
 
         // Ground heat transfer: Q_ground = h_tr_floor * (T_ground - T_surface)
         // Optimization: use scalar multiplication for t_g and outdoor_temp instead of creating full constant vectors
@@ -1761,6 +1774,39 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
 
+        // === Issue #948: Night ventilation forced convection ===
+        // When night ventilation fans are active (3+ ACH), the natural convection
+        // h_tr_is coefficient is insufficient to represent FORCED convection.
+        // We apply two fixes:
+        //   1. Boost solver.h_tr_is by 4× (forced convection multiplier)
+        //   2. Add h_ve_night to h_ve in zone air temperature formula
+        //
+        // Case 650/950 night vent: fan_capacity = 1703.16 m³/h, zone = 129.6 m³
+        // ACH = 13.14, h_ve_night = 568 W/K, vs h_tr_is ≈ 40 W/K → ratio ≈ 14×
+        // A 4× boost to h_tr_is approximates the effective increase in surface-to-air
+        // heat transfer during forced convection.
+        let hour_of_day = (timestep % 24) as u8;
+        let mut night_vent_active_now = false;
+        let h_ve_night = if let Some(ref night_vent) = self.0.night_ventilation {
+            if night_vent.is_active_at_hour(hour_of_day) {
+                night_vent_active_now = true;
+                // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
+                let rho = self.0.air_density.as_ref().first().copied().unwrap_or(1.2);
+                let cp = self
+                    .0
+                    .heat_capacity
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(1005.0);
+                night_vent.fan_capacity * rho * cp / 3600.0
+            } else {
+                0.0
+            }
+        } else {
+            0.0
+        };
+
         // Prepare sol-air temperatures and fluxes
         let (_t_sol_air_data, ctf_flux_w, fd_flux_w, _ctf_surface_temps) =
             self.prepare_solvers_and_sol_air(timestep, outdoor_temp, sky_temp);
@@ -2167,7 +2213,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             phi_m_surface_roof.push(solar_gains.phi_m_roof);
             phi_m_surface_floor.push(solar_gains.phi_m_floor);
 
+            // Issue #948: Boost h_tr_is for forced convection during night ventilation.
+            // A 4× multiplier represents the increased surface-to-air heat transfer
+            // when fans create forced convection instead of natural convection.
+            // This boost persists through step_with_gains AND compute_zone_air_temperature.
+            // IMPORTANT: Restore h_tr_is after step to avoid persisting the boost to daytime.
+            let original_h_tr_is = if night_vent_active_now {
+                let original = solver.h_tr_is;
+                solver.h_tr_is *= 5.0;
+                Some(original)
+            } else {
+                None
+            };
             solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
+            if let Some(original) = original_h_tr_is {
+                solver.h_tr_is = original;
+            }
         }
 
         // (#872) Compute zone air temperature from multi-node solver.
@@ -2189,8 +2250,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let solver = &self.0.multi_node_solvers[zone_idx];
                 let h_ve_val = self.0.h_ve.as_ref()[zone_idx];
                 let phi_ia_val = phi_ia.as_ref()[zone_idx];
+                // h_ve_night: night ventilation fan conductance (only for zone 0, ASHRAE 140)
+                let h_ve_night_zone = if night_vent_active_now && zone_idx == 0 {
+                    h_ve_night
+                } else {
+                    0.0
+                };
                 let t_air_mn =
-                    solver.compute_zone_air_temperature(outdoor_temp, h_ve_val, phi_ia_val);
+                    solver.compute_zone_air_temperature(outdoor_temp, h_ve_val, h_ve_night_zone, phi_ia_val);
                 // Use multi-node temperature — it provides the correct air balance
                 // from mass node temperatures stepped by the backward Euler.
                 t_i_free_data.push(t_air_mn);

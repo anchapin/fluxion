@@ -161,7 +161,7 @@ fn simulate_multi_node_900ff() -> (f64, f64, f64, f64) {
         let t_air =
             runner
                 .solver
-                .compute_zone_air_temperature(t_outdoor, runner.h_ve, internal_gain);
+                .compute_zone_air_temperature(t_outdoor, runner.h_ve, 0.0, internal_gain);
         min_temp = min_temp.min(t_air);
         max_temp = max_temp.max(t_air);
     }

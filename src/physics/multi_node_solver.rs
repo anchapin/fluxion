@@ -256,17 +256,18 @@ impl MultiNodeSolver {
     ///
     /// ```text
     /// T_s = Σ(h_tr_ms_k × T_k) / Σ(h_tr_ms_k)   for k ∈ {wall, roof, floor}
-    /// T_air = (h_tr_is × T_s + h_ve × T_out + φ_ia) / (h_tr_is + h_ve)
+    /// T_air = (h_tr_is × T_s + (h_ve + h_ve_night) × T_out + φ_ia) / (h_tr_is + h_ve + h_ve_night)
     /// ```
     ///
     /// # Arguments
     /// * `t_outdoor` — Outdoor air temperature [°C]
     /// * `h_ve` — Ventilation/infiltration conductance [W/K]
+    /// * `h_ve_night` — Night ventilation fan conductance [W/K]
     /// * `phi_ia` — Internal convective + solar-to-air gains [W]
     ///
     /// # Returns
     /// Free-floating zone air temperature [°C]
-    pub fn compute_zone_air_temperature(&self, t_outdoor: f64, h_ve: f64, phi_ia: f64) -> f64 {
+    pub fn compute_zone_air_temperature(&self, t_outdoor: f64, h_ve: f64, h_ve_night: f64, phi_ia: f64) -> f64 {
         // Conductance-weighted surface temperature from envelope nodes
         let h_ms_w = self.mass.wall.h_tr_ms;
         let h_ms_r = self.mass.roof.h_tr_ms;
@@ -284,13 +285,15 @@ impl MultiNodeSolver {
         };
 
         // Air node energy balance
-        let denom = self.h_tr_is + h_ve;
+        // h_ve_night: additional ventilation conductance from night ventilation fans [W/K]
+        let h_ve_total = h_ve + h_ve_night;
+        let denom = self.h_tr_is + h_ve_total;
         if denom < 1e-6 {
             // Near-zero ventilation + interior film — return surface temp as best estimate
             return t_surface;
         }
 
-        (self.h_tr_is * t_surface + h_ve * t_outdoor + phi_ia) / denom
+        (self.h_tr_is * t_surface + h_ve_total * t_outdoor + phi_ia) / denom
     }
 
     /// Compute ideal HVAC power demand to maintain setpoints.
@@ -932,7 +935,7 @@ mod tests {
     fn test_compute_zone_air_temperature_steady_state() {
         let solver = create_test_solver();
         // All nodes at 20°C, outdoor at 20°C → T_air ≈ 20°C
-        let t_air = solver.compute_zone_air_temperature(20.0, 5.0, 0.0);
+        let t_air = solver.compute_zone_air_temperature(20.0, 5.0, 0.0, 0.0);
         assert!(
             (t_air - 20.0).abs() < 0.5,
             "Steady-state T_air should be ~20°C, got {t_air}"
@@ -943,8 +946,8 @@ mod tests {
     fn test_compute_zone_air_temperature_solar_gain() {
         let solver = create_test_solver();
         // phi_ia > 0 → T_air > T_outdoor
-        let t_air_no_gain = solver.compute_zone_air_temperature(10.0, 5.0, 0.0);
-        let t_air_with_gain = solver.compute_zone_air_temperature(10.0, 5.0, 2000.0);
+        let t_air_no_gain = solver.compute_zone_air_temperature(10.0, 5.0, 0.0, 0.0);
+        let t_air_with_gain = solver.compute_zone_air_temperature(10.0, 5.0, 0.0, 2000.0);
         assert!(
             t_air_with_gain > t_air_no_gain,
             "Solar gain should raise T_air: {t_air_with_gain} should be > {t_air_no_gain}"
