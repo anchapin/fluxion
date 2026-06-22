@@ -1,0 +1,17 @@
+# cargo-mutants configuration for fluxion
+# See https://mutants.rs/config.html
+
+# Timeout for building a single mutant (in seconds)
+build_timeout = 600
+
+# Timeout for running tests for a single mutant (in seconds)
+test_timeout = 300
+
+# Number of parallel jobs
+jobs = 4
+
+# Skip common allocator-sizes patterns that don't represent real bugs
+skip_calls = ["with_capacity", "new", "default"]
+
+# Minimum time to wait for test to complete
+minimum_test_timeout = 60
