@@ -2461,49 +2461,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     );
                 }
 
-                // Issue #908 corrected cooling formula:
-
+                // CORRECTED cooling formula (symmetric with heating):
                 //
-                // OLD formula problems:
-                // 1. Steady-state term used t_free_val (multi-node air temp with STALE
-                //    surface temperatures, computed before step_physics_9r4c updates them).
-                //    This gives a tiny value when t_free_val barely exceeds t_cool_sp.
-                // 2. mass_heat_release used h_tr_ms directly (1092 W/K), giving huge
-                //    values (3.3 kW for 3°C ΔT) that had to be capped, losing the
-                //    physical link to the Norton equivalent h_coeff.
+                // For heating: Q = h_coeff × (T_heat_sp − T_free) > 0
+                // For cooling: Q = h_coeff × (T_cool_sp − T_free) < 0  [same form]
                 //
-                // CORRECTED formula (from steady-state zone air energy balance):
-                // Q = h_coeff × (T_mass − T_cool_sp)
-                // This is derived by substituting the Norton equivalent property
-                // h_tr_ms × (T_mass − T_zone) = h_coeff × (T_mass − T_zone) into
-                // the zone energy balance, eliminating the need for a separate
-                // mass term and avoiding the h_tr_ms/h_coeff mismatch.
+                // The driving temperature for BOTH is the FREE-FLOATING zone air temperature
+                // (t_i_free), which already includes all heat flows (solar, internal, conduction,
+                // ventilation, AND the dynamic mass heat exchange via the 5R1C network).
+                //
+                // Using t_free (zone air temperature) is correct because:
+                // - t_free represents the equilibrium temperature the zone reaches WITHOUT HVAC
+                // - If t_free > T_cool_sp, the zone needs cooling to bring it down
+                // - If t_free < T_heat_sp, the zone needs heating to bring it up
+                //
+                // The OLD formula used t_mass_mn (conductance-weighted mass temperature) as
+                // the driving temperature for cooling, which is WRONG because:
+                // - During summer peak, T_mass ≈ 28-30°C but T_zone ≈ 33-36°C
+                // - The HVAC needs to cool T_zone to 27°C, not T_mass to 27°C
+                // - Using t_mass gives ~162 W demand instead of ~730 W (4.5× underestimate)
                 //
                 // Sign convention: Q > 0 = heating, Q < 0 = cooling.
-                //
-                // Issue #908 FIX: Prevent misclassification of cooling demand as heating.
-                //
-                // The formula q = -h_coeff * (t_mass_mn - T_cool_sp) produces a POSITIVE
-                // value when t_mass_mn < T_cool_sp (e.g., mass at 20°C from winter control,
-                // cooling setpoint at 27°C → q = +700 W). This positive value gets
-                // accumulated as HEATING energy (val > 0 → heating_sum += val), inflating
-                // annual heating by ~1.75 MWh and leaving cooling near zero.
-                //
-                // Fix: Only compute cooling when t_mass_mn > T_cool_sp. A cold mass cannot
-                // release heat for cooling — setting q = 0 when mass is cold is physically
-                // correct and prevents misclassification.
                 let q = if t_free_val < self.0.heating_setpoint {
-                    // Heating: keep Issue #925 formula unchanged.
-                    // Mass heat absorption term is intentionally omitted
-                    // (see Issue #900 in hvac.rs for rationale).
+                    // Heating: Q = h_coeff × (T_heat_sp − T_free) > 0
                     h_coeff * (self.0.heating_setpoint - t_free_val)
-                } else if t_mass_mn > self.0.cooling_setpoint {
-                    // Cooling: only when mass is warm enough to release heat.
-                    // Uses t_mass_mn (already computed at lines 2200-2217) which
-                    // reflects the CURRENT thermal mass state after step_physics_9r4c.
-                    -h_coeff * (t_mass_mn - self.0.cooling_setpoint)
+                } else if t_free_val > self.0.cooling_setpoint {
+                    // Cooling: Q = h_coeff × (T_cool_sp − T_free) = −h_coeff × (T_free − T_cool_sp) < 0
+                    // Driving temperature is t_free (zone air), NOT t_mass_mn
+                    -h_coeff * (t_free_val - self.0.cooling_setpoint)
                 } else {
-                    // Mass is cold (at or below cooling setpoint): no cooling available.
+                    // Zone air is within deadband: no HVAC demand
                     0.0
                 };
 
