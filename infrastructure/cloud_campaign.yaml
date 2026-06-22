@@ -1,0 +1,149 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Fluxion Cloud Campaign Infrastructure
+  S3 bucket, SNS topic, and IAM role for cloud campaign orchestration.
+
+Parameters:
+  S3BucketName:
+    Type: String
+    Default: fluxion-campaigns
+    Description: Name of the S3 bucket for campaign data
+
+  SNSTopicName:
+    Type: String
+    Default: fluxion-campaign-notifications
+    Description: Name of the SNS topic for notifications
+
+  NotificationEmail:
+    Type: String
+    Default: ""
+    Description: Email address for SNS subscription (optional)
+
+Resources:
+  CampaignBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref S3BucketName
+      Versioning:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: ExpireOldResults
+            Status: Enabled
+            ExpirationInDays: 30
+          - Id: AbortIncompleteUploads
+            Status: Enabled
+            AbortIncompleteMultipartUploadDays: 7
+      Tags:
+        - Key: Project
+          Value: Fluxion
+
+  CampaignTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Ref SNSTopicName
+      DisplayName: Fluxion Campaign Notifications
+      Tags:
+        - Key: Project
+          Value: Fluxion
+
+  CampaignRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: fluxion-campaign-role
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CampaignPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                Resource:
+                  - !GetAtt CampaignBucket.Arn
+                  - !Sub "${CampaignBucket.Arn}/*"
+
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: !Ref CampaignTopic
+
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                Resource: "*"
+
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: "*"
+
+  AggregatorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: fluxion-aggregator
+      Runtime: python3.11
+      Handler: s3_aggregator.lambda_handler
+      Role: !GetAtt CampaignRole.Arn
+      Timeout: 300
+      MemorySize: 256
+      Code:
+        S3Bucket: !Ref S3BucketName
+        S3Key: scripts/s3_aggregator.py
+      Environment:
+        Variables:
+          FLUXION_S3_BUCKET: !Ref S3BucketName
+          FLUXION_S3_PREFIX: fluxion-campaigns
+
+  AggregatorPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref AggregatorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !GetAtt CampaignBucket.Arn
+
+Outputs:
+  S3Bucket:
+    Description: S3 bucket for campaign data
+    Value: !Ref CampaignBucket
+    Export:
+      Name: !Sub "${AWS::StackName}-S3Bucket"
+
+  SNSTopicArn:
+    Description: SNS topic ARN for notifications
+    Value: !Ref CampaignTopic
+    Export:
+      Name: !Sub "${AWS::StackName}-SNSTopicArn"
+
+  CampaignRoleArn:
+    Description: IAM role ARN for campaign operations
+    Value: !GetAtt CampaignRole.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-CampaignRoleArn"
+
+  AggregatorFunctionName:
+    Description: Lambda function name for result aggregation
+    Value: !Ref AggregatorFunction
+    Export:
+      Name: !Sub "${AWS::StackName}-AggregatorFunction"
