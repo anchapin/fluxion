@@ -79,11 +79,7 @@ impl MatrixState {
         }
     }
 
-    pub fn merge_temp_update(
-        &mut self,
-        zone_index: usize,
-        new_temp: f64,
-    ) -> HeatTransferPayload {
+    pub fn merge_temp_update(&mut self, zone_index: usize, new_temp: f64) -> HeatTransferPayload {
         self.sequence += 1;
         let old_temp = self.temperatures[zone_index];
         self.temperatures[zone_index] = new_temp;
@@ -110,8 +106,8 @@ impl MatrixState {
 mod loom_tests {
     use super::*;
     use loom::thread;
-    use std::sync::{Arc as StdArc, Mutex as StdMutex};
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc as StdArc, Mutex as StdMutex};
 
     /// Test concurrent updates to matrix state using loom-controlled threads
     #[test]

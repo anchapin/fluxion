@@ -267,7 +267,13 @@ impl MultiNodeSolver {
     ///
     /// # Returns
     /// Free-floating zone air temperature [°C]
-    pub fn compute_zone_air_temperature(&self, t_outdoor: f64, h_ve: f64, h_ve_night: f64, phi_ia: f64) -> f64 {
+    pub fn compute_zone_air_temperature(
+        &self,
+        t_outdoor: f64,
+        h_ve: f64,
+        h_ve_night: f64,
+        phi_ia: f64,
+    ) -> f64 {
         // Conductance-weighted surface temperature from envelope nodes
         let h_ms_w = self.mass.wall.h_tr_ms;
         let h_ms_r = self.mass.roof.h_tr_ms;
