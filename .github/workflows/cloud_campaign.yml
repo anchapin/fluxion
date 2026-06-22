@@ -1,0 +1,140 @@
+name: Cloud Campaign Runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      campaign_type:
+        description: 'Campaign type'
+        required: true
+        default: 'ashrae_sweep'
+        type: choice
+        options:
+          - ashrae_sweep
+          - monte_carlo
+          - sensitivity_analysis
+      case_id:
+        description: 'ASHRAE case ID'
+        required: true
+        default: '600'
+      params:
+        description: 'Comma-separated parameters to sweep'
+        required: false
+        default: 'R_value,wall_thickness'
+      sweep_type:
+        description: 'Sweep type'
+        required: true
+        default: 'random'
+        type: choice
+        options:
+          - random
+          - grid
+          - latin_hypercube
+      samples:
+        description: 'Number of samples'
+        required: false
+        default: '50'
+      s3_bucket:
+        description: 'S3 bucket for campaign data'
+        required: true
+      s3_prefix:
+        description: 'S3 prefix'
+        required: false
+        default: 'fluxion-campaigns'
+      sns_topic:
+        description: 'SNS topic ARN for notifications'
+        required: false
+
+jobs:
+  create-campaign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install boto3
+
+      - name: Create campaign
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
+          FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
+          FLUXION_SNS_TOPIC_ARN: ${{ inputs.sns_topic }}
+        run: |
+          python scripts/cloud_campaign_manager.py \
+            --action create \
+            --case ${{ inputs.case_id }} \
+            --params ${{ inputs.params }} \
+            --sweep-type ${{ inputs.sweep_type }} \
+            --samples ${{ inputs.samples }} \
+            --s3-bucket ${{ env.FLUXION_S3_BUCKET }} \
+            --s3-prefix ${{ env.FLUXION_S3_PREFIX }}
+
+  wait-for-completion:
+    needs: create-campaign
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install boto3
+
+      - name: Wait for campaign
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
+          FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
+          FLUXION_SNS_TOPIC_ARN: ${{ inputs.sns_topic }}
+        run: |
+          python scripts/cloud_campaign_manager.py \
+            --action wait \
+            --campaign-id ${{ needs.create-campaign.outputs.campaign_id }} \
+            --s3-bucket ${{ env.FLUXION_S3_BUCKET }} \
+            --s3-prefix ${{ env.FLUXION_S3_PREFIX }}
+
+  aggregate-results:
+    needs: wait-for-completion
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install boto3
+
+      - name: Aggregate results
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+          AWS_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+          FLUXION_S3_BUCKET: ${{ inputs.s3_bucket }}
+          FLUXION_S3_PREFIX: ${{ inputs.s3_prefix }}
+        run: |
+          python scripts/s3_aggregator.py \
+            --campaign-id ${{ needs.create-campaign.outputs.campaign_id }} \
+            --s3-bucket ${{ env.FLUXION_S3_BUCKET }} \
+            --s3-prefix ${{ env.FLUXION_S3_PREFIX }} \
+            --output-format both
