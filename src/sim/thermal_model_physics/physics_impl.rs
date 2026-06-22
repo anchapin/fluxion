@@ -2213,14 +2213,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             phi_m_surface_roof.push(solar_gains.phi_m_roof);
             phi_m_surface_floor.push(solar_gains.phi_m_floor);
 
-            // Issue #948: Boost h_tr_is for forced convection during night ventilation.
+            // Issue #1191: Boost h_tr_is for forced convection during night ventilation.
             // A 4× multiplier represents the increased surface-to-air heat transfer
-            // when fans create forced convection instead of natural convection.
-            // This boost persists through step_with_gains AND compute_zone_air_temperature.
+            // when fans create forced convection instead of natural convection (ACH >= 3.0).
             // IMPORTANT: Restore h_tr_is after step to avoid persisting the boost to daytime.
             let original_h_tr_is = if night_vent_active_now {
                 let original = solver.h_tr_is;
-                solver.h_tr_is *= 5.0;
+                solver.h_tr_is *= 4.0;
                 Some(original)
             } else {
                 None
@@ -2228,6 +2227,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
             if let Some(original) = original_h_tr_is {
                 solver.h_tr_is = original;
+            }
+        }
+
+        // Issue #1191: Apply forced convection boost to h_tr_is when calling
+        // compute_zone_air_temperature during night ventilation. This ensures
+        // the zone air temperature calculation uses the enhanced surface-to-air
+        // heat transfer that occurs with forced convection (ACH >= 3.0).
+        if night_vent_active_now {
+            for solver in &mut self.0.multi_node_solvers {
+                solver.h_tr_is *= 4.0;
             }
         }
 
@@ -2266,6 +2275,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
         let t_i_free_mn = T::from(VectorField::new(t_i_free_data));
+
+        // Issue #1191: Restore h_tr_is to original value after computing zone air temperature.
+        if night_vent_active_now {
+            for solver in &mut self.0.multi_node_solvers {
+                solver.h_tr_is /= 4.0;
+            }
+        }
 
         // (#872) Do NOT write multi-node mass temperatures back to self.0.
         // The multi-node solver keeps its own internal state. Writing back would
