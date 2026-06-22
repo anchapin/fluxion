@@ -1404,10 +1404,9 @@ impl ThermalModel<VectorField> {
                 // This replaces the previous ρ*c*V calculation with the furniture factor formula
                 let c_me = zone_floor_area * 55_000.0 * furniture_factor;
 
-                // Push to cm_internal_vec if 9R4C model
-                if is_9r4c_model {
-                    cm_internal_vec.push(c_me);
-                }
+                // Internal mass capacitance needed for 9R4C solver initialization.
+                // Populated unconditionally so low-mass 9R4C path has cm_internal available.
+                cm_internal_vec.push(c_me);
 
                 h_tr_me
             })
@@ -1858,7 +1857,15 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        if spec.case_id.starts_with("9") && spec.case_id != "960" {
+        // ADR-002 + Case 600 diagnosis: 5R1C omits surface-to-air convective heat transfer,
+        // causing ~50% cooling under-prediction for low-mass cases (640/610/620/630/650).
+        // 9R4C separates surface nodes with explicit convective coupling, routing solar gains
+        // through floor → floor surface temp → convective transfer to zone air → correct HVAC demand.
+        // Case 600FF/650FF must retain 5R1C for free-float t_i_free (validated separately).
+        if (spec.case_id.starts_with("9") && spec.case_id != "960")
+            || (spec.case_id.starts_with("6")
+                && !["600FF", "650FF"].contains(&spec.case_id.as_str()))
+        {
             model.enable_9r4c_model();
         }
 

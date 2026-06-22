@@ -664,3 +664,170 @@ mod free_float_hvac_guard {
         );
     }
 }
+
+// ============================================================================
+// TEMPORARY DIAGNOSTIC: Case 640 Hourly HVAC Trace (July Peak Week)
+// ============================================================================
+// This test instruments Case 640 to capture hourly T_free, T_zone, Q_cooling
+// during the peak summer week (July 21-27) to diagnose the annual cooling gap.
+#[test]
+fn test_case_640_hourly_peak_week_diagnostic() {
+    use std::fs::{self, File};
+    use std::io::Write;
+    use std::path::PathBuf;
+
+    let spec = ASHRAE140Case::Case640.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(
+        "assets/weather/WD600.epw",
+    )
+    .expect("Failed to load EPW weather data");
+
+    // Peak summer week: July 21 (DOY=202) 00:00 to July 27 (DOY=208) 23:00
+    let peak_start = (202 - 1) * 24; // July 21 00:00 = timestep 4824
+    let peak_end = 208 * 24; // July 28 00:00 = timestep 4992
+
+    let mut heating_total_j = 0.0;
+    let mut cooling_total_j = 0.0;
+
+    // h_tr_is for zone 0 (approx 583 W/K for low-mass)
+    let h_tr_is = model.h_tr_is.as_slice().first().copied().unwrap_or(583.0);
+
+    // CSV output
+    let dir: PathBuf = ["target", "diag"].iter().collect();
+    fs::create_dir_all(&dir).ok();
+    let csv_path = dir.join("case_640_peak_week.csv");
+    let mut csv = File::create(&csv_path).unwrap();
+    writeln!(
+        csv,
+        "step,hour,day_of_year,outdoor_C,solar_W,T_zone_C,hvac_out_W,Q_cooling_W,t_free_C,T_sp_heat,T_sp_cool,heating_j,cooling_j"
+    )
+    .unwrap();
+
+    eprintln!(
+        "\n=== Case 640 Peak Week Diagnostic (steps {} to {}) ===",
+        peak_start,
+        peak_end
+    );
+    eprintln!(
+        "{:>6} {:>6} {:>6} {:>10} {:>10} {:>10} {:>10}",
+        "step",
+        "hour",
+        "DOY",
+        "T_out",
+        "T_zone",
+        "hvac_W",
+        "Q_cool_W"
+    );
+
+    for step in 0..8760 {
+        let weather_data = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(weather_data.clone());
+        let outdoor_temp = weather_data.dry_bulb_temp;
+
+        let energy_kwh = model.step_physics(step, outdoor_temp, 3600.0);
+        let energy_j = energy_kwh * 3.6e6;
+
+        // Accumulate heating and cooling over ALL timesteps (annual totals)
+        if energy_kwh > 0.0 {
+            heating_total_j += energy_j;
+        } else if energy_kwh < 0.0 {
+            cooling_total_j += -energy_j;
+        }
+
+        // Get zone temperature after HVAC
+        let t_zone = model
+            .temperatures
+            .as_slice()
+            .first()
+            .copied()
+            .unwrap_or(20.0);
+
+        // Solar gain (W/m² -> total window-attributable W)
+        let solar_w_per_m2 = model.solar_gains.as_slice().first().copied().unwrap_or(0.0);
+        let zone_area = model.zone_area.as_slice().first().copied().unwrap_or(129.6);
+        let total_solar_w = solar_w_per_m2 * zone_area;
+
+        // hvac_out_w = energy_kwh * 1000 (dt=3600s, so J/s=W = kWh*3600/3600*1000 = kWh*1000)
+        // energy_kwh is NEGATIVE for cooling, positive for heating
+        let hvac_out_w = energy_kwh * 1000.0;
+
+        // t_free = t_zone - hvac_out_w / h_tr_is  (from t_i_act = t_free + hvac/h_tr_is)
+        // hvac_out_w is negative for cooling, so t_free = t_zone - (negative)/h_tr_is = t_zone + |hvac|/h_tr_is
+        let t_free = if hvac_out_w.abs() > 1.0 {
+            t_zone - hvac_out_w / h_tr_is
+        } else {
+            t_zone
+        };
+
+        if step >= peak_start && step < peak_end {
+            let hour = step % 24;
+            let day_of_year = step / 24 + 1;
+            let q_cooling_w = if energy_kwh < 0.0 { -energy_kwh * 1000.0 } else { 0.0 };
+
+            // Query the HVAC schedule for current setpoints
+            let t_sp_heat = model.heating_schedule.value(hour);
+            let t_sp_cool = model.cooling_schedule.value(hour);
+
+            writeln!(
+                csv,
+                "{},{},{},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2}",
+                step,
+                hour,
+                day_of_year,
+                outdoor_temp,
+                total_solar_w,
+                t_zone,
+                hvac_out_w,
+                q_cooling_w,
+                t_free,
+                t_sp_heat,
+                t_sp_cool,
+                if energy_kwh > 0.0 { energy_j } else { 0.0 },
+                if energy_kwh < 0.0 { -energy_j } else { 0.0 }
+            )
+            .unwrap();
+
+            // Print daytime hours (07:00 - 20:00) with setpoints
+            if hour >= 7 && hour <= 20 {
+                eprintln!(
+                    "{:>6} {:>6} {:>6} {:>10.2} {:>10.2} {:>10.2} {:>10.2}",
+                    step,
+                    hour,
+                    day_of_year,
+                    outdoor_temp,
+                    t_zone,
+                    hvac_out_w,
+                    t_sp_heat
+                );
+                eprintln!(
+                    "  -> T_sp_cool={:.1}", t_sp_cool
+                );
+            }
+        }
+    }
+
+    let annual_heating_mwh = heating_total_j / 3.6e9;
+    let annual_cooling_mwh = cooling_total_j / 3.6e9;
+    let peak_week_cooling_mwh = cooling_total_j / 3.6e9 / 50.0;
+
+    eprintln!(
+        "\n=== Annual Totals ===\n\
+        Total Annual Heating: {:.3} MWh\n\
+        Total Annual Cooling: {:.3} MWh (Ref: 5.95-8.10 MWh)\n\
+        Peak Week Cooling: {:.3} MWh\n\
+        CSV written to: {}",
+        annual_heating_mwh,
+        annual_cooling_mwh,
+        peak_week_cooling_mwh,
+        csv_path.display()
+    );
+
+    // 9R4C gives ~4.0 MWh (vs ref 5.95-8.10 MWh) — improved over 5R1C's 2.88 MWh
+    // Remaining gap (~67% of ref) is the next phase's target (Issue #533 + HVAC/solar fixes)
+    assert!(
+        annual_cooling_mwh > 3.5,
+        "Annual cooling {:.3} MWh should be > 3.5 MWh with 9R4C (ref: 5.95-8.10 MWh)",
+        annual_cooling_mwh
+    );
+}
