@@ -1396,7 +1396,15 @@ impl ThermalModel<VectorField> {
                 };
                 // Use furniture factor for internal mass area (furniture/partition surface area)
                 let a_int = furniture_factor * zone_floor_area;
-                let h_ms = 4.5; // Furniture/partitions coupling coefficient W/(m²·K)
+                // Issue #1213 Fix: Increase h_tr_me from 4.5 to 9.1 W/(m²·K)
+                // to match the ISO 13790 lumped mass coupling coefficient.
+                // The previous 4.5 value was too low, causing internal mass to be
+                // thermally decoupled from the envelope. This resulted in:
+                // - Night minimum 0.6°C warmer than expected
+                // - Zone cooling underestimated by ~90% (6.13 MWh vs 8-10.5 MWh target)
+                // Using 9.1 W/(m²·K) gives h_tr_me ≈ 218 W/K (vs previous 108 W/K),
+                // which provides proper coupling for furniture thermal mass response.
+                let h_ms = 9.1; // Furniture/partitions coupling coefficient W/(m²·K)
                 let h_tr_me = h_ms * a_int;
 
                 // Also update cm_internal for 9R4C model (Phase 6B)
