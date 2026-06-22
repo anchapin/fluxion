@@ -6,6 +6,7 @@
 use std::sync::OnceLock;
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::assembly::BuildingAssembly;
 use crate::sim::construction::{SurfaceType, WallSurface};
@@ -2552,6 +2553,44 @@ impl ThermalModel<VectorField> {
         }
 
         model
+    }
+
+    /// Create a new ThermalModel with validation, returning Result instead of panicking.
+    ///
+    /// This is the recommended constructor for new code that wants proper error handling.
+    /// It validates the model state and returns a `PhysicsError` if validation fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_zones` - Number of thermal zones to model
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ThermalModel)` if validation passes
+    /// * `Err(PhysicsError)` if validation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use fluxion::sim::engine::ThermalModel;
+    /// use fluxion::physics::solver_trait::PhysicsError;
+    ///
+    /// match ThermalModel::try_new(10) {
+    ///     Ok(model) => println!("Created model with {} zones", model.num_zones),
+    ///     Err(e) => eprintln!("Failed to create model: {}", e),
+    /// }
+    /// ```
+    pub fn try_new(num_zones: usize) -> PhysicsResult<Self> {
+        let model = Self::new(num_zones);
+
+        // Validate h_ve is non-negative (ventilation can be 0, but not negative)
+        if model.h_ve.iter().any(|h| *h < 0.0) {
+            return Err(PhysicsError::invalid_conductance(
+                "h_ve must be non-negative. Check infiltration rate configuration.",
+            ));
+        }
+
+        Ok(model)
     }
 
     /// Create a new 8R3C thermal model (Phase 20 evaluation).
