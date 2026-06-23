@@ -63,7 +63,11 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
     let mut hourly_data = Vec::with_capacity(steps);
     let mut daily_data: Vec<DailyData> = Vec::with_capacity(365);
     let mut monthly_data: Vec<MonthlyData> = vec![
-        MonthlyData { month: 1, cooling_kwh: 0.0, days: 0 };
+        MonthlyData {
+            month: 1,
+            cooling_kwh: 0.0,
+            days: 0
+        };
         12
     ];
 
@@ -87,24 +91,15 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
             .copied()
             .unwrap_or(20.0);
 
-        let solar_gain_wm2 = model
-            .solar_gains
-            .as_slice()
-            .first()
-            .copied()
-            .unwrap_or(0.0);
+        let solar_gain_wm2 = model.solar_gains.as_slice().first().copied().unwrap_or(0.0);
         let zone_area = model.zone_area.as_slice().first().copied().unwrap_or(48.0);
         let solar_gain = solar_gain_wm2 * zone_area;
 
-        let internal_gain_wm2 = model
-            .loads
-            .as_slice()
-            .first()
-            .copied()
-            .unwrap_or(0.0);
+        let internal_gain_wm2 = model.loads.as_slice().first().copied().unwrap_or(0.0);
         let internal_gain = internal_gain_wm2 * zone_area;
 
-        let energy_kwh = model.step_physics(warmup_steps + step, weather_data.dry_bulb_temp, 3600.0);
+        let energy_kwh =
+            model.step_physics(warmup_steps + step, weather_data.dry_bulb_temp, 3600.0);
         let energy_joules = energy_kwh * 3.6e6;
 
         let cooling_power_kw = if energy_kwh < 0.0 { -energy_kwh } else { 0.0 };
@@ -136,7 +131,8 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
                 avg_zone_temp: avg_zone,
                 max_zone_temp: day_zone_temps.iter().cloned().fold(f64::MIN, f64::max),
                 min_zone_temp: day_zone_temps.iter().cloned().fold(f64::MAX, f64::min),
-                avg_outdoor_temp: day_outdoor_temps.iter().sum::<f64>() / day_outdoor_temps.len() as f64,
+                avg_outdoor_temp: day_outdoor_temps.iter().sum::<f64>()
+                    / day_outdoor_temps.len() as f64,
             });
 
             monthly_data[month].cooling_kwh += day_cooling_kwh;
@@ -151,13 +147,26 @@ fn run_simulation() -> (Vec<HourlyData>, Vec<DailyData>, Vec<MonthlyData>, f64, 
     let annual_cooling_mwh = annual_cooling_joules / 3.6e9;
     let annual_heating_mwh = annual_heating_joules / 3.6e9;
 
-    (hourly_data, daily_data, monthly_data, annual_cooling_mwh, annual_heating_mwh)
+    (
+        hourly_data,
+        daily_data,
+        monthly_data,
+        annual_cooling_mwh,
+        annual_heating_mwh,
+    )
 }
 
 fn export_csv(hourly_data: &[HourlyData], filename: &str) -> std::io::Result<()> {
     let file = std::fs::File::create(filename)?;
     let mut wtr = csv::Writer::from_writer(file);
-    wtr.write_record(&["step", "outdoor_temp_c", "zone_temp_c", "cooling_power_kw", "solar_gain_w", "internal_gain_w"])?;
+    wtr.write_record(&[
+        "step",
+        "outdoor_temp_c",
+        "zone_temp_c",
+        "cooling_power_kw",
+        "solar_gain_w",
+        "internal_gain_w",
+    ])?;
     for h in hourly_data {
         wtr.write_record(&[
             h.step.to_string(),
@@ -177,15 +186,25 @@ fn analyze_cooling_pattern(daily_data: &[DailyData], monthly_data: &[MonthlyData
     println!("\n--- Monthly Cooling Energy ---");
     for (i, m) in monthly_data.iter().enumerate() {
         if m.days > 0 {
-            println!("Month {:2}: {:8.2} kWh ({:4.1} days avg daily: {:6.2} kWh/day)",
-                i + 1, m.cooling_kwh, m.days, m.cooling_kwh / m.days as f64);
+            println!(
+                "Month {:2}: {:8.2} kWh ({:4.1} days avg daily: {:6.2} kWh/day)",
+                i + 1,
+                m.cooling_kwh,
+                m.days,
+                m.cooling_kwh / m.days as f64
+            );
         }
     }
 
     let total_cooling = monthly_data.iter().map(|m| m.cooling_kwh).sum::<f64>();
-    println!("\nTotal Annual Cooling: {:.2} kWh ({:.2} MWh)", total_cooling, total_cooling / 1000.0);
+    println!(
+        "\nTotal Annual Cooling: {:.2} kWh ({:.2} MWh)",
+        total_cooling,
+        total_cooling / 1000.0
+    );
 
-    let warm_months: Vec<_> = daily_data.iter()
+    let warm_months: Vec<_> = daily_data
+        .iter()
         .filter(|d| d.avg_outdoor_temp > 20.0)
         .collect();
     let warm_cooling: f64 = warm_months.iter().map(|d| d.cooling_kwh).sum();
@@ -195,9 +214,18 @@ fn analyze_cooling_pattern(daily_data: &[DailyData], monthly_data: &[MonthlyData
     println!("Warm months (>20°C avg): {:.2} kWh", warm_cooling);
     println!("Cool months (≤20°C avg): {:.2} kWh", cool_cooling);
 
-    let hot_days: Vec<_> = daily_data.iter().filter(|d| d.max_zone_temp > 26.0).collect();
-    let warm_days: Vec<_> = daily_data.iter().filter(|d| d.max_zone_temp > 24.0 && d.max_zone_temp <= 26.0).collect();
-    let comfort_days: Vec<_> = daily_data.iter().filter(|d| d.max_zone_temp <= 24.0).collect();
+    let hot_days: Vec<_> = daily_data
+        .iter()
+        .filter(|d| d.max_zone_temp > 26.0)
+        .collect();
+    let warm_days: Vec<_> = daily_data
+        .iter()
+        .filter(|d| d.max_zone_temp > 24.0 && d.max_zone_temp <= 26.0)
+        .collect();
+    let comfort_days: Vec<_> = daily_data
+        .iter()
+        .filter(|d| d.max_zone_temp <= 24.0)
+        .collect();
 
     println!("\n--- Zone Temperature Distribution ---");
     println!("Hot days (>26°C max):   {:4}", hot_days.len());
@@ -216,16 +244,21 @@ fn test_case_900_cooling_diagnostic() {
     println!("Running Case 900 cooling diagnostic...");
     println!("Reference: 6.13 MWh actual vs target 8.00-10.50 MWh (33.76% underestimation)");
 
-    let (hourly_data, daily_data, monthly_data, annual_cooling_mwh, annual_heating_mwh) = run_simulation();
+    let (hourly_data, daily_data, monthly_data, annual_cooling_mwh, annual_heating_mwh) =
+        run_simulation();
 
     println!("\n=== Results ===");
-    println!("Annual Cooling: {:.2} MWh (target: {:.2}-{:.2} MWh)", annual_cooling_mwh, TARGET_COOLING_MIN_MWH, TARGET_COOLING_MAX_MWH);
+    println!(
+        "Annual Cooling: {:.2} MWh (target: {:.2}-{:.2} MWh)",
+        annual_cooling_mwh, TARGET_COOLING_MIN_MWH, TARGET_COOLING_MAX_MWH
+    );
     println!("Annual Heating: {:.2} MWh", annual_heating_mwh);
 
     let error_pct = ((annual_cooling_mwh - REFERENCE_COOLING_MWH) / REFERENCE_COOLING_MWH) * 100.0;
     println!("Error vs reference: {:.2}%", error_pct);
 
-    let in_range = annual_cooling_mwh >= TARGET_COOLING_MIN_MWH && annual_cooling_mwh <= TARGET_COOLING_MAX_MWH;
+    let in_range = annual_cooling_mwh >= TARGET_COOLING_MIN_MWH
+        && annual_cooling_mwh <= TARGET_COOLING_MAX_MWH;
     println!("In target range: {}", if in_range { "YES" } else { "NO" });
 
     if let Ok(()) = export_csv(&hourly_data, "output/case_900_cooling_diagnostic.csv") {
@@ -236,16 +269,24 @@ fn test_case_900_cooling_diagnostic() {
 
     println!("\n=== Diagnostic Summary ===");
     if annual_cooling_mwh < TARGET_COOLING_MIN_MWH {
-        println!("WARNING: Cooling energy {:.2} MWh is below target range ({:.2}-{:.2} MWh)", 
-            annual_cooling_mwh, TARGET_COOLING_MIN_MWH, TARGET_COOLING_MAX_MWH);
+        println!(
+            "WARNING: Cooling energy {:.2} MWh is below target range ({:.2}-{:.2} MWh)",
+            annual_cooling_mwh, TARGET_COOLING_MIN_MWH, TARGET_COOLING_MAX_MWH
+        );
         println!("This confirms the reported cooling underestimation issue.");
-        println!("Zone temperature analysis: {} hot days indicates cooling is insufficient", 
-            daily_data.iter().filter(|d| d.max_zone_temp > 26.0).count());
+        println!(
+            "Zone temperature analysis: {} hot days indicates cooling is insufficient",
+            daily_data.iter().filter(|d| d.max_zone_temp > 26.0).count()
+        );
     } else if annual_cooling_mwh > TARGET_COOLING_MAX_MWH {
-        println!("NOTE: Cooling energy {:.2} MWh exceeds upper target ({:.2} MWh)", 
-            annual_cooling_mwh, TARGET_COOLING_MAX_MWH);
+        println!(
+            "NOTE: Cooling energy {:.2} MWh exceeds upper target ({:.2} MWh)",
+            annual_cooling_mwh, TARGET_COOLING_MAX_MWH
+        );
     } else {
-        println!("PASS: Cooling energy {:.2} MWh is within target range ({:.2}-{:.2} MWh)", 
-            annual_cooling_mwh, TARGET_COOLING_MIN_MWH, TARGET_COOLING_MAX_MWH);
+        println!(
+            "PASS: Cooling energy {:.2} MWh is within target range ({:.2}-{:.2} MWh)",
+            annual_cooling_mwh, TARGET_COOLING_MIN_MWH, TARGET_COOLING_MAX_MWH
+        );
     }
 }

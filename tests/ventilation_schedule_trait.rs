@@ -15,7 +15,7 @@
 //! - [x] Test runs in <100ms
 
 use fluxion::sim::ventilation::{
-    ach_to_conductance, calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
+    calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
     calculate_wind_infiltration_ach, ConstantVentilation, ScheduledVentilation,
     VentilationSchedule, WeatherDependentVentilation,
 };
@@ -28,7 +28,11 @@ use fluxion::sim::ventilation::{
 fn constant_ventilation_same_ach_all_hours() {
     let vent = ConstantVentilation::new(1.5);
     for hour in 0..8760 {
-        assert_eq!(vent.get_ach(hour), 1.5, "Hour {hour} should return 1.5 ACH");
+        assert_eq!(
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            1.5,
+            "Hour {hour} should return 1.5 ACH"
+        );
     }
 }
 
@@ -36,15 +40,15 @@ fn constant_ventilation_same_ach_all_hours() {
 fn constant_ventilation_zero_ach_is_non_negative() {
     let vent = ConstantVentilation::new(0.0);
     for hour in 0..24 {
-        assert!(vent.get_ach(hour) >= 0.0);
+        assert!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0) >= 0.0);
     }
 }
 
 #[test]
 fn constant_ventilation_high_ach_remains_non_negative() {
     let vent = ConstantVentilation::new(100.0);
-    assert!(vent.get_ach(0) >= 0.0);
-    assert_eq!(vent.get_ach(0), 100.0);
+    assert!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0) >= 0.0);
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 100.0);
 }
 
 // ============================================================================
@@ -58,7 +62,7 @@ fn scheduled_ventilation_transitions_at_correct_hours_normal_range() {
     // Fan ON: 22, 23, 0, 1, 2, 3, 4, 5
     for hour in [22, 23, 0, 1, 2, 3, 4, 5] {
         assert_eq!(
-            vent.get_ach(hour),
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
             2.5,
             "Hour {hour} should have fan ON (ACH = 2.5)"
         );
@@ -67,7 +71,7 @@ fn scheduled_ventilation_transitions_at_correct_hours_normal_range() {
     // Fan OFF: 6..22
     for hour in 6..22 {
         assert_eq!(
-            vent.get_ach(hour),
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
             0.5,
             "Hour {hour} should have fan OFF (ACH = 0.5)"
         );
@@ -80,17 +84,29 @@ fn scheduled_ventilation_transitions_daytime_range() {
 
     // Fan ON: 8..18
     for hour in 8..18 {
-        assert_eq!(vent.get_ach(hour), 1.8, "Hour {hour}: fan ON");
+        assert_eq!(
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            1.8,
+            "Hour {hour}: fan ON"
+        );
     }
 
     // Fan OFF: 0..8
     for hour in 0..8 {
-        assert_eq!(vent.get_ach(hour), 0.3, "Hour {hour}: fan OFF");
+        assert_eq!(
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            0.3,
+            "Hour {hour}: fan OFF"
+        );
     }
 
     // Fan OFF: 18..24
     for hour in 18..24 {
-        assert_eq!(vent.get_ach(hour), 0.3, "Hour {hour}: fan OFF");
+        assert_eq!(
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            0.3,
+            "Hour {hour}: fan OFF"
+        );
     }
 }
 
@@ -98,16 +114,20 @@ fn scheduled_ventilation_transitions_daytime_range() {
 fn scheduled_ventilation_all_on_when_start_equals_end() {
     let vent = ScheduledVentilation::night_ventilation(0.2, 3.0, 10, 10);
     for hour in 0..24 {
-        assert_eq!(vent.get_ach(hour), 3.2, "Hour {hour}: all-on");
+        assert_eq!(
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            3.2,
+            "Hour {hour}: all-on"
+        );
     }
 }
 
 #[test]
 fn scheduled_ventilation_single_hour_transition() {
     let vent = ScheduledVentilation::night_ventilation(0.4, 1.0, 14, 15);
-    assert_eq!(vent.get_ach(13), 0.4); // OFF before
-    assert_eq!(vent.get_ach(14), 1.4); // ON
-    assert_eq!(vent.get_ach(15), 0.4); // OFF after (end is exclusive)
+    assert_eq!(vent.get_ach(13, 20.0, 24.0, 2.0, 100.0), 0.4); // OFF before
+    assert_eq!(vent.get_ach(14, 20.0, 24.0, 2.0, 100.0), 1.4); // ON
+    assert_eq!(vent.get_ach(15, 20.0, 24.0, 2.0, 100.0), 0.4); // OFF after (end is exclusive)
 }
 
 #[test]
@@ -115,17 +135,17 @@ fn scheduled_ventilation_midnight_wrap_boundary() {
     // Start=23, end=1 — wraps around midnight
     let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 23, 1);
 
-    assert_eq!(vent.get_ach(22), 0.3); // OFF
-    assert_eq!(vent.get_ach(23), 2.3); // ON
-    assert_eq!(vent.get_ach(0), 2.3); // ON
-    assert_eq!(vent.get_ach(1), 0.3); // OFF (end exclusive)
+    assert_eq!(vent.get_ach(22, 20.0, 24.0, 2.0, 100.0), 0.3); // OFF
+    assert_eq!(vent.get_ach(23, 20.0, 24.0, 2.0, 100.0), 2.3); // ON
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 2.3); // ON
+    assert_eq!(vent.get_ach(1, 20.0, 24.0, 2.0, 100.0), 0.3); // OFF (end exclusive)
 }
 
 #[test]
 fn scheduled_ventilation_always_non_negative() {
     let vent = ScheduledVentilation::night_ventilation(0.1, 0.5, 0, 24);
     for hour in 0..24 {
-        assert!(vent.get_ach(hour) >= 0.0);
+        assert!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0) >= 0.0);
     }
 }
 
@@ -133,7 +153,11 @@ fn scheduled_ventilation_always_non_negative() {
 fn scheduled_ventilation_no_schedule_returns_base() {
     let vent = ScheduledVentilation::new(0.5, 3.0);
     for hour in 0..24 {
-        assert_eq!(vent.get_ach(hour), 0.5, "Default schedule: all OFF");
+        assert_eq!(
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            0.5,
+            "Default schedule: all OFF"
+        );
     }
 }
 
@@ -143,11 +167,11 @@ fn scheduled_ventilation_no_schedule_returns_base() {
 
 #[test]
 fn weather_dependent_base_ach_via_trait() {
-    // get_ach() on the trait returns base_ach (weather-agnostic fallback)
+    // get_ach() on the trait returns weather-dependent ACH
     let vent = WeatherDependentVentilation::new(0.5, 0.5, 3.0, 18.0, 26.0);
     for hour in 0..24 {
-        assert!(vent.get_ach(hour) >= 0.0);
-        assert_eq!(vent.get_ach(hour), 0.5);
+        let ach = vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0);
+        assert!(ach >= 0.0);
     }
 }
 
@@ -233,7 +257,7 @@ fn weather_dependent_mixed_mode_construction() {
     let vent = WeatherDependentVentilation::mixed_mode(0.3, 3.0, 18.0, 26.0, 25.0);
     assert_eq!(vent.min_ach, vent.base_ach);
     assert_eq!(vent.indoor_cooling_setpoint, 25.0);
-    assert!(vent.get_ach(0) >= 0.0);
+    assert!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0) >= 0.0);
 }
 
 // ============================================================================
@@ -247,8 +271,8 @@ fn trait_dispatch_matches_direct_call_constant() {
 
     for hour in [0, 6, 12, 18, 23] {
         assert_eq!(
-            vent.get_ach(hour),
-            boxed.get_ach(hour),
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            boxed.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
             "Direct vs dispatch mismatch at hour {hour}"
         );
     }
@@ -261,8 +285,8 @@ fn trait_dispatch_matches_direct_call_scheduled() {
 
     for hour in 0..24 {
         assert_eq!(
-            vent.get_ach(hour),
-            boxed.get_ach(hour),
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            boxed.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
             "Direct vs dispatch mismatch at hour {hour}"
         );
     }
@@ -275,8 +299,8 @@ fn trait_dispatch_matches_direct_call_weather() {
 
     for hour in [0, 6, 12, 18, 23] {
         assert_eq!(
-            vent.get_ach(hour),
-            boxed.get_ach(hour),
+            vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
+            boxed.get_ach(hour, 20.0, 24.0, 2.0, 100.0),
             "Direct vs dispatch mismatch at hour {hour}"
         );
     }
@@ -288,8 +312,14 @@ fn trait_dispatch_clone_box_roundtrip() {
     let cloned = original.clone_box();
     let recloned = cloned.clone_box();
 
-    assert_eq!(original.get_ach(5), cloned.get_ach(5));
-    assert_eq!(original.get_ach(5), recloned.get_ach(5));
+    assert_eq!(
+        original.get_ach(5, 20.0, 24.0, 2.0, 100.0),
+        cloned.get_ach(5, 20.0, 24.0, 2.0, 100.0)
+    );
+    assert_eq!(
+        original.get_ach(5, 20.0, 24.0, 2.0, 100.0),
+        recloned.get_ach(5, 20.0, 24.0, 2.0, 100.0)
+    );
 }
 
 #[test]
@@ -301,7 +331,7 @@ fn trait_dispatch_collection_of_mixed_types() {
     ];
 
     for (i, schedule) in schedules.iter().enumerate() {
-        let ach = schedule.get_ach(12);
+        let ach = schedule.get_ach(12, 20.0, 24.0, 2.0, 100.0);
         assert!(
             ach >= 0.0,
             "Schedule {i}: ACH must be non-negative, got {ach}"
@@ -316,15 +346,15 @@ fn trait_dispatch_collection_of_mixed_types() {
 #[test]
 fn edge_case_zero_ach_constant() {
     let vent = ConstantVentilation::new(0.0);
-    assert_eq!(vent.get_ach(0), 0.0);
-    assert_eq!(vent.get_ach(8759), 0.0);
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 0.0);
+    assert_eq!(vent.get_ach(8759, 20.0, 24.0, 2.0, 100.0), 0.0);
 }
 
 #[test]
 fn edge_case_zero_ach_scheduled() {
     let vent = ScheduledVentilation::new(0.0, 0.0);
     for hour in 0..24 {
-        assert_eq!(vent.get_ach(hour), 0.0);
+        assert_eq!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0), 0.0);
     }
 }
 
@@ -440,10 +470,10 @@ fn test_completes_within_100ms() {
 
     let mut sum = 0.0f64;
     for hour in 0..8760 {
-        sum += constant.get_ach(hour);
-        sum += weather.get_ach(hour);
+        sum += constant.get_ach(hour, 20.0, 24.0, 2.0, 100.0);
+        sum += weather.get_ach(hour, 20.0, 24.0, 2.0, 100.0);
         // ScheduledVentilation indexes a 24-element array, use hour % 24
-        sum += scheduled.get_ach(hour % 24);
+        sum += scheduled.get_ach(hour % 24, 20.0, 24.0, 2.0, 100.0);
     }
 
     // Prevent optimizer from removing the loop

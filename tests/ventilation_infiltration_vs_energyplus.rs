@@ -110,7 +110,7 @@ fn test_constant_ach_matches_energyplus() {
     let mut sum_error_pct = 0.0_f64;
 
     for row in &ref_data {
-        let our_ach = vent.get_ach(row.hour - 1); // 0-indexed hour
+        let our_ach = vent.get_ach(row.hour - 1, row.outdoor_temp, 20.0, row.wind_speed, VOLUME); // 0-indexed hour
         let ep_ach = row.infiltration_ach;
 
         let error_pct = if ep_ach.abs() > 1e-10 {
