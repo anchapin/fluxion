@@ -678,10 +678,8 @@ fn test_case_640_hourly_peak_week_diagnostic() {
 
     let spec = ASHRAE140Case::Case640.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);
-    let weather = fluxion::weather::epw::EpwWeatherSource::from_file(
-        "assets/weather/WD600.epw",
-    )
-    .expect("Failed to load EPW weather data");
+    let weather = fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+        .expect("Failed to load EPW weather data");
 
     // Peak summer week: July 21 (DOY=202) 00:00 to July 27 (DOY=208) 23:00
     let peak_start = (202 - 1) * 24; // July 21 00:00 = timestep 4824
@@ -706,18 +704,11 @@ fn test_case_640_hourly_peak_week_diagnostic() {
 
     eprintln!(
         "\n=== Case 640 Peak Week Diagnostic (steps {} to {}) ===",
-        peak_start,
-        peak_end
+        peak_start, peak_end
     );
     eprintln!(
         "{:>6} {:>6} {:>6} {:>10} {:>10} {:>10} {:>10}",
-        "step",
-        "hour",
-        "DOY",
-        "T_out",
-        "T_zone",
-        "hvac_W",
-        "Q_cool_W"
+        "step", "hour", "DOY", "T_out", "T_zone", "hvac_W", "Q_cool_W"
     );
 
     for step in 0..8760 {
@@ -763,7 +754,11 @@ fn test_case_640_hourly_peak_week_diagnostic() {
         if step >= peak_start && step < peak_end {
             let hour = step % 24;
             let day_of_year = step / 24 + 1;
-            let q_cooling_w = if energy_kwh < 0.0 { -energy_kwh * 1000.0 } else { 0.0 };
+            let q_cooling_w = if energy_kwh < 0.0 {
+                -energy_kwh * 1000.0
+            } else {
+                0.0
+            };
 
             // Query the HVAC schedule for current setpoints
             let t_sp_heat = model.heating_schedule.value(hour);
@@ -792,17 +787,9 @@ fn test_case_640_hourly_peak_week_diagnostic() {
             if hour >= 7 && hour <= 20 {
                 eprintln!(
                     "{:>6} {:>6} {:>6} {:>10.2} {:>10.2} {:>10.2} {:>10.2}",
-                    step,
-                    hour,
-                    day_of_year,
-                    outdoor_temp,
-                    t_zone,
-                    hvac_out_w,
-                    t_sp_heat
+                    step, hour, day_of_year, outdoor_temp, t_zone, hvac_out_w, t_sp_heat
                 );
-                eprintln!(
-                    "  -> T_sp_cool={:.1}", t_sp_cool
-                );
+                eprintln!("  -> T_sp_cool={:.1}", t_sp_cool);
             }
         }
     }

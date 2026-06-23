@@ -17,6 +17,7 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::WindowProperties;
+use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
@@ -1858,15 +1859,7 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        // ADR-002 + Case 600 diagnosis: 5R1C omits surface-to-air convective heat transfer,
-        // causing ~50% cooling under-prediction for low-mass cases (640/610/620/630/650).
-        // 9R4C separates surface nodes with explicit convective coupling, routing solar gains
-        // through floor → floor surface temp → convective transfer to zone air → correct HVAC demand.
-        // Case 600FF/650FF must retain 5R1C for free-float t_i_free (validated separately).
-        if (spec.case_id.starts_with("9") && spec.case_id != "960")
-            || (spec.case_id.starts_with("6")
-                && !["600FF", "650FF"].contains(&spec.case_id.as_str()))
-        {
+        if RoutingThermalModelType::from(spec) == RoutingThermalModelType::HighMass9R4C {
             model.enable_9r4c_model();
         }
 
