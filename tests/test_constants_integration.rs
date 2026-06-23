@@ -63,7 +63,6 @@ fn test_thermal_model_can_create_with_constants() {
 }
 
 #[test]
-#[ignore = "hardcoded constants in engine.rs — ref: #1218"]
 fn test_engine_rs_no_hardcoded_film_coefficients() {
     // Verify no hardcoded film coefficient values in engine.rs
     let engine_rs = std::fs::read_to_string("src/sim/engine.rs").expect("Failed to read engine.rs");
@@ -93,7 +92,6 @@ fn test_engine_rs_no_hardcoded_film_coefficients() {
 }
 
 #[test]
-#[ignore = "constants module integration incomplete — ref: #1218"]
 fn test_engine_rs_has_constants_imports() {
     // Verify engine.rs imports from constants module
     let engine_rs = std::fs::read_to_string("src/sim/engine.rs").expect("Failed to read engine.rs");
