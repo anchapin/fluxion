@@ -2581,7 +2581,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 let denom = cm_dt + h_tr_em + h_tr_3_zone;
                 let numer =
                     cm_dt * tm_old + h_tr_em * t_ext + h_tr_3_zone * t_s + phi_m.as_ref()[i];
-                let tm_new = numer / denom;
+                // Issue #1219: Guard against division by zero when denom is near-zero
+                let tm_new = if denom.abs() > 1e-10 {
+                    numer / denom
+                } else {
+                    // Fallback: use previous mass temperature if system is degenerate
+                    tm_old
+                };
 
                 new_mass_temperatures.push(tm_new);
             }
