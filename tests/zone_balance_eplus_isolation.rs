@@ -842,7 +842,7 @@ fn test_case_600_blind_energy_infrastructure() {
 /// `#[ignore]` until the underlying physics is corrected; it will be
 /// un-ignored automatically when the cooling load is brought within band.
 #[test]
-#[ignore = "blocked by cooling-load physics gap; see ARCHITECTURE.md Zone Balance status"]
+#[ignore = "blocked by cooling-load physics gap; see ARCHITECTURE.md Zone Balance status — ref: #1213"]
 fn test_case_600_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case600.spec();
     let (h, c, _ph, _pc) =
@@ -905,7 +905,7 @@ fn test_case_900_blind_energy_infrastructure() {
 
 /// Case 900 STRICT ASHRAE 140 tolerance — IGNORED pending physics fix.
 #[test]
-#[ignore = "blocked by cooling-load physics gap; see ARCHITECTURE.md Zone Balance status"]
+#[ignore = "blocked by cooling-load physics gap; see ARCHITECTURE.md Zone Balance status — ref: #1213"]
 fn test_case_900_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case900.spec();
     let (h, c, _ph, _pc) =

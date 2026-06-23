@@ -1,6 +1,7 @@
-# EnergyPlus Reference Data: Roof Assembly
-# Generated: 2026-06-12 (synthetic for testing)
-# Note: Replace with actual E+ output for validation
+# Analytical Test Fixture: Roof Assembly
+# Generated: 2026-06-12 (SYNTHETIC — NOT from EnergyPlus)
+# This file contains analytically-derived step response data for testing purposes.
+# Do NOT use for EnergyPlus validation — not representative of actual E+ output.
 # U-value: 0.3177 W/m²K
 # Total R-value: 3.1480 m²K/W
 # Thermal mass: 20062.5 J/m²K

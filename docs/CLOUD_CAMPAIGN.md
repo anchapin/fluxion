@@ -1,0 +1,267 @@
+# Cloud Campaign Manager for Fluxion
+
+Direct-to-S3 campaign orchestration that removes the "Local Tether" bottleneck.
+
+## Overview
+
+OSimFlow's original campaign submission relied on the user's local machine to manage the execution loop. If a user disconnected or their laptop went to sleep, the remote simulation would drop.
+
+This cloud-hosted system decouples campaign execution from local machines by:
+
+1. **Campaign State in S3** — All campaign state is stored in S3, not local disk
+2. **Workers Push to S3** — Individual simulation workers push KPIs directly to S3
+3. **Cloud Aggregator** — Merges S3 result files into a final dataset
+4. **SNS Notifications** — Email/SMS notification upon campaign completion
+
+## Architecture
+
+```
+┌──────────────────┐     ┌─────────────┐     ┌─────────────────┐
+│ Cloud Campaign   │────▶│  S3 Bucket  │◀────│  S3 Worker      │
+│ Manager          │     │             │     │  (Remote VM/EC2)│
+└──────────────────┘     │  work-units │     └─────────────────┘
+       │                 │  results/   │              │
+       │                 │  state.json  │              │
+       │                 └─────────────┘              │
+       ▼                                                │
+┌──────────────────┐                                   │
+│ SNS Notification │◀──────────────────────────────────┘
+│ (Email/SMS)     │         (on completion)
+└──────────────────┘
+```
+
+## Quick Start
+
+### Prerequisites
+
+```bash
+# Install dependencies
+pip install boto3
+
+# Configure AWS credentials
+export AWS_ACCESS_KEY_ID=your_access_key
+export AWS_SECRET_ACCESS_KEY=your_secret_key
+export AWS_REGION=us-east-1
+
+# Set campaign parameters
+export FLUXION_S3_BUCKET=your-bucket-name
+export FLUXION_S3_PREFIX=fluxion-campaigns
+export FLUXION_SNS_TOPIC_ARN=arn:aws:sns:region:account:topic
+```
+
+### Create a Campaign
+
+```bash
+python scripts/cloud_campaign_manager.py \
+  --action create \
+  --case 600 \
+  --params R_value,wall_thickness \
+  --sweep-type random \
+  --samples 50 \
+  --s3-bucket your-bucket-name \
+  --s3-prefix fluxion-campaigns
+```
+
+This creates:
+- Campaign state in `s3://bucket/prefix/campaigns/{id}/state.json`
+- Work units in `s3://bucket/prefix/work-units/{id}.json`
+
+### Run Workers
+
+On each remote machine (Hetzner, EC2, etc.):
+
+```bash
+# Process a single work unit
+python scripts/s3_worker.py \
+  --param-file s3://bucket/prefix/work-units/campaign-wu-0000.json
+
+# Or run as an SQS listener for auto-scaling
+python scripts/s3_worker.py \
+  --mode sqs \
+  --queue-url https://sqs.region.amazonaws.com/account/queue-name
+```
+
+### Monitor Progress
+
+```bash
+# Check status
+python scripts/cloud_campaign_manager.py \
+  --action status \
+  --campaign-id fluxion-abc123def456
+
+# Wait for completion
+python scripts/cloud_campaign_manager.py \
+  --action wait \
+  --campaign-id fluxion-abc123def456
+```
+
+### Aggregate Results
+
+```bash
+python scripts/s3_aggregator.py \
+  --campaign-id fluxion-abc123def456 \
+  --s3-bucket your-bucket-name \
+  --s3-prefix fluxion-campaigns
+```
+
+This creates:
+- `s3://bucket/prefix/campaigns/{id}/results/aggregation_report.json`
+- `s3://bucket/prefix/campaigns/{id}/results/convergence_data.csv`
+
+### Send Notification
+
+```bash
+python scripts/cloud_campaign_manager.py \
+  --action notify \
+  --campaign-id fluxion-abc123def456 \
+  --sns-topic arn:aws:sns:region:account:topic
+```
+
+## Workflow Components
+
+### `cloud_campaign_manager.py`
+
+Main orchestration script. Actions:
+- `create` — Create a new campaign with work units
+- `status` — Check campaign progress
+- `wait` — Poll until campaign completes
+- `aggregate` — Trigger result aggregation
+- `notify` — Send SNS notification
+
+### `s3_worker.py`
+
+Worker script for remote execution. Supports:
+- **Single mode** — Process one work unit and exit
+- **SQS mode** — Long-running worker that processes messages from an SQS queue
+
+### `s3_aggregator.py`
+
+Merges individual work unit results into a final dataset. Can run:
+- Standalone script
+- AWS Lambda function (triggered by SNS or S3 events)
+
+## AWS Setup
+
+### S3 Bucket
+
+```bash
+# Create bucket
+aws s3 mb s3://your-bucket-name --region us-east-1
+
+# Enable versioning (optional but recommended)
+aws s3api put-bucket-versioning \
+  --bucket your-bucket-name \
+  --versioning-configuration Status=Enabled
+```
+
+### SNS Topic
+
+```bash
+# Create topic
+aws sns create-topic --name fluxion-campaign-notifications
+
+# Subscribe email
+aws sns subscribe \
+  --topic-arn arn:aws:sns:region:account:fluxion-campaign-notifications \
+  --protocol email \
+  --notification-endpoint your@email.com
+```
+
+### IAM Role (for EC2/ECS)
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::your-bucket-name",
+        "arn:aws:s3:::your-bucket-name/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "sns:Publish"
+      ],
+      "Resource": "arn:aws:sns:region:account:fluxion-campaign-notifications"
+    }
+  ]
+}
+```
+
+## GitHub Actions Integration
+
+Use the `cloud_campaign.yml` workflow to run campaigns from GitHub Actions:
+
+1. Add AWS secrets to your repository:
+   - `AWS_ACCESS_KEY_ID`
+   - `AWS_SECRET_ACCESS_KEY`
+   - `AWS_SESSION_TOKEN` (for temporary credentials)
+
+2. Set repository variables:
+   - `AWS_REGION`
+
+3. Dispatch the workflow with your campaign parameters.
+
+## Remote Worker Setup
+
+### Hetzner VM
+
+```bash
+# Provision runner (from scripts/provision-hetzner-runner.sh)
+./scripts/provision-hetzner-runner.sh \
+  --github-repo anchapin/fluxion \
+  --github-token $RUNNER_TOKEN \
+  --hcloud-ssh-key your-ssh-key
+
+# Install campaign dependencies
+ssh root@$VM_IP 'pip install boto3'
+
+# Start worker (processes work from SQS queue)
+ssh root@$VM_IP 'python scripts/s3_worker.py --mode sqs --queue-url $QUEUE_URL'
+```
+
+### AWS EC2 (Auto Scaling)
+
+Use the provided CloudFormation template or Terraform module to provision:
+- Auto Scaling group with worker instances
+- SQS queue for work distribution
+- IAM role with minimal permissions
+
+## Troubleshooting
+
+### Worker fails with "boto3 not found"
+```bash
+pip install boto3
+```
+
+### Campaign stuck in "created" status
+- Ensure workers can reach S3
+- Check work units exist in `s3://bucket/prefix/work-units/`
+- Verify AWS credentials are valid
+
+### SNS notification not received
+- Confirm SNS topic subscription is confirmed
+- Check email spam folder
+- Verify IAM permissions for `sns:Publish`
+
+## Migration from Local Campaigns
+
+The new system is API-compatible with the existing `autonomous_parameter_sweep.py` for the parameter specification format. To migrate:
+
+1. Set up AWS credentials and S3 bucket
+2. Use `cloud_campaign_manager.py --action create` instead of running the sweep locally
+3. Deploy workers on remote machines
+4. Use `s3_aggregator.py` to collect results
+
+The local `autonomous_parameter_sweep.py` can still be used for:
+- Quick local debugging
+- Small campaigns (< 10 runs)
+- CI/local development

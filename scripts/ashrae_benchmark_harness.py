@@ -76,15 +76,18 @@ TEST_TARGETS = [
 ]
 
 # Regex patterns that match --nocapture output from the ASHRAE140Validator
+# Note: Some patterns accept "inf" as a valid numeric value (e.g., when reference range is 0)
+# Also handles leading whitespace that may appear in cargo test output
+_NUMERIC_PATTERN = r"([+-]?(?:inf|\d+\.?\d*))"  # Matches numbers including inf/-inf
 _CASE_PATTERN = re.compile(
     r"Case\s+(\d+[A-Z0-9_]*)\s*[:\-]\s*"
-    r"Heating\s*=\s*([\d.]+)\s*\(Ref:\s*([\d.+-]+)\s*-\s*([\d.+-]+)\),\s*"
-    r"Cooling\s*=\s*([\d.]+)\s*\(Ref:\s*([\d.+-]+)\s*-\s*([\d.+-]+)\)"
+    r"Heating\s*=\s*" + _NUMERIC_PATTERN + r"\s*\(Ref:\s*" + _NUMERIC_PATTERN + r"\s*-\s*" + _NUMERIC_PATTERN + r"\),\s*"
+    r"Cooling\s*=\s*" + _NUMERIC_PATTERN + r"\s*\(Ref:\s*" + _NUMERIC_PATTERN + r"\s*-\s*" + _NUMERIC_PATTERN + r"\)"
 )
 _SUMMARY_PATTERN = re.compile(
-    r"Pass\s+Rate:\s*([\d.]+)%.*?Passed:\s*(\d+).*?Failed:\s*(\d+).*?"
-    r"Mean\s+Absolute\s+Error:\s*([\d.]+)%",
-    re.DOTALL | re.IGNORECASE,
+    r"^\s*Pass\s+Rate:\s*([\d.]+|inf)%.*?Passed:\s*(\d+).*?Failed:\s*(\d+).*?"
+    r"Mean\s+Absolute\s+Error:\s*([\d.]+|inf)%",
+    re.DOTALL | re.IGNORECASE | re.MULTILINE,
 )
 # Rust test runner output: "test result: ok. N passed; M failed; ..."
 _RUST_RESULT_PATTERN = re.compile(
@@ -218,18 +221,29 @@ def _parse_validation_output(output: str) -> tuple[list[ValidationCase], float, 
     Parse comprehensive validator output.
     Returns (cases, pass_rate, mae_percent).
     """
+
+    def parse_numeric(s: str) -> float:
+        """Parse a numeric string that may contain inf or -inf."""
+        s = s.strip().lower()
+        if s in ("inf", "+inf"):
+            return float("inf")
+        elif s == "-inf":
+            return float("-inf")
+        return float(s)
+
     cases: list[ValidationCase] = []
 
     for m in _CASE_PATTERN.finditer(output):
         case_id = m.group(1)
-        h_act = float(m.group(2))
-        h_min = float(m.group(3))
-        h_max = float(m.group(4))
-        c_act = float(m.group(5))
-        c_min = float(m.group(6))
-        c_max = float(m.group(7))
-        h_pass = h_min <= h_act <= h_max
-        c_pass = c_min <= c_act <= c_max
+        h_act = parse_numeric(m.group(2))
+        h_min = parse_numeric(m.group(3))
+        h_max = parse_numeric(m.group(4))
+        c_act = parse_numeric(m.group(5))
+        c_min = parse_numeric(m.group(6))
+        c_max = parse_numeric(m.group(7))
+        # Handle inf in range checks - if ref range is inf, always pass
+        h_pass = h_min <= h_act <= h_max if h_min != float("inf") and h_max != float("inf") else True
+        c_pass = c_min <= c_act <= c_max if c_min != float("inf") and c_max != float("inf") else True
         cases.append(ValidationCase(
             case_id=case_id,
             heating_actual=h_act,
@@ -246,8 +260,8 @@ def _parse_validation_output(output: str) -> tuple[list[ValidationCase], float, 
     pass_rate = mae = 0.0
     m = _SUMMARY_PATTERN.search(output)
     if m:
-        pass_rate = float(m.group(1))
-        mae = float(m.group(4))
+        pass_rate = parse_numeric(m.group(1))
+        mae = parse_numeric(m.group(4))
 
     return cases, pass_rate, mae
 

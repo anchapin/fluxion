@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 """
-Generate EnergyPlus reference data for conduction step response tests.
+Generate analytical test fixture data for conduction step response tests.
 
-This script generates synthetic reference data for wall, roof, and floor
-constructions based on EnergyPlus simulation methodology.
+This script generates SYNTHETIC (analytical) reference data for wall, roof, and
+floor constructions. This is NOT EnergyPlus output — it uses a simplified thermal
+model to estimate step response behavior.
 
-For actual E+ validation, run these constructions in EnergyPlus and export
-the surface heat flux and temperature data.
+**IMPORTANT**: These files are test fixtures, NOT validation data.
+They are useful for testing solver behavior but should NOT be used to validate
+against actual EnergyPlus simulations.
+
+For actual E+ validation reference data, run constructions in EnergyPlus and
+export the surface heat flux and temperature data to real CSV files.
 
 Usage:
     python tests/generate_conduction_reference_data.py
@@ -372,9 +377,10 @@ def generate_step_response(
 
     # Write CSV
     with open(output_path, "w", newline="") as f:
-        f.write(f"# EnergyPlus Reference Data: {construction_name}\n")
-        f.write("# Generated: 2026-06-12 (synthetic for testing)\n")
-        f.write("# Note: Replace with actual E+ output for validation\n")
+        f.write(f"# Analytical Test Fixture: {construction_name}\n")
+        f.write("# Generated: 2026-06-12 (SYNTHETIC — NOT from EnergyPlus)\n")
+        f.write("# This file contains analytically-derived step response data for testing.\n")
+        f.write("# Do NOT use for EnergyPlus validation — not representative of actual E+ output.\n")
         f.write(f"# U-value: {u_value:.4f} W/m²K\n")
         f.write(f"# Total R-value: {r_total:.4f} m²K/W\n")
         f.write(f"# Thermal mass: {c_total:.1f} J/m²K\n")
@@ -454,9 +460,8 @@ def main():
     )
 
     print("\nReference data generation complete.")
-    print(
-        "NOTE: These are synthetic data files. Replace with actual E+ output for validation."
-    )
+    print("NOTE: These are synthetic test fixtures, NOT EnergyPlus output.")
+    print("For E+ validation, replace with actual simulation results.")
 
 
 if __name__ == "__main__":

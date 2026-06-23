@@ -45,6 +45,8 @@ mod batch_oracle;
 mod building_parameters;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 mod error;
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+mod state_extractor;
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use batch_oracle::BatchOracle;
@@ -52,6 +54,8 @@ pub use batch_oracle::BatchOracle;
 pub use building_parameters::BuildingParameters;
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 pub use error::{FluxionError, SimulationError, SurrogateError, ValidationError};
+#[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
+pub use state_extractor::{StateExtractor, StateMatrices};
 
 #[cfg(all(feature = "napi-bindings", not(target_arch = "wasm32")))]
 #[napi_derive::napi]
