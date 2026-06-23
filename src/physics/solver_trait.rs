@@ -1,7 +1,19 @@
-//! Heat Conduction Solver Trait - Common interface for all thermal solvers.
+//! Heat Conduction Solver Trait - Common interface for per-surface thermal solvers.
 //!
-//! This module defines the trait interface for heat conduction solvers,
-//! enabling unified treatment of 5R1C, CTF, and finite difference methods.
+//! This module defines the trait interface for per-surface heat conduction solvers.
+//! It is NOT the zone-level thermal network (see Module 5: `ThermalModelTrait`).
+//!
+//! # Per-Surface vs Zone-Level Distinction
+//!
+//! **This trait handles per-surface, per-wall conduction.** The actual zone-level
+//! thermal network (ISO 13790 5R1C / 9R4C) lives in Module 5
+//! (`src/sim/thermal_model_core.rs`). These are two separate solvers that must
+//! not be conflated (see ADR-002, `docs/adr/0002-promote-9r4c-high-mass-default.md`):
+//!
+//! | Solver | Location | Purpose | Dynamic? |
+//! |--------|----------|---------|----------|
+//! | `HeatConductionSolver` (this trait) | `physics/solver_trait.rs` | Per-surface conduction | No (steady-state) |
+//! | Zone-level 5R1C/9R4C network | `sim/thermal_model_core.rs` | Zone air temperature, loads | Yes |
 //!
 //! # Unified Solver Architecture (Issue #624)
 //!
@@ -11,7 +23,7 @@
 //!
 //! ## Design Principles
 //!
-//! 1. **Single Interface**: All heat conduction solvers implement this trait
+//! 1. **Single Interface**: All per-surface conduction solvers implement this trait
 //! 2. **Explicit Selection**: SolverManager selects the appropriate method
 //! 3. **No Duplication**: CTF, FD, and 5R1C share the same lifecycle pattern
 //! 4. **Validation Required**: New solvers only if existing ones fail validation
@@ -28,7 +40,7 @@
 //! # Overview
 //!
 //! The `HeatConductionSolver` trait provides a common interface for:
-//! - 5R1C thermal network (fast, low-mass buildings)
+//! - 5R1C per-surface steady-state solver (`FiveR1CSolver`)
 //! - CTF (Conduction Transfer Functions, accurate for high-mass)
 //! - FD (Finite Difference, robust fallback for complex constructions)
 //!
@@ -75,6 +87,74 @@ pub enum SolverError {
     #[error("Construction error: {0}")]
     ConstructionError(String),
 }
+
+/// Unified error type for physics operations in the core thermal model loop.
+///
+/// This error type encompasses all errors that can occur during thermal model
+/// simulation, including solver errors, configuration errors, and numerical issues.
+/// It replaces raw `.unwrap()` and `.expect()` calls with proper error propagation.
+///
+/// # Error Sources
+///
+/// - **Solver Errors**: Errors from heat conduction solvers (5R1C, CTF, FD)
+/// - **Configuration Errors**: Invalid model parameters or construction data
+/// - **Numerical Errors**: Singular matrices, overflow, or other numerical issues
+/// - **Initialization Errors**: Failed to initialize required components
+#[derive(Debug, Clone, Error)]
+pub enum PhysicsError {
+    /// Wraps solver-specific errors from the heat conduction solvers
+    #[error("Solver error: {0}")]
+    Solver(#[from] SolverError),
+
+    /// Invalid thermal conductance (e.g., negative h_ve value)
+    #[error("Invalid thermal conductance: {0}")]
+    InvalidConductance(String),
+
+    /// Numerical error such as singular matrix or overflow
+    #[error("Numerical error: {0}")]
+    Numerical(String),
+
+    /// Model initialization failed
+    #[error("Initialization failed: {0}")]
+    Initialization(String),
+
+    /// Invalid model state or configuration
+    #[error("Invalid model state: {0}")]
+    InvalidState(String),
+
+    /// Weather or EPW file related error
+    #[error("Weather error: {0}")]
+    Weather(String),
+
+    /// Geometry or construction related error
+    #[error("Geometry error: {0}")]
+    Geometry(String),
+}
+
+impl PhysicsError {
+    /// Creates an invalid conductance error with the given details
+    pub fn invalid_conductance(msg: &str) -> Self {
+        PhysicsError::InvalidConductance(msg.to_string())
+    }
+
+    /// Creates a numerical error
+    pub fn numerical(msg: &str) -> Self {
+        PhysicsError::Numerical(msg.to_string())
+    }
+
+    /// Creates an initialization error
+    pub fn initialization(msg: &str) -> Self {
+        PhysicsError::Initialization(msg.to_string())
+    }
+
+    /// Creates an invalid state error
+    pub fn invalid_state(msg: &str) -> Self {
+        PhysicsError::InvalidState(msg.to_string())
+    }
+}
+
+/// Result type alias for physics operations using PhysicsError
+pub type PhysicsResult<T> = Result<T, PhysicsError>;
 
 /// Common trait for all heat conduction solvers.
 ///

@@ -339,7 +339,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires trained ONNX model models/solar.onnx — ref: #1221"]
     fn test_holdout_accuracy_solar_component() {
         // This test validates that a trained solar component surrogate achieves <5% mean relative error
         // on a holdout dataset. It requires a trained ONNX model at models/solar.onnx.
@@ -389,7 +389,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore]
+    #[ignore = "requires trained ONNX model models/hvac.onnx — ref: #1221"]
     fn test_holdout_accuracy_hvac_component() {
         // Similar test for HVAC component
         let model_path = "models/hvac.onnx";
