@@ -1,6 +1,7 @@
-# EnergyPlus Reference Data: Lightweight Steel Stud Wall
-# Generated: 2026-06-12 (synthetic for testing)
-# Note: Replace with actual E+ output for validation
+# Analytical Test Fixture: Lightweight Steel Stud Wall
+# Generated: 2026-06-12 (SYNTHETIC — NOT from EnergyPlus)
+# This file contains analytically-derived step response data for testing purposes.
+# Do NOT use for EnergyPlus validation — not representative of actual E+ output.
 # U-value: 0.5314 W/m²K
 # Total R-value: 1.8818 m²K/W
 # Thermal mass: 359568.0 J/m²K
