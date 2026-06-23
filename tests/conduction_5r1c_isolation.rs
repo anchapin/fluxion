@@ -5,11 +5,24 @@
 //! # Test Strategy
 //!
 //! Validates `FiveR1CSolver` (src/physics/five_r1c_solver.rs) against closed-form
-//! analytical solutions, not against EnergyPlus. This is bottom-up unit testing:
+//! analytical solutions, NOT against EnergyPlus reference data. This is bottom-up
+//! unit testing:
 //!
 //! 1. **Steady-state**: Q = ΔT / R_total (Fourier's law, 1D slab)
 //! 2. **Transient step response**: Exponential approach to steady-state
 //! 3. **Thermal time constant**: τ = C × R
+//!
+//! # Reference Data Sources
+//!
+//! There are 6 CSV files in `tests/reference_data/conduction/`:
+//! - 2 files are REAL EnergyPlus 25.2.0 output: `step_response_200mm_concrete.csv`,
+//!   `step_response_fixed_zone_20c.csv`
+//! - 4 files are SYNTHETIC analytical test fixtures: `step_response_composite.csv`,
+//!   `step_response_floor.csv`, `step_response_lightweight.csv`, `step_response_roof.csv`
+//!
+//! **This test file does NOT use the CSV files** — it computes expected values
+//! analytically from WallSpec parameters. The CSV files exist for future E+
+//! validation work but are clearly labeled as synthetic fixtures.
 //!
 //! # 5R1C Model (ISO 13790 / EN 15270)
 //!
