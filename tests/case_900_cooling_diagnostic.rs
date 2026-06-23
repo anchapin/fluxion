@@ -11,7 +11,7 @@
 //! 5. Identifies pattern: is cooling running too much/little? Is zone staying warm?
 
 #[test]
-#[ignore = "API outdated - needs update to use step_physics"]
+#[ignore = "API outdated - needs update to use step_physics — ref: #1222"]
 fn test_case_900_cooling_diagnostic() {
     // TODO: Update to use step_physics API
     panic!("Test stubbed - API needs update");
