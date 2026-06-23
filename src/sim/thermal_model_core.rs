@@ -17,6 +17,7 @@ use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::WindowProperties;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
+use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
 use crate::validation::config::{validate_assembly, validate_constants};
@@ -1858,7 +1859,7 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        if spec.case_id.starts_with("9") && spec.case_id != "960" {
+        if RoutingThermalModelType::from(spec) == RoutingThermalModelType::HighMass9R4C {
             model.enable_9r4c_model();
         }
 
