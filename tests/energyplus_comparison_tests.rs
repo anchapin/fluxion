@@ -630,7 +630,7 @@ fn test_900_series_comprehensive_comparison() {
 /// Test hourly temperature comparison for Case 900
 /// Note: This test requires hourly EnergyPlus output data
 #[test]
-#[ignore] // Requires hourly EnergyPlus data extraction
+#[ignore = "requires hourly EnergyPlus data extraction — ref: #1224"]
 fn test_case_900_hourly_temperature_comparison() {
     println!("\n=== Case 900: Hourly Temperature Comparison ===");
     println!("This test requires hourly EnergyPlus output data.");
@@ -648,7 +648,7 @@ fn test_case_900_hourly_temperature_comparison() {
 
 /// Test hourly energy comparison for Case 900
 #[test]
-#[ignore] // Requires hourly EnergyPlus data extraction
+#[ignore = "requires hourly EnergyPlus data extraction — ref: #1224"]
 fn test_case_900_hourly_energy_comparison() {
     println!("\n=== Case 900: Hourly Energy Comparison ===");
     println!("This test requires hourly EnergyPlus output data.");

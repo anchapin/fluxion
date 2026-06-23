@@ -5,11 +5,24 @@
 //! # Test Strategy
 //!
 //! Validates `FiveR1CSolver` (src/physics/five_r1c_solver.rs) against closed-form
-//! analytical solutions, not against EnergyPlus. This is bottom-up unit testing:
+//! analytical solutions, NOT against EnergyPlus reference data. This is bottom-up
+//! unit testing:
 //!
 //! 1. **Steady-state**: Q = ΔT / R_total (Fourier's law, 1D slab)
 //! 2. **Transient step response**: Exponential approach to steady-state
 //! 3. **Thermal time constant**: τ = C × R
+//!
+//! # Reference Data Sources
+//!
+//! There are 6 CSV files in `tests/reference_data/conduction/`:
+//! - 2 files are REAL EnergyPlus 25.2.0 output: `step_response_200mm_concrete.csv`,
+//!   `step_response_fixed_zone_20c.csv`
+//! - 4 files are SYNTHETIC analytical test fixtures: `step_response_composite.csv`,
+//!   `step_response_floor.csv`, `step_response_lightweight.csv`, `step_response_roof.csv`
+//!
+//! **This test file does NOT use the CSV files** — it computes expected values
+//! analytically from WallSpec parameters. The CSV files exist for future E+
+//! validation work but are clearly labeled as synthetic fixtures.
 //!
 //! # 5R1C Model (ISO 13790 / EN 15270)
 //!
@@ -456,7 +469,7 @@ fn test_r_total_matches_wall_spec() {
 ///
 /// Acceptance: Transient flux matches exponential within 1%.
 #[test]
-#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step())"]
+#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step()) — ref: #1206"]
 fn test_transient_step_response_heavyweight() {
     let wall = heavyweight_wall();
     let r_total = wall.total_r_value();
@@ -537,7 +550,7 @@ fn test_transient_step_response_heavyweight() {
 /// Transient step response for lightweight construction.
 /// Should reach steady-state much faster than heavyweight.
 #[test]
-#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step())"]
+#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step()) — ref: #1206"]
 fn test_transient_step_response_lightweight() {
     let wall = lightweight_wall();
     let r_total = wall.total_r_value();
@@ -595,7 +608,7 @@ fn test_transient_step_response_lightweight() {
 /// Transient step response for insulated wall.
 /// Tests that the solver handles multi-layer constructions correctly.
 #[test]
-#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step())"]
+#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step()) — ref: #1206"]
 fn test_transient_step_response_insulated() {
     let wall = insulated_wall();
     let r_total = wall.total_r_value();
@@ -671,7 +684,7 @@ fn test_transient_step_response_insulated() {
 ///
 /// Acceptance: τ within 2% of analytical value.
 #[test]
-#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step())"]
+#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step()) — ref: #1206"]
 fn test_time_constant_heavyweight() {
     let wall = heavyweight_wall();
     let r_total = wall.total_r_value();
@@ -741,7 +754,7 @@ fn test_time_constant_heavyweight() {
 /// Time constant verification for lightweight wall.
 /// Should have a much shorter τ than heavyweight.
 #[test]
-#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step())"]
+#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step()) — ref: #1206"]
 fn test_time_constant_lightweight() {
     let wall = lightweight_wall();
     let r_total = wall.total_r_value();
@@ -806,7 +819,7 @@ fn test_time_constant_lightweight() {
 
 /// Time constant verification for insulated wall.
 #[test]
-#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step())"]
+#[ignore = "Requires FiveR1CSolver transient dynamics (mass node update in step()) — ref: #1206"]
 fn test_time_constant_insulated() {
     let wall = insulated_wall();
     let r_total = wall.total_r_value();

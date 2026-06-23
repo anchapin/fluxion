@@ -62,32 +62,52 @@ jobs:
           with open('validation_output.txt', 'r') as f:
               output = f.read()
 
-          # Extract case results
+          def parse_numeric(s):
+              """Parse numeric string that may contain inf."""
+              s = s.strip().lower()
+              if s in ('inf', '+inf'):
+                  return float('inf')
+              elif s == '-inf':
+                  return float('-inf')
+              return float(s)
+
+          # Extract case results - handles inf and leading whitespace
           cases = {}
-          case_pattern = r"Case (\d+[A-Z]*): Heating=([\d.]+) \(Ref: ([\d.-]+)-([\d.-]+)\), Cooling=([\d.]+) \(Ref: ([\d.-]+)-([\d.-]+)\)"
+          case_pattern = r"Case\s+(\d+[A-Z]*)\s*[:\-]\s*Heating\s*=\s*([+-]?(?:inf|\d+\.?\d*))\s*\(Ref:\s*([+-]?(?:inf|\d+\.?\d*))\s*-\s*([+-]?(?:inf|\d+\.?\d*))\),\s*Cooling\s*=\s*([+-]?(?:inf|\d+\.?\d*))\s*\(Ref:\s*([+-]?(?:inf|\d+\.?\d*))\s*-\s*([+-]?(?:inf|\d+\.?\d*))\)"
           for match in re.finditer(case_pattern, output):
               case_id, heating, heating_min, heating_max, cooling, cooling_min, cooling_max = match.groups()
+              h_act = parse_numeric(heating)
+              h_min = parse_numeric(heating_min)
+              h_max = parse_numeric(heating_max)
+              c_act = parse_numeric(cooling)
+              c_min = parse_numeric(cooling_min)
+              c_max = parse_numeric(cooling_max)
+              # If ref range is inf, skip the range check
+              h_pass = (h_min <= h_act <= h_max) if h_min != float('inf') and h_max != float('inf') else True
+              c_pass = (c_min <= c_act <= c_max) if c_min != float('inf') and c_max != float('inf') else True
               cases[case_id] = {
-                  'heating': float(heating),
-                  'heating_min': float(heating_min),
-                  'heating_max': float(heating_max),
-                  'cooling': float(cooling),
-                  'cooling_min': float(cooling_min),
-                  'cooling_max': float(cooling_max)
+                  'heating': h_act,
+                  'heating_min': h_min,
+                  'heating_max': h_max,
+                  'cooling': c_act,
+                  'cooling_min': c_min,
+                  'cooling_max': c_max,
+                  'heating_pass': h_pass,
+                  'cooling_pass': c_pass,
               }
 
-          # Extract summary
-          summary_pattern = r"Validation Report Summary:.*?Pass Rate: ([\d.]+)%.*?Passed: (\d+).*?Failed: (\d+).*?Mean Absolute Error: ([\d.]+)%"
-          summary_match = re.search(summary_pattern, output, re.DOTALL)
+          # Extract summary - handles inf% and leading whitespace
+          summary_pattern = r"^\s*Validation\s+Report\s+Summary:.*?Pass\s+Rate:\s*([\d.]+|inf)%\s*Passed:\s*(\d+).*?Failed:\s*(\d+).*?Mean\s+Absolute\s+Error:\s*([\d.]+|inf)%"
+          summary_match = re.search(summary_pattern, output, re.DOTALL | re.MULTILINE)
 
           summary = {}
           if summary_match:
               pass_rate, passed, failed, mae = summary_match.groups()
               summary = {
-                  'pass_rate': float(pass_rate),
+                  'pass_rate': parse_numeric(pass_rate),
                   'passed': int(passed),
                   'failed': int(failed),
-                  'mae': float(mae)
+                  'mae': parse_numeric(mae)
               }
 
           with open('validation_results.json', 'w') as f:
@@ -95,10 +115,12 @@ jobs:
 
           print(f"::notice::ASHRAE 140 Validation Summary")
           if summary:
-              print(f"Pass Rate: {summary['pass_rate']:.1f}%")
+              pr = summary['pass_rate']
+              ma = summary['mae']
+              print(f"Pass Rate: {pr:.1f}%" if pr != float('inf') else f"Pass Rate: inf%")
               print(f"Passed: {summary['passed']}")
               print(f"Failed: {summary['failed']}")
-              print(f"Mean Absolute Error: {summary['mae']:.2f}%")
+              print(f"Mean Absolute Error: {ma:.2f}%" if ma != float('inf') else f"Mean Absolute Error: inf%")
           EOF
 
       - name: Generate Markdown Report
