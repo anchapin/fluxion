@@ -1862,7 +1862,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // The CTF/FD flux calculations use t_sol_air_data as the exterior boundary
         // temperature. Using outdoor_temp would ignore solar gain on west walls,
         // causing massive heating energy overcounting (9.45 MWh vs reference 1.17-2.04 MWh).
-        let t_sol_air_wall = if let Some(ref weather) = self.0.weather {
+        let t_sol_air_wall = if let Some(weather) = &self.0.weather {
             let hour_of_year = timestep % 8760;
             let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
             let day_of_year = hour_of_year / 24;
@@ -1877,7 +1877,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Issue #1212: Extract weather data before mutably borrowing self for cache
             let (dni, dhi, ghi) = (weather.dni, weather.dhi, weather.ghi);
-            drop(weather);
 
             // Issue #1212: Use cached solar position to eliminate 5x redundant computation
             let sun_pos = self.cached_solar_position(
