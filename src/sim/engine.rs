@@ -1,3 +1,7 @@
+pub use crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT;
+pub use crate::physics::constants::thermal::ashrae_140::v2023::{
+    EXTERIOR_FILM_COEFF, INTERIOR_FILM_COEFF,
+};
 pub use crate::sim::hvac_controller::{HVACMode, HvacSystemMode, IdealHVACController};
 pub use crate::sim::thermal_model_core::{
     get_daily_cycle, DoorGeometry, ThermalModel, ThermalModelType,

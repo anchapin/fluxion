@@ -211,7 +211,7 @@ where
         sky_temp: f64, // EPW-derived sky temperature from WeatherData
     ) -> SolversAndSolAirResult {
         use crate::physics::constants::thermal::ashrae_140::v2023::{
-            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
+            EXTERIOR_FILM_COEFF_DEFAULT, INTERIOR_FILM_COEFF, SOLAR_ABSORPTANCE_DEFAULT,
         };
         let solar_ref = self.0.solar_gains.as_ref();
         let alpha = SOLAR_ABSORPTANCE_DEFAULT;
@@ -281,12 +281,12 @@ where
                 let t_zone = temps.get(i).copied().unwrap_or(20.0);
                 let t_ext = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
                 // h_int = 8.29, h_ext = 29.3 per ASHRAE 140 Sec. 5.2 (#736)
-                let interior_bc = SurfaceBC::new_interior(8.29, t_zone);
+                let interior_bc = SurfaceBC::new_interior(INTERIOR_FILM_COEFF, t_zone);
                 let exterior_bc = SurfaceBC::new_exterior(29.3, t_ext, 0.0);
 
                 // Step FD solver and get interior surface heat flux
                 solver.step(3600.0, &interior_bc, &exterior_bc);
-                let q_flux = solver.interior_heat_flux(8.29, t_zone);
+                let q_flux = solver.interior_heat_flux(INTERIOR_FILM_COEFF, t_zone);
                 fd_fluxes.push(q_flux);
             }
             Some(fd_fluxes)
