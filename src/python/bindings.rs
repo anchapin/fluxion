@@ -248,9 +248,12 @@ impl PyMultiZoneThermalModel {
                 let shape = vec![num_zones, timesteps];
 
                 // Create numpy array from Vec<Vec<f64>> - this is the expected format for from_vec2_bound
-                let arr = numpy::PyArray2::from_vec2_bound(py, &temps)
-                    .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!(
-                    "Failed to create numpy array: {}", e)))?;
+                let arr = numpy::PyArray2::from_vec2_bound(py, &temps).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Failed to create numpy array: {}",
+                        e
+                    ))
+                })?;
                 Ok((arr, shape))
             }
             None => Err(pyo3::exceptions::PyValueError::new_err(
