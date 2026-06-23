@@ -1,6 +1,7 @@
-# EnergyPlus Reference Data: Insulated Floor
-# Generated: 2026-06-12 (synthetic for testing)
-# Note: Replace with actual E+ output for validation
+# Analytical Test Fixture: Insulated Floor
+# Generated: 2026-06-12 (SYNTHETIC — NOT from EnergyPlus)
+# This file contains analytically-derived step response data for testing purposes.
+# Do NOT use for EnergyPlus validation — not representative of actual E+ output.
 # U-value: 0.1902 W/m²K
 # Total R-value: 5.2583 m²K/W
 # Thermal mass: 25985.8 J/m²K

@@ -264,7 +264,6 @@ fn test_free_floating_stability_case_900ff() {
 
 /// Test that energy accumulation is consistent over multiple timesteps
 #[test]
-#[ignore] // TODO: Fix - energy accumulation calculation issue
 fn test_energy_accumulation_consistency() {
     let spec = ASHRAE140Case::Case600.spec();
     let mut model = ThermalModel::<VectorField>::from_spec(&spec);

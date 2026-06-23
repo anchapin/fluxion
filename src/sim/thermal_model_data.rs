@@ -19,7 +19,7 @@ use crate::sim::hvac::{
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType;
 use crate::sim::schedule::DailySchedule;
-use crate::sim::solar::WindowProperties;
+use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model_core::DoorGeometry;
 use crate::testing::integration::wiring::WiringTracer;
 use crate::validation::ashrae_140_cases::{NightVentilation, Orientation};
@@ -209,6 +209,9 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Issue #762 — per-surface incident solar radiation tracking for ASHRAE 140-2023 Section 8.2.3.
     /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
     pub incident_solar_per_surface: HashMap<String, IncidentSolarAccumulator>,
+    /// Issue #1212 — solar position cache indexed by hour_of_year (0-8759).
+    /// Eliminates 5x redundancy: 5 surfaces × 8760 timesteps → 8760 unique computations.
+    pub sun_pos_cache: Vec<Option<SolarPosition>>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
@@ -348,6 +351,7 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             last_phi_m: self.last_phi_m,
             hourly_temperatures: None,
             incident_solar_per_surface: self.incident_solar_per_surface.clone(),
+            sun_pos_cache: self.sun_pos_cache.clone(),
         }
     }
 }
