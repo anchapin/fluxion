@@ -15,6 +15,132 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
+  # Module isolation tests - each module must match EnergyPlus within 1% tolerance
+  isolation-weather:
+    name: Weather Isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Weather Isolation Tests
+        run: cargo test --test weather_isolation --release
+
+  isolation-solar:
+    name: Solar Isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Solar Isolation Tests
+        run: cargo test --test solar_isolation --release
+
+  isolation-conduction:
+    name: Conduction Isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Conduction Isolation Tests
+        run: cargo test --test conduction_5r1c_isolation --release
+
+  isolation-ventilation:
+    name: Ventilation Isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Ventilation Isolation Tests
+        run: cargo test --test ventilation_infiltration_vs_energyplus --release
+
+  isolation-zone-balance:
+    name: Zone Balance Isolation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+      - name: Run Zone Balance Isolation Tests
+        run: cargo test --test zone_balance_eplus_isolation --release
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -61,10 +187,11 @@ jobs:
           failed = None
           mae = None
 
-          rate_pattern = r"Pass Rate:\s*([0-9.]+)%"
+          rate_pattern = r"Pass Rate:\s*([0-9.]+|inf)%"
           rate_match = re.search(rate_pattern, output)
           if rate_match:
-              pass_rate = float(rate_match.group(1).strip())
+              rate_str = rate_match.group(1).strip()
+              pass_rate = float('inf') if rate_str == 'inf' else float(rate_str)
 
           passed_pattern = r"Passed:\s*([0-9]+)"
           passed_match = re.search(passed_pattern, output)

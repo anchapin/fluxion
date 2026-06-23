@@ -110,9 +110,26 @@ pub fn calculate_combined_infiltration_ach(
 }
 
 /// Trait for defining air change rate (ACH) schedules.
+///
+/// All implementations should return weather-dependent ACH when applicable,
+/// using the provided weather parameters.
 pub trait VentilationSchedule: Debug + Send + Sync {
     /// Returns the air change rate (ACH) for a given hour.
-    fn get_ach(&self, hour: usize) -> f64;
+    ///
+    /// # Arguments
+    /// * `hour` - Hour of day (0-23)
+    /// * `T_outdoor` - Outdoor temperature [C]
+    /// * `T_indoor` - Indoor temperature [C]
+    /// * `wind_speed` - Wind speed [m/s]
+    /// * `volume` - Zone volume [m³]
+    fn get_ach(
+        &self,
+        hour: usize,
+        T_outdoor: f64,
+        T_indoor: f64,
+        wind_speed: f64,
+        volume: f64,
+    ) -> f64;
     /// Clones the schedule into a boxed trait object.
     fn clone_box(&self) -> Box<dyn VentilationSchedule>;
 }
@@ -130,7 +147,14 @@ impl ConstantVentilation {
 }
 
 impl VentilationSchedule for ConstantVentilation {
-    fn get_ach(&self, _hour: usize) -> f64 {
+    fn get_ach(
+        &self,
+        _hour: usize,
+        _T_outdoor: f64,
+        _T_indoor: f64,
+        _wind_speed: f64,
+        _volume: f64,
+    ) -> f64 {
         self.ach
     }
     fn clone_box(&self) -> Box<dyn VentilationSchedule> {
@@ -186,7 +210,14 @@ impl ScheduledVentilation {
 }
 
 impl VentilationSchedule for ScheduledVentilation {
-    fn get_ach(&self, hour: usize) -> f64 {
+    fn get_ach(
+        &self,
+        hour: usize,
+        _T_outdoor: f64,
+        _T_indoor: f64,
+        _wind_speed: f64,
+        _volume: f64,
+    ) -> f64 {
         if self.schedule[hour] {
             self.base_ach + self.fan_ach
         } else {
@@ -321,8 +352,15 @@ impl WeatherDependentVentilation {
 }
 
 impl VentilationSchedule for WeatherDependentVentilation {
-    fn get_ach(&self, _hour: usize) -> f64 {
-        self.base_ach
+    fn get_ach(
+        &self,
+        _hour: usize,
+        T_outdoor: f64,
+        T_indoor: f64,
+        wind_speed: f64,
+        volume: f64,
+    ) -> f64 {
+        self.get_ach_weather(T_outdoor, T_indoor, wind_speed, volume)
     }
     fn clone_box(&self) -> Box<dyn VentilationSchedule> {
         Box::new(self.clone())
@@ -361,16 +399,16 @@ mod tests {
     fn test_constant_ventilation() {
         let vent = ConstantVentilation::new(0.5);
         assert_eq!(vent.ach, 0.5);
-        assert_eq!(vent.get_ach(0), 0.5);
-        assert_eq!(vent.get_ach(12), 0.5);
-        assert_eq!(vent.get_ach(23), 0.5);
+        assert_eq!(vent.get_ach(0, 20.0, 22.0, 2.0, 100.0), 0.5);
+        assert_eq!(vent.get_ach(12, 20.0, 22.0, 2.0, 100.0), 0.5);
+        assert_eq!(vent.get_ach(23, 20.0, 22.0, 2.0, 100.0), 0.5);
     }
 
     #[test]
     fn test_constant_ventilation_clone() {
         let vent = ConstantVentilation::new(1.0);
         let cloned = vent.clone_box();
-        assert_eq!(cloned.get_ach(5), 1.0);
+        assert_eq!(cloned.get_ach(5, 20.0, 22.0, 2.0, 100.0), 1.0);
     }
 
     #[test]
@@ -381,7 +419,7 @@ mod tests {
         assert!(!vent.schedule.iter().any(|&x| x)); // all false
                                                     // Should return base_ach for all hours
         for hour in 0..24 {
-            assert_eq!(vent.get_ach(hour), 0.3);
+            assert_eq!(vent.get_ach(hour, 20.0, 22.0, 2.0, 100.0), 0.3);
         }
     }
 
@@ -389,13 +427,13 @@ mod tests {
     fn test_night_ventilation_normal_range() {
         let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 22, 6);
         // Fan ON from hour 22 to 23, 0 to 5
-        assert_eq!(vent.get_ach(21), 0.3); // before start
-        assert_eq!(vent.get_ach(22), 2.3); // fan on
-        assert_eq!(vent.get_ach(23), 2.3); // fan on
-        assert_eq!(vent.get_ach(0), 2.3); // fan on (next day)
-        assert_eq!(vent.get_ach(5), 2.3); // fan on
-        assert_eq!(vent.get_ach(6), 0.3); // fan off
-        assert_eq!(vent.get_ach(12), 0.3); // fan off
+        assert_eq!(vent.get_ach(21, 20.0, 22.0, 2.0, 100.0), 0.3); // before start
+        assert_eq!(vent.get_ach(22, 20.0, 22.0, 2.0, 100.0), 2.3); // fan on
+        assert_eq!(vent.get_ach(23, 20.0, 22.0, 2.0, 100.0), 2.3); // fan on
+        assert_eq!(vent.get_ach(0, 20.0, 22.0, 2.0, 100.0), 2.3); // fan on (next day)
+        assert_eq!(vent.get_ach(5, 20.0, 22.0, 2.0, 100.0), 2.3); // fan on
+        assert_eq!(vent.get_ach(6, 20.0, 22.0, 2.0, 100.0), 0.3); // fan off
+        assert_eq!(vent.get_ach(12, 20.0, 22.0, 2.0, 100.0), 0.3); // fan off
     }
 
     #[test]
@@ -403,24 +441,24 @@ mod tests {
         let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 10, 10);
         // When start == end, fan is on all 24 hours
         for hour in 0..24 {
-            assert_eq!(vent.get_ach(hour), 2.3);
+            assert_eq!(vent.get_ach(hour, 20.0, 22.0, 2.0, 100.0), 2.3);
         }
     }
 
     #[test]
     fn test_night_ventilation_single_hour() {
         let vent = ScheduledVentilation::night_ventilation(0.5, 1.5, 14, 15);
-        assert_eq!(vent.get_ach(13), 0.5);
-        assert_eq!(vent.get_ach(14), 2.0); // fan on
-        assert_eq!(vent.get_ach(15), 0.5); // fan off
+        assert_eq!(vent.get_ach(13, 20.0, 22.0, 2.0, 100.0), 0.5);
+        assert_eq!(vent.get_ach(14, 20.0, 22.0, 2.0, 100.0), 2.0); // fan on
+        assert_eq!(vent.get_ach(15, 20.0, 22.0, 2.0, 100.0), 0.5); // fan off
     }
 
     #[test]
     fn test_scheduled_ventilation_clone() {
         let vent = ScheduledVentilation::night_ventilation(0.3, 2.0, 20, 8);
         let cloned = vent.clone_box();
-        assert_eq!(cloned.get_ach(21), 2.3);
-        assert_eq!(cloned.get_ach(10), 0.3);
+        assert_eq!(cloned.get_ach(21, 20.0, 22.0, 2.0, 100.0), 2.3);
+        assert_eq!(cloned.get_ach(10, 20.0, 22.0, 2.0, 100.0), 0.3);
     }
 
     #[test]
@@ -452,8 +490,8 @@ mod tests {
         let vent2: Box<dyn VentilationSchedule> =
             Box::new(ScheduledVentilation::night_ventilation(0.3, 2.0, 22, 6));
 
-        assert_eq!(vent1.get_ach(10), 0.5);
-        assert_eq!(vent2.get_ach(23), 2.3);
+        assert_eq!(vent1.get_ach(10, 20.0, 22.0, 2.0, 100.0), 0.5);
+        assert_eq!(vent2.get_ach(23, 20.0, 22.0, 2.0, 100.0), 2.3);
     }
 
     #[test]
