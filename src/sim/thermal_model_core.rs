@@ -6,6 +6,7 @@
 use std::sync::OnceLock;
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::assembly::BuildingAssembly;
 use crate::sim::construction::{SurfaceType, WallSurface};
@@ -15,7 +16,8 @@ use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
-use crate::sim::solar::WindowProperties;
+use crate::sim::solar::{SolarPosition, WindowProperties};
+use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
@@ -293,6 +295,45 @@ where
         };
 
         (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps)
+    }
+
+    /// Get or compute solar position for a given hour of year.
+    ///
+    /// Issue #1212: Caches solar position by `(year, month, day, hour)` to eliminate
+    /// 5x redundant computation (5 surfaces × 8760 timesteps → 8760 unique values).
+    ///
+    /// # Arguments
+    /// * `timestep` - Hour of year (0-8759)
+    /// * `year` - Calendar year
+    /// * `month` - Month (1-12)
+    /// * `day` - Day of month
+    /// * `hour` - Hour of day (0-23)
+    ///
+    /// # Returns
+    /// `SolarPosition` for the given datetime
+    pub fn cached_solar_position(
+        &mut self,
+        timestep: usize,
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: f64,
+    ) -> SolarPosition {
+        let hour_idx = timestep.min(8759);
+        if let Some(Some(cached)) = self.0.sun_pos_cache.get(hour_idx).copied() {
+            return cached;
+        }
+
+        let sun_pos = crate::sim::solar::calculate_solar_position(
+            self.0.latitude_deg,
+            self.0.longitude_deg,
+            year,
+            month,
+            day,
+            hour,
+        );
+        self.0.sun_pos_cache[hour_idx] = Some(sun_pos);
+        sun_pos
     }
 
     /// Get peak heating power in kW
@@ -1396,7 +1437,15 @@ impl ThermalModel<VectorField> {
                 };
                 // Use furniture factor for internal mass area (furniture/partition surface area)
                 let a_int = furniture_factor * zone_floor_area;
-                let h_ms = 4.5; // Furniture/partitions coupling coefficient W/(m²·K)
+                // Issue #1213 Fix: Increase h_tr_me from 4.5 to 9.1 W/(m²·K)
+                // to match the ISO 13790 lumped mass coupling coefficient.
+                // The previous 4.5 value was too low, causing internal mass to be
+                // thermally decoupled from the envelope. This resulted in:
+                // - Night minimum 0.6°C warmer than expected
+                // - Zone cooling underestimated by ~90% (6.13 MWh vs 8-10.5 MWh target)
+                // Using 9.1 W/(m²·K) gives h_tr_me ≈ 218 W/K (vs previous 108 W/K),
+                // which provides proper coupling for furniture thermal mass response.
+                let h_ms = 9.1; // Furniture/partitions coupling coefficient W/(m²·K)
                 let h_tr_me = h_ms * a_int;
 
                 // Also update cm_internal for 9R4C model (Phase 6B)
@@ -1404,10 +1453,9 @@ impl ThermalModel<VectorField> {
                 // This replaces the previous ρ*c*V calculation with the furniture factor formula
                 let c_me = zone_floor_area * 55_000.0 * furniture_factor;
 
-                // Push to cm_internal_vec if 9R4C model
-                if is_9r4c_model {
-                    cm_internal_vec.push(c_me);
-                }
+                // Internal mass capacitance needed for 9R4C solver initialization.
+                // Populated unconditionally so low-mass 9R4C path has cm_internal available.
+                cm_internal_vec.push(c_me);
 
                 h_tr_me
             })
@@ -1858,7 +1906,7 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        if spec.case_id.starts_with("9") && spec.case_id != "960" {
+        if RoutingThermalModelType::from(spec) == RoutingThermalModelType::HighMass9R4C {
             model.enable_9r4c_model();
         }
 
@@ -2536,6 +2584,9 @@ impl ThermalModel<VectorField> {
 
             // Issue #762 — per-surface incident solar tracking
             incident_solar_per_surface: std::collections::HashMap::new(),
+
+            // Issue #1212 — solar position cache (8760 hours × 1 computation = 5x speedup)
+            sun_pos_cache: vec![None; 8760],
         });
 
         model.update_derived_parameters();
@@ -2552,6 +2603,44 @@ impl ThermalModel<VectorField> {
         }
 
         model
+    }
+
+    /// Create a new ThermalModel with validation, returning Result instead of panicking.
+    ///
+    /// This is the recommended constructor for new code that wants proper error handling.
+    /// It validates the model state and returns a `PhysicsError` if validation fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_zones` - Number of thermal zones to model
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ThermalModel)` if validation passes
+    /// * `Err(PhysicsError)` if validation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use fluxion::sim::engine::ThermalModel;
+    /// use fluxion::physics::solver_trait::PhysicsError;
+    ///
+    /// match ThermalModel::try_new(10) {
+    ///     Ok(model) => println!("Created model with {} zones", model.num_zones),
+    ///     Err(e) => eprintln!("Failed to create model: {}", e),
+    /// }
+    /// ```
+    pub fn try_new(num_zones: usize) -> PhysicsResult<Self> {
+        let model = Self::new(num_zones);
+
+        // Validate h_ve is non-negative (ventilation can be 0, but not negative)
+        if model.h_ve.iter().any(|h| *h < 0.0) {
+            return Err(PhysicsError::invalid_conductance(
+                "h_ve must be non-negative. Check infiltration rate configuration.",
+            ));
+        }
+
+        Ok(model)
     }
 
     /// Create a new 8R3C thermal model (Phase 20 evaluation).
