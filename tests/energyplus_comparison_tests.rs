@@ -7,9 +7,8 @@
 //! ## Test Categories
 //!
 //! 1. **Annual Energy Comparison**: Compare annual heating/cooling energy
-//! 2. **Hourly Temperature Comparison**: Compare zone air temperatures hour-by-hour
-//! 3. **Peak Load Comparison**: Compare peak heating and cooling loads
-//! 4. **Free-Floating Temperature Comparison**: Compare free-floating behavior
+//! 2. **Peak Load Comparison**: Compare peak heating and cooling loads
+//! 3. **Free-Floating Temperature Comparison**: Compare free-floating behavior
 //!
 //! ## EnergyPlus Reference Data
 //!
@@ -621,39 +620,4 @@ fn test_900_series_comprehensive_comparison() {
     println!("\n{}", report);
 
     assert!(all_passed, "Some 900-series cases failed validation");
-}
-
-// ============================================================================
-// Hourly Comparison Tests (Pending EnergyPlus hourly data)
-// ============================================================================
-
-/// Test hourly temperature comparison for Case 900
-/// Note: This test requires hourly EnergyPlus output data
-#[test]
-#[ignore = "requires hourly EnergyPlus data extraction — ref: #1224"]
-fn test_case_900_hourly_temperature_comparison() {
-    println!("\n=== Case 900: Hourly Temperature Comparison ===");
-    println!("This test requires hourly EnergyPlus output data.");
-    println!("TODO: Extract hourly data from EnergyPlus SQL output.");
-
-    // Placeholder for future implementation
-    // 1. Run EnergyPlus simulation with hourly output
-    // 2. Extract hourly zone temperatures from SQL file
-    // 3. Run Fluxion simulation with same weather data
-    // 4. Compare hour-by-hour temperatures
-    // 5. Calculate RMSE, max error, and pass/fail criteria
-
-    println!("✅ Test scaffolded - pending EnergyPlus hourly data extraction");
-}
-
-/// Test hourly energy comparison for Case 900
-#[test]
-#[ignore = "requires hourly EnergyPlus data extraction — ref: #1224"]
-fn test_case_900_hourly_energy_comparison() {
-    println!("\n=== Case 900: Hourly Energy Comparison ===");
-    println!("This test requires hourly EnergyPlus output data.");
-    println!("TODO: Extract hourly HVAC energy from EnergyPlus SQL output.");
-
-    // Placeholder for future implementation
-    println!("✅ Test scaffolded - pending EnergyPlus hourly data extraction");
 }
