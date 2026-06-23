@@ -22,6 +22,30 @@ pub enum ThermalModelMode {
     Hybrid,
 }
 
+/// Thermal model type for routing between different thermal network complexities.
+///
+/// Used to determine whether to use 5R1C (low-mass) or 9R4C (high-mass) model.
+#[derive(Clone, Debug, Copy, PartialEq, Eq, Default)]
+pub enum ThermalModelType {
+    /// 5R1C model for low-mass buildings (Case 600, 650 series)
+    #[default]
+    LowMass5R1C,
+    /// 9R4C model for high-mass buildings (Case 900 series)
+    HighMass9R4C,
+}
+
+impl From<&crate::validation::ashrae_140_cases::CaseSpec> for ThermalModelType {
+    fn from(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
+        match spec.case_id.as_str() {
+            "600" | "600FF" | "650" | "650FF" => ThermalModelType::LowMass5R1C,
+            _ if spec.case_id.starts_with("9") && spec.case_id != "960" => {
+                ThermalModelType::HighMass9R4C
+            }
+            _ => ThermalModelType::LowMass5R1C,
+        }
+    }
+}
+
 /// Core trait for thermal model implementations.
 ///
 /// This trait defines the interface for building energy modeling, allowing
@@ -876,5 +900,67 @@ mod tests {
         assert_eq!(model.heating_setpoint(), 20.0);
         assert_eq!(model.cooling_setpoint(), 26.0);
         assert!(model.is_valid());
+    }
+
+    #[test]
+    fn test_thermal_model_type_from_case_spec_low_mass() {
+        use crate::validation::ashrae_140_cases::CaseBuilder;
+
+        let case_600 = CaseBuilder::case_600_baseline();
+        assert_eq!(
+            ThermalModelType::from(&case_600),
+            ThermalModelType::LowMass5R1C
+        );
+
+        let case_600ff = CaseBuilder::case_600ff();
+        assert_eq!(
+            ThermalModelType::from(&case_600ff),
+            ThermalModelType::LowMass5R1C
+        );
+
+        let case_650ff = CaseBuilder::case_650ff();
+        assert_eq!(
+            ThermalModelType::from(&case_650ff),
+            ThermalModelType::LowMass5R1C
+        );
+    }
+
+    #[test]
+    fn test_thermal_model_type_from_case_spec_high_mass() {
+        use crate::validation::ashrae_140_cases::CaseBuilder;
+
+        let case_900 = CaseBuilder::case_900_baseline();
+        assert_eq!(
+            ThermalModelType::from(&case_900),
+            ThermalModelType::HighMass9R4C
+        );
+
+        let case_900ff = CaseBuilder::case_900ff();
+        assert_eq!(
+            ThermalModelType::from(&case_900ff),
+            ThermalModelType::HighMass9R4C
+        );
+
+        let case_950ff = CaseBuilder::case_950ff();
+        assert_eq!(
+            ThermalModelType::from(&case_950ff),
+            ThermalModelType::HighMass9R4C
+        );
+    }
+
+    #[test]
+    fn test_thermal_model_type_from_case_spec_excludes_960() {
+        use crate::validation::ashrae_140_cases::CaseBuilder;
+
+        let case_960 = CaseBuilder::case_960_sunspace();
+        assert_eq!(
+            ThermalModelType::from(&case_960),
+            ThermalModelType::LowMass5R1C
+        );
+    }
+
+    #[test]
+    fn test_thermal_model_type_default() {
+        assert_eq!(ThermalModelType::default(), ThermalModelType::LowMass5R1C);
     }
 }

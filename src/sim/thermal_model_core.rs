@@ -6,6 +6,7 @@
 use std::sync::OnceLock;
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::assembly::BuildingAssembly;
 use crate::sim::construction::{SurfaceType, WallSurface};
@@ -16,6 +17,7 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{SolarPosition, WindowProperties};
+use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
@@ -1896,15 +1898,7 @@ impl ThermalModel<VectorField> {
         // multi-node air temperature (see `physics_impl.rs::step_physics`), so
         // 9R4C is the sole driver of high-mass free-float and the guard is
         // removed. Case 960 (multi-zone sunspace) remains excluded as before.
-        // ADR-002 + Case 600 diagnosis: 5R1C omits surface-to-air convective heat transfer,
-        // causing ~50% cooling under-prediction for low-mass cases (640/610/620/630/650).
-        // 9R4C separates surface nodes with explicit convective coupling, routing solar gains
-        // through floor → floor surface temp → convective transfer to zone air → correct HVAC demand.
-        // Case 600FF/650FF must retain 5R1C for free-float t_i_free (validated separately).
-        if (spec.case_id.starts_with("9") && spec.case_id != "960")
-            || (spec.case_id.starts_with("6")
-                && !["600FF", "650FF"].contains(&spec.case_id.as_str()))
-        {
+        if RoutingThermalModelType::from(spec) == RoutingThermalModelType::HighMass9R4C {
             model.enable_9r4c_model();
         }
 
@@ -2601,6 +2595,44 @@ impl ThermalModel<VectorField> {
         }
 
         model
+    }
+
+    /// Create a new ThermalModel with validation, returning Result instead of panicking.
+    ///
+    /// This is the recommended constructor for new code that wants proper error handling.
+    /// It validates the model state and returns a `PhysicsError` if validation fails.
+    ///
+    /// # Arguments
+    ///
+    /// * `num_zones` - Number of thermal zones to model
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(ThermalModel)` if validation passes
+    /// * `Err(PhysicsError)` if validation fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use fluxion::sim::engine::ThermalModel;
+    /// use fluxion::physics::solver_trait::PhysicsError;
+    ///
+    /// match ThermalModel::try_new(10) {
+    ///     Ok(model) => println!("Created model with {} zones", model.num_zones),
+    ///     Err(e) => eprintln!("Failed to create model: {}", e),
+    /// }
+    /// ```
+    pub fn try_new(num_zones: usize) -> PhysicsResult<Self> {
+        let model = Self::new(num_zones);
+
+        // Validate h_ve is non-negative (ventilation can be 0, but not negative)
+        if model.h_ve.iter().any(|h| *h < 0.0) {
+            return Err(PhysicsError::invalid_conductance(
+                "h_ve must be non-negative. Check infiltration rate configuration.",
+            ));
+        }
+
+        Ok(model)
     }
 
     /// Create a new 8R3C thermal model (Phase 20 evaluation).

@@ -214,6 +214,54 @@ impl PyMultiZoneThermalModel {
         self.inner.get_hourly_temperatures()
     }
 
+    /// Get hourly temperatures as zero-copy numpy arrays for ML training.
+    ///
+    /// This method provides direct access to the underlying temperature data
+    /// without JSON/CSV serialization overhead, enabling high-performance
+    /// ML training pipelines.
+    ///
+    /// # Arguments
+    /// * `py` - Python GIL token for numpy array creation
+    ///
+    /// # Returns
+    /// Tuple of (zone_temperatures, shape) where zone_temperatures is a 2D numpy array
+    /// with shape [num_zones, timesteps] and zero-copy memory sharing when possible.
+    ///
+    /// # Example
+    /// ```python
+    /// import numpy as np
+    /// model = fluxion.MultiZoneThermalModel(3)
+    /// model.simulate_multi_zone(1, False)
+    /// temps, shape = model.get_hourly_temperatures_numpy()
+    /// # temps is a numpy array with shape [3, 8760]
+    /// ```
+    pub fn get_hourly_temperatures_numpy<'a>(
+        &self,
+        py: Python<'a>,
+    ) -> PyResult<(Bound<'a, numpy::PyArray2<f64>>, Vec<usize>)> {
+        let hourly_temps = self.inner.get_hourly_temperatures();
+
+        match hourly_temps {
+            Some(temps) => {
+                let num_zones = temps.len();
+                let timesteps = if num_zones > 0 { temps[0].len() } else { 0 };
+                let shape = vec![num_zones, timesteps];
+
+                // Create numpy array from Vec<Vec<f64>> - this is the expected format for from_vec2_bound
+                let arr = numpy::PyArray2::from_vec2_bound(py, &temps).map_err(|e| {
+                    pyo3::exceptions::PyValueError::new_err(format!(
+                        "Failed to create numpy array: {}",
+                        e
+                    ))
+                })?;
+                Ok((arr, shape))
+            }
+            None => Err(pyo3::exceptions::PyValueError::new_err(
+                "Simulation has not been run yet. Call simulate_multi_zone first.",
+            )),
+        }
+    }
+
     /// Run energy balance validation for multi-zone model
     pub fn validate_energy_balance(&self) -> PyResult<bool> {
         // TODO: Implement energy balance validation once ThermalModel API is updated

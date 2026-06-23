@@ -1428,7 +1428,7 @@ impl BenchmarkReport {
         std::fs::write(path, content)
     }
 
-    /// Prints a summary to stdout.
+    /// Prints a summary to stdout in human-readable format.
     pub fn print_summary(&self) {
         println!("Validation Report Summary:");
         println!("  Total Results: {}", self.results.len());
@@ -1441,6 +1441,32 @@ impl BenchmarkReport {
         println!("  Failed: {}", self.fail_count());
         println!("  Mean Absolute Error: {:.2}%", self.mae());
         println!("  Max Deviation: {:.2}%", self.max_deviation());
+    }
+
+    /// Prints a machine-readable summary to stdout in JSON format for CI ingestion.
+    ///
+    /// This output format is designed to be parsed reliably by CI scripts without
+    /// requiring fragile regex patterns. The format avoids issues like `inf%`
+    /// appearing in percentage fields by using JSON numbers directly.
+    pub fn print_summary_json(&self) {
+        use serde_json::json;
+
+        let passed_count = self.results.iter().filter(|r| r.passed()).count() as u32;
+        let warning_count = self.warning_count() as u32;
+        let fail_count = self.fail_count() as u32;
+
+        let summary = json!({
+            "total_results": self.results.len() as u32,
+            "pass_rate": self.pass_rate(),
+            "passed": passed_count,
+            "warnings": warning_count,
+            "failed": fail_count,
+            "mae": self.mae(),
+            "max_deviation": self.max_deviation(),
+            "duration_seconds": self.duration_seconds(),
+        });
+
+        println!("{}", serde_json::to_string_pretty(&summary).unwrap());
     }
 
     /// Appends the report's metrics to the historical performance log.
