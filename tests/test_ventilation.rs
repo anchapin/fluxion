@@ -27,17 +27,17 @@ fn test_constant_ventilation_returns_same_ach() {
     let vent = ConstantVentilation::new(0.75);
 
     // Should return same ACH for any hour
-    assert_eq!(vent.get_ach(0), 0.75);
-    assert_eq!(vent.get_ach(6), 0.75);
-    assert_eq!(vent.get_ach(12), 0.75);
-    assert_eq!(vent.get_ach(23), 0.75);
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 0.75);
+    assert_eq!(vent.get_ach(6, 20.0, 24.0, 2.0, 100.0), 0.75);
+    assert_eq!(vent.get_ach(12, 20.0, 24.0, 2.0, 100.0), 0.75);
+    assert_eq!(vent.get_ach(23, 20.0, 24.0, 2.0, 100.0), 0.75);
 }
 
 #[test]
 fn test_constant_ventilation_zero_ach() {
     let vent = ConstantVentilation::new(0.0);
-    assert_eq!(vent.get_ach(0), 0.0);
-    assert_eq!(vent.get_ach(12), 0.0);
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 0.0);
+    assert_eq!(vent.get_ach(12, 20.0, 24.0, 2.0, 100.0), 0.0);
 }
 
 #[test]
@@ -45,8 +45,8 @@ fn test_constant_ventilation_clone() {
     let vent = ConstantVentilation::new(1.0);
     let cloned = vent.clone_box();
 
-    assert_eq!(cloned.get_ach(5), 1.0);
-    assert_eq!(cloned.get_ach(15), 1.0);
+    assert_eq!(cloned.get_ach(5, 20.0, 24.0, 2.0, 100.0), 1.0);
+    assert_eq!(cloned.get_ach(15, 20.0, 24.0, 2.0, 100.0), 1.0);
 }
 
 // ============================================================================
@@ -71,7 +71,7 @@ fn test_scheduled_ventilation_night_cooling_same_hour() {
 
     for hour in 0..24 {
         assert!(vent.schedule[hour], "Hour {} should be ON", hour);
-        assert_eq!(vent.get_ach(hour), 0.3 + 3.0);
+        assert_eq!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0), 0.3 + 3.0);
     }
 }
 
@@ -95,9 +95,9 @@ fn test_scheduled_ventilation_night_cooling_normal_range() {
     }
 
     // Verify ACH values
-    assert_eq!(vent.get_ach(22), 0.3 + 2.0); // Fan ON
-    assert_eq!(vent.get_ach(3), 0.3 + 2.0); // Fan ON
-    assert_eq!(vent.get_ach(12), 0.3); // Fan OFF
+    assert_eq!(vent.get_ach(22, 20.0, 24.0, 2.0, 100.0), 0.3 + 2.0); // Fan ON
+    assert_eq!(vent.get_ach(3, 20.0, 24.0, 2.0, 100.0), 0.3 + 2.0); // Fan ON
+    assert_eq!(vent.get_ach(12, 20.0, 24.0, 2.0, 100.0), 0.3); // Fan OFF
 }
 
 #[test]
@@ -119,8 +119,8 @@ fn test_scheduled_ventilation_daytime_only() {
     }
 
     // Verify ACH values
-    assert_eq!(vent.get_ach(10), 0.5 + 1.5); // Fan ON
-    assert_eq!(vent.get_ach(20), 0.5); // Fan OFF
+    assert_eq!(vent.get_ach(10, 20.0, 24.0, 2.0, 100.0), 0.5 + 1.5); // Fan ON
+    assert_eq!(vent.get_ach(20, 20.0, 24.0, 2.0, 100.0), 0.5); // Fan OFF
 }
 
 #[test]
@@ -132,8 +132,8 @@ fn test_scheduled_ventilation_single_hour() {
     assert!(!vent.schedule[13]);
     assert!(!vent.schedule[15]);
 
-    assert_eq!(vent.get_ach(14), 0.3 + 2.0);
-    assert_eq!(vent.get_ach(13), 0.3);
+    assert_eq!(vent.get_ach(14, 20.0, 24.0, 2.0, 100.0), 0.3 + 2.0);
+    assert_eq!(vent.get_ach(13, 20.0, 24.0, 2.0, 100.0), 0.3);
 }
 
 #[test]
@@ -141,9 +141,9 @@ fn test_scheduled_ventilation_clone() {
     let vent = ScheduledVentilation::night_ventilation(0.5, 1.0, 20, 6);
     let cloned = vent.clone_box();
 
-    assert_eq!(cloned.get_ach(22), 0.5 + 1.0);
-    assert_eq!(cloned.get_ach(3), 0.5 + 1.0);
-    assert_eq!(cloned.get_ach(12), 0.5);
+    assert_eq!(cloned.get_ach(22, 20.0, 24.0, 2.0, 100.0), 0.5 + 1.0);
+    assert_eq!(cloned.get_ach(3, 20.0, 24.0, 2.0, 100.0), 0.5 + 1.0);
+    assert_eq!(cloned.get_ach(12, 20.0, 24.0, 2.0, 100.0), 0.5);
 }
 
 #[test]
@@ -152,10 +152,10 @@ fn test_scheduled_ventilation_zero_fan_ach() {
     let vent = ScheduledVentilation::night_ventilation(0.5, 0.0, 20, 6);
 
     for hour in 20..24 {
-        assert_eq!(vent.get_ach(hour), 0.5);
+        assert_eq!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0), 0.5);
     }
     for hour in 0..6 {
-        assert_eq!(vent.get_ach(hour), 0.5);
+        assert_eq!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0), 0.5);
     }
 }
 
@@ -274,7 +274,7 @@ fn test_ach_to_conductance_different_air_properties() {
 fn test_ventilation_negative_ach_handling() {
     // Negative ACH doesn't make physical sense, but we should handle it gracefully
     let vent = ConstantVentilation::new(-0.5);
-    let ach = vent.get_ach(0);
+    let ach = vent.get_ach(0, 20.0, 24.0, 2.0, 100.0);
 
     // The implementation doesn't clamp to positive, so we just verify it returns the value
     assert_eq!(ach, -0.5);
@@ -284,7 +284,7 @@ fn test_ventilation_negative_ach_handling() {
 fn test_ventilation_very_high_ach() {
     // Very high ventilation rate (industrial)
     let vent = ConstantVentilation::new(50.0);
-    assert_eq!(vent.get_ach(0), 50.0);
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 50.0);
 
     let conductance = ach_to_conductance(50.0, 100.0, 1.2, 1005.0);
     assert!(conductance.get::<watt_per_kelvin>() > 0.0);
@@ -298,7 +298,7 @@ fn test_scheduled_ventilation_full_day_on() {
     vent.schedule = [true; 24];
 
     for hour in 0..24 {
-        assert_eq!(vent.get_ach(hour), 0.3 + 1.0);
+        assert_eq!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0), 0.3 + 1.0);
     }
 }
 
@@ -309,7 +309,7 @@ fn test_scheduled_ventilation_full_day_off() {
     // Default schedule is all false
 
     for hour in 0..24 {
-        assert_eq!(vent.get_ach(hour), 0.5);
+        assert_eq!(vent.get_ach(hour, 20.0, 24.0, 2.0, 100.0), 0.5);
     }
 }
 
@@ -323,7 +323,7 @@ fn test_ventilation_trait_object_usage() {
 
     // Should be able to call get_ach on any schedule
     for schedule in &schedules {
-        let ach = schedule.get_ach(12);
+        let ach = schedule.get_ach(12, 20.0, 24.0, 2.0, 100.0);
         assert!(ach >= 0.0);
     }
 }
@@ -351,17 +351,17 @@ fn test_scheduled_ventilation_boundary_hours() {
 
     // Hour 23 should be ON
     assert!(vent.schedule[23]);
-    assert_eq!(vent.get_ach(23), 1.3);
+    assert_eq!(vent.get_ach(23, 20.0, 24.0, 2.0, 100.0), 1.3);
 
     // Hour 0 should be ON
     assert!(vent.schedule[0]);
-    assert_eq!(vent.get_ach(0), 1.3);
+    assert_eq!(vent.get_ach(0, 20.0, 24.0, 2.0, 100.0), 1.3);
 
     // Hour 1 should be OFF (end_hour is exclusive)
     assert!(!vent.schedule[1]);
-    assert_eq!(vent.get_ach(1), 0.3);
+    assert_eq!(vent.get_ach(1, 20.0, 24.0, 2.0, 100.0), 0.3);
 
     // Hour 22 should be OFF
     assert!(!vent.schedule[22]);
-    assert_eq!(vent.get_ach(22), 0.3);
+    assert_eq!(vent.get_ach(22, 20.0, 24.0, 2.0, 100.0), 0.3);
 }
