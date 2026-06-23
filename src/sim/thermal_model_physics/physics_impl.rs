@@ -2256,8 +2256,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 } else {
                     0.0
                 };
-                let t_air_mn =
-                    solver.compute_zone_air_temperature(outdoor_temp, h_ve_val, h_ve_night_zone, phi_ia_val);
+                let t_air_mn = solver.compute_zone_air_temperature(
+                    outdoor_temp,
+                    h_ve_val,
+                    h_ve_night_zone,
+                    phi_ia_val,
+                );
                 // Use multi-node temperature — it provides the correct air balance
                 // from mass node temperatures stepped by the backward Euler.
                 t_i_free_data.push(t_air_mn);
