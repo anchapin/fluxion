@@ -137,8 +137,9 @@ impl HeatConductionSolver for FiveR1CSolver {
         // R_1 is the resistance from mass to interior air (interior half of wall)
         // R_2 is the resistance from exterior to mass (exterior half of wall)
         // For a homogeneous wall: R_1 = R_2 = R_total / 2
-        let R_1 = self.R_total / 2.0;
+        #[allow(unused_variables)]
         let R_2 = self.R_total / 2.0;
+        let R_1 = self.R_total / 2.0;
 
         // Heat flow from exterior to mass [W/m²]
         // Formula from issue: Q = (T_ext - T_mass) / R_total
