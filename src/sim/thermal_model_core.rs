@@ -16,7 +16,7 @@ use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
-use crate::sim::solar::WindowProperties;
+use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
 use crate::sim::view_factors;
@@ -295,6 +295,45 @@ where
         };
 
         (t_sol_air_data, ctf_flux_w, fd_flux_w, ctf_surface_temps)
+    }
+
+    /// Get or compute solar position for a given hour of year.
+    ///
+    /// Issue #1212: Caches solar position by `(year, month, day, hour)` to eliminate
+    /// 5x redundant computation (5 surfaces × 8760 timesteps → 8760 unique values).
+    ///
+    /// # Arguments
+    /// * `timestep` - Hour of year (0-8759)
+    /// * `year` - Calendar year
+    /// * `month` - Month (1-12)
+    /// * `day` - Day of month
+    /// * `hour` - Hour of day (0-23)
+    ///
+    /// # Returns
+    /// `SolarPosition` for the given datetime
+    pub fn cached_solar_position(
+        &mut self,
+        timestep: usize,
+        year: i32,
+        month: u32,
+        day: u32,
+        hour: f64,
+    ) -> SolarPosition {
+        let hour_idx = timestep.min(8759);
+        if let Some(Some(cached)) = self.0.sun_pos_cache.get(hour_idx).copied() {
+            return cached;
+        }
+
+        let sun_pos = crate::sim::solar::calculate_solar_position(
+            self.0.latitude_deg,
+            self.0.longitude_deg,
+            year,
+            month,
+            day,
+            hour,
+        );
+        self.0.sun_pos_cache[hour_idx] = Some(sun_pos);
+        sun_pos
     }
 
     /// Get peak heating power in kW
@@ -2537,6 +2576,9 @@ impl ThermalModel<VectorField> {
 
             // Issue #762 — per-surface incident solar tracking
             incident_solar_per_surface: std::collections::HashMap::new(),
+
+            // Issue #1212 — solar position cache (8760 hours × 1 computation = 5x speedup)
+            sun_pos_cache: vec![None; 8760],
         });
 
         model.update_derived_parameters();
