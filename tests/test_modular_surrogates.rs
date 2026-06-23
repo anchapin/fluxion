@@ -326,5 +326,4 @@ mod tests {
         assert_eq!(results[0], vec![1.2]);
         assert_eq!(results[1], vec![1.2]);
     }
-
 }
