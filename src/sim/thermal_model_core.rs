@@ -1685,7 +1685,10 @@ impl ThermalModel<VectorField> {
         // compensation (unchanged). This is the hybrid selection rule from ADR-002.
         {
             let (air_frac, mass_frac_of_remaining): (f64, f64) = match spec.construction_type {
-                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.80, 0.05),
+                // Issue #1216: LowMass requires solar_distribution_to_air > 0 for proper
+                // peak cooling response. Per ASHRAE 140 Phase 8 plan: 70% to air, 30% to mass.
+                // This fixes peak cooling underprediction (was 40-80% low with 0% to air).
+                crate::validation::ashrae_140_cases::ConstructionType::LowMass => (0.7, 0.3),
                 // ADR-002 (#1175): high-mass FREE-FLOAT uses the ASHRAE-140-correct
                 // solar split — window solar → opaque surfaces / mass, NONE directly
                 // to the air node (ISSUE_1168_ROOT_CAUSE.md, recommended fix #3).
