@@ -1,0 +1,17 @@
+# Docker Compose for Fluxion MCP Server
+# Use with Claude Desktop, VS Code, or Cursor
+
+version: '3.8'
+
+services:
+  fluxion-mcp:
+    build:
+      context: .
+      dockerfile: fluxion-mcp/Dockerfile
+    container_name: fluxion-mcp
+    environment:
+      - RUST_LOG=info
+      - RUST_BACKTRACE=1
+    stdin_open: true
+    tty: true
+    restart: unless-stopped

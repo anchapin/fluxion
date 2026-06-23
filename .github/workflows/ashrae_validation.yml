@@ -61,10 +61,11 @@ jobs:
           failed = None
           mae = None
 
-          rate_pattern = r"Pass Rate:\s*([0-9.]+)%"
+          rate_pattern = r"Pass Rate:\s*([0-9.]+|inf)%"
           rate_match = re.search(rate_pattern, output)
           if rate_match:
-              pass_rate = float(rate_match.group(1).strip())
+              rate_str = rate_match.group(1).strip()
+              pass_rate = float('inf') if rate_str == 'inf' else float(rate_str)
 
           passed_pattern = r"Passed:\s*([0-9]+)"
           passed_match = re.search(passed_pattern, output)

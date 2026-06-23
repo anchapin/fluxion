@@ -375,6 +375,12 @@ enum Commands {
         /// Enable CI mode (enforces guardrails and sets exit code on failure)
         #[arg(long)]
         ci: bool,
+
+        /// Output machine-readable JSON summary for CI ingestion.
+        /// This outputs only the summary metrics (pass rate, MAE, etc.) as JSON,
+        /// avoiding fragile regex parsing of human-readable text.
+        #[arg(long)]
+        ci_summary_json: bool,
     },
 
     /// Validate specific diagnostic case or range
@@ -1026,6 +1032,7 @@ fn main() -> Result<()> {
             format,
             output_file,
             ci,
+            ci_summary_json,
         } => {
             // Validate alpha is in valid range [0, 1]
             if !(0.0..=1.0).contains(&alpha) {
@@ -1153,6 +1160,14 @@ fn main() -> Result<()> {
 
             // Always append historical metrics
             report.append_history();
+
+            // CI Summary JSON output - outputs machine-readable summary for CI parsing
+            // This bypasses human-readable formatting and outputs JSON directly to avoid
+            // regex parsing issues with values like "inf%" in text output
+            if ci_summary_json {
+                report.print_summary_json();
+                return Ok(());
+            }
 
             // Classify systematic issues if generating markdown
             let systematic_issues = if format == "markdown" {
