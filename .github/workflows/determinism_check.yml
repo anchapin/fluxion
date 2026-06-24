@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-13]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable]
 
     steps:
@@ -92,7 +92,7 @@ jobs:
           # Reduce parallelism on macOS to avoid resource pressure that can cause
           # linker toolchain failures (clang_rt.osx not found). Use --verbose to
           # capture linker diagnostics that would otherwise be truncated in CI logs.
-          if [ "${{ matrix.os }}" = "macos-13" ]; then
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
             export CARGO_BUILD_JOBS=2
             echo "macOS detected: limiting CARGO_BUILD_JOBS=2 to reduce memory pressure"
           fi
@@ -193,7 +193,7 @@ jobs:
           all_values = {}
 
           # Read hashes and values from all platforms
-          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-13']:
+          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-latest']:
               hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
               values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
 
