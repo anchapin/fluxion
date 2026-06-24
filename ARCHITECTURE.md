@@ -132,7 +132,7 @@ graph TD
 
 ### Module 1: Weather
 
-**Source**: `src/weather/` (`epw.rs`, `tmy3.rs`, `psychrometrics.rs`, `interpolation.rs`, `ddy.rs`, `denver.rs`)
+**Source**: `fluxion-core/src/weather/` (`epw.rs`, `tmy3.rs`, `psychrometrics.rs`, `interpolation.rs`, `ddy.rs`, `denver.rs`)
 **Purpose**: Parse EPW/TMY3 files and provide hourly weather data.
 
 | Input | Type | Source |
@@ -148,9 +148,9 @@ graph TD
 | Humidity ratio | `f64` [kg/kg] | Psychrometrics |
 
 **Key structs/traits**:
-- `HourlyRecord` in `weather/epw.rs`
-- `HourlyWeatherData` in `weather/mod.rs`
-- `WeatherSource` trait in `weather/mod.rs`
+- `HourlyRecord` in `fluxion-core/src/weather/epw.rs`
+- `HourlyWeatherData` in `fluxion-core/src/weather/mod.rs`
+- `WeatherSource` trait in `fluxion-core/src/weather/mod.rs`
 
 **EPW parsing contract** (#1164): All EPW parsers (`parse`, `parse_epw_v3`, `parse_epw_amy`, `parse_epw_iwec`) must skip all 8 standard EPW header lines before the data section (LOCATION, DESIGN CONDITIONS, TYPICAL/EXTREME PERIODS, GROUND TEMPERATURES, HOLIDAYS/DAYLIGHT SAVINGS, COMMENTS 1, COMMENTS 2, DATA PERIODS). The `is_epw_header_line()` helper performs this check by prefix. This is required because `GROUND TEMPERATURES` carries 35+ comma-separated monthly values and would otherwise pass the field-count guard, inserting a spurious first record that shifts all real data by one position. The returned `Vec` is time-aligned: index `i` corresponds to EPW hour `i+1` (row `i` represents the period `(i mod 24):00`–`(i mod 24)+1:00`), so direct indexing by callers yields correct data without additional offset.
 
@@ -345,8 +345,8 @@ These traits support the main physics pipeline and should also be documented:
 | Trait | File | Purpose |
 |-------|------|---------|
 | `SurfaceHeatFluxProvider` | `src/sim/surface_flux_provider.rs` | Surface-level heat flux abstraction (conduction + solar combined) |
-| `WeatherSource` | `src/weather/mod.rs` | Weather data access abstraction |
-| `PsychrometricCalculations` | `src/weather/psychrometrics.rs` | Moist air property calculations |
+| `WeatherSource` | `fluxion-core/src/weather/mod.rs` | Weather data access abstraction |
+| `PsychrometricCalculations` | `fluxion-core/src/weather/psychrometrics.rs` | Moist air property calculations |
 | `MaterialLayer` | `src/sim/assembly.rs` | Building material layer interface |
 | `Equipment` | `src/sim/equipment.rs` | HVAC equipment trait |
 | `VariableCapacityEquipment` | `src/sim/hvac/equipment.rs` | Variable-speed equipment |

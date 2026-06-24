@@ -28,6 +28,7 @@ COPY Cargo.lock .
 COPY pyproject.toml .
 COPY requirements-dev.txt .
 COPY src/ ./src/
+COPY fluxion-core/ ./fluxion-core/
 COPY benches/ ./benches/
 COPY README.md .
 COPY api/ ./api/
