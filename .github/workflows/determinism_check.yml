@@ -56,13 +56,66 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-determinism-cargo-
 
+      - name: Verify clang_rt.osx availability (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          echo "=== clang_rt.osx diagnostic ==="
+          # Search for clang_rt.osx in common Xcode toolchain locations
+          FOUND=false
+          for clang_dir in \
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang"/*/lib/darwin \
+            "/Applications/Xcode_*.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang"/*/lib/darwin \
+            "/Users/runner/Library/Caches/ort.pyke.io/dfbin/"*/lib; do
+            if [ -f "$clang_dir/libclang_rt.osx" ]; then
+              echo "✅ Found: $clang_dir/libclang_rt.osx"
+              FOUND=true
+            fi
+          done
+          if [ "$FOUND" = "false" ]; then
+            echo "⚠️  WARNING: libclang_rt.osx not found in standard locations"
+            echo "   This may cause link failures with ORT (ONNX Runtime)"
+            echo "   Current Xcode path:"
+            xcode-select -p 2>/dev/null || echo "   xcode-select failed"
+          fi
+          echo "================================"
+
       - name: Build fluxion
-        run: cargo build --release --features wiring-tracing
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Toolchain diagnostic ==="
+          echo "rustc: $(rustc --version 2>&1)"
+          echo "cargo: $(cargo --version 2>&1)"
+          echo "cc: $(cc --version 2>&1 | head -1 || echo 'cc not found')"
+          echo "macOS: $(sw_vers 2>&1 || echo 'sw_vers not found')"
+          echo "================================"
+          # Reduce parallelism on macOS to avoid resource pressure that can cause
+          # linker toolchain failures (clang_rt.osx not found). Use --verbose to
+          # capture linker diagnostics that would otherwise be truncated in CI logs.
+          if [ "${{ matrix.os }}" = "macos-latest" ]; then
+            export CARGO_BUILD_JOBS=2
+            echo "macOS detected: limiting CARGO_BUILD_JOBS=2 to reduce memory pressure"
+          fi
+          # Use || true to ensure diagnostics run even on build failure; then capture
+          # cargo's exit code via PIPESTATUS and explicitly exit with it.
+          cargo build --release --features wiring-tracing --verbose 2>&1 | tee build_output.txt || true
+          BUILD_STATUS=${PIPESTATUS[0]}
+          echo "================================"
+          echo "cargo build exit status: $BUILD_STATUS"
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo "=== Last 100 lines of build output ==="
+            tail -100 build_output.txt
+            echo "=== dmesg (if available) ==="
+            dmesg 2>&1 | tail -20 || echo "(dmesg not available)"
+            exit $BUILD_STATUS
+          fi
+          echo "Build successful"
 
       - name: Run Case 900 Determinism Test
         id: case900
         shell: bash
         run: |
+          set -euo pipefail
           cargo test --test case_900_determinism --release -- --nocapture 2>&1 | tee case900_output.txt
 
       - name: Extract determinism values
