@@ -25,15 +25,10 @@ jobs:
   determinism-check:
     name: Determinism Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    # NOTE: macos-latest is excluded from this matrix due to GitHub Actions
-    # infrastructure issue #1264. Xcode 16.x runners have incomplete
-    # libclang_rt.osx installation causing intermittent linker failures.
-    # This is a GHA toolchain issue, NOT physics code nondeterminism.
-    # Linux + Windows are sufficient for cross-platform determinism validation.
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         rust: [stable]
 
     steps:
@@ -44,6 +39,17 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
+      - name: Select stable Xcode 15.4 on macOS (fixes #1264)
+        if: runner.os == 'macOS'
+        run: |
+          # Xcode 16.x on GHA runners has incomplete libclang_rt.osx installation,
+          # causing intermittent linker failures when building ORT (ONNX Runtime).
+          # Switch to Xcode 15.4 which has a complete, stable toolchain.
+          # See: https://github.com/anchapin/fluxion/issues/1264
+          sudo xcode-select -s /Applications/Xcode_15.4.app
+          echo "Active Xcode: $(xcode-select -p)"
+          echo "Xcode version: $(xcodebuild -version 2>&1)"
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -198,8 +204,7 @@ jobs:
           all_values = {}
 
           # Read hashes and values from all platforms
-          # NOTE: macos-latest excluded due to GHA infrastructure issue #1264
-          for os_name in ['ubuntu-latest', 'windows-latest']:
+          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-latest']:
               hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
               values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
 
