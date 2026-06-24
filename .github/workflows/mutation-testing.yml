@@ -67,7 +67,7 @@ jobs:
 
       - name: Run mutation testing
         run: |
-          cargo mutants test --lib --verbose --no-default-features -- \
+          cargo mutants --lib --verbose --no-default-features -- \
             --test-threads=4
 
       - name: Generate HTML report
