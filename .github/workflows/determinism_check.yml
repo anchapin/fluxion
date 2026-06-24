@@ -28,7 +28,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-14]
+        os: [ubuntu-latest, windows-latest, macos-13]
         rust: [stable]
 
     steps:
@@ -56,6 +56,29 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-determinism-cargo-
 
+      - name: Verify clang_rt.osx availability (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          echo "=== clang_rt.osx diagnostic ==="
+          # Search for clang_rt.osx in common Xcode toolchain locations
+          FOUND=false
+          for clang_dir in \
+            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang"/*/lib/darwin \
+            "/Applications/Xcode_*.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang"/*/lib/darwin \
+            "/Users/runner/Library/Caches/ort.pyke.io/dfbin/"*/lib; do
+            if [ -f "$clang_dir/libclang_rt.osx" ]; then
+              echo "✅ Found: $clang_dir/libclang_rt.osx"
+              FOUND=true
+            fi
+          done
+          if [ "$FOUND" = "false" ]; then
+            echo "⚠️  WARNING: libclang_rt.osx not found in standard locations"
+            echo "   This may cause link failures with ORT (ONNX Runtime)"
+            echo "   Current Xcode path:"
+            xcode-select -p 2>/dev/null || echo "   xcode-select failed"
+          fi
+          echo "================================"
+
       - name: Build fluxion
         shell: bash
         run: |
@@ -69,7 +92,7 @@ jobs:
           # Reduce parallelism on macOS to avoid resource pressure that can cause
           # linker toolchain failures (clang_rt.osx not found). Use --verbose to
           # capture linker diagnostics that would otherwise be truncated in CI logs.
-          if [ "${{ matrix.os }}" = "macos-14" ]; then
+          if [ "${{ matrix.os }}" = "macos-13" ]; then
             export CARGO_BUILD_JOBS=2
             echo "macOS detected: limiting CARGO_BUILD_JOBS=2 to reduce memory pressure"
           fi
@@ -170,7 +193,7 @@ jobs:
           all_values = {}
 
           # Read hashes and values from all platforms
-          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-latest']:
+          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-13']:
               hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
               values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
 
