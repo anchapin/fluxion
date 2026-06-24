@@ -17,23 +17,36 @@ minimum_test_timeout = 60
 
 # Exclude modules with complex generic types from mutation testing
 # These modules have type hierarchies that cause cargo-mutants to OOM
-# even on machines with 32GB+ RAM
+# during the discovery phase (issue #1260 re-opens #1244).
+#
+# Root cause: the crate split (#1255) only moved `weather` to fluxion-core.
+# The physics module (CTF solvers, multi-node solvers, geometry tensors with
+# heavily-parameterized generic types) stayed in the main `fluxion` crate.
+# During cargo-mutants discovery, these types expand combinatorially and
+# cause ~28 GB peak allocation — well beyond what even 32 GB CI runners can
+# sustain after accounting for OS, rustc, and other concurrent processes.
+#
+# The long-term fix (moving physics to fluxion-core) is tracked in
+# docs/mutation_testing_crate_split.md Phase 2. Until then, we scope
+# mutation testing to the modules that fit in CI memory.
 exclude_globs = [
-    # Large generic-heavy files that cause exponential memory growth during analysis
+    # FULL physics tree — the primary OOM source (complex generic types)
+    # All *.rs files under src/physics/ cause exponential type expansion.
+    # Excluding the whole tree avoids the combinatorial generic expansion.
+    "src/physics/**",
+
+    # Large sim files with complex generic types
     "src/sim/thermal_model_physics/**",
     "src/sim/thermal_model_core.rs",
-    "src/sim/construction.rs",
-    "src/physics/state_space_ctf.rs",
-    "src/physics/nd_array.rs",
-    "src/physics/multi_node_solver.rs",
-    # AI/ML modules with complex type hierarchies
-    "src/ai/surrogate.rs",
-    "src/ai/modular_surrogate.rs",
-    "src/ai/distributed.rs",
-    "src/ai/ensemble.rs",
-    "src/ai/neural_field.rs",
+    "src/sim/thermal_model_iterative.rs",
+    "src/sim/sky_radiation.rs",
+
+    # AI/ML modules — ort (ONNX) loaded even without default features,
+    # causes large type hierarchies and binary download overhead
+    "src/ai/**",
+
     # Large validation modules
-    "src/validation/ashrae_140_cases.rs",
+    "src/validation/**",
 ]
 
 # Use slice sharding for better memory locality when running manually

@@ -1,13 +1,18 @@
 name: Mutation Testing
 
-# Mutation testing (issue #1255).
+# Mutation testing (issue #1255, #1260).
 #
 # The workspace was split into `fluxion` + `fluxion-core` so that cargo-mutants can
-# target only the main `fluxion` crate while `fluxion-core` is built once and cached,
-# cutting peak memory dramatically versus the previous single-crate layout.
+# target only the main `fluxion` crate while `fluxion-core` is built once and cached.
 #
-# Run manually, or on PRs that touch physics/sim logic:
-#   cargo mutants -p fluxion --baseline skip
+# IMPORTANT: src/physics/**, src/ai/**, and src/validation/** are EXCLUDED from
+# mutation analysis in .cargo/mutants.toml because those modules have complex generic
+# types (CTF solvers, multi-node solvers, ONNX type hierarchies) that cause OOM
+# during cargo-mutants discovery even on 32 GB runners. The long-term fix (moving
+# physics to fluxion-core) is in docs/mutation_testing_crate_split.md Phase 2.
+#
+# Run manually (requires 32 GB+ machine):
+#   cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip
 #
 # See docs/mutation_testing_crate_split.md for the phased plan to reach the <4GB
 # target (Phase 3 gates `ort`/ONNX behind a feature flag).
@@ -53,13 +58,19 @@ jobs:
 
       - name: Run mutation testing
         env:
-          # Bound peak memory: serialize rustc invocations and cap cargo parallelism.
-          CARGO_BUILD_JOBS: "2"
           CARGO_INCREMENTAL: "0"
         run: |
+          # --config: explicitly load .cargo/mutants.toml (not auto-discovered in CI
+          #           when running via `cargo mutants`; this ensures exclude_globs apply).
+          # --jobs 2: cap parallelism to bound peak RSS to what the 32 GB runner allows.
           # -p fluxion: mutate only the main crate; fluxion-core is a cached dep.
-          cargo mutants -p fluxion --baseline skip --no-default-features -- \
-            --test-threads=4
+          # --baseline skip: skip the no-mutant baseline run to save time + memory.
+          # --no-default-features: exclude ort (ONNX) even though it's a direct dep;
+          #           ort's type hierarchy is still large even without CUDA/TensorRT.
+          # See .cargo/mutants.toml for the full exclude_globs list (src/physics/**,
+          # src/ai/**, src/validation/** are all excluded to prevent discovery OOM).
+          cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 \
+            --baseline skip --no-default-features -- --test-threads=2
 
       - name: Generate HTML report
         if: always()

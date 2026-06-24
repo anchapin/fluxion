@@ -133,26 +133,41 @@ it is bounded by diff size and parse cost (no compilation).
 
 ---
 
-## 5. Fluxion context (current state)
+## 5. Fluxion context (current state, updated #1260)
 
-- **Crate structure:** fluxion is a **single crate** (`fluxion`, `cdylib` + `rlib`),
-  *not* a Cargo workspace. (There is no `docs/mutation_testing_crate_split.md` —
-  that document does not exist in the repo.) This is relevant: cargo-mutants must
-  type-check the entire single crate's complex type hierarchies at once, which is
-  what drives its ~28 GB peak. ripr sidesteps this entirely.
-- **OOM history (Issue #1244):** `cargo-mutants` 27.x needs ~28 GB to analyze
-  fluxion's type hierarchies. Standard `ubuntu-latest` runners have 7 GB.
-  Commits `c8480ef`, `e83a35e`, and the revert `8b4012e` all tried to scope
-  mutation testing to smaller modules; final state `7c47842` **disabled** CI
-  mutation testing and restricted it to `workflow_dispatch` on a 32 GB runner.
+> **⚠ This section supersedes the description above.** The workspace split
+> (#1255, merged as #1257) was completed — but only partially, which is why
+> the OOM returned (Issue #1260 re-opens #1244).
+
+- **Crate structure:** fluxion is now a **Cargo workspace** with two packages:
+  - `fluxion` (root, `cdylib` + `rlib`) — `src/physics/`, `src/ai/`, `src/sim/`,
+    `src/validation/`, etc.
+  - `fluxion-core` (`src/fluxion-core/`) — `weather/` module only (true leaf).
+    See `docs/mutation_testing_crate_split.md` for the full Phase 2 plan.
+  The `weather` module was the only clean leaf; `physics`, `ai`, and `validation`
+  are blocked from moving by bidirectional dependency cycles with `sim`. This is
+  why the OOM returned: `src/physics/` (CTF solvers, multi-node solvers,
+  geometry tensors with heavily-parameterized generics) stayed in `fluxion` and
+  is still analyzed by cargo-mutants.
+- **Current memory fix (issue #1260):** `.cargo/mutants.toml` was updated to add
+  `src/physics/**`, `src/ai/**`, and `src/validation/**` to `exclude_globs`, and
+  the CI workflow was updated to pass `--config .cargo/mutants.toml --jobs 2`.
+  This scopes mutation testing to the sim/weather/API modules that fit in CI memory.
+  The long-term fix is moving `physics` to `fluxion-core` (Phase 2 of the crate
+  split), which is blocked on breaking the `physics → sim` cycle.
+- **`ort` is not yet behind a feature flag.** It is a direct `[dependencies]` entry.
+  The Phase 3 success criterion in #1255 (`ort` behind a feature flag → <4 GB)
+  is **not yet met**. Gating `ort` behind a `#[cfg(feature = "ort")]` remains the
+  path to removing the `src/ai/**` exclusion and achieving full crate mutation
+  coverage on standard runners.
 - **Current CI layout:**
   - `.github/workflows/rust-tests.yml` — per-PR fast gate on `ubuntu-latest` (7 GB).
   - `.github/workflows/ci.yml` — main-merge jobs (Python, integration).
-  - `.github/workflows/mutation-testing.yml` — **disabled**, `workflow_dispatch`
-    only, runs on `ubuntu-latest-8-cores` (32 GB), runs `cargo mutants`.
-- **Net effect today:** fluxion has *no* mutation signal on per-PR CI, and the
-  confirmation run is manual. This is exactly the gap ripr is designed to fill:
-  cheap, advisory, per-PR.
+  - `.github/workflows/mutation-testing.yml` — `workflow_dispatch` on
+    `ubuntu-latest-8-cores` (32 GB), runs `cargo mutants` with reduced scope.
+- **Net effect:** cargo-mutants is re-enabled with reduced scope (physics/ai excluded).
+  The per-PR mutation signal is still absent; ripr is the tool to fill that gap.
+  See §6.3 for the planned nightly-scheduled confirmation run.
 
 ---
 
