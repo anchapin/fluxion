@@ -116,17 +116,15 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     // ==================== Low Mass Cases (600 Series) ====================
 
     // Case 600 - Baseline (Low Mass)
-    // TODO-BLIND-VALIDATION: These ranges are calibrated for the 5R1C thermal network model
-    // For blind validation: use raw ASHRAE 140-2023 reference values instead of calibrated ranges
-    // The ASHRAE 140 reference values are based on detailed hourly simulation
-    // Our model uses simplified 5R1C thermal network with different solar distribution
+    // ASHRAE 140-2023 Annex B raw reference values (issue #1270)
+    // Previously calibrated for 5R1C model (5.5-7.5 heating, 8.0-10.5 cooling)
     data.insert(
         "600".to_string(),
         BenchmarkData {
-            annual_heating_min: 5.5,
-            annual_heating_max: 7.5,
-            annual_cooling_min: 8.0,
-            annual_cooling_max: 10.5,
+            annual_heating_min: 4.36,
+            annual_heating_max: 5.79,
+            annual_cooling_min: 3.92,
+            annual_cooling_max: 6.14,
             peak_heating_min: 2.8,
             peak_heating_max: 3.8,
             peak_cooling_min: 4.8,
@@ -477,6 +475,373 @@ pub fn get_all_benchmark_data() -> HashMap<String, BenchmarkData> {
     data
 }
 
+/// Returns raw ASHRAE 140-2023 benchmark data for blind validation.
+///
+/// This function returns reference ranges from ASHRAE 140-2023 Annex B
+/// without any model-specific calibration adjustments. Used for true
+/// blind validation where the 5R1C model should be compared directly
+/// against the standard reference values.
+///
+/// Reference: ASHRAE 140-2023 Tables B8-1 through B8-5
+/// Programs: BSIMAC 9.0.74, CSE 0.861.1, DeST 2.0, EnergyPlus 9.0.1,
+///           ESP-r 13.3, TRNSYS 18.01.0001
+///
+/// See issue #1270 for details.
+pub fn get_all_benchmark_data_blind() -> HashMap<String, BenchmarkData> {
+    let mut data = HashMap::new();
+
+    // ==================== Low Mass Cases (600 Series) ====================
+
+    // Case 600 - Baseline (Low Mass)
+    // Raw ASHRAE 140-2023 Annex B values (issue #1270)
+    data.insert(
+        "600".to_string(),
+        BenchmarkData {
+            annual_heating_min: 4.36,
+            annual_heating_max: 5.79,
+            annual_cooling_min: 3.92,
+            annual_cooling_max: 6.14,
+            peak_heating_min: 2.8,
+            peak_heating_max: 3.8,
+            peak_cooling_min: 4.8,
+            peak_cooling_max: 6.2,
+            min_free_float_min: -6.0,
+            min_free_float_max: -4.0,
+            max_free_float_min: 64.0,
+            max_free_float_max: 68.0,
+        },
+    );
+
+    // Case 610 - South Shading (Low Mass)
+    data.insert(
+        "610".to_string(),
+        BenchmarkData {
+            annual_heating_min: 4.36,
+            annual_heating_max: 5.79,
+            annual_cooling_min: 3.92,
+            annual_cooling_max: 6.14,
+            peak_heating_min: 4.30,
+            peak_heating_max: 5.70,
+            peak_cooling_min: 2.20,
+            peak_cooling_max: 2.90,
+            min_free_float_min: -19.2,
+            min_free_float_max: -16.0,
+            max_free_float_min: 60.2,
+            max_free_float_max: 68.9,
+        },
+    );
+
+    // Case 620 - East/West Windows (Low Mass)
+    data.insert(
+        "620".to_string(),
+        BenchmarkData {
+            annual_heating_min: 4.5,
+            annual_heating_max: 6.5,
+            annual_cooling_min: 3.2,
+            annual_cooling_max: 5.0,
+            peak_heating_min: 2.8,
+            peak_heating_max: 3.8,
+            peak_cooling_min: 2.5,
+            peak_cooling_max: 3.5,
+            min_free_float_min: -18.5,
+            min_free_float_max: -15.3,
+            max_free_float_min: 62.8,
+            max_free_float_max: 71.5,
+        },
+    );
+
+    // Case 630 - East/West Shading (Low Mass)
+    data.insert(
+        "630".to_string(),
+        BenchmarkData {
+            annual_heating_min: 5.05,
+            annual_heating_max: 6.47,
+            annual_cooling_min: 2.13,
+            annual_cooling_max: 3.70,
+            peak_heating_min: 4.70,
+            peak_heating_max: 6.10,
+            peak_cooling_min: 1.80,
+            peak_cooling_max: 2.40,
+            min_free_float_min: -18.0,
+            min_free_float_max: -14.8,
+            max_free_float_min: 58.5,
+            max_free_float_max: 66.2,
+        },
+    );
+
+    // Case 640 - Thermostat Setback (Low Mass)
+    data.insert(
+        "640".to_string(),
+        BenchmarkData {
+            annual_heating_min: 2.75,
+            annual_heating_max: 3.80,
+            annual_cooling_min: 5.95,
+            annual_cooling_max: 8.10,
+            peak_heating_min: 4.30,
+            peak_heating_max: 5.70,
+            peak_cooling_min: 2.80,
+            peak_cooling_max: 3.70,
+            min_free_float_min: -18.6,
+            min_free_float_max: -15.4,
+            max_free_float_min: 63.5,
+            max_free_float_max: 72.8,
+        },
+    );
+
+    // Case 650 - Night Ventilation (Low Mass)
+    data.insert(
+        "650".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.00,
+            annual_heating_max: 0.00,
+            annual_cooling_min: 4.82,
+            annual_cooling_max: 7.06,
+            peak_heating_min: 0.00,
+            peak_heating_max: 0.00,
+            peak_cooling_min: 1.90,
+            peak_cooling_max: 2.50,
+            min_free_float_min: -23.0,
+            min_free_float_max: -21.0,
+            max_free_float_min: 58.8,
+            max_free_float_max: 67.5,
+        },
+    );
+
+    // Case 600FF - Free Float (Low Mass)
+    data.insert(
+        "600FF".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.00,
+            annual_heating_max: 0.00,
+            annual_cooling_min: 0.00,
+            annual_cooling_max: 0.00,
+            peak_heating_min: 0.00,
+            peak_heating_max: 0.00,
+            peak_cooling_min: 0.00,
+            peak_cooling_max: 0.00,
+            min_free_float_min: -18.8,
+            min_free_float_max: -15.6,
+            max_free_float_min: 64.9,
+            max_free_float_max: 75.1,
+        },
+    );
+
+    // Case 650FF - Free Float with Night Ventilation (Low Mass)
+    data.insert(
+        "650FF".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.00,
+            annual_heating_max: 0.00,
+            annual_cooling_min: 0.00,
+            annual_cooling_max: 0.00,
+            peak_heating_min: 0.00,
+            peak_heating_max: 0.00,
+            peak_cooling_min: 0.00,
+            peak_cooling_max: 0.00,
+            min_free_float_min: -23.0,
+            min_free_float_max: -21.0,
+            max_free_float_min: 63.2,
+            max_free_float_max: 73.5,
+        },
+    );
+
+    // ==================== High Mass Cases (900 Series) ====================
+
+    // Case 900 - Baseline (High Mass)
+    data.insert(
+        "900".to_string(),
+        BenchmarkData {
+            annual_heating_min: 1.17,
+            annual_heating_max: 2.04,
+            annual_cooling_min: 2.13,
+            annual_cooling_max: 3.67,
+            peak_heating_min: 1.80,
+            peak_heating_max: 2.40,
+            peak_cooling_min: 1.60,
+            peak_cooling_max: 2.10,
+            min_free_float_min: -6.4,
+            min_free_float_max: -1.6,
+            max_free_float_min: 41.8,
+            max_free_float_max: 46.4,
+        },
+    );
+
+    // Case 910 - South Shading (High Mass)
+    data.insert(
+        "910".to_string(),
+        BenchmarkData {
+            annual_heating_min: 1.51,
+            annual_heating_max: 2.28,
+            annual_cooling_min: 0.82,
+            annual_cooling_max: 1.88,
+            peak_heating_min: 1.90,
+            peak_heating_max: 2.50,
+            peak_cooling_min: 1.20,
+            peak_cooling_max: 1.60,
+            min_free_float_min: -7.0,
+            min_free_float_max: -2.2,
+            max_free_float_min: 38.5,
+            max_free_float_max: 43.2,
+        },
+    );
+
+    // Case 920 - East/West Windows (High Mass)
+    data.insert(
+        "920".to_string(),
+        BenchmarkData {
+            annual_heating_min: 3.26,
+            annual_heating_max: 4.30,
+            annual_cooling_min: 1.84,
+            annual_cooling_max: 3.31,
+            peak_heating_min: 2.10,
+            peak_heating_max: 2.80,
+            peak_cooling_min: 1.40,
+            peak_cooling_max: 1.90,
+            min_free_float_min: -5.8,
+            min_free_float_max: -1.0,
+            max_free_float_min: 40.2,
+            max_free_float_max: 45.8,
+        },
+    );
+
+    // Case 930 - East/West Shading (High Mass)
+    data.insert(
+        "930".to_string(),
+        BenchmarkData {
+            annual_heating_min: 4.14,
+            annual_heating_max: 5.34,
+            annual_cooling_min: 1.04,
+            annual_cooling_max: 2.24,
+            peak_heating_min: 2.30,
+            peak_heating_max: 3.00,
+            peak_cooling_min: 1.10,
+            peak_cooling_max: 1.50,
+            min_free_float_min: -5.2,
+            min_free_float_max: -0.4,
+            max_free_float_min: 39.5,
+            max_free_float_max: 44.8,
+        },
+    );
+
+    // Case 940 - Thermostat Setback (High Mass)
+    data.insert(
+        "940".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.79,
+            annual_heating_max: 1.41,
+            annual_cooling_min: 2.08,
+            annual_cooling_max: 3.55,
+            peak_heating_min: 1.90,
+            peak_heating_max: 2.50,
+            peak_cooling_min: 1.70,
+            peak_cooling_max: 2.30,
+            min_free_float_min: -6.2,
+            min_free_float_max: -1.4,
+            max_free_float_min: 40.8,
+            max_free_float_max: 46.2,
+        },
+    );
+
+    // Case 950 - Night Ventilation (High Mass)
+    data.insert(
+        "950".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.00,
+            annual_heating_max: 0.00,
+            annual_cooling_min: 0.39,
+            annual_cooling_max: 0.92,
+            peak_heating_min: 0.00,
+            peak_heating_max: 0.00,
+            peak_cooling_min: 0.70,
+            peak_cooling_max: 0.90,
+            min_free_float_min: -20.2,
+            min_free_float_max: -17.8,
+            max_free_float_min: 35.5,
+            max_free_float_max: 38.5,
+        },
+    );
+
+    // Case 900FF - Free Float (High Mass)
+    data.insert(
+        "900FF".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.00,
+            annual_heating_max: 0.00,
+            annual_cooling_min: 0.00,
+            annual_cooling_max: 0.00,
+            peak_heating_min: 0.00,
+            peak_heating_max: 0.00,
+            peak_cooling_min: 0.00,
+            peak_cooling_max: 0.00,
+            min_free_float_min: -6.4,
+            min_free_float_max: -1.6,
+            max_free_float_min: 41.8,
+            max_free_float_max: 46.4,
+        },
+    );
+
+    // Case 950FF - Free Float with Night Ventilation (High Mass)
+    data.insert(
+        "950FF".to_string(),
+        BenchmarkData {
+            annual_heating_min: 0.00,
+            annual_heating_max: 0.00,
+            annual_cooling_min: 0.00,
+            annual_cooling_max: 0.00,
+            peak_heating_min: 0.00,
+            peak_heating_max: 0.00,
+            peak_cooling_min: 0.00,
+            peak_cooling_max: 0.00,
+            min_free_float_min: -20.2,
+            min_free_float_max: -17.8,
+            max_free_float_min: 35.5,
+            max_free_float_max: 38.5,
+        },
+    );
+
+    // ==================== Special Cases ====================
+
+    // Case 960 - Sunspace (2-zone)
+    data.insert(
+        "960".to_string(),
+        BenchmarkData {
+            annual_heating_min: 1.65,
+            annual_heating_max: 2.45,
+            annual_cooling_min: 1.55,
+            annual_cooling_max: 2.78,
+            peak_heating_min: 2.0,
+            peak_heating_max: 8.0,
+            peak_cooling_min: 0.0,
+            peak_cooling_max: 4.0,
+            min_free_float_min: -2.8,
+            min_free_float_max: 6.0,
+            max_free_float_min: 48.9,
+            max_free_float_max: 55.3,
+        },
+    );
+
+    // Case 195 - Solid Conduction (no windows, no infiltration, no loads)
+    data.insert(
+        "195".to_string(),
+        BenchmarkData {
+            annual_heating_min: 3.5,
+            annual_heating_max: 6.0,
+            annual_cooling_min: 0.00,
+            annual_cooling_max: 0.00,
+            peak_heating_min: 1.4,
+            peak_heating_max: 2.2,
+            peak_cooling_min: 0.00,
+            peak_cooling_max: 0.00,
+            min_free_float_min: -21.5,
+            min_free_float_max: -18.2,
+            max_free_float_min: 27.8,
+            max_free_float_max: 32.5,
+        },
+    );
+
+    data
+}
+
 /// Returns benchmark data for a specific case.
 ///
 /// Returns `None` if the case is not found in the reference database.
@@ -595,11 +960,11 @@ mod tests {
         assert!(case_600.is_some());
 
         let data = case_600.unwrap();
-        // Updated to match new calibrated values for 5R1C thermal network
-        assert_eq!(data.annual_heating_min, 5.5);
-        assert_eq!(data.annual_heating_max, 7.5);
-        assert_eq!(data.annual_cooling_min, 8.0);
-        assert_eq!(data.annual_cooling_max, 10.5);
+        // Raw ASHRAE 140-2023 Annex B values (issue #1270)
+        assert_eq!(data.annual_heating_min, 4.36);
+        assert_eq!(data.annual_heating_max, 5.79);
+        assert_eq!(data.annual_cooling_min, 3.92);
+        assert_eq!(data.annual_cooling_max, 6.14);
     }
 
     #[test]
@@ -666,6 +1031,27 @@ mod tests {
         assert!(data.min_free_float_max != 0.0);
         assert!(data.max_free_float_min != 0.0);
         assert!(data.max_free_float_max != 0.0);
+    }
+
+    #[test]
+    fn test_get_all_benchmark_data_blind() {
+        let data = get_all_benchmark_data_blind();
+        assert!(data.len() >= 18);
+
+        // Case 600 should have raw ASHRAE 140-2023 values (issue #1270)
+        let case_600 = data.get("600").expect("Case 600 should exist");
+        assert_eq!(case_600.annual_heating_min, 4.36);
+        assert_eq!(case_600.annual_heating_max, 5.79);
+        assert_eq!(case_600.annual_cooling_min, 3.92);
+        assert_eq!(case_600.annual_cooling_max, 6.14);
+
+        // Blind data should match informed data for Case 600
+        let informed_data = get_all_benchmark_data();
+        let informed_600 = informed_data.get("600").expect("Case 600 should exist");
+        assert_eq!(case_600.annual_heating_min, informed_600.annual_heating_min);
+        assert_eq!(case_600.annual_heating_max, informed_600.annual_heating_max);
+        assert_eq!(case_600.annual_cooling_min, informed_600.annual_cooling_min);
+        assert_eq!(case_600.annual_cooling_max, informed_600.annual_cooling_max);
     }
 
     #[test]
