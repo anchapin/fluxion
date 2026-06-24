@@ -12,19 +12,14 @@ minimum_test_timeout = 60
 
 # Exclude modules with complex generic types that cause memory issues
 # during mutant discovery (Issue #1244)
-# Note: cargo-mutants analyzes entire type hierarchies during discovery,
-# so exclude_globs only prevents mutation, not memory usage. The entire
-# src/physics/ and src/solar/ directories must be excluded because
-# complex generic type patterns cause exponential memory growth.
 exclude_globs = [
-    # Entire physics and solar modules excluded due to complex generics
-    # causing OOM during mutant discovery (Issue #1244)
-    "src/physics/**",
-    "src/solar/**",
-    # Thermal model files with complex type hierarchies
-    "src/sim/thermal_model_physics/**",
+    # Large generic-heavy files that cause exponential memory growth
+    "src/sim/thermal_model_physics/physics_impl.rs",
     "src/sim/thermal_model_core.rs",
     "src/sim/construction.rs",
+    "src/physics/state_space_ctf.rs",
+    "src/physics/nd_array.rs",
+    "src/physics/multi_node_solver.rs",
     # AI/ML modules with complex type hierarchies
     "src/ai/surrogate.rs",
     "src/ai/modular_surrogate.rs",
