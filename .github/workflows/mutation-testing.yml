@@ -8,7 +8,7 @@ on:
       modules:
         description: 'Modules to test (comma-separated)'
         required: false
-        default: 'src/physics/,src/solar/'
+        default: 'src/weather/,src/thermal/'
         type: string
       toolchain:
         description: 'Rust toolchain'
@@ -18,8 +18,11 @@ on:
   pull_request:
     paths:
       - '.cargo/mutants.toml'
-      - 'src/physics/**/*.rs'
-      - 'src/solar/**/*.rs'
+      # Note: src/physics/** and src/solar/** excluded from mutation testing
+      # due to OOM from complex generic types (Issue #1244)
+      - 'src/weather/**/*.rs'
+      - 'src/thermal/**/*.rs'
+      - 'src/analysis/**/*.rs'
       - '.github/workflows/mutation-testing.yml'
 
 concurrency:
@@ -33,7 +36,8 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MODULES: ${{ inputs.modules || 'src/physics/,src/solar/' }}
+  # Note: src/physics/ and src/solar/ excluded due to OOM from complex generics (Issue #1244)
+  MODULES: ${{ inputs.modules || 'src/weather/,src/thermal/' }}
   TOOLCHAIN: ${{ inputs.toolchain || 'stable' }}
 
 jobs:
@@ -44,8 +48,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - modules: 'src/physics/'
-          - modules: 'src/solar/'
+          # src/physics/ and src/solar/ excluded (Issue #1244: OOM from complex generics)
+          - modules: 'src/weather/'
+          - modules: 'src/thermal/'
     steps:
       - uses: actions/checkout@v4
 
