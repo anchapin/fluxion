@@ -147,7 +147,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather = HourlyWeatherData::new(
     ///     20.0,  // 20°C temperature
@@ -254,7 +254,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather = HourlyWeatherData::with_infrared(
     ///     20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 350.0, 100
@@ -309,7 +309,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 25);
     /// assert_eq!(weather.hour_of_day(), 1); // Hour 25 is 1 AM
@@ -323,7 +323,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 48);
     /// assert_eq!(weather.day_of_year(), 2); // Hour 48 is day 2
@@ -339,7 +339,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather = HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 744);
     /// assert_eq!(weather.month(), 2); // Hour 744 is in February
@@ -387,7 +387,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather_data = vec![
     ///     HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0),
@@ -492,7 +492,7 @@ impl HourlyWeatherData {
     /// # Example
     ///
     /// ```
-    /// use fluxion::weather::HourlyWeatherData;
+    /// use fluxion_core::weather::HourlyWeatherData;
     ///
     /// let weather_data = vec![
     ///     HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0),
@@ -543,19 +543,19 @@ pub enum WeatherError {
 /// # Example
 ///
 /// ```no_run
-/// use fluxion::weather::WeatherSource;
+/// use fluxion_core::weather::WeatherSource;
 /// # struct MyWeatherSource;
 /// # impl WeatherSource for MyWeatherSource {
 /// #     fn location(&self) -> Option<String> { None }
-/// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion::weather::HourlyWeatherData, fluxion::weather::WeatherError> {
-/// #         Ok(fluxion::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
+/// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion_core::weather::HourlyWeatherData, fluxion_core::weather::WeatherError> {
+/// #         Ok(fluxion_core::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
 /// #     }
 /// # }
 ///
 /// let weather = MyWeatherSource;
 /// let data = weather.get_hourly_data(100)?;
 /// println!("Temperature at hour 100: {}°C", data.dry_bulb_temp);
-/// # Ok::<(), fluxion::weather::WeatherError>(())
+/// # Ok::<(), fluxion_core::weather::WeatherError>(())
 /// ```
 pub trait WeatherSource {
     /// Returns the location description (e.g., "Denver, CO") if available.
@@ -578,12 +578,12 @@ pub trait WeatherSource {
     /// # Example
     ///
     /// ```no_run
-    /// use fluxion::weather::WeatherSource;
+    /// use fluxion_core::weather::WeatherSource;
     /// # struct MyWeatherSource;
     /// # impl WeatherSource for MyWeatherSource {
     /// #     fn location(&self) -> Option<String> { Some("Test City".to_string()) }
-    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion::weather::HourlyWeatherData, fluxion::weather::WeatherError> {
-    /// #         Ok(fluxion::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
+    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion_core::weather::HourlyWeatherData, fluxion_core::weather::WeatherError> {
+    /// #         Ok(fluxion_core::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
     /// #     }
     /// # }
     ///
@@ -596,7 +596,7 @@ pub trait WeatherSource {
     /// // This will return an error
     /// let error = weather.get_hourly_data(8760);
     /// assert!(error.is_err());
-    /// # Ok::<(), fluxion::weather::WeatherError>(())
+    /// # Ok::<(), fluxion_core::weather::WeatherError>(())
     /// ```
     fn get_hourly_data(&self, hour: usize) -> Result<HourlyWeatherData, WeatherError>;
 
@@ -608,12 +608,12 @@ pub trait WeatherSource {
     /// # Example
     ///
     /// ```no_run
-    /// use fluxion::weather::WeatherSource;
+    /// use fluxion_core::weather::WeatherSource;
     /// # struct MyWeatherSource;
     /// # impl WeatherSource for MyWeatherSource {
     /// #     fn location(&self) -> Option<String> { Some("Test City".to_string()) }
-    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion::weather::HourlyWeatherData, fluxion::weather::WeatherError> {
-    /// #         Ok(fluxion::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
+    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion_core::weather::HourlyWeatherData, fluxion_core::weather::WeatherError> {
+    /// #         Ok(fluxion_core::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
     /// #     }
     /// # }
     ///
@@ -653,12 +653,12 @@ pub trait WeatherSource {
     /// # Example
     ///
     /// ```no_run
-    /// use fluxion::weather::WeatherSource;
+    /// use fluxion_core::weather::WeatherSource;
     /// # struct MyWeatherSource;
     /// # impl WeatherSource for MyWeatherSource {
     /// #     fn location(&self) -> Option<String> { Some("Test City".to_string()) }
-    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion::weather::HourlyWeatherData, fluxion::weather::WeatherError> {
-    /// #         Ok(fluxion::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
+    /// #     fn get_hourly_data(&self, hour: usize) -> Result<fluxion_core::weather::HourlyWeatherData, fluxion_core::weather::WeatherError> {
+    /// #         Ok(fluxion_core::weather::HourlyWeatherData::new(20.0, 800.0, 100.0, 900.0, 3.5, 50.0, hour))
     /// #     }
     /// # }
     ///

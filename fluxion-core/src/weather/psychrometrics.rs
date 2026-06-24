@@ -68,7 +68,7 @@ pub const STANDARD_ATMOSPHERIC_PRESSURE_Pa: f64 = 101325.0;
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::psychrometrics::saturation_vapor_pressure;
+/// use fluxion_core::weather::psychrometrics::saturation_vapor_pressure;
 ///
 /// let p_sat = saturation_vapor_pressure(20.0);
 /// assert!((p_sat - 2339.0).abs() < 5.0); // ~2339 Pa at 20°C
@@ -132,7 +132,7 @@ pub fn saturation_vapor_pressure(temperature: f64) -> f64 {
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::psychrometrics::calculate_dew_point;
+/// use fluxion_core::weather::psychrometrics::calculate_dew_point;
 ///
 /// let dp = calculate_dew_point(25.0, 50.0, 101325.0);
 /// assert!((dp - 13.9).abs() < 0.5); // ~13.9°C at 25°C, 50% RH
@@ -203,7 +203,7 @@ pub fn calculate_dew_point(dry_bulb: f64, relative_humidity: f64, _pressure: f64
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::psychrometrics::calculate_humidity_ratio;
+/// use fluxion_core::weather::psychrometrics::calculate_humidity_ratio;
 ///
 /// let omega = calculate_humidity_ratio(25.0, 50.0, 101325.0);
 /// assert!((omega - 0.0099).abs() < 0.0001); // ~0.0099 kg/kg at 25°C, 50% RH
@@ -248,7 +248,7 @@ pub fn calculate_humidity_ratio(dry_bulb: f64, relative_humidity: f64, pressure:
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::psychrometrics::calculate_enthalpy;
+/// use fluxion_core::weather::psychrometrics::calculate_enthalpy;
 ///
 /// let h = calculate_enthalpy(25.0, 50.0, 101325.0);
 /// assert!((h - 50.4).abs() < 0.5); // ~50.4 kJ/kg at 25°C, 50% RH
@@ -288,7 +288,7 @@ pub fn calculate_enthalpy(dry_bulb: f64, relative_humidity: f64, pressure: f64) 
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::psychrometrics::calculate_wet_bulb;
+/// use fluxion_core::weather::psychrometrics::calculate_wet_bulb;
 ///
 /// let wb = calculate_wet_bulb(25.0, 50.0, 101325.0);
 /// // Wet-bulb is between dew point and dry bulb
@@ -361,7 +361,7 @@ pub struct PsychrometricInputs {
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::{HourlyWeatherData, PsychrometricCalculations};
+/// use fluxion_core::weather::{HourlyWeatherData, PsychrometricCalculations};
 ///
 /// let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
 /// let dp = weather.dew_point();  // ~13.9°C at 50% RH
@@ -430,7 +430,7 @@ impl PsychrometricCalculations for HourlyWeatherData {
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::{HourlyWeatherData, from_weather_data};
+/// use fluxion_core::weather::{HourlyWeatherData, from_weather_data};
 ///
 /// let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
 /// let inputs = from_weather_data(&weather);
@@ -461,7 +461,7 @@ pub fn from_weather_data(weather: &HourlyWeatherData) -> PsychrometricInputs {
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::{HourlyWeatherData, enthalpy_from_weather};
+/// use fluxion_core::weather::{HourlyWeatherData, enthalpy_from_weather};
 ///
 /// let weather = HourlyWeatherData::new(25.0, 800.0, 100.0, 900.0, 3.5, 50.0, 0);
 /// let h = enthalpy_from_weather(&weather);  // ~50.4 kJ/kg at 50% RH

@@ -1,12 +1,16 @@
 name: Mutation Testing
 
-# NOTE: Mutation testing is DISABLED on CI due to cargo-mutants OOM.
-# cargo-mutants 27.x requires ~28GB RAM to analyze fluxion's type hierarchies.
-# Standard CI runners have 7GB RAM. Mutation testing must be run manually
-# on a machine with at least 32GB RAM using:
-#   cargo mutants
+# Mutation testing (issue #1255).
 #
-# See Issue #1244 for details.
+# The workspace was split into `fluxion` + `fluxion-core` so that cargo-mutants can
+# target only the main `fluxion` crate while `fluxion-core` is built once and cached,
+# cutting peak memory dramatically versus the previous single-crate layout.
+#
+# Run manually, or on PRs that touch physics/sim logic:
+#   cargo mutants -p fluxion --baseline skip
+#
+# See docs/mutation_testing_crate_split.md for the phased plan to reach the <4GB
+# target (Phase 3 gates `ort`/ONNX behind a feature flag).
 
 on:
   workflow_dispatch:
@@ -29,9 +33,9 @@ env:
 jobs:
   mutation-testing:
     name: Mutation Testing
-    # NOTE: Only runs via workflow_dispatch due to OOM on standard CI runners.
-    # cargo-mutants requires ~28GB RAM to analyze fluxion's complex type hierarchies.
-    # GitHub Actions ubuntu-latest runners only have 7GB RAM.
+    # Targets the main `fluxion` crate only; `fluxion-core` is built once and cached
+    # by cargo-mutants, which is what makes this feasible on a 16GB runner.
+    # (Full <4GB support arrives once `ort` is feature-gated — Phase 3.)
     runs-on: ubuntu-latest-8-cores  # 32GB RAM machine for mutation testing
     steps:
       - uses: actions/checkout@v4
@@ -48,8 +52,13 @@ jobs:
         run: cargo install cargo-mutants --locked
 
       - name: Run mutation testing
+        env:
+          # Bound peak memory: serialize rustc invocations and cap cargo parallelism.
+          CARGO_BUILD_JOBS: "2"
+          CARGO_INCREMENTAL: "0"
         run: |
-          cargo mutants --baseline skip --no-default-features -- \
+          # -p fluxion: mutate only the main crate; fluxion-core is a cached dep.
+          cargo mutants -p fluxion --baseline skip --no-default-features -- \
             --test-threads=4
 
       - name: Generate HTML report

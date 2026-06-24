@@ -226,8 +226,8 @@ pub fn detect_epw_version<R: Read>(reader: &mut R) -> Result<EpwVersion, Weather
 /// # Example
 ///
 /// ```no_run
-/// use fluxion::weather::epw::EpwWeatherSource;
-/// use fluxion::weather::WeatherSource;
+/// use fluxion_core::weather::epw::EpwWeatherSource;
+/// use fluxion_core::weather::WeatherSource;
 ///
 /// // Load an EPW file
 /// let weather = EpwWeatherSource::from_file("path/to/weather.epw")
@@ -270,14 +270,14 @@ impl EpwWeatherSource {
     /// # Example
     ///
     /// ```no_run
-    /// use fluxion::weather::epw::EpwWeatherSource;
-    /// use fluxion::weather::WeatherSource;
+    /// use fluxion_core::weather::epw::EpwWeatherSource;
+    /// use fluxion_core::weather::WeatherSource;
     ///
     /// let weather = EpwWeatherSource::from_file("weather.epw")
     ///     .expect("Failed to load weather file");
     ///
     /// let data = weather.get_hourly_data(100)?;
-    /// # Ok::<(), fluxion::weather::WeatherError>(())
+    /// # Ok::<(), fluxion_core::weather::WeatherError>(())
     /// ```
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self, WeatherError> {
         let file = File::open(path).map_err(|e| WeatherError::IoError(e.to_string()))?;
@@ -1075,9 +1075,16 @@ mod tests {
     fn test_parse_epw_v3_matches_trait_path() {
         // parse_epw_v3 and the WeatherSource trait path (parse) must produce
         // identical field values at matching indices for the same file.
-        let epw_data = include_bytes!("../../tests/test_data/denver.epw");
+        let epw_data = include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/test_data/denver.epw"
+        ));
         let v3 = EpwWeatherSource::parse_epw_v3(Cursor::new(&epw_data[..])).unwrap();
-        let source = EpwWeatherSource::from_file("tests/test_data/denver.epw").unwrap();
+        let source = EpwWeatherSource::from_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/test_data/denver.epw"
+        ))
+        .unwrap();
 
         // Same record count (8760) — no spurious header record in parse_epw_v3.
         assert_eq!(v3.len(), source.record_count());
@@ -1134,7 +1141,10 @@ mod tests {
 
     #[test]
     fn test_from_file_valid_epw() {
-        let source = EpwWeatherSource::from_file("tests/test_data/test_denver.epw");
+        let source = EpwWeatherSource::from_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/test_data/test_denver.epw"
+        ));
         assert!(source.is_ok());
         let source = source.unwrap();
         assert_eq!(source.location(), Some("Denver, CO".to_string()));
@@ -1145,7 +1155,10 @@ mod tests {
 
     #[test]
     fn test_from_file_empty_epw() {
-        let result = EpwWeatherSource::from_file("tests/test_data/test_empty.epw");
+        let result = EpwWeatherSource::from_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/test_data/test_empty.epw"
+        ));
         assert!(result.is_err());
     }
 

@@ -23,40 +23,44 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ARCH_FILE = REPO_ROOT / "ARCHITECTURE.md"
-SRC_DIR = REPO_ROOT / "src"
+# Scan source directories from all workspace members
+SRC_DIRS = [REPO_ROOT / "src", REPO_ROOT / "fluxion-core" / "src"]
 
 
-def find_rust_traits(src_dir: Path) -> dict[str, str]:
+def find_rust_traits(src_dirs: list[Path]) -> dict[str, str]:
     """Find all pub trait definitions and their source files."""
     traits = {}
-    for rs_file in src_dir.rglob("*.rs"):
-        content = rs_file.read_text(encoding="utf-8", errors="replace")
-        for match in re.finditer(r"pub\s+trait\s+(\w+)", content):
-            trait_name = match.group(1)
-            rel_path = rs_file.relative_to(REPO_ROOT)
-            traits[trait_name] = str(rel_path)
+    for src_dir in src_dirs:
+        for rs_file in src_dir.rglob("*.rs"):
+            content = rs_file.read_text(encoding="utf-8", errors="replace")
+            for match in re.finditer(r"pub\s+trait\s+(\w+)", content):
+                trait_name = match.group(1)
+                rel_path = rs_file.relative_to(REPO_ROOT)
+                traits[trait_name] = str(rel_path)
     return traits
 
 
-def find_rust_structs(src_dir: Path) -> dict[str, str]:
+def find_rust_structs(src_dirs: list[Path]) -> dict[str, str]:
     """Find all pub struct definitions."""
     structs = {}
-    for rs_file in src_dir.rglob("*.rs"):
-        content = rs_file.read_text(encoding="utf-8", errors="replace")
-        for match in re.finditer(r"pub\s+struct\s+(\w+)", content):
-            struct_name = match.group(1)
-            rel_path = rs_file.relative_to(REPO_ROOT)
-            structs[struct_name] = str(rel_path)
+    for src_dir in src_dirs:
+        for rs_file in src_dir.rglob("*.rs"):
+            content = rs_file.read_text(encoding="utf-8", errors="replace")
+            for match in re.finditer(r"pub\s+struct\s+(\w+)", content):
+                struct_name = match.group(1)
+                rel_path = rs_file.relative_to(REPO_ROOT)
+                structs[struct_name] = str(rel_path)
     return structs
 
 
-def find_trait_implementations(src_dir: Path) -> list[str]:
+def find_trait_implementations(src_dirs: list[Path]) -> list[str]:
     """Find all `impl Trait for Struct` relationships."""
     impls = []
-    for rs_file in src_dir.rglob("*.rs"):
-        content = rs_file.read_text(encoding="utf-8", errors="replace")
-        for match in re.finditer(r"impl\s+(\w+)\s+for\s+(\w+)", content):
-            impls.append(f"{match.group(1)} -> {match.group(2)}")
+    for src_dir in src_dirs:
+        for rs_file in src_dir.rglob("*.rs"):
+            content = rs_file.read_text(encoding="utf-8", errors="replace")
+            for match in re.finditer(r"impl\s+(\w+)\s+for\s+(\w+)", content):
+                impls.append(f"{match.group(1)} -> {match.group(2)}")
     return impls
 
 
@@ -114,7 +118,7 @@ def check_drift() -> list[str]:
     arch_content = ARCH_FILE.read_text(encoding="utf-8")
 
     # --- Check 1: Traits in code but not documented ---
-    code_traits = find_rust_traits(SRC_DIR)
+    code_traits = find_rust_traits(SRC_DIRS)
     documented_traits = extract_documented_traits(arch_content)
 
     # Filter out internal/auxiliary traits that don't need documentation
@@ -168,7 +172,7 @@ def check_drift() -> list[str]:
         "src/sim/thermal_model.rs",
         "src/sim/solar.rs",
         "src/sim/ventilation.rs",
-        "src/weather/epw.rs",
+        "fluxion-core/src/weather/epw.rs",
         "src/sim/sky_radiation.rs",
         "src/sim/solar_gain_distribution.rs",
     ]
