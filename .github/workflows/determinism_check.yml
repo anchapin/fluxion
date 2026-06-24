@@ -56,26 +56,109 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-determinism-cargo-
 
-      - name: Verify clang_rt.osx availability (macOS)
+      - name: Resolve clang_rt.osx builtins (macOS)
         if: runner.os == 'macOS'
+        shell: bash
         run: |
-          echo "=== clang_rt.osx diagnostic ==="
-          # Search for clang_rt.osx in common Xcode toolchain locations
-          FOUND=false
-          for clang_dir in \
-            "/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang"/*/lib/darwin \
-            "/Applications/Xcode_*.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang"/*/lib/darwin \
-            "/Users/runner/Library/Caches/ort.pyke.io/dfbin/"*/lib; do
-            if [ -f "$clang_dir/libclang_rt.osx" ]; then
-              echo "✅ Found: $clang_dir/libclang_rt.osx"
-              FOUND=true
+          set -uo pipefail
+          echo "=== Resolving libclang_rt.osx builtins ==="
+          # The ORT (ONNX Runtime) prebuilt link step emits `-lclang_rt.osx`,
+          # which the linker resolves to `libclang_rt.osx.a` (compiler-rt
+          # builtins). On Xcode 16.x GHA runners the toolchain's
+          # `clang/<ver>/lib/darwin/` directory is sometimes absent, so the
+          # archive must be located elsewhere and made discoverable.
+          #
+          # NOTE: the real filename is `libclang_rt.osx.a` (static archive),
+          # NOT `libclang_rt.osx` — the old diagnostic checked the wrong name
+          # and therefore always reported "not found".
+
+          RESOURCE_DIR="$(clang -print-resource-dir 2>/dev/null || true)"
+          echo "clang resource dir : ${RESOURCE_DIR:-<unknown>}"
+          echo "xcode-select path  : $(xcode-select -p 2>/dev/null || echo unknown)"
+          echo "SDK path           : $(xcrun --show-sdk-path 2>/dev/null || echo unknown)"
+
+          DARWIN_DIR=""
+          if [ -n "$RESOURCE_DIR" ]; then
+            DARWIN_DIR="$RESOURCE_DIR/lib/darwin"
+          fi
+
+          # 1) Already at the expected location?
+          if [ -n "$DARWIN_DIR" ] && [ -f "$DARWIN_DIR/libclang_rt.osx.a" ]; then
+            echo "✅ Already present: $DARWIN_DIR/libclang_rt.osx.a"
+            echo "CLANG_RT_DIR=$DARWIN_DIR" >> $GITHUB_ENV
+            echo "================================"
+            exit 0
+          fi
+
+          echo "⚠️  libclang_rt.osx.a not at resource dir; searching the system..."
+          # 2) Broad search across every likely toolchain (correct .a extension).
+          SEARCH_ROOTS=(
+            "/Applications/Xcode.app"
+            /Applications/Xcode_*.app
+            "/Library/Developer/CommandLineTools"
+            "$(xcrun --show-sdk-platform-path 2>/dev/null)/Developer/SDKs"
+            /opt/homebrew/opt/llvm
+            /usr/local/opt/llvm
+          )
+          FOUND_FILE=""
+          for root in "${SEARCH_ROOTS[@]}"; do
+            [ -e "$root" ] || continue
+            hit="$(find "$root" -type f -name "libclang_rt.osx.a" -print -quit 2>/dev/null || true)"
+            if [ -n "$hit" ]; then
+              FOUND_FILE="$hit"
+              break
             fi
           done
-          if [ "$FOUND" = "false" ]; then
-            echo "⚠️  WARNING: libclang_rt.osx not found in standard locations"
-            echo "   This may cause link failures with ORT (ONNX Runtime)"
-            echo "   Current Xcode path:"
-            xcode-select -p 2>/dev/null || echo "   xcode-select failed"
+
+          # 3) Fallback: any darwin builtins archive (renamed variants, e.g.
+          #    libclang_rt.macos.a in newer toolchains).
+          if [ -z "$FOUND_FILE" ]; then
+            echo "No libclang_rt.osx.a; listing all clang_rt builtins found:"
+            for root in /Applications/Xcode*.app "/Library/Developer/CommandLineTools" /opt/homebrew/opt/llvm /usr/local/opt/llvm; do
+              [ -e "$root" ] || continue
+              find "$root" -type f -name "libclang_rt*.a" 2>/dev/null | head -40 || true
+            done
+            # Pick a macos/osx builtin if one exists under a different name.
+            for root in /Applications/Xcode*.app "/Library/Developer/CommandLineTools" /opt/homebrew/opt/llvm /usr/local/opt/llvm; do
+              [ -e "$root" ] || continue
+              hit="$(find "$root" -type f \( -name "libclang_rt.macos.a" -o -name "libclang_rt.cc_kext.a" \) -print -quit 2>/dev/null || true)"
+              if [ -n "$hit" ]; then
+                FOUND_FILE="$hit"
+                break
+              fi
+            done
+          fi
+
+          if [ -n "$FOUND_FILE" ]; then
+            FOUND_DIR="$(dirname "$FOUND_FILE")"
+            echo "✅ Found builtins: $FOUND_FILE"
+            # Make it discoverable at the expected resource-dir location too,
+            # so rustc's own `-L .../clang/<ver>/lib/darwin` resolves it.
+            if [ -n "$DARWIN_DIR" ]; then
+              mkdir -p "$DARWIN_DIR"
+              [ -e "$DARWIN_DIR/libclang_rt.osx.a" ] || ln -sf "$FOUND_FILE" "$DARWIN_DIR/libclang_rt.osx.a"
+            fi
+            echo "CLANG_RT_DIR=$FOUND_DIR" >> $GITHUB_ENV
+          else
+            echo "❌ libclang_rt.osx.a not found in Xcode or Command Line Tools."
+            echo "    Installing compiler-rt builtins via Homebrew LLVM..."
+            # Last-resort: Homebrew LLVM ships a complete compiler-rt including
+            # the darwin builtins. GHA macOS runners have Homebrew preinstalled.
+            brew install llvm >/tmp/brew-llvm.log 2>&1 || { echo "brew install llvm failed"; tail -20 /tmp/brew-llvm.log; }
+            BREW_LLVM="/opt/homebrew/opt/llvm"
+            [ -d "$BREW_LLVM" ] || BREW_LLVM="/usr/local/opt/llvm"
+            hit="$(find "$BREW_LLVM" -type f -name "libclang_rt.osx.a" -print -quit 2>/dev/null || true)"
+            if [ -n "$hit" ]; then
+              FOUND_DIR="$(dirname "$hit")"
+              echo "✅ Obtained builtins from Homebrew LLVM: $hit"
+              if [ -n "$DARWIN_DIR" ]; then
+                mkdir -p "$DARWIN_DIR"
+                [ -e "$DARWIN_DIR/libclang_rt.osx.a" ] || ln -sf "$hit" "$DARWIN_DIR/libclang_rt.osx.a"
+              fi
+              echo "CLANG_RT_DIR=$FOUND_DIR" >> $GITHUB_ENV
+            else
+              echo "❌ Still not found after Homebrew LLVM; build will likely fail."
+            fi
           fi
           echo "================================"
 
@@ -89,12 +172,22 @@ jobs:
           echo "cc: $(cc --version 2>&1 | head -1 || echo 'cc not found')"
           echo "macOS: $(sw_vers 2>&1 || echo 'sw_vers not found')"
           echo "================================"
-          # Reduce parallelism on macOS to avoid resource pressure that can cause
-          # linker toolchain failures (clang_rt.osx not found). Use --verbose to
-          # capture linker diagnostics that would otherwise be truncated in CI logs.
+          # On macOS the Xcode 16.x toolchain intermittently cannot resolve
+          # `libclang_rt.osx` (ORT link dependency). Two mitigations:
+          #  (a) force a clean build so no stale incremental artifacts retain
+          #      references to dead clang version paths (a known cause of
+          #      `ld: library 'clang_rt.osx' not found`); and
+          #  (b) extend the linker search path to the directory that actually
+          #      holds the compiler-rt builtins (resolved in the prior step).
           if [ "${{ matrix.os }}" = "macos-latest" ]; then
             export CARGO_BUILD_JOBS=2
-            echo "macOS detected: limiting CARGO_BUILD_JOBS=2 to reduce memory pressure"
+            echo "macOS detected: limiting CARGO_BUILD_JOBS=2"
+            # Drop stale release artifacts to avoid dead-path link fingerprints.
+            cargo clean --release || true
+            if [ -n "${CLANG_RT_DIR:-}" ]; then
+              export RUSTFLAGS="$RUSTFLAGS -C link-arg=-L${CLANG_RT_DIR}"
+              echo "macOS: RUSTFLAGS += -C link-arg=-L${CLANG_RT_DIR}"
+            fi
           fi
           # Use || true to ensure diagnostics run even on build failure; then capture
           # cargo's exit code via PIPESTATUS and explicitly exit with it.
