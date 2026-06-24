@@ -1,0 +1,369 @@
+name: ripr Mutation Pre-Filter
+
+# Issue #1254: Memory-efficient mutation seam analysis for CI
+# Runs on every PR to find test coverage gaps before cargo-mutants
+#
+# Memory: ~1.5GB (vs cargo-mutants ~28GB)
+# Runtime: ~5-10 minutes (vs hours for full mutation testing)
+
+on:
+  pull_request:
+    paths:
+      - 'fluxion-core/src/**/*.rs'
+      - 'src/weather/**/*.rs'
+    branches:
+      - main
+      - '*.x'  # Feature branches
+
+  # Allow manual trigger for baseline updates
+  workflow_dispatch:
+    inputs:
+      update_baseline:
+        description: 'Update baseline instead of checking gaps'
+        required: false
+        default: 'false'
+        type: boolean
+
+permissions:
+  contents: read
+  pull-requests: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ============================================================
+  # Job 1: Run ripr pilot and generate exposure report
+  # ============================================================
+  ripr-analysis:
+    name: ripr Seam Analysis
+    runs-on: ubuntu-latest-4-cores  # ~6GB RAM sufficient for ripr
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install ripr
+        run: cargo install ripr --locked
+
+      # ----------------------------------------------------------------
+      # Analyze fluxion-core (weather module - true leaf crate)
+      # ----------------------------------------------------------------
+      - name: Run ripr pilot on fluxion-core
+        working-directory: ./fluxion-core
+        env:
+          RUST_LOG: info
+        run: |
+          echo "=== Running ripr pilot on fluxion-core ==="
+          ripr pilot \
+            --max-seams 50 \
+            --timeout-ms 180000 \
+            --out target/ripr/pilot
+
+          echo ""
+          echo "=== Generating repo exposure report ==="
+          ripr check \
+            --root . \
+            --mode draft \
+            --format repo-exposure-json \
+            > target/ripr/pilot/repo-exposure.json
+
+          echo ""
+          echo "=== Exposure Summary ==="
+          python3 << 'PYEOF'
+          import json
+          with open('target/ripr/pilot/repo-exposure.json') as f:
+              data = json.load(f)
+
+          metrics = data.get('metrics', {})
+          seams = data.get('seams', [])
+
+          print(f"Total seams: {metrics.get('seams_total', len(seams))}")
+          print(f"Strongly gripped: {metrics.get('strongly_gripped', 0)}")
+          print(f"Weakly gripped: {metrics.get('weakly_gripped', 0)}")
+          print(f"Activation unknown: {metrics.get('activation_unknown', 0)}")
+
+          # Count by file
+          by_file = {}
+          for s in seams:
+              if s.get('grip_class') == 'weakly_gripped':
+                  loc = s.get('location', '?:?')
+                  file = loc.split(':')[0] if ':' in loc else loc
+                  by_file[file] = by_file.get(file, 0) + 1
+
+          if by_file:
+              print("\nTop files with weak seams:")
+              for f, c in sorted(by_file.items(), key=lambda x: -x[1])[:5]:
+                  print(f"  {f}: {c} weak seams")
+          PYEOF
+
+      # ----------------------------------------------------------------
+      # Generate human-readable reports
+      # ----------------------------------------------------------------
+      - name: Generate exposure markdown
+        working-directory: ./fluxion-core
+        run: |
+          python3 << 'PYEOF'
+          import json
+          with open('target/ripr/pilot/repo-exposure.json') as f:
+              data = json.load(f)
+
+          with open('target/ripr/pilot/repo-exposure.md', 'w') as out:
+              out.write("# ripr Repo Exposure Report\n\n")
+              out.write(f"**Scope**: {data.get('scope', 'N/A')}\n")
+              out.write(f"**Status**: {data.get('run_status', 'N/A')}\n\n")
+
+              metrics = data.get('metrics', {})
+              out.write("## Summary\n\n")
+              out.write("| Class | Count |\n")
+              out.write("| --- | --- |\n")
+              for k, v in metrics.items():
+                  out.write(f"| {k} | {v} |\n")
+              out.write("\n")
+
+              # Top gaps
+              seams = data.get('seams', [])
+              weak = [s for s in seams if s.get('grip_class') == 'weakly_gripped']
+
+              if weak:
+                  out.write("## Top Weak Seams\n\n")
+                  for i, s in enumerate(weak[:10]):
+                      out.write(f"### {i+1}. {s.get('location', 'unknown')}\n")
+                      out.write(f"- Kind: {s.get('seam_kind', 'N/A')}\n")
+                      out.write(f"- Owner: {s.get('owner', 'N/A')}\n")
+                      out.write(f"- Evidence: {s.get('evidence', {})}\n\n")
+          PYEOF
+
+      # ----------------------------------------------------------------
+      # Handle baseline update vs. gap check
+      # ----------------------------------------------------------------
+      - name: Update baseline (if requested)
+        if: github.event.inputs.update_baseline == 'true'
+        working-directory: ./fluxion-core
+        run: |
+          echo "=== Updating baseline ==="
+          mkdir -p .ripr
+          ripr baseline create \
+            --from target/ripr/pilot/repo-exposure.json \
+            --out .ripr/gate-baseline.json \
+            --force
+
+          echo ""
+          echo "Baseline updated. Commit this file to version control:"
+          echo "  fluxion-core/.ripr/gate-baseline.json"
+
+      - name: Compare to baseline (if baseline exists)
+        if: github.event.inputs.update_baseline != 'true'
+        working-directory: ./fluxion-core
+        run: |
+          if [ -f .ripr/gate-baseline.json ]; then
+            echo "=== Comparing to baseline ==="
+            ripr baseline diff \
+              --baseline .ripr/gate-baseline.json \
+              --current target/ripr/pilot/repo-exposure.json \
+              --out target/ripr/reports/baseline-delta.json \
+              --out-md target/ripr/reports/baseline-delta.md || true
+
+            echo ""
+            echo "=== Delta Summary ==="
+            python3 << 'PYEOF'
+            import json
+            try:
+                with open('target/ripr/reports/baseline-delta.json') as f:
+                    delta = json.load(f)
+
+                if 'summary' in delta:
+                    for k, v in delta['summary'].items():
+                        print(f"  {k}: {v}")
+            except:
+                print("Could not parse delta JSON")
+            PYEOF
+          else
+            echo "No baseline exists. Run with 'update_baseline: true' to create one."
+          fi
+
+      # ----------------------------------------------------------------
+      # Upload artifacts
+      # ----------------------------------------------------------------
+      - name: Upload ripr results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ripr-results-${{ github.sha }}
+          path: |
+            fluxion-core/target/ripr/
+            !fluxion-core/target/ripr/**/.git/**
+          retention-days: 14
+
+  # ============================================================
+  # Job 2: Evaluate gap threshold gate
+  # ============================================================
+  ripr-gate:
+    name: Seam Gap Gate
+    needs: ripr-analysis
+    runs-on: ubuntu-latest
+    outputs:
+      weak_seam_count: ${{ steps.count.outputs.weak_seams }}
+      gate_threshold: ${{ vars.RIPR_WEAK_SEAM_THRESHOLD || '100' }}
+      gate_status: ${{ steps.gate.outputs.status }}
+    steps:
+      - name: Download ripr results
+        uses: actions/download-artifact@v4
+        with:
+          name: ripr-results-${{ github.sha }}
+          path: ./ripr-results
+
+      - name: Count weak seams
+        id: count
+        run: |
+          WEAK=$(python3 << 'PYEOF'
+          import json
+          import os
+
+          path = 'ripr-results/fluxion-core/target/ripr/pilot/repo-exposure.json'
+          if os.path.exists(path):
+              with open(path) as f:
+                  data = json.load(f)
+              seams = data.get('seams', [])
+              weak = len([s for s in seams if s.get('grip_class') == 'weakly_gripped'])
+              print(str(weak))
+          else:
+              print("0")
+          PYEOF
+          )
+          echo "weak_seams=$WEAK" >> $GITHUB_OUTPUT
+          echo "Weak seam count: $WEAK"
+
+      - name: Evaluate gate
+        id: gate
+        run: |
+          WEAK=${{ steps.count.outputs.weak_seams }}
+          THRESHOLD=${{ vars.RIPR_WEAK_SEAM_THRESHOLD || '100' }}
+
+          echo "Weak seams: $WEAK"
+          echo "Threshold: $THRESHOLD"
+
+          if [ "$WEAK" -gt "$THRESHOLD" ]; then
+            echo "status=failing" >> $GITHUB_OUTPUT
+            echo "::notice::High seam gap count: $WEAK (threshold: $THRESHOLD)"
+            echo "::error::Too many weakly gripped seams. Review ripr-results artifact."
+            exit 1
+          else
+            echo "status=passing" >> $GITHUB_OUTPUT
+            echo "Seam gap within acceptable range."
+          fi
+
+      - name: Post PR comment with summary
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const weakCount = '${{ steps.count.outputs.weak_seams }}';
+            const threshold = '${{ vars.RIPR_WEAK_SEAM_THRESHOLD || '100' }}';
+            const status = '${{ steps.gate.outputs.status }}';
+            const sha = '${{ github.sha }}';
+            const isPassing = status === 'passing';
+            const emoji = isPassing ? 'PASS' : 'FAIL';
+            const flag = isPassing ? 'pass' : 'fail';
+
+            let body = '## ripr Mutation Seam Analysis\n\n';
+            body += '| Metric | Value |\n';
+            body += '|--------|-------|\n';
+            body += '| Weak seams | ' + weakCount + ' |\n';
+            body += '| Threshold | ' + threshold + ' |\n';
+            body += '| Status | ' + emoji + ' |\n\n';
+            body += isPassing
+              ? 'Seam gaps within acceptable range.'
+              : '**Gap count exceeds threshold.** Review the artifact for details.\n\n**Artifact**: `ripr-results-' + sha + '` (expires in 14 days)\n**Analysis**: fluxion-core/target/ripr/pilot/repo-exposure.md';
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+  # ============================================================
+  # Job 3: Generate actionable seam list for developers
+  # ============================================================
+  ripr-actionable:
+    name: Actionable Seams
+    needs: ripr-analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download ripr results
+        uses: actions/download-artifact@v4
+        with:
+          name: ripr-results-${{ github.sha }}
+          path: ./ripr-results
+
+      - name: Generate actionable seam list
+        run: |
+          python3 << 'PYEOF'
+          import json
+          import os
+
+          path = 'ripr-results/fluxion-core/target/ripr/pilot/repo-exposure.json'
+          if not os.path.exists(path):
+              print("No exposure data found")
+              exit(0)
+
+          with open(path) as f:
+              data = json.load(f)
+
+          seams = data.get('seams', [])
+          weak = [s for s in seams if s.get('grip_class') == 'weakly_gripped']
+
+          print("# Top Actionable Seams for Testing\n")
+          print("These seams have weak test coverage. Consider adding targeted tests:\n")
+
+          # Group by location prefix
+          by_file = {}
+          for s in weak:
+              loc = s.get('location', '?:?')
+              parts = loc.split(':')
+              if len(parts) >= 2:
+                  file = parts[0]
+                  line = parts[1]
+                  kind = s.get('seam_kind', 'unknown')
+                  owner = s.get('owner', 'unknown')
+
+                  if file not in by_file:
+                      by_file[file] = []
+                  by_file[file].append({
+                      'line': line,
+                      'kind': kind,
+                      'owner': owner,
+                      'seam': s.get('seam', 'N/A')
+                  })
+
+          for file, seams_in_file in sorted(by_file.items(), key=lambda x: -len(x[1]))[:5]:
+              print(f"## {file} ({len(seams_in_file)} weak seams)\n")
+              for s in seams_in_file[:3]:  # Top 3 per file
+                  print(f"### Line {s['line']}: {s['kind']}")
+                  print(f"```rust")
+                  print(f"// {s['owner']}")
+                  print(f"// Seam: {s['seam'][:100]}...")
+                  print(f"```")
+                  print()
+              print()
+
+          print("Run `cargo test -p fluxion-core` to see current coverage.")
+          PYEOF
