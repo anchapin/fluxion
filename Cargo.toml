@@ -229,6 +229,10 @@ path = "src/bin/export_csv.rs"
 name = "run_multi_zone_validation"
 path = "src/bin/run_multi_zone_validation.rs"
 
+[[bin]]
+name = "parallel-issue-workflow"
+path = "src/bin/parallel_issue_workflow.rs"
+
 [profile.release]
 opt-level = 3
 lto = "thin"
