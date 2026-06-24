@@ -15,6 +15,12 @@ on:
         required: false
         default: 'stable'
         type: string
+  pull_request:
+    paths:
+      - '.cargo/mutants.toml'
+      - 'src/physics/**/*.rs'
+      - 'src/solar/**/*.rs'
+      - '.github/workflows/mutation-testing.yml'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -56,15 +62,15 @@ jobs:
 
       - name: Run mutation testing
         run: |
-          cargo mutants --dir . -o mutation_testing_results --timeout 300 -j 4 -- \
-            test --lib --verbose --no-default-features -- --test-threads=4
+          cargo mutants test --lib --verbose --no-default-features -- \
+            --test-threads=4
 
       - name: Generate HTML report
         if: always()
         run: |
           mkdir -p mutation_testing_results/reports
           if [ -f mutation_testing_results/outcomes.json ]; then
-            cargo mutants --dir . show -o mutation_testing_results --format html > mutation_testing_results/reports/index.html 2>&1 || true
+            cargo mutants show -o mutation_testing_results --format html > mutation_testing_results/reports/index.html 2>&1 || true
           fi
 
       - name: Upload mutation test results

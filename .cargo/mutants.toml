@@ -1,17 +1,34 @@
 # cargo-mutants configuration for fluxion
 # See https://mutants.rs/config.html
-
-# Timeout for building a single mutant (in seconds)
-build_timeout = 600
-
-# Timeout for running tests for a single mutant (in seconds)
-test_timeout = 300
-
-# Number of parallel jobs
-jobs = 4
+#
+# Issue #1244: Excluded modules with complex generic type patterns that cause
+# OOM during mutant discovery due to exponential memory growth
 
 # Skip common allocator-sizes patterns that don't represent real bugs
 skip_calls = ["with_capacity", "new", "default"]
 
 # Minimum time to wait for test to complete
 minimum_test_timeout = 60
+
+# Exclude modules with complex generic types that cause memory issues
+# during mutant discovery (Issue #1244)
+exclude_globs = [
+    # Large generic-heavy files that cause exponential memory growth
+    "src/sim/thermal_model_physics/physics_impl.rs",
+    "src/sim/thermal_model_core.rs",
+    "src/sim/construction.rs",
+    "src/physics/state_space_ctf.rs",
+    "src/physics/nd_array.rs",
+    "src/physics/multi_node_solver.rs",
+    # AI/ML modules with complex type hierarchies
+    "src/ai/surrogate.rs",
+    "src/ai/modular_surrogate.rs",
+    "src/ai/distributed.rs",
+    "src/ai/ensemble.rs",
+    "src/ai/neural_field.rs",
+    # Large validation modules
+    "src/validation/ashrae_140_cases.rs",
+]
+
+# Use slice sharding for better memory locality
+sharding = "slice"
