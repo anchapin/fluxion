@@ -40,17 +40,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
 
-      - name: Select stable Xcode 15.4 on macOS (fixes #1264)
-        if: runner.os == 'macOS'
-        run: |
-          # Xcode 16.x on GHA runners has incomplete libclang_rt.osx installation,
-          # causing intermittent linker failures when building ORT (ONNX Runtime).
-          # Switch to Xcode 15.4 which has a complete, stable toolchain.
-          # See: https://github.com/anchapin/fluxion/issues/1264
-          sudo xcode-select -s /Applications/Xcode_15.4.app
-          echo "Active Xcode: $(xcode-select -p)"
-          echo "Xcode version: $(xcodebuild -version 2>&1)"
-
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
