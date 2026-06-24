@@ -63,8 +63,8 @@ jobs:
           push: false
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=build-test-v3
+          cache-to: type=gha,scope=build-test-v3,mode=max
 
       - name: Run container smoke test
         if: github.event_name != 'pull_request'
@@ -128,8 +128,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           labels: ${{ steps.meta.outputs.labels }}
           outputs: type=image,push-by-digest=true,name-canonical=true
-          cache-from: type=gha,scope=build-${{ matrix.slug }}
-          cache-to: type=gha,scope=build-${{ matrix.slug }},mode=max
+          cache-from: type=gha,scope=build-${{ matrix.slug }}-v3
+          cache-to: type=gha,scope=build-${{ matrix.slug }}-v3,mode=max
 
       - name: Export digest
         if: github.event_name != 'pull_request'
