@@ -3,7 +3,7 @@
 //! This module defines the core trait interface for thermal modeling, allowing
 //! easy swapping between traditional physics-based approaches and AI surrogate models.
 
-use crate::ai::surrogate::SurrogateManager;
+use crate::ai::SurrogateOps;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use std::error::Error;
 
@@ -76,7 +76,7 @@ pub trait ThermalModelTrait: Send + Sync {
     ///
     /// # Arguments
     /// * `steps` - Number of hourly timesteps (typically 8760 for 1 year)
-    /// * `surrogates` - Reference to SurrogateManager for load predictions
+    /// * `surrogates` - Reference to SurrogateOps for load predictions
     /// * `use_surrogates` - If true, use neural surrogates; if false, use analytical calculations
     ///
     /// # Returns
@@ -84,7 +84,7 @@ pub trait ThermalModelTrait: Send + Sync {
     fn solve_timesteps(
         &mut self,
         steps: usize,
-        surrogates: &SurrogateManager,
+        surrogates: &dyn SurrogateOps,
         use_surrogates: bool,
     ) -> f64;
 
@@ -165,11 +165,11 @@ impl ThermalModelTrait for PhysicsThermalModel {
     fn solve_timesteps(
         &mut self,
         steps: usize,
-        surrogates: &SurrogateManager,
-        use_surrogates: bool,
+        surrogates: &dyn SurrogateOps,
+        _use_surrogates: bool,
     ) -> f64 {
         // Use the mode to determine whether to use surrogates
-        let actual_use_surrogates = use_surrogates || self.mode == ThermalModelMode::Surrogate;
+        let actual_use_surrogates = _use_surrogates || self.mode == ThermalModelMode::Surrogate;
         self.inner
             .solve_timesteps(steps, surrogates, actual_use_surrogates, None, None, None)
     }
@@ -277,7 +277,7 @@ impl ThermalModelTrait for SurrogateThermalModel {
     fn solve_timesteps(
         &mut self,
         steps: usize,
-        surrogates: &SurrogateManager,
+        surrogates: &dyn SurrogateOps,
         _use_surrogates: bool,
     ) -> f64 {
         // Always use surrogates for this model type
@@ -403,7 +403,7 @@ impl ThermalModelTrait for UnifiedThermalModel {
     fn solve_timesteps(
         &mut self,
         steps: usize,
-        surrogates: &SurrogateManager,
+        surrogates: &dyn SurrogateOps,
         _use_surrogates: bool,
     ) -> f64 {
         // Use the internal mode flag

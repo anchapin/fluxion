@@ -7,3 +7,6 @@ pub mod neural_field;
 pub mod shared_batch_service;
 pub mod surrogate;
 pub mod xdt_export;
+
+// Re-export SurrogateOps and SurrogateOpsBox for use in thermal model
+pub use surrogate::{SurrogateManager, SurrogateOps, SurrogateOpsBox};

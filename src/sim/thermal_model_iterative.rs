@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use crate::ai::SurrogateOps;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::boundary::{
     ConstantGroundTemperature, DynamicGroundTemperature, GroundTemperature,

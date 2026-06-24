@@ -2,14 +2,14 @@
 //!
 //! Timestep loop, convergence, and result accumulation.
 
-use crate::ai::surrogate::SurrogateManager;
+use crate::ai::{SurrogateManager, SurrogateOpsBox};
 use crate::sim::equipment::Equipment;
 use crate::sim::lighting::LightingSchedule;
 use crate::sim::occupancy::OccupancyProfile;
 
 pub struct StepParameters {
     pub use_ai: bool,
-    pub surrogates: SurrogateManager,
+    pub surrogates: SurrogateOpsBox,
     pub use_analytical_gains: bool,
     pub lighting: Option<LightingSchedule>,
     pub equipment: Option<Vec<Box<dyn Equipment>>>,
@@ -20,7 +20,7 @@ impl Default for StepParameters {
     fn default() -> Self {
         Self {
             use_ai: false,
-            surrogates: SurrogateManager::new().expect("Failed to create default SurrogateManager"),
+            surrogates: SurrogateOpsBox::new(SurrogateManager::new().expect("Failed to create default SurrogateManager")),
             use_analytical_gains: false,
             lighting: None,
             equipment: None,
@@ -46,7 +46,7 @@ impl StepParameters {
     pub fn new() -> Self {
         Self {
             use_ai: false,
-            surrogates: SurrogateManager::new().expect("Failed to create SurrogateManager"),
+            surrogates: SurrogateOpsBox::new(SurrogateManager::new().expect("Failed to create SurrogateManager")),
             use_analytical_gains: false,
             lighting: None,
             equipment: None,

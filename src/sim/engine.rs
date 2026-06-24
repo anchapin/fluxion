@@ -11,7 +11,7 @@ pub use crate::sim::timestep_solver::StepParameters;
 #[cfg(test)]
 mod tests {
     use super::{StepParameters, ThermalModel};
-    use crate::ai::surrogate::SurrogateManager;
+    use crate::ai::surrogate::{SurrogateManager, SurrogateOpsBox};
     use crate::physics::cta::VectorField;
     use crate::sim::schedule::DailySchedule;
 
@@ -105,7 +105,7 @@ mod tests {
 
         let step_params = StepParameters {
             use_ai: false,
-            surrogates: surrogates.clone(),
+            surrogates: SurrogateOpsBox::new(surrogates.clone()),
             use_analytical_gains: true,
             lighting: None,
             equipment: None,
@@ -383,7 +383,7 @@ mod tests {
             for step in 0..num_timesteps {
                 let step_params = StepParameters {
                     use_ai: false,
-                    surrogates: surrogates.clone(),
+                    surrogates: SurrogateOpsBox::new(surrogates.clone()),
                     use_analytical_gains: false,
                     lighting: None,
                     equipment: None,
@@ -421,7 +421,7 @@ mod tests {
 
             let step_params = StepParameters {
                 use_ai: false,
-                surrogates: surrogates.clone(),
+                surrogates: SurrogateOpsBox::new(surrogates.clone()),
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -449,7 +449,7 @@ mod tests {
             let outdoor_temp_cold = 10.0;
             let step_params = StepParameters {
                 use_ai: false,
-                surrogates: surrogates.clone(),
+                surrogates: SurrogateOpsBox::new(surrogates.clone()),
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -463,7 +463,7 @@ mod tests {
             let outdoor_temp_hot = 35.0;
             let step_params = StepParameters {
                 use_ai: false,
-                surrogates: surrogates.clone(),
+                surrogates: SurrogateOpsBox::new(surrogates.clone()),
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -475,7 +475,7 @@ mod tests {
             model.mass_temperatures = VectorField::from_scalar(23.5, 1);
             let step_params_2 = StepParameters {
                 use_ai: false,
-                surrogates: surrogates.clone(),
+                surrogates: SurrogateOpsBox::new(surrogates.clone()),
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,
@@ -564,7 +564,7 @@ mod tests {
             for t in 0..24 {
                 let step_params = StepParameters {
                     use_ai: false,
-                    surrogates: surrogates.clone(),
+                    surrogates: SurrogateOpsBox::new(surrogates.clone()),
                     use_analytical_gains: false,
                     lighting: None,
                     equipment: None,
@@ -637,7 +637,7 @@ mod tests {
             let outdoor_temp = 15.0;
             let step_params = StepParameters {
                 use_ai: false,
-                surrogates: surrogates.clone(),
+                surrogates: SurrogateOpsBox::new(surrogates.clone()),
                 use_analytical_gains: false,
                 lighting: None,
                 equipment: None,

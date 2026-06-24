@@ -13,7 +13,7 @@
 //! solvers, weather data, and surrogate managers. `MockThermalModel` breaks
 //! that dependency chain.
 
-use crate::ai::surrogate::SurrogateManager;
+use crate::ai::SurrogateOps;
 use crate::sim::thermal_model::{ThermalModelMode, ThermalModelTrait};
 
 /// A mock thermal model for testing that returns configurable fixed values.
@@ -154,7 +154,7 @@ impl ThermalModelTrait for MockThermalModel {
     fn solve_timesteps(
         &mut self,
         _steps: usize,
-        _surrogates: &SurrogateManager,
+        _surrogates: &dyn SurrogateOps,
         _use_surrogates: bool,
     ) -> f64 {
         self.fixed_solve_result
@@ -193,6 +193,7 @@ impl ThermalModelTrait for MockThermalModel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ai::SurrogateManager;
     use crate::sim::thermal_model::ThermalModelTrait;
 
     fn make_surrogate_manager() -> SurrogateManager {

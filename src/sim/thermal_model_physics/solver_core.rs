@@ -13,7 +13,7 @@
 
 use log::{error, info, warn};
 
-use crate::ai::surrogate::SurrogateManager;
+use crate::ai::{SurrogateManager, SurrogateOps, SurrogateOpsBox};
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::adaptive_timestep::TimestepMode;
 use crate::sim::equipment::Equipment;
@@ -65,7 +65,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn solve_timesteps(
         &mut self,
         steps: usize,
-        surrogates: &SurrogateManager,
+        surrogates: &dyn SurrogateOps,
         use_ai: bool,
         lighting: Option<&LightingSchedule>,
         equipment: Option<&[Box<dyn Equipment>]>,
@@ -183,7 +183,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn solve_timesteps_with_dt(
         &mut self,
         steps: usize,
-        surrogates: &SurrogateManager,
+        surrogates: &dyn SurrogateOps,
         use_ai: bool,
         lighting: Option<&LightingSchedule>,
         equipment: Option<&[Box<dyn Equipment>]>,
@@ -272,9 +272,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let step_params = StepParameters {
             use_ai,
             surrogates: if use_ai {
-                surrogates.clone()
+                SurrogateOpsBox::new(surrogates.clone_box())
             } else {
-                SurrogateManager::default()
+                SurrogateOpsBox::new(SurrogateManager::default())
             },
             use_analytical_gains: true,
             lighting: lighting_ref.cloned(),

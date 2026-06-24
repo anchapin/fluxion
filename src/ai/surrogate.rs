@@ -260,6 +260,70 @@ impl Default for ModelMetadata {
     }
 }
 
+/// Trait for surrogate model operations.
+///
+/// This trait abstracts the operations needed by the thermal model
+/// from the concrete SurrogateManager implementation. Used to break
+/// dependency cycles and enable lighter-weight mutation testing.
+///
+/// # Rationale
+/// cargo-mutants analyzes the full type hierarchy during discovery.
+/// By using this trait instead of `&SurrogateManager` directly,
+/// we avoid loading the entire AI module's type graph (ONNX sessions,
+/// CUDA bindings, composite surrogates) into memory during analysis.
+pub trait SurrogateOps: Send + Sync {
+    /// Predict thermal loads with fallback to analytical model.
+    ///
+    /// # Arguments
+    /// * `temps` - Current zone temperatures
+    ///
+    /// # Returns
+    /// Predicted loads in kW, or error string if prediction fails
+    fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String>;
+
+    /// Clone the surrogate ops into a new boxed instance.
+    fn clone_box(&self) -> Box<dyn SurrogateOps>;
+}
+
+/// A cloneable wrapper around `Box<dyn SurrogateOps>`.
+///
+/// This allows `StepParameters` to hold a trait object that can be cloned,
+/// which is needed for the `clone_for_test` implementation.
+pub struct SurrogateOpsBox(Box<dyn SurrogateOps>);
+
+impl SurrogateOpsBox {
+    pub fn new(surrogate: impl SurrogateOps + 'static) -> Self {
+        Self(Box::new(surrogate))
+    }
+}
+
+impl Clone for SurrogateOpsBox {
+    fn clone(&self) -> Self {
+        SurrogateOpsBox(self.0.clone_box())
+    }
+}
+
+impl SurrogateOps for SurrogateOpsBox {
+    fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
+        self.0.predict_loads_with_fallback(temps)
+    }
+
+    fn clone_box(&self) -> Box<dyn SurrogateOps> {
+        self.0.clone_box()
+    }
+}
+
+// Blanket impl so Box<dyn SurrogateOps> can be used with SurrogateOpsBox::new
+impl SurrogateOps for Box<dyn SurrogateOps> {
+    fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
+        self.as_ref().predict_loads_with_fallback(temps)
+    }
+
+    fn clone_box(&self) -> Box<dyn SurrogateOps> {
+        self.as_ref().clone_box()
+    }
+}
+
 /// Manages AI surrogate models for fast thermal load prediction.
 ///
 /// Replaces expensive CFD/ray-tracing with pre-trained neural networks.
@@ -937,6 +1001,17 @@ impl PredictionWithUncertainty {
             lower_bound,
             upper_bound,
         }
+    }
+}
+
+// Implement SurrogateOps for SurrogateManager
+impl SurrogateOps for SurrogateManager {
+    fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
+        self.predict_loads_with_fallback(temps)
+    }
+
+    fn clone_box(&self) -> Box<dyn SurrogateOps> {
+        Box::new(self.clone())
     }
 }
 

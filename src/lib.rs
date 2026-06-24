@@ -95,7 +95,7 @@ pub use sim::thermal_model_mock::MockThermalModel;
 pub use sim::construction::{Construction, ConstructionLayer, MassClass};
 
 use crate::physics::cta::VectorField;
-use ai::surrogate::SurrogateManager;
+use ai::{SurrogateManager, SurrogateOpsBox};
 
 use sim::engine::{StepParameters, ThermalModel};
 
@@ -1277,7 +1277,7 @@ impl BatchOracle {
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                         let step_params = StepParameters {
                             use_ai: false,
-                            surrogates: self.surrogates.clone(),
+                            surrogates: SurrogateOpsBox::new(self.surrogates.clone()),
                             use_analytical_gains: true,
                             lighting: None,
                             equipment: None,
@@ -1548,7 +1548,7 @@ impl BatchOracle {
                         let outdoor_temp = 10.0 + 10.0 * daily_cycle;
                         let step_params = StepParameters {
                             use_ai: false,
-                            surrogates: self.surrogates.clone(),
+                            surrogates: SurrogateOpsBox::new(self.surrogates.clone()),
                             use_analytical_gains: true,
                             lighting: None,
                             equipment: None,
