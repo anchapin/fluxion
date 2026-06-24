@@ -1,4 +1,6 @@
-use fluxion::sim::solar::{WindowProperties, calculate_window_solar_gain, SurfaceIrradiance, SolarPosition};
+use fluxion::sim::solar::{
+    calculate_window_solar_gain, SolarPosition, SurfaceIrradiance, WindowProperties,
+};
 use fluxion::validation::Orientation;
 
 fn main() {
@@ -32,11 +34,18 @@ fn main() {
         Orientation::South,
     );
 
-    println!("Window: area={:.1} m², shgc={:.3}", window.area, window.shgc);
-    println!("Irradiance: beam={:.1}, diffuse={:.1}, ground={:.1} W/m²",
-             irradiance.beam_wm2, irradiance.diffuse_wm2, irradiance.ground_reflected_wm2);
-    println!("Solar gain: beam={:.1}, diffuse={:.1}, ground={:.1}, total={:.1} W",
-             gain.beam_gain_w, gain.diffuse_gain_w, gain.ground_reflected_gain_w, gain.total_gain_w);
+    println!(
+        "Window: area={:.1} m², shgc={:.3}",
+        window.area, window.shgc
+    );
+    println!(
+        "Irradiance: beam={:.1}, diffuse={:.1}, ground={:.1} W/m²",
+        irradiance.beam_wm2, irradiance.diffuse_wm2, irradiance.ground_reflected_wm2
+    );
+    println!(
+        "Solar gain: beam={:.1}, diffuse={:.1}, ground={:.1}, total={:.1} W",
+        gain.beam_gain_w, gain.diffuse_gain_w, gain.ground_reflected_gain_w, gain.total_gain_w
+    );
 
     // Expected diffuse_gain without 0.9 factor: 12.0 * 200 * 0.77 = 1848 W
     // Expected diffuse_gain with 0.9 factor: 12.0 * 200 * 0.77 * 0.9 = 1663.2 W
