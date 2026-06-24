@@ -1,8 +1,13 @@
 # cargo-mutants configuration for fluxion
 # See https://mutants.rs/config.html
 #
-# Issue #1244: Excluded modules with complex generic type patterns that cause
-# OOM during mutant discovery due to exponential memory growth
+# Issue #1244: Mutation testing is DISABLED on CI due to cargo-mutants OOM.
+# cargo-mutants 27.x requires ~28GB RAM to analyze fluxion's type hierarchies.
+# Standard CI runners have 7GB RAM. See workflow file for details.
+#
+# To run mutation testing manually (requires 32GB+ RAM machine):
+#   cargo install cargo-mutants --locked
+#   cargo mutants
 
 # Skip common allocator-sizes patterns that don't represent real bugs
 skip_calls = ["with_capacity", "new", "default"]
@@ -10,11 +15,12 @@ skip_calls = ["with_capacity", "new", "default"]
 # Minimum time to wait for test to complete
 minimum_test_timeout = 60
 
-# Exclude modules with complex generic types that cause memory issues
-# during mutant discovery (Issue #1244)
+# Exclude modules with complex generic types from mutation testing
+# These modules have type hierarchies that cause cargo-mutants to OOM
+# even on machines with 32GB+ RAM
 exclude_globs = [
-    # Large generic-heavy files that cause exponential memory growth
-    "src/sim/thermal_model_physics/physics_impl.rs",
+    # Large generic-heavy files that cause exponential memory growth during analysis
+    "src/sim/thermal_model_physics/**",
     "src/sim/thermal_model_core.rs",
     "src/sim/construction.rs",
     "src/physics/state_space_ctf.rs",
@@ -30,5 +36,5 @@ exclude_globs = [
     "src/validation/ashrae_140_cases.rs",
 ]
 
-# Use slice sharding for better memory locality
+# Use slice sharding for better memory locality when running manually
 sharding = "slice"

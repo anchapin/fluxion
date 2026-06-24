@@ -1,30 +1,21 @@
 name: Mutation Testing
 
+# NOTE: Mutation testing is DISABLED on CI due to cargo-mutants OOM.
+# cargo-mutants 27.x requires ~28GB RAM to analyze fluxion's type hierarchies.
+# Standard CI runners have 7GB RAM. Mutation testing must be run manually
+# on a machine with at least 32GB RAM using:
+#   cargo mutants
+#
+# See Issue #1244 for details.
+
 on:
-  schedule:
-    - cron: '0 0 1 * *'  # First day of each month at midnight UTC
   workflow_dispatch:
     inputs:
-      modules:
-        description: 'Modules to test (comma-separated)'
-        required: false
-        default: 'src/physics/,src/solar/'
-        type: string
       toolchain:
         description: 'Rust toolchain'
         required: false
         default: 'stable'
         type: string
-  pull_request:
-    paths:
-      - '.cargo/mutants.toml'
-      - 'src/physics/**/*.rs'
-      - 'src/solar/**/*.rs'
-      - '.github/workflows/mutation-testing.yml'
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -33,19 +24,15 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  MODULES: ${{ inputs.modules || 'src/physics/,src/solar/' }}
   TOOLCHAIN: ${{ inputs.toolchain || 'stable' }}
 
 jobs:
   mutation-testing:
-    name: Mutation Testing (${{ matrix.modules }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - modules: 'src/physics/'
-          - modules: 'src/solar/'
+    name: Mutation Testing
+    # NOTE: Only runs via workflow_dispatch due to OOM on standard CI runners.
+    # cargo-mutants requires ~28GB RAM to analyze fluxion's complex type hierarchies.
+    # GitHub Actions ubuntu-latest runners only have 7GB RAM.
+    runs-on: ubuntu-latest-8-cores  # 32GB RAM machine for mutation testing
     steps:
       - uses: actions/checkout@v4
 
@@ -62,7 +49,7 @@ jobs:
 
       - name: Run mutation testing
         run: |
-          cargo mutants test --lib --verbose --no-default-features -- \
+          cargo mutants --baseline skip --no-default-features -- \
             --test-threads=4
 
       - name: Generate HTML report
@@ -77,103 +64,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mutation-results-${{ matrix.modules }}
+          name: mutation-results
           path: |
             mutation_testing_results/
           retention-days: 30
-
-  mutation-summary:
-    name: Mutation Testing Summary
-    needs: mutation-testing
-    runs-on: ubuntu-latest
-    if: always()
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all mutation results
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/mutation-results
-          pattern: mutation-results-*
-          merge-multiple: true
-
-      - name: Check for surviving mutants
-        id: check_mutants
-        run: |
-          echo "### Mutation Testing Results" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          TOTAL_KILLED=0
-          TOTAL_SURVIVED=0
-          TOTAL_TIMEOUT=0
-          TOTAL_ERROR=0
-
-          for dir in artifacts/mutation-results/*/; do
-            if [ -f "${dir}outcomes.json" ]; then
-              MODULE=$(basename "$dir")
-              KILLED=$(grep -o '"killed":[0-9]*' "${dir}outcomes.json" | grep -o '[0-9]*$' | head -1)
-              SURVIVED=$(grep -o '"survived":[0-9]*' "${dir}outcomes.json" | grep -o '[0-9]*$' | head -1)
-              TIMEOUT=$(grep -o '"timeout":[0-9]*' "${dir}outcomes.json" | grep -o '[0-9]*$' | head -1)
-              ERROR=$(grep -o '"error":[0-9]*' "${dir}outcomes.json" | grep -o '[0-9]*$' | head -1)
-
-              KILLED=${KILLED:-0}
-              SURVIVED=${SURVIVED:-0}
-              TIMEOUT=${TIMEOUT:-0}
-              ERROR=${ERROR:-0}
-
-              echo "| ${MODULE} | ${KILLED} | ${SURVIVED} | ${TIMEOUT} | ${ERROR} |" >> $GITHUB_STEP_SUMMARY
-
-              TOTAL_KILLED=$((TOTAL_KILLED + KILLED))
-              TOTAL_SURVIVED=$((TOTAL_SURVIVED + SURVIVED))
-              TOTAL_TIMEOUT=$((TOTAL_TIMEOUT + TIMEOUT))
-              TOTAL_ERROR=$((TOTAL_ERROR + ERROR))
-            fi
-          done
-
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| **Total** | **${TOTAL_KILLED}** | **${TOTAL_SURVIVED}** | **${TOTAL_TIMEOUT}** | **${TOTAL_ERROR}** |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          if [ ${TOTAL_SURVIVED} -gt 0 ]; then
-            echo "⚠️ **Action Required**: ${TOTAL_SURVIVED} surviving mutants detected. Review the report and tighten test assertions." >> $GITHUB_STEP_SUMMARY
-            echo "::warning title=Mutation Testing::${TOTAL_SURVIVED} surviving mutants detected. Review the artifact for details."
-          else
-            echo "✅ **All mutants were killed** - your test suite is working effectively!" >> $GITHUB_STEP_SUMMARY
-          fi
-
-  comment-pr:
-    name: Comment on PR
-    needs: mutation-summary
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all mutation results
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts/mutation-results
-          pattern: mutation-results-*
-          merge-multiple: true
-
-      - name: Post comment to PR
-        run: |
-          TOTAL_SURVIVED=0
-
-          for dir in artifacts/mutation-results/*/; do
-            if [ -f "${dir}outcomes.json" ]; then
-              SURVIVED=$(grep -o '"survived":[0-9]*' "${dir}outcomes.json" | grep -o '[0-9]*$' | head -1)
-              TOTAL_SURVIVED=$((TOTAL_SURVIVED + ${SURVIVED:-0}))
-            fi
-          done
-
-          if [ ${TOTAL_SURVIVED} -gt 0 ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "## Mutation Testing Results
-            - **${TOTAL_SURVIVED} surviving mutants detected** - tests may be too loose
-            - Review mutation-results-* artifacts for details
-            - Generated by cargo-mutants"
-          else
-            gh pr comment ${{ github.event.pull_request.number }} --body "## Mutation Testing Passed
-            - All mutants were killed by the test suite
-            - Generated by cargo-mutants"
-          fi
