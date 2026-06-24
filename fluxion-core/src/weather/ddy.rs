@@ -32,7 +32,7 @@
 //! # Usage
 //!
 //! ```no_run
-//! use fluxion::weather::ddy::DesignDaySource;
+//! use fluxion_core::weather::ddy::DesignDaySource;
 //!
 //! let ddy = DesignDaySource::from_file("path/to/file.ddy")?;
 //! let heating_design = ddy.heating_design().unwrap();
@@ -170,7 +170,7 @@ impl DesignDaySource {
     /// # Example
     ///
     /// ```no_run
-    /// use fluxion::weather::ddy::DesignDaySource;
+    /// use fluxion_core::weather::ddy::DesignDaySource;
     ///
     /// let ddy = DesignDaySource::from_file("weather.ddy")?;
     /// if let Some(heating) = ddy.heating_design() {
@@ -376,7 +376,11 @@ mod tests {
 
     #[test]
     fn test_design_day_source_from_file_valid_ddy() {
-        let ddy = DesignDaySource::from_file("tests/test_data/denver.ddy").unwrap();
+        let ddy = DesignDaySource::from_file(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/test_data/denver.ddy"
+        ))
+        .unwrap();
         assert!(ddy.location.is_some());
         // The parser reads all lines and accumulates fields, so the last design day
         // (cooling) values are returned. This is a known limitation of the parser.

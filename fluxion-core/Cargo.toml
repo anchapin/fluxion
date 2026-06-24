@@ -1,0 +1,28 @@
+[package]
+name = "fluxion-core"
+version = "1.0.0"
+edition = "2021"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+description = "Foundational, dependency-light modules for Fluxion (weather parsing) split out to enable cargo-mutants in CI (issue #1255)."
+repository = "https://github.com/anchapin/fluxion"
+license = "Apache-2.0"
+
+[lib]
+name = "fluxion_core"
+path = "src/lib.rs"
+
+[dependencies]
+# Serialization for weather records
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+
+# Weather download + on-disk cache (tmy3.rs)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "blocking"] }
+sha2 = "0.10"
+directories = "5.0"
+
+[dev-dependencies]
+proptest = "1.5"
+# Mock HTTP server for tmy3 download tests
+mockito = "1.7"

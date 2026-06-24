@@ -20,7 +20,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use fluxion::weather::interpolation::{interpolate_weather, select_method_for_field, InterpolationMethod};
+//! use fluxion_core::weather::interpolation::{interpolate_weather, select_method_for_field, InterpolationMethod};
 //!
 //! // Interpolate temperature at 30 minutes (fraction = 0.5)
 //! let temp = interpolate_weather(
@@ -93,7 +93,7 @@ pub enum InterpolationMethod {
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::interpolation::linear_interpolate;
+/// use fluxion_core::weather::interpolation::linear_interpolate;
 ///
 /// let value = linear_interpolate(10.0, 20.0, 0.5); // Returns 15.0
 /// ```
@@ -199,7 +199,7 @@ pub fn cubic_spline_interpolate(t1: f64, t2: f64, fraction: f64) -> f64 {
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::interpolation::{interpolate_weather, InterpolationMethod};
+/// use fluxion_core::weather::interpolation::{interpolate_weather, InterpolationMethod};
 ///
 /// let value = interpolate_weather("dry_bulb_temp", 10.0, 20.0, 0.5, InterpolationMethod::Linear);
 /// // Returns 15.0
@@ -237,7 +237,7 @@ pub fn interpolate_weather(
 /// # Example
 ///
 /// ```
-/// use fluxion::weather::interpolation::{select_method_for_field, InterpolationMethod};
+/// use fluxion_core::weather::interpolation::{select_method_for_field, InterpolationMethod};
 ///
 /// let method = select_method_for_field("dry_bulb_temp");
 /// assert_eq!(method, InterpolationMethod::Linear);

@@ -7,9 +7,30 @@ description = "A differentiable, AI-accelerated Building Energy Modeling engine 
 repository = "https://github.com/anchapin/fluxion"
 license = "Apache-2.0"
 
+# =============================================================================
+# Workspace (#1255 — crate split to enable cargo-mutants in CI)
+# =============================================================================
+# The workspace root is also the main `fluxion` package (src/ lives here).
+# `fluxion-core` holds the dependency-light *leaf* modules (currently `weather`)
+# that cargo-mutants can build once and cache while mutating only `fluxion`.
+[workspace]
+resolver = "2"
+members = ["fluxion-core"]
+# Default to the root package so bare `cargo build`/`cargo test` build `fluxion`.
+default-members = ["."]
+
+# Locate the shared workspace lockfile at the workspace root.
+[workspace.package]
+version = "1.0.0"
+edition = "2021"
+authors = ["Dr. Aris Thorne <aris.thorne@fluxion.org>"]
+license = "Apache-2.0"
+repository = "https://github.com/anchapin/fluxion"
+
 # Exclude large files/dirs from crate distribution - only src/ is needed
 # This reduces package from 79MB to ~4MB (well under 10MB crates.io limit)
 exclude = [
+    "fluxion-core/",
     "refdata/",
     "assets/",
     "tests/",
@@ -55,6 +76,9 @@ loom = []
 unexpected_cfgs = { level = "allow", check-cfg = ["cfg(docsrs,test)", "cfg(gil_refs)"] }
 
 [dependencies]
+# Workspace sibling crate (#1255): leaf modules built once & cached by cargo-mutants.
+fluxion-core = { path = "fluxion-core", version = "1.0.0" }
+
 # Core Logic
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

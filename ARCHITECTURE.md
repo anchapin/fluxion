@@ -12,6 +12,24 @@
 
 ---
 
+## Workspace Layout (#1255 — crate split for cargo-mutants)
+
+The repo is a **Cargo workspace**. The main engine is the root `fluxion` package
+(`src/`); the new `fluxion-core` package holds dependency-light *leaf* modules that
+are built once and cached while `cargo-mutants` mutates only `fluxion`:
+
+```
+fluxion-core/src/weather/   # MOVED here (true leaf: no deps on sim/physics/ai/validation)
+```
+
+`fluxion` re-exports the moved module (`pub use fluxion_core::weather;` in `lib.rs`),
+so all existing `crate::weather::…` paths are unchanged. Moving `ai`, `physics`, and
+`validation` is blocked by bidirectional cycles with `sim` and is planned in phases —
+see `docs/mutation_testing_crate_split.md`. The memory hog is `ort` (ONNX), used only
+in `src/ai/`; gating it behind a feature is the key remaining step to the <4 GB target.
+
+---
+
 ## Module Dependency Diagram
 
 ```mermaid

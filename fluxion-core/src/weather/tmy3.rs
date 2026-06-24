@@ -11,7 +11,7 @@
 //! # Example
 //!
 //! ```no_run
-//! use fluxion::weather::tmy3::{Tmy3Cache, load_weather_locations};
+//! use fluxion_core::weather::tmy3::{Tmy3Cache, load_weather_locations};
 //!
 //! // Create cache
 //! let cache = Tmy3Cache::new().unwrap();

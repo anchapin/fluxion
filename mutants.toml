@@ -1,0 +1,42 @@
+# cargo-mutants configuration — Issue #1255
+#
+# Goal: make mutation testing runnable in CI without OOM (~28 GB -> <4 GB peak).
+#
+# How the split helps:
+#   * `fluxion-core` holds the dependency-light leaf modules (currently `weather`).
+#   * Running `cargo mutants -p fluxion` builds `fluxion-core` ONCE and caches it;
+#     only the main `fluxion` crate is recompiled per mutant.
+#
+# Scope mutations to the physics/sim logic that mutation testing is meant to guard.
+# Exclude areas that are either non-deterministic, environment-coupled, or already
+# covered by the crate boundary (fluxion-core is built from source only once and is
+# not itself mutated here).
+#
+# NOTE: The heaviest remaining per-mutant compile cost is `ort` (ONNX Runtime),
+# pulled in unconditionally by `src/ai/surrogate.rs`. Fully reaching the <4 GB target
+# requires gating `ort` behind a feature flag (Phase 3 in
+# docs/mutation_testing_crate_split.md). Until then, prefer a runner with >= 16 GB.
+
+# Operate on the main crate only; fluxion-core is a cached dependency, not a target.
+package = "fluxion"
+
+# Cap concurrency so peak resident memory stays bounded on constrained runners.
+# Override per-run with `--jobs` / `CARGO_BUILD_JOBS`.
+jobs = 2
+
+# Skip mutation of modules that are inherently hard to mutate meaningfully or that
+# dominate compile cost without commensurate mutation-testing value. (These are still
+# *compiled*; they are just not *mutated*.)
+exclude_globs = [
+    # AI/ONNX inference: non-deterministic I/O, env-coupled, and the `ort` type
+    # explosion is the primary memory consumer. Mutate physics instead.
+    "src/ai/**",
+    # Generated/heavy interop glue and language bindings.
+    "src/python/**",
+    "src/napi/**",
+    "src/interop/**",
+    "src/cli/**",
+]
+
+# Copies of test fixtures large enough that cargo-mutants' scratch copies would be
+# wasteful are excluded from the per-mutant copy via the workspace's .cargoignore.
