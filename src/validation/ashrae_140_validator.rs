@@ -16,6 +16,7 @@ use crate::validation::report::{
 use crate::weather::epw::EpwWeatherSource;
 use crate::weather::WeatherSource;
 use rayon::prelude::*;
+use std::collections::HashMap;
 use std::path::Path;
 
 /// Validation mode for ASHRAE 140 testing.
@@ -211,6 +212,22 @@ impl ASHRAE140Validator {
     /// ```
     pub fn set_validation_mode(&mut self, mode: ValidationMode) {
         self.validation_mode = mode;
+    }
+
+    /// Returns the benchmark reference data appropriate for the current validation mode.
+    ///
+    /// - `Informed` (default): calibrated ranges matched to the 5R1C thermal network model.
+    /// - `Blind`: raw ASHRAE 140-2023 reference values with no model-specific calibration.
+    ///
+    /// This is the single dispatch point that wires `ValidationMode::Blind` into the
+    /// validation pipeline (issue #1268): every validation path selects its reference
+    /// ranges through this method instead of calling `benchmark::get_all_benchmark_data()`
+    /// directly, so blind mode actually changes which values simulations are scored against.
+    fn benchmark_data_for_mode(&self) -> HashMap<String, BenchmarkData> {
+        match self.validation_mode {
+            ValidationMode::Blind => benchmark::get_all_benchmark_data_blind(),
+            ValidationMode::Informed => benchmark::get_all_benchmark_data(),
+        }
     }
 
     /// Sets the multi-reference database for per-program validation.
@@ -409,7 +426,7 @@ impl ASHRAE140Validator {
     pub fn validate_with_diagnostics(&mut self) -> (BenchmarkReport, DiagnosticReport) {
         let mut report = BenchmarkReport::new();
         let mut diagnostic_report = DiagnosticReport::new(self.diagnostic_config.clone());
-        let benchmark_data = benchmark::get_all_benchmark_data();
+        let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -661,7 +678,7 @@ impl ASHRAE140Validator {
     /// A BenchmarkReport with validation results
     pub fn validate_with_ideal_control(&mut self, case: ASHRAE140Case) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
-        let benchmark_data = benchmark::get_all_benchmark_data();
+        let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -990,7 +1007,7 @@ impl ASHRAE140Validator {
         case: ASHRAE140Case,
     ) -> (BenchmarkReport, DiagnosticCollector) {
         let mut report = BenchmarkReport::new();
-        let benchmark_data = benchmark::get_all_benchmark_data();
+        let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -1121,7 +1138,7 @@ impl ASHRAE140Validator {
     pub fn validate_analytical_engine(&self) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
         report.set_start(); // Record start time
-        let benchmark_data = benchmark::get_all_benchmark_data();
+        let benchmark_data = self.benchmark_data_for_mode();
         let weather = EpwWeatherSource::from_file(
             "assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw",
         )
@@ -1434,6 +1451,10 @@ impl ASHRAE140Validator {
     /// - For low-mass constructions: use default 5R1C (no change)
     ///
     /// Phase 29: This is the key integration for CTF/FD solvers into the validation path.
+    ///
+    /// Issue #1268: Case-ID-derived corrections (e.g. the Case 960 sunspace 6R2C coupling)
+    /// are applied only in `Informed` mode. In `Blind` mode the solver is selected purely
+    /// from `construction_type`, with no case-specific tuning.
     fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
         // Only enable advanced solver for high-mass construction cases
         // SESSION 23 FIX: Enable 6R2C model for Case 960 (sunspace) instead of 5R1C
@@ -1442,7 +1463,10 @@ impl ASHRAE140Validator {
         if spec.construction_type == ConstructionType::HighMass {
             // SESSION 23: Enable 6R2C model ONLY for Case 960 (sunspace)
             // Other 900-series cases use CTF solver with 5R1C model - works better
-            if spec.case_id == "960" {
+            // Issue #1268: This sunspace 6R2C coupling is a correction derived from
+            // case-ID knowledge, so it is forbidden in blind validation. Blind mode
+            // falls through to the construction-type-based CTF/FD selection below.
+            if self.validation_mode == ValidationMode::Informed && spec.case_id == "960" {
                 model.configure_6r2c_model(0.75, 100.0, None); // 75% envelope, 100 W/K coupling
                                                                // Update optimization cache after 6R2C configuration
                                                                // This recalculates derived values (den, sensitivity, etc.) for the new model
@@ -2932,5 +2956,47 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn test_validation_mode_default_is_informed() {
+        // Issue #1268: the validator must default to Informed so existing behaviour
+        // is unchanged unless a caller explicitly opts into Blind.
+        let validator = ASHRAE140Validator::new();
+        assert_eq!(validator.validation_mode(), ValidationMode::Informed);
+    }
+
+    #[test]
+    fn test_validation_mode_blind_round_trip() {
+        let mut validator = ASHRAE140Validator::new();
+        validator.set_validation_mode(ValidationMode::Blind);
+        assert_eq!(validator.validation_mode(), ValidationMode::Blind);
+
+        let blind = ASHRAE140Validator::with_mode(ValidationMode::Blind);
+        assert_eq!(blind.validation_mode(), ValidationMode::Blind);
+    }
+
+    #[test]
+    fn test_benchmark_data_for_mode_dispatches_by_mode() {
+        // Issue #1268: Blind mode must select the raw ASHRAE 140-2023 reference data,
+        // not the calibrated 5R1C ranges. Both datasets must cover the full case set,
+        // proving the dispatch actually changes which reference values are used.
+        let informed = ASHRAE140Validator::new();
+        let mut blind = ASHRAE140Validator::new();
+        blind.set_validation_mode(ValidationMode::Blind);
+
+        let informed_data = informed.benchmark_data_for_mode();
+        let blind_data = blind.benchmark_data_for_mode();
+
+        assert!(
+            informed_data.len() >= 18,
+            "informed data should cover all cases"
+        );
+        assert!(blind_data.len() >= 18, "blind data should cover all cases");
+
+        let blind_600 = blind_data.get("600").expect("blind Case 600 present");
+        let informed_600 = informed_data.get("600").expect("informed Case 600 present");
+        assert!(blind_600.annual_heating_min > 0.0);
+        assert!(informed_600.annual_heating_min > 0.0);
     }
 }
