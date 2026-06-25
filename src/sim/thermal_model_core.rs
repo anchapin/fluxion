@@ -1751,9 +1751,7 @@ impl ThermalModel<VectorField> {
                 // the OLD 5R1C topology (ISSUE_1168_ROOT_CAUSE.md). Issue #1271 removes it
                 // because the 9R4C solver routes solar through physical mass nodes; dumping
                 // 40% onto the air node bypasses thermal mass and over-predicts cooling.
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
-                    (0.0, 0.30)
-                }
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };
             model.solar_distribution_to_air = air_frac;
