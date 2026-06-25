@@ -369,11 +369,12 @@ where
 
     /// Get per-surface incident solar accumulation for ASHRAE 140-2023 Section 8.2.3.
     ///
-    /// Returns a reference to the HashMap containing incident solar data per surface.
+    /// Returns a reference to the BTreeMap containing incident solar data per surface.
     /// Keys are surface identifiers (e.g., "wall_N", "roof", "window_S").
+    /// BTreeMap ensures deterministic iteration order across platforms (Issue #1297).
     pub fn get_incident_solar(
         &self,
-    ) -> &std::collections::HashMap<String, IncidentSolarAccumulator> {
+    ) -> &std::collections::BTreeMap<String, IncidentSolarAccumulator> {
         &self.0.incident_solar_per_surface
     }
 
@@ -2579,7 +2580,8 @@ impl ThermalModel<VectorField> {
             hourly_temperatures: None,
 
             // Issue #762 — per-surface incident solar tracking
-            incident_solar_per_surface: std::collections::HashMap::new(),
+            // BTreeMap for deterministic iteration order across platforms (Issue #1297)
+            incident_solar_per_surface: std::collections::BTreeMap::new(),
 
             // Issue #1212 — solar position cache (8760 hours × 1 computation = 5x speedup)
             sun_pos_cache: vec![None; 8760],

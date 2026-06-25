@@ -16,9 +16,11 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Ensure deterministic floating point across platforms
-  # - nan-canonicalization: ensures NaN values are consistent
+  # RUSTFLAGS for cross-platform FP determinism (Issue #1297)
+  # - opt-level=3: maximum optimization for consistent math behavior
   # - debug-assertions=no: disable debug assertions for release-like behavior
+  # Note: target-cpu=haswell was removed — it causes SIMD compilation errors on ARM macOS.
+  # Determinism is achieved via BTreeMap for HashMap replacement (iteration order fix).
   RUSTFLAGS: "-C opt-level=3 -C debug-assertions=no"
 
 jobs:
