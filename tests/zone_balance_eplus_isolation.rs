@@ -1036,9 +1036,10 @@ fn test_case_600_energy_balance_conservation() {
     let mut max_residual = 0.0_f64;
 
     for step in 0..n_steps {
-        let t_outdoor = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
-        model.step_physics(step, t_outdoor, dt);
-        let result = checker.check_invariant(&model, dt, t_outdoor);
+        let w = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, dt);
+        let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
         let residual = result.balance.abs() / 1000.0;
         if residual > max_residual {
@@ -1084,9 +1085,10 @@ fn test_case_900_energy_balance_conservation() {
     let mut max_residual = 0.0_f64;
 
     for step in 0..n_steps {
-        let t_outdoor = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
-        model.step_physics(step, t_outdoor, dt);
-        let result = checker.check_invariant(&model, dt, t_outdoor);
+        let w = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, dt);
+        let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
         let residual = result.balance.abs() / 1000.0;
         if residual > max_residual {
@@ -1134,9 +1136,10 @@ fn test_case_960_energy_balance_conservation() {
     let mut max_residual = 0.0_f64;
 
     for step in 0..n_steps {
-        let t_outdoor = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
-        model.step_physics(step, t_outdoor, dt);
-        let result = checker.check_invariant(&model, dt, t_outdoor);
+        let w = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, dt);
+        let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
 
         let residual = result.balance.abs() / 1000.0;
         if residual > max_residual {
