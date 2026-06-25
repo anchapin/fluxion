@@ -12,8 +12,6 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # FP determinism flags (Issue #1297)
-  RUSTFLAGS: "-C opt-level=3 -C debug-assertions=no -C target-cpu=haswell"
 
 jobs:
   # Issue #1297: Cross-platform FP determinism check - runs first as a gate
