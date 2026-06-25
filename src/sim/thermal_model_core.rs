@@ -1906,23 +1906,23 @@ impl ThermalModel<VectorField> {
             model.enable_9r4c_model();
         }
 
-        // CTF-primary surface temperature coupling for high-mass free-floating cases only
-        // For low-mass (600FF, 650FF), the 6R2C model provides adequate thermal mass
-        // Effect if removed: 900FF and 950FF free-floating temp predictions less accurate
-        // SESSION 89: The 6R2C lumped model's τ ≈ 26h under-represents thermal mass (concrete h₁₂ = 771 W/K
-        // is too high). The CTF solver captures multi-layer conduction dynamics correctly (τ ≈ 120-200h).
-        // Enable CTF with iterative zone coupling so T_si drives the zone air heat balance directly.
+        // High-mass free-float driver (ADR-002, docs/adr/0002-promote-9r4c-high-mass-default.md):
+        // 900FF/950FF are routed to the 9R4C multi-node network by the
+        // `HighMass9R4C` arm above (`enable_9r4c_model()`). The 9R4C solver
+        // derives the free-floating zone air temperature from backward-Euler-stepped
+        // wall/roof/floor/internal-mass nodes (see `physics_impl.rs::step_physics`
+        // → `t_i_free_mn`), NOT from the 5R1C/6R2C closed-form `t_i_free`.
         //
-        // REVERTED: Do NOT enable 6R2C for 900FF/950FF - the 6R2C t_i_free formula doesn't
-        // properly use thermal mass temperatures in its numerator, causing massive temperature errors.
-        // Case 900FF should use the standard 5R1C path which correctly models thermal mass
-        // through the single lumped thermal node. See issue #860 for tracking.
-        if spec.case_id == "900FF" || spec.case_id == "950FF" {
-            // Use 5R1C model (default) - do NOT call configure_6r2c_model()
-            // The 6R2C model has issues with thermal mass coupling in t_i_free formula
-            // Previously this block enabled 6R2C which caused max temp ~0°C (outdoor tracking)
-            // or ~15°C (still too low). The 5R1C model produces correct ~44°C max temp.
-        }
+        // History (issue #1269 — superseded): an earlier investigation proposed
+        // fixing the 6R2C `t_i_free` numerator and re-enabling 6R2C for 900FF/950FF
+        // because they were believed to fall back to 5R1C. That premise is obsolete:
+        //   - The routing enum (`thermal_model.rs::ThermalModelType`) has only
+        //     `LowMass5R1C` and `HighMass9R4C`; 6R2C is never selected.
+        //   - `t_i_free` (`physics_impl.rs`) already includes mass temperatures in
+        //     its numerator (`num_tm = derived_h_ms_is_prod · mass_temperatures`).
+        //   - ADR-002 made 9R4C the sole high-mass free-float driver.
+        // The no-op `if case_id == "900FF" || "950FF"` guard that previously lived
+        // here has been removed as dead/misleading code.
 
         // Handle inter-zone conductance for multi-zone buildings (Case 960 sunspace)
         if num_zones > 1 && !spec.common_walls.is_empty() {
