@@ -25,7 +25,7 @@ use crate::testing::integration::wiring::WiringTracer;
 use crate::validation::ashrae_140_cases::{NightVentilation, Orientation};
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 /// Accumulator for per-surface incident solar radiation tracking.
@@ -208,7 +208,8 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub hourly_temperatures: Option<Vec<Vec<f64>>>,
     /// Issue #762 — per-surface incident solar radiation tracking for ASHRAE 140-2023 Section 8.2.3.
     /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
-    pub incident_solar_per_surface: HashMap<String, IncidentSolarAccumulator>,
+    /// BTreeMap for deterministic iteration order across platforms (Issue #1297)
+    pub incident_solar_per_surface: BTreeMap<String, IncidentSolarAccumulator>,
     /// Issue #1212 — solar position cache indexed by hour_of_year (0-8759).
     /// Eliminates 5x redundancy: 5 surfaces × 8760 timesteps → 8760 unique computations.
     pub sun_pos_cache: Vec<Option<SolarPosition>>,

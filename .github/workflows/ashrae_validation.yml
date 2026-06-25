@@ -9,11 +9,221 @@ concurrency:
   group: ashrae-ci-gate-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # FP determinism flags (Issue #1297)
+  RUSTFLAGS: "-C opt-level=3 -C debug-assertions=no -C target-cpu=haswell"
+
 jobs:
+  # Issue #1297: Cross-platform FP determinism check - runs first as a gate
+  determinism-check:
+    name: Determinism Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev fontconfig
+
+      - name: Install system dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install pkg-config nasm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Cache cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-determinism-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-determinism-cargo-
+
+      - name: Build fluxion
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "=== Toolchain diagnostic ==="
+          echo "rustc: $(rustc --version 2>&1)"
+          echo "cargo: $(cargo --version 2>&1)"
+          echo "cc: $(cc --version 2>&1 | head -1 || echo 'cc not found')"
+          echo "================================"
+          cargo build --release --features wiring-tracing 2>&1 | tee build_output.txt
+
+      - name: Run Case 900 Determinism Test
+        id: case900
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --test case_900_determinism --release -- --nocapture 2>&1 | tee case900_output.txt
+
+      - name: Extract determinism values
+        id: extract
+        shell: bash
+        run: |
+          python3 << 'PYEOF'
+          import re
+          import json
+          import hashlib
+
+          with open('case900_output.txt', 'r') as f:
+              output = f.read()
+
+          values = {}
+
+          match = re.search(r'DETERMINISM_VALUES\|([\d.]+)\|([\d.]+)\|([\d.]+)\|([\d.]+)', output)
+          if match:
+              values['annual_heating_mwh'] = float(match.group(1))
+              values['annual_cooling_mwh'] = float(match.group(2))
+              values['peak_heating_kw'] = float(match.group(3))
+              values['peak_cooling_kw'] = float(match.group(4))
+
+          ff_match = re.search(r'DETERMINISM_FF_VALUES\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)\|([\d.-]+)', output)
+          if ff_match:
+              values['ff_min_temp'] = float(ff_match.group(1))
+              values['ff_max_temp'] = float(ff_match.group(2))
+              values['ff_avg_temp'] = float(ff_match.group(3))
+              values['ff_temp_swing'] = float(ff_match.group(4))
+
+          hash_input = json.dumps(values, sort_keys=True)
+          hash_hex = hashlib.sha256(hash_input.encode()).hexdigest()
+
+          with open('output_values.json', 'w') as f:
+              json.dump(values, f, indent=2)
+          with open('output_hash.txt', 'w') as f:
+              f.write(hash_hex + '\n')
+              f.write(hash_input + '\n')
+
+          print(f"Hash: {hash_hex}")
+          print(f"Values: {json.dumps(values, indent=2)}")
+          PYEOF
+
+          echo "output_hash=$(head -1 output_hash.txt)" >> $GITHUB_OUTPUT
+          echo "platform=${{ matrix.os }}" >> $GITHUB_OUTPUT
+
+      - name: Upload Case 900 output
+        uses: actions/upload-artifact@v4
+        with:
+          name: case900-output-${{ matrix.os }}
+          path: |
+            case900_output.txt
+            output_values.json
+            output_hash.txt
+          retention-days: 7
+
+  # Compare hashes across platforms - must pass before validation runs
+  compare-hashes:
+    name: Compare Hashes
+    needs: determinism-check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Compare hashes across platforms
+        run: |
+          python3 << 'EOF'
+          import os
+          import json
+          import sys
+
+          artifacts_dir = 'artifacts'
+          hashes = {}
+          all_values = {}
+
+          # Read hashes and values from all platforms
+          for os_name in ['ubuntu-latest', 'windows-latest', 'macos-latest']:
+              hash_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_hash.txt')
+              values_file = os.path.join(artifacts_dir, f'case900-output-{os_name}', 'output_values.json')
+
+              if os.path.exists(hash_file):
+                  with open(hash_file, 'r') as f:
+                      lines = f.readlines()
+                      if lines:
+                          hashes[os_name] = lines[0].strip()
+
+              if os.path.exists(values_file):
+                  with open(values_file, 'r') as f:
+                      all_values[os_name] = json.load(f)
+
+          print("=" * 60)
+          print("Cross-Platform Determinism Check Results")
+          print("=" * 60)
+          print()
+
+          print("Hashes from each platform:")
+          for os_name, h in hashes.items():
+              print(f"  {os_name}: {h}")
+          print()
+
+          print("Values from each platform:")
+          for os_name, vals in all_values.items():
+              print(f"  {os_name}:")
+              for k, v in vals.items():
+                  print(f"    {k}: {v}")
+          print()
+
+          # Check if all hashes are identical
+          unique_hashes = set(hashes.values())
+
+          if len(unique_hashes) == 1:
+              print("✅ SUCCESS: All platforms produce identical outputs")
+              print(f"Universal hash: {list(unique_hashes)[0]}")
+              status = "PASS"
+          else:
+              print("❌ FAILURE: Hashes differ across platforms!")
+              print(f"Unique hashes ({len(unique_hashes)}): {unique_hashes}")
+              status = "FAIL"
+              # Detailed comparison
+              print()
+              print("Detailed comparison:")
+              for os_name, vals in all_values.items():
+                  print(f"  {os_name}:")
+                  for k, v in vals.items():
+                      print(f"    {k}: {v}")
+              sys.exit(1)
+
+          # Write result files
+          result = {
+              'status': status,
+              'all_identical': status == "PASS",
+              'hash': list(unique_hashes)[0] if status == "PASS" else None,
+              'platforms': list(hashes.keys()),
+              'values': all_values
+          }
+          with open('comparison_result.json', 'w') as f:
+              json.dump(result, f, indent=2)
+          EOF
+
+      - name: Upload comparison result
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-comparison
+          path: comparison_result.json
+          retention-days: 30
+
   validate:
     name: ASHRAE 140 Blind Validation
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    needs: compare-hashes
     steps:
       - name: Checkout code
         uses: actions/checkout@v4

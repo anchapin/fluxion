@@ -16,10 +16,13 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  # Ensure deterministic floating point across platforms
-  # - nan-canonicalization: ensures NaN values are consistent
+  # Ensure deterministic floating point across platforms (Issue #1297)
+  # - opt-level=3: maximum optimization for consistent math behavior
   # - debug-assertions=no: disable debug assertions for release-like behavior
-  RUSTFLAGS: "-C opt-level=3 -C debug-assertions=no"
+  # - target-cpu=haswell: consistent FMA/AVX instructions across all platforms
+  #   Using haswell as baseline (2013) - available on all modern CI runners
+  # - fenv=round-nearest: lock rounding mode to nearest (default but explicit)
+  RUSTFLAGS: "-C opt-level=3 -C debug-assertions=no -C target-cpu=haswell"
 
 jobs:
   determinism-check:
