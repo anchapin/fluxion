@@ -311,7 +311,7 @@ impl WeatherDependentVentilation {
         zone_volume: f64,
     ) -> f64 {
         let temp_benefit = self.outdoor_temp_benefit(outdoor_temp, indoor_temp);
-        let wind_benefit = self.wind_benefit(wind_speed, zone_volume);
+        let wind_benefit = self.wind_benefit(wind_speed, outdoor_temp, indoor_temp, zone_volume);
         let combined = (temp_benefit + wind_benefit) / 2.0;
         (self.min_ach + (self.max_ach - self.min_ach) * combined).max(self.min_ach)
     }
@@ -337,15 +337,30 @@ impl WeatherDependentVentilation {
         ((outdoor_temp - self.start_temp) / delta_t_out).clamp(0.0, 1.0)
     }
 
-    /// Calculate wind benefit (0-1).
-    fn wind_benefit(&self, _wind_speed: f64, zone_volume: f64) -> f64 {
+    /// Calculate wind benefit (0-1) using combined wind + stack infiltration.
+    ///
+    /// Uses `calculate_combined_infiltration_ach` which properly accounts for:
+    /// - Wind-driven infiltration via `calculate_wind_infiltration_ach`
+    /// - Stack-driven infiltration via `calculate_stack_infiltration_ach`
+    fn wind_benefit(
+        &self,
+        wind_speed: f64,
+        outdoor_temp: f64,
+        indoor_temp: f64,
+        zone_volume: f64,
+    ) -> f64 {
         let opening_area = self.opening_fraction * 2.0 * (self.building_height * 3.0);
-        let ach = calculate_stack_infiltration_ach(
-            25.0,
-            20.0,
+        // Shielding factor 0.5 is appropriate for weather-responsive ventilation
+        // (windows/vents have partial shielding vs. whole-building tightness)
+        let shielding_factor = 0.5;
+        let ach = calculate_combined_infiltration_ach(
+            outdoor_temp,
+            indoor_temp,
+            wind_speed,
             self.building_height,
             opening_area,
             zone_volume,
+            shielding_factor,
         );
         (ach / self.max_ach).clamp(0.0, 1.0)
     }
