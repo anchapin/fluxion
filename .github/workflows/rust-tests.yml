@@ -80,6 +80,34 @@ jobs:
         env:
           PYO3_PYTHON: /usr/bin/python3
 
+  energy-conservation:
+    name: Energy Conservation (Issue #1295)
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+      - name: Run energy conservation tests
+        run: |
+          cargo test --test test_energy_conservation --verbose 2>&1 | tee /tmp/energy_test_output.txt
+          cargo test --test zone_balance_eplus_isolation --verbose 2>&1 | tee /tmp/zone_balance_test_output.txt
+      - name: Extract violation counts
+        run: |
+          echo "=== Energy Conservation Test Results ==="
+          echo "Checking for energy conservation violations..."
+          ENERGY_VIOLATIONS=$(grep -c "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt 2>/dev/null || echo "0")
+          echo "Total violations found: $ENERGY_VIOLATIONS"
+          if [ "$ENERGY_VIOLATIONS" -gt "0" ]; then
+            echo "FAIL: Energy conservation violations detected"
+            grep -A2 "violated energy conservation" /tmp/energy_test_output.txt /tmp/zone_balance_test_output.txt
+            exit 1
+          fi
+          echo "PASS: No energy conservation violations"
+
   fmt:
     name: Rustfmt
     runs-on: ubuntu-latest
