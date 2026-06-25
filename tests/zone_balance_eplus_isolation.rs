@@ -73,6 +73,7 @@ use fluxion::physics::units::{
 };
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::invariant_checker::InvariantChecker;
 use fluxion::sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
 };
@@ -87,6 +88,9 @@ use fluxion::weather::WeatherSource;
 
 /// Steady-state heat flux tolerance for 5R1C network.
 const STEADY_STATE_REL_TOL: f64 = 0.001; // 0.1%
+
+/// Energy balance residual threshold for CI gate (Issue #1295).
+const ENERGY_BALANCE_RESIDUAL_THRESHOLD: f64 = 0.001; // 0.1%
 
 // ===========================================================================
 // Section 1: PhysicsThermalModel against E+ Case 600 Reference Data
@@ -995,5 +999,161 @@ fn test_free_floating_performance() {
         elapsed.as_secs_f64() < 10.0,
         "FF simulations took {:.2}s, expected <10s",
         elapsed.as_secs_f64()
+    );
+}
+
+// ===========================================================================
+// Section 7: Energy Conservation Verification (Issue #1295)
+// ===========================================================================
+
+/// Verify that Case 600 satisfies strict energy conservation (< 0.1% residual).
+///
+/// This test ensures the 5R1C network and zone solver conserve energy at
+/// each timestep. Violations indicate bugs in the thermal network math.
+///
+/// Reference: Issue #1295
+#[test]
+fn test_case_600_energy_balance_conservation() {
+    let spec = ASHRAE140Case::Case600.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = DenverTmyWeather::new();
+
+    let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
+    let mut checker = InvariantChecker::new(tolerance);
+
+    model.temperatures.as_mut()[0] = 20.0;
+    model.set_ground_temp(10.0);
+
+    let dt = 3600.0;
+    let n_steps = 168; // 1 week
+
+    let mut max_residual = 0.0_f64;
+
+    for step in 0..n_steps {
+        let w = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, dt);
+        let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
+
+        let residual = result.balance.abs() / 1000.0;
+        if residual > max_residual {
+            max_residual = residual;
+        }
+    }
+
+    let total_violations = checker.violation_count();
+    let max_violation = checker.max_violation();
+
+    println!(
+        "[#1295 Case 600 energy balance] N={}, violations={}, max_residual={:.6}, max_violation={:.6e}",
+        n_steps,
+        total_violations,
+        max_residual * 100.0,
+        max_violation
+    );
+
+    assert_eq!(total_violations, 0, "Case 600 energy conservation violated");
+}
+
+/// Verify that Case 900 (high-mass) satisfies strict energy conservation.
+///
+/// High-mass cases have larger thermal capacitance. Energy imbalances
+/// accumulate if the 5R1C network has bugs.
+///
+/// Reference: Issue #1295
+#[test]
+fn test_case_900_energy_balance_conservation() {
+    let spec = ASHRAE140Case::Case900.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = DenverTmyWeather::new();
+
+    let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
+    let mut checker = InvariantChecker::new(tolerance);
+
+    model.temperatures.as_mut()[0] = 20.0;
+    model.set_ground_temp(10.0);
+
+    let dt = 3600.0;
+    let n_steps = 168; // 1 week
+
+    let mut max_residual = 0.0_f64;
+
+    for step in 0..n_steps {
+        let w = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, dt);
+        let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
+
+        let residual = result.balance.abs() / 1000.0;
+        if residual > max_residual {
+            max_residual = residual;
+        }
+    }
+
+    let total_violations = checker.violation_count();
+    let max_violation = checker.max_violation();
+
+    println!(
+        "[#1295 Case 900 energy balance] N={}, violations={}, max_residual={:.6}, max_violation={:.6e}",
+        n_steps,
+        total_violations,
+        max_residual * 100.0,
+        max_violation
+    );
+
+    assert_eq!(total_violations, 0, "Case 900 energy conservation violated");
+}
+
+/// Verify that Case 960 (multi-zone sunspace) satisfies strict energy conservation.
+///
+/// Case 960 is the critical case for MULTI-02 (COP conversion fix). This
+/// test ensures the multi-zone physics conserves energy properly.
+///
+/// Reference: Issue #1295, MULTI-02 (docs/KNOWN_ISSUES.md)
+#[test]
+fn test_case_960_energy_balance_conservation() {
+    let spec = ASHRAE140Case::Case960.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = DenverTmyWeather::new();
+
+    let tolerance = ENERGY_BALANCE_RESIDUAL_THRESHOLD;
+    let mut checker = InvariantChecker::new(tolerance);
+
+    for i in 0..model.num_zones {
+        model.temperatures.as_mut()[i] = 20.0;
+    }
+    model.set_ground_temp(10.0);
+
+    let dt = 3600.0;
+    let n_steps = 168; // 1 week
+
+    let mut max_residual = 0.0_f64;
+
+    for step in 0..n_steps {
+        let w = weather.get_hourly_data(step).unwrap();
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, dt);
+        let result = checker.check_invariant(&model, dt, w.dry_bulb_temp);
+
+        let residual = result.balance.abs() / 1000.0;
+        if residual > max_residual {
+            max_residual = residual;
+        }
+    }
+
+    let total_violations = checker.violation_count();
+    let max_violation = checker.max_violation();
+
+    println!(
+        "[#1295 Case 960 (MULTI-02) energy balance] N={}, violations={}, max_residual={:.6}, max_violation={:.6e}",
+        n_steps,
+        total_violations,
+        max_residual * 100.0,
+        max_violation
+    );
+
+    assert_eq!(
+        total_violations, 0,
+        "Case 960 (MULTI-02) energy conservation violated"
     );
 }
