@@ -186,7 +186,8 @@ struct CaseResultsBlinded {
 
 fn run_blind_validation() -> Vec<BlindValidationResult> {
     let mut results = Vec::new();
-    let benchmark_data = benchmark::get_all_benchmark_data();
+    // Use raw ASHRAE 140-2023 ranges for blind validation (issue #1270)
+    let benchmark_data = benchmark::get_all_benchmark_data_blind();
 
     let cases = vec![
         ASHRAE140Case::Case600,
