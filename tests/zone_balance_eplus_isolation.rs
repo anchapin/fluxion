@@ -76,10 +76,10 @@ use fluxion::physics::units::{
 };
 use fluxion::physics::wall_spec::{LayerSpec, WallSpec};
 use fluxion::sim::engine::ThermalModel;
+use fluxion::sim::invariant_checker::InvariantChecker;
 use fluxion::sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,
 };
-use fluxion::sim::invariant_checker::InvariantChecker;
 use fluxion::sim::thermal_model::{PhysicsThermalModel, ThermalModelTrait};
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
 use fluxion::weather::denver::DenverTmyWeather;
@@ -1037,6 +1037,7 @@ fn test_case_600_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let t_outdoor = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
+        model.step_physics(step, t_outdoor, dt);
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
         let residual = result.balance.abs() / 1000.0;
@@ -1084,6 +1085,7 @@ fn test_case_900_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let t_outdoor = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
+        model.step_physics(step, t_outdoor, dt);
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
         let residual = result.balance.abs() / 1000.0;
@@ -1133,6 +1135,7 @@ fn test_case_960_energy_balance_conservation() {
 
     for step in 0..n_steps {
         let t_outdoor = weather.get_hourly_data(step).unwrap().dry_bulb_temp;
+        model.step_physics(step, t_outdoor, dt);
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
         let residual = result.balance.abs() / 1000.0;
@@ -1152,5 +1155,8 @@ fn test_case_960_energy_balance_conservation() {
         max_violation
     );
 
-    assert_eq!(total_violations, 0, "Case 960 (MULTI-02) energy conservation violated");
+    assert_eq!(
+        total_violations, 0,
+        "Case 960 (MULTI-02) energy conservation violated"
+    );
 }
