@@ -130,7 +130,6 @@ fn test_h_tr_is_calculation() {
 
 /// Test 5: Validate h_ve (ventilation) calculation with air change rate
 #[test]
-#[ignore = "ventilation conductance calculation issue — ref: #1207"]
 fn test_h_ve_calculation() {
     use fluxion::sim::construction::Assemblies;
 
@@ -393,7 +392,6 @@ fn test_window_property_validation() {
 
 /// Test 12: Validate air change rate conversion (INFIL-01)
 #[test]
-#[ignore = "air change rate calculation issue — ref: #1207"]
 fn test_air_change_rate_conversion() {
     use fluxion::sim::construction::Assemblies;
 

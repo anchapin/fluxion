@@ -85,7 +85,7 @@ fn test_group_validation_80_percent() {
 /// 1. Build the binary: `cargo build --release --bin fluxion`
 /// 2. Run with: `cargo test test_cli_statistical_flag -- --ignored --nocapture`
 #[test]
-#[ignore]
+#[ignore = "requires compiled fluxion binary at target/release/fluxion"]
 fn test_cli_statistical_flag() {
     use std::process::Command;
 

@@ -14,7 +14,7 @@ use fluxion::weather::denver::DenverTmyWeather;
 /// Issue #1216: Solar distribution to air was 0, causing 40-80% peak cooling underprediction.
 /// Fix: Set LowMass solar_distribution_to_air = 0.7, solar_beam_to_mass_fraction = 0.3
 #[test]
-#[ignore] // TODO: Calibrate against ASHRAE 140 reference data
+#[ignore = "TDD test pending calibration: hardcoded expected values need verification against ASHRAE 140"]
 fn test_case_600_peak_cooling_red() {
     // EnergyPlus reference for Case 600 (from ASHRAE 140 documentation)
     // Expected peak cooling: ~4.80 kW
@@ -98,7 +98,7 @@ fn test_solar_gain_distribution_analysis() {
 /// per ADR-002/#1175. This test monitors but does not enforce a pass criteria.
 /// Issue #1216 primarily affects LowMass cases.
 #[test]
-#[ignore] // TODO: Calibrate against ASHRAE 140 reference data
+#[ignore = "TDD test pending calibration: hardcoded expected values need verification against ASHRAE 140"]
 fn test_case_900_peak_cooling_red() {
     // EnergyPlus reference for Case 900 (high-mass)
     // Expected peak cooling: ~3.5-4.0 kW
