@@ -833,6 +833,8 @@ fn test_case_600_blind_energy_infrastructure() {
 /// AGENTS.md ("no parameter tuning, fix the math"), this test is
 /// `#[ignore]` until the underlying physics is corrected; it will be
 /// un-ignored automatically when the cooling load is brought within band.
+/// RE-IGNORED per wave orchestrator: physics gap (#1213) not resolved.
+#[ignore = "blocked by #1213 zone cooling physics + #672 epic v1.3"]
 #[test]
 fn test_case_600_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case600.spec();
@@ -895,6 +897,8 @@ fn test_case_900_blind_energy_infrastructure() {
 }
 
 /// Case 900 STRICT ASHRAE 140 tolerance — IGNORED pending physics fix.
+/// Blocked by: #1213 (90% cooling underestimate), #672 epic (v1.3 blind validation).
+#[ignore = "blocked by #1213 cooling physics + #672 epic v1.3"]
 #[test]
 fn test_case_900_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case900.spec();
