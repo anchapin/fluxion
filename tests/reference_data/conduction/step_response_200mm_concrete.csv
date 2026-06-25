@@ -1,7 +1,7 @@
 # EnergyPlus Version: 25.2.0
 # Model: 200mm concrete south wall facing outdoors, single-zone box (6×8×2.7m), free-floating (no HVAC), driven by Golden-NREL Jan 1-3 weather
 # EPW: USA_CO_Golden-NREL.724666_TMY3.epw
-# Generated: 2026-06-13 12:37 UTC
+# Generated: 2026-06-25 22:44 UTC
 # Parameters: Concrete: k=1.73 W/(m·K), ρ=2300 kg/m³, cp=840 J/(kg·K), thickness=200mm; Timestep=15min; Other walls highly insulated (R-20)
 # Rows: 288
 hour(0-72),T_ext(C),T_surface_inside(C),T_surface_outside(C),heat_flux_inside(W/m2),heat_flux_outside(W/m2)

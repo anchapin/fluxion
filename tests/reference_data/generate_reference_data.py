@@ -7,6 +7,10 @@ Creates:
   - solar/surface_irradiance_south.csv
   - ventilation/infiltration_denver.csv
   - conduction/step_response_200mm_concrete.csv
+  - conduction/step_response_composite.csv
+  - conduction/step_response_floor.csv
+  - conduction/step_response_lightweight.csv
+  - conduction/step_response_roof.csv
 
 Prerequisites:
   - EnergyPlus 25.2.0 on PATH
@@ -502,6 +506,329 @@ Output:Variable, SouthWall, Surface Outside Face Conduction Heat Transfer Rate p
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# MODEL 3: Composite Wall (concrete + insulation)
+# ═══════════════════════════════════════════════════════════════════════════
+
+IDF_COMPOSITE = """\
+Version, 25.2;
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  StepChangeRun, 1, 1, , 1, 3, , Tuesday,
+  No, No, No, No, No;
+
+Timestep, 4;
+
+Building,
+  RefBox_Composite, 0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  ZONE1, 0, 0, 0, 0, 1, 1, , , , ;
+
+Material,
+  CONCRETE_100, MediumRough, 0.100, 1.730, 2300, 840;
+
+Material,
+  MINERAL_WOOL, MediumRough, 0.100, 0.040, 18, 840;
+
+Material,
+  GYP_BOARD, MediumSmooth, 0.013, 0.160, 800, 1090;
+
+Material,
+  HIGH_INSUL, MediumRough, 0.200, 0.01, 12, 840;
+
+Construction,
+  COMPOSITE_WALL, GYP_BOARD, MINERAL_WOOL, CONCRETE_100;
+
+Construction,
+  INSUL_WALL, HIGH_INSUL;
+
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner, ClockWise, World;
+
+BuildingSurface:Detailed,
+  SouthWall, Wall, COMPOSITE_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 0, 2.7,  6, 8, 2.7,  6, 8, 0,  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 8, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 8, 2.7,  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, INSUL_WALL, ZONE1, , Ground, , NoSun, NoWind, ,
+  4, 0, 0, 0,  6, 0, 0,  6, 8, 0,  0, 8, 0;
+
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Conduction Heat Transfer Rate per Area, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Conduction Heat Transfer Rate per Area, Timestep;
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODEL 4: Floor Slab (concrete slab on grade)
+# ═══════════════════════════════════════════════════════════════════════════
+
+IDF_FLOOR = """\
+Version, 25.2;
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  StepChangeRun, 1, 1, , 1, 3, , Tuesday,
+  No, No, No, No, No;
+
+Timestep, 4;
+
+Building,
+  RefBox_Floor, 0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  ZONE1, 0, 0, 0, 0, 1, 1, , , , ;
+
+Material,
+  CONCRETE_SLAB, MediumRough, 0.150, 1.730, 2300, 840;
+
+Material,
+  SLAB_INSUL, MediumRough, 0.100, 0.040, 18, 840;
+
+Material,
+  FLOOR_FINISH, MediumSmooth, 0.010, 0.060, 200, 1380;
+
+Material,
+  HIGH_INSUL, MediumRough, 0.200, 0.01, 12, 840;
+
+Construction,
+  FLOOR_SLAB, FLOOR_FINISH, CONCRETE_SLAB, SLAB_INSUL;
+
+Construction,
+  INSUL_WALL, HIGH_INSUL;
+
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner, ClockWise, World;
+
+BuildingSurface:Detailed,
+  SouthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 0, 2.7,  6, 8, 2.7,  6, 8, 0,  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 8, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 8, 2.7,  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, FLOOR_SLAB, ZONE1, , Ground, , NoSun, NoWind, ,
+  4, 0, 0, 0,  6, 0, 0,  6, 8, 0,  0, 8, 0;
+
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, Floor, Surface Inside Face Temperature, Timestep;
+Output:Variable, Floor, Surface Outside Face Temperature, Timestep;
+Output:Variable, Floor, Surface Inside Face Conduction Heat Transfer Rate per Area, Timestep;
+Output:Variable, Floor, Surface Outside Face Conduction Heat Transfer Rate per Area, Timestep;
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODEL 5: Lightweight Steel Stud Wall
+# ═══════════════════════════════════════════════════════════════════════════
+
+IDF_LIGHTWEIGHT = """\
+Version, 25.2;
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  StepChangeRun, 1, 1, , 1, 3, , Tuesday,
+  No, No, No, No, No;
+
+Timestep, 4;
+
+Building,
+  RefBox_Lightweight, 0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  ZONE1, 0, 0, 0, 0, 1, 1, , , , ;
+
+Material,
+  EXT_GYP, MediumRough, 0.016, 0.160, 800, 1090;
+
+Material,
+  OSB_SHEATHING, MediumRough, 0.012, 0.110, 600, 2500;
+
+Material,
+  CAVITY_INSUL, MediumRough, 0.090, 0.040, 18, 840;
+
+Material,
+  INT_GYP, MediumSmooth, 0.013, 0.160, 800, 1090;
+
+Material,
+  HIGH_INSUL, MediumRough, 0.200, 0.01, 12, 840;
+
+Construction,
+  LIGHTWEIGHT_WALL, EXT_GYP, OSB_SHEATHING, CAVITY_INSUL, INT_GYP;
+
+Construction,
+  INSUL_WALL, HIGH_INSUL;
+
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner, ClockWise, World;
+
+BuildingSurface:Detailed,
+  SouthWall, Wall, LIGHTWEIGHT_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 0, 2.7,  6, 8, 2.7,  6, 8, 0,  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 8, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 8, 2.7,  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, INSUL_WALL, ZONE1, , Ground, , NoSun, NoWind, ,
+  4, 0, 0, 0,  6, 0, 0,  6, 8, 0,  0, 8, 0;
+
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Conduction Heat Transfer Rate per Area, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Conduction Heat Transfer Rate per Area, Timestep;
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
+# MODEL 6: Roof Assembly
+# ═══════════════════════════════════════════════════════════════════════════
+
+IDF_ROOF = """\
+Version, 25.2;
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  StepChangeRun, 1, 1, , 1, 3, , Tuesday,
+  No, No, No, No, No;
+
+Timestep, 4;
+
+Building,
+  RefBox_Roof, 0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  ZONE1, 0, 0, 0, 0, 1, 1, , , , ;
+
+Material,
+  STEEL_DECK, MediumRough, 0.0015, 45.0, 7800, 500;
+
+Material,
+  ROOF_INSUL, MediumRough, 0.150, 0.040, 18, 840;
+
+Material,
+  GRAVEL, MediumRough, 0.050, 0.700, 1700, 850;
+
+Material,
+  HIGH_INSUL, MediumRough, 0.200, 0.01, 12, 840;
+
+Construction,
+  ROOF_ASSEMBLY, GRAVEL, ROOF_INSUL, STEEL_DECK;
+
+Construction,
+  INSUL_WALL, HIGH_INSUL;
+
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner, ClockWise, World;
+
+BuildingSurface:Detailed,
+  SouthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 0, 2.7,  6, 8, 2.7,  6, 8, 0,  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 8, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, ROOF_ASSEMBLY, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 8, 2.7,  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, INSUL_WALL, ZONE1, , Ground, , NoSun, NoWind, ,
+  4, 0, 0, 0,  6, 0, 0,  6, 8, 0,  0, 8, 0;
+
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, Roof, Surface Inside Face Temperature, Timestep;
+Output:Variable, Roof, Surface Outside Face Temperature, Timestep;
+Output:Variable, Roof, Surface Inside Face Conduction Heat Transfer Rate per Area, Timestep;
+Output:Variable, Roof, Surface Outside Face Conduction Heat Transfer Rate per Area, Timestep;
+"""
+
+# ═══════════════════════════════════════════════════════════════════════════
 # EnergyPlus Runner
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -873,6 +1200,145 @@ def generate_model_2():
         conn.close()
 
 
+def _generate_conduction_csv(idf_text: str, idf_name: str, csv_name: str,
+                               model_desc: str, params: str, surface_name: str):
+    """Shared helper for the 4 conduction test surface models."""
+    print(f"\n═══ {model_desc} ═══")
+
+    idf_path = MODEL_DIR / idf_name
+    idf_path.write_text(idf_text)
+    print(f"  Written IDF: {idf_path}")
+
+    out_dir = Path(f"/tmp/eplus_{csv_name.replace('step_response_', '')}")
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+
+    if not run_energyplus(idf_path, out_dir):
+        sys.exit(1)
+
+    sql_path = out_dir / "eplusout.sql"
+    conn = query_eplus_sql(sql_path)
+
+    try:
+        t_outdoor = get_variable_timeseries(conn, "Site Outdoor Air Drybulb Temperature")
+        t_zone = get_variable_timeseries(conn, "Zone Mean Air Temperature", "ZONE1")
+        t_surf_in = get_variable_timeseries(
+            conn, "Surface Inside Face Temperature", surface_name
+        )
+        t_surf_out = get_variable_timeseries(
+            conn, "Surface Outside Face Temperature", surface_name
+        )
+        q_in = get_variable_timeseries(
+            conn,
+            "Surface Inside Face Conduction Heat Transfer Rate per Area",
+            surface_name,
+        )
+        q_out = get_variable_timeseries(
+            conn,
+            "Surface Outside Face Conduction Heat Transfer Rate per Area",
+            surface_name,
+        )
+
+        n_pts = len(t_outdoor)
+        print(f"  Total timesteps: {n_pts}")
+
+        time_map = get_time_map(conn)
+
+        header = write_header(
+            COND_DIR / csv_name,
+            model_desc,
+            params,
+            n_pts,
+        )
+
+        rows = []
+        for idx in sorted(t_outdoor.keys()):
+            if idx not in time_map:
+                continue
+            month, day, hour, minute = time_map[idx]
+            elapsed_h = (day - 1) * 24 + hour + minute / 60.0
+            rows.append(
+                [
+                    round(elapsed_h, 4),
+                    round(t_outdoor.get(idx, 0), 4),
+                    round(t_zone.get(idx, 0), 4),
+                    round(t_surf_in.get(idx, 0), 4),
+                    round(t_surf_out.get(idx, 0), 4),
+                    round(q_in.get(idx, 0), 4),
+                    round(q_out.get(idx, 0), 4),
+                ]
+            )
+
+        write_csv_with_header(
+            COND_DIR / csv_name,
+            header,
+            [
+                "hour",
+                "T_outdoor",
+                "T_zone",
+                "T_surface_inside",
+                "T_surface_outside",
+                "q_inside_Wm2",
+                "q_outside_Wm2",
+            ],
+            rows,
+        )
+    finally:
+        conn.close()
+
+
+def generate_model_3():
+    """Composite wall: concrete + mineral wool + gypsum."""
+    _generate_conduction_csv(
+        IDF_COMPOSITE,
+        "step_change_composite.idf",
+        "step_response_composite.csv",
+        "Composite Wall (concrete + insulation + gypsum)",
+        "Concrete 100mm + mineral wool 100mm + gypsum 13mm; "
+        "South wall; Timestep=15min; Other surfaces highly insulated",
+        "SouthWall",
+    )
+
+
+def generate_model_4():
+    """Floor slab: concrete slab on grade with insulation."""
+    _generate_conduction_csv(
+        IDF_FLOOR,
+        "step_change_floor.idf",
+        "step_response_floor.csv",
+        "Floor Slab (concrete on grade with insulation)",
+        "Carpet 10mm + concrete 150mm + insulation 100mm; "
+        "Floor (slab on grade); Timestep=15min; Other surfaces highly insulated",
+        "Floor",
+    )
+
+
+def generate_model_5():
+    """Lightweight steel stud wall."""
+    _generate_conduction_csv(
+        IDF_LIGHTWEIGHT,
+        "step_change_lightweight.idf",
+        "step_response_lightweight.csv",
+        "Lightweight Steel Stud Wall",
+        "Ext gyp 16mm + OSB 12mm + cavity insulation 90mm + int gyp 13mm; "
+        "South wall; Timestep=15min; Other surfaces highly insulated",
+        "SouthWall",
+    )
+
+
+def generate_model_6():
+    """Roof assembly: gravel + insulation + steel deck."""
+    _generate_conduction_csv(
+        IDF_ROOF,
+        "step_change_roof.idf",
+        "step_response_roof.csv",
+        "Roof Assembly (gravel + insulation + steel deck)",
+        "Gravel 50mm + insulation 150mm + steel deck 1.5mm; "
+        "Roof; Timestep=15min; Other surfaces highly insulated",
+        "Roof",
+    )
+
+
 def update_readme():
     """Update README.md with generation details."""
     print("\n═══ Updating README.md ═══")
@@ -908,9 +1374,18 @@ Prerequisites:
 
 ### Conduction (`conduction/`)
 
-| File | Description | Rows | Columns |
-|------|-------------|------|---------|
-| `step_response_200mm_concrete.csv` | Transient conduction through 200mm concrete wall | 288 | hour, T_ext, T_surf_in, T_surf_out, q_in, q_out |
+All conduction CSVs are generated from EnergyPlus 25.2.0 using the step-change
+protocol (Jan 1-3, 15-min timesteps, free-floating zone, single test surface exposed
+to outdoor weather).
+
+| File | Description | Rows | Source |
+|------|-------------|------|--------|
+| `step_response_200mm_concrete.csv` | 200mm concrete south wall | ~288 | EnergyPlus |
+| `step_response_composite.csv` | Composite wall (concrete + insulation + gypsum) south wall | ~288 | EnergyPlus |
+| `step_response_floor.csv` | Floor slab on grade (carpet + concrete + insulation) | ~288 | EnergyPlus |
+| `step_response_lightweight.csv` | Lightweight steel stud wall south wall | ~288 | EnergyPlus |
+| `step_response_roof.csv` | Roof assembly (gravel + insulation + steel deck) | ~288 | EnergyPlus |
+| `step_response_fixed_zone_20c.csv` | Fixed zone temperature (ASHRAE 140) | — | EnergyPlus |
 
 ### Ventilation (`ventilation/`)
 
@@ -923,7 +1398,11 @@ Prerequisites:
 | File | Description |
 |------|-------------|
 | `annual_solar_ventilation.idf` | Single-zone box (6×8×2.7m), lightweight walls, no HVAC, 0.5 ACH |
-| `step_change_concrete.idf` | Single-zone, 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `step_change_concrete.idf` | 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `step_change_composite.idf` | Composite wall (concrete + insulation + gypsum), south wall, Jan 1-3 |
+| `step_change_floor.idf` | Floor slab on grade, Jan 1-3 |
+| `step_change_lightweight.idf` | Lightweight steel stud wall, south wall, Jan 1-3 |
+| `step_change_roof.idf` | Roof assembly, Jan 1-3 |
 
 ## Model Parameters
 
@@ -935,20 +1414,37 @@ Prerequisites:
 - **HVAC**: None (free-floating)
 - **Weather**: USA_CO_Golden-NREL TMY3 (39.74°N, 105.18°W)
 
-### Model 2: Conduction Response
+### Models 2-6: Conduction Step-Change Tests
 - **Geometry**: 6m × 8m × 2.7m single zone
-- **Test wall (South)**: 200mm concrete (k=1.73 W/(m·K), ρ=2300 kg/m³, cp=840 J/(kg·K))
-- **Other surfaces**: Highly insulated (R-20, k=0.01 W/(m·K), 200mm)
+- **Timestep**: 15 minutes (4 per hour)
+- **Run period**: 72 hours (Jan 1-3)
 - **HVAC**: None (free-floating)
-- **Timestep**: 15 minutes (4 per hour)
-- **Run period**: 72 hours (Jan 1-3)
-- **Driving force**: Real outdoor temperature from Golden-NREL TMY3
-- **ZONE_EXT**: Step from 20°C to -10°C at hour 1 via schedule (ideal loads)
-- **Other surfaces**: Adiabatic
-- **Timestep**: 15 minutes (4 per hour)
-- **Run period**: 72 hours (Jan 1-3)
+- **Non-test surfaces**: Highly insulated (R-20, k=0.01 W/(m·K))
+- **Ground temperature**: 18°C constant
+
+| Model | Test Surface | Construction |
+|-------|-------------|--------------|
+| 2: 200mm Concrete | South wall | 200mm concrete (k=1.73, ρ=2300, cp=840) |
+| 3: Composite | South wall | 100mm concrete + 100mm mineral wool + 13mm gypsum |
+| 4: Floor Slab | Floor (slab on grade) | 10mm carpet + 150mm concrete + 100mm insulation |
+| 5: Lightweight | South wall | 16mm ext gyp + 12mm OSB + 90mm cavity insulation + 13mm int gyp |
+| 6: Roof | Roof | 50mm gravel + 150mm insulation + 1.5mm steel deck |
 
 ## CSV Format
+
+### Conduction CSV columns
+
+```
+hour, T_outdoor, T_zone, T_surface_inside, T_surface_outside, q_inside_Wm2, q_outside_Wm2
+```
+
+- `hour`: elapsed hours from start (0 to 72)
+- `T_outdoor`: outdoor air drybulb temperature (°C)
+- `T_zone`: zone mean air temperature (°C)
+- `T_surface_inside`: inside face temperature of test surface (°C)
+- `T_surface_outside`: outside face temperature of test surface (°C)
+- `q_inside_Wm2`: inside face conduction heat flux (W/m²)
+- `q_outside_Wm2`: outside face conduction heat flux (W/m²)
 
 ## Ventilation Conductance Calculation
 
@@ -978,6 +1474,10 @@ if __name__ == "__main__":
 
     generate_model_1()
     generate_model_2()
+    generate_model_3()
+    generate_model_4()
+    generate_model_5()
+    generate_model_6()
     update_readme()
 
     print("\n✓ All reference data generated successfully.")
