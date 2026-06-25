@@ -9,10 +9,10 @@
 //! - Error propagation through SolverManager
 //! - All solver types (FD, CTF, 5R1C) return errors appropriately
 
-use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
 use fluxion::physics::ctf_solver_wrapper::CTFSolverWrapper;
-use fluxion::physics::solver_manager::SolverManager;
+use fluxion::physics::fd_solver_wrapper::FDSolverWrapper;
 use fluxion::physics::method_selector::ThermalMethodSelector;
+use fluxion::physics::solver_manager::SolverManager;
 use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use fluxion::physics::wall_spec::WallSpec;
@@ -30,7 +30,10 @@ fn test_fd_solver_step_before_initialization_returns_error() {
         HeatTransferCoefficient::from_value(25.0),
     );
 
-    assert!(result.is_err(), "FD solver should return error when step() called before initialize()");
+    assert!(
+        result.is_err(),
+        "FD solver should return error when step() called before initialize()"
+    );
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("not initialized"),
@@ -51,7 +54,10 @@ fn test_ctf_solver_step_before_initialization_returns_error() {
         HeatTransferCoefficient::from_value(25.0),
     );
 
-    assert!(result.is_err(), "CTF solver should return error when step() called before initialize()");
+    assert!(
+        result.is_err(),
+        "CTF solver should return error when step() called before initialize()"
+    );
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("not initialized"),
@@ -74,7 +80,10 @@ fn test_five_r1c_solver_step_before_initialization_returns_error() {
         HeatTransferCoefficient::from_value(25.0),
     );
 
-    assert!(result.is_err(), "5R1C solver should return error when step() called before initialize()");
+    assert!(
+        result.is_err(),
+        "5R1C solver should return error when step() called before initialize()"
+    );
     let err_msg = result.unwrap_err().to_string();
     assert!(
         err_msg.contains("not initialized") || err_msg.contains("No solver"),
@@ -94,7 +103,10 @@ fn test_fd_solver_with_valid_wall_succeeds() {
     let mut solver = FDSolverWrapper::new();
 
     let init_result = solver.initialize(&wall_spec);
-    assert!(init_result.is_ok(), "FD solver should initialize successfully with valid wall");
+    assert!(
+        init_result.is_ok(),
+        "FD solver should initialize successfully with valid wall"
+    );
 
     let step_result = solver.step(
         Time::from_value(3600.0),
@@ -104,7 +116,10 @@ fn test_fd_solver_with_valid_wall_succeeds() {
         HeatTransferCoefficient::from_value(25.0),
     );
 
-    assert!(step_result.is_ok(), "FD solver step should succeed after initialization");
+    assert!(
+        step_result.is_ok(),
+        "FD solver step should succeed after initialization"
+    );
     let flux = step_result.unwrap();
     assert!(
         flux.to_value().is_finite(),
@@ -124,7 +139,10 @@ fn test_ctf_solver_with_valid_wall_succeeds() {
     let mut solver = CTFSolverWrapper::new();
 
     let init_result = solver.initialize(&wall_spec);
-    assert!(init_result.is_ok(), "CTF solver should initialize successfully with valid wall");
+    assert!(
+        init_result.is_ok(),
+        "CTF solver should initialize successfully with valid wall"
+    );
 
     let step_result = solver.step(
         Time::from_value(3600.0),
@@ -134,7 +152,10 @@ fn test_ctf_solver_with_valid_wall_succeeds() {
         HeatTransferCoefficient::from_value(25.0),
     );
 
-    assert!(step_result.is_ok(), "CTF solver step should succeed after initialization");
+    assert!(
+        step_result.is_ok(),
+        "CTF solver step should succeed after initialization"
+    );
     let flux = step_result.unwrap();
     assert!(
         flux.to_value().is_finite(),
@@ -175,9 +196,14 @@ fn test_fd_solver_stays_valid_after_successful_step() {
     let wall_spec = WallSpec::from_assembly(&wall);
     let mut solver = FDSolverWrapper::new();
 
-    solver.initialize(&wall_spec).expect("Initialization should succeed");
+    solver
+        .initialize(&wall_spec)
+        .expect("Initialization should succeed");
 
-    assert!(solver.is_valid(), "Solver should be valid after initialization");
+    assert!(
+        solver.is_valid(),
+        "Solver should be valid after initialization"
+    );
 
     let step_result = solver.step(
         Time::from_value(3600.0),
@@ -188,7 +214,10 @@ fn test_fd_solver_stays_valid_after_successful_step() {
     );
 
     assert!(step_result.is_ok(), "First step should succeed");
-    assert!(solver.is_valid(), "Solver should still be valid after successful step");
+    assert!(
+        solver.is_valid(),
+        "Solver should still be valid after successful step"
+    );
 }
 
 #[test]
@@ -222,7 +251,16 @@ fn test_all_solver_types_return_errors_before_initialization() {
         HeatTransferCoefficient::from_value(25.0),
     );
 
-    assert!(fd_result.is_err(), "FD solver should return error before initialization");
-    assert!(ctf_result.is_err(), "CTF solver should return error before initialization");
-    assert!(five_r1c_result.is_err(), "5R1C solver should return error before initialization");
+    assert!(
+        fd_result.is_err(),
+        "FD solver should return error before initialization"
+    );
+    assert!(
+        ctf_result.is_err(),
+        "CTF solver should return error before initialization"
+    );
+    assert!(
+        five_r1c_result.is_err(),
+        "5R1C solver should return error before initialization"
+    );
 }
