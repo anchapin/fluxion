@@ -1068,13 +1068,12 @@ impl ThermalModel<VectorField> {
             // show LARGER swings than 600FF (wrong physics). Restoring to 9.1 for proper
             // mass coupling; time constant will be addressed separately via derived_h_tr_3.
             //
-            // SESSION 91 (Issue #897): Calibration sweep showed ISO 13790 default (9.1 W/m²K)
-            // gives 900FF max temp = 41.50°C (below reference [41.8, 46.4]). The 47% increase
-            // to 13.4 raises max temp to ~43.0°C (center of reference range) by strengthening
-            // the mass-to-exterior coupling, which reduces peak zone temperature swing.
+            // ISO 13790 Table C.3 prescribes h_ms = 9.1 W/(m²·K) for Heavy construction.
+            // The previous 13.4 value was a calibration constant (Session 91, Issue #897)
+            // tuned to hit the 900FF reference range — not traceable to any standard.
             let h_ms_coeff = match spec.construction_type {
                 crate::validation::ashrae_140_cases::ConstructionType::LowMass => 2.0,
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 13.4,
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => 9.1,
                 crate::validation::ashrae_140_cases::ConstructionType::Special => 9.1,
             };
             let h_ms_iso_13790 = h_ms_coeff * a_m;
@@ -1746,19 +1745,13 @@ impl ThermalModel<VectorField> {
                 // the 9R4C mass nodes (via `phi_st`/`phi_m`) lets the backward-Euler
                 // mass dynamics buffer it, landing 900FF max in [41.8, 46.4]°C.
                 //
-                // HIGH-MASS HVAC keeps the baseline 0.40: the HVAC controller clamps
-                // the zone air to the setpoint, so the air-fraction compensation is
-                // absorbed harmlessly and the Case 900/950 HVAC results stay on their
-                // validated baseline (no regression to 950 PeakCooling etc.). The
-                // 9R4C solver is still the sole high-mass solver in both modes; only
-                // the solar split differs by mode.
-                crate::validation::ashrae_140_cases::ConstructionType::HighMass => {
-                    if spec.is_free_floating() {
-                        (0.0, 0.30)
-                    } else {
-                        (0.40, 0.30)
-                    }
-                }
+                // ADR-002 (#1175): HighMass HVAC now uses ASHRAE-140-correct solar split —
+                // window solar → opaque surfaces / mass, NONE directly to air (same as
+                // free-float). The previous 0.40 was a stale compensation constant for
+                // the OLD 5R1C topology (ISSUE_1168_ROOT_CAUSE.md). Issue #1271 removes it
+                // because the 9R4C solver routes solar through physical mass nodes; dumping
+                // 40% onto the air node bypasses thermal mass and over-predicts cooling.
+                crate::validation::ashrae_140_cases::ConstructionType::HighMass => (0.0, 0.30),
                 crate::validation::ashrae_140_cases::ConstructionType::Special => (0.10, 0.50),
             };
             model.solar_distribution_to_air = air_frac;

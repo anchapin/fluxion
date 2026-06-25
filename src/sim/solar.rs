@@ -186,12 +186,17 @@ pub fn calculate_window_solar_gain(
         window.shgc * shgc_ratio
     };
 
+    // Issue #1271: ground-reflected radiation arrives from below the window at different
+    // angles than sky diffuse; EnergyPlus treats these separately. Use 0.85 for ground-
+    // reflected vs 0.90 for sky diffuse (ASHRAE 140 / ISO 13790 anisotropic sky correction).
     let diffuse_shgc = window.shgc * 0.9;
+    let ground_reflected_shgc = window.shgc * 0.85;
     let effective_beam_wm2 = irradiance.beam_wm2 * (1.0 - shaded_fraction);
 
     let beam_gain = window.area * effective_beam_wm2 * beam_shgc;
     let diffuse_gain = window.area * irradiance.diffuse_wm2 * diffuse_shgc;
-    let ground_reflected_gain = window.area * irradiance.ground_reflected_wm2 * diffuse_shgc;
+    let ground_reflected_gain =
+        window.area * irradiance.ground_reflected_wm2 * ground_reflected_shgc;
 
     SolarGain::new(beam_gain, diffuse_gain, ground_reflected_gain)
 }
@@ -246,12 +251,17 @@ pub fn calculate_window_solar_gain_with_diagnostics(
         window.shgc * shgc_ratio
     };
 
+    // Issue #1271: ground-reflected radiation arrives from below the window at different
+    // angles than sky diffuse; EnergyPlus treats these separately. Use 0.85 for ground-
+    // reflected vs 0.90 for sky diffuse (ASHRAE 140 / ISO 13790 anisotropic sky correction).
     let diffuse_shgc = window.shgc * 0.9;
+    let ground_reflected_shgc = window.shgc * 0.85;
     let effective_beam_wm2 = irradiance.beam_wm2 * (1.0 - shaded_fraction);
 
     let beam_gain = window.area * effective_beam_wm2 * beam_shgc;
     let diffuse_gain = window.area * irradiance.diffuse_wm2 * diffuse_shgc;
-    let ground_reflected_gain = window.area * irradiance.ground_reflected_wm2 * diffuse_shgc;
+    let ground_reflected_gain =
+        window.area * irradiance.ground_reflected_wm2 * ground_reflected_shgc;
 
     let solar_gain = SolarGain::new(beam_gain, diffuse_gain, ground_reflected_gain);
 
