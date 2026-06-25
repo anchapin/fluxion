@@ -2992,15 +2992,10 @@ mod tests {
             informed_data.len() >= 18,
             "informed data should cover all cases"
         );
-        assert!(
-            blind_data.len() >= 18,
-            "blind data should cover all cases"
-        );
+        assert!(blind_data.len() >= 18, "blind data should cover all cases");
 
         let blind_600 = blind_data.get("600").expect("blind Case 600 present");
-        let informed_600 = informed_data
-            .get("600")
-            .expect("informed Case 600 present");
+        let informed_600 = informed_data.get("600").expect("informed Case 600 present");
         assert!(blind_600.annual_heating_min > 0.0);
         assert!(informed_600.annual_heating_min > 0.0);
     }
