@@ -115,25 +115,4 @@ fn test_benchmark_report_aggregation_with_synthetic_data() {
 // - Throughput (cases/second)
 // - Peak memory usage (if tracked)
 // These tests will be added in Plans 06-02 through 06-05.
-
-#[test]
-#[ignore] // Placeholder for future performance metrics validation
-fn test_benchmark_report_performance_metrics() {
-    // After Plan 06-03: Verify that BenchmarkReport includes timing information
-    // let report = BenchmarkReport::new();
-    // assert!(report.total_execution_time_ms > 0);
-    // assert!(report.per_case_timings.is_some());
-    // This test will be completed when the feature is implemented.
-}
-
-#[test]
-#[ignore] // Placeholder for throughput measurement
-fn test_validation_throughput_requirement() {
-    // After Plan 06-02: Verify that complete validation suite executes in < 5 minutes (300 sec)
-    // This translates to throughput of 18+ cases / 300 sec = ~0.06 cases/sec minimum,
-    // but our target is much higher (> 10 cases/sec on 8-core).
-    // let mut validator = ASHRAE140Validator::new();
-    // let report = validator.validate_analytical_engine();
-    // assert!(report.total_execution_time_ms < 300000);
-    // This test will be completed when timing instrumentation is added.
-}
+// NOTE: Placeholder tests removed per Issue #1284 triage.

@@ -104,7 +104,6 @@ fn test_concurrent_batched_inference() {
 }
 
 #[test]
-#[ignore = "requires external ONNX model file tests_tmp_dummy.onnx — ref: #1221"]
 fn test_concurrent_real_model_inference() {
     // If a real ONNX model is available, test concurrent inference with actual model
     let path = "tests_tmp_dummy.onnx";
