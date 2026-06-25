@@ -27,6 +27,34 @@ use crate::sim::thermal_integration::{
 };
 use crate::sim::thermal_model_core::ThermalModel;
 
+/// Computes the forced-convection multiplier for h_tr_is based on ACH.
+///
+/// Uses the ASHRAE/EnergyPlus empirical correlation for interior forced convection:
+/// `h_c = h_c_still + 0.84 * ACH^0.8` [W/m²K]
+///
+/// Where:
+/// - `h_c_still = 3.45 W/m²K` (ASHRAE 140 simplified 5R1C still-air value)
+/// - ACH is in air changes per hour
+///
+/// This gives approximately:
+/// - ACH=0.5: ratio ≈ 1.14× (daytime baseline)
+/// - ACH=3:   ratio ≈ 1.59× (Case 950 night vent)
+/// - ACH=13:  ratio ≈ 2.84× (Case 650/950 spec night vent ACH=13.14)
+/// - ACH=40:  ratio ≈ 5.66× (theoretical high-ACH night vent)
+///
+/// Reference: ASHRAE Handbook — Fundamentals (ch. 4), EnergyPlus Engineering Reference.
+/// Issue #1279.
+fn h_tr_is_ach_multiplier(ach: f64) -> f64 {
+    const H_C_STILL: f64 = 3.45; // W/m²K - ASHRAE 140 simplified still-air value
+    if ach <= 0.0 {
+        1.0
+    } else {
+        // h_c_forced = h_c_still + 0.84 * ACH^0.8
+        let h_c_forced = H_C_STILL + 0.84 * ach.powf(0.8);
+        h_c_forced / H_C_STILL
+    }
+}
+
 // Methods in this file are being incrementally migrated to the sibling
 // submodules in `thermal_model_physics/` (see Issue #902). Methods that
 // are still in this file retain the same `impl<T: ...> ThermalModel<T>`
@@ -1774,20 +1802,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             .map(|w| w.sky_temperature())
             .unwrap_or(outdoor_temp - 15.0);
 
-        // === Issue #948: Night ventilation forced convection ===
-        // When night ventilation fans are active (3+ ACH), the natural convection
+        // === Issue #1279: Night ventilation forced convection (ACH-dependent) ===
+        // When night ventilation fans are active, the natural convection
         // h_tr_is coefficient is insufficient to represent FORCED convection.
-        // We apply two fixes:
-        //   1. Boost solver.h_tr_is by 4× (forced convection multiplier)
-        //   2. Add h_ve_night to h_ve in zone air temperature formula
         //
-        // Case 650/950 night vent: fan_capacity = 1703.16 m³/h, zone = 129.6 m³
-        // ACH = 13.14, h_ve_night = 568 W/K, vs h_tr_is ≈ 40 W/K → ratio ≈ 14×
-        // A 4× boost to h_tr_is approximates the effective increase in surface-to-air
-        // heat transfer during forced convection.
+        // We compute the ACH from fan_capacity and zone_volume, then apply the
+        // ASHRAE/EnergyPlus empirical correlation for forced convection:
+        //   h_c = h_c_still + 0.84 * ACH^0.8
+        //   multiplier = h_c_forced / h_c_still
+        //
+        // This replaces the prior hardcoded 4× multiplier which was not ACH-accurate.
+        //
+        // References:
+        // - ASHRAE Handbook — Fundamentals (ch. 4) for forced convection correlation
+        // - EnergyPlus Engineering Reference for interior surface coefficients
         let hour_of_day = (timestep % 24) as u8;
         let mut night_vent_active_now = false;
-        let h_ve_night = if let Some(ref night_vent) = self.0.night_ventilation {
+        let mut ach_night_vent: f64 = 0.0; // ACH of night ventilation (for h_tr_is scaling)
+        let h_ve_night: f64 = if let Some(ref night_vent) = self.0.night_ventilation {
             if night_vent.is_active_at_hour(hour_of_day) {
                 night_vent_active_now = true;
                 // ASHRAE 140 night-vent fan supplies outdoor air to zone 0
@@ -1799,6 +1831,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     .first()
                     .copied()
                     .unwrap_or(1005.0);
+                // ACH = fan_capacity (m³/h) / zone_volume (m³)
+                // Zone 0 is the conditioned zone per ASHRAE 140
+                let zone_vol = self
+                    .0
+                    .zone_volume
+                    .as_ref()
+                    .first()
+                    .copied()
+                    .unwrap_or(129.6);
+                ach_night_vent = night_vent.fan_capacity / zone_vol;
                 night_vent.fan_capacity * rho * cp / 3600.0
             } else {
                 0.0
@@ -2208,30 +2250,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             phi_m_surface_roof.push(solar_gains.phi_m_roof);
             phi_m_surface_floor.push(solar_gains.phi_m_floor);
 
-            // Issue #1191: Boost h_tr_is for forced convection during night ventilation.
-            // A 4× multiplier represents the increased surface-to-air heat transfer
-            // when fans create forced convection instead of natural convection (ACH >= 3.0).
+            // Issue #1279: Boost h_tr_is for forced convection during night ventilation.
+            // Use ACH-dependent multiplier (ASHRAE/EnergyPlus correlation) instead of
+            // the prior hardcoded 4× which was not ACH-accurate.
             // IMPORTANT: Restore h_tr_is after step to avoid persisting the boost to daytime.
-            let original_h_tr_is = if night_vent_active_now {
+            let h_tr_is_multiplier = if night_vent_active_now {
+                h_tr_is_ach_multiplier(ach_night_vent)
+            } else {
+                1.0
+            };
+            let original_h_tr_is = if h_tr_is_multiplier != 1.0 {
                 let original = solver.h_tr_is;
-                solver.h_tr_is *= 4.0;
-                Some(original)
+                solver.h_tr_is *= h_tr_is_multiplier;
+                Some((original, h_tr_is_multiplier))
             } else {
                 None
             };
             solver.step_with_gains(dt, gains_wall, gains_roof, gains_floor, gains_internal);
-            if let Some(original) = original_h_tr_is {
+            if let Some((original, _)) = original_h_tr_is {
                 solver.h_tr_is = original;
             }
         }
 
-        // Issue #1191: Apply forced convection boost to h_tr_is when calling
+        // Issue #1279: Apply ACH-dependent forced convection boost to h_tr_is when calling
         // compute_zone_air_temperature during night ventilation. This ensures
         // the zone air temperature calculation uses the enhanced surface-to-air
-        // heat transfer that occurs with forced convection (ACH >= 3.0).
+        // heat transfer from the ASHRAE/EnergyPlus forced convection correlation.
         if night_vent_active_now {
+            let multiplier = h_tr_is_ach_multiplier(ach_night_vent);
             for solver in &mut self.0.multi_node_solvers {
-                solver.h_tr_is *= 4.0;
+                solver.h_tr_is *= multiplier;
             }
         }
 
@@ -2275,10 +2323,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
         let t_i_free_mn = T::from(VectorField::new(t_i_free_data));
 
-        // Issue #1191: Restore h_tr_is to original value after computing zone air temperature.
+        // Issue #1279: Restore h_tr_is to original value after computing zone air temperature.
         if night_vent_active_now {
+            let multiplier = h_tr_is_ach_multiplier(ach_night_vent);
             for solver in &mut self.0.multi_node_solvers {
-                solver.h_tr_is /= 4.0;
+                solver.h_tr_is /= multiplier;
             }
         }
 
