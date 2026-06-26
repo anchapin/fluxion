@@ -493,3 +493,77 @@ class TestSurfaceType:
         assert hasattr(surface_type, "Wall")
         assert hasattr(surface_type, "Ceiling")
         assert hasattr(surface_type, "Floor")
+
+
+class TestMultiZoneThermalModel:
+    """Tests for MultiZoneThermalModel including zone energy tracking (Issue #1288)."""
+
+    def test_get_zone_energies_after_simulation(self, fluxion_module):
+        """Test that get_zone_energies returns non-zero values after simulation."""
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+
+        # Create a 3-zone model
+        model = MultiZoneThermalModel(num_zones=3)
+
+        # Run simulation for 1 year
+        total_energy = model.simulate_multi_zone(years=1, use_surrogates=False)
+
+        # Get zone energies
+        zone_energies = model.get_zone_energies()
+
+        # Verify we get 3 zone energies
+        assert len(zone_energies) == 3, f"Expected 3 zones, got {len(zone_energies)}"
+
+        # Total zone energies should match total EUI (within floating point tolerance)
+        # EUI is returned as total energy, zone_energies is also in kWh
+        total_zone_energy = sum(zone_energies)
+
+        # Allow some tolerance for floating point accumulation differences
+        assert abs(total_zone_energy - total_energy) / total_energy < 0.01, (
+            f"Zone energies sum ({total_zone_energy}) should match total EUI ({total_energy})"
+        )
+
+        # At least some zones should have non-zero energy for a full year simulation
+        # (winter heating or summer cooling should activate)
+        non_zero_zones = sum(1 for e in zone_energies if e > 0.0)
+        assert non_zero_zones >= 1, "At least one zone should have non-zero energy after a year"
+
+    def test_get_zone_energies_length(self, fluxion_module):
+        """Test that get_zone_energies returns correct number of zones."""
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+
+        # Test with different zone counts
+        for num_zones in [1, 2, 5]:
+            model = MultiZoneThermalModel(num_zones=num_zones)
+            zone_energies = model.get_zone_energies()
+            assert len(zone_energies) == num_zones, (
+                f"Expected {num_zones} zones, got {len(zone_energies)}"
+            )
+
+    def test_zone_energies_consistency(self, fluxion_module):
+        """Test that zone energies are consistent with total energy tracking."""
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+
+        model = MultiZoneThermalModel(num_zones=2)
+
+        # Run simulation
+        total_energy = model.simulate_multi_zone(years=1, use_surrogates=False)
+
+        # Get zone energies
+        zone_energies = model.get_zone_energies()
+
+        # Sum of zone energies should equal total EUI
+        total_zone_energy = sum(zone_energies)
+
+        # They should be very close (within 1% tolerance for floating point)
+        relative_error = abs(total_zone_energy - total_energy) / (total_energy + 1e-10)
+        assert relative_error < 0.01, (
+            f"Zone energies sum ({total_zone_energy}) differs significantly from "
+            f"total EUI ({total_energy}), relative error: {relative_error:.4%}"
+        )

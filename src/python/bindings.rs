@@ -172,10 +172,12 @@ impl PyMultiZoneThermalModel {
         Ok(total_energy)
     }
 
-    /// Get zone-specific energy consumption
+    /// Get zone-specific energy consumption (heating + cooling) in kWh
+    ///
+    /// Returns a vector with total energy (heating + cooling) for each zone.
+    /// These values are accumulated during simulation.
     pub fn get_zone_energies(&self) -> Vec<f64> {
-        // TODO: Implement zone energy consumption once ThermalModel API is updated
-        vec![0.0; self.inner.num_zones]
+        self.inner.get_zone_energies_kwh()
     }
 
     /// Get zone-specific peak loads

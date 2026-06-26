@@ -367,6 +367,33 @@ where
         self.0.annual_electrical_energy
     }
 
+    /// Get per-zone heating energy in kilowatt-hours (kWh)
+    ///
+    /// Returns a vector with heating energy for each zone.
+    pub fn get_zone_heating_energy_kwh(&self) -> Vec<f64> {
+        self.0.zone_heating_energy_kwh.as_ref().to_vec()
+    }
+
+    /// Get per-zone cooling energy in kilowatt-hours (kWh)
+    ///
+    /// Returns a vector with cooling energy for each zone.
+    pub fn get_zone_cooling_energy_kwh(&self) -> Vec<f64> {
+        self.0.zone_cooling_energy_kwh.as_ref().to_vec()
+    }
+
+    /// Get per-zone total energy (heating + cooling) in kilowatt-hours (kWh)
+    ///
+    /// Returns a vector with total energy for each zone.
+    pub fn get_zone_energies_kwh(&self) -> Vec<f64> {
+        let heating = self.0.zone_heating_energy_kwh.as_ref();
+        let cooling = self.0.zone_cooling_energy_kwh.as_ref();
+        heating
+            .iter()
+            .zip(cooling.iter())
+            .map(|(&h, &c)| h + c)
+            .collect()
+    }
+
     /// Get per-surface incident solar accumulation for ASHRAE 140-2023 Section 8.2.3.
     ///
     /// Returns a reference to the BTreeMap containing incident solar data per surface.
@@ -382,6 +409,13 @@ where
     pub fn reset_heating_cooling_energy(&mut self) {
         self.0.annual_heating_energy = 0.0;
         self.0.annual_cooling_energy = 0.0;
+        // Reset per-zone energy tracking (Issue #1288)
+        let heating_slice = self.0.zone_heating_energy_kwh.as_mut();
+        let cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
+        for i in 0..self.0.num_zones {
+            heating_slice[i] = 0.0;
+            cooling_slice[i] = 0.0;
+        }
     }
 
     // Diagnostic hook methods (Phase 5: Diagnostics & Reporting)
@@ -2495,6 +2529,10 @@ impl ThermalModel<VectorField> {
 
             // Electrical energy tracking for HVAC equipment (Plan 18-08)
             annual_electrical_energy: 0.0, // Cumulative electrical energy consumption in kWh
+
+            // Per-zone energy tracking (Issue #1288)
+            zone_heating_energy_kwh: VectorField::from_scalar(0.0, num_zones),
+            zone_cooling_energy_kwh: VectorField::from_scalar(0.0, num_zones),
 
             // Weather data for solar gain calculation (Issue #278)
             weather: None, // Will be set from spec or loaded from file
