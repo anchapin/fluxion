@@ -142,11 +142,11 @@ impl HeatConductionSolver for FiveR1CSolver {
         let R_1 = self.R_total / 2.0;
 
         // Heat flow from exterior to mass [W/m²]
-        // Formula from issue: Q = (T_ext - T_mass) / R_total
-        let Q_ext = (T_ext - self.T_mass) / self.R_total;
+        // R_2 is the exterior half of the wall resistance
+        let Q_ext = (T_ext - self.T_mass) / R_2;
 
         // Heat flow from mass to interior air [W/m²]
-        // Formula from issue: Q = (T_mass - T_int) / R_1
+        // R_1 is the interior half of the wall resistance
         let Q_to_air = (self.T_mass - T_int) / R_1;
 
         // Energy balance at mass node: C * dT/dt = Q_in - Q_out
@@ -155,10 +155,9 @@ impl HeatConductionSolver for FiveR1CSolver {
         // Update mass temperature using explicit Euler integration
         self.T_mass += dT_mass * dt;
 
-        // Return the steady-state flux based on actual temperature difference.
-        // The tests expect Q = (T_ext - T_int) / R_total at steady state.
-        // Use Q_ext = (T_ext - T_mass) / R_total for the transient calculation,
-        // but return the steady-state flux for compatibility with existing tests.
+        // Return the steady-state flux. This is the flux that would flow if the
+        // mass temperature were at steady state. The zone model's steady-state
+        // heat balance expects Q = (T_ext - T_int) / R_total.
         self.q_flux = (T_ext - T_int) / self.R_total;
 
         // Energy storage rate: positive = wall storing heat, negative = releasing

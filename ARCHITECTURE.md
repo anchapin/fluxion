@@ -237,7 +237,7 @@ pub trait HeatConductionSolver: Send + Sync {
 >
 > | Path | Location | Dynamic? | Drives free-float / HVAC? |
 > |------|----------|---------|---------------------------|
-> | **Per-wall steady-state solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **No** — `step()` ignores `timestep`; steady-state `Q = ΔT/R_total`, `energy_storage_rate() == 0` (documented in `tests/conduction_5r1c_isolation.rs`) | No (Module 3 isolation only) |
+> | **Per-wall transient solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **Yes** — explicit Euler updates `T_mass` with `dt`; `energy_storage_rate()` returns `Q_ext - Q_to_air`. Note: returned flux uses steady-state formula `(T_ext-T_int)/R_total` (issue #1277). | No (Module 3 isolation only) |
 > | **Zone-level ISO 13790 thermal network** (5R1C / 6R2C / 9R4C) | `sim/thermal_model_core.rs` + `sim/thermal_model_physics/` (Module 5) | **Yes** (coefficient-tuned 5R1C / backward-Euler 9R4C) | **Yes** — this is the network that produces zone air temperature, heating/cooling loads, and free-floating temperatures |
 >
 > ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is unchanged (steady-state, isolation-tested).

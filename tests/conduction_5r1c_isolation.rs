@@ -437,25 +437,21 @@ fn test_r_total_matches_wall_spec() {
 // Section 2: Transient Step Response
 // ===========================================================================
 //
-// These tests are #[ignore] because the current FiveR1CSolver does NOT implement
-// transient dynamics. The mass node T_mass is never updated in step(), and
-// energy_storage_rate() always returns 0.0.
+// The FiveR1CSolver DOES implement transient dynamics:
+// - T_mass is updated via explicit Euler: T_mass += dT_mass * dt
+// - energy_storage_rate() returns Q_ext - Q_to_air (non-zero during transients)
 //
-// The analytical solution for a step change in exterior temperature from T_ext0
-// to T_ext1 at t=0, with constant T_int:
+// However, the returned flux from step() uses the steady-state formula
+// (T_ext - T_int) / R_total regardless of T_mass. This means the zone
+// balance sees the steady-state flux immediately, giving τ_measured ≈ dt.
 //
-//   T_m(t) = T_ss + (T_m0 - T_ss) · exp(-t / τ)
+// The R_1/R_2 split uses R_total/2 for each half (ignoring R_se and R_si
+// surface films). The analytical τ = C_total * R_total assumes the wall's
+// total R-value without surface films.
 //
-// where:
-//   T_ss = steady-state mass temperature (weighted by R-split)
-//   τ = C_total × R_total (thermal time constant)
-//
-// To enable these tests, the FiveR1CSolver needs:
-// 1. Mass node temperature update in step() using explicit Euler or Crank-Nicolson
-// 2. Proper R_1/R_2 split per ISO 13790 §7.2.2.2
-// 3. Non-zero energy_storage_rate() based on dT_mass/dt
-//
-// Per Phase 1 validation strategy: no parameter tuning, fix the underlying math.
+// These tests document the gap between the current implementation and
+// the analytical expectations. The flux at steady state and the τ accuracy
+// need improvement (issue #1277).
 
 /// Transient step response: exponential approach to steady-state.
 ///
