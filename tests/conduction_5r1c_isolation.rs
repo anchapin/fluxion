@@ -295,10 +295,13 @@ fn test_steady_state_zero_delta_t() {
 #[test]
 fn test_steady_state_flux_sign_convention() {
     let wall = heavyweight_wall();
-    let mut solver = init_solver(&wall);
 
-    // Heat gain scenario
-    let flux_gain = solver
+    // Heat gain scenario — fresh solver so step() observes the boundary
+    // conditions in isolation (issue #1308: returned flux now depends on
+    // the wall's mass-node temperature, which would otherwise carry state
+    // forward across calls).
+    let mut solver_gain = init_solver(&wall);
+    let flux_gain = solver_gain
         .step(
             Time::from_value(3600.0),
             Temperature::from_value(20.0),
@@ -314,8 +317,9 @@ fn test_steady_state_flux_sign_convention() {
         flux_gain
     );
 
-    // Heat loss scenario
-    let flux_loss = solver
+    // Heat loss scenario — independent solver for the same reason.
+    let mut solver_loss = init_solver(&wall);
+    let flux_loss = solver_loss
         .step(
             Time::from_value(3600.0),
             Temperature::from_value(20.0),
@@ -336,9 +340,12 @@ fn test_steady_state_flux_sign_convention() {
 #[test]
 fn test_steady_state_symmetry() {
     let wall = insulated_wall();
-    let mut solver = init_solver(&wall);
 
-    let flux_forward = solver
+    // Fresh solver per direction so step() sees each boundary condition in
+    // isolation (issue #1308: returned flux now depends on the wall's
+    // mass-node temperature).
+    let mut solver_forward = init_solver(&wall);
+    let flux_forward = solver_forward
         .step(
             Time::from_value(3600.0),
             Temperature::from_value(20.0),
@@ -348,7 +355,9 @@ fn test_steady_state_symmetry() {
         )
         .unwrap()
         .to_value();
-    let flux_reverse = solver
+
+    let mut solver_reverse = init_solver(&wall);
+    let flux_reverse = solver_reverse
         .step(
             Time::from_value(3600.0),
             Temperature::from_value(10.0),
@@ -372,9 +381,12 @@ fn test_steady_state_symmetry() {
 #[test]
 fn test_steady_state_linearity() {
     let wall = lightweight_wall();
-    let mut solver = init_solver(&wall);
 
-    let flux_10k = solver
+    // Fresh solver per scenario so step() sees each boundary condition in
+    // isolation (issue #1308: returned flux now depends on the wall's
+    // mass-node temperature).
+    let mut solver_10k = init_solver(&wall);
+    let flux_10k = solver_10k
         .step(
             Time::from_value(3600.0),
             Temperature::from_value(20.0),
@@ -384,7 +396,9 @@ fn test_steady_state_linearity() {
         )
         .unwrap()
         .to_value();
-    let flux_20k = solver
+
+    let mut solver_20k = init_solver(&wall);
+    let flux_20k = solver_20k
         .step(
             Time::from_value(3600.0),
             Temperature::from_value(20.0),
