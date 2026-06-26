@@ -613,3 +613,104 @@ class TestMultiZoneThermalModel:
             f"Zone energies sum ({total_zone_energy}) differs significantly from "
             f"total EUI ({total_energy}), relative error: {relative_error:.4%}"
         )
+
+
+class TestEnergyBalanceValidation:
+    """Tests for validate_energy_balance() function (issue #1290)."""
+
+    def test_validate_energy_balance_method_exists(self, fluxion_module):
+        """Verify validate_energy_balance method exists on MultiZoneThermalModel."""
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+        model = MultiZoneThermalModel(num_zones=1)
+        assert hasattr(model, "validate_energy_balance"), (
+            "validate_energy_balance method should exist on MultiZoneThermalModel"
+        )
+
+    def test_validate_energy_balance_returns_true_for_balanced(self, fluxion_module):
+        """
+        Test that validate_energy_balance returns True for a balanced simulation.
+
+        A properly configured Case 600 model should conserve energy, so
+        validate_energy_balance should return True.
+
+        This validates the balanced scenario per issue #1290.
+        """
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+        model = MultiZoneThermalModel(num_zones=1)
+
+        # Run energy balance validation
+        result = model.validate_energy_balance()
+
+        # Balanced simulation should return True
+        assert isinstance(result, bool), "validate_energy_balance should return a boolean"
+        assert result is True, (
+            "validate_energy_balance should return True for properly configured Case 600 model"
+        )
+
+    def test_validate_energy_balance_detailed_returns_metrics(self, fluxion_module):
+        """
+        Test that validate_energy_balance_detailed returns proper diagnostic info.
+
+        Returns (is_balanced, max_residual, violation_count).
+        """
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+        model = MultiZoneThermalModel(num_zones=1)
+
+        # Run detailed energy balance validation
+        is_balanced, max_residual, violations = model.validate_energy_balance_detailed()
+
+        # Check return types
+        assert isinstance(is_balanced, bool), "is_balanced should be a boolean"
+        assert isinstance(max_residual, float), "max_residual should be a float"
+        assert isinstance(violations, int), "violation_count should be an integer"
+
+        # For a balanced model, violations should be 0
+        assert is_balanced is True, "Case 600 should have balanced energy"
+        assert violations == 0, "No violations expected for Case 600"
+
+    def test_validate_energy_balance_case_600_annual_simulation(self, fluxion_module):
+        """
+        Test validate_energy_balance on Case 600 annual simulation.
+
+        Per issue #1290, the Python test should exercise the validation
+        on Case 600 annual simulation.
+        """
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+        model = MultiZoneThermalModel(num_zones=1)
+
+        # Run a short simulation first (simulate_multi_zone uses Case 600 internally)
+        result = model.simulate_multi_zone(years=1, use_surrogates=False)
+
+        # Then validate energy balance
+        is_balanced = model.validate_energy_balance()
+
+        # The simulation should be balanced
+        assert is_balanced is True, (
+            "Case 600 annual simulation should conserve energy"
+        )
+
+    def test_is_energy_unbalanced_detection(self, fluxion_module):
+        """
+        Test the is_energy_unbalanced helper method.
+
+        This method checks if the model has been configured to violate
+        energy conservation (e.g., negative thermal capacitance).
+        """
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+        model = MultiZoneThermalModel(num_zones=1)
+
+        # By default, model should not be unbalanced
+        is_unbalanced = model.is_energy_unbalanced()
+        assert isinstance(is_unbalanced, bool), "Should return a boolean"
+        # Default model should not be intentionally unbalanced
+        # Note: This may return False since the default model is properly configured

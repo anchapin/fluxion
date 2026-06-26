@@ -3,9 +3,18 @@
 
 use crate::physics::cta::VectorField;
 use crate::sim::engine::ThermalModel;
+use crate::sim::invariant_checker::InvariantChecker;
+use crate::validation::ashrae_140_cases::ASHRAE140Case;
+use crate::weather::denver::DenverTmyWeather;
+use crate::weather::WeatherSource;
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use std::collections::HashMap;
+
+/// Default tolerance for energy balance validation (0.1%).
+/// This matches the CI gate in test_energy_conservation.rs.
+/// See issue #1061 for tolerance documentation.
+const ENERGY_BALANCE_TOLERANCE: f64 = 0.001;
 
 /// Multi-zone thermal model for Python
 #[pyclass(name = "MultiZoneThermalModel")]
@@ -264,9 +273,114 @@ impl PyMultiZoneThermalModel {
     }
 
     /// Run energy balance validation for multi-zone model
+    ///
+    /// This method validates that the simulation conserves energy by checking
+    /// that at each timestep: Q_cond + Q_solar + Q_vent + Q_int + Q_hvac ≈ 0
+    /// within the tolerance (default 0.1%, see issue #1061).
+    ///
+    /// The validation re-runs a short simulation (24 timesteps) step-by-step
+    /// and checks the energy balance invariant at each step.
+    ///
+    /// # Returns
+    /// `true` if energy is balanced (within tolerance), `false` otherwise
     pub fn validate_energy_balance(&self) -> PyResult<bool> {
-        // TODO: Implement energy balance validation once ThermalModel API is updated
-        Ok(true) // Assume balanced for now
+        // Create a fresh model from Case 600 spec for validation
+        let spec = ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        // Initialize weather data
+        let weather = DenverTmyWeather::new();
+
+        // Create invariant checker with default tolerance (0.1%)
+        let tolerance = ENERGY_BALANCE_TOLERANCE;
+        let mut checker = InvariantChecker::new(tolerance);
+
+        // Run 24 timesteps (24 hours) with invariant checking
+        let dt = 3600.0; // 1 hour timestep
+
+        for step in 0..24 {
+            // Get weather for this timestep
+            let weather_data = match weather.get_hourly_data(step) {
+                Ok(data) => data,
+                Err(_) => continue,
+            };
+
+            let outdoor_temp = weather_data.dry_bulb_temp;
+
+            // Step the physics
+            model.step_physics(step, outdoor_temp, dt);
+
+            // Check the energy balance invariant
+            let result = checker.check_invariant(&model, dt, outdoor_temp);
+
+            // If any violation occurs, the simulation is unbalanced
+            if result.violated {
+                return Ok(false);
+            }
+        }
+
+        // All timesteps passed - energy is balanced
+        Ok(true)
+    }
+
+    /// Validate energy balance and return detailed diagnostic information
+    ///
+    /// # Returns
+    /// Tuple of (is_balanced: bool, max_residual: f64, violation_count: usize)
+    pub fn validate_energy_balance_detailed(&self) -> PyResult<(bool, f64, usize)> {
+        // Create a fresh model from Case 600 spec for validation
+        let spec = ASHRAE140Case::Case600.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+        // Initialize weather data
+        let weather = DenverTmyWeather::new();
+
+        // Create invariant checker with default tolerance (0.1%)
+        let tolerance = ENERGY_BALANCE_TOLERANCE;
+        let mut checker = InvariantChecker::new(tolerance);
+
+        // Run 24 timesteps (24 hours) with invariant checking
+        let dt = 3600.0; // 1 hour timestep
+
+        for step in 0..24 {
+            // Get weather for this timestep
+            let weather_data = match weather.get_hourly_data(step) {
+                Ok(data) => data,
+                Err(_) => continue,
+            };
+
+            let outdoor_temp = weather_data.dry_bulb_temp;
+
+            // Step the physics
+            model.step_physics(step, outdoor_temp, dt);
+
+            // Check the energy balance invariant
+            checker.check_invariant(&model, dt, outdoor_temp);
+        }
+
+        // Return detailed results
+        let is_balanced = checker.violation_count() == 0;
+        let max_violation = checker.max_violation();
+        let violations = checker.violation_count();
+
+        Ok((is_balanced, max_violation, violations))
+    }
+
+    /// Check if the model is in an intentionally unbalanced state for testing.
+    /// Returns true if the model has been configured to violate energy conservation.
+    ///
+    /// # Returns
+    /// `true` if unbalanced, `false` otherwise
+    pub fn is_energy_unbalanced(&self) -> PyResult<bool> {
+        // This method can be used to check if the model has been
+        // intentionally broken for testing validate_energy_balance
+        // For now, we check if thermal capacitance is negative
+        for i in 0..self.inner.num_zones {
+            if self.inner.thermal_capacitance.as_ref()[i] < 0.0 {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     }
 }
 

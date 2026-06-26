@@ -169,6 +169,10 @@ fn test_case_600_energy_conservation_residual() {
         let weather_data = weather.get_hourly_data(step).unwrap();
         let t_outdoor = weather_data.dry_bulb_temp;
 
+        // Step physics first to update temperatures and establish heat balance
+        // Then check invariant - the energy balance should be satisfied after stepping
+        model.step_physics(step, t_outdoor, dt);
+
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
         if result.violated {
@@ -232,6 +236,10 @@ fn test_case_900_energy_conservation_residual() {
     for step in 0..n_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         let t_outdoor = weather_data.dry_bulb_temp;
+
+        // Step physics first to update temperatures and establish heat balance
+        // Then check invariant - the energy balance should be satisfied after stepping
+        model.step_physics(step, t_outdoor, dt);
 
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
@@ -298,6 +306,10 @@ fn test_case_960_energy_conservation_residual() {
     for step in 0..n_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         let t_outdoor = weather_data.dry_bulb_temp;
+
+        // Step physics first to update temperatures and establish heat balance
+        // Then check invariant - the energy balance should be satisfied after stepping
+        model.step_physics(step, t_outdoor, dt);
 
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
@@ -369,6 +381,10 @@ fn test_free_floating_energy_conservation_residual() {
     for step in 0..n_steps {
         let weather_data = weather.get_hourly_data(step).unwrap();
         let t_outdoor = weather_data.dry_bulb_temp;
+
+        // Step physics first to update temperatures and establish heat balance
+        // Then check invariant - the energy balance should be satisfied after stepping
+        model.step_physics(step, t_outdoor, dt);
 
         let result = checker.check_invariant(&model, dt, t_outdoor);
 
