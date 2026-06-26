@@ -142,6 +142,109 @@ impl InferenceMetrics {
     }
 }
 
+/// Real physics-extracted training data for surrogate model training.
+/// This replaces synthetic placeholder values with actual simulation outputs.
+#[derive(Clone, Debug)]
+pub struct PhysicsTrainingData {
+    pub exterior_temp: f64,    // °C - from weather data
+    pub zone_temp: f64,        // °C - from thermal model
+    pub solar_rad: f64,        // W/m² - from solar module
+    pub humidity: f64,         // % - from psychrometrics
+    pub occupancy: f64,       // fraction 0-1 - from occupancy schedule
+    pub climate_zone: String,  // e.g., "4A", "5A", "6A"
+    pub hour_of_day: usize,    // 0-23
+    pub day_of_year: usize,    // 1-365
+}
+
+impl PhysicsTrainingData {
+    /// Create from physics simulation outputs.
+    pub fn new(
+        exterior_temp: f64,
+        zone_temp: f64,
+        solar_rad: f64,
+        humidity: f64,
+        occupancy: f64,
+        climate_zone: &str,
+        hour_of_day: usize,
+        day_of_year: usize,
+    ) -> Self {
+        PhysicsTrainingData {
+            exterior_temp,
+            zone_temp,
+            solar_rad,
+            humidity,
+            occupancy,
+            climate_zone: climate_zone.to_string(),
+            hour_of_day,
+            day_of_year,
+        }
+    }
+
+    /// Convert to SurrogateInputs for model inference.
+    pub fn to_surrogate_inputs(&self) -> SurrogateInputs {
+        SurrogateInputs {
+            exterior_temp: self.exterior_temp,
+            zone_temp: self.zone_temp,
+            solar_rad: self.solar_rad,
+            humidity: self.humidity,
+            occupancy: self.occupancy,
+            climate_zone: self.climate_zone.clone(),
+        }
+    }
+}
+
+/// Collects physics training data from simulation timesteps.
+/// Supports multi-climate-zone datasets for robust surrogate training.
+#[derive(Clone, Debug, Default)]
+pub struct TrainingDataCollector {
+    /// Collected training samples per climate zone
+    samples_by_zone: std::collections::HashMap<String, Vec<PhysicsTrainingData>>,
+}
+
+impl TrainingDataCollector {
+    /// Create a new training data collector.
+    pub fn new() -> Self {
+        TrainingDataCollector {
+            samples_by_zone: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Add a training sample for a specific climate zone.
+    pub fn add_sample(&mut self, data: PhysicsTrainingData) {
+        let zone = data.climate_zone.clone();
+        self.samples_by_zone
+            .entry(zone)
+            .or_insert_with(Vec::new)
+            .push(data);
+    }
+
+    /// Get all collected samples for a climate zone.
+    pub fn get_samples(&self, climate_zone: &str) -> Vec<PhysicsTrainingData> {
+        self.samples_by_zone
+            .get(climate_zone)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Get all climate zones that have samples.
+    pub fn climate_zones(&self) -> Vec<String> {
+        self.samples_by_zone.keys().cloned().collect()
+    }
+
+    /// Get total number of samples across all climate zones.
+    pub fn total_samples(&self) -> usize {
+        self.samples_by_zone.values().map(|v| v.len()).sum()
+    }
+
+    /// Get samples per climate zone (for balanced training datasets).
+    pub fn samples_per_zone(&self) -> std::collections::HashMap<String, usize> {
+        self.samples_by_zone
+            .iter()
+            .map(|(k, v)| (k.clone(), v.len()))
+            .collect()
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct SurrogateInputs {
     pub exterior_temp: f64,
@@ -153,6 +256,9 @@ pub struct SurrogateInputs {
 }
 
 impl SurrogateInputs {
+    /// Create from temperature array (legacy synthetic method).
+    /// NOTE: This generates placeholder synthetic values.
+    /// Use `from_physics_data` for real physics-extracted training data.
     pub fn from_temps(temps: &[f64]) -> Self {
         let hour_of_day = (std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -168,6 +274,38 @@ impl SurrogateInputs {
             humidity: 50.0,
             occupancy: 0.1,
             climate_zone: "4A".to_string(),
+        }
+    }
+
+    /// Create from real physics simulation data (Issue #1286).
+    /// This replaces synthetic placeholder values with actual physics outputs.
+    pub fn from_physics_data(data: &PhysicsTrainingData) -> Self {
+        SurrogateInputs {
+            exterior_temp: data.exterior_temp,
+            zone_temp: data.zone_temp,
+            solar_rad: data.solar_rad,
+            humidity: data.humidity,
+            occupancy: data.occupancy,
+            climate_zone: data.climate_zone.clone(),
+        }
+    }
+
+    /// Create from individual physics parameters.
+    pub fn from_physics(
+        exterior_temp: f64,
+        zone_temp: f64,
+        solar_rad: f64,
+        humidity: f64,
+        occupancy: f64,
+        climate_zone: &str,
+    ) -> Self {
+        SurrogateInputs {
+            exterior_temp,
+            zone_temp,
+            solar_rad,
+            humidity,
+            occupancy,
+            climate_zone: climate_zone.to_string(),
         }
     }
 }
@@ -1431,5 +1569,157 @@ mod tests {
             "row 1 expected ~20.0, got {}",
             result[1][0]
         );
+    }
+
+    // ---- Issue #1286: Physics-extracted training data tests ----
+
+    #[test]
+    fn test_physics_training_data_creation() {
+        let data = PhysicsTrainingData::new(
+            25.0,   // exterior_temp
+            22.0,   // zone_temp
+            450.0,  // solar_rad
+            55.0,   // humidity
+            0.3,    // occupancy
+            "5A",   // climate_zone
+            14,     // hour_of_day
+            180,    // day_of_year
+        );
+        assert_eq!(data.exterior_temp, 25.0);
+        assert_eq!(data.zone_temp, 22.0);
+        assert_eq!(data.solar_rad, 450.0);
+        assert_eq!(data.humidity, 55.0);
+        assert_eq!(data.occupancy, 0.3);
+        assert_eq!(data.climate_zone, "5A");
+        assert_eq!(data.hour_of_day, 14);
+        assert_eq!(data.day_of_year, 180);
+    }
+
+    #[test]
+    fn test_physics_training_data_to_surrogate_inputs() {
+        let data = PhysicsTrainingData::new(
+            10.0, 5.0, 800.0, 40.0, 0.5, "6A", 8, 60
+        );
+        let inputs = data.to_surrogate_inputs();
+        assert_eq!(inputs.exterior_temp, 10.0);
+        assert_eq!(inputs.zone_temp, 5.0);
+        assert_eq!(inputs.solar_rad, 800.0);
+        assert_eq!(inputs.humidity, 40.0);
+        assert_eq!(inputs.occupancy, 0.5);
+        assert_eq!(inputs.climate_zone, "6A");
+    }
+
+    #[test]
+    fn test_surrogate_inputs_from_physics_data() {
+        let data = PhysicsTrainingData::new(
+            30.0, 25.0, 600.0, 65.0, 0.8, "4A", 12, 200
+        );
+        let inputs = SurrogateInputs::from_physics_data(&data);
+        assert_eq!(inputs.exterior_temp, 30.0);
+        assert_eq!(inputs.zone_temp, 25.0);
+        assert_eq!(inputs.solar_rad, 600.0);
+        assert_eq!(inputs.humidity, 65.0);
+        assert_eq!(inputs.occupancy, 0.8);
+        assert_eq!(inputs.climate_zone, "4A");
+    }
+
+    #[test]
+    fn test_surrogate_inputs_from_physics() {
+        let inputs = SurrogateInputs::from_physics(
+            15.0, 20.0, 300.0, 45.0, 0.2, "5A"
+        );
+        assert_eq!(inputs.exterior_temp, 15.0);
+        assert_eq!(inputs.zone_temp, 20.0);
+        assert_eq!(inputs.solar_rad, 300.0);
+        assert_eq!(inputs.humidity, 45.0);
+        assert_eq!(inputs.occupancy, 0.2);
+        assert_eq!(inputs.climate_zone, "5A");
+    }
+
+    #[test]
+    fn test_training_data_collector_add_and_get() {
+        let mut collector = TrainingDataCollector::new();
+        
+        // Add samples for different climate zones
+        let data_4a = PhysicsTrainingData::new(
+            20.0, 22.0, 500.0, 50.0, 0.3, "4A", 10, 100
+        );
+        let data_5a = PhysicsTrainingData::new(
+            15.0, 20.0, 400.0, 45.0, 0.2, "5A", 10, 100
+        );
+        let data_6a = PhysicsTrainingData::new(
+            10.0, 18.0, 300.0, 40.0, 0.1, "6A", 10, 100
+        );
+        
+        collector.add_sample(data_4a);
+        collector.add_sample(data_5a);
+        collector.add_sample(data_6a);
+        
+        assert_eq!(collector.total_samples(), 3);
+        assert_eq!(collector.get_samples("4A").len(), 1);
+        assert_eq!(collector.get_samples("5A").len(), 1);
+        assert_eq!(collector.get_samples("6A").len(), 1);
+        assert_eq!(collector.get_samples("7A").len(), 0);
+    }
+
+    #[test]
+    fn test_training_data_collector_climate_zones() {
+        let mut collector = TrainingDataCollector::new();
+        
+        collector.add_sample(PhysicsTrainingData::new(
+            20.0, 22.0, 500.0, 50.0, 0.3, "4A", 10, 100
+        ));
+        collector.add_sample(PhysicsTrainingData::new(
+            15.0, 20.0, 400.0, 45.0, 0.2, "5A", 10, 100
+        ));
+        
+        let zones = collector.climate_zones();
+        assert!(zones.contains(&"4A".to_string()));
+        assert!(zones.contains(&"5A".to_string()));
+        assert!(!zones.contains(&"6A".to_string()));
+    }
+
+    #[test]
+    fn test_training_data_collector_samples_per_zone() {
+        let mut collector = TrainingDataCollector::new();
+        
+        // Add 3 samples for 4A, 2 for 5A, 1 for 6A
+        for _ in 0..3 {
+            collector.add_sample(PhysicsTrainingData::new(
+                20.0, 22.0, 500.0, 50.0, 0.3, "4A", 10, 100
+            ));
+        }
+        for _ in 0..2 {
+            collector.add_sample(PhysicsTrainingData::new(
+                15.0, 20.0, 400.0, 45.0, 0.2, "5A", 10, 100
+            ));
+        }
+        collector.add_sample(PhysicsTrainingData::new(
+            10.0, 18.0, 300.0, 40.0, 0.1, "6A", 10, 100
+        ));
+        
+        let per_zone = collector.samples_per_zone();
+        assert_eq!(per_zone.get("4A"), Some(&3));
+        assert_eq!(per_zone.get("5A"), Some(&2));
+        assert_eq!(per_zone.get("6A"), Some(&1));
+    }
+
+    #[test]
+    fn test_multi_climate_zone_coverage() {
+        // Verify SurrogateDomain supports 4A, 5A, 6A
+        let domain = SurrogateDomain::default_residential();
+        assert!(domain.climate_zones.contains(&"4A".to_string()));
+        assert!(domain.climate_zones.contains(&"5A".to_string()));
+        assert!(domain.climate_zones.contains(&"6A".to_string()));
+        
+        // Verify SurrogateInputs from physics data works for all three zones
+        for zone in &["4A", "5A", "6A"] {
+            let data = PhysicsTrainingData::new(
+                20.0, 22.0, 500.0, 50.0, 0.3, zone, 12, 180
+            );
+            let inputs = SurrogateInputs::from_physics_data(&data);
+            assert_eq!(inputs.climate_zone, *zone);
+            assert!(domain.is_valid(&inputs), "Inputs for {} should be valid", zone);
+        }
     }
 }
