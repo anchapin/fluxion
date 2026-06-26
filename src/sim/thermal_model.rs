@@ -36,12 +36,11 @@ pub enum ThermalModelType {
 
 impl From<&crate::validation::ashrae_140_cases::CaseSpec> for ThermalModelType {
     fn from(spec: &crate::validation::ashrae_140_cases::CaseSpec) -> Self {
-        match spec.case_id.as_str() {
-            "600" | "600FF" | "650" | "650FF" => ThermalModelType::LowMass5R1C,
-            _ if spec.case_id.starts_with("9") && spec.case_id != "960" => {
-                ThermalModelType::HighMass9R4C
-            }
-            _ => ThermalModelType::LowMass5R1C,
+        use crate::validation::ashrae_140_cases::ConstructionType;
+        match spec.construction_type {
+            ConstructionType::LowMass => ThermalModelType::LowMass5R1C,
+            ConstructionType::HighMass => ThermalModelType::HighMass9R4C,
+            ConstructionType::Special => ThermalModelType::LowMass5R1C,
         }
     }
 }
@@ -949,13 +948,13 @@ mod tests {
     }
 
     #[test]
-    fn test_thermal_model_type_from_case_spec_excludes_960() {
+    fn test_thermal_model_type_from_case_spec_case_960() {
         use crate::validation::ashrae_140_cases::CaseBuilder;
 
         let case_960 = CaseBuilder::case_960_sunspace();
         assert_eq!(
             ThermalModelType::from(&case_960),
-            ThermalModelType::LowMass5R1C
+            ThermalModelType::HighMass9R4C
         );
     }
 
