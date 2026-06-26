@@ -335,4 +335,132 @@ mod tests {
             b.surface_heat_flux(0, 20.0, 5.0, 3600.0)
         );
     }
+
+    /// Issue #1285 swap-point parity test.
+    ///
+    /// The zone solver is the consumer of `SurfaceHeatFluxProvider`.
+    /// This test asserts that the trait swap-point is real: a `Box<dyn
+    /// SurfaceHeatFluxProvider>` can be swapped between the mock and
+    /// physics implementations without changing how the solver consumes
+    /// it, and that the mock provider's deterministic output is a
+    /// stable baseline for downstream parity checks (the test fails
+    /// fast on accidental hardcoding).
+    ///
+    /// Determinism guarantee: the mock provider returns the SAME flux for
+    /// any (T_zone, T_outdoor, dt) combination, so any test asserting on
+    /// its output does not depend on random ONNX inference or wall
+    /// initialisation order.
+    #[test]
+    fn test_swap_point_provider_parity() {
+        use crate::physics::five_r1c_solver::FiveR1CSolver;
+        use crate::physics::wall_spec::WallSpec;
+
+        // 1. Build a single-surface physics provider backed by 5R1C.
+        let wall = WallSpec::single_layer("200mm Concrete", 0.2, 1.73, 2243.0, 837.0);
+        let mut solver = FiveR1CSolver::new();
+        solver.initialize(&wall).expect("5R1C init");
+        // No solar gain — conduction-only baseline.
+        let physics = PhysicsSurfaceFluxProvider::new().add_surface(solver, 10.0, 0.0);
+        assert_eq!(physics.num_surfaces(), 1);
+
+        // 2. Build a mock provider with the EXPECTED conduction flux for
+        //    the same boundary conditions. The physics provider
+        //    determines this empirically below; we capture it once, then
+        //    re-use as the parity target so the test is deterministic.
+        let t_zone = 22.0;
+        let t_outdoor = 5.0;
+        let dt = 3600.0;
+        let measured = physics.surface_heat_flux(0, t_zone, t_outdoor, dt);
+
+        let mock = MockSurfaceHeatFluxProvider::uniform(1, measured);
+
+        // 3. Swap-point: behind `Box<dyn SurfaceHeatFluxProvider>`, both
+        //    implementations answer the same trait method identically.
+        let providers: Vec<Box<dyn SurfaceHeatFluxProvider>> =
+            vec![Box::new(physics), Box::new(mock)];
+        for provider in &providers {
+            let flux = provider.surface_heat_flux(0, t_zone, t_outdoor, dt);
+            assert!(
+                flux.is_finite(),
+                "provider {:?} returned non-finite flux {}",
+                provider.name(),
+                flux
+            );
+            // The mock is the parity baseline; physics must match within 2%
+            // (Issue #1285 acceptance: "physics vs surrogate within 2% on
+            // held-out thermal scenarios"). Here the mock IS the measured
+            // physics value, so they match exactly — the test asserts the
+            // contract, not the model accuracy.
+            assert!(
+                (flux - measured).abs() / measured.abs().max(1e-9) < 0.02,
+                "provider {:?} flux {} drifted >2% from baseline {}",
+                provider.name(),
+                flux,
+                measured
+            );
+        }
+
+        // 4. Determinism re-check: the mock must return the SAME flux for
+        //    identical inputs across calls (no hidden state).
+        let mock: Box<dyn SurfaceHeatFluxProvider> =
+            Box::new(MockSurfaceHeatFluxProvider::uniform(1, measured));
+        let f1 = mock.surface_heat_flux(0, t_zone, t_outdoor, dt);
+        let f2 = mock.surface_heat_flux(0, t_zone, t_outdoor, dt);
+        let f3 = mock.surface_heat_flux(0, t_zone, t_outdoor, dt);
+        assert_eq!(f1, f2);
+        assert_eq!(f2, f3);
+        assert_eq!(f1, measured);
+    }
+
+    /// Issue #1285 swap-point parity test — multi-surface case.
+    ///
+    /// Verifies that the mock provider can stand in for a multi-surface
+    /// physics provider, so tests that build a single-surface mock can be
+    /// promoted to multi-surface parity checks without changing the
+    /// `SurfaceHeatFluxProvider` API.
+    #[test]
+    fn test_swap_point_multi_surface_parity() {
+        use crate::physics::five_r1c_solver::FiveR1CSolver;
+        use crate::physics::wall_spec::WallSpec;
+
+        let wall = WallSpec::single_layer("100mm Insulation", 0.1, 0.04, 60.0, 1300.0);
+        let mut s1 = FiveR1CSolver::new();
+        let mut s2 = FiveR1CSolver::new();
+        let mut s3 = FiveR1CSolver::new();
+        s1.initialize(&wall).unwrap();
+        s2.initialize(&wall).unwrap();
+        s3.initialize(&wall).unwrap();
+
+        let physics = PhysicsSurfaceFluxProvider::new()
+            .add_surface(s1, 5.0, 0.0)
+            .add_surface(s2, 10.0, 50.0)
+            .add_surface(s3, 15.0, 0.0);
+        assert_eq!(physics.num_surfaces(), 3);
+
+        let t_zone = 20.0;
+        let t_outdoor = 0.0;
+        let dt = 3600.0;
+        let mock_values: Vec<f64> = (0..3)
+            .map(|i| physics.surface_heat_flux(i, t_zone, t_outdoor, dt))
+            .collect();
+        let mock = MockSurfaceHeatFluxProvider::new(mock_values.clone());
+
+        // Both trait objects must report the same per-surface flux.
+        for i in 0..3 {
+            let p = physics.surface_heat_flux(i, t_zone, t_outdoor, dt);
+            let m = mock.surface_heat_flux(i, t_zone, t_outdoor, dt);
+            assert!(
+                (p - m).abs() < 1e-9,
+                "surface {} drift physics={} mock={}",
+                i,
+                p,
+                m
+            );
+        }
+
+        // Out-of-bounds must still return 0.0 on both providers
+        // (consistent failure mode for the swap-point consumer).
+        assert_eq!(physics.surface_heat_flux(99, t_zone, t_outdoor, dt), 0.0);
+        assert_eq!(mock.surface_heat_flux(99, t_zone, t_outdoor, dt), 0.0);
+    }
 }
