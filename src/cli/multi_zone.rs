@@ -364,9 +364,7 @@ fn run_case_960_validation(command: &ValidateCommand) -> Result<(), String> {
     use crate::physics::cta::VectorField;
     use crate::sim::engine::ThermalModel;
     use crate::validation::ashrae_140_cases::ASHRAE140Case;
-    use crate::validation::ashrae_140_multi_zone::{
-        ASHRAE140MultiZoneValidator, Case960Reference,
-    };
+    use crate::validation::ashrae_140_multi_zone::{ASHRAE140MultiZoneValidator, Case960Reference};
 
     // 1. Resolve Case 960 spec (already wired in ASHRAE140Case::Case960.spec())
     let case = ASHRAE140Case::Case960;
@@ -438,8 +436,9 @@ fn run_case_960_validation(command: &ValidateCommand) -> Result<(), String> {
                 h_iz, CASE_960_EXPECTED_H_IZ
             );
             println!(
-                "  Inter-zone wall physics:        {:.2} W/K (full concrete common wall)"
-            , CASE_960_PHYSICAL_WALL_H_IZ);
+                "  Inter-zone wall physics:        {:.2} W/K (full concrete common wall)",
+                CASE_960_PHYSICAL_WALL_H_IZ
+            );
             println!(
                 "  Inter-zone wiring verified:     {}",
                 if conductance_ok { "PASS" } else { "FAIL" }
@@ -466,10 +465,7 @@ fn run_case_960_validation(command: &ValidateCommand) -> Result<(), String> {
                 (reference.load_tolerance * 100.0) as i32
             );
             println!();
-            println!(
-                "Status: {}",
-                status
-            );
+            println!("Status: {}", status);
             println!();
             println!("Phase 1 BLOCKER: ASHRAE 140 system-level numerical validation");
             println!("is gated per AGENTS.md until every individual physics module");
