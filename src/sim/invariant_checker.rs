@@ -116,6 +116,7 @@ impl InvariantChecker {
         let prev_mass_temps = model.previous_mass_temperatures.as_ref();
         let loads = model.loads.as_ref();
         let solar_gains = model.solar_gains.as_ref();
+        let opaque_solar_gains = model.opaque_solar_gains.as_ref();
         let area = model.zone_area.as_ref();
 
         let mut total_balance = 0.0;
@@ -126,6 +127,7 @@ impl InvariantChecker {
             let t_mass_prev = prev_mass_temps[i];
             let load_w = loads[i] * area[i];
             let solar_w = solar_gains[i] * area[i];
+            let opaque_sol_w = opaque_solar_gains[i] * area[i];
 
             let h_tr_em = model.h_tr_em[i];
             let h_tr_ms = model.h_tr_ms[i];
@@ -136,11 +138,22 @@ impl InvariantChecker {
             let cm = model.thermal_capacitance[i];
 
             let conv_frac = model.convective_fraction;
+            let rad_frac = 1.0 - conv_frac;
             let sol_dist_to_air = model.solar_distribution_to_air;
+            let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
 
-            let phi_ia = load_w * conv_frac + solar_w * sol_dist_to_air;
-            let phi_st = load_w * (1.0 - conv_frac) * (1.0 - sol_dist_to_air);
-            let phi_m = load_w * (1.0 - conv_frac) * sol_dist_to_air;
+            // Solar distribution fractions matching step_physics_5r1c
+            let sol_to_air = solar_w * sol_dist_to_air;
+            let remaining_sol = solar_w - sol_to_air;
+            let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+            let m_air_frac = rad_frac * sol_dist_to_air;
+            let st_sol_frac = 1.0 - solar_beam_to_mass;
+            let m_sol_frac = solar_beam_to_mass;
+
+            // Heat flows matching step_physics_5r1c exactly
+            let phi_ia = load_w * conv_frac + sol_to_air;
+            let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 
             let q_em = h_tr_em * (t_mass - outdoor_temp);
             let q_ms = h_tr_ms * (t_air - t_mass);
@@ -178,6 +191,7 @@ impl InvariantChecker {
         let prev_mass_temps = model.previous_mass_temperatures.as_ref();
         let loads = model.loads.as_ref();
         let solar_gains = model.solar_gains.as_ref();
+        let opaque_solar_gains = model.opaque_solar_gains.as_ref();
         let area = model.zone_area.as_ref();
 
         let mut imbalances = Vec::with_capacity(num_zones);
@@ -188,6 +202,7 @@ impl InvariantChecker {
             let t_mass_prev = prev_mass_temps[i];
             let load_w = loads[i] * area[i];
             let solar_w = solar_gains[i] * area[i];
+            let opaque_sol_w = opaque_solar_gains[i] * area[i];
 
             let h_tr_em = model.h_tr_em[i];
             let h_tr_ms = model.h_tr_ms[i];
@@ -198,11 +213,22 @@ impl InvariantChecker {
             let cm = model.thermal_capacitance[i];
 
             let conv_frac = model.convective_fraction;
+            let rad_frac = 1.0 - conv_frac;
             let sol_dist_to_air = model.solar_distribution_to_air;
+            let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
 
-            let phi_ia = load_w * conv_frac + solar_w * sol_dist_to_air;
-            let phi_st = load_w * (1.0 - conv_frac) * (1.0 - sol_dist_to_air);
-            let phi_m = load_w * (1.0 - conv_frac) * sol_dist_to_air;
+            // Solar distribution fractions matching step_physics_5r1c
+            let sol_to_air = solar_w * sol_dist_to_air;
+            let remaining_sol = solar_w - sol_to_air;
+            let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+            let m_air_frac = rad_frac * sol_dist_to_air;
+            let st_sol_frac = 1.0 - solar_beam_to_mass;
+            let m_sol_frac = solar_beam_to_mass;
+
+            // Heat flows matching step_physics_5r1c exactly
+            let phi_ia = load_w * conv_frac + sol_to_air;
+            let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 
             let q_em = h_tr_em * (t_mass - outdoor_temp);
             let q_ms = h_tr_ms * (t_air - t_mass);
@@ -250,6 +276,7 @@ impl InvariantChecker {
         let prev_mass_temps = model.previous_mass_temperatures.as_ref();
         let area = model.zone_area.as_ref();
         let solar_gains = model.solar_gains.as_ref();
+        let opaque_solar_gains = model.opaque_solar_gains.as_ref();
 
         let mut total_balance = 0.0;
         let mut zone_imbalances = Vec::with_capacity(num_zones);
@@ -260,6 +287,7 @@ impl InvariantChecker {
             let t_mass_prev = prev_mass_temps[i];
             let load_w = modified_loads[i] * area[i];
             let solar_w = solar_gains[i] * area[i];
+            let opaque_sol_w = opaque_solar_gains[i] * area[i];
 
             let h_tr_em = model.h_tr_em[i];
             let h_tr_ms = model.h_tr_ms[i];
@@ -270,11 +298,22 @@ impl InvariantChecker {
             let cm = model.thermal_capacitance[i];
 
             let conv_frac = model.convective_fraction;
+            let rad_frac = 1.0 - conv_frac;
             let sol_dist_to_air = model.solar_distribution_to_air;
+            let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
 
-            let phi_ia = load_w * conv_frac + solar_w * sol_dist_to_air;
-            let phi_st = load_w * (1.0 - conv_frac) * (1.0 - sol_dist_to_air);
-            let phi_m = load_w * (1.0 - conv_frac) * sol_dist_to_air;
+            // Solar distribution fractions matching step_physics_5r1c
+            let sol_to_air = solar_w * sol_dist_to_air;
+            let remaining_sol = solar_w - sol_to_air;
+            let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+            let m_air_frac = rad_frac * sol_dist_to_air;
+            let st_sol_frac = 1.0 - solar_beam_to_mass;
+            let m_sol_frac = solar_beam_to_mass;
+
+            // Heat flows matching step_physics_5r1c exactly
+            let phi_ia = load_w * conv_frac + sol_to_air;
+            let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 
             let q_em = h_tr_em * (t_mass - outdoor_temp);
             let q_ms = h_tr_ms * (t_air - t_mass);
