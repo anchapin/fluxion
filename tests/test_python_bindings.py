@@ -355,6 +355,52 @@ class TestSimulation:
         assert result1 == result2
 
 
+class TestMultiZonePeakLoads:
+    """Test per-zone peak load tracking (Issue #1289)."""
+
+    @pytest.fixture(scope="class")
+    def multi_zone_model(self, fluxion_module):
+        """Create a multi-zone model for peak load tests."""
+        MultiZoneThermalModel = getattr(fluxion_module, "MultiZoneThermalModel", None)
+        if MultiZoneThermalModel is None:
+            pytest.skip("MultiZoneThermalModel not available")
+        return MultiZoneThermalModel(num_zones=3)
+
+    def test_get_zone_peak_loads_returns_structure(self, multi_zone_model):
+        """Test that get_zone_peak_loads returns expected dictionary structure."""
+        peaks = multi_zone_model.get_zone_peak_loads()
+        assert isinstance(peaks, dict)
+        assert "heating" in peaks
+        assert "cooling" in peaks
+        assert isinstance(peaks["heating"], list)
+        assert isinstance(peaks["cooling"], list)
+        assert len(peaks["heating"]) == 3
+        assert len(peaks["cooling"]) == 3
+
+    def test_zone_peak_loads_nonzero_after_simulation(self, multi_zone_model):
+        """Test that peak loads are non-zero after simulation."""
+        # Before simulation, peaks should be zero
+        peaks_before = multi_zone_model.get_zone_peak_loads()
+        # Note: initial peaks may or may not be zero depending on initialization
+
+        # Run simulation
+        multi_zone_model.simulate_multi_zone(years=1, use_surrogates=False)
+
+        # After simulation, at least some peak values should be non-zero
+        peaks_after = multi_zone_model.get_zone_peak_loads()
+        heating_peaks = peaks_after["heating"]
+        cooling_peaks = peaks_after["cooling"]
+
+        # At least one zone should have non-zero heating OR cooling peak
+        has_nonzero_peak = any(h > 0.0 for h in heating_peaks) or any(
+            c > 0.0 for c in cooling_peaks
+        )
+        assert has_nonzero_peak, (
+            f"Expected non-zero peak loads after simulation, "
+            f"got heating={heating_peaks}, cooling={cooling_peaks}"
+        )
+
+
 class TestBatchOracle:
     def test_create_oracle(self, batch_oracle):
         assert batch_oracle is not None
