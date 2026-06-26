@@ -533,3 +533,291 @@ fn test_sol_air_from_real_weather_conditions() {
         day_count
     );
 }
+
+// ===========================================================================
+// Section 5: Horizontal-surface (tilt=0) beam geometry — Issue #1325
+// ===========================================================================
+
+/// Physical reference for the beam component on a tilted surface
+/// (Duffie & Beckman, "Solar Engineering of Thermal Processes", 4th ed.,
+/// Eq. 1.6.3; ASHRAE Handbook — Fundamentals Ch.14):
+///     I_beam(β, γ) = DNI · max(cos(θ_i), 0)
+/// where
+///     cos(θ_i) = sin(α)·cos(β) + cos(α)·sin(β)·cos(φ − γ).
+/// For tilt β = 0 (horizontal) the surface normal points to zenith, so
+///     cos(θ_i) = sin(α) = cos(zenith).
+fn analytical_beam(dni: f64, altitude_deg: f64, azimuth_deg: f64,
+                   tilt_deg: f64, surface_azimuth_deg: f64) -> f64 {
+    if dni <= 0.0 || altitude_deg <= 0.0 {
+        return 0.0;
+    }
+    let alpha = altitude_deg.to_radians();
+    let phi   = azimuth_deg.to_radians();
+    let beta  = tilt_deg.to_radians();
+    let gamma = surface_azimuth_deg.to_radians();
+    let cos_th = alpha.sin() * beta.cos()
+        + alpha.cos() * beta.sin() * (phi - gamma).cos();
+    (dni * cos_th).max(0.0)
+}
+
+#[test]
+fn test_horizontal_incident_solar() {
+    // Issue #1325 acceptance #1: horizontal-surface (tilt=0, az=0) beam
+    // matches the analytical formula DNI · cos(zenith) = DNI · sin(altitude)
+    // for every hour of the Denver TMY3 year.
+    //
+    // Note: A per-tilt E+ CSV (tests/reference_data/solar/surface_irradiance_horizontal.csv)
+    // is owned by B#2 (reference-data harness) and is OUT OF SCOPE per the
+    // issue body. We therefore validate against the analytical formulation
+    // ASHRAE Fundamentals Ch.14 / Duffie–Beckman Eq. 1.6.3, which is the
+    // exact formulation E+ itself uses for beam-on-tilt.
+    let weather = load_weather_reference();
+    assert_eq!(weather.len(), 8760);
+
+    let start = Instant::now();
+    let mut beam_sum_calc = 0.0f64;
+    let mut beam_sum_ref  = 0.0f64;
+    let mut max_abs_dev = 0.0f64;
+    let mut hours_exceeding_1pct = 0usize;
+    let mut hours_compared = 0usize;
+    let mut hours_with_sun = 0usize;
+
+    for (i, row) in weather.iter().enumerate() {
+        // Weather CSV is 0-indexed (hour 0..8759); solar position CSV is
+        // 1-indexed (hour 1..8760). Match the existing test convention by
+        // computing the date from the 1-indexed hour.
+        let epw_hour = i + 1;
+        let (year, month, day, hour) = epw_hour_to_date(epw_hour);
+        let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+        let doy = calculate_day_of_year(year, month, day);
+
+        let irr = calculate_surface_irradiance(
+            &sun,
+            row.dni,
+            row.dhi,
+            Some(row.ghi),
+            Orientation::Horizontal,
+            0.2,
+            doy,
+        );
+
+        // Analytical reference for tilt=0, az=0:
+        //     beam_expected = DNI · max(cos(zenith), 0)
+        let beam_expected = if row.dni > 0.0 && sun.is_above_horizon() {
+            (row.dni * sun.zenith_deg.to_radians().cos()).max(0.0)
+        } else {
+            0.0
+        };
+        // Also check the general cos(θ_i) formulation (must match for tilt=0).
+        let beam_general = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg,
+                                           0.0, 0.0);
+
+        beam_sum_calc += irr.beam_wm2;
+        beam_sum_ref  += beam_expected;
+
+        if sun.is_above_horizon() && row.dni > 0.0 {
+            hours_with_sun += 1;
+            let dev = (irr.beam_wm2 - beam_expected).abs();
+            if dev > max_abs_dev {
+                max_abs_dev = dev;
+            }
+            if beam_expected > 1.0 {
+                hours_compared += 1;
+                let pct = (dev / beam_expected) * 100.0;
+                if pct > 1.0 {
+                    hours_exceeding_1pct += 1;
+                }
+            }
+            // The general formula must also agree exactly (Issue #1325
+            // acceptance #2 ground-truth: tilt=0 collapse).
+            assert!(
+                (beam_general - beam_expected).abs() < 1e-9,
+                "h{epw_hour}: cos(θ_i) general formula ({beam_general:.4}) \
+                 != DNI·cos(zenith) ({beam_expected:.4})"
+            );
+        }
+    }
+
+    let annual_err_pct = if beam_sum_ref > 0.0 {
+        (beam_sum_calc - beam_sum_ref).abs() / beam_sum_ref * 100.0
+    } else {
+        0.0
+    };
+    let annual_ratio = if beam_sum_ref > 0.0 {
+        beam_sum_calc / beam_sum_ref
+    } else {
+        1.0
+    };
+
+    println!(
+        "=== Issue #1325: horizontal-surface beam (tilt=0, az=0) vs analytical ==="
+    );
+    println!("  Elapsed:                {:?}", start.elapsed());
+    println!("  Hours with sun + DNI>0: {}/8760", hours_with_sun);
+    println!("  Hours compared (>1 W/m²): {}", hours_compared);
+    println!("  Analytical annual beam: {:.3} kWh/m²/year",
+             beam_sum_ref / 1000.0);
+    println!("  Fluxion annual beam:    {:.3} kWh/m²/year",
+             beam_sum_calc / 1000.0);
+    println!("  Annual ratio:           {:.6}", annual_ratio);
+    println!("  Annual error:           {:.4}%", annual_err_pct);
+    println!("  Max absolute deviation: {:.4e} W/m²", max_abs_dev);
+    println!("  Hours exceeding 1%:     {}", hours_exceeding_1pct);
+
+    // Acceptance #1: horizontal beam within 1% of analytical (E+ reference
+    // unavailable, see header comment); max abs deviation < 5 W/m².
+    assert!(
+        annual_err_pct < 1.0,
+        "Horizontal beam annual error {:.4}% exceeds 1%",
+        annual_err_pct
+    );
+    assert!(
+        max_abs_dev < 5.0,
+        "Horizontal beam max abs deviation {:.4} W/m² exceeds 5 W/m²",
+        max_abs_dev
+    );
+    assert_eq!(
+        hours_exceeding_1pct, 0,
+        "{} hours exceed 1% per-hour tolerance",
+        hours_exceeding_1pct
+    );
+}
+
+#[test]
+fn test_per_tilt_sweep() {
+    // Issue #1325 acceptance #2: per-tilt sweep at tilt ∈ {0, 30, 60, 90, 180},
+    // azimuth=180° (south). For each tilt, the fluxion beam must equal the
+    // analytical cos(θ_i) formula within 1%.
+    //
+    // E+ reference: tilt=90 (south) has tests/reference_data/solar/
+    // surface_irradiance_south.csv and is validated by test_beam_irradiance_vs_energyplus.
+    // Tilt ∈ {0, 30, 60, 180} have no per-tilt E+ CSV (owned by B#2,
+    // OUT OF SCOPE); we validate against the analytical cos(θ_i) formulation.
+    let weather = load_weather_reference();
+    assert_eq!(weather.len(), 8760);
+
+    let south_az = 180.0_f64;
+    let tilt_set = [0.0_f64, 30.0, 60.0, 90.0, 180.0];
+
+    println!(
+        "=== Issue #1325: per-tilt sweep (azimuth=180°, south) ==="
+    );
+    println!(
+        "  {:>6}  {:>12}  {:>14}  {:>13}  {:>10}",
+        "tilt", "annual_calc", "max_abs_dev", "annual_err_pct", "in_band"
+    );
+
+    for &tilt in &tilt_set {
+        let mut sum_calc = 0.0f64;
+        let mut sum_ref  = 0.0f64;
+        let mut sum_abs_dev = 0.0f64;
+        let mut max_abs_dev = 0.0f64;
+        let mut n_compared = 0usize;
+        let mut hours_over_1pct = 0usize;
+
+        for (i, row) in weather.iter().enumerate() {
+            let epw_hour = i + 1;
+            let (year, month, day, hour) = epw_hour_to_date(epw_hour);
+            let sun = calculate_solar_position(DENVER_LAT, DENVER_LON, year, month, day, hour);
+            let doy = calculate_day_of_year(year, month, day);
+
+            // For tilt=180° (down-facing) Orientation::Down is the natural
+            // choice; for other tilts we use the closest cardinal. The
+            // Orientation enum maps to (tilt, az) via orientation_to_angles;
+            // we exercise the same path by passing an explicit tilt through
+            // the AnalyticalBeam reference. The fluxion function is called
+            // via the Orientation enum for clarity in the existing tests.
+            let irr = if (tilt - 0.0).abs() < 1e-9 {
+                calculate_surface_irradiance(
+                    &sun, row.dni, row.dhi, Some(row.ghi),
+                    Orientation::Horizontal, 0.2, doy,
+                )
+            } else if (tilt - 90.0).abs() < 1e-9 {
+                calculate_surface_irradiance(
+                    &sun, row.dni, row.dhi, Some(row.ghi),
+                    Orientation::South, 0.2, doy,
+                )
+            } else {
+                // tilt ∈ {30, 60, 180} — no Orientation variant maps exactly;
+                // compute the analytical reference directly and call the
+                // underlying Rust function via re-implementing the call here.
+                // For these tilts we still compare the analytical cos(θ_i)
+                // against the formula that lives in incidence_cosine; the
+                // exact Orientation enum dispatch is exercised by the tilt=0
+                // and tilt=90 cases.
+                //
+                // We instead call calculate_surface_irradiance through
+                // SolarOrientation::South with a tilt override would require
+                // a new API; instead validate the underlying cos(θ_i)
+                // function (which is what the surface_irradiance function
+                // reduces to for beam) against the analytical reference.
+                let cos_th = sun.incidence_cosine(tilt, south_az);
+                let beam_calc = (row.dni * cos_th).max(0.0);
+                let beam_ref  = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg,
+                                                tilt, south_az);
+                sum_calc += beam_calc;
+                sum_ref  += beam_ref;
+                let dev = (beam_calc - beam_ref).abs();
+                if beam_ref > 1.0 {
+                    sum_abs_dev += dev;
+                    n_compared  += 1;
+                    if dev / beam_ref * 100.0 > 1.0 {
+                        hours_over_1pct += 1;
+                    }
+                }
+                if dev > max_abs_dev { max_abs_dev = dev; }
+                continue;
+            };
+
+            let beam_calc = irr.beam_wm2;
+            let beam_ref  = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg,
+                                            tilt, south_az);
+            sum_calc += beam_calc;
+            sum_ref  += beam_ref;
+            let dev = (beam_calc - beam_ref).abs();
+            if beam_ref > 1.0 {
+                sum_abs_dev += dev;
+                n_compared  += 1;
+                if dev / beam_ref * 100.0 > 1.0 {
+                    hours_over_1pct += 1;
+                }
+            }
+            if dev > max_abs_dev { max_abs_dev = dev; }
+        }
+
+        let ratio = if sum_ref > 0.0 {
+            sum_calc / sum_ref
+        } else {
+            1.0
+        };
+        let err_pct = if sum_ref > 0.0 {
+            (sum_calc - sum_ref).abs() / sum_ref * 100.0
+        } else {
+            0.0
+        };
+        let in_band = if sum_ref > 0.0 {
+            (0.99..=1.01).contains(&ratio)
+        } else {
+            true // tilt=180 sum is zero; trivially in band
+        };
+
+        println!(
+            "  {:6.0}  {:12.3}  {:14.4e}  {:13.4}  {:>10}",
+            tilt,
+            sum_calc / 1000.0,
+            max_abs_dev,
+            err_pct,
+            if in_band { "yes" } else { "NO" }
+        );
+
+        // Acceptance #2: fluxion / E+ (analytical here) ratio mean ∈ [0.99, 1.01].
+        assert!(
+            sum_ref <= 0.0 || (0.99..=1.01).contains(&ratio),
+            "tilt={tilt}: annual ratio {ratio} outside [0.99, 1.01]"
+        );
+        assert_eq!(
+            hours_over_1pct, 0,
+            "tilt={tilt}: {hours_over_1pct} hours exceed 1% per-hour tolerance"
+        );
+    }
+}
