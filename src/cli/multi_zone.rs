@@ -239,13 +239,13 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
     let output = if command.detailed {
         // Detailed zone-by-zone output
         let zone_temps = model.get_temperatures();
-        // TODO: zone_energy_consumption field doesn't exist, need to implement per-zone energy tracking
-        // let zone_energies = model.zone_energy_consumption.clone();
+        // Per-zone energy tracking (Issue #1288, wired up in #1291)
+        let zone_energies = model.get_zone_energies_kwh();
 
         serde_json::json!({
             "total_eui": result,
             "zones": zone_temps,
-            // "zone_energies": zone_energies,
+            "zone_energies": zone_energies,
             "inter_zone_conductance": config.inter_zone_conductance,
             "setpoints": config.zone_setpoints
         })
