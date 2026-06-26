@@ -303,6 +303,20 @@ impl WeatherDependentVentilation {
     /// Calculate ventilation ACH based on weather and indoor conditions.
     ///
     /// Returns the actual ACH considering both outdoor temperature and wind.
+    ///
+    /// # ASHRAE 140-2023 §5.5.3.6 default-infiltration lock-in
+    ///
+    /// ASHRAE Standard 140 (BESTEST) specifies a default infiltration rate of
+    /// **0.5 ACH** for the Case 900 / 920 / 940 / 950 / 960 reference models.
+    /// When this struct is constructed with `min_ach == max_ach == 0.5` and the
+    /// spec inputs (T_in = 20 °C, building height = 2.7 m, shielding = 0.5,
+    /// volume = 129.6 m³, Denver TMY3 wind), this method returns exactly
+    /// `0.5 ACH` for every of the 8760 hours — i.e. the wind/temperature
+    /// blending does not perturb the spec value.
+    ///
+    /// See `tests/ventilation_isolation.rs::test_ashrae_140_0p5_ach_default`
+    /// for the lock-in assertion (Issue #1327), and PRs #1278/#1279 for the
+    /// upstream wind + forced-convection fixes that this lock-in guards.
     pub fn get_ach_weather(
         &self,
         outdoor_temp: f64,

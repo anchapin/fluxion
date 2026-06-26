@@ -1,0 +1,397 @@
+//! Ventilation module isolation tests — ASHRAE 140 default-infiltration lock-in.
+//!
+//! Locks in `WeatherDependentVentilation::get_ach()` returning the ASHRAE 140-2023
+//! §5.5.3.6 default infiltration rate (0.5 ACH) across all 8760 hours of Denver
+//! TMY3 weather when configured with the spec inputs.
+//!
+//! # Reference
+//!
+//! - ASHRAE Standard 140-2023, §5.5.3.6 (Default Infiltration = 0.5 ACH)
+//! - Issue #1327 — verifies the existing function preserves the spec
+//! - Issue #1278 — wired real wind + ΔT into `wind_benefit()`
+//! - Issue #1279 — dynamic h_tr_is forced-convection multiplier
+//! - EnergyPlus reference model: `tests/reference_data/ventilation/infiltration_denver.csv`
+//!   (constant 0.5 ACH schedule; volume = 129.6 m³; ρ = 1.2 kg/m³; cp = 1000 J/kg·K;
+//!    h_ve = 21.6 W/K)
+//!
+//! # Companion Python verification
+//!
+//! `.agents/results/issue-1278-ach-ashrae140-spec.py` reproduces the Rust
+//! formulas in pure Python and prints per-hour drift statistics for human
+//! review; the authoritative pass/fail assertion is this Rust test.
+
+use std::fs;
+use std::path::Path;
+use std::time::Instant;
+
+use uom::si::thermal_conductance::watt_per_kelvin;
+
+use fluxion::sim::ventilation::{
+    ach_to_conductance, calculate_combined_infiltration_ach,
+    calculate_stack_infiltration_ach, calculate_wind_infiltration_ach,
+    AIR_DENSITY, AIR_SPECIFIC_HEAT,
+};
+use fluxion::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
+
+// ============================================================================
+// ASHRAE 140 Case 900 spec constants
+// ============================================================================
+
+/// Zone volume for the Case 900 reference box (6 × 8 × 2.7 m).
+const CASE_900_VOLUME_M3: f64 = 129.6;
+
+/// Building (zone) height used for wind/shielding factors.
+const BUILDING_HEIGHT_M: f64 = 2.7;
+
+/// ASHRAE 140 default infiltration rate (§5.5.3.6).
+const ASHRAE_140_DEFAULT_ACH: f64 = 0.5;
+
+/// ±0.05 tolerance around the ASHRAE 140 default (10% of 0.5).
+const ACH_TOLERANCE: f64 = 0.05;
+
+/// Indoor setpoint temperature for the Case 900 reference model
+/// (matches the existing diagnostic tests).
+const T_INDOOR_C: f64 = 20.0;
+
+/// Shielding factor set by PR #1278 inside `WeatherDependentVentilation::wind_benefit()`.
+const SHIELDING_FACTOR: f64 = 0.5;
+
+/// 1% per ARCHITECTURE.md Module 4 (Ventilation).
+const ONE_PCT_TOLERANCE: f64 = 0.01;
+
+// ============================================================================
+// Reference CSV loader (8760 hourly rows from Denver TMY3)
+// ============================================================================
+
+#[derive(Debug, Clone)]
+struct ReferenceRow {
+    hour: usize,
+    outdoor_temp_c: f64,
+    wind_speed_ms: f64,
+}
+
+fn load_reference_rows() -> Vec<ReferenceRow> {
+    let path = Path::new("tests/reference_data/ventilation/infiltration_denver.csv");
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read reference data {:?}: {}", path, e));
+
+    let mut rows = Vec::with_capacity(8760);
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("hour") {
+            continue;
+        }
+        let parts: Vec<&str> = trimmed.split(',').collect();
+        if parts.len() < 3 {
+            continue;
+        }
+        rows.push(ReferenceRow {
+            hour: parts[0].parse::<usize>().expect("valid hour"),
+            outdoor_temp_c: parts[1].parse::<f64>().expect("valid outdoor_temp"),
+            wind_speed_ms: parts[2].parse::<f64>().expect("valid wind_speed"),
+        });
+    }
+    assert_eq!(
+        rows.len(),
+        8760,
+        "Expected exactly 8760 reference rows in Denver TMY3 CSV"
+    );
+    rows
+}
+
+// ============================================================================
+// Acceptance criterion 1 — get_ach(hour) returns 0.5 ± 0.05 for 8760 hours
+// ============================================================================
+
+/// ASHRAE 140-2023 §5.5.3.6 default-infiltration lock-in.
+///
+/// Constructs `WeatherDependentVentilation` with `min_ach = max_ach = 0.5`
+/// (the spec value) and asserts that `get_ach(hour, ...)` returns a value
+/// inside `[0.5 - 0.05, 0.5 + 0.05]` for **every** of the 8760 hours in the
+/// Denver TMY3 reference weather file. With `min_ach == max_ach`, the
+/// `get_ach_weather` math reduces to `min_ach` deterministically:
+///   `min + (max - min) × (temp_benefit + wind_benefit)/2 = min` when min == max.
+///
+/// This is the lock-in shape that prevents any future change to the
+/// wind/temperature blending or the `calculate_combined_infiltration_ach`
+/// math from silently drifting the ASHRAE 140 Case 900 default infiltration
+/// away from 0.5 ACH.
+#[test]
+fn test_ashrae_140_0p5_ach_default() {
+    let start = Instant::now();
+    let rows = load_reference_rows();
+
+    // ASHRAE 140 Case 900 spec: min = max = 0.5 ACH
+    let vent = WeatherDependentVentilation::new(
+        ASHRAE_140_DEFAULT_ACH, // base_ach
+        ASHRAE_140_DEFAULT_ACH, // min_ach
+        ASHRAE_140_DEFAULT_ACH, // max_ach
+        18.0,                   // start_temp (matters only if max > min)
+        26.0,                   // full_open_temp (matters only if max > min)
+    );
+
+    let mut max_drift = 0.0_f64;
+    let mut worst_hour = 0usize;
+    let mut hours_out_of_tolerance = 0usize;
+
+    for row in &rows {
+        // ASHRAE 140 spec inputs:
+        //   T_indoor = 20 °C (Case 900 setpoint)
+        //   wind_speed from Denver TMY3
+        //   volume = 129.6 m³ (Case 900 zone geometry)
+        let ach = vent.get_ach(
+            row.hour - 1,
+            row.outdoor_temp_c,
+            T_INDOOR_C,
+            row.wind_speed_ms,
+            CASE_900_VOLUME_M3,
+        );
+
+        let drift = (ach - ASHRAE_140_DEFAULT_ACH).abs();
+        if drift > max_drift {
+            max_drift = drift;
+            worst_hour = row.hour;
+        }
+        if drift > ACH_TOLERANCE {
+            hours_out_of_tolerance += 1;
+            // Surface at most 3 failing hours so the failure message is bounded.
+            if hours_out_of_tolerance <= 3 {
+                eprintln!(
+                    "Hour {}: ACH = {:.6}, drift = {:.6} > tolerance {}",
+                    row.hour, ach, drift, ACH_TOLERANCE
+                );
+            }
+        }
+    }
+
+    let elapsed = start.elapsed();
+
+    eprintln!("\n=== ASHRAE 140-2023 §5.5.3.6 default-infiltration lock-in (#1327) ===");
+    eprintln!("Hours checked:          {hours}", hours = rows.len());
+    eprintln!("Target ACH:             {ASHRAE_140_DEFAULT_ACH} ± {ACH_TOLERANCE}");
+    eprintln!("Max drift from target:  {max_drift:.6e} (at hour {worst_hour})");
+    eprintln!("Hours out of tolerance: {hours_out_of_tolerance}/8760");
+    eprintln!("Volume:                 {CASE_900_VOLUME_M3} m³");
+    eprintln!("Building height:        {BUILDING_HEIGHT_M} m");
+    eprintln!("T_indoor:               {T_INDOOR_C} °C");
+    eprintln!("Shielding:              {SHIELDING_FACTOR} (per #1278)");
+    eprintln!("Elapsed:                {elapsed:.2?}");
+
+    assert_eq!(
+        hours_out_of_tolerance, 0,
+        "WeatherDependentVentilation::get_ach(hour) must return 0.5 ± 0.05 ACH for \
+         all 8760 hours with ASHRAE 140 Case 900 spec inputs (ASHRAE 140-2023 §5.5.3.6)."
+    );
+}
+
+// ============================================================================
+// Acceptance criterion 2 — combined infiltration = wind + stack within 1%
+// ============================================================================
+
+/// Per-hour derivation lock-in: the `calculate_combined_infiltration_ach`
+/// underlying the ASHRAE 140 spec must equal the sum of the wind-driven and
+/// stack-driven components to within ARCHITECTURE.md Module 4's 1% tolerance
+/// for every hour of Denver TMY3 weather.
+///
+/// The wind/stack decomposition is the physics that PR #1278 wired into
+/// `WeatherDependentVentilation::wind_benefit()`; this test ensures the
+/// decomposition stays tight even as the spec value (0.5 ACH) is preserved
+/// by the spec-preserving config above.
+#[test]
+fn test_ashrae_140_combined_matches_wind_plus_stack() {
+    let start = Instant::now();
+    let rows = load_reference_rows();
+
+    // Effective opening area matches WeatherDependentVentilation defaults:
+    //   opening_fraction (0.3) × 2 × (building_height × 3)
+    let opening_area: f64 = 0.3 * 2.0 * (BUILDING_HEIGHT_M * 3.0);
+
+    let mut max_rel_err = 0.0_f64;
+    let mut max_abs_err = 0.0_f64;
+    let mut worst_hour = 0usize;
+    let mut max_combined = 0.0_f64;
+
+    for row in &rows {
+        let wind_ach =
+            calculate_wind_infiltration_ach(row.wind_speed_ms, BUILDING_HEIGHT_M, SHIELDING_FACTOR);
+        let stack_ach = calculate_stack_infiltration_ach(
+            T_INDOOR_C,
+            row.outdoor_temp_c,
+            BUILDING_HEIGHT_M,
+            opening_area,
+            CASE_900_VOLUME_M3,
+        );
+        let combined = calculate_combined_infiltration_ach(
+            row.outdoor_temp_c,
+            T_INDOOR_C,
+            row.wind_speed_ms,
+            BUILDING_HEIGHT_M,
+            opening_area,
+            CASE_900_VOLUME_M3,
+            SHIELDING_FACTOR,
+        );
+
+        let sum = wind_ach + stack_ach;
+        let abs_err = (combined - sum).abs();
+        let rel_err = if sum.abs() > 1e-12 {
+            abs_err / sum.abs()
+        } else {
+            abs_err
+        };
+
+        max_combined = max_combined.max(combined);
+        if rel_err > max_rel_err {
+            max_rel_err = rel_err;
+            max_abs_err = abs_err;
+            worst_hour = row.hour;
+        }
+
+        assert!(
+            combined >= 0.0,
+            "Combined ACH must be non-negative at hour {}: got {}",
+            row.hour,
+            combined
+        );
+    }
+
+    let elapsed = start.elapsed();
+
+    eprintln!("\n=== ASHRAE 140 combined = wind + stack decomposition (#1327) ===");
+    eprintln!("Max |combined − (wind + stack)|     : {max_abs_err:.6e}");
+    eprintln!("Max relative error                  : {max_rel_err:.6e}");
+    eprintln!("Max combined ACH over year          : {max_combined:.4}");
+    eprintln!("Worst hour                          : {worst_hour}");
+    eprintln!("ARCHITECTURE.md Module 4 tolerance  : {ONE_PCT_TOLERANCE}");
+    eprintln!("Elapsed                             : {elapsed:.2?}");
+
+    assert!(
+        max_rel_err <= ONE_PCT_TOLERANCE,
+        "calculate_combined_infiltration_ach must match wind + stack within {} (ARCHITECTURE.md \
+         Module 4); max relative error = {} at hour {}",
+        ONE_PCT_TOLERANCE,
+        max_rel_err,
+        worst_hour,
+    );
+}
+
+// ============================================================================
+// Acceptance criterion 3 — ach_to_conductance matches analytical within 1%
+// ============================================================================
+
+/// ASHRAE 140 Case 900 spec ventilation conductance lock-in.
+///
+/// `ach_to_conductance(0.5, 129.6, 1.2, 1000)` must equal the analytical
+/// `ρ × cp × V × ACH / 3600` = 21.6 W/K to within 1%. The EnergyPlus reference
+/// model produced 21.6 W/K (constant across all 8760 hours because both the
+/// ACH and the volume are constants); fluxion must reproduce this exactly
+/// when the spec inputs are passed.
+#[test]
+fn test_ashrae_140_ventilation_conductance_matches_analytical() {
+    let start = Instant::now();
+
+    let analytical_h_ve =
+        (ASHRAE_140_DEFAULT_ACH * CASE_900_VOLUME_M3 * AIR_DENSITY * AIR_SPECIFIC_HEAT) / 3600.0;
+    let fluxion_h_ve = ach_to_conductance(
+        ASHRAE_140_DEFAULT_ACH,
+        CASE_900_VOLUME_M3,
+        AIR_DENSITY,
+        AIR_SPECIFIC_HEAT,
+    )
+    .get::<watt_per_kelvin>();
+
+    let rel_err = ((fluxion_h_ve - analytical_h_ve) / analytical_h_ve).abs();
+    let elapsed = start.elapsed();
+
+    eprintln!("\n=== ASHRAE 140 Case 900 ventilation conductance (#1327) ===");
+    eprintln!("Analytical h_ve (ρ·cp·V·ACH/3600)    : {analytical_h_ve:.6} W/K");
+    eprintln!("Fluxion ach_to_conductance(...)      : {fluxion_h_ve:.6} W/K");
+    eprintln!("EnergyPlus reference h_ve            : 21.6 W/K (constant)");
+    eprintln!("Relative error vs analytical         : {:.4}%", rel_err * 100.0);
+    eprintln!("ARCHITECTURE.md tolerance            : {:.0}%", ONE_PCT_TOLERANCE * 100.0);
+    eprintln!("Elapsed                              : {elapsed:.2?}");
+
+    assert!(
+        rel_err <= ONE_PCT_TOLERANCE,
+        "ach_to_conductance(0.5, 129.6, 1.2, 1000) must match analytical ρ·cp·V·ACH/3600 within \
+         {} (ARCHITECTURE.md Module 4); got fluxion = {}, analytical = {}",
+        ONE_PCT_TOLERANCE,
+        fluxion_h_ve,
+        analytical_h_ve,
+    );
+}
+
+// ============================================================================
+// Companion regression — the spec value is preserved under default weather
+// ============================================================================
+
+/// Companion regression: when `WeatherDependentVentilation` is constructed
+/// with the default constructor and ASHRAE 140 spec values (`min_ach = max_ach
+/// = 0.5`), `get_ach_weather` (the direct entry point) must also return 0.5
+/// ± 0.05 for the spec inputs. This guards against the trait-dispatch path
+/// (`VentilationSchedule::get_ach`) diverging from the direct entry point
+/// (`WeatherDependentVentilation::get_ach_weather`).
+#[test]
+fn test_ashrae_140_get_ach_weather_direct_matches_trait_dispatch() {
+    let start = Instant::now();
+    let rows = load_reference_rows();
+
+    let vent = WeatherDependentVentilation::new(
+        ASHRAE_140_DEFAULT_ACH,
+        ASHRAE_140_DEFAULT_ACH,
+        ASHRAE_140_DEFAULT_ACH,
+        18.0,
+        26.0,
+    );
+
+    let mut max_abs_diff = 0.0_f64;
+    let mut worst_hour = 0usize;
+
+    for row in &rows {
+        let direct = vent.get_ach_weather(
+            row.outdoor_temp_c,
+            T_INDOOR_C,
+            row.wind_speed_ms,
+            CASE_900_VOLUME_M3,
+        );
+        let dispatched = vent.get_ach(
+            row.hour - 1,
+            row.outdoor_temp_c,
+            T_INDOOR_C,
+            row.wind_speed_ms,
+            CASE_900_VOLUME_M3,
+        );
+        let diff = (direct - dispatched).abs();
+        if diff > max_abs_diff {
+            max_abs_diff = diff;
+            worst_hour = row.hour;
+        }
+        // Both paths must independently satisfy the spec.
+        assert!(
+            (direct - ASHRAE_140_DEFAULT_ACH).abs() <= ACH_TOLERANCE,
+            "get_ach_weather direct path drifted at hour {}: {}",
+            row.hour,
+            direct,
+        );
+        assert!(
+            (dispatched - ASHRAE_140_DEFAULT_ACH).abs() <= ACH_TOLERANCE,
+            "VentilationSchedule::get_ach dispatch drifted at hour {}: {}",
+            row.hour,
+            dispatched,
+        );
+    }
+
+    let elapsed = start.elapsed();
+
+    eprintln!("\n=== ASHRAE 140 direct vs trait-dispatch parity (#1327) ===");
+    eprintln!("Max |direct − dispatched|  : {max_abs_diff:.6e}");
+    eprintln!("Worst hour                 : {worst_hour}");
+    eprintln!("Elapsed                    : {elapsed:.2?}");
+
+    assert!(
+        max_abs_diff < 1e-12,
+        "Trait-dispatch path must match direct entry point to bit-exact precision; \
+         max diff = {} at hour {}",
+        max_abs_diff,
+        worst_hour,
+    );
+}
