@@ -157,6 +157,9 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub annual_heating_energy: f64,
     pub annual_cooling_energy: f64,
     pub annual_electrical_energy: f64,
+    // Per-zone energy tracking (Issue #1288)
+    pub zone_heating_energy_kwh: T,
+    pub zone_cooling_energy_kwh: T,
     pub weather: Option<HourlyWeatherData>,
     pub latitude_deg: f64,
     pub longitude_deg: f64,
@@ -316,6 +319,8 @@ impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {
             annual_heating_energy: self.annual_heating_energy,
             annual_cooling_energy: self.annual_cooling_energy,
             annual_electrical_energy: self.annual_electrical_energy,
+            zone_heating_energy_kwh: self.zone_heating_energy_kwh.clone(),
+            zone_cooling_energy_kwh: self.zone_cooling_energy_kwh.clone(),
             weather: self.weather.clone(),
             latitude_deg: self.latitude_deg,
             longitude_deg: self.longitude_deg,

@@ -795,6 +795,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
         self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
 
+        // Per-zone energy accumulation (Issue #1288)
+        // hvac_for_temp_calc: positive = heating, negative = cooling
+        let hvac_vec = hvac_for_temp_calc.as_ref();
+        let zone_heating_slice = self.0.zone_heating_energy_kwh.as_mut();
+        let zone_cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
+        for i in 0..self.0.num_zones {
+            let val = hvac_vec[i];
+            // dt is in seconds, convert to kWh: watts * seconds / 3.6e6
+            let energy_kwh = val * dt / 3.6e6;
+            if val > 0.0 {
+                zone_heating_slice[i] += energy_kwh;
+            } else {
+                zone_cooling_slice[i] += -energy_kwh;
+            }
+        }
+
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
         // DON'T apply correction here - it would break temperature calculations
@@ -1361,6 +1377,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Physics-based: No correction factors - use raw energy values
         self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
         self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+
+        // Per-zone energy accumulation (Issue #1288)
+        // hvac_output_raw: positive = heating, negative = cooling
+        let hvac_vec = hvac_output_raw.as_ref();
+        let zone_heating_slice = self.0.zone_heating_energy_kwh.as_mut();
+        let zone_cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
+        for i in 0..self.0.num_zones {
+            let val = hvac_vec[i];
+            // dt is in seconds, convert to kWh: watts * seconds / 3.6e6
+            let energy_kwh = val * dt / 3.6e6;
+            if val > 0.0 {
+                zone_heating_slice[i] += energy_kwh;
+            } else {
+                zone_cooling_slice[i] += -energy_kwh;
+            }
+        }
 
         // hvac_energy_for_step returns total HVAC energy in JOULES (not kWh)
         // The test expects Joules and multiplies by 3.6e6
@@ -2718,6 +2750,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             self.0.annual_heating_energy += heating_energy_joules / 3.6e6;
             self.0.annual_cooling_energy += cooling_energy_joules / 3.6e6;
+
+            // Per-zone energy accumulation (Issue #1288)
+            // Use enabled-masked values for per-zone accumulation
+            let enabled_vec = self.0.hvac_enabled.as_ref();
+            let zone_heating_slice = self.0.zone_heating_energy_kwh.as_mut();
+            let zone_cooling_slice = self.0.zone_cooling_energy_kwh.as_mut();
+            for i in 0..self.0.num_zones {
+                let val = if enabled_vec[i] > 0.5 {
+                    hvac_output.as_ref()[i]
+                } else {
+                    0.0
+                };
+                // dt is in seconds, convert to kWh: watts * seconds / 3.6e6
+                let energy_kwh = val * dt / 3.6e6;
+                if val > 0.0 {
+                    zone_heating_slice[i] += energy_kwh;
+                } else {
+                    zone_cooling_slice[i] += -energy_kwh;
+                }
+            }
 
             if hvac_power_watts > 0.0 {
                 self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts);
