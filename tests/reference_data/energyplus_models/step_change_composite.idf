@@ -1,0 +1,73 @@
+Version, 25.2;
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  StepChangeRun, 1, 1, , 1, 3, , Tuesday,
+  No, No, No, No, No;
+
+Timestep, 4;
+
+Building,
+  RefBox_Composite, 0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  ZONE1, 0, 0, 0, 0, 1, 1, , , , ;
+
+Material,
+  CONCRETE_100, MediumRough, 0.100, 1.730, 2300, 840;
+
+Material,
+  MINERAL_WOOL, MediumRough, 0.100, 0.040, 18, 840;
+
+Material,
+  GYP_BOARD, MediumSmooth, 0.013, 0.160, 800, 1090;
+
+Material,
+  HIGH_INSUL, MediumRough, 0.200, 0.01, 12, 840;
+
+Construction,
+  COMPOSITE_WALL, GYP_BOARD, MINERAL_WOOL, CONCRETE_100;
+
+Construction,
+  INSUL_WALL, HIGH_INSUL;
+
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner, ClockWise, World;
+
+BuildingSurface:Detailed,
+  SouthWall, Wall, COMPOSITE_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 6, 0, 2.7,  6, 8, 2.7,  6, 8, 0,  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 8, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, INSUL_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4, 0, 0, 2.7,  6, 0, 2.7,  6, 8, 2.7,  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, INSUL_WALL, ZONE1, , Ground, , NoSun, NoWind, ,
+  4, 0, 0, 0,  6, 0, 0,  6, 8, 0,  0, 8, 0;
+
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Temperature, Timestep;
+Output:Variable, SouthWall, Surface Inside Face Conduction Heat Transfer Rate per Area, Timestep;
+Output:Variable, SouthWall, Surface Outside Face Conduction Heat Transfer Rate per Area, Timestep;

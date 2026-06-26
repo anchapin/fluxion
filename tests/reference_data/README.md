@@ -26,9 +26,18 @@ Prerequisites:
 
 ### Conduction (`conduction/`)
 
-| File | Description | Rows | Columns |
-|------|-------------|------|---------|
-| `step_response_200mm_concrete.csv` | Transient conduction through 200mm concrete wall | 288 | hour, T_ext, T_surf_in, T_surf_out, q_in, q_out |
+All conduction CSVs are generated from EnergyPlus 25.2.0 using the step-change
+protocol (Jan 1-3, 15-min timesteps, free-floating zone, single test surface exposed
+to outdoor weather).
+
+| File | Description | Rows | Source |
+|------|-------------|------|--------|
+| `step_response_200mm_concrete.csv` | 200mm concrete south wall | ~288 | EnergyPlus |
+| `step_response_composite.csv` | Composite wall (concrete + insulation + gypsum) south wall | ~288 | EnergyPlus |
+| `step_response_floor.csv` | Floor slab on grade (carpet + concrete + insulation) | ~288 | EnergyPlus |
+| `step_response_lightweight.csv` | Lightweight steel stud wall south wall | ~288 | EnergyPlus |
+| `step_response_roof.csv` | Roof assembly (gravel + insulation + steel deck) | ~288 | EnergyPlus |
+| `step_response_fixed_zone_20c.csv` | Fixed zone temperature (ASHRAE 140) | — | EnergyPlus |
 
 ### Ventilation (`ventilation/`)
 
@@ -41,7 +50,11 @@ Prerequisites:
 | File | Description |
 |------|-------------|
 | `annual_solar_ventilation.idf` | Single-zone box (6×8×2.7m), lightweight walls, no HVAC, 0.5 ACH |
-| `step_change_concrete.idf` | Single-zone, 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `step_change_concrete.idf` | 200mm concrete south wall, free-floating, Jan 1-3 weather-driven |
+| `step_change_composite.idf` | Composite wall (concrete + insulation + gypsum), south wall, Jan 1-3 |
+| `step_change_floor.idf` | Floor slab on grade, Jan 1-3 |
+| `step_change_lightweight.idf` | Lightweight steel stud wall, south wall, Jan 1-3 |
+| `step_change_roof.idf` | Roof assembly, Jan 1-3 |
 
 ## Model Parameters
 
@@ -53,20 +66,37 @@ Prerequisites:
 - **HVAC**: None (free-floating)
 - **Weather**: USA_CO_Golden-NREL TMY3 (39.74°N, 105.18°W)
 
-### Model 2: Conduction Response
+### Models 2-6: Conduction Step-Change Tests
 - **Geometry**: 6m × 8m × 2.7m single zone
-- **Test wall (South)**: 200mm concrete (k=1.73 W/(m·K), ρ=2300 kg/m³, cp=840 J/(kg·K))
-- **Other surfaces**: Highly insulated (R-20, k=0.01 W/(m·K), 200mm)
+- **Timestep**: 15 minutes (4 per hour)
+- **Run period**: 72 hours (Jan 1-3)
 - **HVAC**: None (free-floating)
-- **Timestep**: 15 minutes (4 per hour)
-- **Run period**: 72 hours (Jan 1-3)
-- **Driving force**: Real outdoor temperature from Golden-NREL TMY3
-- **ZONE_EXT**: Step from 20°C to -10°C at hour 1 via schedule (ideal loads)
-- **Other surfaces**: Adiabatic
-- **Timestep**: 15 minutes (4 per hour)
-- **Run period**: 72 hours (Jan 1-3)
+- **Non-test surfaces**: Highly insulated (R-20, k=0.01 W/(m·K))
+- **Ground temperature**: 18°C constant
+
+| Model | Test Surface | Construction |
+|-------|-------------|--------------|
+| 2: 200mm Concrete | South wall | 200mm concrete (k=1.73, ρ=2300, cp=840) |
+| 3: Composite | South wall | 100mm concrete + 100mm mineral wool + 13mm gypsum |
+| 4: Floor Slab | Floor (slab on grade) | 10mm carpet + 150mm concrete + 100mm insulation |
+| 5: Lightweight | South wall | 16mm ext gyp + 12mm OSB + 90mm cavity insulation + 13mm int gyp |
+| 6: Roof | Roof | 50mm gravel + 150mm insulation + 1.5mm steel deck |
 
 ## CSV Format
+
+### Conduction CSV columns
+
+```
+hour, T_outdoor, T_zone, T_surface_inside, T_surface_outside, q_inside_Wm2, q_outside_Wm2
+```
+
+- `hour`: elapsed hours from start (0 to 72)
+- `T_outdoor`: outdoor air drybulb temperature (°C)
+- `T_zone`: zone mean air temperature (°C)
+- `T_surface_inside`: inside face temperature of test surface (°C)
+- `T_surface_outside`: outside face temperature of test surface (°C)
+- `q_inside_Wm2`: inside face conduction heat flux (W/m²)
+- `q_outside_Wm2`: outside face conduction heat flux (W/m²)
 
 ## Ventilation Conductance Calculation
 
