@@ -237,10 +237,10 @@ pub trait HeatConductionSolver: Send + Sync {
 >
 > | Path | Location | Dynamic? | Drives free-float / HVAC? |
 > |------|----------|---------|---------------------------|
-> | **Per-wall transient solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **Yes** — explicit Euler updates `T_mass` with `dt`; `energy_storage_rate()` returns `Q_ext - Q_to_air`. Note: returned flux uses steady-state formula `(T_ext-T_int)/R_total` (issue #1277). | No (Module 3 isolation only) |
+> | **Per-wall transient solver** (`FiveR1CSolver`) | `physics/five_r1c_solver.rs` (Module 3) | **Yes** — explicit Euler `T_mass += (T_ext − T_mass) / (R_total · C_total) · dt`; returned flux `(T_mass − T_int) / R_total`; `energy_storage_rate()` returns `Q_ext = (T_ext − T_mass) / R_total`. The first `step()` after `initialize()` is a steady-state seed (`T_mass = (T_int + T_ext) / 2`, `q = ΔT / R_total`, `energy_storage_rate = 0`) so single-step callers continue to observe `q_ss`. Closed by #1277. | No (Module 3 isolation only) |
 > | **Zone-level ISO 13790 thermal network** (5R1C / 6R2C / 9R4C) | `sim/thermal_model_core.rs` + `sim/thermal_model_physics/` (Module 5) | **Yes** (coefficient-tuned 5R1C / backward-Euler 9R4C) | **Yes** — this is the network that produces zone air temperature, heating/cooling loads, and free-floating temperatures |
 >
-> ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is unchanged (steady-state, isolation-tested).
+> ADR-002 (`docs/adr/0002-promote-9r4c-high-mass-default.md`) resolved the drift by documenting this split and selecting the **9R4C zone-level network** as the sole solver for high-mass constructions (see Module 5). The Module 3 `FiveR1CSolver` is the transient per-surface solver validated against the 1% conduction tolerance criterion in `tests/conduction_5r1c_isolation.rs`.
 
 **Validation target**: Inside surface heat flux within 1% of E+ for step-change temperature test on 200mm concrete wall.
 

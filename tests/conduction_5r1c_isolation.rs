@@ -39,24 +39,28 @@
 //!
 //! where τ = C_m · R_total is the thermal time constant.
 //!
-//! # Current Implementation Status
+//! # Current Implementation Status (post #1277)
 //!
-//! **CRITICAL**: The current `FiveR1CSolver::step()` ignores `timestep`, `h_interior`,
-//! and `h_exterior`. It computes only the steady-state flux Q = ΔT / R_total.
-//! The mass node `T_mass` is never updated, and `energy_storage_rate()` returns 0.0.
+//! `FiveR1CSolver::step()` is **transient**:
+//! - Explicit Euler update: `T_mass += (T_ext − T_mass) / (R_total · C_total) · dt`
+//! - Returned flux: `(T_mass − T_int) / R_total` (depends on the evolved mass node)
+//! - `energy_storage_rate()` returns `Q_ext = (T_ext − T_mass) / R_total` (non-zero
+//!   once the wall is evolving)
+//! - The first `step()` after `initialize()` is a steady-state seed
+//!   (`T_mass = (T_int + T_ext) / 2`, `q = ΔT / R_total`, `energy_storage_rate = 0`)
+//!   so single-step callers continue to observe `q_ss`. See `five_r1c_solver.rs`
+//!   lines 144-184 for the seed branch and 203-216 for the transient branch.
 //!
-//! Therefore:
-//! - Steady-state tests (Section 1) PASS
-//! - Transient tests (Section 2): #1206 CLOSED — transient dynamics implemented
-//! - Time constant tests (Section 3): #1206 CLOSED — transient dynamics implemented
+//! The solver ignores `h_interior` and `h_exterior` — the surface films are
+//! folded into `R_total` by `WallSpec::total_r_value()`.
 //!
-//! # Acceptance Criteria (Issue #961)
+//! # Acceptance Criteria (Issue #961, closed by #1277)
 //!
 //! - [x] Steady-state within 0.1% of Q = ΔT/R
-//! - [ ] Transient matches exponential within 1% (blocked: solver is steady-state only)
-//! - [ ] Time constant within 2% (blocked: solver is steady-state only)
-//! - [x] 3+ construction types tested
-//! - [x] Test runs in <500ms
+//! - [x] Transient matches exponential within 1% (Section 2)
+//! - [x] Time constant within 2% of `C_total · R_total` (Section 3)
+//! - [x] 3+ construction types tested (lightweight, heavyweight, insulated, very heavyweight)
+//! - [x] Test runs in <500ms (Section 5)
 //!
 //! # References
 //!
@@ -451,21 +455,22 @@ fn test_r_total_matches_wall_spec() {
 // Section 2: Transient Step Response
 // ===========================================================================
 //
-// The FiveR1CSolver DOES implement transient dynamics:
-// - T_mass is updated via explicit Euler: T_mass += dT_mass * dt
-// - energy_storage_rate() returns Q_ext - Q_to_air (non-zero during transients)
+// The FiveR1CSolver is fully transient (issue #1277 closed):
+// - T_mass is updated via explicit Euler:
+//     T_mass += (T_ext − T_mass) / (R_total · C_total) · dt
+// - Returned flux depends on the evolved mass node:
+//     q = (T_mass − T_int) / R_total
+// - energy_storage_rate() returns Q_ext = (T_ext − T_mass) / R_total
 //
-// However, the returned flux from step() uses the steady-state formula
-// (T_ext - T_int) / R_total regardless of T_mass. This means the zone
-// balance sees the steady-state flux immediately, giving τ_measured ≈ dt.
+// The lumped model matches the closed-form exponential response
+//     q(t) = q_ss · (1 − exp(−t / τ))
+// with τ = C_total · R_total, which the tests below assert against.
 //
-// The R_1/R_2 split uses R_total/2 for each half (ignoring R_se and R_si
-// surface films). The analytical τ = C_total * R_total assumes the wall's
-// total R-value without surface films.
-//
-// These tests document the gap between the current implementation and
-// the analytical expectations. The flux at steady state and the τ accuracy
-// need improvement (issue #1277).
+// Each test seeds the wall to equilibrium (T_ext = T_int, q_ss = 0) and
+// then applies a step change to T_ext; the first step() at equilibrium
+// seeds T_mass to the midpoint, so the subsequent step() sequence evolves
+// T_mass from (T_int + T_ext) / 2 toward the new T_ext — yielding the
+// q(t) = q_ss · (1 − exp(−t / τ)) form expected by the assertions.
 
 /// Transient step response: exponential approach to steady-state.
 ///
@@ -681,9 +686,11 @@ fn test_transient_step_response_insulated() {
 // ===========================================================================
 //
 // These tests verify that the solver's effective time constant matches
-// τ = C_total × R_total derived from the WallSpec.
-//
-// Currently ignored because the solver doesn't implement transient dynamics.
+// τ = C_total × R_total derived from the WallSpec. Issue #1277 closed:
+// transient dynamics are implemented, the τ measurement threshold (63.2%
+// of q_ss, i.e. (1 − e⁻¹)) is reached within 2% of the analytical value,
+// and these tests run alongside the steady-state and transient step
+// response tests.
 
 /// Time constant verification for heavyweight wall.
 ///
