@@ -3,9 +3,10 @@
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use log::{info, warn};
 #[cfg(feature = "ort")]
+#[cfg(feature = "cuda")]
+use ort::execution_providers::CUDAExecutionProvider;
 use ort::execution_providers::{
-    CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
-    OpenVINOExecutionProvider,
+    CoreMLExecutionProvider, DirectMLExecutionProvider, OpenVINOExecutionProvider,
 };
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
@@ -14,7 +15,7 @@ use rand::SeedableRng;
 use rayon::prelude::*;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, Copy, Default)]
+#[derive(Clone, Debug, Copy, Default, PartialEq, Eq)]
 /// Inference backend for ONNX runtime execution.
 pub enum InferenceBackend {
     #[default]
@@ -654,10 +655,21 @@ impl SessionPool {
             Session::builder().map_err(|e| format!("Failed to create session builder: {}", e))?;
         match backend {
             InferenceBackend::CUDA => {
-                let ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
-                builder = builder
-                    .with_execution_providers([ep.build()])
-                    .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
+                #[cfg(feature = "cuda")]
+                {
+                    let ep = CUDAExecutionProvider::default().with_device_id(device_id as i32);
+                    builder = builder
+                        .with_execution_providers([ep.build()])
+                        .map_err(|e| format!("Failed to add CUDA execution provider: {}", e))?;
+                }
+                #[cfg(not(feature = "cuda"))]
+                {
+                    return Err(
+                        "CUDA backend requested but fluxion was built without the `cuda` feature; \
+                         rebuild with `cargo build --features cuda` or set FLUXION_ONNX_BACKEND=cpu"
+                            .to_string(),
+                    );
+                }
             }
             InferenceBackend::CoreML => {
                 let ep = CoreMLExecutionProvider::default();
@@ -746,6 +758,16 @@ impl<'a> std::ops::DerefMut for SessionGuard<'a> {
 }
 
 impl SurrogateManager {
+    /// Built-in default model path used when neither `FLUXION_ONNX_MODEL`
+    /// nor an explicit `load_onnx` call supplies a model. The zone-thermal
+    /// surrogate is shipped in `models/` and is the most general of the
+    /// trained components (conduction, solar, ventilation, zone).
+    pub const DEFAULT_MODEL_PATH: &'static str = "models/surrogate_zone_thermal.onnx";
+
+    /// Construct a `SurrogateManager` with no model loaded (legacy mock mode).
+    ///
+    /// Use [`Self::new_with_auto_load`] in production code paths to pick up
+    /// a real ONNX model from the environment or built-in default path.
     pub fn new() -> Result<Self, String> {
         Ok(SurrogateManager {
             model_loaded: false,
@@ -756,6 +778,89 @@ impl SurrogateManager {
             composite: None,
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
         })
+    }
+
+    /// Construct a `SurrogateManager`, auto-loading a real ONNX model when
+    /// one is available. Resolution order (first hit wins):
+    ///
+    /// 1. `FLUXION_ONNX_MODEL` environment variable (explicit override)
+    /// 2. `FLUXION_ONNX_BACKEND` selects the inference backend
+    ///    (`cpu`, `cuda`, `coreml`, `directml`, `openvino`).
+    ///    Defaults to `cpu`. `cuda` is a no-op when the `cuda` feature
+    ///    is disabled — the manager falls back to CPU at runtime.
+    /// 3. [`Self::DEFAULT_MODEL_PATH`] (`models/surrogate_zone_thermal.onnx`)
+    ///    if it exists on disk.
+    ///
+    /// If none of the above resolve to an existing file, the manager is
+    /// returned in mock mode (matching [`Self::new`]) so callers can still
+    /// fall back to analytical loads.
+    pub fn new_with_auto_load() -> Result<Self, String> {
+        let backend = Self::resolve_backend_from_env();
+        // 1. Explicit env var override.
+        if let Ok(path) = std::env::var("FLUXION_ONNX_MODEL") {
+            if !path.is_empty() && std::path::Path::new(&path).exists() {
+                return Self::load_with_backend(&path, backend, 0);
+            }
+        }
+        // 2. Built-in default path.
+        let default_path = Self::DEFAULT_MODEL_PATH;
+        if std::path::Path::new(default_path).exists() {
+            return Self::load_with_backend(default_path, backend, 0);
+        }
+        // 3. No model available — return mock manager.
+        Ok(SurrogateManager {
+            model_loaded: false,
+            model_path: None,
+            session_pool: None,
+            backend: InferenceBackend::CPU,
+            device_id: 0,
+            composite: None,
+            inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
+        })
+    }
+
+    /// Resolve the [`InferenceBackend`] from the `FLUXION_ONNX_BACKEND`
+    /// environment variable. Unknown values fall back to CPU. The CUDA
+    /// variant is downgraded to CPU when the `cuda` feature is disabled.
+    fn resolve_backend_from_env() -> InferenceBackend {
+        let raw = std::env::var("FLUXION_ONNX_BACKEND").unwrap_or_default();
+        let parsed = match raw.to_ascii_lowercase().as_str() {
+            "cuda" | "gpu" => Some(InferenceBackend::CUDA),
+            "coreml" => Some(InferenceBackend::CoreML),
+            "directml" => Some(InferenceBackend::DirectML),
+            "openvino" => Some(InferenceBackend::OpenVINO),
+            "cpu" | "" => Some(InferenceBackend::CPU),
+            _ => None,
+        };
+        match parsed {
+            Some(InferenceBackend::CUDA) => {
+                #[cfg(feature = "cuda")]
+                {
+                    if matches!(
+                        std::env::var("FLUXION_GPU").as_deref(),
+                        Ok("0") | Ok("false") | Ok("")
+                    ) {
+                        InferenceBackend::CPU
+                    } else {
+                        InferenceBackend::CUDA
+                    }
+                }
+                #[cfg(not(feature = "cuda"))]
+                {
+                    InferenceBackend::CPU
+                }
+            }
+            Some(other) => other,
+            None => InferenceBackend::CPU,
+        }
+    }
+
+    fn load_with_backend(
+        path: &str,
+        backend: InferenceBackend,
+        device_id: usize,
+    ) -> Result<Self, String> {
+        Self::with_gpu_backend(path, backend, device_id)
     }
 
     /// Returns `true` if the manager has no real ONNX model loaded and is
@@ -775,16 +880,40 @@ impl SurrogateManager {
         self.inference_metrics.lock().clone()
     }
 
+    /// Predict thermal loads, preferring real ONNX inference when a model
+    /// is loaded and falling back to the analytical model otherwise.
+    ///
+    /// Issue #1285: prior versions of this method unconditionally returned
+    /// a `vec![1.2; n]` mock constant whenever the model was not loaded,
+    /// which silently shadowed the analytical fallback. This implementation
+    /// routes:
+    ///
+    /// - **Model loaded** → real ONNX inference via [`Self::predict_loads_onnx`].
+    /// - **Model not loaded** → [`Self::analytical_loads`] (the synthetic
+    ///   sine-cycle surrogate retained for offline use).
+    /// - **ONNX inference errors** → [`Self::analytical_loads`] with a
+    ///   warning, so the simulation keeps running.
     pub fn predict_loads_with_fallback(&self, temps: &[f64]) -> Result<Vec<f64>, String> {
-        // Try ONNX first (delegate to existing batched method)
-        let batch_loads = self.predict_loads_batched(&[temps.to_vec()]);
+        // Empty input is a no-op for both paths.
+        if temps.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        if batch_loads.is_empty() {
-            // Log warning and fall back to analytical
-            warn!("ONNX inference returned empty results, falling back to analytical mode");
-            self.analytical_loads(temps)
-        } else {
-            Ok(batch_loads[0].clone())
+        // No model loaded → use the analytical fallback (not the 1.2 mock).
+        if !self.model_loaded && self.composite.is_none() {
+            return self.analytical_loads(temps);
+        }
+
+        // Model loaded → try real ONNX inference.
+        match self.predict_loads_onnx(temps) {
+            Ok(loads) => Ok(loads),
+            Err(e) => {
+                warn!(
+                    "ONNX inference failed ({}), falling back to analytical_loads",
+                    e
+                );
+                self.analytical_loads(temps)
+            }
         }
     }
 
@@ -1300,6 +1429,11 @@ impl SurrogateManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Shared mutex serializing all tests in this module that mutate
+    /// `FLUXION_*` env vars. Without this, parallel `cargo test` threads
+    /// stomp on each other's env state and produce flaky failures.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
     #[test]
     fn creation() {
@@ -1857,6 +1991,213 @@ mod tests {
                 domain.is_valid(&inputs),
                 "Inputs for {} should be valid",
                 zone
+            );
+        }
+    }
+
+    // ---- Issue #1285: Wire SurrogateManager to real ONNX inference ----
+
+    #[test]
+    fn test_new_with_auto_load_picks_up_default_model() {
+        // Issue #1285 acceptance: with the shipped default model on disk,
+        // `new_with_auto_load()` must produce a non-mock manager and route
+        // predict_loads_with_fallback through real ONNX inference.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        if !std::path::Path::new(SurrogateManager::DEFAULT_MODEL_PATH).exists() {
+            eprintln!(
+                "Skipping: default model {} not present in repo",
+                SurrogateManager::DEFAULT_MODEL_PATH
+            );
+            return;
+        }
+        // Hermetic: ensure no leftover env var from another test is in play.
+        let prev = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::remove_var("FLUXION_ONNX_MODEL");
+        let m = SurrogateManager::new_with_auto_load().expect("auto-load must succeed");
+        assert!(
+            m.model_loaded,
+            "SurrogateManager::new_with_auto_load() must load the default model"
+        );
+        assert!(!m.is_mock(), "is_mock() must be false after auto-load");
+        assert_eq!(
+            m.model_path.as_deref(),
+            Some(SurrogateManager::DEFAULT_MODEL_PATH)
+        );
+        if let Some(v) = prev {
+            std::env::set_var("FLUXION_ONNX_MODEL", v);
+        }
+    }
+
+    #[test]
+    fn test_new_returns_mock_when_no_model_resolvable() {
+        // When neither env var nor default path resolves, `new()` must
+        // remain in mock mode (no panics, no errors).
+        let m = SurrogateManager::new().unwrap();
+        assert!(m.is_mock());
+        assert!(!m.model_loaded);
+    }
+
+    #[test]
+    fn test_predict_loads_with_fallback_uses_onnx_when_loaded() {
+        // Issue #1285: when a model is loaded, the fallback path must
+        // delegate to ONNX (not the 1.2 mock constant).
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        if !std::path::Path::new(SurrogateManager::DEFAULT_MODEL_PATH).exists() {
+            eprintln!(
+                "Skipping: default model {} not present in repo",
+                SurrogateManager::DEFAULT_MODEL_PATH
+            );
+            return;
+        }
+        // Hermetic.
+        let prev = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::remove_var("FLUXION_ONNX_MODEL");
+        let m = SurrogateManager::new_with_auto_load().expect("auto-load must succeed");
+
+        // Build a 7-element input (the zone-thermal model expects [1, 7]).
+        let temps = vec![15.0, 22.0, 0.5, 0.6, 0.7, 0.8, 0.9];
+        let loads = m
+            .predict_loads_with_fallback(&temps)
+            .expect("real ONNX inference should not error on valid input");
+
+        assert_eq!(loads.len(), 1, "ONNX model returns one scalar load");
+        let real = loads[0];
+        // Real ONNX output must NOT be the 1.2 mock constant.
+        assert!(
+            (real - 1.2).abs() > 1e-6,
+            "got the 1.2 mock constant ({}) instead of ONNX output",
+            real
+        );
+        assert!(
+            real.is_finite(),
+            "ONNX output should be finite, got {}",
+            real
+        );
+        if let Some(v) = prev {
+            std::env::set_var("FLUXION_ONNX_MODEL", v);
+        }
+    }
+
+    #[test]
+    fn test_predict_loads_with_fallback_uses_analytical_when_not_loaded() {
+        // Issue #1285: when no model is loaded, the fallback must return
+        // the analytical sine-cycle value (NOT the 1.2 mock constant).
+        let m = SurrogateManager::new().unwrap();
+        assert!(m.is_mock());
+
+        let temps = vec![20.0, 21.0, 22.0];
+        let loads = m
+            .predict_loads_with_fallback(&temps)
+            .expect("fallback should always succeed for valid temps");
+
+        // Compare to analytical_loads directly — they MUST agree exactly.
+        let analytical = m.analytical_loads(&temps).unwrap();
+        assert_eq!(loads, analytical);
+
+        // And the values must NOT be the 1.2 mock constant.
+        assert!(
+            (loads[0] - 1.2).abs() > 1e-6,
+            "got the 1.2 mock constant ({}) instead of analytical_loads",
+            loads[0]
+        );
+    }
+
+    #[test]
+    fn test_env_var_overrides_default_model_path() {
+        // Set FLUXION_ONNX_MODEL to the small dummy fixture and verify
+        // auto-load uses the override (not the built-in default).
+        // Serialize access via the shared ENV_LOCK so parallel runs
+        // don't stomp on each other's env state.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        let dummy = DUMMY_ONNX_MODEL;
+        if !std::path::Path::new(dummy).exists() {
+            eprintln!("Skipping: {} not found", dummy);
+            return;
+        }
+        let prev = std::env::var("FLUXION_ONNX_MODEL").ok();
+        std::env::set_var("FLUXION_ONNX_MODEL", dummy);
+        let m = SurrogateManager::new_with_auto_load().expect("env override should load");
+        assert_eq!(m.model_path.as_deref(), Some(dummy));
+        match prev {
+            Some(v) => std::env::set_var("FLUXION_ONNX_MODEL", v),
+            None => std::env::remove_var("FLUXION_ONNX_MODEL"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_backend_from_env_defaults_to_cpu() {
+        // No env var → CPU. Serialize via ENV_LOCK.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_backend = std::env::var("FLUXION_ONNX_BACKEND").ok();
+        let prev_gpu = std::env::var("FLUXION_GPU").ok();
+        std::env::remove_var("FLUXION_ONNX_BACKEND");
+        std::env::remove_var("FLUXION_GPU");
+        let b = SurrogateManager::resolve_backend_from_env();
+        assert_eq!(b, InferenceBackend::CPU);
+        match prev_backend {
+            Some(v) => std::env::set_var("FLUXION_ONNX_BACKEND", v),
+            None => std::env::remove_var("FLUXION_ONNX_BACKEND"),
+        }
+        match prev_gpu {
+            Some(v) => std::env::set_var("FLUXION_GPU", v),
+            None => std::env::remove_var("FLUXION_GPU"),
+        }
+    }
+
+    #[test]
+    fn test_resolve_backend_from_env_cuda_downgrades_without_feature() {
+        // When FLUXION_ONNX_BACKEND=cuda but the cuda feature is OFF,
+        // resolution must yield CPU so runtime stays valid.
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_backend = std::env::var("FLUXION_ONNX_BACKEND").ok();
+        let prev_gpu = std::env::var("FLUXION_GPU").ok();
+        std::env::set_var("FLUXION_ONNX_BACKEND", "cuda");
+        std::env::remove_var("FLUXION_GPU");
+        let b = SurrogateManager::resolve_backend_from_env();
+        #[cfg(feature = "cuda")]
+        assert_eq!(b, InferenceBackend::CUDA);
+        #[cfg(not(feature = "cuda"))]
+        assert_eq!(b, InferenceBackend::CPU);
+        match prev_backend {
+            Some(v) => std::env::set_var("FLUXION_ONNX_BACKEND", v),
+            None => std::env::remove_var("FLUXION_ONNX_BACKEND"),
+        }
+        match prev_gpu {
+            Some(v) => std::env::set_var("FLUXION_GPU", v),
+            None => std::env::remove_var("FLUXION_GPU"),
+        }
+    }
+
+    #[test]
+    fn test_cuda_backend_errors_when_feature_disabled() {
+        // Direct test of the cfg-gated CUDA branch in create_session:
+        // when cuda feature is OFF, requesting CUDA must return Err.
+        let dummy = DUMMY_ONNX_MODEL;
+        if !std::path::Path::new(dummy).exists() {
+            eprintln!("Skipping: {} not found", dummy);
+            return;
+        }
+        let result = SurrogateManager::with_gpu_backend(dummy, InferenceBackend::CUDA, 0);
+        #[cfg(feature = "cuda")]
+        {
+            // With cuda feature ON, the session loads fine (or fails on the
+            // ORT binary, but never with our cfg-gate error string).
+            if let Err(e) = result {
+                assert!(
+                    !e.contains("without the `cuda` feature"),
+                    "got cfg-gate error despite cuda feature: {}",
+                    e
+                );
+            }
+        }
+        #[cfg(not(feature = "cuda"))]
+        {
+            let err = result.expect_err("CUDA must error when cuda feature is disabled");
+            assert!(
+                err.contains("cuda") && err.contains("feature"),
+                "expected feature-gate error, got: {}",
+                err
             );
         }
     }
