@@ -178,16 +178,18 @@ impl PyMultiZoneThermalModel {
         vec![0.0; self.inner.num_zones]
     }
 
-    /// Get zone-specific peak loads
+    /// Get zone-specific peak loads (Issue #1289)
+    ///
+    /// Returns a dictionary with:
+    /// - "heating": List of peak heating power per zone in kW
+    /// - "cooling": List of peak cooling power per zone in kW
     pub fn get_zone_peak_loads(&self) -> PyResult<HashMap<String, Vec<f64>>> {
         let mut result = HashMap::new();
-
-        // TODO: Implement peak loads once ThermalModel API is updated
-        result.insert("heating_peaks".to_string(), vec![0.0; self.inner.num_zones]);
-
-        // Add cooling peaks
-        result.insert("cooling_peaks".to_string(), vec![0.0; self.inner.num_zones]);
-
+        result.insert(
+            "heating".to_string(),
+            self.inner.get_zone_peak_heating_kw(),
+        );
+        result.insert("cooling".to_string(), self.inner.get_zone_peak_cooling_kw());
         Ok(result)
     }
 

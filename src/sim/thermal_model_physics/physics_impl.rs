@@ -617,22 +617,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             // Physics-based: No calibration factors - track actual HVAC demand
             // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
             let enabled_vec = self.0.hvac_enabled.as_ref();
-            let hvac_output_sum: f64 = hvac_output
+            let mut hvac_output_sum: f64 = 0.0;
+            for (i, (output, &enabled)) in hvac_output
                 .as_ref()
                 .iter()
                 .zip(enabled_vec.iter())
-                .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
-                .sum::<f64>();
-            if hvac_output_sum > 0.0 {
-                // Heating mode - track actual demand
-                if hvac_output_sum > 0.0 {
-                    // Heating mode - track actual demand
-                    self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_output_sum);
-                } else if hvac_output_sum < 0.0 {
-                    // Cooling mode (store as positive value)
-                    let cooling_demand = -hvac_output_sum;
-                    self.0.peak_power_cooling = self.0.peak_power_cooling.max(cooling_demand);
+                .enumerate()
+            {
+                let val = if enabled > 0.5 { *output } else { 0.0 };
+                hvac_output_sum += val;
+
+                // Issue #1289: Track per-zone peaks
+                if val > 0.0 {
+                    // Heating mode for this zone
+                    let val_kw = val / 1000.0;
+                    if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
+                        self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                    }
+                } else if val < 0.0 {
+                    // Cooling mode for this zone
+                    let val_kw = -val / 1000.0;
+                    if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
+                        self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                    }
                 }
+            }
+            // Track global peak (sum of all zones)
+            if hvac_output_sum > 0.0 {
+                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_output_sum);
+            } else if hvac_output_sum < 0.0 {
+                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_output_sum);
             }
 
             // Both equipment and fallback paths now use hvac_output (per-zone VectorField)
@@ -655,25 +669,38 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let hvac_power_for_peak = hvac_output_raw.as_ref();
 
             // Track peak heating/cooling based on actual HVAC demand (only if not already tracked above)
-            if self.0.hvac_equipment.is_none() {
-                // Note: hvac_output_raw is positive for heating, negative for cooling
-                // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
-                let enabled_vec = self.0.hvac_enabled.as_ref();
-                let hvac_power_watts = hvac_power_for_peak
-                    .iter()
-                    .zip(enabled_vec.iter())
-                    .map(|(output, &enabled)| if enabled > 0.5 { *output } else { 0.0 })
-                    .sum::<f64>();
+            // Note: This is the fallback path when hvac_equipment is None
+            // Note: hvac_output_raw is positive for heating, negative for cooling
+            // Only sum HVAC output from zones where HVAC is enabled (fix for Case 960)
+            let enabled_vec = self.0.hvac_enabled.as_ref();
+            let mut hvac_power_watts_sum: f64 = 0.0;
+            for (i, (output, &enabled)) in hvac_power_for_peak
+                .iter()
+                .zip(enabled_vec.iter())
+                .enumerate()
+            {
+                let val = if enabled > 0.5 { *output } else { 0.0 };
+                hvac_power_watts_sum += val;
 
-                // Physics-based: Track actual HVAC demand without calibration
-                if hvac_power_watts > 0.0 {
-                    // Heating mode - track actual demand
-                    self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts);
-                } else if hvac_power_watts < 0.0 {
-                    // Cooling mode (store as positive value)
-                    let cooling_demand = -hvac_power_watts;
-                    self.0.peak_power_cooling = self.0.peak_power_cooling.max(cooling_demand);
+                // Issue #1289: Track per-zone peaks
+                if val > 0.0 {
+                    let val_kw = val / 1000.0;
+                    if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
+                        self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                    }
+                } else if val < 0.0 {
+                    let val_kw = -val / 1000.0;
+                    if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
+                        self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                    }
                 }
+            }
+
+            // Track global peak
+            if hvac_power_watts_sum > 0.0 {
+                self.0.peak_power_heating = self.0.peak_power_heating.max(hvac_power_watts_sum);
+            } else if hvac_power_watts_sum < 0.0 {
+                self.0.peak_power_cooling = self.0.peak_power_cooling.max(-hvac_power_watts_sum);
             }
 
             hvac_output_raw
@@ -1326,12 +1353,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut heating_sum = 0.0;
         let mut cooling_sum = 0.0;
         let mut total_signed = 0.0;
-        for &val in hvac_output_raw.as_ref() {
+        for (i, &val) in hvac_output_raw.as_ref().iter().enumerate() {
             total_signed += val;
             if val > 0.0 {
                 heating_sum += val;
+                // Issue #1289: Track per-zone peaks
+                let val_kw = val / 1000.0;
+                if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
+                    self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                }
             } else {
                 cooling_sum += -val;
+                // Issue #1289: Track per-zone peaks
+                let val_kw = -val / 1000.0;
+                if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
+                    self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                }
             }
         }
 
@@ -2698,18 +2735,29 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         {
             let mut heating_sum = 0.0_f64;
             let mut cooling_sum = 0.0_f64;
-            for (&output, &enabled) in hvac_output
+            for (i, (&output, &enabled)) in hvac_output
                 .as_ref()
                 .iter()
                 .zip(self.0.hvac_enabled.as_ref().iter())
+                .enumerate()
             {
                 let val = if enabled > 0.5 { output } else { 0.0 };
                 hvac_power_watts += val;
 
                 if val > 0.0 {
                     heating_sum += val;
+                    // Issue #1289: Track per-zone peaks
+                    let val_kw = val / 1000.0;
+                    if val_kw > self.0.zone_peak_heating_kw.as_mut()[i] {
+                        self.0.zone_peak_heating_kw.as_mut()[i] = val_kw;
+                    }
                 } else if val < 0.0 {
                     cooling_sum += -val;
+                    // Issue #1289: Track per-zone peaks
+                    let val_kw = -val / 1000.0;
+                    if val_kw > self.0.zone_peak_cooling_kw.as_mut()[i] {
+                        self.0.zone_peak_cooling_kw.as_mut()[i] = val_kw;
+                    }
                 }
             }
 

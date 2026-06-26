@@ -346,7 +346,8 @@ where
         self.0.peak_power_cooling / 1000.0
     }
 
-    /// Reset peak power tracking
+    /// Reset peak power tracking (scalar peaks only)
+    /// Note: For per-zone peaks, use the specialized impl ThermalModel<VectorField>
     pub fn reset_peak_power(&mut self) {
         self.0.peak_power_heating = 0.0;
         self.0.peak_power_cooling = 0.0;
@@ -2488,6 +2489,9 @@ impl ThermalModel<VectorField> {
             // Peak power tracking (Issue #272)
             peak_power_heating: 0.0, // Peak heating power in watts
             peak_power_cooling: 0.0, // Peak cooling power in watts
+            // Per-zone peak power tracking (Issue #1289)
+            zone_peak_heating_kw: VectorField::from_scalar(0.0, num_zones),
+            zone_peak_cooling_kw: VectorField::from_scalar(0.0, num_zones),
 
             // Separate heating and cooling energy tracking (Plan 03-08d: Diagnostic)
             annual_heating_energy: 0.0, // Cumulative heating energy in kWh
@@ -2671,6 +2675,16 @@ impl ThermalModel<VectorField> {
         model.h_tr_partition = Some(VectorField::from_scalar(0.0, num_zones));
 
         model
+    }
+
+    /// Get per-zone peak heating power in kW (Issue #1289)
+    pub fn get_zone_peak_heating_kw(&self) -> Vec<f64> {
+        self.0.zone_peak_heating_kw.as_slice().to_vec()
+    }
+
+    /// Get per-zone peak cooling power in kW (Issue #1289)
+    pub fn get_zone_peak_cooling_kw(&self) -> Vec<f64> {
+        self.0.zone_peak_cooling_kw.as_slice().to_vec()
     }
 }
 
