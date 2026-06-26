@@ -29,6 +29,11 @@ minimum_test_timeout = 60
 # The long-term fix (moving physics to fluxion-core) is tracked in
 # docs/mutation_testing_crate_split.md Phase 2. Until then, we scope
 # mutation testing to the modules that fit in CI memory.
+#
+# src/ai/** is no longer excluded (issue #1294): the workflow now passes
+# --features ort so src/ai/surrogate compiles end-to-end. The ort type
+# hierarchy is still large, so peak RSS may still approach the 32 GB limit;
+# monitoring and follow-up are documented in the PR.
 exclude_globs = [
     # FULL physics tree — the primary OOM source (complex generic types)
     # All *.rs files under src/physics/ cause exponential type expansion.
@@ -40,10 +45,6 @@ exclude_globs = [
     "src/sim/thermal_model_core.rs",
     "src/sim/thermal_model_iterative.rs",
     "src/sim/sky_radiation.rs",
-
-    # AI/ML modules — ort (ONNX) loaded even without default features,
-    # causes large type hierarchies and binary download overhead
-    "src/ai/**",
 
     # Large validation modules
     "src/validation/**",

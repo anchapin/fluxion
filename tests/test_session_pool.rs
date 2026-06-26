@@ -103,6 +103,7 @@ fn test_concurrent_batched_inference() {
     }
 }
 
+#[cfg(feature = "ort")]
 #[test]
 fn test_concurrent_real_model_inference() {
     // If a real ONNX model is available, test concurrent inference with actual model

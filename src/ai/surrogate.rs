@@ -2,6 +2,7 @@
 
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
 use log::{info, warn};
+#[cfg(feature = "ort")]
 use ort::execution_providers::{
     CUDAExecutionProvider, CoreMLExecutionProvider, DirectMLExecutionProvider,
     OpenVINOExecutionProvider,
@@ -424,9 +425,28 @@ impl Default for SurrogateManager {
 }
 
 /// Thread-safe pool of ONNX Runtime sessions for concurrent inference.
+///
+/// Issue #1294: When the `ort` feature is disabled, `SessionPool` is an inert
+/// stub. The public surface (`Option<Arc<SessionPool>>` field on
+/// [`SurrogateManager`], `SessionPool::new` callers in tests) still compiles —
+/// only `create_session` actually attempts to load an ONNX model, and it
+/// returns an error when `ort` is disabled.
+#[cfg(feature = "ort")]
 #[derive(Debug)]
 pub struct SessionPool {
     sessions: Mutex<Vec<ort::session::Session>>,
+    model_path: String,
+    backend: InferenceBackend,
+    device_id: usize,
+}
+
+/// Inert stub of [`SessionPool`] used when the `ort` feature is disabled
+/// (issue #1294). Carries no ONNX state. Construction succeeds; any attempt
+/// to actually create an ONNX session via the corresponding methods returns
+/// an error (those methods only exist under `#[cfg(feature = "ort")]`).
+#[cfg(not(feature = "ort"))]
+#[derive(Debug)]
+pub struct SessionPool {
     model_path: String,
     backend: InferenceBackend,
     device_id: usize,
@@ -439,6 +459,7 @@ pub struct MultiDeviceSessionPool {
     _model_path: String,
 }
 
+#[cfg(feature = "ort")]
 impl MultiDeviceSessionPool {
     pub fn new(model_path: String, config: &MultiDeviceConfig) -> Result<Self, String> {
         let mut device_pools = Vec::new();
@@ -544,10 +565,29 @@ impl MultiDeviceSessionPool {
     }
 }
 
+/// Stub implementation when the `ort` feature is disabled (issue #1294).
+/// `MultiDeviceSessionPool::new` always fails; `num_devices` reports zero.
+#[cfg(not(feature = "ort"))]
+impl MultiDeviceSessionPool {
+    pub fn new(_model_path: String, _config: &MultiDeviceConfig) -> Result<Self, String> {
+        Err("Multi-device ONNX inference requires the `ort` feature".to_string())
+    }
+
+    pub fn num_devices(&self) -> usize {
+        0
+    }
+}
+
+/// RAII guard returned by [`MultiDeviceSessionPool::get_session`].
+///
+/// Issue #1294: only available with the `ort` feature — the `run_inference`
+/// signature depends on `ort::value::Value`.
+#[cfg(feature = "ort")]
 pub struct MultiDeviceSessionGuard {
     pool: Arc<SessionPool>,
 }
 
+#[cfg(feature = "ort")]
 impl MultiDeviceSessionGuard {
     pub fn run_inference(&self, input_tensor: ort::value::Value) -> Result<Vec<f64>, String> {
         let mut guard = self.pool.get_or_create_session()?;
@@ -565,6 +605,7 @@ impl MultiDeviceSessionGuard {
     }
 }
 
+#[cfg(feature = "ort")]
 impl SessionPool {
     fn new(
         model_path: String,
@@ -644,11 +685,43 @@ impl SessionPool {
     }
 }
 
+/// Stub [`SessionPool`] methods when the `ort` feature is disabled
+/// (issue #1294). `SessionPool::new` accepts a model path but never loads a
+/// session; `get_or_create_session` returns an error explaining that ONNX
+/// inference is unavailable.
+#[cfg(not(feature = "ort"))]
+impl SessionPool {
+    #[allow(dead_code)]
+    fn new(model_path: String, backend: InferenceBackend, device_id: usize) -> Self {
+        SessionPool {
+            model_path,
+            backend,
+            device_id,
+        }
+    }
+
+    #[allow(dead_code)]
+    fn get_or_create_session(&self) -> Result<SessionGuard<'_>, String> {
+        Err("ONNX inference requires the `ort` feature (build with --features ort)".to_string())
+    }
+}
+
+#[cfg(feature = "ort")]
 struct SessionGuard<'a> {
     pool: &'a SessionPool,
     session: Option<ort::session::Session>,
 }
 
+/// Stub [`SessionGuard`] when the `ort` feature is disabled (issue #1294).
+/// Constructed by [`SessionPool::get_or_create_session`] in its error path,
+/// but never actually used (the function returns `Err` before producing it).
+#[cfg(not(feature = "ort"))]
+#[allow(dead_code)]
+struct SessionGuard<'a> {
+    _pool: &'a SessionPool,
+}
+
+#[cfg(feature = "ort")]
 impl<'a> Drop for SessionGuard<'a> {
     fn drop(&mut self) {
         if let Some(session) = self.session.take() {
@@ -657,6 +730,7 @@ impl<'a> Drop for SessionGuard<'a> {
     }
 }
 
+#[cfg(feature = "ort")]
 impl<'a> std::ops::Deref for SessionGuard<'a> {
     type Target = ort::session::Session;
     fn deref(&self) -> &Self::Target {
@@ -664,6 +738,7 @@ impl<'a> std::ops::Deref for SessionGuard<'a> {
     }
 }
 
+#[cfg(feature = "ort")]
 impl<'a> std::ops::DerefMut for SessionGuard<'a> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.session.as_mut().unwrap()
@@ -784,10 +859,28 @@ impl SurrogateManager {
         }
     }
 
+    #[cfg(feature = "ort")]
     pub fn load_onnx(path: &str) -> Result<Self, String> {
         Self::with_gpu_backend(path, InferenceBackend::CPU, 0)
     }
 
+    /// Stub for `cargo build` without the `ort` feature (issue #1294).
+    /// Returns a clear error instead of panicking; callers should detect the
+    /// missing feature and surface a friendly message. Still validates the
+    /// path so callers see a `not found` diagnostic before the feature error.
+    #[cfg(not(feature = "ort"))]
+    pub fn load_onnx(path: &str) -> Result<Self, String> {
+        use std::path::Path;
+        if !Path::new(path).exists() {
+            return Err(format!("ONNX model file not found: {}", path));
+        }
+        Err(
+            "Loading ONNX models requires the `ort` feature (build with --features ort)"
+                .to_string(),
+        )
+    }
+
+    #[cfg(feature = "ort")]
     pub fn with_gpu_backend(
         path: &str,
         backend: InferenceBackend,
@@ -814,6 +907,25 @@ impl SurrogateManager {
         })
     }
 
+    /// Stub for non-`ort` builds (issue #1294). Validates the path first so
+    /// callers still see a `not found` diagnostic before the feature error.
+    #[cfg(not(feature = "ort"))]
+    pub fn with_gpu_backend(
+        path: &str,
+        _backend: InferenceBackend,
+        _device_id: usize,
+    ) -> Result<Self, String> {
+        use std::path::Path;
+        if !Path::new(path).exists() {
+            return Err(format!("ONNX model file not found: {}", path));
+        }
+        Err(
+            "Loading ONNX models requires the `ort` feature (build with --features ort)"
+                .to_string(),
+        )
+    }
+
+    #[cfg(feature = "ort")]
     pub fn with_multi_device(path: &str, config: MultiDeviceConfig) -> Result<Self, String> {
         use std::path::Path;
         if !Path::new(path).exists() {
@@ -847,6 +959,13 @@ impl SurrogateManager {
         }
     }
 
+    /// Stub for non-`ort` builds (issue #1294).
+    #[cfg(not(feature = "ort"))]
+    pub fn with_multi_device(_path: &str, _config: MultiDeviceConfig) -> Result<Self, String> {
+        Err("Multi-device ONNX inference requires the `ort` feature".to_string())
+    }
+
+    #[cfg(feature = "ort")]
     pub fn load_modular(component_configs: &[(&str, InferenceBackend)]) -> Result<Self, String> {
         if component_configs.is_empty() {
             return Err("At least one component model required for modular surrogate".to_string());
@@ -875,6 +994,12 @@ impl SurrogateManager {
             composite: Some(composite),
             inference_metrics: Arc::new(parking_lot::Mutex::new(InferenceMetrics::default())),
         })
+    }
+
+    /// Stub for non-`ort` builds (issue #1294).
+    #[cfg(not(feature = "ort"))]
+    pub fn load_modular(_component_configs: &[(&str, InferenceBackend)]) -> Result<Self, String> {
+        Err("Modular ONNX surrogates require the `ort` feature".to_string())
     }
 
     pub fn predict_loads(&self, current_temps: &[f64]) -> Vec<f64> {
@@ -910,6 +1035,7 @@ impl SurrogateManager {
     /// - no ONNX model has been loaded via [`Self::load_onnx`]
     /// - input tensor shape does not match the model's expected input
     /// - the ONNX runtime reports an inference error
+    #[cfg(feature = "ort")]
     pub fn predict_loads_onnx(&self, current_temps: &[f64]) -> Result<Vec<f64>, String> {
         if !self.model_loaded {
             return Err("No ONNX model loaded".to_string());
@@ -953,6 +1079,13 @@ impl SurrogateManager {
         Ok(result)
     }
 
+    /// Stub for non-`ort` builds (issue #1294). Without the `ort` feature,
+    /// no ONNX model can ever be loaded, so this always errors.
+    #[cfg(not(feature = "ort"))]
+    pub fn predict_loads_onnx(&self, _current_temps: &[f64]) -> Result<Vec<f64>, String> {
+        Err("ONNX inference requires the `ort` feature (build with --features ort)".to_string())
+    }
+
     pub fn predict_loads_batched(&self, batch_temps: &[Vec<f64>]) -> Vec<Vec<f64>> {
         if let Some(ref comp) = self.composite {
             return batch_temps
@@ -985,6 +1118,7 @@ impl SurrogateManager {
 
     /// Explicit batched ONNX inference — returns an error instead of
     /// panicking or silently falling back to mock data.
+    #[cfg(feature = "ort")]
     pub fn predict_loads_batched_onnx(
         &self,
         batch_temps: &[Vec<f64>],
@@ -1044,6 +1178,15 @@ impl SurrogateManager {
         let elapsed_ms = start.elapsed().as_secs_f64() * 1000.0;
         self.inference_metrics.lock().record_inference(elapsed_ms);
         Ok(batch_results)
+    }
+
+    /// Stub for non-`ort` builds (issue #1294).
+    #[cfg(not(feature = "ort"))]
+    pub fn predict_loads_batched_onnx(
+        &self,
+        _batch_temps: &[Vec<f64>],
+    ) -> Result<Vec<Vec<f64>>, String> {
+        Err("ONNX inference requires the `ort` feature (build with --features ort)".to_string())
     }
 }
 
@@ -1409,6 +1552,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_is_mock_false_when_model_loaded() {
         // Skip cleanly if the fixture is missing (e.g. cargo packaging dropped it).
@@ -1422,6 +1566,7 @@ mod tests {
         assert!(m.model_loaded);
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_predict_loads_onnx_errors_when_no_model_loaded() {
         let m = SurrogateManager::new().unwrap();
@@ -1430,6 +1575,7 @@ mod tests {
         assert!(result.unwrap_err().contains("No ONNX model loaded"));
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_load_real_onnx_model_and_inspect_io() {
         // Verifies the end-to-end ONNX pipeline: load, inspect inputs/outputs.
@@ -1470,6 +1616,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_predict_loads_onnx_runs_real_inference() {
         // End-to-end: the dummy model is a pass-through (output[0,0] = input[0,0]).
@@ -1503,6 +1650,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_predict_loads_uses_real_onnx_when_loaded() {
         // The public `predict_loads` should route through ONNX when a model
@@ -1534,6 +1682,7 @@ mod tests {
         assert_eq!(metrics.throughput, 0.0);
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_predict_loads_batched_onnx_errors_when_no_model_loaded() {
         let m = SurrogateManager::new().unwrap();
@@ -1541,6 +1690,7 @@ mod tests {
         assert!(result.is_err());
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_predict_loads_batched_runs_real_inference() {
         if !std::path::Path::new(DUMMY_ONNX_MODEL).exists() {

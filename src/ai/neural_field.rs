@@ -1,6 +1,7 @@
 use crate::physics::continuous::ContinuousField;
 use ndarray::ArrayD;
 use num_traits::Zero;
+#[cfg(feature = "ort")]
 use ort::{session::Session, value::Value};
 use std::f64::consts::PI;
 use std::ops::{Add, AddAssign, Mul};
@@ -61,6 +62,10 @@ impl<T> NeuralScalarField<T> {
 }
 
 impl NeuralScalarField<f64> {
+    /// Load a `NeuralScalarField` from an ONNX model file. Requires the
+    /// `ort` feature (issue #1294) — without it, returns a runtime error
+    /// explaining the missing feature.
+    #[cfg(feature = "ort")]
     pub fn from_onnx<P: AsRef<Path>>(
         model_path: P,
         input: ArrayD<f32>,
@@ -84,6 +89,16 @@ impl NeuralScalarField<f64> {
         };
 
         Ok(Self::new(weights)?)
+    }
+
+    /// Stub for non-`ort` builds (issue #1294). Always returns an error
+    /// explaining that ONNX inference is unavailable without `--features ort`.
+    #[cfg(not(feature = "ort"))]
+    pub fn from_onnx<P: AsRef<Path>>(
+        _model_path: P,
+        _input: ArrayD<f32>,
+    ) -> Result<Self, Box<dyn std::error::Error>> {
+        Err("Loading ONNX models requires the `ort` feature (build with --features ort)".into())
     }
 }
 

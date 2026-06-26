@@ -65,12 +65,14 @@ jobs:
           # --jobs 2: cap parallelism to bound peak RSS to what the 32 GB runner allows.
           # -p fluxion: mutate only the main crate; fluxion-core is a cached dep.
           # --baseline skip: skip the no-mutant baseline run to save time + memory.
-          # --no-default-features: exclude ort (ONNX) even though it's a direct dep;
-          #           ort's type hierarchy is still large even without CUDA/TensorRT.
-          # See .cargo/mutants.toml for the full exclude_globs list (src/physics/**,
-          # src/ai/**, src/validation/** are all excluded to prevent discovery OOM).
+          # --features ort: opt in to the ONNX runtime so src/ai/** (issue #1294) is
+          #           included in mutation analysis instead of excluded from
+          #           .cargo/mutants.toml. Without `--features ort`, the build
+          #           excludes `ort` entirely (issue #1294) and src/ai/surrogate
+          #           would fail to compile. The default feature set remains []
+          #           so non-AI builds stay slim — see Cargo.toml.
           cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 \
-            --baseline skip --no-default-features -- --test-threads=2
+            --baseline skip --features ort -- --test-threads=2
 
       - name: Generate HTML report
         if: always()
