@@ -58,8 +58,14 @@ default = []
 python-bindings = ["dep:pyo3", "dep:pyo3-build-config", "dep:numpy"]
 # Feature flag to enable Node.js/NAPI bindings (disabled by default for pure Rust testing)
 napi-bindings = ["dep:napi", "dep:napi-derive", "dep:napi-build"]
-# Feature flag for CUDA support (enables GPU-accelerated ONNX inference)
-cuda = ["ort/cuda", "ort/tensorrt"]
+# ONNX Runtime support (issue #1294). When disabled (the default), the crate does
+# not compile `ort` and src/ai/surrogate exposes only the mock / analytical fallback.
+# Opt in for AI surrogate inference, the ASHRAE ONNX tests, or mutation testing.
+ort = ["dep:ort"]
+# Alias for `ort` (issue #1294 requested feature naming).
+onnx = ["ort"]
+# CUDA / TensorRT execution providers for `ort` (issue #1294). Implies `ort`.
+cuda = ["ort", "ort/cuda", "ort/tensorrt"]
 # Feature flag for wiring tracing in integration tests (Plan 21-10)
 wiring-tracing = []
 # Feature flag for multi-zone support
@@ -129,8 +135,11 @@ rand_distr = "0.4"
 statrs = "0.18.0"
 
 # AI / Machine Learning Integration
-# Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io
-ort = { version = "2.0.0-rc.10", features = ["download-binaries"] }
+# Using 2.0.0-rc.10 (prerelease) as stable 1.20 is not available on crates.io.
+# Gated behind the `ort` feature (issue #1294) so the default build (no features)
+# does not pull in the ONNX runtime. The mutation-testing workflow opts in via
+# `--features ort`; default Rust builds stay small and fast.
+ort = { version = "2.0.0-rc.10", features = ["download-binaries"], optional = true }
 
 # Python Interop
 pyo3 = { version = "0.22", features = ["extension-module", "auto-initialize", "abi3-py310"], optional = true }

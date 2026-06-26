@@ -319,6 +319,7 @@ mod tests {
         assert_eq!(comp.name, "test");
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn composite_surrogate_single_component() {
         let path = "tests_tmp_dummy.onnx";
@@ -335,6 +336,7 @@ mod tests {
         assert!(loads[0] > 0.0);
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn composite_surrogate_two_components_sum() {
         let path = "tests_tmp_dummy.onnx";
@@ -353,6 +355,7 @@ mod tests {
         assert!(loads[0] > 0.0);
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn composite_surrogate_three_components() {
         let path = "tests_tmp_dummy.onnx";
@@ -406,6 +409,7 @@ mod tests {
         assert_eq!(composite.num_components(), 3);
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn composite_surrogate_with_valid_outputs() {
         let path = "tests_tmp_dummy.onnx";
