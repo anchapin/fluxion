@@ -76,7 +76,9 @@ jobs:
             ort-binaries-aarch64-apple-darwin-
 
       - name: Run tests
-        run: cargo test --lib --verbose ${{ matrix.feature_set.flags }}
+        run: |
+          cargo test --lib --verbose ${{ matrix.feature_set.flags }}
+          cargo test --test surface_flux_provider_isolation --verbose ${{ matrix.feature_set.flags }}
         env:
           PYO3_PYTHON: /usr/bin/python3
 
