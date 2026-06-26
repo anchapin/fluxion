@@ -283,25 +283,32 @@ This is a known limitation of the 5R1C model for multi-zone buildings with free-
   3. Separate sunspace from thermal model (decouple from conditioned zone)
   4. Accept as model limitation and document sunspace validation as out-of-scope
 
-### LIMIT-05: High-Mass Peak Cooling Overprediction (5R1C/6R2C Model Limitation)
+### LIMIT-05: High-Mass Peak Cooling — direction **inverted** since Phase 7B (see #1280)
 
-- **Description:** High-mass cases (900 series) show peak cooling 2-2.5x above ASHRAE 140 reference. This is a fundamental limitation of the lumped thermal capacitance model (5R1C/6R2C) when combined with:
-  1. High thermal mass (Cm > 5 MJ/K)
-  2. Significant solar forcing (peak summer conditions)
-  3. Large time step (dt = 1 hour)
-
-  The issue stems from thermal time constant (τ ≈ 1.25 hours for Case 900) being comparable to time step, causing solar gains to accumulate in mass faster than they can dissipate. This drives air temperature up and causes excessive cooling demand.
-- **Affected Cases:** 900, 910, 920, 930, 940, 950
+- **Description:** Phase 7B (2026-Q1) originally characterised high-mass cases (900 series) as
+  showing peak cooling **2-2.5x above** ASHRAE 140 reference, attributed to a thermal time
+  constant (τ ≈ 1.25 h) comparable to the 1 h timestep causing solar over-accumulation in
+  mass. As of #1280 (June 2026), this over-estimation has been **inverted**: the production
+  9R4C multi-node path now reports peak cooling **~0.85 kW against a 2.10-3.50 kW target**
+  for Case 900 (i.e. 59-75% UNDER-estimation), and similarly 86-87% UNDER for Cases 950/960.
+  See `docs/investigations/issue-1280-ctf-peak-load.md` for the full reproduction and
+  directional analysis.
+- **Affected Cases:** 900, 910, 920, 930, 940, 950, 960
 - **Affected Metrics:** Peak Cooling (kW), Annual Cooling (MWh)
-- **Severity:** Medium
-- **GitHub Issue:** (none - documented as model limitation)
-- **Status:** ⚠️ **Known Limitation** (5R1C/6R2C model limitation for high-mass peak cooling)
-- **Phase Addressed:** Phase 7B (investigated, root cause identified, documented)
-- **Resolution Notes:** Phase 7B investigation showed:
-  1. Crank-Nicolson integration (2nd-order) made results worse, not a solution
-  2. Solar distribution adjustment (reducing to-mass fraction) made results worse
-  3. Root cause: Thermal mass time constant (τ ≈ 1.25h) comparable to time step (1h), causing solar energy accumulation
-  4. This is a known limitation of ISO 13790 lumped models with high thermal mass and large dt
+- **Severity:** High (current direction: UNDER-estimation)
+- **GitHub Issue:** [#1280](https://github.com/anchapin/fluxion/issues/1280) (current investigation)
+- **Status:** 🔄 **Inverted** — recommendation shifted from "accept as model limitation" to
+  "investigate load-side (solar) under-estimation" — sub-stepping is **not** the right fix.
+- **Phase Addressed:** Phase 7B (original), #1280 (current re-investigation)
+- **Current snapshot (2026-06-26):**
+
+  | Case | Fluxion Peak Cooling | Reference Range | Deviation   |
+  | ---- | -------------------- | --------------- | ----------- |
+  | 900  | 0.86 kW              | 2.10 - 3.50 kW  | **-69% UNDER** |
+  | 950  | 0.84 kW              | 5.30 - 6.80 kW  | **-86% UNDER** |
+  | 960  | 0.85 kW              | 6.00 - 7.50 kW  | **-87% UNDER** |
+
+  Reproduce with `cargo test --release --test limit_05_inversion_regression -- --ignored`.
 
 **Investigation Summary:**
 - **Thermal Mass Divergence Test:** Mass temperatures stable without solar, accumulate with solar forcing
