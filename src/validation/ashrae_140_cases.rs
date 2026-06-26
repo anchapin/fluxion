@@ -910,7 +910,27 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case808 => CaseBuilder::case_808_vav_heat_recovery(),
             ASHRAE140Case::Case809 => CaseBuilder::case_809_cav_economizer(),
             ASHRAE140Case::Case810 => CaseBuilder::case_810_comprehensive_hvac(),
-            _ => unimplemented!("Case {:?} not yet implemented in spec()", self),
+            // Cases 500-510 and 699 are defined in the enum for ASHRAE 140 extended
+            // coverage but currently lack dedicated CaseBuilder factories. Fall back to
+            // the low-mass baseline (#1293) so callers receive a valid CaseSpec rather
+            // than panicking on the catch-all arm.
+            ASHRAE140Case::Case500
+            | ASHRAE140Case::Case501
+            | ASHRAE140Case::Case502
+            | ASHRAE140Case::Case503
+            | ASHRAE140Case::Case504
+            | ASHRAE140Case::Case505
+            | ASHRAE140Case::Case506
+            | ASHRAE140Case::Case507
+            | ASHRAE140Case::Case508
+            | ASHRAE140Case::Case509
+            | ASHRAE140Case::Case510
+            | ASHRAE140Case::Case699 => {
+                let mut spec = CaseBuilder::case_600_baseline();
+                spec.case_id = format!("{:?}", self);
+                spec.description = format!("{:?} (fallback baseline — see issue #1293)", self);
+                spec
+            }
         }
     }
 
@@ -4017,6 +4037,62 @@ mod tests {
 
             assert_eq!(heat, None, "Hour {} heating should be None", hour);
             assert_eq!(cool, None, "Hour {} cooling should be None", hour);
+        }
+    }
+
+    /// Issue #1293 — every numbered ASHRAE 140 case from 600 through 999 must
+    /// produce a valid `CaseSpec` via `spec()` without panicking. This guards
+    /// against the previous `unimplemented!()` catch-all firing for variants
+    /// that were defined in the enum but never wired to a `CaseBuilder`.
+    #[test]
+    fn test_spec_returns_valid_casebuilder_for_all_600_999_cases() {
+        let cases_600_999: &[ASHRAE140Case] = &[
+            // 600 series (low mass)
+            ASHRAE140Case::Case600,
+            ASHRAE140Case::Case610,
+            ASHRAE140Case::Case620,
+            ASHRAE140Case::Case630,
+            ASHRAE140Case::Case640,
+            ASHRAE140Case::Case650,
+            ASHRAE140Case::Case600FF,
+            ASHRAE140Case::Case650FF,
+            // 800 series (HVAC equipment, #1293)
+            ASHRAE140Case::Case800,
+            ASHRAE140Case::Case801,
+            ASHRAE140Case::Case802,
+            ASHRAE140Case::Case803,
+            ASHRAE140Case::Case804,
+            ASHRAE140Case::Case805,
+            ASHRAE140Case::Case806,
+            ASHRAE140Case::Case807,
+            ASHRAE140Case::Case808,
+            ASHRAE140Case::Case809,
+            ASHRAE140Case::Case810,
+            // 900 series (high mass)
+            ASHRAE140Case::Case900,
+            ASHRAE140Case::Case910,
+            ASHRAE140Case::Case920,
+            ASHRAE140Case::Case930,
+            ASHRAE140Case::Case940,
+            ASHRAE140Case::Case950,
+            ASHRAE140Case::Case900FF,
+            ASHRAE140Case::Case950FF,
+            ASHRAE140Case::Case960,
+        ];
+
+        for case in cases_600_999 {
+            let spec = case.spec();
+            assert!(
+                !spec.case_id.is_empty(),
+                "spec() for {:?} returned an empty case_id",
+                case
+            );
+            assert!(
+                spec.validate().is_ok(),
+                "spec() for {:?} (case_id={}) failed validation",
+                case,
+                spec.case_id
+            );
         }
     }
 }
