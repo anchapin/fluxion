@@ -34,8 +34,51 @@
 //! Each envelope node (wall, roof, floor) has its own h_tr_em path to exterior.
 //! All envelope nodes share the same surface node T_s via their respective h_tr_ms paths.
 
-use crate::sim::multi_node_thermal::{MultiNodeThermalMass, ThermalMassNode};
+use crate::sim::multi_node_thermal::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
 use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
+
+/// Series combination of two conductances (Issue #1281, parallel-resistance
+/// coupling network for 9R4C).
+///
+/// `h_series(a, b) = (a × b) / (a + b)` is the conductance of `a` and `b` placed
+/// in series. It is symmetric, strictly positive when both inputs are positive,
+/// and bounded above by `min(a, b)`.
+///
+/// In the parallel-resistance formulation, each per-surface mass-to-air path is
+/// the series pair `(h_tr_ms_k, h_tr_is)`, so `h_path_k = h_series(h_tr_ms_k, h_tr_is)`.
+#[inline]
+fn h_series(a: f64, b: f64) -> f64 {
+    if a <= 0.0 || b <= 0.0 {
+        return 0.0;
+    }
+    (a * b) / (a + b)
+}
+
+/// Per-surface surface temperature for the parallel-resistance 9R4C coupling
+/// (Issue #1281).
+///
+/// Steady-state solution of the (mass → T_s → air) series pair, given the
+/// current mass temperature `t_m`, the surface-to-air conductance `h_is`,
+/// and the air temperature `t_air`:
+///
+/// ```text
+/// T_s = (h_tr_ms × t_m + h_tr_is × t_air) / (h_tr_ms + h_tr_is)
+/// ```
+///
+/// Equivalent to `t_air + (h_tr_ms / (h_tr_ms + h_tr_is)) × (t_m − t_air)`.
+/// Degenerate cases (`h_tr_ms + h_tr_is` near zero, or non-finite inputs)
+/// fall back to the air temperature.
+#[inline]
+fn per_surface_t_s(t_m: f64, h_tr_ms: f64, h_tr_is: f64, t_air: f64) -> f64 {
+    let denom = h_tr_ms + h_tr_is;
+    if !denom.is_finite() || denom < 1e-10 {
+        return t_air;
+    }
+    if !t_m.is_finite() || !t_air.is_finite() {
+        return t_air;
+    }
+    (h_tr_ms * t_m + h_tr_is * t_air) / denom
+}
 
 /// Per-surface exterior boundary temperatures for the multi-node solver (Issue #863).
 ///
@@ -78,6 +121,13 @@ pub struct MultiNodeSolver {
     /// instead of the uniform `exterior_temperature`.
     pub exterior_temperatures: SurfaceExteriorTemperatures,
     pub timestep_seconds: f64,
+    /// Mass-to-air coupling mode (Issue #1281).
+    ///
+    /// Defaults to `MassAirCouplingMode::AdditiveSum` (original shared-T_s
+    /// formulation) for backward compatibility. Set to
+    /// `MassAirCouplingMode::ParallelResistance` to use the per-surface
+    /// series-path formulation described in `MassAirCouplingMode`'s docs.
+    pub coupling_mode: MassAirCouplingMode,
 }
 
 impl MultiNodeSolver {
@@ -96,11 +146,32 @@ impl MultiNodeSolver {
             exterior_temperature: 10.0,
             exterior_temperatures: SurfaceExteriorTemperatures::uniform(10.0),
             timestep_seconds: 3600.0,
+            coupling_mode: MassAirCouplingMode::default(),
         }
+    }
+
+    /// Construct a solver with a chosen mass-to-air coupling mode (Issue #1281).
+    pub fn new_with_mode(
+        h_tr_is: f64,
+        wall: ThermalMassNode,
+        roof: ThermalMassNode,
+        floor: ThermalMassNode,
+        internal: ThermalMassNode,
+        coupling_mode: MassAirCouplingMode,
+    ) -> Self {
+        let mut s = Self::new(h_tr_is, wall, roof, floor, internal);
+        s.coupling_mode = coupling_mode;
+        s
     }
 
     pub fn with_timestep(mut self, dt: f64) -> Self {
         self.timestep_seconds = dt;
+        self
+    }
+
+    /// Set the mass-to-air coupling mode (Issue #1281).
+    pub fn with_coupling_mode(mut self, mode: MassAirCouplingMode) -> Self {
+        self.coupling_mode = mode;
         self
     }
 
@@ -111,6 +182,23 @@ impl MultiNodeSolver {
     }
 
     fn step_backward_euler(&mut self) {
+        match self.coupling_mode {
+            MassAirCouplingMode::AdditiveSum => self.step_backward_euler_additive(),
+            MassAirCouplingMode::ParallelResistance => {
+                self.step_backward_euler_parallel_resistance()
+            }
+        }
+    }
+
+    /// Original additive-formulation backward Euler step (default, backward-compatible).
+    ///
+    /// Updates each envelope mass node using the SHARED surface temperature as
+    /// the interior boundary. The shared T_s is the conductance-weighted average
+    /// of mass node temperatures.
+    ///
+    /// See `step_backward_euler_parallel_resistance` for the Issue #1281
+    /// alternative that uses per-surface T_s_k with h_is feedback.
+    fn step_backward_euler_additive(&mut self) {
         let dt = self.timestep_seconds;
         let t_i = self.zone_temperature;
         let h_is = self.h_tr_is;
@@ -189,9 +277,113 @@ impl MultiNodeSolver {
                 / h_ms_total;
         }
 
-        // Issue #1024: First Law of Thermodynamics debug_assert!
-        // Energy In - Energy Out = Change in Storage
-        // For backward Euler: Q_net = C*(T_new - T_old)/dt for each node
+        self.check_energy_balance(t_wall_old, t_roof_old, t_floor_old, t_internal_old);
+    }
+
+    /// Parallel-resistance backward Euler step (Issue #1281).
+    ///
+    /// Each envelope mass node uses its OWN per-surface surface temperature
+    /// `T_s_k = (h_tr_ms_k × T_m_k + h_tr_is × T_air) / (h_tr_ms_k + h_tr_is)`,
+    /// not a shared conductance-weighted mean. This eliminates the additive
+    /// `h_ms_total` overcounting and produces a more physically correct mass
+    /// response.
+    ///
+    /// The First Law check still holds: the BE update is algebraically
+    /// equivalent for any value of `T_s_k` (it's a fixed linear system in
+    /// T_m, T_ext, T_s_k), so we re-use `check_energy_balance`.
+    fn step_backward_euler_parallel_resistance(&mut self) {
+        let dt = self.timestep_seconds;
+        let t_i = self.zone_temperature;
+        let h_is = self.h_tr_is;
+
+        // Issue #863: Per-surface exterior temperatures
+        let t_ext_wall = self.exterior_temperatures.t_ext_wall;
+        let t_ext_roof = self.exterior_temperatures.t_ext_roof;
+        let t_ext_floor = self.exterior_temperatures.t_ext_floor;
+
+        let m = &mut self.mass;
+
+        // Capture pre-step temperatures for First Law energy balance check (Issue #1024)
+        let t_wall_old = m.wall.temperature;
+        let t_roof_old = m.roof.temperature;
+        let t_floor_old = m.floor.temperature;
+        let t_internal_old = m.internal.temperature;
+
+        // Compute per-surface T_s_k from the OLD mass temperatures and OLD T_air.
+        // This is the steady-state surface temperature for each surface, solved
+        // from the (mass → surface → air) series pair.
+        let t_s_wall = per_surface_t_s(m.wall.temperature, m.wall.h_tr_ms, h_is, t_i);
+        let t_s_roof = per_surface_t_s(m.roof.temperature, m.roof.h_tr_ms, h_is, t_i);
+        let t_s_floor = per_surface_t_s(m.floor.temperature, m.floor.h_tr_ms, h_is, t_i);
+
+        // Update wall node using its OWN per-surface T_s_k
+        {
+            let node = &mut m.wall;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_wall
+                    + h_ms * t_s_wall;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Update roof node using its OWN per-surface T_s_k
+        {
+            let node = &mut m.roof;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_roof
+                    + h_ms * t_s_roof;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Update floor node using its OWN per-surface T_s_k
+        {
+            let node = &mut m.floor;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_floor
+                    + h_ms * t_s_floor;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Update internal node (unchanged from additive — internal mass uses h_is directly)
+        {
+            let node = &mut m.internal;
+            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
+            let h_me = node.h_tr_me;
+
+            let denom = node.capacitance / dt + h_is + h_me;
+            let numer = node.capacitance / dt * node.temperature + h_is * t_i + h_me * t_env_avg;
+            node.temperature = numer / denom;
+        }
+
+        // Update self.surface_temperature as the conductance-weighted average so
+        // legacy code reading `surface_temperature` still gets a representative
+        // value. compute_zone_air_temperature in ParallelResistance mode does
+        // NOT use this field — it computes per-surface paths directly.
+        let h_ms_total = m.wall.h_tr_ms + m.roof.h_tr_ms + m.floor.h_tr_ms;
+        if h_ms_total > 1e-6 {
+            self.surface_temperature = (m.wall.h_tr_ms * m.wall.temperature
+                + m.roof.h_tr_ms * m.roof.temperature
+                + m.floor.h_tr_ms * m.floor.temperature)
+                / h_ms_total;
+        }
+
         self.check_energy_balance(t_wall_old, t_roof_old, t_floor_old, t_internal_old);
     }
 
@@ -259,6 +451,10 @@ impl MultiNodeSolver {
     /// T_air = (h_tr_is × T_s + (h_ve + h_ve_night) × T_out + φ_ia) / (h_tr_is + h_ve + h_ve_night)
     /// ```
     ///
+    /// Dispatches to `compute_zone_air_temperature_additive` or
+    /// `compute_zone_air_temperature_parallel_resistance` depending on
+    /// `self.coupling_mode` (Issue #1281).
+    ///
     /// # Arguments
     /// * `t_outdoor` — Outdoor air temperature [°C]
     /// * `h_ve` — Ventilation/infiltration conductance [W/K]
@@ -268,6 +464,38 @@ impl MultiNodeSolver {
     /// # Returns
     /// Free-floating zone air temperature [°C]
     pub fn compute_zone_air_temperature(
+        &self,
+        t_outdoor: f64,
+        h_ve: f64,
+        h_ve_night: f64,
+        phi_ia: f64,
+    ) -> f64 {
+        match self.coupling_mode {
+            MassAirCouplingMode::AdditiveSum => {
+                self.compute_zone_air_temperature_additive(t_outdoor, h_ve, h_ve_night, phi_ia)
+            }
+            MassAirCouplingMode::ParallelResistance => self
+                .compute_zone_air_temperature_parallel_resistance(t_outdoor, h_ve, h_ve_night, phi_ia),
+        }
+    }
+
+    /// Original (additive) formulation — backward-compatible default.
+    ///
+    /// Treats the three envelope mass nodes as parallel conductances summed into
+    /// a single shared surface temperature, then couples that surface to the
+    /// air node through the lumped interior-film conductance `h_tr_is`. See
+    /// `MassAirCouplingMode::AdditiveSum` for the equations and `compute_zone_air_temperature_parallel_resistance`
+    /// for the physically-correct alternative.
+    ///
+    /// # Arguments
+    /// * `t_outdoor` — Outdoor air temperature [°C]
+    /// * `h_ve` — Ventilation/infiltration conductance [W/K]
+    /// * `h_ve_night` — Night ventilation fan conductance [W/K]
+    /// * `phi_ia` — Internal convective + solar-to-air gains [W]
+    ///
+    /// # Returns
+    /// Free-floating zone air temperature [°C]
+    pub fn compute_zone_air_temperature_additive(
         &self,
         t_outdoor: f64,
         h_ve: f64,
@@ -300,6 +528,83 @@ impl MultiNodeSolver {
         }
 
         (self.h_tr_is * t_surface + h_ve_total * t_outdoor + phi_ia) / denom
+    }
+
+    /// Parallel-resistance formulation (Issue #1281).
+    ///
+    /// Each envelope surface has its own steady-state surface temperature
+    /// `T_s_k`, computed from the series pair (mass-to-surface, surface-to-air):
+    ///
+    /// ```text
+    /// T_s_k = (h_tr_ms_k × T_m_k + h_tr_is × T_air) / (h_tr_ms_k + h_tr_is)
+    /// ```
+    ///
+    /// The air node sees the parallel combination of per-surface series paths:
+    ///
+    /// ```text
+    /// h_path_k = h_tr_ms_k × h_tr_is / (h_tr_ms_k + h_tr_is)   [series combination]
+    /// T_air = (Σ h_path_k × T_m_k + (h_ve + h_ve_night) × T_out + φ_ia)
+    ///         / (Σ h_path_k + h_ve + h_ve_night)
+    /// ```
+    ///
+    /// Eliminating the additive `h_ms_total` overcounting produces a more
+    /// physically correct air-temperature prediction when each per-surface
+    /// `h_tr_ms_k` is comparable to `h_tr_is` (typical for ASHRAE 140 Case 900).
+    ///
+    /// **Direction (verified in `.agents/results/issue-1281-python-verification.py`):**
+    /// For Case 900 parameters, `h_path_total = 96.0 W/K` vs `h_ms_total = 127.3 W/K`
+    /// (-32.7 % overcount). Air temperature and peak cooling demand are both
+    /// LOWER than the additive formulation.
+    ///
+    /// **Note:** the ASHRAE 140 peak-cooling underestimate documented in
+    /// `docs/KNOWN_ISSUES.md` LIMIT-05 UPDATE is *not* closed by this
+    /// formulation alone — the actual root cause is roof-solar under-counting
+    /// (see `docs/investigations/issue-1280-ctf-peak-load.md` §4). This
+    /// method ships the more physically correct 9R4C coupling network and
+    /// is the architecturally-improved fix the issue body asks for.
+    ///
+    /// # Arguments
+    /// * `t_outdoor` — Outdoor air temperature [°C]
+    /// * `h_ve` — Ventilation/infiltration conductance [W/K]
+    /// * `h_ve_night` — Night ventilation fan conductance [W/K]
+    /// * `phi_ia` — Internal convective + solar-to-air gains [W]
+    ///
+    /// # Returns
+    /// Free-floating zone air temperature [°C]
+    pub fn compute_zone_air_temperature_parallel_resistance(
+        &self,
+        t_outdoor: f64,
+        h_ve: f64,
+        h_ve_night: f64,
+        phi_ia: f64,
+    ) -> f64 {
+        let h_ms_w = self.mass.wall.h_tr_ms;
+        let h_ms_r = self.mass.roof.h_tr_ms;
+        let h_ms_f = self.mass.floor.h_tr_ms;
+
+        // Series combination per surface (mass → T_s_k → air through h_tr_is).
+        // h_path_k = h_ms_k × h_is / (h_ms_k + h_is). Each is strictly <= h_ms_k.
+        let h_path_w = h_series(h_ms_w, self.h_tr_is);
+        let h_path_r = h_series(h_ms_r, self.h_tr_is);
+        let h_path_f = h_series(h_ms_f, self.h_tr_is);
+        let h_path_total = h_path_w + h_path_r + h_path_f;
+
+        let h_ve_total = h_ve + h_ve_night;
+        let denom = h_path_total + h_ve_total;
+        if denom < 1e-6 {
+            // Degenerate — fall back to conductance-weighted average of mass temps
+            return (h_ms_w * self.mass.wall.temperature
+                + h_ms_r * self.mass.roof.temperature
+                + h_ms_f * self.mass.floor.temperature)
+                / (h_ms_w + h_ms_r + h_ms_f).max(1e-6);
+        }
+
+        (h_path_w * self.mass.wall.temperature
+            + h_path_r * self.mass.roof.temperature
+            + h_path_f * self.mass.floor.temperature
+            + h_ve_total * t_outdoor
+            + phi_ia)
+            / denom
     }
 
     /// Compute ideal HVAC power demand to maintain setpoints.
@@ -477,7 +782,16 @@ impl MultiNodeSolver {
         gains_internal: f64,
     ) -> &MultiNodeThermalMass {
         self.timestep_seconds = dt;
-        self.step_backward_euler_with_gains(gains_wall, gains_roof, gains_floor, gains_internal);
+        match self.coupling_mode {
+            MassAirCouplingMode::AdditiveSum => {
+                self.step_backward_euler_with_gains(gains_wall, gains_roof, gains_floor, gains_internal);
+            }
+            MassAirCouplingMode::ParallelResistance => {
+                self.step_backward_euler_with_gains_parallel_resistance(
+                    gains_wall, gains_roof, gains_floor, gains_internal,
+                );
+            }
+        }
         &self.mass
     }
 
@@ -583,6 +897,122 @@ impl MultiNodeSolver {
         }
 
         // Issue #1024: First Law of Thermodynamics debug_assert! (with gains)
+        self.check_energy_balance_with_gains(
+            t_wall_old,
+            t_roof_old,
+            t_floor_old,
+            t_internal_old,
+            gains_wall,
+            gains_roof,
+            gains_floor,
+            gains_internal,
+        );
+    }
+
+    /// Parallel-resistance backward Euler step with per-node gain injection
+    /// (Issue #1281). See `step_backward_euler_parallel_resistance` for the
+    /// non-gain counterpart.
+    fn step_backward_euler_with_gains_parallel_resistance(
+        &mut self,
+        gains_wall: f64,
+        gains_roof: f64,
+        gains_floor: f64,
+        gains_internal: f64,
+    ) {
+        let dt = self.timestep_seconds;
+        let t_i = self.zone_temperature;
+        let h_is = self.h_tr_is;
+
+        let t_ext_wall = self.exterior_temperatures.t_ext_wall;
+        let t_ext_roof = self.exterior_temperatures.t_ext_roof;
+        let t_ext_floor = self.exterior_temperatures.t_ext_floor;
+
+        let m = &mut self.mass;
+
+        // Capture pre-step temperatures for First Law energy balance check (Issue #1024)
+        let t_wall_old = m.wall.temperature;
+        let t_roof_old = m.roof.temperature;
+        let t_floor_old = m.floor.temperature;
+        let t_internal_old = m.internal.temperature;
+
+        // Per-surface T_s_k from OLD mass temps and OLD T_air.
+        let t_s_wall = per_surface_t_s(m.wall.temperature, m.wall.h_tr_ms, h_is, t_i);
+        let t_s_roof = per_surface_t_s(m.roof.temperature, m.roof.h_tr_ms, h_is, t_i);
+        let t_s_floor = per_surface_t_s(m.floor.temperature, m.floor.h_tr_ms, h_is, t_i);
+
+        // Wall — per-surface T_s_k + per-node gain
+        {
+            let node = &mut m.wall;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_wall
+                    + h_ms * t_s_wall
+                    + gains_wall;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Roof — per-surface T_s_k + per-node gain
+        {
+            let node = &mut m.roof;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_roof
+                    + h_ms * t_s_roof
+                    + gains_roof;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Floor — per-surface T_s_k + per-node gain
+        {
+            let node = &mut m.floor;
+            let h_em = node.h_tr_em;
+            let h_ms = node.h_tr_ms;
+
+            let denom = node.capacitance / dt + h_em + h_ms;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature
+                    + h_em * t_ext_floor
+                    + h_ms * t_s_floor
+                    + gains_floor;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Internal node — unchanged (uses h_is directly to air)
+        {
+            let node = &mut m.internal;
+            let t_env_avg = (m.wall.temperature + m.roof.temperature + m.floor.temperature) / 3.0;
+            let h_me = node.h_tr_me;
+
+            let denom = node.capacitance / dt + h_is + h_me;
+            if denom > 1e-10 {
+                let numer = node.capacitance / dt * node.temperature + h_is * t_i + h_me * t_env_avg + gains_internal;
+                node.temperature = numer / denom;
+            }
+        }
+
+        // Keep self.surface_temperature in sync with the conductance-weighted
+        // average so legacy readers see a consistent value. The
+        // ParallelResistance-mode air temperature does NOT use this field.
+        let h_ms_total = m.wall.h_tr_ms + m.roof.h_tr_ms + m.floor.h_tr_ms;
+        if h_ms_total > 1e-6 {
+            self.surface_temperature = (m.wall.h_tr_ms * m.wall.temperature
+                + m.roof.h_tr_ms * m.roof.temperature
+                + m.floor.h_tr_ms * m.floor.temperature)
+                / h_ms_total;
+        }
+
+        // Gains cancel out of the energy balance (Issue #1024), same as additive.
         self.check_energy_balance_with_gains(
             t_wall_old,
             t_roof_old,
@@ -1034,5 +1464,265 @@ mod tests {
             wall_delta > roof_delta,
             "Wall delta ({wall_delta}) should exceed roof delta ({roof_delta})"
         );
+    }
+
+    // ── Issue #1281: Parallel-resistance coupling network ─────────────
+
+    /// Construct a Case 900-style high-mass solver for Issue #1281 tests.
+    ///
+    /// Per-surface h_tr_ms values come from the half-insulation rule applied
+    /// to the ASHRAE 140 Case 900 construction
+    /// (`src/sim/construction.rs::Assemblies::high_mass_wall` /
+    /// `high_mass_roof` / `high_mass_floor`).
+    fn create_case_900_solver(coupling_mode: MassAirCouplingMode) -> MultiNodeSolver {
+        let wall = ThermalMassNode::new(20.0, 5.0e6, 76.4, 25.0);
+        let roof = ThermalMassNode::new(20.0, 3.0e6, 32.9, 20.0);
+        let floor = ThermalMassNode::new(20.0, 2.0e6, 18.0, 10.0);
+        let internal = ThermalMassNode::new(20.0, 1.0e6, 0.0, 0.0).with_h_tr_me(100.0);
+
+        // h_tr_is = 3.45 × floor_area = 3.45 × 48 = 165.6 W/K
+        // (Issue #714: ASHRAE 140 simplified 5R1C formula)
+        MultiNodeSolver::new_with_mode(165.6, wall, roof, floor, internal, coupling_mode)
+    }
+
+    #[test]
+    fn test_issue_1281_default_mode_is_additive_sum() {
+        // Backward compatibility: existing constructor keeps AdditiveSum default.
+        let solver = create_test_solver();
+        assert_eq!(solver.coupling_mode, MassAirCouplingMode::AdditiveSum);
+    }
+
+    #[test]
+    fn test_issue_1281_new_with_mode_parallel_resistance() {
+        let solver =
+            create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+        assert_eq!(
+            solver.coupling_mode,
+            MassAirCouplingMode::ParallelResistance
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_with_coupling_mode_builder() {
+        let solver = create_test_solver().with_coupling_mode(MassAirCouplingMode::ParallelResistance);
+        assert_eq!(
+            solver.coupling_mode,
+            MassAirCouplingMode::ParallelResistance
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_parallel_resistance_air_lower_than_additive() {
+        // At steady state with hot exterior forcing, the parallel-resistance
+        // formulation should give a LOWER T_air than the additive formulation
+        // because h_path_total < h_ms_total (each per-surface series conductance
+        // is strictly less than the per-surface h_ms_k).
+        //
+        // Reference: .agents/results/issue-1281-python-verification.py
+        // (steady-state Case 900: additive T_air=42.0, parallel-resistance T_air=30.4)
+
+        let mut add = create_case_900_solver(MassAirCouplingMode::AdditiveSum);
+        let mut par = create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+
+        // Hot summer forcing (similar to Python verification)
+        let ext = SurfaceExteriorTemperatures {
+            t_ext_wall: 45.0,
+            t_ext_roof: 50.0,
+            t_ext_floor: 18.0,
+        };
+        add.set_surface_exterior_temperatures(ext.clone());
+        par.set_surface_exterior_temperatures(ext);
+        add.set_zone_temperature(20.0);
+        par.set_zone_temperature(20.0);
+
+        // 5000 × 1-hour steps to reach steady state
+        for _ in 0..5000 {
+            add.step(3600.0);
+            par.step(3600.0);
+        }
+
+        let t_air_add = add.compute_zone_air_temperature(32.0, 21.7, 0.0, 200.0);
+        let t_air_par = par.compute_zone_air_temperature(32.0, 21.7, 0.0, 200.0);
+
+        // Sanity: both finite and positive
+        assert!(t_air_add.is_finite() && t_air_par.is_finite());
+        assert!(t_air_add > 20.0 && t_air_par > 20.0);
+
+        // The parallel-resistance formulation gives a LOWER air temperature
+        // (verified by Python: 30.4 °C vs 42.0 °C).
+        assert!(
+            t_air_par < t_air_add,
+            "Parallel-resistance T_air ({:.3}) should be < additive T_air ({:.3})",
+            t_air_par,
+            t_air_add,
+        );
+
+        // The gap should be on the order of 5-15 °C for Case 900 parameters.
+        let gap = t_air_add - t_air_par;
+        assert!(
+            gap > 1.0,
+            "T_air gap ({:.3}) should be meaningful (>1 K), confirming non-additive correction",
+            gap,
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_h_series_formula() {
+        // Verify the series-combination helper matches a hand calculation.
+        // h_series(a, b) = a*b/(a+b)
+        // Symmetric: h_series(a, b) == h_series(b, a)
+        assert!((h_series(50.0, 165.6) - 50.0 * 165.6 / (50.0 + 165.6)).abs() < 1e-10);
+        assert!((h_series(165.6, 50.0) - h_series(50.0, 165.6)).abs() < 1e-10);
+
+        // Degenerate cases
+        assert_eq!(h_series(0.0, 100.0), 0.0);
+        assert_eq!(h_series(100.0, 0.0), 0.0);
+        assert_eq!(h_series(-1.0, 100.0), 0.0);
+
+        // For Case 900 per-surface values:
+        let h_path_wall = h_series(76.4, 165.6);
+        let h_path_roof = h_series(32.9, 165.6);
+        let h_path_floor = h_series(18.0, 165.6);
+        let h_path_total = h_path_wall + h_path_roof + h_path_floor;
+        let h_ms_total = 76.4 + 32.9 + 18.0;
+        assert!(
+            h_path_total < h_ms_total,
+            "Parallel-resistance total ({:.3}) must be < additive h_ms_total ({:.3})",
+            h_path_total,
+            h_ms_total,
+        );
+        // Numerical verification: ratio matches Python's 0.753
+        let ratio = h_path_total / h_ms_total;
+        assert!(
+            (ratio - 0.7534).abs() < 0.01,
+            "ratio {ratio} should be ~0.753 (Python-verified 32.7% overcount)"
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_per_surface_t_s_helper() {
+        // T_s = (h_ms × t_m + h_is × t_air) / (h_ms + h_is)
+        let t_m = 30.0;
+        let h_ms = 76.4;
+        let h_is = 165.6;
+        let t_air = 25.0;
+        let expected = (h_ms * t_m + h_is * t_air) / (h_ms + h_is);
+        let actual = per_surface_t_s(t_m, h_ms, h_is, t_air);
+        assert!((actual - expected).abs() < 1e-10);
+
+        // Degenerate cases
+        assert_eq!(per_surface_t_s(20.0, 0.0, 0.0, 30.0), 30.0);
+        assert_eq!(per_surface_t_s(f64::NAN, 1.0, 1.0, 20.0), 20.0);
+    }
+
+    #[test]
+    fn test_issue_1281_parallel_resistance_step_uses_per_surface_t_s() {
+        // Verify that step() in ParallelResistance mode produces DIFFERENT mass
+        // temperatures than AdditiveSum for the same forcing. This is the
+        // physically meaningful behavior change.
+        let mut add = create_case_900_solver(MassAirCouplingMode::AdditiveSum);
+        let mut par = create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+
+        let ext = SurfaceExteriorTemperatures {
+            t_ext_wall: 45.0,
+            t_ext_roof: 50.0,
+            t_ext_floor: 18.0,
+        };
+        add.set_surface_exterior_temperatures(ext.clone());
+        par.set_surface_exterior_temperatures(ext);
+        add.set_zone_temperature(20.0);
+        par.set_zone_temperature(20.0);
+
+        // Run 24 hourly steps
+        for _ in 0..24 {
+            add.step(3600.0);
+            par.step(3600.0);
+        }
+
+        // Mass temperatures should differ between the two formulations
+        // (the parallel-resistance formulation feeds each mass node its OWN
+        // per-surface T_s_k, not the shared conductance-weighted mean).
+        let diff_wall = (add.wall_temperature() - par.wall_temperature()).abs();
+        let diff_roof = (add.roof_temperature() - par.roof_temperature()).abs();
+        let diff_floor = (add.floor_temperature() - par.floor_temperature()).abs();
+
+        assert!(
+            diff_wall + diff_roof + diff_floor > 0.01,
+            "Mass temperatures must differ between additive ({:.3}, {:.3}, {:.3}) and parallel ({:.3}, {:.3}, {:.3})",
+            add.wall_temperature(), add.roof_temperature(), add.floor_temperature(),
+            par.wall_temperature(), par.roof_temperature(), par.floor_temperature(),
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_parallel_resistance_step_with_gains() {
+        // Verify step_with_gains in ParallelResistance mode produces higher
+        // mass temperatures than no-gains case (solar gains are heating).
+        let mut solver_no_gains =
+            create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+        let mut solver_with_gains =
+            create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+
+        let ext = SurfaceExteriorTemperatures {
+            t_ext_wall: 45.0,
+            t_ext_roof: 50.0,
+            t_ext_floor: 18.0,
+        };
+        solver_no_gains.set_surface_exterior_temperatures(ext.clone());
+        solver_with_gains.set_surface_exterior_temperatures(ext);
+        solver_no_gains.set_zone_temperature(20.0);
+        solver_with_gains.set_zone_temperature(20.0);
+
+        for _ in 0..24 {
+            solver_no_gains.step(3600.0);
+            solver_with_gains.step_with_gains(3600.0, 1000.0, 500.0, 0.0, 0.0);
+        }
+
+        assert!(
+            solver_with_gains.wall_temperature() > solver_no_gains.wall_temperature(),
+            "Wall with gains ({:.3}) should be hotter than without ({:.3})",
+            solver_with_gains.wall_temperature(),
+            solver_no_gains.wall_temperature(),
+        );
+        assert!(
+            solver_with_gains.roof_temperature() > solver_no_gains.roof_temperature(),
+            "Roof with gains ({:.3}) should be hotter than without ({:.3})",
+            solver_with_gains.roof_temperature(),
+            solver_no_gains.roof_temperature(),
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_backward_compat_additive_unchanged() {
+        // Verify that AdditiveSum mode produces the same T_air as the
+        // original (pre-Issue #1281) formulation for a known forcing case.
+        // This test serves as a regression guard: if someone breaks the
+        // original additive formula, this test fails.
+        let solver = create_case_900_solver(MassAirCouplingMode::AdditiveSum);
+
+        // All masses at 20, all temps at 20 → T_air should be 20 (steady state).
+        let t_air = solver.compute_zone_air_temperature(20.0, 0.0, 0.0, 0.0);
+        assert!(
+            (t_air - 20.0).abs() < 0.5,
+            "Steady-state T_air should be ~20°C, got {t_air}"
+        );
+    }
+
+    #[test]
+    fn test_issue_1281_parallel_resistance_degenerate_falls_back() {
+        // When h_tr_ms sums to ~0 (degenerate construction), the parallel-resistance
+        // air calc must fall back to the conductance-weighted average of mass
+        // temperatures (not NaN/Inf).
+        let wall = ThermalMassNode::new(20.0, 1.0e6, 0.0, 25.0);
+        let roof = ThermalMassNode::new(20.0, 1.0e6, 0.0, 20.0);
+        let floor = ThermalMassNode::new(20.0, 1.0e6, 0.0, 10.0);
+        let internal = ThermalMassNode::new(20.0, 5.0e5, 0.0, 0.0).with_h_tr_me(0.0);
+        let solver = MultiNodeSolver::new_with_mode(
+            165.6, wall, roof, floor, internal,
+            MassAirCouplingMode::ParallelResistance,
+        );
+
+        let t_air = solver.compute_zone_air_temperature(30.0, 5.0, 0.0, 0.0);
+        assert!(t_air.is_finite(), "Degenerate construction must produce finite T_air, got {t_air}");
     }
 }

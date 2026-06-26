@@ -348,6 +348,20 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
 
 **Conclusion:** The case-specific τ scaling approach does not solve the 920-950 peak load issue. A more sophisticated architectural fix (proper thermal coupling network or multi-node thermal model) is needed. This is a Phase 6+ level redesign.
 
+### LIMIT-05 UPDATE (Issue #1281, 2026-Q2): 9R4C parallel-resistance coupling shipped; cooling gap is roof-solar, not coupling
+
+**Status:** Architectural fix shipped (backward-compatible, opt-in via `MassAirCouplingMode::ParallelResistance`). Cooling gap **NOT closed** by this change alone.
+
+**Investigation finding (Python-verified):** Issue #1281's hypothesis was that the additive `h_ms_total = h_ms_wall + h_ms_roof + h_ms_floor` formulation overcounts the mass-to-air coupling, and a parallel-resistance (per-surface series paths) correction would close the ASHRAE 140 cooling-underestimate gap. Stand-alone Python verification (`.agents/results/issue-1281-python-verification.py`) using actual Case 900 parameters from `src/sim/construction.rs` confirms:
+
+1. The additive formulation DOES overcount the coupling (h_ms_total = 127.3 W/K vs h_path_total = 96.0 W/K, **+32.7%**).
+2. But the effect on cooling is **opposite** to the issue body's hypothesis: switching to parallel-resistance produces a *lower* peak cooling demand (3.27 kW vs 4.10 kW for Case 900).
+3. The engine currently produces 0.86 kW — well below both formulations' predictions.
+
+**Conclusion:** The `h_ms_total` additive model is genuinely over-conservative but does NOT explain the cooling underestimate. The actual root cause is upstream: **roof-solar under-counting** (~3×), per `docs/investigations/issue-1280-ctf-peak-load.md` §4. The HVAC demand is correctly proportional to (T_free − T_set) but T_free itself is too low because the driving solar load is too small.
+
+**Architectural improvement (shipped):** `MassAirCouplingMode::ParallelResistance` is now available as the physically-correct alternative to `MassAirCouplingMode::AdditiveSum`. Default remains `AdditiveSum` for backward compatibility. The new mode is verified by 10 unit tests in `src/physics/multi_node_solver.rs::tests::test_issue_1281_*`. ARCHITECTURE.md documents both modes and the residual coupling-formulation effect. **Follow-up issue** filed to track the roof-solar root cause and the cooling-gap closure.
+
 ## Reporting Issues (REPORT)
 
 ### REPORT-01: Systematic Issues Classification Heuristic
