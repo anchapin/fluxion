@@ -1,0 +1,88 @@
+ISO-10303-21;
+HEADER;
+FILE_DESCRIPTION(('ViewDefinition [CoordinationView]','Fluxion sample IFC4 file'),'2;1');
+FILE_NAME('sample.ifc','2026-06-27',('Fluxion'),('Fluxion'),'fluxion','fluxion','IFC4 STEP scaffold test fixture');
+FILE_SCHEMA(('IFC4'));
+ENDSEC;
+DATA;
+/* Owner history --------------------------------------------------------- */
+#1=IFCPERSON('unknown','unknown',$,$,$,$,$,$);
+#2=IFCORGANIZATION($,'Fluxion',$,$,$);
+#3=IFCPERSONANDORGANIZATION(#1,#2,$);
+#4=IFCAPPLICATION(#2,'0.0','fluxion','fluxion');
+#5=IFCOWNERHISTORY(#3,#4,.READWRITE.,.ADDED.,1735689600,$,$,1735689600);
+
+/* Project & units ------------------------------------------------------- */
+#10=IFCCARTESIANPOINT((0.,0.,0.));
+#11=IFCAXIS2PLACEMENT3D(#10,$,$);
+#12=IFCDIRECTION((0.,0.,1.));
+#13=IFCDIRECTION((1.,0.,0.));
+#14=IFCDIMENSIONALEXPONENTS(1,0,0,0,0,0,0);
+#15=IFCSIUNIT(*,.LENGTHUNIT.,$,.METRE.);
+#16=IFCSIUNIT(*,.AREAUNIT.,$,.SQUARE_METRE.);
+#17=IFCSIUNIT(*,.VOLUMEUNIT.,$,.CUBIC_METRE.);
+#18=IFCUNITASSIGNMENT((#15,#16,#17));
+#19=IFCGEOMETRICREPRESENTATIONCONTEXT('3D','Model',3,1.0E-05,#11,#12);
+#20=IFCPROJECT('0Sampl3Pr0jGu1D00000',#5,'SampleProject',$,$,$,$,(#19),#18);
+
+/* Site / Building / Storey --------------------------------------------- */
+#21=IFCLOCALPLACEMENT($,#11);
+#22=IFCSITE('0Sampl3S1teGu1D000000',#5,'Site',$,$,#21,$,$,.ELEMENT.,$,$,$,$,$);
+#23=IFCRELAGGREGATES('0R3lAggS1teGu1D0000',#5,$,$,#20,(#22));
+#24=IFCLOCALPLACEMENT(#21,#11);
+#25=IFCBUILDING('0Sampl3Bu1Gu1D0000000',#5,'Building',$,$,#24,$,$,.ELEMENT.,$,$,$);
+#26=IFCRELAGGREGATES('0R3lAggBu1Gu1D00000',#5,$,$,#22,(#25));
+#27=IFCLOCALPLACEMENT(#24,#11);
+#28=IFCBUILDINGSTOREY('0Sampl3StGu1D0000000',#5,'Storey',$,$,#27,$,$,.ELEMENT.,0.);
+#29=IFCRELAGGREGATES('0R3lAggStGu1D000000',#5,$,$,#25,(#28));
+
+/* Zone (space) -------------------------------------------------------- */
+#30=IFCLOCALPLACEMENT(#27,#11);
+#31=IFCSPACE('0Sp4c3Z1Gu1D00000000',#5,'Zone1','Zone 1',$,#30,$,$,.ELEMENT.,.INTERNAL.,$);
+#32=IFCRELAGGREGATES('0R3lAggZ1Gu1D000000',#5,$,$,#28,(#31));
+
+/* Materials ----------------------------------------------------------- */
+#40=IFCMATERIAL('Concrete',$,'Concrete');
+#41=IFCMATERIAL('Insulation',$,'Insulation');
+
+/* Wall layer set: concrete (0.1m) + insulation (0.05m) -------------- */
+#42=IFCMATERIALLAYER(#40,0.100,$,'ConcreteLayer',$,$,$);
+#43=IFCMATERIALLAYER(#41,0.050,$,'InsulationLayer',$,$,$);
+#44=IFCMATERIALLAYERSET((#42,#43),'WallLayers',$);
+#45=IFCMATERIALLAYERSETUSAGE(#44,.AXIS2.,.POSITIVE.,-0.075,$);
+
+/* Roof layer set: insulation (0.1m) ---------------------------------- */
+#47=IFCMATERIALLAYER(#41,0.100,$,'RoofInsulation',$,$,$);
+#48=IFCMATERIALLAYERSET((#47),'RoofLayers',$);
+#49=IFCMATERIALLAYERSETUSAGE(#48,.AXIS3.,.POSITIVE.,0.,$);
+
+/* Slab layer set: concrete (0.2m) ------------------------------------ */
+#51=IFCMATERIALLAYER(#40,0.200,$,'SlabConcrete',$,$,$);
+#52=IFCMATERIALLAYERSET((#51),'SlabLayers',$);
+#53=IFCMATERIALLAYERSETUSAGE(#52,.AXIS3.,.POSITIVE.,0.,$);
+
+/* Wall placement (origin at zone corner) ---------------------------- */
+#60=IFCCARTESIANPOINT((0.,0.,0.));
+#61=IFCAXIS2PLACEMENT3D(#60,#12,#13);
+#62=IFCLOCALPLACEMENT(#30,#61);
+
+/* Walls — each at the same local placement for simplicity ------------ */
+/* (Acceptance test verifies entity count, not per-wall geometry.) */
+#80=IFCWALL('0W4NGu1D000000000000000',#5,'Wall-North','North wall',$,#62,$,$,.NOTDEFINED.);
+#81=IFCWALL('0W4EGu1D000000000000000',#5,'Wall-East','East wall',$,#62,$,$,.NOTDEFINED.);
+#82=IFCWALL('0W4SGu1D000000000000000',#5,'Wall-South','South wall',$,#62,$,$,.NOTDEFINED.);
+#83=IFCWALL('0W4WGu1D000000000000000',#5,'Wall-West','West wall',$,#62,$,$,.NOTDEFINED.);
+
+/* Slab (floor) + Roof ------------------------------------------------ */
+#90=IFCROOF('0R00fGu1D00000000000000',#5,'Roof','Roof',$,#62,$,$,.NOTDEFINED.);
+#91=IFCSLAB('0Sl4bGu1D00000000000000',#5,'Slab-Floor','Floor slab',$,#62,$,$,.FLOOR.);
+
+/* Material associations ---------------------------------------------- */
+#100=IFCRELASSOCIATESMATERIAL('0R3lAssWGu1D000000000',#5,'WallMaterial',$,(#80,#81,#82,#83),#45);
+#101=IFCRELASSOCIATESMATERIAL('0R3lAssRGu1D000000000',#5,'RoofMaterial',$,(#90),#49);
+#102=IFCRELASSOCIATESMATERIAL('0R3lAssSGu1D000000000',#5,'SlabMaterial',$,(#91),#53);
+
+/* Containment in space ----------------------------------------------- */
+#110=IFCRELCONTAINEDINSPATIALSTRUCTURE('0R3lC0ntGu1D00000000',#5,$,$,(#80,#81,#82,#83,#90,#91),#31);
+ENDSEC;
+END-ISO-10303-21;

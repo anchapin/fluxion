@@ -446,7 +446,7 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 | gbXML | `interop/gbxml/` | Implemented (#1126) | Reader + Writer + types; `import_gbxml` / `export_gbxml`; BIM integration |
 | FMI Co-Simulation | `interop/fmi/` | Implemented — spike (#1125) | FMU export, single-zone, fixed 1h timestep; `FmiExporter`, `FmiConfig` |
 | EnergyPlus IDF/epJSON | `docs/idf-import-design.md` | **Scaffold landed** (#1341) | `src/io/idf/` (lexer + parser for the 10 MVP objects from design §4.1); `IdfFile` → `SimulationSchema` conversion pending (design §4.3 follow-up) |
-| IFC/BIM geometry | `docs/` (design doc) | **Design only** (#1121) | Geometry import design documented; not yet implemented |
+| IFC/BIM geometry | `interop/ifc/` | **Scaffold landed** (#1343) | IFC4 STEP lexer + parser + mapping for `IfcWall` / `IfcSlab` / `IfcRoof` / `IfcSpace` → `SimulationSchemaV1`; full IFC2X3 deferred; IFC export still design-only (#1121) |
 
 ### Language Bindings
 
