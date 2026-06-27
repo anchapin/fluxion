@@ -137,6 +137,7 @@ def check_drift() -> list[str]:
         "SolAirTemperature",  # struct in sky_radiation.rs
         "CTFSolverWrapper",  # struct implementing HeatConductionSolver
         "FDSolverWrapper",  # struct implementing HeatConductionSolver
+        "MultiNodeSolver",  # struct in physics/multi_node_solver.rs
     }
 
     for trait_name, source_file in sorted(code_traits.items()):

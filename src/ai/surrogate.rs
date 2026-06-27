@@ -5,6 +5,7 @@ use log::{info, warn};
 #[cfg(feature = "ort")]
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
+#[cfg(feature = "ort")]
 use ort::execution_providers::{
     CoreMLExecutionProvider, DirectMLExecutionProvider, OpenVINOExecutionProvider,
 };
