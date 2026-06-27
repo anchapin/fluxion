@@ -1,0 +1,10 @@
+# EnergyPlus Reference: ASHRAE 140 Case 960 — Annual + Peak Energy
+# Source: ASHRAE Standard 140-2023 Annex B8 (validated across BEM programs incl. EnergyPlus)
+# EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
+# Tolerance: ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147/#1331)
+# Hourly E+ output: regenerate via generate_case_920_950_960_energy.py
+metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
+annual_heating,MWh,1.65,2.45,2.050,15,1.742,2.357,"2-zone: back-zone conditioned, sunspace buffer"
+annual_cooling,MWh,1.55,2.78,2.165,15,1.840,2.490,Sunspace thermal buffer reduces back-zone cooling
+peak_heating,kW,2.00,8.00,5.000,15,4.250,5.750,Winter peak with sunspace pre-heating
+peak_cooling,kW,0.00,4.00,2.000,15,1.700,2.300,Summer peak with sunspace heat transfer

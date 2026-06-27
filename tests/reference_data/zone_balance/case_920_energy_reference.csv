@@ -1,0 +1,10 @@
+# EnergyPlus Reference: ASHRAE 140 Case 920 — Annual + Peak Energy
+# Source: ASHRAE Standard 140-2023 Annex B8 (validated across BEM programs incl. EnergyPlus)
+# EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
+# Tolerance: ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147/#1331)
+# Hourly E+ output: regenerate via generate_case_920_950_960_energy.py
+metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
+annual_heating,MWh,3.26,4.30,3.780,15,3.213,4.347,High-mass east/west windows (ref 3.26-4.30 MWh)
+annual_cooling,MWh,1.84,3.31,2.575,15,2.189,2.961,Annual cooling dominated by east/west solar gain
+peak_heating,kW,2.10,2.80,2.450,15,2.083,2.817,Winter clear-night peak with east/west losses
+peak_cooling,kW,1.40,1.90,1.650,15,1.402,1.897,Summer peak from east/west solar pre-heat
