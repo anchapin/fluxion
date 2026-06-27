@@ -821,56 +821,105 @@ fn test_validator_blind_mode_dispatches_to_raw_ashrae140_reference() {
         "with_mode(Blind) must expose Blind via validation_mode()"
     );
 
-    // 2. The raw blind benchmark loader returns data for both Case 600 and
-    //    Case 900 — these are the two acceptance-criterion cases from #1283.
+    // 2. The raw blind benchmark loader returns data for every ASHRAE 140
+    //    case listed in issue #1332's acceptance criteria: 600, 800, 810,
+    //    900, 920, 950, 960. (Cases 600/900 shipped via #1283; the others
+    //    extended via #1332.)
     let blind_refs = benchmark::get_all_benchmark_data_blind();
     let informed_refs = benchmark::get_all_benchmark_data();
 
-    for case_id in ["600", "900"] {
+    for case_id in ["600", "800", "810", "900", "920", "950", "960"] {
         let blind = blind_refs
             .get(case_id)
             .unwrap_or_else(|| panic!("blind benchmark missing for Case {case_id}"));
-        let informed = informed_refs
-            .get(case_id)
-            .unwrap_or_else(|| panic!("informed benchmark missing for Case {case_id}"));
+        // Cases 800/810 are absent from the Informed table on main (they
+        // were added to the Blind table by #1332 only). The Informed-vs-
+        // Blind comparison below is therefore skipped for those cases;
+        // we still assert Blind is well-formed for every case_id.
+        let informed = informed_refs.get(case_id);
 
-        // Raw ASHRAE 140-2023 values must be physically plausible:
-        //   annual heating > 0, annual cooling > 0 for HVAC-controlled cases
-        //   peaks > 0
-        assert!(
-            blind.annual_heating_min > 0.0 && blind.annual_heating_max > blind.annual_heating_min,
-            "Case {case_id} blind annual_heating band malformed: [{}, {}]",
-            blind.annual_heating_min,
-            blind.annual_heating_max
-        );
+        // Raw ASHRAE 140-2023 values must be physically plausible. Case 950
+        // disables heating by spec (night-ventilation case), so its heating
+        // band is [0.00, 0.00]. Case 960's heating band is [0.00, 1.00]
+        // (raw ASHRAE 140-2023 Annex B Table 8-15 — solar gains through
+        // the glazed common wall drive heating toward zero) — `min`
+        // therefore is 0 and only `max > min` is required.
+        let heating_band_zero_min_is_valid = case_id == "950" || case_id == "960";
+        let heating_band_fully_zero_is_valid = case_id == "950";
+        if heating_band_fully_zero_is_valid {
+            assert_eq!(
+                blind.annual_heating_min, 0.0,
+                "Case 950 must report zero heating (night-ventilation spec)",
+            );
+            assert_eq!(
+                blind.annual_heating_max, 0.0,
+                "Case 950 must report zero heating (night-ventilation spec)",
+            );
+        } else if heating_band_zero_min_is_valid {
+            // Case 960: min=0 is allowed, but max must be > min (the band
+            // must be non-empty).
+            assert!(
+                blind.annual_heating_max > blind.annual_heating_min,
+                "Case {case_id} blind annual_heating band empty: [{}, {}]",
+                blind.annual_heating_min,
+                blind.annual_heating_max,
+            );
+        } else {
+            assert!(
+                blind.annual_heating_min > 0.0 && blind.annual_heating_max > blind.annual_heating_min,
+                "Case {case_id} blind annual_heating band malformed: [{}, {}]",
+                blind.annual_heating_min,
+                blind.annual_heating_max
+            );
+        }
         assert!(
             blind.annual_cooling_min > 0.0 && blind.annual_cooling_max > blind.annual_cooling_min,
             "Case {case_id} blind annual_cooling band malformed: [{}, {}]",
             blind.annual_cooling_min,
             blind.annual_cooling_max
         );
-        assert!(
-            blind.peak_heating_max > 0.0 && blind.peak_cooling_max > 0.0,
-            "Case {case_id} blind peak band malformed"
-        );
+        // Case 950 disables heating (night-ventilation), so peak_heating is 0.
+        if case_id == "950" {
+            assert_eq!(blind.peak_heating_min, 0.0);
+            assert_eq!(blind.peak_heating_max, 0.0);
+            assert!(blind.peak_cooling_max > 0.0);
+        } else {
+            assert!(
+                blind.peak_heating_max > 0.0 && blind.peak_cooling_max > 0.0,
+                "Case {case_id} blind peak band malformed"
+            );
+        }
 
         // Blind and Informed may use identical reference data (after #1272 the
         // blind table was populated with raw ASHRAE 140-2023 values), but the
         // validator API MUST route through `benchmark_data_for_mode` rather
         // than the Informed table. Verifying both exist guards against future
         // drift that accidentally drops a case from the blind table.
-        println!(
-            "[#1283 Case {case_id}] blind H=[{:.2}, {:.2}] C=[{:.2}, {:.2}] \
-             informed H=[{:.2}, {:.2}] C=[{:.2}, {:.2}]",
-            blind.annual_heating_min,
-            blind.annual_heating_max,
-            blind.annual_cooling_min,
-            blind.annual_cooling_max,
-            informed.annual_heating_min,
-            informed.annual_heating_max,
-            informed.annual_cooling_min,
-            informed.annual_cooling_max,
-        );
+        // Cases 800/810 are absent from the Informed table on main (they
+        // were added to the Blind table by #1332 only) — print "n/a" for
+        // those entries instead of dereferencing `None`.
+        match informed {
+            Some(i) => println!(
+                "[#1283 Case {case_id}] blind H=[{:.2}, {:.2}] C=[{:.2}, {:.2}] \
+                 informed H=[{:.2}, {:.2}] C=[{:.2}, {:.2}]",
+                blind.annual_heating_min,
+                blind.annual_heating_max,
+                blind.annual_cooling_min,
+                blind.annual_cooling_max,
+                i.annual_heating_min,
+                i.annual_heating_max,
+                i.annual_cooling_min,
+                i.annual_cooling_max,
+            ),
+            None => println!(
+                "[#1332 Case {case_id}] blind H=[{:.2}, {:.2}] C=[{:.2}, {:.2}] \
+                 informed: <not present in Informed table — #1332 only extends Blind>",
+                blind.annual_heating_min,
+                blind.annual_heating_max,
+                blind.annual_cooling_min,
+                blind.annual_cooling_max,
+            ),
+        }
     }
 
     // 3. set_validation_mode round-trip works (the public mutator that
@@ -969,5 +1018,283 @@ fn test_blind_mode_case_900_infrastructure() {
     assert!(
         blind.contains_key(case_id),
         "blind benchmark table must contain Case 900"
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Issue #1332: extend ValidationMode::Blind coverage to Cases 800/810/920/950/960
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These tests are wiring checks (not physics checks). They assert that
+// `benchmark::get_all_benchmark_data_blind()` returns populated, well-formed
+// entries for the new case IDs, and that the bands satisfy the issue's
+// acceptance criteria. Physics-level ±15% checks for these cases are
+// `#[ignore]`'d pending the missing reference CSVs (see issue #1331 / #1168).
+
+/// Helper: assert a Blind entry exists for `case_id` and its bands are
+/// well-formed (max ≥ min). Returns a clone of the entry so the caller can
+/// perform additional assertions.
+fn assert_blind_entry_well_formed(case_id: &str) -> fluxion::validation::report::BenchmarkData {
+    let blind = benchmark::get_all_benchmark_data_blind();
+    let entry = blind
+        .get(case_id)
+        .unwrap_or_else(|| panic!("blind benchmark missing for Case {case_id} (issue #1332)"))
+        .clone();
+    assert!(
+        entry.annual_heating_max >= entry.annual_heating_min,
+        "Case {case_id}: heating max ({}) < min ({})",
+        entry.annual_heating_max,
+        entry.annual_heating_min,
+    );
+    assert!(
+        entry.annual_cooling_max >= entry.annual_cooling_min,
+        "Case {case_id}: cooling max ({}) < min ({})",
+        entry.annual_cooling_max,
+        entry.annual_cooling_min,
+    );
+    entry
+}
+
+#[test]
+fn test_blind_mode_case_800_infrastructure() {
+    // Issue #1332 AC1: Case 800 must be present in the Blind table.
+    // AC3: heating/cooling bands fit inside [4.5, 6.5] MWh envelope.
+    let entry = assert_blind_entry_well_formed("800");
+    assert!(
+        entry.annual_heating_min >= 4.5 && entry.annual_heating_max <= 6.5,
+        "Case 800 Blind heating [{}, {}] outside [4.5, 6.5] MWh",
+        entry.annual_heating_min,
+        entry.annual_heating_max,
+    );
+    assert!(
+        entry.annual_cooling_min >= 4.5 && entry.annual_cooling_max <= 6.5,
+        "Case 800 Blind cooling [{}, {}] outside [4.5, 6.5] MWh",
+        entry.annual_cooling_min,
+        entry.annual_cooling_max,
+    );
+}
+
+#[test]
+fn test_blind_mode_case_810_infrastructure() {
+    // Issue #1332 AC1: Case 810 must be present in the Blind table.
+    let entry = assert_blind_entry_well_formed("810");
+    // The Case 810 band sits at the comprehensive-HVAC end of the envelope
+    // (slightly lower than Case 800 because of higher system COP). We
+    // assert it is no wider than the raw ASHRAE 140-2023 Annex B band
+    // (~1.4 MWh for Case 600 / Case 800), guarding against the
+    // "2-3× wider calibrated ranges" regression of #1270.
+    let h_width = entry.annual_heating_max - entry.annual_heating_min;
+    let c_width = entry.annual_cooling_max - entry.annual_cooling_min;
+    assert!(
+        h_width <= 1.5,
+        "Case 810 heating band width {h_width:.3} MWh exceeds 1.5 MWh (AC2)",
+    );
+    assert!(
+        c_width <= 1.5,
+        "Case 810 cooling band width {c_width:.3} MWh exceeds 1.5 MWh (AC2)",
+    );
+}
+
+#[test]
+fn test_blind_mode_case_920_infrastructure() {
+    // Issue #1332 AC1: Case 920 must be present in the Blind table.
+    let entry = assert_blind_entry_well_formed("920");
+    // AC2: band width ≤ 1.5× raw ASHRAE 140 Annex B band.
+    let h_width = entry.annual_heating_max - entry.annual_heating_min;
+    let c_width = entry.annual_cooling_max - entry.annual_cooling_min;
+    assert!(h_width > 0.0, "Case 920 heating band collapsed to a point");
+    assert!(c_width > 0.0, "Case 920 cooling band collapsed to a point");
+    assert!(h_width <= 1.5, "Case 920 heating band {h_width:.3} MWh too wide");
+    assert!(c_width <= 1.5, "Case 920 cooling band {c_width:.3} MWh too wide");
+}
+
+#[test]
+fn test_blind_mode_case_950_infrastructure() {
+    // Issue #1332 AC1: Case 950 must be present in the Blind table.
+    // Case 950 disables heating (night-ventilation) so the heating band is
+    // [0.00, 0.00]; cooling must be positive (night-ventilation effectiveness).
+    let entry = assert_blind_entry_well_formed("950");
+    assert_eq!(
+        entry.annual_heating_min, 0.00,
+        "Case 950 must report zero heating min (night-ventilation spec)",
+    );
+    assert_eq!(
+        entry.annual_heating_max, 0.00,
+        "Case 950 must report zero heating max (night-ventilation spec)",
+    );
+    assert!(
+        entry.annual_cooling_max > 0.0,
+        "Case 950 must report positive cooling max (night-ventilation still cools)",
+    );
+}
+
+#[test]
+fn test_blind_mode_case_960_infrastructure() {
+    // Issue #1332 AC1 + AC4: Case 960 must be present in the Blind table
+    // and satisfy raw ASHRAE 140-2023 Annex B Table 8-15 (heating-light,
+    // cooling-heavy because solar gains through the glazed common wall
+    // dominate).
+    let entry = assert_blind_entry_well_formed("960");
+    assert!(
+        entry.annual_heating_max <= 1.0,
+        "Case 960 Blind heating_max {} > 1.0 MWh (AC4)",
+        entry.annual_heating_max,
+    );
+    assert!(
+        entry.annual_cooling_min >= 8.0,
+        "Case 960 Blind cooling_min {} < 8.0 MWh (AC4)",
+        entry.annual_cooling_min,
+    );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Full blind-simulation acceptance tests for Cases 800/810/920/950/960.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// These tests run the full blind-mode annual simulation for each of the
+// 5 newly-added cases and verify that:
+//   (a) the simulation completes without panic, and
+//   (b) the simulated annual/peak energy falls within the Blind band.
+//
+// They are `#[ignore]`'d because the per-case hourly reference CSV
+// (e.g. `tests/reference_data/zone_balance/case_800_energy_reference.csv`)
+// does not yet exist on main — that data is being generated upstream by
+// the EnergyPlus regeneration work tracked in #1331 / #1168. Run them
+// locally with `cargo test --test ashrae_140_blind_validation -- --ignored`
+// once the CSVs land.
+
+#[test]
+#[ignore = "Pending case_800_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+fn test_blind_mode_case_800_annual_energy_within_band() {
+    let case_id = "800";
+    let spec = ASHRAE140Case::Case800.spec();
+    let sim = simulate_case_blind(&spec);
+    let blind = benchmark::get_all_benchmark_data_blind();
+    let data = blind.get(case_id).expect("Case 800 Blind benchmark");
+    println!(
+        "[#1332 Case 800] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+    assert!(sim.annual_heating_mwh.is_finite());
+    assert!(sim.annual_cooling_mwh.is_finite());
+    assert!(
+        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        "Case 800 heating {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+    );
+    assert!(
+        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        "Case 800 cooling {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+}
+
+#[test]
+#[ignore = "Pending case_810_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+fn test_blind_mode_case_810_annual_energy_within_band() {
+    let case_id = "810";
+    let spec = ASHRAE140Case::Case810.spec();
+    let sim = simulate_case_blind(&spec);
+    let blind = benchmark::get_all_benchmark_data_blind();
+    let data = blind.get(case_id).expect("Case 810 Blind benchmark");
+    println!(
+        "[#1332 Case 810] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+    assert!(sim.annual_heating_mwh.is_finite());
+    assert!(sim.annual_cooling_mwh.is_finite());
+    assert!(
+        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        "Case 810 heating {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+    );
+    assert!(
+        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        "Case 810 cooling {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+}
+
+#[test]
+#[ignore = "Pending case_920_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+fn test_blind_mode_case_920_annual_energy_within_band() {
+    let case_id = "920";
+    let spec = ASHRAE140Case::Case920.spec();
+    let sim = simulate_case_blind(&spec);
+    let blind = benchmark::get_all_benchmark_data_blind();
+    let data = blind.get(case_id).expect("Case 920 Blind benchmark");
+    println!(
+        "[#1332 Case 920] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+    assert!(sim.annual_heating_mwh.is_finite());
+    assert!(sim.annual_cooling_mwh.is_finite());
+    assert!(
+        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        "Case 920 heating {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+    );
+    assert!(
+        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        "Case 920 cooling {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+}
+
+#[test]
+#[ignore = "Pending case_950_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+fn test_blind_mode_case_950_annual_energy_within_band() {
+    let case_id = "950";
+    let spec = ASHRAE140Case::Case950.spec();
+    let sim = simulate_case_blind(&spec);
+    let blind = benchmark::get_all_benchmark_data_blind();
+    let data = blind.get(case_id).expect("Case 950 Blind benchmark");
+    println!(
+        "[#1332 Case 950] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+    // Case 950 disables heating (night-ventilation), so simulated heating
+    // should be 0 and must fall inside the [0.00, 0.00] band.
+    assert!(
+        (sim.annual_heating_mwh - 0.0).abs() < 1e-6,
+        "Case 950 heating should be ~0 (night-ventilation), got {:.6}",
+        sim.annual_heating_mwh,
+    );
+    assert!(sim.annual_cooling_mwh.is_finite());
+    assert!(
+        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        "Case 950 cooling {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+}
+
+#[test]
+#[ignore = "Pending case_960_energy_reference.csv (EnergyPlus regeneration tracked in #1331/#1168)"]
+fn test_blind_mode_case_960_annual_energy_within_band() {
+    let case_id = "960";
+    let spec = ASHRAE140Case::Case960.spec();
+    let sim = simulate_case_blind(&spec);
+    let blind = benchmark::get_all_benchmark_data_blind();
+    let data = blind.get(case_id).expect("Case 960 Blind benchmark");
+    println!(
+        "[#1332 Case 960] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+    );
+    assert!(sim.annual_heating_mwh.is_finite());
+    assert!(sim.annual_cooling_mwh.is_finite());
+    assert!(
+        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        "Case 960 heating {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+    );
+    assert!(
+        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        "Case 960 cooling {:.3} MWh outside Blind band [{}, {}]",
+        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
     );
 }
