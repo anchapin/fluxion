@@ -54,6 +54,17 @@ pub struct ValidateCommand {
     #[arg(long)]
     pub energy_conservation: bool,
 
+    /// Energy conservation tolerance (percent). The validator rejects models
+    /// whose total Watt residual exceeds this fraction of the system's
+    /// active thermal throughput (Σ |zone heating/cooling loads|).
+    ///
+    /// Default = 1.0% (matches ARCHITECTURE.md Phase 1 isolation target).
+    /// The strict 0.1% invariant check is enforced by `InvariantChecker` in
+    /// the #1295 CI gate; this CLI flag governs the wiring-level check
+    /// surfaced via `--energy-conservation`.
+    #[arg(long, default_value_t = 1.0)]
+    pub energy_conservation_tolerance: f64,
+
     /// Run ASHRAE 140 Case 960 validation
     #[arg(long)]
     pub case_960: bool,
@@ -302,39 +313,79 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
 
 /// Execute multi-zone validation
 pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow::Error> {
-    use crate::validation::energy_balance::EnergyBalanceValidator;
+    use crate::validation::energy_balance::{EnergyBalanceValidator, ValidationError};
 
-    let _validator = EnergyBalanceValidator::new(0.1, 1.0);
+    let validator = EnergyBalanceValidator::new(command.energy_conservation_tolerance, 1.0);
 
     if command.energy_conservation {
         println!("Running energy conservation validation...");
-        // TODO: Implement energy conservation validation
-        // let energy_result = validator.validate_energy_conservation(&model);
-        let energy_result: Result<(), anyhow::Error> = Ok(()); // Placeholder for now
+        // Build a 2-zone multi-zone thermal model from the canonical Case 960
+        // spec (sunspace + back-zone) so the validation exercises the same
+        // model construction path as `--case-960`. We step physics once with
+        // a neutral outdoor temperature (10 °C) to populate the model's
+        // per-zone state (temperatures, mass temperatures, loads, solar
+        // gains) before invoking the strict invariant check.
+        let energy_result = run_energy_conservation_validation(&validator);
 
         match command.format.as_str() {
             "json" => {
-                let status = if energy_result.is_ok() {
-                    "PASS"
-                } else {
-                    "FAIL"
+                let payload = match &energy_result {
+                    Ok(summary) => serde_json::json!({
+                        "energy_conservation": true,
+                        "energy_conservation_residual_w": summary.residual_w,
+                        "energy_conservation_zone_residuals_w": summary.zone_residuals_w,
+                        "energy_conservation_tolerance_pct": command.energy_conservation_tolerance,
+                        "status": "PASS",
+                    }),
+                    Err(ValidationError::MultiZoneConservationViolation {
+                        residual_w,
+                        zone_residuals_w,
+                        tolerance_pct,
+                    }) => serde_json::json!({
+                        "energy_conservation": false,
+                        "energy_conservation_residual_w": residual_w,
+                        "energy_conservation_zone_residuals_w": zone_residuals_w,
+                        "energy_conservation_tolerance_pct": tolerance_pct,
+                        "status": "FAIL",
+                    }),
+                    Err(other) => serde_json::json!({
+                        "energy_conservation": false,
+                        "energy_conservation_residual_w": f64::NAN,
+                        "energy_conservation_zone_residuals_w": [],
+                        "energy_conservation_tolerance_pct": command.energy_conservation_tolerance,
+                        "status": "ERROR",
+                        "error": other.to_string(),
+                    }),
                 };
-                let output = serde_json::json!({
-                    "energy_conservation": energy_result.is_ok(),
-                    "status": status
-                });
-                println!("{}", serde_json::to_string_pretty(&output).unwrap());
+                println!("{}", serde_json::to_string_pretty(&payload).unwrap());
             }
-            _ => {
-                println!(
-                    "Energy Conservation: {}",
-                    if energy_result.is_ok() {
-                        "PASS"
-                    } else {
-                        "FAIL"
+            _ => match &energy_result {
+                Ok(summary) => {
+                    println!(
+                        "Energy Conservation: PASS (residual {:.3} W, tolerance {:.2}%)",
+                        summary.residual_w, command.energy_conservation_tolerance
+                    );
+                    for (i, z) in summary.zone_residuals_w.iter().enumerate() {
+                        println!("  Zone {} residual: {:.3} W", i, z);
                     }
-                );
-            }
+                }
+                Err(ValidationError::MultiZoneConservationViolation {
+                    residual_w,
+                    zone_residuals_w,
+                    tolerance_pct,
+                }) => {
+                    println!(
+                        "Energy Conservation: FAIL (residual {:.3} W, tolerance {:.2}%)",
+                        residual_w, tolerance_pct
+                    );
+                    for (i, z) in zone_residuals_w.iter().enumerate() {
+                        println!("  Zone {} residual: {:.3} W", i, z);
+                    }
+                }
+                Err(other) => {
+                    println!("Energy Conservation: ERROR ({})", other);
+                }
+            },
         }
     }
 
@@ -344,6 +395,61 @@ pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow:
     }
 
     Ok(())
+}
+
+/// Run the per-zone energy conservation check against a 2-zone model.
+///
+/// Builds the canonical Case 960 thermal model (sunspace + back-zone, the
+/// same wiring exercised by `--case-960`), advances one physics step to
+/// populate the per-zone state, and delegates to
+/// [`EnergyBalanceValidator::validate_multi_zone_energy_conservation`]. That
+/// validator uses the same `InvariantChecker` arithmetic as the strict #1295
+/// CI gate, returning a real signed Watt residual plus a per-zone Watt
+/// breakdown.
+pub fn run_energy_conservation_validation(
+    validator: &crate::validation::energy_balance::EnergyBalanceValidator,
+) -> Result<EnergyConservationSummary, crate::validation::energy_balance::ValidationError> {
+    use crate::physics::cta::VectorField;
+    use crate::sim::engine::ThermalModel;
+    use crate::sim::invariant_checker::InvariantChecker;
+    use crate::validation::ashrae_140_cases::ASHRAE140Case;
+
+    let spec = ASHRAE140Case::Case960.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+
+    // Seed zone temperatures and step physics once with a neutral outdoor
+    // temperature so the model's per-zone state is populated (temperatures,
+    // mass temperatures, loads, solar gains all set by the 5R1C step).
+    let dt = 3600.0;
+    let t_outdoor = 10.0;
+    for i in 0..model.num_zones {
+        model.temperatures.as_mut()[i] = 20.0;
+    }
+    model.step_physics(0, t_outdoor, dt);
+
+    validator
+        .validate_multi_zone_energy_conservation(&model, dt, t_outdoor)
+        .map(|()| {
+            // On Ok, recompute the residual via the same InvariantChecker so
+            // the summary carries the signed Watt value and per-zone breakdown
+            // for text/JSON output (avoiding two separate code paths that
+            // could drift).
+            let mut checker = InvariantChecker::new(f64::EPSILON);
+            let result = checker.check_invariant(&model, dt, t_outdoor);
+            EnergyConservationSummary {
+                residual_w: result.balance,
+                zone_residuals_w: result.zone_imbalances,
+            }
+        })
+}
+
+/// Lightweight summary returned by `run_energy_conservation_validation` so
+/// the CLI can render PASS lines with the actual Watt residual (not a
+/// tautological `Ok(())`).
+#[derive(Debug, Clone)]
+pub struct EnergyConservationSummary {
+    pub residual_w: f64,
+    pub zone_residuals_w: Vec<f64>,
 }
 
 /// Execute ASHRAE 140 Case 960 (sunspace + back-zone) validation.

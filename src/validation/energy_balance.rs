@@ -10,7 +10,9 @@
 //!
 //! The module follows the Validator pattern used throughout the Fluxion validation framework.
 
+use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::engine::ThermalModel;
+use crate::sim::invariant_checker::InvariantChecker;
 use crate::validation::thermal_mass_energy_accounting::EnergyBalanceReport;
 
 /// Validation error type for energy balance checks
@@ -29,6 +31,19 @@ pub enum ValidationError {
         zone_to: usize,
         expected_heat_flow: f64,
         actual_heat_flow: f64,
+    },
+    /// Per-zone residual breakdown from the strict multi-zone invariant check.
+    /// `residual_w` is the total system residual in Watts
+    /// (signed: heat_in - heat_out - dE/dt, consistent with `InvariantChecker`).
+    /// `zone_residuals_w` is the per-zone Watt residual vector; the per-zone
+    /// breakdown is required because whole-system residuals can mask
+    /// inter-zone imbalances (a positive residual in zone A can cancel a
+    /// negative residual in zone B even when physics is wrong).
+    /// `tolerance_pct` is the configured percentage tolerance (e.g. 1.0 = 1%).
+    MultiZoneConservationViolation {
+        residual_w: f64,
+        zone_residuals_w: Vec<f64>,
+        tolerance_pct: f64,
     },
     /// General validation error
     GeneralError(String),
@@ -57,6 +72,21 @@ impl std::fmt::Display for ValidationError {
                 "Inter-zone imbalance between zone {} and {}: expected {:.2} W, got {:.2} W",
                 zone_from, zone_to, expected_heat_flow, actual_heat_flow
             ),
+            ValidationError::MultiZoneConservationViolation {
+                residual_w,
+                zone_residuals_w,
+                tolerance_pct,
+            } => {
+                writeln!(
+                    f,
+                    "Multi-zone energy conservation violation: total residual = {:.3} W (tolerance {:.2}%)",
+                    residual_w, tolerance_pct
+                )?;
+                for (i, z) in zone_residuals_w.iter().enumerate() {
+                    writeln!(f, "  Zone {} residual: {:.3} W", i, z)?;
+                }
+                Ok(())
+            }
             ValidationError::GeneralError(msg) => write!(f, "Validation error: {}", msg),
         }
     }
@@ -219,6 +249,84 @@ impl EnergyBalanceValidator {
                     zone_idx, conductance
                 )));
             }
+        }
+
+        Ok(())
+    }
+
+    /// Validate multi-zone energy conservation with per-zone residual breakdown.
+    ///
+    /// Unlike [`Self::validate_energy_conservation`] (which compares `Σ E_zone`
+    /// against itself and always passes), this method delegates to
+    /// [`crate::sim::invariant_checker::InvariantChecker`] — the same
+    /// physics-based check used by the strict #1295 CI gate. That gives a real
+    /// Watt residual (signed: `heat_in − heat_out − dE/dt`) plus a per-zone
+    /// breakdown vector. Per-zone residuals are required because whole-system
+    /// residuals can mask inter-zone imbalances (zone A's positive residual can
+    /// cancel zone B's negative residual even when physics is wrong).
+    ///
+    /// # Arguments
+    /// * `thermal_model` - Reference to the multi-zone thermal model
+    /// * `dt_seconds` - Timestep length in seconds (e.g. 3600 for 1 h)
+    /// * `outdoor_temp` - Outdoor air temperature for this timestep (°C)
+    ///
+    /// # Returns
+    /// `Ok(())` if the total Watt residual is within `conservation_tolerance`
+    /// (interpreted as a percentage of the magnitude of zone heating/cooling
+    /// loads in the system). On violation, returns
+    /// [`ValidationError::MultiZoneConservationViolation`] with the signed
+    /// total residual, per-zone Watt residuals, and configured tolerance.
+    ///
+    /// # Acceptance criterion (Issue #1344)
+    /// For a 2-zone stub with a deliberate 5 W unbalance, the validator must
+    /// report residual = 5.00 W (within 1e-3 W) and `status = FAIL`.
+    pub fn validate_multi_zone_energy_conservation<
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + std::convert::AsRef<[f64]>
+            + std::convert::AsMut<[f64]>
+            + std::ops::Index<usize, Output = f64>,
+    >(
+        &self,
+        thermal_model: &ThermalModel<T>,
+        dt_seconds: f64,
+        outdoor_temp: f64,
+    ) -> Result<(), ValidationError> {
+        // The strict invariant check — same arithmetic used by #1295 CI gate.
+        let mut checker = InvariantChecker::new(f64::EPSILON);
+        let result = checker.check_invariant(thermal_model, dt_seconds, outdoor_temp);
+
+        let residual_w = result.balance;
+        let zone_residuals_w = result.zone_imbalances.clone();
+
+        // Convert the configured % tolerance into an absolute Watt allowance.
+        // Denominator: Σ |zone heating/cooling loads| (a stable proxy for the
+        // thermal energy throughput at this timestep — zero only when the
+        // system is at perfect rest, in which case any non-zero residual is a
+        // hard violation regardless of tolerance).
+        let throughput_w: f64 = thermal_model
+            .loads
+            .as_ref()
+            .iter()
+            .zip(thermal_model.zone_area.as_ref().iter())
+            .map(|(l, a)| (l * a).abs())
+            .sum();
+
+        let allowance_w = if throughput_w > 0.0 {
+            throughput_w * (self.conservation_tolerance / 100.0)
+        } else {
+            // No active loads: the residual must itself be effectively zero.
+            // Use a 1e-6 W floor to guard against floating-point noise on a
+            // perfectly still system.
+            1e-6
+        };
+
+        if residual_w.abs() > allowance_w {
+            return Err(ValidationError::MultiZoneConservationViolation {
+                residual_w,
+                zone_residuals_w,
+                tolerance_pct: self.conservation_tolerance,
+            });
         }
 
         Ok(())
@@ -415,5 +523,106 @@ mod tests {
         assert!(report.contains("Energy Balance Validation Report"));
         assert!(report.contains("Total Zones:"));
         assert!(report.contains("Zone Energy Breakdown:"));
+    }
+
+    /// Issue #1344 acceptance criterion: a 2-zone stub with a deliberate 5 W
+    /// unbalance must be reported as residual = 5.00 W (within 1e-3 W) with
+    /// status = FAIL.
+    ///
+    /// Strategy: build a Case 960 2-zone model and **hand-balance** every
+    /// field the InvariantChecker reads (T_air = T_mass = T_prev_mass =
+    /// T_outdoor = T_ground = 20 °C, all loads/solar = 0). This isolates the
+    /// validator from the #1295 first-timestep physics-imbalance gap (out of
+    /// scope per the issue body). Inject +5 W into zone 0's `loads` and
+    /// assert the validator reports residual = 5.00 W (within 1e-3 W).
+    #[test]
+    fn test_multi_zone_validator_catches_5w_unbalance() {
+        use crate::physics::cta::VectorField;
+
+        let spec = ASHRAE140Case::Case960.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let area0 = model.zone_area.as_ref()[0];
+
+        // Hand-balance the stub (T_air = T_mass = T_prev_mass = T_outdoor =
+        // T_ground = 20 °C, all loads/solar = 0).
+        let t_balanced = 20.0_f64;
+        for i in 0..model.num_zones {
+            model.temperatures.as_mut()[i] = t_balanced;
+            model.mass_temperatures.as_mut()[i] = t_balanced;
+            model.previous_mass_temperatures.as_mut()[i] = t_balanced;
+            model.loads.as_mut()[i] = 0.0;
+            model.solar_gains.as_mut()[i] = 0.0;
+            model.opaque_solar_gains.as_mut()[i] = 0.0;
+        }
+        model.set_ground_temp(t_balanced);
+
+        let dt = 3600.0;
+        let t_outdoor = t_balanced; // ΔT = 0 → all heat flows = 0
+
+        // Inject +5 W into zone 0's load flux (W/m^2 → W by /area).
+        let artificial_gain_w = 5.0_f64;
+        model.loads.as_mut()[0] += artificial_gain_w / area0;
+
+        // Validator: a tight 1e-6% tolerance forces the validator to reject
+        // any non-trivial Watt residual.
+        let validator = EnergyBalanceValidator::new(1e-6, 1e-3);
+        let result = validator.validate_multi_zone_energy_conservation(&model, dt, t_outdoor);
+
+        match result {
+            Err(ValidationError::MultiZoneConservationViolation {
+                residual_w,
+                zone_residuals_w,
+                ..
+            }) => {
+                // The injected 5 W must show up in zone 0's per-zone residual
+                // within 1e-3 W (this is the acceptance criterion).
+                assert!(
+                    (zone_residuals_w[0] - artificial_gain_w).abs() < 1e-3,
+                    "Zone 0 residual must reflect injected +5 W unbalance within 1e-3 W; got {} W",
+                    zone_residuals_w[0]
+                );
+                // And the total residual must equal the acceptance value
+                // 5.00 W within 1e-3 W.
+                assert!(
+                    (residual_w - artificial_gain_w).abs() < 1e-3,
+                    "Acceptance criterion: residual must equal 5.00 W within 1e-3 W; got {} W",
+                    residual_w
+                );
+            }
+            other => panic!(
+                "expected MultiZoneConservationViolation with 5 W unbalance, got {:?}",
+                other
+            ),
+        }
+    }
+
+    /// Issue #1344: a hand-balanced 2-zone stub (T_air = T_mass = T_prev_mass
+    /// = T_outdoor = T_ground = 20 °C, all loads = 0) must report `Ok(())`
+    /// with a Watt residual of exactly zero.
+    #[test]
+    fn test_multi_zone_validator_balanced_model_passes() {
+        use crate::physics::cta::VectorField;
+
+        let spec = ASHRAE140Case::Case960.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let t_balanced = 20.0_f64;
+        for i in 0..model.num_zones {
+            model.temperatures.as_mut()[i] = t_balanced;
+            model.mass_temperatures.as_mut()[i] = t_balanced;
+            model.previous_mass_temperatures.as_mut()[i] = t_balanced;
+            model.loads.as_mut()[i] = 0.0;
+            model.solar_gains.as_mut()[i] = 0.0;
+            model.opaque_solar_gains.as_mut()[i] = 0.0;
+        }
+        model.set_ground_temp(t_balanced);
+
+        let dt = 3600.0;
+        let validator = EnergyBalanceValidator::new(1.0, 1.0);
+        let result = validator.validate_multi_zone_energy_conservation(&model, dt, t_balanced);
+        assert!(
+            result.is_ok(),
+            "Hand-balanced 2-zone stub must pass; got {:?}",
+            result
+        );
     }
 }
