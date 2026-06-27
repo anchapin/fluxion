@@ -1,0 +1,237 @@
+Version, 25.2;
+
+! ── ASHRAE 140 Case 960 — Sunspace (2-zone, High-Mass) ──────────────────
+! Reference: ASHRAE Standard 140-2023 Annex B8 (BESTEST Case 960)
+!   Multi-zone interpretation per issue #1331 acceptance criteria:
+!   - ZONE1 (back-zone, conditioned): 8m x 6m x 2.7m at y∈[2,8],
+!     heating 20°C / cooling 27°C, 12m² exterior south-facing window
+!   - ZONE2 (sunspace, free-floating): 8m x 2m x 2.7m at y∈[0,2],
+!     no HVAC — solar buffer zone with 6m² south-facing window
+!   - Infiltration: 0.5 ACH constant in each zone
+!
+! Geometry: back-zone and sunspace are physically adjacent but have separate
+! exterior walls (each has its own south-facing window). This is the
+! ASHRAE 140-2017 Plan 04-04 interpretation where both zones have
+! independent exposure to solar gain and outdoor conditions.
+!
+! Run with EnergyPlus 25.2.0 against the Golden-NREL TMY3 EPW to regenerate
+! the reference hourly CSV via generate_case_920_950_960_energy.py.
+
+SimulationControl,
+  No, No, No, No, Yes;
+
+RunPeriod,
+  AnnualRun,
+  1, 1, , 12, 31, ,
+  Tuesday,
+  No, No, No, No, No;
+
+Timestep, 1;
+
+Building,
+  ASHRAE140_Case960,
+  0.0, City, 0.04, 0.4, FullExterior, 25;
+
+Zone,
+  BACK_ZONE,
+  0.0, 0.0, 0.0, 0.0, 1, 1, 2.7, AutoCalculate;
+
+Zone,
+  SUNSPACE,
+  0.0, 0.0, 0.0, 0.0, 1, 1, 2.7, AutoCalculate;
+
+ZoneHVAC:EquipmentConnections,
+  BACK_ZONE, BACK_ZONE_Equip,
+  BACK_ZONE_Inlet Node, BACK_ZONE_Exhaust Node,
+  BACK_ZONE_Zone Air Node, BACK_ZONE_Return Air Node;
+
+ZoneHVAC:EquipmentConnections,
+  SUNSPACE, SUNSPACE_Equip,
+  SUNSPACE_Inlet Node, SUNSPACE_Exhaust Node,
+  SUNSPACE_Zone Air Node, SUNSPACE_Return Air Node;
+
+! ── Materials ───────────────────────────────────────────────────────────
+Material,
+  WOOD_SIDING, MediumSmooth, 0.009, 0.14, 530, 900;
+Material,
+  FOAM_INSULATION, MediumRough, 0.0615, 0.04, 14, 1400;
+Material,
+  CONCRETE_BLOCK, MediumRough, 0.100, 0.51, 1400, 840;
+Material,
+  CONCRETE, MediumRough, 0.080, 1.13, 1400, 1000;
+Material,
+  ROOF_DECK, MediumSmooth, 0.019, 0.14, 500, 1300;
+Material,
+  CONCRETE_HEAVY, MediumRough, 0.080, 0.51, 1400, 840;
+Material,
+  HIGH_INSUL, MediumRough, 0.201, 0.04, 14, 1400;
+
+Construction, HEAVY_WALL, WOOD_SIDING, FOAM_INSULATION, CONCRETE_BLOCK;
+Construction, HEAVY_ROOF, CONCRETE, FOAM_INSULATION, ROOF_DECK;
+Construction, HEAVY_FLOOR, CONCRETE_HEAVY, HIGH_INSUL;
+
+WindowMaterial:Glazing,
+  DblClear_Glazing,
+  SpectralAverage,
+  ,
+  0.003, 0.837, 0.075, 0.075, 0.898, 0.081, 0.081,
+  0.0, 0.84, 0.84, 0.9;
+
+WindowMaterial:Gas, DblClear_Gas, Air, 0.0127;
+Construction, DblClear_Window, DblClear_Glazing, DblClear_Gas, DblClear_Glazing;
+
+Site:GroundTemperature:BuildingSurface, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules, UpperLeftCorner, ClockWise, World;
+
+! ════════════════════════════════════════════════════════════════════════
+! BACK_ZONE: 8m × 6m × 2.7m at y∈[2,8], with exterior 12 m² south window
+! ════════════════════════════════════════════════════════════════════════
+BuildingSurface:Detailed,
+  BZ_SouthWall, Wall, HEAVY_WALL, BACK_ZONE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  0, 2, 2.7,  8, 2, 2.7,  8, 2, 0,  0, 2, 0;
+
+BuildingSurface:Detailed,
+  BZ_NorthWall, Wall, HEAVY_WALL, BACK_ZONE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  8, 8, 2.7,  0, 8, 2.7,  0, 8, 0,  8, 8, 0;
+
+BuildingSurface:Detailed,
+  BZ_EastWall, Wall, HEAVY_WALL, BACK_ZONE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  8, 2, 2.7,  8, 8, 2.7,  8, 8, 0,  8, 2, 0;
+
+BuildingSurface:Detailed,
+  BZ_WestWall, Wall, HEAVY_WALL, BACK_ZONE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  0, 8, 2.7,  0, 2, 2.7,  0, 2, 0,  0, 8, 0;
+
+BuildingSurface:Detailed,
+  BZ_Roof, Roof, HEAVY_ROOF, BACK_ZONE, , Outdoors, , SunExposed, WindExposed, 0.0,
+  4,
+  0, 2, 2.7,  0, 8, 2.7,  8, 8, 2.7,  8, 2, 2.7;
+
+BuildingSurface:Detailed,
+  BZ_Floor, Floor, HEAVY_FLOOR, BACK_ZONE, , Ground, , NoSun, NoWind, 0.0,
+  4,
+  0, 2, 0,  8, 2, 0,  8, 8, 0,  0, 8, 0;
+
+! Back-zone south window (12 m², 6m wide × 2m tall)
+FenestrationSurface:Detailed,
+  BZ_SouthWindow,
+  Window,
+  DblClear_Window,
+  BZ_SouthWall,
+  ,
+  0.5000000,
+  ,
+  1.0,
+  4,
+  1, 2, 2.0,  7, 2, 2.0,  7, 2, 0.0,  1, 2, 0.0;
+
+! ════════════════════════════════════════════════════════════════════════
+! SUNSPACE: 8m × 2m × 2.7m at y∈[0,2], with exterior 6 m² south window
+! ════════════════════════════════════════════════════════════════════════
+BuildingSurface:Detailed,
+  SS_SouthWall, Wall, HEAVY_WALL, SUNSPACE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  0, 0, 2.7,  8, 0, 2.7,  8, 0, 0,  0, 0, 0;
+
+BuildingSurface:Detailed,
+  SS_NorthWall, Wall, HEAVY_WALL, SUNSPACE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  8, 2, 2.7,  0, 2, 2.7,  0, 2, 0,  8, 2, 0;
+
+BuildingSurface:Detailed,
+  SS_EastWall, Wall, HEAVY_WALL, SUNSPACE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  8, 0, 2.7,  8, 2, 2.7,  8, 2, 0,  8, 0, 0;
+
+BuildingSurface:Detailed,
+  SS_WestWall, Wall, HEAVY_WALL, SUNSPACE, , Outdoors, , SunExposed, WindExposed, 0.5,
+  4,
+  0, 2, 2.7,  0, 0, 2.7,  0, 0, 0,  0, 2, 0;
+
+BuildingSurface:Detailed,
+  SS_Roof, Roof, HEAVY_ROOF, SUNSPACE, , Outdoors, , SunExposed, WindExposed, 0.0,
+  4,
+  0, 0, 2.7,  0, 2, 2.7,  8, 2, 2.7,  8, 0, 2.7;
+
+BuildingSurface:Detailed,
+  SS_Floor, Floor, HEAVY_FLOOR, SUNSPACE, , Ground, , NoSun, NoWind, 0.0,
+  4,
+  0, 0, 0,  8, 0, 0,  8, 2, 0,  0, 2, 0;
+
+! Sunspace south window (6 m², 3m wide × 2m tall, vertically centered)
+FenestrationSurface:Detailed,
+  SS_SouthWindow,
+  Window,
+  DblClear_Window,
+  SS_SouthWall,
+  ,
+  0.5000000,
+  ,
+  1.0,
+  4,
+  2.5, 0, 2.0,  5.5, 0, 2.0,  5.5, 0, 0.0,  2.5, 0, 0.0;
+
+! ── Infiltration ────────────────────────────────────────────────────────
+ZoneInfiltration:DesignFlowRate,
+  BACK_ZONE_Infil, BACK_ZONE, AlwaysOn, Flow/Zone, 0.018, , , ;
+ZoneInfiltration:DesignFlowRate,
+  SUNSPACE_Infil, SUNSPACE, AlwaysOn, Flow/Zone, 0.006, , , ;
+
+Schedule:Compact, AlwaysOn, Fraction, Through: 12/31, For: AllDays, Until: 24:00, 1.0;
+ScheduleTypeLimits, Fraction, 0.0, 1.0, Continuous;
+
+! ── Thermostats ─────────────────────────────────────────────────────────
+ScheduleTypeLimits, Temperature, -100, 200, Continuous;
+Schedule:Compact, BZ_HeatSP, Temperature, Through: 12/31, For: AllDays, Until: 24:00, 20.0;
+Schedule:Compact, BZ_CoolSP, Temperature, Through: 12/31, For: AllDays, Until: 24:00, 27.0;
+
+ZoneControl:Thermostat,
+  BACK_ZONE_Tstat, BACK_ZONE, DualSP_Sched,
+  ThermostatSetpoint:DualSetpoint, DualSP_Dual;
+
+ScheduleTypeLimits, ControlType, 0.0, 4.0, Discrete;
+Schedule:Compact, DualSP_Sched, ControlType, Through: 12/31, For: AllDays, Until: 24:00, 4;
+ThermostatSetpoint:DualSetpoint, DualSP_Dual, BZ_HeatSP, BZ_CoolSP;
+
+! ── Ideal Loads Air System ──────────────────────────────────────────────
+ZoneHVAC:EquipmentList,
+  BACK_ZONE_Equip,
+  SequentialLoad,
+  ZoneHVAC:IdealLoadsAirSystem, BACK_ZONE_IdealLoads, 1, 1;
+
+ZoneHVAC:IdealLoadsAirSystem,
+  BACK_ZONE_IdealLoads,
+  , BACK_ZONE_Inlet Node, BACK_ZONE_Exhaust Node, ,
+  50, 13, 0.0156, 0.0077,
+  NoLimit, , , NoLimit, , ,
+  , , ConstantSensibleHeatRatio, 0.7, None, , , , , ;
+
+ZoneHVAC:EquipmentList,
+  SUNSPACE_Equip,
+  SequentialLoad,
+  ZoneHVAC:IdealLoadsAirSystem, SUNSPACE_IdealLoads, 1, 1;
+
+ZoneHVAC:IdealLoadsAirSystem,
+  SUNSPACE_IdealLoads,
+  , SUNSPACE_Inlet Node, SUNSPACE_Exhaust Node, ,
+  50, 13, 0.0156, 0.0077,
+  NoLimit, , , NoLimit, , ,
+  , , ConstantSensibleHeatRatio, 0.7, None, , , , , ;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, BACK_ZONE, Zone Mean Air Temperature, Timestep;
+Output:Variable, BACK_ZONE, Zone Air System Sensible Heating Energy, Hourly;
+Output:Variable, BACK_ZONE, Zone Air System Sensible Cooling Energy, Hourly;
+Output:Variable, SUNSPACE, Zone Mean Air Temperature, Timestep;
+Output:Variable, SUNSPACE, Zone Air System Sensible Heating Energy, Hourly;
+Output:Variable, SUNSPACE, Zone Air System Sensible Cooling Energy, Hourly;
+Output:Variable, BZ_SouthWindow, Surface Window Transmitted Solar Radiation Rate, Timestep;
+Output:Variable, SS_SouthWindow, Surface Window Transmitted Solar Radiation Rate, Timestep;

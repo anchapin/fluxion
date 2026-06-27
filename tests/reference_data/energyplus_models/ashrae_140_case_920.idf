@@ -1,0 +1,309 @@
+Version, 25.2;
+
+! ── ASHRAE 140 Case 920 — High-Mass Building with East/West Windows ─────
+! Reference: ASHRAE Standard 140-2023 Annex B8 (BESTEST Case 920)
+!   - 8m x 6m x 2.7m single-zone box (high-mass variant of Case 620)
+!   - High-mass construction (per ASHRAE 140 Table 7-27):
+!     * Wall:  wood_siding (9mm) + foam (61.5mm) + concrete_block (100mm)
+!     * Roof:  concrete (80mm) + foam (111mm) + roof_deck (19mm)
+!     * Floor: concrete_heavyweight (80mm) + insulation_high_mass (201mm)
+!   - Two 6 m² windows: 3m wide x 2m tall, one on East wall, one on West wall
+!     (no south window — east/west exposure only)
+!   - Heating setpoint: 20°C, Cooling setpoint: 27°C
+!   - Infiltration: 0.5 ACH constant (Flow/Zone = 0.018 m³/s)
+!   - No internal gains, no mechanical ventilation (infiltration only)
+!   - Ideal Loads Air System (metered heating/cooling energy)
+!
+! Run with EnergyPlus 25.2.0 against the Golden-NREL TMY3 EPW to regenerate
+! the reference hourly CSV via generate_case_920_950_960_energy.py.
+
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+RunPeriod,
+  AnnualRun,
+  1, 1, , 12, 31, ,
+  Tuesday,
+  No, No, No, No, No;
+
+Timestep, 1;
+
+Building,
+  ASHRAE140_Case920,
+  0.0,
+  City,
+  0.04,
+  0.4,
+  FullExterior,
+  25;
+
+Zone,
+  ZONE1,
+  0, 0, 0, 0, 1, 1, , , , ;
+
+ZoneHVAC:EquipmentConnections,
+  ZONE1, ZONE1_Equip,
+  ZONE1_Inlet Node, ZONE1_Exhaust Node,
+  ZONE1_Zone Air Node, ZONE1_Return Air Node;
+
+! ── Materials — High-Mass Construction per ASHRAE 140 Table 7-27 ──────
+! Wall: wood_siding (interior) + foam (insulation) + concrete_block (exterior)
+Material,
+  WOOD_SIDING,        ! k=0.14 W/mK, rho=530, cp=900
+  MediumSmooth,
+  0.009,
+  0.14,
+  530,
+  900;
+
+Material,
+  FOAM_INSULATION,    ! k=0.04 W/mK, rho=14, cp=1400
+  MediumRough,
+  0.0615,
+  0.04,
+  14,
+  1400;
+
+Material,
+  CONCRETE_BLOCK,     ! k=0.51 W/mK, rho=1400, cp=840 (ASHRAE 140 Table 7-27)
+  MediumRough,
+  0.100,
+  0.51,
+  1400,
+  840;
+
+! Roof: concrete + foam + roof_deck (exterior)
+Material,
+  CONCRETE,           ! k=1.13 W/mK, rho=1400, cp=1000
+  MediumRough,
+  0.080,
+  1.13,
+  1400,
+  1000;
+
+Material,
+  ROOF_DECK,          ! k=0.14 W/mK, rho=500, cp=1300
+  MediumSmooth,
+  0.019,
+  0.14,
+  500,
+  1300;
+
+! Floor: concrete_heavyweight + insulation_high_mass
+Material,
+  CONCRETE_HEAVY,     ! k=0.51 W/mK, rho=1400, cp=840 (ASHRAE 140 Table B1-3)
+  MediumRough,
+  0.080,
+  0.51,
+  1400,
+  840;
+
+Material,
+  HIGH_INSUL,         ! k=0.04 W/mK, rho=14, cp=1400
+  MediumRough,
+  0.201,
+  0.04,
+  14,
+  1400;
+
+! ── Constructions ───────────────────────────────────────────────────────
+Construction,
+  HEAVY_WALL,
+  WOOD_SIDING,        ! Interior layer
+  FOAM_INSULATION,    ! Middle insulation
+  CONCRETE_BLOCK;     ! Exterior layer
+
+Construction,
+  HEAVY_ROOF,
+  CONCRETE,
+  FOAM_INSULATION,
+  ROOF_DECK;
+
+Construction,
+  HEAVY_FLOOR,
+  CONCRETE_HEAVY,
+  HIGH_INSUL;
+
+! ── Window (double-pane clear, matches existing Case 600 / 900 glazing) ─
+WindowMaterial:Glazing,
+  DblClear_Glazing,
+  SpectralAverage,         ! Optical Data Type
+  ,                        ! Window Glass Spectral Data Set Name (none)
+  0.003,                   ! Thickness {m}
+  0.837,                   ! Solar Transmittance at Normal Incidence
+  0.075,                   ! Front Side Solar Reflectance at Normal Incidence
+  0.075,                   ! Back Side Solar Reflectance at Normal Incidence
+  0.898,                   ! Visible Transmittance at Normal Incidence
+  0.081,                   ! Front Side Visible Reflectance at Normal Incidence
+  0.081,                   ! Back Side Visible Reflectance at Normal Incidence
+  0.0,                     ! Infrared Transmittance at Normal Incidence
+  0.84,                    ! Front Side Infrared Hemispherical Emissivity
+  0.84,                    ! Back Side Infrared Hemispherical Emissivity
+  0.9;                     ! Conductivity {W/m-K}
+
+WindowMaterial:Gas,
+  DblClear_Gas,
+  Air,
+  0.0127;                  ! Thickness
+
+Construction,
+  DblClear_Window,
+  DblClear_Glazing,
+  DblClear_Gas,
+  DblClear_Glazing;
+
+! ── Ground temperature ──────────────────────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner,
+  ClockWise,
+  World;
+
+! ── Surfaces (8m wide × 6m deep × 2.7m tall) ────────────────────────────
+BuildingSurface:Detailed,
+  SouthWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 0, 2.7,
+  8, 0, 2.7,
+  8, 0, 0,
+  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  8, 6, 2.7,
+  0, 6, 2.7,
+  0, 6, 0,
+  8, 6, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  8, 0, 2.7,
+  8, 6, 2.7,
+  8, 6, 0,
+  8, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 6, 2.7,
+  0, 0, 2.7,
+  0, 0, 0,
+  0, 6, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, HEAVY_ROOF, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 0, 2.7,
+  0, 6, 2.7,
+  8, 6, 2.7,
+  8, 0, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, HEAVY_FLOOR, ZONE1, , Ground, , NoSun, NoWind, ,
+  4,
+  0, 0, 0,
+  8, 0, 0,
+  8, 6, 0,
+  0, 6, 0;
+
+! ── East window (3m wide × 2m tall = 6 m², centered) ────────────────────
+! E+ 25.2 IO Reference layout: View Factor to Ground, Frame/Divider, Multiplier
+FenestrationSurface:Detailed,
+  EastWindow,
+  Window,
+  DblClear_Window,
+  EastWall,
+  ,                        ! Outside Boundary Condition Object (none)
+  0.5000000,               ! View Factor to Ground
+  ,                        ! Frame and Divider Name
+  1.0,                     ! Multiplier
+  4,                       ! Number of Vertices
+  8, 1.5, 2.0,
+  8, 4.5, 2.0,
+  8, 4.5, 0.0,
+  8, 1.5, 0.0;
+
+! ── West window (3m wide × 2m tall = 6 m², mirrored from East) ──────────
+FenestrationSurface:Detailed,
+  WestWindow,
+  Window,
+  DblClear_Window,
+  WestWall,
+  ,
+  0.5000000,
+  ,
+  1.0,
+  4,
+  0, 4.5, 2.0,
+  0, 1.5, 2.0,
+  0, 1.5, 0.0,
+  0, 4.5, 0.0;
+
+! ── Infiltration: 0.5 ACH (Flow/Zone = 0.5 × 129.6 / 3600 = 0.018 m³/s) ─
+ZoneInfiltration:DesignFlowRate,
+  ZONE1_Infil,
+  ZONE1,
+  AlwaysOn,
+  Flow/Zone,
+  0.018,
+  , , ;
+
+Schedule:Compact, AlwaysOn, Fraction, Through: 12/31, For: AllDays, Until: 24:00, 1.0;
+ScheduleTypeLimits, Fraction, 0.0, 1.0, Continuous;
+
+! ── Thermostat: 20°C heating, 27°C cooling ──────────────────────────────
+ScheduleTypeLimits, Temperature, -100, 200, Continuous;
+
+Schedule:Compact,
+  HeatSP,
+  Temperature,
+  Through: 12/31, For: AllDays, Until: 24:00, 20.0;
+
+Schedule:Compact,
+  CoolSP,
+  Temperature,
+  Through: 12/31, For: AllDays, Until: 24:00, 27.0;
+
+ZoneControl:Thermostat,
+  ZONE1_Tstat, ZONE1, DualSP_Sched,
+  ThermostatSetpoint:DualSetpoint,
+  DualSP_Sched;
+
+ScheduleTypeLimits, ControlType, 0.0, 4.0, Discrete;
+Schedule:Compact, DualSP_Sched, ControlType, Through: 12/31, For: AllDays, Until: 24:00, 4;
+
+ThermostatSetpoint:DualSetpoint,
+  DualSP_Sched, HeatSP, CoolSP;
+
+! ── Ideal Loads Air System (metered heating/cooling) ────────────────────
+ZoneHVAC:EquipmentList,
+  ZONE1_Equip,
+  SequentialLoad,
+  ZoneHVAC:IdealLoadsAirSystem, ZONE1_IdealLoads, 1, 1;
+
+ZoneHVAC:IdealLoadsAirSystem,
+  ZONE1_IdealLoads,
+  , ZONE1_Inlet Node, ZONE1_Exhaust Node, ,
+  50, 13, 0.0156, 0.0077,
+  NoLimit, , , NoLimit, , ,
+  , , ConstantSensibleHeatRatio, 0.7, None, , , , , ;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, ZONE1, Zone Air System Sensible Heating Energy, Hourly;
+Output:Variable, ZONE1, Zone Air System Sensible Cooling Energy, Hourly;
+Output:Variable, ZONE1, Zone Infiltration Sensible Heat Loss, Timestep;
+Output:Variable, ZONE1, Zone Infiltration Sensible Heat Gain, Timestep;
+Output:Variable, EastWindow, Surface Window Transmitted Solar Radiation Rate, Timestep;
+Output:Variable, WestWindow, Surface Window Transmitted Solar Radiation Rate, Timestep;
