@@ -1,0 +1,230 @@
+# ASHRAE 140 Strict Annual-Energy CI Gate (Issue #1333)
+#
+# Runs the strict ±15% annual-energy tolerance tests for ASHRAE 140
+# Cases 600 (low-mass baseline) and 900 (high-mass) on every PR and push
+# to main. This is the durable regression guard that locks in the post-#1323
+# roof-solar physics fix (PR #1356) and prevents silent regressions in the
+# annual-energy band.
+#
+# What it runs
+# ------------
+# Four tests, each named explicitly so the gate's coverage is auditable.
+# Each test runs in its own cargo invocation with a substring filter
+# precise enough to match exactly one test (cargo test accepts only one
+# TESTNAME positional arg, and a too-broad substring like "_infrastructure"
+# matches 7 blind-mode tests in `ashrae_140_blind_validation.rs`).
+#
+#   1. test_case_600_annual_energy_ashrae140_tolerance  (zone_balance_eplus_isolation)
+#      filter: _case_600_annual_energy_ashrae140_tolerance
+#   2. test_case_900_annual_energy_ashrae140_tolerance  (zone_balance_eplus_isolation)
+#      filter: _case_900_annual_energy_ashrae140_tolerance
+#   3. test_blind_mode_case_600_infrastructure          (ashrae_140_blind_validation)
+#      filter: _blind_mode_case_600_infrastructure
+#   4. test_blind_mode_case_900_infrastructure          (ashrae_140_blind_validation)
+#      filter: _blind_mode_case_900_infrastructure
+#
+# The two `*_annual_energy_ashrae140_tolerance` tests are currently
+# `#[ignore]` pending issue A#4 closure verification (the residual
+# cooling-load gap after the post-#1323 roof-solar fix). When that issue
+# reports PASS and the `#[ignore]` attributes are removed, these tests
+# will run as part of this same gate invocation — without any workflow
+# change. The `--include-ignored` flag is NOT used; the gate must fail
+# honestly if a follow-up PR un-ignores a test that the physics cannot
+# yet satisfy (matches AGENTS.md "strict gate MUST fail honestly when
+# physics is wrong").
+#
+# The two `*_infrastructure` tests already run today (no `#[ignore]`).
+# They verify that the validator API exposes `ValidationMode::Blind` and
+# that Case 600/900 produce finite, non-zero annual energy through the
+# public API. They are the API-level companions to the strict-tolerance
+# tests (issue #1283).
+#
+# Why --release
+# -------------
+# The strict ±15% tolerance tests run annual simulations (8760 hourly
+# steps). Release mode matches the production binary and avoids the
+# 5-10x slowdown that debug-mode unit tests incur. Same reasoning as
+# `.github/workflows/ashrae_140_validation.yml`.
+#
+# Why --features ort
+# ------------------
+# Case 900 routes through the production `MultiNodeSolver` (9R4C thermal
+# network) when the construction is HighMass. That code path lives
+# behind the `ort` feature gate (per issue #1294). Without `--features
+# ort`, Case 900 would compile out of the `MultiNodeSolver` arm and the
+# strict gate would only exercise the low-mass path — false-positive
+# coverage.
+#
+# Status check name
+# -----------------
+# The job id is `strict-energy-gate`; the human-readable name is
+# "ASHRAE 140 Strict Energy Gate (Issue #1333)". Add this job name to
+# the branch protection "Required status checks" list (it is also
+# declared in `release_gates.yaml` under `ci.required_checks`).
+#
+# Linked issues
+# -------------
+# - #1333 — this issue (wire the gate)
+# - #1323 — roof-solar physics fix (PR #1356)
+# - #1328 — Case 900 peak-cooling closure verification
+# - #1295 — established the strict energy-conservation invariant CI pattern
+# - #1147 — ASHRAE 140 blind validation baseline
+# - #1283 — ValidationMode::Blind wiring
+# - #1332 — extended Blind coverage to Cases 800/810/920/950/960
+
+name: ASHRAE 140 Strict Energy Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Serialize strict-gate runs per ref so two pushes don't double-allocate
+# runners while the previous run is still queued. Different refs run in
+# parallel (so feature branches don't queue behind main).
+concurrency:
+  group: ashrae-140-strict-energy-gate-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  PYO3_USE_ABI3_FORWARD_COMPATIBILITY: 1
+
+jobs:
+  strict-energy-gate:
+    name: ASHRAE 140 Strict Energy Gate (Issue #1333)
+    runs-on: ${{ vars.FLUXION_LINUX_RUNNER || 'ubuntu-latest' }}
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config libfontconfig1-dev
+
+      - uses: ./.github/actions/setup-rust-python-env
+        with:
+          python-version: '3.10'
+
+      - name: Cache cargo registry + build artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ashrae-140-strict-gate-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ashrae-140-strict-gate-${{ runner.os }}-
+
+      - name: Strict ±15% Case 600 tolerance (annual heating/cooling)
+        # Test 1/4: strict tolerance for low-mass Case 600.
+        # Filter `_case_600_annual_energy_ashrae140_tolerance` is precise —
+        # no other test in the workspace shares this suffix.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test zone_balance_eplus_isolation \
+            _case_600_annual_energy_ashrae140_tolerance \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Strict ±15% Case 900 tolerance (annual heating/cooling)
+        # Test 2/4: strict tolerance for high-mass Case 900.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test zone_balance_eplus_isolation \
+            _case_900_annual_energy_ashrae140_tolerance \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: ValidationMode::Blind Case 600 infrastructure
+        # Test 3/4: API-level infrastructure for Case 600 (already passing).
+        # Filter `_blind_mode_case_600_infrastructure` is precise — only
+        # one test in the workspace matches this substring.
+        run: |
+          cargo test --release --features ort --verbose \
+            --test ashrae_140_blind_validation \
+            _blind_mode_case_600_infrastructure \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: ValidationMode::Blind Case 900 infrastructure
+        # Test 4/4: API-level infrastructure for Case 900 (already passing).
+        run: |
+          cargo test --release --features ort --verbose \
+            --test ashrae_140_blind_validation \
+            _blind_mode_case_900_infrastructure \
+            2>&1 | tee -a /tmp/strict_gate_output.txt
+          echo "---"
+          echo "exit_code=$?"
+
+      - name: Verify all 4 tests ran and gate is green
+        # The strict gate's contract: every named test appears in the
+        # cargo output, either as `ok` (passed), `ignored` (still gated
+        # by `#[ignore]`), or `FAILED` (regression — fail the build).
+        # A test name missing from the output means a follow-up refactor
+        # silently dropped it from the gate's coverage, which is itself
+        # a regression.
+        run: |
+          echo "=== Strict gate coverage check ==="
+          for t in \
+            test_case_600_annual_energy_ashrae140_tolerance \
+            test_case_900_annual_energy_ashrae140_tolerance \
+            test_blind_mode_case_600_infrastructure \
+            test_blind_mode_case_900_infrastructure ; do
+            if grep -qE "\\.\\.\\. $t \\.\\.\\. (ok|ignored|FAILED)" /tmp/strict_gate_output.txt; then
+              echo "  COVERED: $t"
+            else
+              echo "  DROPPED FROM GATE: $t"
+              echo "  This test name is no longer matched by the cargo filter."
+              echo "  Either the test was renamed/removed, or the workflow"
+              echo "  filter needs updating. Failing the build."
+              exit 1
+            fi
+          done
+
+          echo
+          echo "=== Strict gate result extraction ==="
+          # Strip ANSI colour codes for grep.
+          sed -i 's/\x1b\[[0-9;]*m//g' /tmp/strict_gate_output.txt
+
+          FAILED=$(grep -cE '^test .* \\.\\.\\. FAILED$' /tmp/strict_gate_output.txt || true)
+          PANICS=$(grep -cE 'panicked at' /tmp/strict_gate_output.txt || true)
+          PASSED=$(grep -cE '^test (test_case|test_blind_mode)_(600|900)_(annual_energy_ashrae140_tolerance|infrastructure) \\.\\.\\. ok$' /tmp/strict_gate_output.txt || true)
+          IGNORED=$(grep -cE '^test (test_case|test_blind_mode)_(600|900)_(annual_energy_ashrae140_tolerance|infrastructure) \\.\\.\\. ignored$' /tmp/strict_gate_output.txt || true)
+
+          echo "  Passed   : $PASSED"
+          echo "  Ignored  : $IGNORED (still gated by #[ignore] pending A#4)"
+          echo "  Failed   : $FAILED"
+          echo "  Panics   : $PANICS"
+
+          if [ "$FAILED" -gt 0 ] || [ "$PANICS" -gt 0 ]; then
+            echo
+            echo "::error::Strict ±15% annual-energy gate FAILED — Case 600/900 regression detected."
+            echo "See /tmp/strict_gate_output.txt for the failing assertion messages."
+            echo "Per AGENTS.md 'no parameter tuning, fix the math': the physics layer must be"
+            echo "fixed, NOT the tolerance band."
+            exit 1
+          fi
+          echo "PASS: ASHRAE 140 strict ±15% annual-energy gate holds."
+
+      - name: Upload strict-gate log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ashrae-140-strict-energy-gate
+          path: /tmp/strict_gate_output.txt
+          retention-days: 14

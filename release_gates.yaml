@@ -168,3 +168,35 @@ ci:
 
   # Gate status output file
   output_file: "gate_status.json"
+
+  # =============================================================================
+  # REQUIRED STATUS CHECKS
+  # =============================================================================
+  # GitHub branch-protection "Required status checks" list. Every check
+  # named here must report `success` on the merge commit before the PR
+  # can be merged into `main`. Mirrors the `#1295` energy-conservation
+  # pattern (`rust-tests.yml::energy-conservation`) — the strict energy
+  # gate (#1333) is the next layer of the same regression-guard stack.
+  #
+  # Job names (NOT workflow names) must match the `jobs.<id>.name`
+  # field in each workflow file. To find them, look for
+  # `name: ASHRAE 140 Strict Energy Gate (Issue #1333)` in
+  # `.github/workflows/ashrae_140_strict_energy_gate.yml`.
+  required_checks:
+    # Strict ±15% annual-energy tolerance for ASHRAE 140 Cases 600/900
+    # (issue #1333). Currently exercises the two Blind-mode
+    # infrastructure tests (passing) plus the two strict-tolerance
+    # tests (skipped via `#[ignore]` pending A#4 closure verification).
+    # When the `#[ignore]` attributes are removed (tracked by the
+    # follow-up issue recorded in PR #1367's body), the same gate will
+    # enforce the ±15% band automatically.
+    - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+
+  # Job-to-workflow map (informational; branch-protection reads job
+  # names directly). Used by `scripts/release_gate_checker.py` to verify
+  # the required_checks list is in sync with the workflows directory.
+  workflow_index:
+    - job: "ASHRAE 140 Strict Energy Gate (Issue #1333)"
+      workflow: ".github/workflows/ashrae_140_strict_energy_gate.yml"
+      issue: 1333
+      triggered_by: "PR + push to main"

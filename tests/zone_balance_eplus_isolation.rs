@@ -828,17 +828,28 @@ fn test_case_600_blind_energy_infrastructure() {
     assert!(c_lo > 0.0 && c_hi > c_lo, "malformed cooling reference");
 }
 
-/// Case 600 STRICT ASHRAE 140 tolerance — IGNORED pending physics fix.
+/// Case 600 STRICT ASHRAE 140 tolerance — IGNORED pending A#4 closure.
 ///
-/// The cooling load calculation underestimates ASHRAE 140 reference by
-/// ~90% (current: ~0.5 MWh; ref: 3.9-6.1 MWh). Root cause: the 5R1C
-/// solver is steady-state only and the zone balance does not yet
-/// correctly integrate solar gains + mass dynamics + HVAC cooling. Per
-/// AGENTS.md ("no parameter tuning, fix the math"), this test is
-/// `#[ignore]` until the underlying physics is corrected; it will be
-/// un-ignored automatically when the cooling load is brought within band.
-/// RE-IGNORED per wave orchestrator: physics gap (#1213) not resolved.
-#[ignore = "blocked by #1213 zone cooling physics + #672 epic v1.3"]
+/// The strict ±15% annual-energy tolerance gate (issue #1333) is wired
+/// in `.github/workflows/ashrae_140_strict_energy_gate.yml` and runs on
+/// every PR. This test is left `#[ignore]` until issue A#4 reports PASS
+/// (post-#1323 cooling-gap closure verification). When un-ignored, this
+/// test participates in the strict gate automatically — if the engine
+/// regresses outside ±15% of the ASHRAE 140 published band, the gate
+/// fails the build.
+///
+/// Engine values observed on the post-#1323 branch (this file,
+/// run with `cargo test --release --features ort
+/// -- --include-ignored test_case_600_annual_energy`):
+///   H=3.167 MWh outside band [4.314, 5.836]   FAIL (~27% below)
+///   C=2.672 MWh outside band [4.275, 5.784]   FAIL (~38% below)
+///
+/// Per AGENTS.md ("no parameter tuning, fix the math"), the fix is owned
+/// by the physics layer (CTF transient wall modeling follow-up), not by
+/// loosening the band or adjusting the engine constants.
+#[ignore = "Issue #1333 strict gate wired; un-ignore pending A#4 closure \
+            verification (post-#1323 cooling-gap regression on Case 600 \
+            annual heating/cooling — see PR #1367 / issue #1333)."]
 #[test]
 fn test_case_600_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case600.spec();
@@ -900,9 +911,29 @@ fn test_case_900_blind_energy_infrastructure() {
     assert!(c_lo > 0.0 && c_hi > c_lo, "malformed cooling reference");
 }
 
-/// Case 900 STRICT ASHRAE 140 tolerance — IGNORED pending physics fix.
-/// Blocked by: #1213 (90% cooling underestimate), #672 epic (v1.3 blind validation).
-#[ignore = "blocked by #1213 cooling physics + #672 epic v1.3"]
+/// Case 900 STRICT ASHRAE 140 tolerance — IGNORED pending A#4 closure.
+///
+/// The strict ±15% annual-energy tolerance gate (issue #1333) is wired
+/// in `.github/workflows/ashrae_140_strict_energy_gate.yml` and runs on
+/// every PR. This test is left `#[ignore]` until issue A#4 reports PASS
+/// (post-#1323 cooling-gap closure verification). When un-ignored, this
+/// test participates in the strict gate automatically — if the engine
+/// regresses outside ±15% of the ASHRAE 140 published band, the gate
+/// fails the build.
+///
+/// Engine values observed on the post-#1323 branch (this file,
+/// run with `cargo test --release --features ort
+/// -- --include-ignored test_case_900_annual_energy`):
+///   H=1.626 MWh within band [1.364, 1.846]   PASS
+///   C=1.203 MWh outside band [7.862, 10.637] FAIL (~85% below)
+///
+/// Per AGENTS.md ("no parameter tuning, fix the math"), the residual
+/// cooling gap is owned by the physics layer (CTF transient wall modeling
+/// follow-up per #1328 verification hand-off), not by loosening the band.
+#[ignore = "Issue #1333 strict gate wired; un-ignore pending A#4 closure \
+            verification (post-#1323 cooling-gap regression on Case 900 \
+            annual cooling — peak 1.03 kW vs 2.10 kW band lower bound, \
+            see PR #1367 / issue #1333 / #1328 closure report)."]
 #[test]
 fn test_case_900_annual_energy_ashrae140_tolerance() {
     let spec = ASHRAE140Case::Case900.spec();
