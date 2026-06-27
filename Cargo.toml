@@ -160,6 +160,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # XML parsing for gbXML import/export
 quick-xml = "0.31"
 
+# ZIP archive writer for FMI 2.0 FMU packaging (#1339)
+zip = { version = "0.6", default-features = false, features = ["deflate"] }
+
 [build-dependencies]
 pyo3-build-config = { version = "0.22", optional = true }
 napi-build = { version = "2", optional = true }
