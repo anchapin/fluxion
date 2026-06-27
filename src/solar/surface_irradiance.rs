@@ -140,8 +140,26 @@ pub fn calculate_surface_irradiance(
     let ghi = ghi.unwrap_or_else(|| dni * sun_pos.altitude_deg.to_radians().sin() + dhi);
     let (tilt_deg, azimuth_deg) = orientation_to_angles(orientation);
 
-    let incidence_cos = sun_pos.incidence_cosine(tilt_deg, azimuth_deg);
-    let beam = dni * incidence_cos;
+    // Beam component: I_beam = DNI · cos(θ_i), clamped to ≥ 0.
+    //
+    // Issue #1325: For a horizontal surface (tilt = 0) the surface normal
+    // points toward zenith, so the incidence angle equals the solar zenith
+    // angle and cos(θ_i) = cos(zenith) = sin(altitude). We special-case
+    // tilt = 0 here so the geometry is explicit (and matches the analytical
+    // formulation ASHRAE Fundamentals Ch.14 / Duffie–Beckman Eq. 1.6.3),
+    // and so the result is guarded against any future changes to the
+    // general incidence-angle formula. For non-horizontal surfaces we fall
+    // back to the full incidence-cosine expression.
+    //
+    // No incidence-angle / airmass reductions are applied here beyond the
+    // cos(θ_i) factor itself — beam is direct normal irradiance projected
+    // onto the surface plane. Airmass is used only by the diffuse model.
+    let beam = if tilt_deg.abs() < 1e-9 {
+        // Horizontal: normal = up (zenith direction), θ_i = zenith.
+        (dni * sun_pos.zenith_deg.to_radians().cos()).max(0.0)
+    } else {
+        dni * sun_pos.incidence_cosine(tilt_deg, azimuth_deg)
+    };
 
     let dni_extra = extraterrestrial_irradiance(day_of_year);
     let airmass = relative_airmass(sun_pos.zenith_deg);
