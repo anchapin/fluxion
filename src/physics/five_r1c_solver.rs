@@ -168,8 +168,7 @@ impl HeatConductionSolver for FiveR1CSolver {
         let prev_negative = self.q_flux < 0.0;
         let new_positive = q_ss > 0.0;
         let new_negative = q_ss < 0.0;
-        let sign_flip =
-            (prev_positive && new_negative) || (prev_negative && new_positive);
+        let sign_flip = (prev_positive && new_negative) || (prev_negative && new_positive);
         if self.pre_step || sign_flip {
             // At steady state for the 5R1C network with symmetric R split
             // (R_1 = R_2 = R_total/2), T_mass sits at the midpoint of T_int

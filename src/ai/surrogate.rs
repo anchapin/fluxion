@@ -1,6 +1,8 @@
 //! Surrogate manager for fast thermal load predictions.
 
+#[allow(unused_imports)]
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
+#[allow(unused_imports)]
 use log::{info, warn};
 #[cfg(feature = "ort")]
 #[cfg(feature = "cuda")]
@@ -9,6 +11,7 @@ use ort::execution_providers::CUDAExecutionProvider;
 use ort::execution_providers::{
     CoreMLExecutionProvider, DirectMLExecutionProvider, OpenVINOExecutionProvider,
 };
+#[allow(unused_imports)]
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -435,6 +438,7 @@ impl Default for SurrogateManager {
 /// returns an error when `ort` is disabled.
 #[cfg(feature = "ort")]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SessionPool {
     sessions: Mutex<Vec<ort::session::Session>>,
     model_path: String,
@@ -448,6 +452,7 @@ pub struct SessionPool {
 /// an error (those methods only exist under `#[cfg(feature = "ort")]`).
 #[cfg(not(feature = "ort"))]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SessionPool {
     model_path: String,
     backend: InferenceBackend,
@@ -455,7 +460,9 @@ pub struct SessionPool {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct MultiDeviceSessionPool {
+    #[allow(dead_code)]
     device_pools: Vec<Arc<SessionPool>>,
     _config: MultiDeviceConfig,
     _model_path: String,
