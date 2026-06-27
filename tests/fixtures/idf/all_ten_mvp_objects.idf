@@ -1,0 +1,89 @@
+! Minimal IDF sample exercising all 10 MVP object types.
+! Used by tests/idf_parser_tests.rs.
+
+Version, 25.2;
+
+Timestep, 4;
+
+RunPeriod,
+  AnnualRun,        !- Name
+  1,                !- Begin Month
+  1,                !- Begin Day of Month
+  ,                 !- Begin Year (default)
+  12,               !- End Month
+  31,               !- End Day of Month
+  ,                 !- End Year (default)
+  Tuesday,          !- Day of Week for Start Day
+  No,               !- Use Weather File Holidays and Special Days
+  No,               !- Use Weather File Daylight Saving Period
+  No,               !- Apply Weekend Holiday Rule
+  No,               !- Use Weather File Rain Indicators
+  No;               !- Use Weather File Snow Indicators
+
+Building,
+  TestBuilding,     !- Name
+  0.0,              !- North Axis {deg}
+  Suburbs,          !- Terrain
+  0.04,             !- Loads Convergence Tolerance Value
+  0.4,              !- Temperature Convergence Tolerance Value {deltaC}
+  FullExterior,     !- Solar Distribution
+  25;               !- Maximum Number of Warmup Days
+
+Zone,
+  Zone1,            !- Name
+  0.0,              !- Direction of Relative North {deg}
+  0.0,              !- X Origin {m}
+  0.0,              !- Y Origin {m}
+  0.0;              !- Z Origin {m}
+
+! ── Materials ────────────────────────────────────────────────────────────
+Material,
+  GypsumBoard,      !- Name
+  MediumSmooth,     !- Roughness
+  0.0127,           !- Thickness {m}
+  0.16,             !- Conductivity {W/m-K}
+  800,              !- Density {kg/m3}
+  1090;             !- Specific Heat {J/kg-K}
+
+Material,
+  Insulation,
+  MediumRough,
+  0.05,
+  0.04,
+  30,
+  840;
+
+! ── Construction ────────────────────────────────────────────────────────
+Construction,
+  ExteriorWall,
+  GypsumBoard,
+  Insulation;
+
+! ── Geometry rules ───────────────────────────────────────────────────────
+GlobalGeometryRules,
+  UpperLeftCorner,  !- Starting Vertex Position
+  ClockWise,        !- Vertex Entry Direction
+  World;            !- Coordinate System
+
+! ── Ground temperatures ─────────────────────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18.0, 18.0, 18.0, 18.0, 18.0, 18.0,
+  18.0, 18.0, 18.0, 18.0, 18.0, 18.0;
+
+! ── A single BuildingSurface:Detailed to confirm the multi-line
+!    surface block parses cleanly. ─────────────────────────────────────────
+BuildingSurface:Detailed,
+  Wall-South,                       !- Name
+  Wall,                             !- Surface Type
+  ExteriorWall,                     !- Construction Name
+  Zone1,                            !- Zone Name
+  ,                                 !- Outside Boundary Condition Object
+  Outdoors,                         !- Outside Boundary Condition
+  SunExposed,                       !- Sun Exposure
+  WindExposed,                      !- Wind Exposure
+  ,                                 !- View Factor to Ground
+  4,                                !- Number of Vertices
+  0.0, 0.0, 2.7,                    !- X,Y,Z Vertex 1
+  6.0, 0.0, 2.7,
+  6.0, 0.0, 0.0,
+  0.0, 0.0, 0.0;

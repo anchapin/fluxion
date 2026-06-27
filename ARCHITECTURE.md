@@ -86,7 +86,7 @@ graph TD
         OSM["OSM Reader/Writer<br/>(interop/osm/)"]
         GBX["gbXML Reader/Writer<br/>(interop/gbxml/)"]
         FMU["FMI Co-Sim Export<br/>(interop/fmi/)"]
-        IDFD["IDF/epJSON Import<br/>(design doc only — docs/idf-import-design.md)"]
+        IDFD["IDF/epJSON Import<br/>(scaffold landed — src/io/idf/)"]
     end
 
     subgraph Bindings ["Language Bindings"]
@@ -124,7 +124,7 @@ graph TD
     NAPI -.-> CORE
 ```
 
-**Notes on interop edges**: Dashed lines (`-.->`) indicate optional import/export bridges. OSM, gbXML, and FMI are implemented; IDF/epJSON import is currently a design document only (`docs/idf-import-design.md`), with the planned module path `src/io/idf/`.
+**Notes on interop edges**: Dashed lines (`-.->`) indicate optional import/export bridges. OSM, gbXML, and FMI are implemented; IDF import scaffold landed in `src/io/idf/` (#1341) covering the 10 MVP objects from `docs/idf-import-design.md` §4.1 — `TryFrom<IdfFile> for SimulationSchema` (design §4.3) and epJSON parsing (design §4.2) are still follow-up issues.
 
 ---
 
@@ -445,7 +445,7 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 | OpenStudio OSM | `interop/osm/` | Implemented (#1130) | Reader (884 LoC) + Writer (505 LoC) + types; `import_osm` / `export_osm` |
 | gbXML | `interop/gbxml/` | Implemented (#1126) | Reader + Writer + types; `import_gbxml` / `export_gbxml`; BIM integration |
 | FMI Co-Simulation | `interop/fmi/` | Implemented — spike (#1125) | FMU export, single-zone, fixed 1h timestep; `FmiExporter`, `FmiConfig` |
-| EnergyPlus IDF/epJSON | `docs/idf-import-design.md` | **Design only** (#1126) | Planned path `src/io/idf/`; not yet implemented |
+| EnergyPlus IDF/epJSON | `docs/idf-import-design.md` | **Scaffold landed** (#1341) | `src/io/idf/` (lexer + parser for the 10 MVP objects from design §4.1); `IdfFile` → `SimulationSchema` conversion pending (design §4.3 follow-up) |
 | IFC/BIM geometry | `docs/` (design doc) | **Design only** (#1121) | Geometry import design documented; not yet implemented |
 
 ### Language Bindings
