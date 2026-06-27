@@ -1,0 +1,260 @@
+Version, 25.2;
+
+! ── ASHRAE 140 Case 900 — High-Mass Building with South Window ─────────
+! Reference: ASHRAE Standard 140-2023 Annex B8
+!   - 6m x 8m x 2.7m single-zone box (same geometry as Case 600)
+!   - High-mass construction: 200mm concrete walls, roof, floor
+!   - South-facing window (12m², double-pane, SHGC ≈ 0.7)
+!   - Heating setpoint: 20°C, Cooling setpoint: 27°C
+!   - Infiltration: 0.5 ACH constant
+!   - No internal gains, no mechanical ventilation (only infiltration)
+!
+! Per-surface Output:Variable block (beam + sky-diffuse + ground-diffuse
+! for each of the 5 sun-exposed surfaces) mirrors
+! tests/reference_data/energyplus_models/ashrae_140_solar_gain.idf
+! lines 243-264 — gives E+ the per-tilt hourly ground truth required to
+! quantitatively verify the roof-solar fix from issue #1323 / A#1.
+
+SimulationControl,
+  No,   ! Do Zone Sizing
+  No,   ! Do System Sizing
+  No,   ! Do Plant Sizing
+  No,   ! Run Simulation for Sizing Periods
+  Yes;  ! Run Simulation for Weather File Run Periods
+
+RunPeriod,
+  AnnualRun,
+  1, 1, , 12, 31, ,
+  Tuesday,
+  No, No, No, No, No;
+
+Timestep, 1;
+
+Building,
+  ASHRAE140_Case900,
+  0.0,
+  City,
+  0.04,
+  0.4,
+  FullExterior,
+  25;
+
+Zone,
+  ZONE1,
+  0, 0, 0, 0, 1, 1, , , , ;
+
+ZoneHVAC:EquipmentConnections,
+  ZONE1, ZONE1_Equip,
+  ZONE1_Inlet Node, ZONE1_Exhaust Node,
+  ZONE1_Zone Air Node, ZONE1_Return Air Node;
+
+! ── Materials — High-Mass ASHRAE 140 Case 900 construction ─────────────
+Material,
+  CONCRETE_200,            ! 200mm concrete — ASHRAE 140 high-mass spec
+  MediumRough,
+  0.200,
+  1.730,
+  2243,
+  837;
+
+Construction,
+  HEAVY_WALL,
+  CONCRETE_200;
+
+Construction,
+  HEAVY_ROOF,
+  CONCRETE_200;
+
+Construction,
+  HEAVY_FLOOR,
+  CONCRETE_200;
+
+! ── Window (ASHRAE 140 Case 900 glazing — identical to Case 600) ───────
+Material,
+  GLASS_DBL_CLEAR,
+  Glass,
+  0.003,
+  0.9,
+  2500,
+  840;
+
+WindowMaterial:Glazing,
+  DblClear_Glazing,
+  SpectralAverage,
+  0.003,
+  0.837,
+  0.075,
+  0.075,
+  0.837,
+  0.075,
+  0.075,
+  0.0,
+  0.84,
+  0.84,
+  0.9;
+
+WindowMaterial:Gas,
+  DblClear_Gas,
+  Air,
+  0.0127;
+
+Construction,
+  DblClear_Window,
+  DblClear_Glazing,
+  DblClear_Gas,
+  DblClear_Glazing;
+
+! ── Ground temperature ──────────────────────────────────────────────────
+Site:GroundTemperature:BuildingSurface,
+  18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18;
+
+GlobalGeometryRules,
+  UpperLeftCorner,
+  ClockWise,
+  World;
+
+! ── Surfaces (6m wide x 8m deep x 2.7m tall, south-facing window) ───────
+BuildingSurface:Detailed,
+  SouthWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 0, 0,
+  0, 0, 0;
+
+BuildingSurface:Detailed,
+  NorthWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  6, 8, 2.7,
+  0, 8, 2.7,
+  0, 8, 0,
+  6, 8, 0;
+
+BuildingSurface:Detailed,
+  EastWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  6, 8, 0,
+  6, 0, 0;
+
+BuildingSurface:Detailed,
+  WestWall, Wall, HEAVY_WALL, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 8, 2.7,
+  0, 0, 2.7,
+  0, 0, 0,
+  0, 8, 0;
+
+BuildingSurface:Detailed,
+  Roof, Roof, HEAVY_ROOF, ZONE1, , Outdoors, , SunExposed, WindExposed, ,
+  4,
+  0, 0, 2.7,
+  6, 0, 2.7,
+  6, 8, 2.7,
+  0, 8, 2.7;
+
+BuildingSurface:Detailed,
+  Floor, Floor, HEAVY_FLOOR, ZONE1, , Ground, , NoSun, NoWind, ,
+  4,
+  0, 0, 0,
+  6, 0, 0,
+  6, 8, 0,
+  0, 8, 0;
+
+! ── South window (12m², double-pane) ────────────────────────────────────
+FenestrationSurface:Detailed,
+  SouthWindow,
+  Window,
+  DblClear_Window,
+  SouthWall,
+  , ,
+  0.0,
+  Outside,
+  4,
+  0.5, 0.0, 2.0,
+  5.5, 0.0, 2.0,
+  5.5, 0.0, 0.0,
+  0.5, 0.0, 0.0;
+
+! ── Infiltration: 0.5 ACH constant ──────────────────────────────────────
+ZoneInfiltration:DesignFlowRate,
+  ZONE1_Infil,
+  ZONE1,
+  AlwaysOn,
+  0.02207,
+  0, 0, 0;
+
+Schedule:Compact, AlwaysOn, Fraction, Through: 12/31, For: AllDays, Until: 24:00, 1.0;
+ScheduleTypeLimits, Fraction, 0.0, 1.0, Continuous;
+
+! ── Thermostat: 20°C heating, 27°C cooling ──────────────────────────────
+ScheduleTypeLimits, Temperature, -100, 200, Continuous;
+
+Schedule:Compact,
+  HeatSP,
+  Temperature,
+  Through: 12/31, For: AllDays, Until: 24:00, 20.0;
+
+Schedule:Compact,
+  CoolSP,
+  Temperature,
+  Through: 12/31, For: AllDays, Until: 24:00, 27.0;
+
+ZoneControl:Thermostat,
+  ZONE1_Tstat, ZONE1, DualSP_Sched,
+  ThermostatSetpoint:DualSetpoint,
+  DualSP_Sched;
+
+ScheduleTypeLimits, ControlType, 0.0, 4.0, Discrete;
+Schedule:Compact, DualSP_Sched, ControlType, Through: 12/31, For: AllDays, Until: 24:00, 4;
+
+ThermostatSetpoint:DualSetpoint,
+  DualSP_Sched, HeatSP, CoolSP;
+
+! ── Ideal Loads Air System (metered heating/cooling) ────────────────────
+ZoneHVAC:EquipmentList,
+  ZONE1_Equip,
+  SequentialLoad,
+  ZoneHVAC:IdealLoadsAirSystem, ZONE1_IdealLoads, 1, 1;
+
+ZoneHVAC:IdealLoadsAirSystem,
+  ZONE1_IdealLoads,
+  , ZONE1_Inlet Node, ZONE1_Exhaust Node, ,
+  50, 13, 0.0156, 0.0077,
+  NoLimit, , , NoLimit, , ,
+  , , ConstantSensibleHeatRatio, 0.7, None, , , , , ;
+
+! ── Output ──────────────────────────────────────────────────────────────
+Output:SQLite, SimpleAndTabular;
+
+Output:Variable, *, Site Outdoor Air Drybulb Temperature, Timestep;
+Output:Variable, ZONE1, Zone Mean Air Temperature, Timestep;
+Output:Variable, ZONE1, Zone Air System Sensible Heating Energy, Hourly;
+Output:Variable, ZONE1, Zone Air System Sensible Cooling Energy, Hourly;
+Output:Variable, ZONE1, Zone Infiltration Sensible Heat Loss, Timestep;
+Output:Variable, ZONE1, Zone Infiltration Sensible Heat Gain, Timestep;
+Output:Variable, SouthWindow, Surface Window Transmitted Solar Radiation Rate, Timestep;
+
+! ── Per-surface incident solar (5 surfaces × {beam, sky-diffuse, ground-diffuse})
+! Mirrors ashrae_140_solar_gain.idf lines 243-264 — gives E+ per-tilt
+! hourly ground truth for verifying the roof-solar fix from #1323.
+Output:Variable, SouthWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, SouthWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, SouthWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, NorthWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, NorthWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, NorthWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, EastWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, EastWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, EastWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, WestWall, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, WestWall, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, WestWall, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;
+
+Output:Variable, Roof, Surface Outside Face Incident Beam Solar Radiation Rate per Area, Hourly;
+Output:Variable, Roof, Surface Outside Face Incident Ground Diffuse Solar Radiation Rate per Area, Hourly;
+Output:Variable, Roof, Surface Outside Face Incident Sky Diffuse Solar Radiation Rate per Area, Hourly;

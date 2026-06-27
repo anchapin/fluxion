@@ -60,7 +60,11 @@ OUTPUT_DIR = REPO_ROOT / "tests/reference_data/zone_balance"
 
 CASES = [
     ("600", IDF_DIR / "ashrae_140_case_600.idf", OUTPUT_DIR / "case_600_energy_hourly.csv"),
-    # Case 900 IDF is added under a separate task — add a row here once it exists.
+    (
+        "900",
+        IDF_DIR / "ashrae_140_case_900.idf",
+        OUTPUT_DIR / "case_900_energy_hourly.csv",
+    ),
 ]
 
 
