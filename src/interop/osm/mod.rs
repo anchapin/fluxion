@@ -20,6 +20,44 @@
 //! ## Export (Fluxion -> OSM)
 //! - Serialize fluxion model back to OSM for round-trip or hand-off to OpenStudio Measures
 //!
+//! # Round-Trip Stability (issue #1340)
+//!
+//! Writer→reader round-trip is **stable** for single- and multi-zone schemas
+//! within the supported subset. Tests live in
+//! `src/interop/osm/writer.rs::tests` (`test_roundtrip_single_zone`,
+//! `test_roundtrip_two_zones`, `test_roundtrip_four_zones`,
+//! `test_roundtrip_no_windows`, `test_roundtrip_exhaustive_diff_report`).
+//!
+//! ## Lossless fields
+//!
+//! The following `SimulationSchemaV1` fields round-trip byte-equivalent
+//! field-wise (f64 comparisons within `1e-6` absolute or relative tolerance):
+//!
+//! - `metadata.name` (via `OS:Building.Name`)
+//! - `geometry.zones[*].name`, `.floor_area`, `.volume`, `.height`
+//!   (via `OS:ThermalZone.Name` and `OS:Space.Floor Area` / `Volume`)
+//! - `geometry.total_floor_area`, `.total_volume` (sum of zone values)
+//! - `geometry.number_of_floors` (via `OS:Building.Number of Floors`)
+//! - `geometry.floor_height` (computed from `total_volume / total_floor_area`)
+//! - `constructions.{wall,roof,floor}.layers[*]`
+//!   (`.name`, `.thickness`, `.conductivity`, `.density`, `.specific_heat`)
+//! - `weather` for the `TmyLocation` variant (lat/lon pair, within tolerance)
+//!
+//! ## Known lossy fields
+//!
+//! The following fields are NOT guaranteed to round-trip; they fall back to
+//! `Default` during read:
+//!
+//! - `metadata.description`, `.author`, `.created_at`
+//! - `schedules.*` (writer does not yet emit `OS:Schedule:*`)
+//! - `controls.{heating,cooling}_setpoint` (no `OS:Thermostat` emission;
+//!   reader falls back to 20 °C / 24 °C)
+//! - `constructions.{wall,roof,floor}.window`
+//!   (no `OS:SubSurface` emission in the supported subset)
+//! - `constructions.interzone` (not emitted)
+//! - `weather` for the `EpwFile` and `Inline` variants
+//! - `output.*` (simulation results, not part of model file)
+//!
 //! # OSM Format
 //!
 //! OSM files use a line-oriented key-value format similar to IDF but with
