@@ -1,0 +1,11 @@
+# EnergyPlus Version: 25.2.0
+# Annual integrated per-surface incident solar for the ASHRAE 140 box.
+# Units: means in W/m^2 (hourly average); totals in Wh/m^2 (sum of hourly W/m^2).
+# peak_hour_total in W/m^2 — max over hours 1..8760.
+# Generated: 2026-06-27T20:44:20.810257+00:00
+surface,annual_mean_beam(W/m2),annual_mean_sky(W/m2),annual_mean_ground(W/m2),annual_mean_total(W/m2),annual_total_beam(Wh/m2),annual_total_sky(Wh/m2),annual_total_ground(Wh/m2),annual_total_all(Wh/m2),peak_hour_total(W/m2)
+Roof,119,66,0,185,1.04e+06,5.78e+05,0,1.62e+06,1.04e+03
+SouthWall,89.5,41.8,18.5,150,7.84e+05,3.66e+05,1.62e+05,1.31e+06,1e+03
+NorthWall,3.67,28.1,18.5,50.2,3.21e+04,2.46e+05,1.62e+05,4.4e+05,254
+EastWall,64.2,38.8,18.5,121,5.62e+05,3.4e+05,1.62e+05,1.06e+06,923
+WestWall,51.9,37.2,18.5,108,4.54e+05,3.26e+05,1.62e+05,9.42e+05,912
