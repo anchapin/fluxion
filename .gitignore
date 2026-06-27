@@ -202,3 +202,7 @@ case_900ff_profile_hourly.csv
 logs/security/
 .sdd/runtime/
 benches/orchestration_decisions/baselines/current_tdqs.json
+
+# ONNX model artifacts (issue #1335) — pinned via tests/surrogate_models/registry.json, never committed
+*.onnx
+models/

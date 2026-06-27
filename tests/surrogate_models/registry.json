@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "schema": "fluxion-surrogate-registry/v1",
+    "description": "Pinned surrogate model versions for SurrogateManager. ONNX files themselves are NOT committed to git; see docs/adr/0004-onnx-model-versioning.md for the deployment contract.",
+    "regenerate_with": "python3 scripts/gen_registry.py <path-to-models-dir>"
+  },
+  "versions": [
+    {
+      "version": "3.1.0",
+      "model_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "onnx_opset_version": 17,
+      "training_data_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "trained_on": "2026-06-27",
+      "training_data_summary": "ASHRARE 140 cases 600-960 + Denver TMY3 100k timesteps (placeholder; replaced by CI)",
+      "expected_accuracy": 0.0,
+      "model_path": "models/surrogate_v3.1.0.onnx"
+    }
+  ]
+}
