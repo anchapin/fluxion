@@ -324,9 +324,8 @@ impl MultiNodeSolver {
 
             let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
-                let numer = node.capacitance / dt * node.temperature
-                    + h_em * t_ext_wall
-                    + h_ms * t_s_wall;
+                let numer =
+                    node.capacitance / dt * node.temperature + h_em * t_ext_wall + h_ms * t_s_wall;
                 node.temperature = numer / denom;
             }
         }
@@ -339,9 +338,8 @@ impl MultiNodeSolver {
 
             let denom = node.capacitance / dt + h_em + h_ms;
             if denom > 1e-10 {
-                let numer = node.capacitance / dt * node.temperature
-                    + h_em * t_ext_roof
-                    + h_ms * t_s_roof;
+                let numer =
+                    node.capacitance / dt * node.temperature + h_em * t_ext_roof + h_ms * t_s_roof;
                 node.temperature = numer / denom;
             }
         }
@@ -475,7 +473,9 @@ impl MultiNodeSolver {
                 self.compute_zone_air_temperature_additive(t_outdoor, h_ve, h_ve_night, phi_ia)
             }
             MassAirCouplingMode::ParallelResistance => self
-                .compute_zone_air_temperature_parallel_resistance(t_outdoor, h_ve, h_ve_night, phi_ia),
+                .compute_zone_air_temperature_parallel_resistance(
+                    t_outdoor, h_ve, h_ve_night, phi_ia,
+                ),
         }
     }
 
@@ -784,11 +784,19 @@ impl MultiNodeSolver {
         self.timestep_seconds = dt;
         match self.coupling_mode {
             MassAirCouplingMode::AdditiveSum => {
-                self.step_backward_euler_with_gains(gains_wall, gains_roof, gains_floor, gains_internal);
+                self.step_backward_euler_with_gains(
+                    gains_wall,
+                    gains_roof,
+                    gains_floor,
+                    gains_internal,
+                );
             }
             MassAirCouplingMode::ParallelResistance => {
                 self.step_backward_euler_with_gains_parallel_resistance(
-                    gains_wall, gains_roof, gains_floor, gains_internal,
+                    gains_wall,
+                    gains_roof,
+                    gains_floor,
+                    gains_internal,
                 );
             }
         }
@@ -996,7 +1004,10 @@ impl MultiNodeSolver {
 
             let denom = node.capacitance / dt + h_is + h_me;
             if denom > 1e-10 {
-                let numer = node.capacitance / dt * node.temperature + h_is * t_i + h_me * t_env_avg + gains_internal;
+                let numer = node.capacitance / dt * node.temperature
+                    + h_is * t_i
+                    + h_me * t_env_avg
+                    + gains_internal;
                 node.temperature = numer / denom;
             }
         }
@@ -1494,8 +1505,7 @@ mod tests {
 
     #[test]
     fn test_issue_1281_new_with_mode_parallel_resistance() {
-        let solver =
-            create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+        let solver = create_case_900_solver(MassAirCouplingMode::ParallelResistance);
         assert_eq!(
             solver.coupling_mode,
             MassAirCouplingMode::ParallelResistance
@@ -1504,7 +1514,8 @@ mod tests {
 
     #[test]
     fn test_issue_1281_with_coupling_mode_builder() {
-        let solver = create_test_solver().with_coupling_mode(MassAirCouplingMode::ParallelResistance);
+        let solver =
+            create_test_solver().with_coupling_mode(MassAirCouplingMode::ParallelResistance);
         assert_eq!(
             solver.coupling_mode,
             MassAirCouplingMode::ParallelResistance
@@ -1658,10 +1669,8 @@ mod tests {
     fn test_issue_1281_parallel_resistance_step_with_gains() {
         // Verify step_with_gains in ParallelResistance mode produces higher
         // mass temperatures than no-gains case (solar gains are heating).
-        let mut solver_no_gains =
-            create_case_900_solver(MassAirCouplingMode::ParallelResistance);
-        let mut solver_with_gains =
-            create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+        let mut solver_no_gains = create_case_900_solver(MassAirCouplingMode::ParallelResistance);
+        let mut solver_with_gains = create_case_900_solver(MassAirCouplingMode::ParallelResistance);
 
         let ext = SurfaceExteriorTemperatures {
             t_ext_wall: 45.0,
@@ -1718,11 +1727,18 @@ mod tests {
         let floor = ThermalMassNode::new(20.0, 1.0e6, 0.0, 10.0);
         let internal = ThermalMassNode::new(20.0, 5.0e5, 0.0, 0.0).with_h_tr_me(0.0);
         let solver = MultiNodeSolver::new_with_mode(
-            165.6, wall, roof, floor, internal,
+            165.6,
+            wall,
+            roof,
+            floor,
+            internal,
             MassAirCouplingMode::ParallelResistance,
         );
 
         let t_air = solver.compute_zone_air_temperature(30.0, 5.0, 0.0, 0.0);
-        assert!(t_air.is_finite(), "Degenerate construction must produce finite T_air, got {t_air}");
+        assert!(
+            t_air.is_finite(),
+            "Degenerate construction must produce finite T_air, got {t_air}"
+        );
     }
 }

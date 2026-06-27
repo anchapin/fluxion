@@ -1,13 +1,17 @@
 //! Surrogate manager for fast thermal load predictions.
 
+#[allow(unused_imports)]
 use crate::ai::modular_surrogate::{ComponentSurrogate, CompositeSurrogate};
+#[allow(unused_imports)]
 use log::{info, warn};
 #[cfg(feature = "ort")]
 #[cfg(feature = "cuda")]
 use ort::execution_providers::CUDAExecutionProvider;
+#[cfg(feature = "ort")]
 use ort::execution_providers::{
     CoreMLExecutionProvider, DirectMLExecutionProvider, OpenVINOExecutionProvider,
 };
+#[allow(unused_imports)]
 use parking_lot::Mutex;
 use rand::rngs::StdRng;
 use rand::Rng;
@@ -434,6 +438,7 @@ impl Default for SurrogateManager {
 /// returns an error when `ort` is disabled.
 #[cfg(feature = "ort")]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SessionPool {
     sessions: Mutex<Vec<ort::session::Session>>,
     model_path: String,
@@ -447,6 +452,7 @@ pub struct SessionPool {
 /// an error (those methods only exist under `#[cfg(feature = "ort")]`).
 #[cfg(not(feature = "ort"))]
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct SessionPool {
     model_path: String,
     backend: InferenceBackend,
@@ -454,7 +460,9 @@ pub struct SessionPool {
 }
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub struct MultiDeviceSessionPool {
+    #[allow(dead_code)]
     device_pools: Vec<Arc<SessionPool>>,
     _config: MultiDeviceConfig,
     _model_path: String,
@@ -1997,6 +2005,7 @@ mod tests {
 
     // ---- Issue #1285: Wire SurrogateManager to real ONNX inference ----
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_new_with_auto_load_picks_up_default_model() {
         // Issue #1285 acceptance: with the shipped default model on disk,
@@ -2037,6 +2046,7 @@ mod tests {
         assert!(!m.model_loaded);
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_predict_loads_with_fallback_uses_onnx_when_loaded() {
         // Issue #1285: when a model is loaded, the fallback path must
@@ -2102,6 +2112,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_env_var_overrides_default_model_path() {
         // Set FLUXION_ONNX_MODEL to the small dummy fixture and verify
@@ -2169,6 +2180,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "ort")]
     #[test]
     fn test_cuda_backend_errors_when_feature_disabled() {
         // Direct test of the cfg-gated CUDA branch in create_session:
