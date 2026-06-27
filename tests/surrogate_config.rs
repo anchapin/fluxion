@@ -315,6 +315,23 @@ fn test_inference_backend_default() {
     assert!(matches!(backend, InferenceBackend::CPU));
 }
 
+/// Issue #1336: explicitly pin the safe default to detect any future drift
+/// in the `#[default]` enum tag. CPU is the only universally-available
+/// execution provider, so any switch away from it requires intentional
+/// review and a corresponding ARCHITECTURE.md update.
+#[test]
+fn test_inference_backend_default_is_cpu() {
+    let backend = InferenceBackend::default();
+    assert!(
+        matches!(backend, InferenceBackend::CPU),
+        "InferenceBackend::default() must be CPU; got {:?}",
+        backend
+    );
+    // Companion assertion: the backend must equal itself via PartialEq
+    // (catches accidental Eq-semantics changes).
+    assert_eq!(backend, InferenceBackend::CPU);
+}
+
 #[test]
 fn test_inference_backend_variants() {
     // Just verify all variants exist and can be created

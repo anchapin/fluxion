@@ -399,6 +399,25 @@ ThermalModelTrait (zone level, sim/thermal_model.rs)
 └── MockThermalModel           (fixed values for testing, sim/thermal_model_mock.rs)
 ```
 
+### Inference Backend & CUDA Fallback Semantics (issue #1336)
+
+The `InferenceBackend` enum (`src/ai/surrogate.rs:26-33`) wires five execution providers for ONNX inference: `CPU` (default), `CUDA`, `CoreML`, `DirectML`, `OpenVINO`. The CPU backend is the **safe default** — `InferenceBackend::default() == CPU` is pinned by `tests/surrogate_config.rs::test_inference_backend_default_is_cpu`. Resolution from `FLUXION_ONNX_BACKEND` (`cpu`/`cuda`/`coreml`/`directml`/`openvino`) downgrades `cuda` to CPU when the crate was built without `--features cuda`.
+
+**Fallback contract** (issue #1336 acceptance criterion):
+
+1. `MultiDeviceConfig::{single_gpu, multi_gpu, auto}` always set `fallback_to_cpu = true`, so a CUDA EP miss during `with_multi_device` returns an `Err` and the caller routes back to CPU via `predict_loads_with_fallback`. The default `MultiDeviceConfig::default()` deliberately leaves `fallback_to_cpu = false` (empty config = user-supplied semantics).
+2. When no ONNX model is loaded, `predict_loads_with_fallback` routes to `deterministic_analytical_loads` (issue #1335) — the analytical sine-cycle surrogate is **deterministic across runs**, which is the ground truth the CPU-vs-CUDA parity harness compares against.
+3. CUDA build is gated behind `--features cuda` (implies `ort/cuda` + `ort/tensorrt`). At runtime, `SessionPool::create_session` for `InferenceBackend::CUDA` adds `CUDAExecutionProvider`; if the runtime has no CUDA device, the EP registration fails and `with_gpu_backend` returns a typed error with the message `"CUDA backend requested but fluxion was built without the `cuda` feature"` (no panic, no silent CPU fallback).
+
+**Parity test design** (issue #1336, `tests/surrogate_backend_parity.rs`):
+
+- **Always-on CPU baseline**: 4 ASHRAE 140-style cases × 100 timesteps × 5 zones = 2,000 inputs fed through `predict_loads_with_fallback` and compared to `deterministic_analytical_loads` (max relative error ≤ 1e-12). This pins the CPU reference that any CUDA path must match.
+- **CPU determinism**: two consecutive runs through the CPU backend must produce bit-identical outputs.
+- **CUDA-gated (`#[cfg(feature = "cuda")]` + `#[ignore]`)**: the live CPU-vs-CUDA tensor sweep. Marked `#[ignore]` so the test compiles under every feature combination and is skipped on machines without a CUDA device — only hardware-in-loop CI runners opt in via `--include-ignored`. When active, the tolerance envelope is `max relative error ≤ 1e-5` per tensor element (issue #1336 acceptance criterion).
+- **Multi-backend config**: `test_multi_device_config_fallback_to_cpu_enables_parity` pins the three GPU fan-out presets to CPU-fallback semantics and explicitly disallows the default `MultiDeviceConfig::default()` from silently gaining CPU fallback.
+
+The CPU-vs-CUDA equivalence is therefore enforced on three levels: (a) deterministic CPU reference (always-on), (b) gated tensor parity with a runtime GPU detector (hardware-in-loop), (c) `tools/benchmark_inference.py --compare-cpu-cuda` for manual cross-backend regression sweeps.
+
 ---
 
 ## Data Flow: Single Timestep
