@@ -121,9 +121,16 @@ pub fn orientation_to_angles(orientation: Orientation) -> (f64, f64) {
 /// * `day_of_year` - Day of year (1-366) for extraterrestrial irradiance
 ///
 /// # Physics
-/// - Beam: DNI × cos(θ_incidence)
-/// - Diffuse: Perez all-weather model (accounts for circumsolar and horizon brightening)
-/// - Ground reflected: isotropic model = GHI × ρ × (1 - cos(β)) / 2
+/// - Beam: DNI × cos(θ_incidence), with explicit tilt = 0 branch
+///   (`DNI · max(cos(zenith), 0)`) per ASHRAE Fundamentals Ch.14 /
+///   Duffie–Beckman Eq. 1.6.3 (see Issue #1325).
+/// - Diffuse: Perez all-weather model (accounts for circumsolar and
+///   horizon brightening)
+/// - Ground reflected: isotropic view-factor model = GHI × ρ × (1 - cos(β)) / 2
+///   for β ∈ (0°, 180°), with the two endpoint tilts pinned explicitly
+///   (Issue #1326):
+///   - β =   0° → ρ · GHI    (horizontal up-facing roof: full ground hemisphere)
+///   - β = 180° → 0          (down-facing surface: no ground seen)
 pub fn calculate_surface_irradiance(
     sun_pos: &SolarPosition,
     dni: f64,
@@ -175,9 +182,37 @@ pub fn calculate_surface_irradiance(
         sun_pos.azimuth_deg,
     );
 
-    let surface_tilt = tilt_deg.to_radians();
-    let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
-    let ground_reflected = ghi * ground_reflectance * ground_factor;
+    // Ground-reflected component: isotropic model
+    //     E_g = ρ · GHI · (1 − cos β) / 2
+    // (ASHRAE Handbook — Fundamentals, Ch. 14; Duffie & Beckman Eq. 2.12.1).
+    //
+    // Issue #1326: This view-factor form is correct for the open interval
+    // β ∈ (0°, 180°) — at β = 90° (vertical wall) it yields 0.5·ρ·GHI, the
+    // value E+ and the building energy community use.  However, the formula
+    // collapses to 0 at β = 0° (horizontal up-facing roof), while a
+    // horizontal roof actually sees the full hemisphere of ground-reflected
+    // radiation and must receive E_g = ρ · GHI.  Symmetrically, at β = 180°
+    // (down-facing) the formula returns ρ · GHI, but a down-facing surface
+    // sees no ground and must receive 0.
+    //
+    // We therefore pin the two endpoint tilts explicitly:
+    //   tilt =   0°  →  ρ · GHI        (full ground hemisphere)
+    //   tilt = 180°  →  0              (down-facing: no ground)
+    //   tilt ∈ (0°, 180°)  →  ρ · GHI · (1 − cos β) / 2   (unchanged)
+    //
+    // No parameter tuning — just the correct boundary conditions.
+    let ground_reflected = if tilt_deg.abs() < 1e-9 {
+        // Horizontal up-facing: surface normal points to zenith, sees all
+        // ground-reflected radiation arriving from the lower hemisphere.
+        ghi * ground_reflectance
+    } else if (tilt_deg - 180.0).abs() < 1e-9 {
+        // Down-facing: surface normal points to nadir, sees no ground.
+        0.0
+    } else {
+        let surface_tilt = tilt_deg.to_radians();
+        let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
+        ghi * ground_reflectance * ground_factor
+    };
 
     SurfaceIrradiance::new(beam, diffuse, ground_reflected)
 }

@@ -187,6 +187,12 @@ graph TD
 
 **Per-surface distribution** (#1119): Solar gain distribution across multiple surfaces is handled by `sim/solar_gain_distribution.rs`. The `IncidentSolar` metric type (#1132, `validation/report.rs`) and `IncidentSolarAccumulator` (`sim/thermal_model_data.rs`) track per-surface solar radiation for diagnostics and validation.
 
+**Ground-reflected component** (#1326): The `ground_reflected` field of `SurfaceIrradiance` uses the standard isotropic view-factor form
+`E_g = ρ · GHI · (1 - cos β) / 2` for β ∈ (0°, 180°), with the two endpoint tilts pinned explicitly so the boundary physics is correct:
+  - `β =   0°` (horizontal up-facing roof): `E_g = ρ · GHI` (the roof sees the full ground hemisphere)
+  - `β = 180°` (down-facing): `E_g = 0` (no ground is seen)
+The standard formula's endpoint limits (0 at β=0 and ρ·GHI at β=180) are inverted relative to physical reality, so the explicit branches are required (no parameter tuning).
+
 **Validation target**: Solar azimuth/altitude within 0.5 deg of E+; surface irradiance within 1% of E+.
 
 **Reference data**: `tests/reference_data/solar/`
