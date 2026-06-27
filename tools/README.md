@@ -211,21 +211,29 @@ The `train_surrogate.py` tool automates the training of neural network surrogate
 
 ### How it works
 
-1.  **Data Generation**: If no input file is provided, it generates synthetic data using a simplified internal physics model (or can be adapted to use the analytical `fluxion` engine).
-2.  **Training**: Trains a configurable PyTorch Multi-Layer Perceptron (MLP) on the data.
-3.  **Validation**: Splits data into train/validation sets and tracks metrics (MAE, MSE, R²).
-4.  **Export**: Saves the best model as an ONNX file for integration with the Rust engine.
+1.  **Data Loading**: Loads physics-extracted samples from `--data-dir` (default `data/training/`). The directory must contain one or more `samples_*.csv` files produced by the EnergyPlus extraction pipeline described in `data/training/README.md`.
+2.  **Hard error on missing physics samples**: Per Issue #1338, the script raises `SystemExit` (exit code 1) when `data/training/` is empty or missing — there is no silent fallback to random data. CI / benchmark harnesses that explicitly need a synthetic backfill must pass `--allow-synthetic-for-benchmark-only`.
+3.  **Training**: Trains a configurable PyTorch Multi-Layer Perceptron (MLP) on the data.
+4.  **Validation**: Splits data into train/validation sets and tracks metrics (MAE, MSE, R²).
+5.  **Export**: Saves the best model as an ONNX file for integration with the Rust engine.
 
 ### Usage Examples
 
-**Basic training (generates data):**
+**Production training (requires physics samples in `data/training/`):**
 ```bash
-python tools/train_surrogate.py
+python tools/train_surrogate.py --data-dir data/training --output-dir models
+```
+
+**Benchmark-only run (CI harnesses; random synthetic data, NOT for production):**
+```bash
+python tools/train_surrogate.py --allow-synthetic-for-benchmark-only \
+    --run-benchmark --shap-analysis --ensemble
 ```
 
 **Training with custom hyperparameters:**
 ```bash
-python tools/train_surrogate.py --num-samples 50000 --epochs 50 --hidden-dims 128 128 64 --learning-rate 0.0005
+python tools/train_surrogate.py --data-dir data/training --num-samples 50000 \
+    --epochs 50 --hidden-dims 128 128 64 --learning-rate 0.0005
 ```
 
 **Training from existing data file:**
