@@ -287,9 +287,9 @@ pub struct SolAirTemperature {
 impl Default for SolAirTemperature {
     fn default() -> Self {
         Self {
-            solar_absorptance: 0.6,
+            solar_absorptance: 0.7,
             emissivity: 0.9,
-            exterior_conductance: 22.7,
+            exterior_conductance: 18.3,
         }
     }
 }
@@ -305,8 +305,22 @@ impl SolAirTemperature {
     }
 
     /// Creates a calculator with ASHRAE 140 default parameters.
+    ///
+    /// Issue #1323 / #1140: updated to match the corrected ASHRAE 140-2023 reference
+    /// values: `α = 0.7` (solar absorptance, Annex B1-3 / Table B1-3) and
+    /// `h_ext = 18.3 W/m²K` (exterior film coefficient for forced convection,
+    /// §5.2 reference conditions, ~3.4 m/s wind).
+    ///
+    /// The previous defaults `α = 0.6, h_ext = 22.7` (legacy pre-#1140 values)
+    /// produced a sol-air boost ~1.45× too small for the horizontal roof, which
+    /// directly caused the ~3× Case 900 peak-cooling underestimate flagged by
+    /// the #1280/#1281/#1323 investigations.
     pub fn ashrae_140_default() -> Self {
-        Self::default()
+        Self {
+            solar_absorptance: 0.7,
+            emissivity: 0.9,
+            exterior_conductance: 18.3,
+        }
     }
 
     /// Creates a calculator for a light-colored surface.
@@ -785,9 +799,14 @@ mod tests {
 
     #[test]
     fn test_sol_air_default() {
+        // Issue #1323 / #1140: ASHRAE 140-2023 reference values
+        //   α = 0.7 (Annex B1-3, post #1140 correction from 0.6)
+        //   h_ext = 18.3 W/m²K (Section 5.2, post #1140 correction from 22.7)
+        // The previous defaults 0.6 / 22.7 were stale pre-#1140 values that caused
+        // the sol-air boost to be ~1.45× too small for high-mass Case 900.
         let sol = SolAirTemperature::default();
-        assert!((sol.solar_absorptance - 0.6).abs() < 1e-6);
-        assert!((sol.exterior_conductance - 22.7).abs() < 1e-6);
+        assert!((sol.solar_absorptance - 0.7).abs() < 1e-6);
+        assert!((sol.exterior_conductance - 18.3).abs() < 1e-6);
     }
 
     #[test]

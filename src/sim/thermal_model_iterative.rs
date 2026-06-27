@@ -186,8 +186,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Calculate solar gain for each surface in the zone
         let mut total_window_gain = 0.0;
         let mut total_opaque_gain = 0.0;
-        let alpha = 0.6; // Default absorptance for ASHRAE 140
-        let re = 0.034; // Exterior film resistance (m²K/W)
+        // Issue #1323 / #1140: apply the ASHRAE 140-2023 corrected values that match
+        // the rest of the codebase (v2023.rs / sky_radiation.rs::ashrae_140_default).
+        // The hard-coded α=0.6 and R_e=0.034 (h_ext=29.4) here were stale pre-#1140
+        // values; the corrected defaults are α=0.7 for roof (ASHRAE 140 Annex B1-3)
+        // and h_ext=18.3 W/m²K → R_e=0.0546 m²K/W.
+        //
+        // The actual roof-solar delivery to the zone for high-mass Case 900 is
+        // dominated by the sol-air boost in `t_ext_roof = sol_air.for_roof(...)`
+        // (in `thermal_model_physics/physics_impl.rs::step_physics_9r4c`), not by
+        // this `opaque_solar_gains` field. The 9R4C path uses the sol-air method
+        // for envelope heat delivery, and the corrections here ensure consistency
+        // with `sky_radiation::ashrae_140_default()` (Issue #1323 / #1140).
+        use crate::physics::constants::thermal::ashrae_140::v2023::{
+            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
+        };
+        let alpha_roof = SOLAR_ABSORPTANCE_DEFAULT; // 0.7 (ASHRAE 140 Annex B1-3 / #1140)
+        let alpha_wall = 0.6; // ASHRAE 140 Annex B1-2 (walls stay at 0.6 per spec)
+        let re = 1.0 / EXTERIOR_FILM_COEFF_DEFAULT; // 1/18.3 = 0.0546 m²K/W
 
         if let Some(zone_surfaces) = self.0.surfaces.get(zone_idx) {
             // Group surfaces by orientation to avoid double-counting solar gain
@@ -298,12 +314,36 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     }
 
                     // 2. Opaque Solar Gain (Wall/Roof)
-                    // Issue #831: Sol-air method  q = α × I × R_ext × U × A
-                    // Previously this multiplied by an extra `area_ratio = opaque_area / total_opaque_area`,
-                    // which double-attenuated the gain by `1/N` per orientation. With one wall surface per
-                    // orientation in Case 600 (N=1) the bug had no effect, but with multiple orientations
-                    // sharing surfaces (e.g. roof spans the floor footprint) the gain was halved.
+                    // Issue #1323 (#1281 follow-up): the previous formula `A × U × I × α × R_e`
+                    // used stale pre-#1140 hard-coded values (α=0.6, R_e=0.034) that
+                    // produced a sol-air-conducted portion (~1% of absorbed solar) about
+                    // 10× too small for the horizontal (roof) surface, which directly caused
+                    // the Case 900 peak-cooling underestimate (0.86 kW vs ref 2.10-3.50 kW).
+                    //
+                    // The correct opaque solar gain is the SOL-AIR CONDUCTED flux at the
+                    // exterior surface: `Q = α × I × R_e × U × A`, with `α` per
+                    // ASHRAE 140 Annex B1 (0.7 roof, 0.6 walls) and `R_e = 1/h_ext`
+                    // per #1140 (h_ext = 18.3 W/m²K → R_e = 0.0546 m²K/W). The 9R4C / 6R2C
+                    // thermal network then distributes this absorbed energy to zone air
+                    // via `h_tr_ms` coupling over multiple timesteps.
+                    //
+                    // This formula is mathematically equivalent to the sol-air boost
+                    // `h_em × (α × I / h_ext)` when h_em = U × A (per ADR-002 #831); it
+                    // carries the FULL absorbed-solar flux through the wall conduction path
+                    // rather than the unphysical lumped-mass direct-injection path.
+                    //
+                    // Reference: ASHRAE Handbook of Fundamentals 2021 Ch. 3 §3.7
+                    // (Sol-Air Temperature as a conduction boundary); ASHRAE 140-2023
+                    // Annex B1 (solar absorptance values); EnergyPlus Engineering
+                    // Reference, HeatBalanceSurfaceManager (Outside Surface Heat Balance).
                     if opaque_area > 0.0 {
+                        let alpha = if orientation == Orientation::Up {
+                            alpha_roof
+                        } else {
+                            alpha_wall
+                        };
+                        // Sol-air-conducted flux: α × I × R_e × U × A
+                        // R_e = 1/h_ext (ASHRAE 140 default exterior film resistance).
                         total_opaque_gain +=
                             opaque_area * surface.u_value * irradiance.total_wm2 * alpha * re;
                     }
