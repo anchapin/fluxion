@@ -1,0 +1,717 @@
+openapi: 3.1.0
+info:
+  title: Fluxion REST API
+  version: 1.0.0
+  summary: REST API for the Fluxion building energy modeling engine
+  description: |
+    Issue #1342 — REST deployment surface for Fluxion. Mirrors the canonical
+    `SimulationSchema` contract documented in `src/api/schema.rs`. All endpoints
+    are versioned under `/v1` and use plain JSON or YAML; no streaming, no
+    websockets, no auth in this MVP (deferred).
+
+    Complementary to the MCP server closed in #1185 — REST is the
+    CI/webhook/multi-user surface, MCP remains the in-agent surface.
+  contact:
+    name: Fluxion Maintainers
+    url: https://github.com/anchapin/fluxion
+  license:
+    name: Apache-2.0
+    identifier: Apache-2.0
+
+servers:
+  - url: http://localhost:8080
+    description: Local default (FLUXION_REST_BIND=0.0.0.0, FLUXION_REST_PORT=8080)
+
+tags:
+  - name: health
+    description: Liveness probe
+  - name: spec
+    description: OpenAPI metadata
+  - name: simulate
+    description: Run a Fluxion simulation against a schema
+  - name: schema
+    description: Retrieve previously imported or stored schemas
+  - name: import
+    description: Convert external model files into a Fluxion SimulationSchemaV1
+
+paths:
+  /v1/healthz:
+    get:
+      tags: [health]
+      summary: Liveness probe
+      description: Returns 200 with a static JSON payload. Does not ping downstream services.
+      operationId: healthz
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              examples:
+                ok:
+                  value:
+                    status: ok
+                    version: 1.0.0
+
+  /v1/openapi.json:
+    get:
+      tags: [spec]
+      summary: OpenAPI document (envelope)
+      description: |
+        Returns a JSON envelope `{ "openapi": "3.1.0", "spec": "<yaml>" }`.
+        Prefer `/v1/openapi.yaml` for direct swagger-cli consumption.
+      operationId: getOpenapiJson
+      responses:
+        "200":
+          description: OpenAPI 3.1 document (envelope)
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+
+  /v1/openapi.yaml:
+    get:
+      tags: [spec]
+      summary: OpenAPI 3.1 document (raw YAML)
+      description: |
+        Hand-authored YAML mirror of `src/api/openapi.yaml`. Suitable for
+        `npx @apidevtools/swagger-cli validate`.
+      operationId: getOpenapiYaml
+      responses:
+        "200":
+          description: OpenAPI 3.1 document
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /v1/simulate:
+    post:
+      tags: [simulate]
+      summary: Run a Fluxion simulation
+      description: |
+        Accepts a `SimulationSchemaV1` (either bare or wrapped in the
+        versioned `SimulationSchema` envelope) and returns heating and
+        cooling energy plus the standard `SimulationOutput` block.
+
+        The simulation result is guaranteed to match an in-process Rust call
+        against the same schema within floating-point noise (<0.1% on
+        heating_energy_kwh + cooling_energy_kwh). The schema is auto-stored
+        and the returned `schema_id` can be used with `GET /v1/schema/{id}`
+        for retrieval.
+      operationId: simulate
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulateRequest"
+            examples:
+              default_one_zone:
+                summary: 1-zone, 1-year analytical run
+                value:
+                  version: "V1"
+                  metadata:
+                    name: "single-zone-demo"
+                    description: "Demo"
+                    schema_version: "V1"
+                  geometry:
+                    zones:
+                      - name: "Zone 1"
+                        floor_area: 48.0
+                        volume: 129.6
+                        height: 2.7
+                    total_floor_area: 48.0
+                    total_volume: 129.6
+                    number_of_floors: 1
+                    floor_height: 2.7
+                  constructions:
+                    wall:
+                      name: "Default Wall"
+                      layers:
+                        - name: "Plasterboard"
+                          conductivity: 0.16
+                          density: 950.0
+                          specific_heat: 840.0
+                          thickness: 0.012
+                        - name: "Fiberglass"
+                          conductivity: 0.04
+                          density: 12.0
+                          specific_heat: 840.0
+                          thickness: 0.066
+                        - name: "Wood siding"
+                          conductivity: 0.14
+                          density: 500.0
+                          specific_heat: 1300.0
+                          thickness: 0.009
+                      window:
+                        window_area: 12.0
+                        window_u_value: 1.5
+                        window_shgc: 0.3
+                    roof:
+                      name: "Default Roof"
+                      layers:
+                        - name: "Plasterboard"
+                          conductivity: 0.16
+                          density: 950.0
+                          specific_heat: 840.0
+                          thickness: 0.012
+                      window: null
+                    floor:
+                      name: "Default Floor"
+                      layers:
+                        - name: "Wood siding"
+                          conductivity: 0.14
+                          density: 500.0
+                          specific_heat: 1300.0
+                          thickness: 0.009
+                      window: null
+                  schedules:
+                    occupancy:
+                      kind: weekly
+                      name: "Occupancy"
+                    lighting:
+                      kind: weekly
+                      name: "Lighting"
+                    hvac:
+                      kind: constant
+                      heating_setpoint: 20.0
+                      cooling_setpoint: 24.0
+                    infiltration: null
+                  weather:
+                    type: tmy
+                    location: "Denver, CO"
+                  controls:
+                    zone_control:
+                      heating_setpoint: 20.0
+                      cooling_setpoint: 24.0
+                      deadband_tolerance: 0.5
+                      heating_capacity: 100000.0
+                      cooling_capacity: 100000.0
+                  output:
+                    eui: 0.0
+                    total_energy: 0.0
+                    peak_heating_load: 0.0
+                    peak_cooling_load: 0.0
+                    heating_energy: 0.0
+                    cooling_energy: 0.0
+                    zone_temperatures: null
+                    hourly_zone_temperatures: null
+                  options:
+                    years: 1
+                    use_surrogates: false
+      responses:
+        "200":
+          description: Simulation completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulateResponse"
+        "400":
+          $ref: "#/components/responses/InvalidSchema"
+        "500":
+          $ref: "#/components/responses/SimulationFailed"
+
+  /v1/schema/{id}:
+    get:
+      tags: [schema]
+      summary: Retrieve a previously stored schema
+      description: |
+        Returns the `SimulationSchemaV1` stored under the given id. Schemas
+        are stored by `POST /v1/simulate` (auto-store) or `POST /v1/import/*`.
+        Storage is process-local; restarting the server clears the store.
+      operationId: getSchema
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Schema identifier, e.g. `sch-0`, `sch-42`
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Schema found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulationSchemaV1"
+        "404":
+          $ref: "#/components/responses/SchemaNotFound"
+
+  /v1/import/{fmt}:
+    post:
+      tags: [import]
+      summary: Import an external model file
+      description: |
+        Body is the raw file bytes (no multipart envelope). The `{fmt}` path
+        parameter selects the decoder:
+
+        - `osm` — OpenStudio Model (delegates to `crate::interop::osm::import_osm`)
+        - `gbxml` — gbXML (delegates to `crate::interop::gbxml::import_gbxml`)
+        - `idf` — EnergyPlus IDF — **returns 501 Not Implemented**; no IDF
+          reader exists in `src/interop/*` yet (out of scope for #1342).
+
+        On success, the schema is stored under an auto-generated id and the
+        id + schema are returned. Callers can fetch the schema later via
+        `GET /v1/schema/{id}` or re-run it via `POST /v1/simulate`.
+      operationId: importFormat
+      parameters:
+        - name: fmt
+          in: path
+          required: true
+          description: Source format (`osm`, `gbxml`, or `idf`)
+          schema:
+            type: string
+            enum: [osm, gbxml, idf]
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+          text/plain:
+            schema:
+              type: string
+      responses:
+        "200":
+          description: Schema imported and stored
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportResponse"
+        "400":
+          $ref: "#/components/responses/UnsupportedFormat"
+        "422":
+          $ref: "#/components/responses/ImportFailed"
+        "501":
+          $ref: "#/components/responses/NotImplemented"
+
+components:
+  responses:
+    InvalidSchema:
+      description: Schema failed validation (missing fields, bad ranges, ...)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    SchemaNotFound:
+      description: No schema under the given id
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    UnsupportedFormat:
+      description: The `{fmt}` path parameter was not a recognized format
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    ImportFailed:
+      description: The import reader rejected the file
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotImplemented:
+      description: The requested operation is not yet implemented
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    SimulationFailed:
+      description: Internal simulation error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        version:
+          type: string
+
+    ApiError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [kind, message]
+          properties:
+            kind:
+              type: string
+              enum:
+                - invalid_schema
+                - schema_not_found
+                - unsupported_format
+                - not_implemented
+                - import_failed
+                - simulation_failed
+            message:
+              type: string
+
+    SimulateOptions:
+      type: object
+      properties:
+        years:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 1
+        use_surrogates:
+          type: boolean
+          default: false
+        store_as:
+          type: [string, "null"]
+          description: |
+            Optional explicit id under which to store the schema. If absent,
+            the server auto-assigns an id and returns it in the response.
+
+    SimulateRequest:
+      type: object
+      description: |
+        Accepts either a bare `SimulationSchemaV1` or the version-tagged
+        `SimulationSchema` envelope. The `options` field is optional.
+      required: [geometry, constructions, schedules, weather, controls]
+      properties:
+        version:
+          type: string
+          enum: [V1]
+        metadata:
+          $ref: "#/components/schemas/SchemaMetadata"
+        geometry:
+          $ref: "#/components/schemas/Geometry"
+        constructions:
+          $ref: "#/components/schemas/ConstructionSet"
+        schedules:
+          $ref: "#/components/schemas/ScheduleSet"
+        weather:
+          $ref: "#/components/schemas/WeatherData"
+        controls:
+          $ref: "#/components/schemas/ControlSet"
+        output:
+          $ref: "#/components/schemas/SimulationOutput"
+        options:
+          $ref: "#/components/schemas/SimulateOptions"
+
+    SimulateResponse:
+      type: object
+      required: [output]
+      properties:
+        schema_id:
+          oneOf:
+            - type: string
+            - type: "null"
+          description: |
+            id of the stored schema. Always non-null because `POST /v1/simulate`
+            auto-stores the schema so callers can retrieve it via `GET /v1/schema/{id}`.
+        output:
+          $ref: "#/components/schemas/SimulationOutput"
+
+    ImportResponse:
+      type: object
+      required: [schema_id, schema]
+      properties:
+        schema_id:
+          type: string
+        schema:
+          $ref: "#/components/schemas/SimulationSchemaV1"
+
+    # -------------------------------------------------------------------
+    # Below: schemas are mirrored from `src/api/schema.rs`. They are kept
+    # here verbatim so `swagger-cli validate` can resolve every $ref.
+    # Any change to the Rust types MUST be reflected here.
+    # -------------------------------------------------------------------
+
+    SchemaVersion:
+      type: string
+      enum: [V1]
+
+    SchemaMetadata:
+      type: object
+      required: [name, description, schema_version]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        author:
+          type: [string, "null"]
+        created_at:
+          type: [string, "null"]
+        schema_version:
+          $ref: "#/components/schemas/SchemaVersion"
+
+    ZoneGeometry:
+      type: object
+      required: [name, floor_area, volume, height]
+      properties:
+        name:
+          type: string
+        floor_area:
+          type: number
+          format: double
+        volume:
+          type: number
+          format: double
+        height:
+          type: number
+          format: double
+
+    Geometry:
+      type: object
+      required: [zones, total_floor_area, total_volume, number_of_floors, floor_height]
+      properties:
+        zones:
+          type: array
+          items:
+            $ref: "#/components/schemas/ZoneGeometry"
+        total_floor_area:
+          type: number
+          format: double
+        total_volume:
+          type: number
+          format: double
+        number_of_floors:
+          type: integer
+          minimum: 0
+        floor_height:
+          type: number
+          format: double
+
+    WindowSpec:
+      type: object
+      required: [window_area, window_u_value, window_shgc]
+      properties:
+        window_area:
+          type: number
+          format: double
+        window_u_value:
+          type: number
+          format: double
+        window_shgc:
+          type: number
+          format: double
+
+    ConstructionLayer:
+      type: object
+      required: [name, conductivity, density, specific_heat, thickness]
+      properties:
+        name:
+          type: string
+        conductivity:
+          type: number
+          format: double
+        density:
+          type: number
+          format: double
+        specific_heat:
+          type: number
+          format: double
+        thickness:
+          type: number
+          format: double
+
+    SurfaceConstruction:
+      type: object
+      required: [name, layers]
+      properties:
+        name:
+          type: string
+        layers:
+          type: array
+          items:
+            $ref: "#/components/schemas/ConstructionLayer"
+        window:
+          oneOf:
+            - $ref: "#/components/schemas/WindowSpec"
+            - type: "null"
+
+    ConstructionSet:
+      type: object
+      required: [wall, roof, floor]
+      properties:
+        wall:
+          $ref: "#/components/schemas/SurfaceConstruction"
+        roof:
+          $ref: "#/components/schemas/SurfaceConstruction"
+        floor:
+          $ref: "#/components/schemas/SurfaceConstruction"
+        interzone:
+          oneOf:
+            - $ref: "#/components/schemas/SurfaceConstruction"
+            - type: "null"
+
+    DailySchedule:
+      type: object
+      description: Free-form; see `src/sim/schedule.rs` for full schema
+      additionalProperties: true
+
+    HVACSchedule:
+      type: object
+      description: Free-form; see `src/sim/schedule.rs` for full schema
+      additionalProperties: true
+
+    ScheduleSet:
+      type: object
+      required: [occupancy, lighting, hvac]
+      properties:
+        occupancy:
+          $ref: "#/components/schemas/DailySchedule"
+        lighting:
+          $ref: "#/components/schemas/DailySchedule"
+        hvac:
+          $ref: "#/components/schemas/HVACSchedule"
+        infiltration:
+          oneOf:
+            - $ref: "#/components/schemas/DailySchedule"
+            - type: "null"
+
+    WeatherData:
+      oneOf:
+        - type: object
+          required: [type, path]
+          properties:
+            type:
+              type: string
+              enum: [epw]
+            path:
+              type: string
+          additionalProperties: false
+        - type: object
+          required: [type, location]
+          properties:
+            type:
+              type: string
+              enum: [tmy]
+            location:
+              type: string
+          additionalProperties: false
+        - type: object
+          required: [type, hourly_data]
+          properties:
+            type:
+              type: string
+              enum: [inline]
+            hourly_data:
+              type: array
+              items:
+                type: object
+                additionalProperties: true
+          additionalProperties: false
+
+    ControlConfig:
+      type: object
+      required:
+        - heating_setpoint
+        - cooling_setpoint
+        - deadband_tolerance
+        - heating_capacity
+        - cooling_capacity
+      properties:
+        heating_setpoint:
+          type: number
+          format: double
+        cooling_setpoint:
+          type: number
+          format: double
+        deadband_tolerance:
+          type: number
+          format: double
+        heating_capacity:
+          type: number
+          format: double
+        cooling_capacity:
+          type: number
+          format: double
+
+    ControlSet:
+      type: object
+      required: [zone_control]
+      properties:
+        zone_control:
+          $ref: "#/components/schemas/ControlConfig"
+        global_control:
+          oneOf:
+            - $ref: "#/components/schemas/ControlConfig"
+            - type: "null"
+
+    SimulationOutput:
+      type: object
+      required:
+        - eui
+        - total_energy
+        - peak_heating_load
+        - peak_cooling_load
+        - heating_energy
+        - cooling_energy
+      properties:
+        eui:
+          type: number
+          format: double
+        total_energy:
+          type: number
+          format: double
+        peak_heating_load:
+          type: number
+          format: double
+        peak_cooling_load:
+          type: number
+          format: double
+        heating_energy:
+          type: number
+          format: double
+        cooling_energy:
+          type: number
+          format: double
+        zone_temperatures:
+          type: [array, "null"]
+          items:
+            type: number
+            format: double
+        hourly_zone_temperatures:
+          type: [array, "null"]
+          description: "[num_zones][8760] hourly zone temperatures in °C"
+          items:
+            type: array
+            items:
+              type: number
+              format: double
+
+    SimulationSchemaV1:
+      type: object
+      required:
+        - version
+        - metadata
+        - geometry
+        - constructions
+        - schedules
+        - weather
+        - controls
+        - output
+      properties:
+        version:
+          $ref: "#/components/schemas/SchemaVersion"
+        metadata:
+          $ref: "#/components/schemas/SchemaMetadata"
+        geometry:
+          $ref: "#/components/schemas/Geometry"
+        constructions:
+          $ref: "#/components/schemas/ConstructionSet"
+        schedules:
+          $ref: "#/components/schemas/ScheduleSet"
+        weather:
+          $ref: "#/components/schemas/WeatherData"
+        controls:
+          $ref: "#/components/schemas/ControlSet"
+        output:
+          $ref: "#/components/schemas/SimulationOutput"

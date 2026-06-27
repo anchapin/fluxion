@@ -118,7 +118,7 @@ clap = { version = "4.5", features = ["derive"] }
 
 # Parallelism
 rayon = "1.10"
-tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time", "macros"] }
+tokio = { version = "1.40", features = ["rt-multi-thread", "sync", "time", "macros", "signal", "net"] }
 parking_lot = "0.12"
 once_cell = "1.21"
 lazy_static = "1.4.0"
@@ -159,6 +159,12 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 # OpenStudio OSM file parsing/serialization
 # XML parsing for gbXML import/export
 quick-xml = "0.31"
+
+# REST API server (Issue #1342). Async HTTP server with typed extractors
+# and ergonomic routing. Stays on tokio 1.x — already in our dep tree above.
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query"] }
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
 
 # ZIP archive writer for FMI 2.0 FMU packaging (#1339)
 zip = { version = "0.6", default-features = false, features = ["deflate"] }
@@ -232,6 +238,10 @@ harness = false
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
+
+[[bin]]
+name = "fluxion-rest"
+path = "src/bin/fluxion_rest.rs"
 
 [[bin]]
 name = "export_csv"
