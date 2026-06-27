@@ -10,6 +10,7 @@
 pub mod error;
 pub mod parameters;
 pub mod schema;
+pub mod server;
 
 // Re-export commonly used types
 pub use error::FluxionError;
@@ -19,6 +20,8 @@ pub use schema::{
     SimulationOutput, SimulationSchema, SimulationSchemaV1, SurfaceConstruction, WeatherData,
     WindowSpec, ZoneGeometry,
 };
+// Re-export REST server entrypoints (Issue #1342)
+pub use server::{run_simulation, AppState};
 
 #[cfg(feature = "python-bindings")]
 pub use error::{FluxionErrorPy, SimulationError, SurrogateError, ValidationError};
