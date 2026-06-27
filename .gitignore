@@ -206,3 +206,7 @@ benches/orchestration_decisions/baselines/current_tdqs.json
 # ONNX model artifacts (issue #1335) — pinned via tests/surrogate_models/registry.json, never committed
 *.onnx
 models/
+
+# FMI 2.0 XSD cache used by `.agents/results/issue-D1-multi-zone-fmi-verification.py`.
+# Fetched on demand from modelica/fmi-standard; never committed.
+.agents/results/fmi-xsd/
