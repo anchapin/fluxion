@@ -1,0 +1,27 @@
+! Minimal IDF fixture for lexer edge cases:
+!  - quoted commas inside field values
+!  - multi-line quoted strings
+!  - trailing line comments after the last field
+!  - doubled-quote escapes inside a string
+
+Version, 25.2;
+
+Material,
+  QuotedComma,                !- Name
+  "Hello, World!",            !- Roughness (quoted comma preserved)
+  0.05,                       !- Thickness
+  0.04;                       !- Conductivity
+
+Material,
+  MultiLine,
+  "first line
+   second line
+   third line",
+  0.10,
+  0.04;
+
+Material,
+  EscapedQuote,
+  "He said ""hello"" loudly",
+  0.05,
+  0.04;                       !- trailing comment after last field
