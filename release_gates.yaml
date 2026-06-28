@@ -192,6 +192,19 @@ ci:
     # enforce the ±15% band automatically.
     - "ASHRAE 140 Strict Energy Gate (Issue #1333)"
 
+    # Cross-platform floating-point determinism (issues #1351 / #1297).
+    # The listener job is defined in `.github/workflows/ashrae_validation.yml`
+    # under the `fluxion-determinism-gate` id and is triggered by the
+    # `Cross-Platform Determinism CI` workflow_run completion. It is the
+    # canonical non-matrix check name that branch protection references
+    # (the upstream `determinism-check` job expands into three OS matrix
+    # rows and is not a stable branch-protection target on its own).
+    # The listener exits non-zero on `failure` / `cancelled` / `timed_out`
+    # upstream conclusions and posts a PR comment linking the upstream
+    # run URL — closing the #1297 acceptance gap that allowed a
+    # determinism failure to slip through with a green `validate` job.
+    - "Fluxion Determinism Gate (Issue #1351)"
+
   # Job-to-workflow map (informational; branch-protection reads job
   # names directly). Used by `scripts/release_gate_checker.py` to verify
   # the required_checks list is in sync with the workflows directory.
@@ -200,3 +213,13 @@ ci:
       workflow: ".github/workflows/ashrae_140_strict_energy_gate.yml"
       issue: 1333
       triggered_by: "PR + push to main"
+
+    - job: "Fluxion Determinism Gate (Issue #1351)"
+      # The listener job is defined in `ashrae_validation.yml`; it
+      # observes completion of the upstream workflow named below.
+      workflow: ".github/workflows/ashrae_validation.yml"
+      observes_workflow: "Cross-Platform Determinism CI"
+      observes_workflow_file: ".github/workflows/determinism_check.yml"
+      issue: 1351
+      depends_on: 1297
+      triggered_by: "workflow_run on Cross-Platform Determinism CI completion"
