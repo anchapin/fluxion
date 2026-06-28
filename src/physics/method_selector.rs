@@ -25,7 +25,12 @@
 //! }
 //! ```
 
-use crate::sim::assembly::BuildingAssembly;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to
+// `fluxion_core::assembly`. We import from there directly so this module no
+// longer depends on `crate::sim` — breaking the physics<->sim cycle. The
+// `crate::sim::assembly::BuildingAssembly` path remains available via the
+// re-export shim in `src/sim/assembly.rs` for callers that haven't migrated.
+use fluxion_core::assembly::BuildingAssembly;
 use log::{info, warn};
 
 /// Available thermal solution methods.
@@ -571,7 +576,7 @@ impl Default for ThermalMethodSelector {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
+    use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
 
     fn create_lightweight_wall() -> BuildingAssembly {
         AssemblyBuilder::new("Lightweight Wall".to_string())

@@ -12,7 +12,8 @@
 
 use crate::physics::constants::thermal::ashrae_140 as ashrae_140_thermal;
 use crate::physics::constants::thermal::iso_13790;
-use crate::sim::assembly::BuildingAssembly;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
+use fluxion_core::assembly::BuildingAssembly;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -389,7 +390,7 @@ pub fn validate_constants(path: &str) -> ConfigValidationResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::assembly::{
+    use fluxion_core::assembly::{
         AssemblyBuilder, ConcreteMaterial, InsulationMaterial, MaterialLayer,
     };
 

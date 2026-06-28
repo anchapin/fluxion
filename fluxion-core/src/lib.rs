@@ -4,7 +4,9 @@
 //!
 //! Split out from the main [`fluxion`] crate as part of
 //! [issue #1255](https://github.com/anchapin/fluxion/issues/1255) ("Crate split to
-//! enable cargo-mutants in CI").
+//! enable cargo-mutants in CI") and extended in
+//! [issue #1349](https://github.com/anchapin/fluxion/issues/1349) (Phase 2: break
+//! the physics<->sim dependency cycle).
 //!
 //! ## Why a separate crate?
 //!
@@ -21,26 +23,49 @@
 //! ## Re-export shim
 //!
 //! The main `fluxion` crate re-exports these modules, e.g.
-//! `pub use fluxion_core::weather;`, so existing `crate::weather::...` and
-//! `fluxion::weather::...` paths are **unchanged** — no call-site edits required.
+//! `pub use fluxion_core::assembly;`, so existing `crate::assembly::...`,
+//! `crate::sim::assembly::...`, and `fluxion::sim::assembly::...` paths are
+//! **unchanged** — no call-site edits required.
 //!
 //! ## Current contents
 //!
-//! | Module   | Status | Notes |
-//! |----------|--------|-------|
-//! | `weather` | Moved (true leaf) | EPW/TMY3 parsing, psychrometrics, design-day, interpolation |
+//! | Module      | Status | Notes |
+//! |-------------|--------|-------|
+//! | `weather`   | Moved (#1255, true leaf) | EPW/TMY3 parsing, psychrometrics, design-day, interpolation |
+//! | `assembly`  | Moved (#1349) | `BuildingAssembly`, `AssemblyBuilder`, `MaterialLayer` trait, ASHRAE 140 material constants (inlined) |
+//! | `multi_node`| Moved (#1349) | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (pure data, zero deps) |
 //!
-//! ## Not yet moved (blocked by dependency cycles)
+//! ## Cycle break (#1349)
 //!
-//! `ai`, `physics`, and `validation` are coupled **bidirectionally** with `sim`
-//! (e.g. `physics` uses `sim::assembly::BuildingAssembly`; `sim` uses
-//! `physics::HeatConductionSolver`). Moving them verbatim would create a circular
-//! crate dependency. See `docs/mutation_testing_crate_split.md` for the phased
-//! cycle-breaking plan.
+//! After #1349 the `fluxion::physics -> fluxion::sim::assembly` edge is broken:
+//!
+//! ```text
+//! fluxion::physics  ───> fluxion_core::assembly     (was: -> fluxion::sim::assembly)
+//! fluxion::sim      ───> fluxion_core::assembly     (was: -> fluxion::sim::assembly, now self-loop via re-export shim)
+//! fluxion::sim      ───> fluxion_core::multi_node   (was: -> fluxion::sim::multi_node_thermal, now self-loop via re-export shim)
+//! ```
+//!
+//! `fluxion::sim::assembly::*` and `fluxion::sim::multi_node_thermal::*` remain
+//! valid paths via thin re-export shims at `src/sim/assembly.rs` and
+//! `src/sim/multi_node_thermal.rs`, so no downstream call-site edits are required.
+//!
+//! ## Not yet moved (blocked by remaining dependency edges)
+//!
+//! - `fluxion::sim::construction` — depends on `fluxion::physics::continuous` and
+//!   `fluxion::validation::ashrae_140_cases::Orientation`
+//! - `fluxion::sim::per_surface_conduction` — depends on
+//!   `fluxion::validation::ashrae_140_cases::Orientation`
+//! - `fluxion::physics::{wall_spec, wall_properties, method_selector}` reference
+//!   `fluxion::physics::{ctf_coefficients, fd_discretization}` (heavy solver types)
+//!
+//! Moving these requires breaking their remaining cross-crate edges and is
+//! tracked in follow-up issues.
 
 // Match the main `fluxion` crate's relaxed lint posture so leaf modules compile
 // without the historical style warnings they carried before the split.
 #![allow(nonstandard_style)]
 #![allow(clippy::all)]
 
+pub mod assembly;
+pub mod multi_node;
 pub mod weather;

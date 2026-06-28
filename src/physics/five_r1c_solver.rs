@@ -231,7 +231,7 @@ mod tests {
         FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64,
     };
     use crate::physics::wall_spec::WallSpec;
-    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+    use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
     #[test]
     fn test_five_r1c_initialization() {

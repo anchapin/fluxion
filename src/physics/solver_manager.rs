@@ -37,7 +37,8 @@ use crate::physics::solver_registry::SolverRegistry;
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
-use crate::sim::assembly::BuildingAssembly;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
+use fluxion_core::assembly::BuildingAssembly;
 use log::{debug, warn};
 
 /// Unified solver manager for multiple heat conduction methods.
@@ -382,7 +383,7 @@ impl Default for SolverManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+    use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
     #[test]
     fn test_solver_manager_creation() {

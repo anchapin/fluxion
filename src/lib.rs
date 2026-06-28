@@ -84,6 +84,14 @@ pub mod validation;
 // leaf). Re-export it so all existing `crate::weather::...` paths resolve unchanged.
 pub use fluxion_core::weather;
 
+// #1349 (Phase 2 crate split): `assembly` and `multi_node` were moved from
+// `src/sim/` into `fluxion-core` to break the physics<->sim dependency cycle.
+// The original `src/sim/assembly.rs` and `src/sim/multi_node_thermal.rs` files
+// are now thin re-export shims, so existing `crate::sim::assembly::*` and
+// `crate::sim::multi_node_thermal::*` paths still resolve. Top-level re-exports
+// here make `crate::assembly::*` and `crate::multi_node::*` work too.
+pub use fluxion_core::{assembly, multi_node};
+
 // Re-export thermal model traits for public API
 pub use sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,

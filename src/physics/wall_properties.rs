@@ -41,7 +41,12 @@
 //! The `HeatConductionSolver` trait now takes `WallSpec` directly. The conversion
 //! from `BuildingAssembly` to `WallProperties` happens at the `WallSpec` level.
 
-use crate::sim::assembly::BuildingAssembly;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to
+// `fluxion_core::assembly`. We import from there directly so this module no
+// longer depends on `crate::sim` — breaking the physics<->sim cycle. The
+// `crate::sim::assembly::BuildingAssembly` path remains available via the
+// re-export shim in `src/sim/assembly.rs` for callers that haven't migrated.
+use fluxion_core::assembly::BuildingAssembly;
 
 /// Layer properties needed by thermal solvers.
 ///
@@ -65,7 +70,7 @@ pub struct LayerProperties {
 
 impl LayerProperties {
     /// Create layer properties from a material layer trait object.
-    pub fn from_material_layer(layer: &dyn crate::sim::assembly::MaterialLayer) -> Self {
+    pub fn from_material_layer(layer: &dyn fluxion_core::assembly::MaterialLayer) -> Self {
         let thickness = layer.thickness();
         let density = layer.density();
         let specific_heat = layer.specific_heat();
@@ -134,7 +139,7 @@ impl WallProperties {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
+    use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial, InsulationMaterial};
 
     #[test]
     fn test_layer_properties_from_concrete() {

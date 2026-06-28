@@ -8,11 +8,12 @@ use std::sync::OnceLock;
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::solver_trait::{PhysicsError, PhysicsResult};
 use crate::sim::adaptive_timestep::TimestepMode;
-use crate::sim::assembly::BuildingAssembly;
 use crate::sim::construction::{SurfaceType, WallSurface};
 use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, PredictiveController};
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
+use fluxion_core::assembly::BuildingAssembly;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
@@ -1425,7 +1426,7 @@ impl ThermalModel<VectorField> {
             // Initialize MultiNodeThermalMass with per-surface nodes
             // Note: actual temperature initialization happens in multi_node_thermal.rs
             model.multi_node_thermal_mass =
-                Some(crate::sim::multi_node_thermal::MultiNodeThermalMass::default());
+                Some(fluxion_core::multi_node::MultiNodeThermalMass::default());
         } else {
             model.h_tr_ms_wall = None;
             model.h_tr_ms_roof = None;
@@ -1566,26 +1567,26 @@ impl ThermalModel<VectorField> {
             for zone_idx in 0..num_zones {
                 let h_tr_is = h_tr_is_vals.get(zone_idx).copied().unwrap_or(10.0);
 
-                let wall_node = crate::sim::multi_node_thermal::ThermalMassNode::new(
+                let wall_node = fluxion_core::multi_node::ThermalMassNode::new(
                     20.0, // initial temperature
                     cm_wall_vals.get(zone_idx).copied().unwrap_or(1e6),
                     h_tr_ms_wall_vals.get(zone_idx).copied().unwrap_or(50.0),
                     h_tr_em_wall_vals.get(zone_idx).copied().unwrap_or(20.0),
                 );
-                let roof_node = crate::sim::multi_node_thermal::ThermalMassNode::new(
+                let roof_node = fluxion_core::multi_node::ThermalMassNode::new(
                     20.0,
                     cm_roof_vals.get(zone_idx).copied().unwrap_or(1e6),
                     h_tr_ms_roof_vals.get(zone_idx).copied().unwrap_or(50.0),
                     h_tr_em_roof_vals.get(zone_idx).copied().unwrap_or(20.0),
                 );
-                let floor_node = crate::sim::multi_node_thermal::ThermalMassNode::new(
+                let floor_node = fluxion_core::multi_node::ThermalMassNode::new(
                     20.0,
                     cm_floor_vals.get(zone_idx).copied().unwrap_or(1e6),
                     h_tr_ms_floor_vals.get(zone_idx).copied().unwrap_or(50.0),
                     h_tr_em_floor_vals.get(zone_idx).copied().unwrap_or(20.0),
                 );
                 let h_tr_me_zone = h_tr_me_vals.get(zone_idx).copied().unwrap_or(100.0);
-                let internal_node = crate::sim::multi_node_thermal::ThermalMassNode::new(
+                let internal_node = fluxion_core::multi_node::ThermalMassNode::new(
                     20.0,
                     cm_internal_vals.get(zone_idx).copied().unwrap_or(1e6),
                     10.0, // h_tr_ms not used for internal node
