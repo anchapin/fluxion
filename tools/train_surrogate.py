@@ -6,14 +6,27 @@ This script benchmarks MLP vs XGBoost vs Random Forest surrogate models on the
 fluxion thermal problem, integrates SHAP analysis for feature importance, and
 provides ensemble prediction combining multiple architectures.
 
+Training data contract (Issue #1338):
+    This script MUST be trained on physics-extracted samples placed under
+    ``--data-dir`` (default ``data/training/``).  It refuses to run when the
+    directory is empty or missing, unless ``--allow-synthetic-for-benchmark-only``
+    is passed — which exists ONLY so benchmark/CI harnesses can exercise the
+    code path without a real EnergyPlus run.  Production surrogate retraining
+    MUST go through the physics-extraction pipeline described in
+    ``data/training/README.md`` (see Issue #1286).
+
 Usage:
-    python tools/train_surrogate.py --data-dir data/training --output models
-    python tools/train_surrogate.py --run-benchmark --shap-analysis --ensemble
+    # Production retrain (requires physics-extracted samples in data/training/):
+    python tools/train_surrogate.py --data-dir data/training --output-dir models
+
+    # Benchmark-only (uses random synthetic data, NEVER for production models):
+    python tools/train_surrogate.py --allow-synthetic-for-benchmark-only \\
+        --run-benchmark --shap-analysis --ensemble
 
 Requirements:
     pip install shap xgboost scikit-learn
 
-Issue: #553
+Issues: #553, #1286, #1338
 """
 
 import argparse
@@ -368,7 +381,19 @@ class EnsemblePredictor:
 
 
 def generate_synthetic_thermal_data(n_samples: int = 10000, seed: int = 42) -> Tuple[np.ndarray, np.ndarray]:
-    """Generate synthetic thermal problem data for benchmarking."""
+    """Generate synthetic thermal problem data for benchmarking.
+
+    synthetic-only benchmark path — NOT for production models.
+    ------------------------------------------------------------------
+    Issue #1286 closed ``SurrogateInputs::from_synthetic`` so production
+    Rust-side surrogate inputs are wired through physics-extracted values.
+    This helper is retained strictly so benchmark/CI harnesses can exercise
+    the MLP/XGBoost/RF code paths without a full EnergyPlus run.  It MUST
+    NOT be used as the training source for any production surrogate — see
+    ``data/training/README.md`` and ``--allow-synthetic-for-benchmark-only``
+    in ``main()``.  Calling it directly bypasses the physics contract; the
+    CLI gates this with a hard ``SystemExit`` when no real samples are found.
+    """
     np.random.seed(seed)
 
     n_features = 8
@@ -405,14 +430,51 @@ def generate_synthetic_thermal_data(n_samples: int = 10000, seed: int = 42) -> T
     return X, y, feature_names
 
 
-def load_training_data(data_dir: str, feature_names: List[str]) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-    """Load training data from CSV files."""
+def load_training_data(
+    data_dir: str,
+    feature_names: List[str],
+    allow_synthetic_for_benchmark_only: bool = False,
+) -> Tuple[np.ndarray, np.ndarray, List[str]]:
+    """Load training data from CSV files.
+
+    When no physics-extracted ``samples_*.csv`` files are present in
+    ``data_dir`` the function either:
+
+    * fails fast with ``SystemExit`` (default; production behaviour, see
+      Issue #1338) — physics is the only legitimate training source; or
+    * delegates to :func:`generate_synthetic_thermal_data` ONLY when the
+      caller has explicitly opted in via
+      ``allow_synthetic_for_benchmark_only=True``.  This branch exists
+      strictly so benchmark/CI harnesses can exercise the code path
+      without an EnergyPlus run.
+    """
     data_path = Path(data_dir)
     sample_files = list(data_path.glob("samples_*.csv"))
 
     if not sample_files:
-        logger.warning(f"No training data found in {data_dir}, using synthetic data")
-        return generate_synthetic_thermal_data(10000)
+        if allow_synthetic_for_benchmark_only:
+            logger.warning(
+                "No training data found in %s; --allow-synthetic-for-benchmark-only "
+                "is set so generating random synthetic data. This branch is for "
+                "BENCHMARK HARNESSES ONLY — it MUST NOT be used to train a "
+                "production surrogate (see Issue #1338).",
+                data_dir,
+            )
+            # synthetic-only benchmark path — NOT for production models
+            return generate_synthetic_thermal_data(10000)
+
+        # synthetic-only benchmark path — NOT for production models
+        # Production training requires physics-extracted samples. Refusing
+        # the run rather than silently substituting random data (Issue #1286
+        # closed the Rust-side synthetic path; Issue #1338 closes the Python
+        # one). See data/training/README.md for the contract.
+        raise SystemExit(
+            f"No physics-extracted training samples found in '{data_dir}'. "
+            f"Training requires samples_*.csv files produced by the "
+            f"physics-extraction pipeline (see data/training/README.md). "
+            f"If you are running a benchmark/CI harness and explicitly need "
+            f"random synthetic data, pass --allow-synthetic-for-benchmark-only."
+        )
 
     latest_file = max(sample_files, key=lambda p: p.stat().st_mtime)
     logger.info(f"Loading data from {latest_file}")
@@ -582,7 +644,23 @@ def main():
     parser.add_argument("--run-benchmark", action="store_true", help="Run MLP vs XGBoost vs RF benchmark")
     parser.add_argument("--shap-analysis", action="store_true", help="Run SHAP interpretability analysis")
     parser.add_argument("--ensemble", action="store_true", help="Create ensemble predictor")
-    parser.add_argument("--n-samples", type=int, default=10000, help="Synthetic samples if no data")
+    parser.add_argument(
+        "--allow-synthetic-for-benchmark-only",
+        action="store_true",
+        help=(
+            "Allow generate_synthetic_thermal_data() to backfill missing "
+            "physics samples with random data. INTENDED FOR BENCHMARK / CI "
+            "HARNESSES ONLY. Production surrogate retraining MUST use "
+            "physics-extracted samples under --data-dir (see "
+            "data/training/README.md and Issue #1338)."
+        ),
+    )
+    parser.add_argument(
+        "--n-samples",
+        type=int,
+        default=10000,
+        help="Synthetic sample count when --allow-synthetic-for-benchmark-only is set",
+    )
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
 
     args = parser.parse_args()
@@ -594,11 +672,16 @@ def main():
                      "day_of_year", "month", "u_value", "wwr"]
 
     logger.info("Loading training data...")
-    try:
-        X, y, feature_names = load_training_data(args.data_dir, feature_names)
-    except Exception as e:
-        logger.warning(f"Failed to load data: {e}, generating synthetic data")
-        X, y, feature_names = generate_synthetic_thermal_data(args.n_samples, args.seed)
+    # Issue #1338: do NOT silently substitute synthetic data when physics
+    # extraction is unavailable.  load_training_data() now raises SystemExit
+    # unless --allow-synthetic-for-benchmark-only is explicitly passed. We
+    # therefore do not wrap this call in a broad try/except — any error
+    # here is fatal so we don't accidentally re-introduce a hidden fallback.
+    X, y, feature_names = load_training_data(
+        args.data_dir,
+        feature_names,
+        allow_synthetic_for_benchmark_only=args.allow_synthetic_for_benchmark_only,
+    )
 
     results_summary = {"timestamp": datetime.now().isoformat()}
 
