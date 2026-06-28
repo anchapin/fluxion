@@ -461,7 +461,7 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 
 | Module | Path | Status | Notes |
 |--------|------|--------|-------|
-| OpenStudio OSM | `interop/osm/` | Implemented (#1130) | Reader (884 LoC) + Writer (505 LoC) + types; `import_osm` / `export_osm` |
+| OpenStudio OSM | `interop/osm/` | Implemented + round-trip stable (#1130, #1340) | Reader (884 LoC) + Writer (505 LoC) + types; `import_osm` / `export_osm`. Writer→reader round-trip is **stable** for single- and multi-zone schemas within the supported subset — see `src/interop/osm/mod.rs` for the lossless-field list and round-trip test entry points. |
 | gbXML | `interop/gbxml/` | Implemented (#1126) | Reader + Writer + types; `import_gbxml` / `export_gbxml`; BIM integration |
 | FMI Co-Simulation | `interop/fmi/` | Implemented — spike (#1125) | FMU export, single-zone, fixed 1h timestep; `FmiExporter`, `FmiConfig` |
 | EnergyPlus IDF/epJSON | `docs/idf-import-design.md` | **Scaffold landed** (#1341) | `src/io/idf/` (lexer + parser for the 10 MVP objects from design §4.1); `IdfFile` → `SimulationSchema` conversion pending (design §4.3 follow-up) |
@@ -470,9 +470,49 @@ Import/export bridges live under `src/interop/`. Each is gated behind the module
 ### Language Bindings
 
 | Binding | Path | Feature Flag | Status |
-|---------|------|--------------|--------|
+|---------|------|--------------|
 | Python (PyO3) | `src/python/` | `python-bindings` | Implemented (#1123); multi-zone + HVAC bindings |
 | Node.js (NAPI) | `src/napi/` | `napi-bindings` | Implemented; coexists with Python bindings |
+
+### OSM Round-Trip Lossless Contract (issue #1340)
+
+The OSM writer→reader round-trip is **stable** for single- and multi-zone schemas within the supported subset. Tests live in `src/interop/osm/writer.rs::tests`:
+
+- `test_roundtrip_single_zone` — 1 zone, default `ConstructionSet`
+- `test_roundtrip_two_zones` — 2 zones, mixed floor areas
+- `test_roundtrip_four_zones` — 4 zones (upper end of supported subset)
+- `test_roundtrip_no_windows` — edge case: zone with 0 windows, 1 floor, 4 walls
+- `test_roundtrip_exhaustive_diff_report` — asserts every supported field matches; emits a per-field diff on failure
+
+**Lossless fields** (f64 comparison within `1e-6` absolute or relative tolerance):
+
+| Field | OSM path |
+|-------|----------|
+| `metadata.name` | `OS:Building.Name` |
+| `geometry.zones[*].name` | `OS:ThermalZone.Name` |
+| `geometry.zones[*].floor_area` | `OS:Space.Floor Area` |
+| `geometry.zones[*].volume` | `OS:Space.Volume` |
+| `geometry.zones[*].height` | derived from `volume / floor_area` |
+| `geometry.total_floor_area` | sum of zone values |
+| `geometry.total_volume` | sum of zone values |
+| `geometry.number_of_floors` | `OS:Building.Number of Floors` |
+| `geometry.floor_height` | derived from `total_volume / total_floor_area` |
+| `constructions.{wall,roof,floor}.layers[*].name` | `OS:Material.Name` (referenced by `OS:Construction.Layer N`) |
+| `constructions.{wall,roof,floor}.layers[*].thickness` | `OS:Material.Thickness` |
+| `constructions.{wall,roof,floor}.layers[*].conductivity` | `OS:Material.Conductivity` |
+| `constructions.{wall,roof,floor}.layers[*].density` | `OS:Material.Density` |
+| `constructions.{wall,roof,floor}.layers[*].specific_heat` | `OS:Material.Specific Heat` |
+| `weather` (`TmyLocation` variant only) | `OS:Site.Latitude`, `OS:Site.Longitude` (lat/lon f64 pair, within tolerance) |
+
+**Known lossy fields** (fall back to `Default` on read; out of scope for issue #1340):
+
+- `metadata.description`, `.author`, `.created_at`
+- `schedules.*` (no `OS:Schedule:*` emission)
+- `controls.{heating,cooling}_setpoint` (no `OS:Thermostat` emission; reader falls back to 20 °C / 24 °C)
+- `constructions.{wall,roof,floor}.window` (no `OS:SubSurface` emission)
+- `constructions.interzone`
+- `weather` for `EpwFile` and `Inline` variants
+- `output.*` (simulation results, not part of model file)
 
 ---
 

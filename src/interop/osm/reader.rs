@@ -107,7 +107,30 @@ impl OsmReader {
                 continue;
             }
 
+            // An object terminator in OpenStudio IDD is either:
+            //   1) a line containing only ";"
+            //   2) the last field of an object whose source line contains ";"
+            //      before the trailing ", !- <comment>" annotation, e.g.
+            //      "  2.7; !- Floor Height {m}" — the writer emits `;`
+            //      on the same line as the last value to terminate the object.
+            //
+            // Both forms must be recognized here; otherwise parse_object would
+            // bleed into the next object. (Fix for issue #1340 round-trip.)
+            let line_has_terminator = line.contains(';') || line == ";";
+
             if line == ";" {
+                break;
+            }
+
+            // If a line begins with "OS:" / "OSM:" it is the start of the next
+            // object; the current object is complete. (This guard is needed
+            // because the writer sometimes omits the explicit `;` terminator
+            // line; we still need to stop cleanly.)
+            if line.starts_with("OS:") || line.starts_with("OSM:") {
+                // Step back so the outer loop picks up this line as a new object.
+                if *idx > 0 {
+                    *idx -= 1;
+                }
                 break;
             }
 
@@ -119,8 +142,14 @@ impl OsmReader {
 
             let field_value = self.extract_field_value(line, field_idx)?;
             let field_name = self.get_field_name(&object_type, field_idx);
-            obj.fields.insert(field_name.to_string(), field_value);
+            obj.fields.insert(field_name, field_value);
             field_idx += 1;
+
+            // After consuming a field whose source line carried the
+            // terminating ";" (case 2 above), the object is done.
+            if line_has_terminator {
+                break;
+            }
         }
 
         Ok(obj)
@@ -144,137 +173,157 @@ impl OsmReader {
     }
 
     fn extract_field_value(&self, line: &str, _field_idx: usize) -> Result<String, OsmError> {
+        // Strip the trailing comment of the form ", !- <comment>" (OpenStudio
+        // IDD field annotation). Example input: "  Test Building, !- Name"
+        // produces value "Test Building".
         let line = line.trim_end_matches(',').trim();
 
-        if line.ends_with(';') {
-            let value = line.strip_suffix(';').unwrap();
-            return Ok(value.trim().to_string());
-        }
+        // Strip trailing semicolon first (last field of an object ends with
+        // "<value>;" e.g. "  2.7; !- Floor Height {m}" -> "2.7").
+        let line = if let Some(idx) = line.rfind(';') {
+            &line[..idx]
+        } else {
+            line
+        };
 
-        Ok(line.to_string())
+        // Now strip the ", !- <comment>" suffix if present. Some fields have
+        // empty values written as just ",", which would have been collapsed
+        // by trim_end_matches(',') above; that's fine, we want empty.
+        if let Some(idx) = line.find(", !-") {
+            Ok(line[..idx].trim().to_string())
+        } else {
+            // No trailing comma-comment; could be a numeric-only value or a
+            // bare string without the comment. Just trim and return.
+            Ok(line.trim().to_string())
+        }
     }
 
-    fn get_field_name(&self, object_type: &str, field_idx: usize) -> &'static str {
+    fn get_field_name(&self, object_type: &str, field_idx: usize) -> String {
         match object_type {
             "OS:Material" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "roughness",
-                3 => "thickness",
-                4 => "conductivity",
-                5 => "density",
-                6 => "specific_heat",
-                7 => "emissivity",
-                8 => "vapor_transmission",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "roughness".to_string(),
+                3 => "thickness".to_string(),
+                4 => "conductivity".to_string(),
+                5 => "density".to_string(),
+                6 => "specific_heat".to_string(),
+                7 => "emissivity".to_string(),
+                8 => "vapor_transmission".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Construction" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                _ => "layer",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                // Layers (Layer N, Outside Layer, Inside Layer) — give each
+                // a distinct storage key so we don't lose any to HashMap
+                // overwrites. Issue #1340 round-trip.
+                n => format!("layer_{}", n - 2),
             },
             "OS:BuildingStory" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "level",
-                3 => "height",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "level".to_string(),
+                3 => "height".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Space" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "zone_handle",
-                3 => "building_story_handle",
-                4 => "x_origin",
-                5 => "y_origin",
-                6 => "z_origin",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "zone_handle".to_string(),
+                3 => "building_story_handle".to_string(),
+                4 => "floor_area".to_string(),
+                5 => "volume".to_string(),
+                6 => "x_origin".to_string(),
+                7 => "y_origin".to_string(),
+                8 => "z_origin".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Surface" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "surface_type",
-                3 => "construction_handle",
-                4 => "building_boundary",
-                5 => "outside_boundary_condition",
-                6 => "sun_exposure",
-                7 => "wind_exposure",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "surface_type".to_string(),
+                3 => "construction_handle".to_string(),
+                4 => "building_boundary".to_string(),
+                5 => "outside_boundary_condition".to_string(),
+                6 => "sun_exposure".to_string(),
+                7 => "wind_exposure".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:SubSurface" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "surface_handle",
-                3 => "construction_handle",
-                4 => "window_type",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "surface_handle".to_string(),
+                3 => "construction_handle".to_string(),
+                4 => "window_type".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:ThermalZone" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "thermostat_handle",
-                3 => "multiplier",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "thermostat_handle".to_string(),
+                3 => "multiplier".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Site" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "latitude",
-                3 => "longitude",
-                4 => "elevation",
-                5 => "time_zone",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "latitude".to_string(),
+                3 => "longitude".to_string(),
+                4 => "elevation".to_string(),
+                5 => "time_zone".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Building" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "building_story_handles",
-                3 => "zone_handles",
-                4 => "area",
-                5 => "number_of_floors",
-                6 => "floor_height",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "building_story_handles".to_string(),
+                3 => "zone_handles".to_string(),
+                4 => "area".to_string(),
+                5 => "number_of_floors".to_string(),
+                6 => "floor_height".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Thermostat" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "heating_setpoint",
-                3 => "cooling_setpoint",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "heating_setpoint".to_string(),
+                3 => "cooling_setpoint".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Lights" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "zone_handle",
-                3 => "design_level",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "zone_handle".to_string(),
+                3 => "design_level".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:ElectricEquipment" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "zone_handle",
-                3 => "design_level",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "zone_handle".to_string(),
+                3 => "design_level".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:People" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "zone_handle",
-                3 => "number_of_people",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "zone_handle".to_string(),
+                3 => "number_of_people".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Schedule:Constant" => match field_idx {
-                0 => "handle",
-                1 => "name",
-                2 => "schedule_type",
-                3 => "value",
-                _ => "extra",
+                0 => "handle".to_string(),
+                1 => "name".to_string(),
+                2 => "schedule_type".to_string(),
+                3 => "value".to_string(),
+                _ => "extra".to_string(),
             },
             "OS:Version" => match field_idx {
-                0 => "version_identifier",
-                _ => "extra",
+                0 => "version_identifier".to_string(),
+                _ => "extra".to_string(),
             },
-            _ => "field",
+            _ => "field".to_string(),
         }
     }
 
@@ -382,24 +431,40 @@ impl OsmReader {
     }
 
     fn parse_construction(&self, obj: &OsmObject) -> Construction {
-        let mut layer_handles = Vec::new();
+        let mut indexed_layers: Vec<(usize, String)> = Vec::new();
+        let mut outside_layer: Option<String> = None;
+        let mut inside_layer: Option<String> = None;
+
         for (key, val) in &obj.fields {
-            if key.starts_with("layer")
-                || key == "outside_layer"
-                || key == "inside_layer" && !val.is_empty() && val != "OS:Material"
-            {
-                layer_handles.push(val.clone());
-            }
-        }
-        if layer_handles.is_empty() && obj.fields.len() > 2 {
-            for i in 2..obj.fields.len() {
-                let field_key = format!("layer_{}", i - 2);
-                if let Some(val) = obj.fields.get(&field_key) {
+            if let Some(idx_str) = key.strip_prefix("layer_") {
+                if let Ok(idx) = idx_str.parse::<usize>() {
                     if !val.is_empty() {
-                        layer_handles.push(val.clone());
+                        indexed_layers.push((idx, val.clone()));
                     }
                 }
+            } else if key == "outside_layer" && !val.is_empty() && val != "OS:Material" {
+                outside_layer = Some(val.clone());
+            } else if key == "inside_layer" && !val.is_empty() && val != "OS:Material" {
+                inside_layer = Some(val.clone());
+            } else if key == "layer" {
+                // Backwards-compatible single-layer form (legacy OSM files).
+                indexed_layers.push((indexed_layers.len(), val.clone()));
             }
+        }
+
+        // Sort by index so layer order is deterministic regardless of
+        // HashMap iteration order (issue #1340 round-trip).
+        indexed_layers.sort_by_key(|(idx, _)| *idx);
+        let mut layer_handles: Vec<String> =
+            indexed_layers.into_iter().map(|(_, v)| v).collect();
+
+        // Prepend outside_layer / append inside_layer if present (OpenStudio
+        // order convention; empty if not set).
+        if let Some(ol) = outside_layer {
+            layer_handles.insert(0, ol);
+        }
+        if let Some(il) = inside_layer {
+            layer_handles.push(il);
         }
 
         Construction {
@@ -425,8 +490,8 @@ impl OsmReader {
             name: obj.fields.get("name").cloned().unwrap_or_default(),
             zone_handle: obj.fields.get("zone_handle").cloned(),
             story_handle: obj.fields.get("building_story_handle").cloned(),
-            area: None,
-            volume: None,
+            area: self.parse_f64(obj.fields.get("floor_area")),
+            volume: self.parse_f64(obj.fields.get("volume")),
             surfaces: Vec::new(),
         }
     }
@@ -627,27 +692,41 @@ impl OsmReader {
             .and_then(|b| b.number_of_floors)
             .unwrap_or(1) as usize;
 
-        for space in self.ctx.spaces.values() {
-            let zone_name = space
-                .zone_handle
-                .as_ref()
-                .and_then(|zh| self.ctx.thermal_zones.get(zh))
-                .map(|tz| tz.name.clone())
-                .unwrap_or_else(|| space.name.clone());
-
-            let area = space.area.unwrap_or(48.0);
-            let volume = space.volume.unwrap_or(area * 2.7);
-
-            total_floor_area += area;
-            total_volume += volume;
-
-            zones.push(ZoneGeometry {
-                name: zone_name,
-                floor_area: area,
-                volume,
-                height: if area > 0.0 { volume / area } else { 2.7 },
+        // Iterate spaces in a deterministic order so the resulting zone list
+            // preserves the original insertion order. We sort by the
+            // trailing numeric index of the handle (e.g. "{space-0}" -> 0)
+            // to match the order the writer emits zones. Issue #1340.
+            let mut ordered_spaces: Vec<&Space> = self.ctx.spaces.values().collect();
+            ordered_spaces.sort_by_key(|s| {
+                // Extract trailing integer from handle like "{space-12}" -> 12.
+                s.handle
+                    .rsplit('-')
+                    .next()
+                    .and_then(|n| n.trim_end_matches('}').parse::<usize>().ok())
+                    .unwrap_or(usize::MAX)
             });
-        }
+
+            for space in ordered_spaces {
+                let zone_name = space
+                    .zone_handle
+                    .as_ref()
+                    .and_then(|zh| self.ctx.thermal_zones.get(zh))
+                    .map(|tz| tz.name.clone())
+                    .unwrap_or_else(|| space.name.clone());
+
+                let area = space.area.unwrap_or(48.0);
+                let volume = space.volume.unwrap_or(area * 2.7);
+
+                total_floor_area += area;
+                total_volume += volume;
+
+                zones.push(ZoneGeometry {
+                    name: zone_name,
+                    floor_area: area,
+                    volume,
+                    height: if area > 0.0 { volume / area } else { 2.7 },
+                });
+            }
 
         if zones.is_empty() {
             zones.push(ZoneGeometry::default());
@@ -695,6 +774,8 @@ impl OsmReader {
                 if let Some(const_handle) = &surface.construction_handle {
                     if let Some(construction) = self.ctx.constructions.get(const_handle) {
                         for layer_handle in &construction.layer_handles {
+                            // Try the strict OpenStudio structure first:
+                            // OS:Construction.layer_handle -> OS:Material:Layer.material_handles -> OS:Material
                             if let Some(layer) = self.ctx.layers.get(layer_handle) {
                                 for mat_handle in &layer.material_handles {
                                     if let Some(material) = self.ctx.materials.get(mat_handle) {
@@ -702,6 +783,15 @@ impl OsmReader {
                                             layers.push(layer);
                                         }
                                     }
+                                }
+                            } else if let Some(material) = self.ctx.materials.get(layer_handle) {
+                                // Fallback: layer_handle IS a material_handle.
+                                // This is the case for OSM files emitted by the fluxion
+                                // writer, which references {mat-w0..} directly from
+                                // OS:Construction without an intermediate Layer object.
+                                // Required for lossless round-trip (issue #1340).
+                                if let Some(layer) = material.to_construction_layer() {
+                                    layers.push(layer);
                                 }
                             }
                         }
