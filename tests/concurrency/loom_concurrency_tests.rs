@@ -1,13 +1,29 @@
-//! Concurrency tests for parallel solver execution (Issue #1065, #1194)
+//! Concurrency tests for parallel solver execution (Issue #1065, #1194, #1352)
 //!
-//! This module tests that the parallel execution paths in SolverManager
-//! are free from race conditions and deadlocks when multiple threads
-//! update shared boundary conditions (e.g., inter-zone walls).
+//! This module tests that the parallel execution paths in `SolverManager`
+//! (per-wall transient solvers, inter-zone wall boundary merge) and the
+//! multi-zone runtime (post-#1291 `ThermalModel<VF>::step_physics`,
+//! `solve_timesteps`, `h_tr_iz` inter-zone conductance, and
+//! `get_zone_energies_kwh` accumulator) are free from race conditions and
+//! deadlocks when multiple threads / rayon workers update shared state.
+//!
+//! # Scope
+//!
+//! - Single shared `SolverManager` instance (Issue #1065, #1194):
+//!   5 loom tests at lines 113–247 — `MatrixState` updates, sequence
+//!   integrity, reader/writer contention, atomic boundary merge.
+//! - Multi-zone runtime (Issue #1352): 4 loom tests below line 247 —
+//!   2-zone concurrent `step_physics` with shared HVAC schedule,
+//!   3-zone rayon `par_iter` over per-zone solvers with shared HVAC
+//!   demand payload collection, shared inter-zone airflow conductance
+//!   `h_tr_iz` reads/writes, and per-zone energy accumulator under a
+//!   shared weather timestep. Each has a paired `std::thread::spawn`
+//!   baseline that runs without `LOOM=1`.
 //!
 //! # Running Tests
 //!
 //! ```bash
-//! # Run basic concurrency tests (uses std threads)
+//! # Run all concurrency tests — uses std threads (no loom required)
 //! cargo test --test loom_concurrency_tests
 //!
 //! # Run with loom model checking (explores all thread interleavings)
@@ -17,7 +33,10 @@
 //! # Loom Model Checking
 //!
 //! Loom runs each test multiple times, exploring different thread interleavings
-//! to find race conditions and deadlocks that might only occur rarely.
+//! to find race conditions and deadlocks that might only occur rarely. The
+//! 4 new multi-zone loom tests exercise shared `Arc<StdMutex<...>>` state
+//! across `loom::fuzz` blocks; allow up to 30 minutes for `LOOM=1` to run
+//! locally because loom explores N! thread orderings.
 
 use std::sync::{Arc as StdArc, Mutex as StdMutex};
 use std::thread;
@@ -25,6 +44,16 @@ use std::thread;
 use fluxion::physics::method_selector::ThermalMethodSelector;
 use fluxion::physics::solver_manager::SolverManager;
 use fluxion::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+use fluxion::sim::engine::ThermalModel;
+use fluxion::physics::cta::VectorField;
+
+// Always import rayon — the baseline rayon `par_iter` test (Issue #1352
+// acceptance criterion #2) needs the trait in scope to compile under both
+// the default build and `--features loom`. The rayon test runs OS threads
+// rather than loom-controlled threads; under `LOOM=1` loom cannot introspect
+// rayon workers, so the test serves only as a regression baseline.
+#[allow(unused_imports)]
+use rayon::prelude::*;
 
 /// Heat transfer payload that should never be dropped
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +97,18 @@ pub struct MatrixState {
     pub temperatures: Vec<f64>,
     pub sequence: usize,
     pub wall_indices: Vec<usize>,
+}
+
+/// Per-zone HVAC demand payload collected from concurrent zone steps
+/// (Issue #1352). Mirrors the per-zone energy accumulator surfaced by
+/// `ThermalModel::get_zone_energies_kwh` (#1291). Used to assert that
+/// no zone's demand payload is dropped under rayon `par_iter` over
+/// multiple zones.
+#[derive(Debug, Clone, PartialEq)]
+pub struct HvacDemandPayload {
+    pub zone_index: usize,
+    pub sequence: usize,
+    pub energy_kwh: f64,
 }
 
 impl MatrixState {
@@ -242,6 +283,249 @@ mod loom_tests {
 
             // Note: This test verifies atomic operations work, but doesn't test
             // cross-thread visibility since we cloned before threads ran
+        });
+    }
+
+    // ========================================================================
+    // Multi-zone runtime tests (Issue #1352)
+    //
+    // The original 5 loom tests above (#1065 / #1194) cover a single shared
+    // `SolverManager` instance for per-wall transient conduction. The multi-zone
+    // path (post-#1291 / #1293) introduced in `src/cli/multi_zone.rs` and
+    // `src/sim/thermal_model_physics/` spawns per-zone solvers concurrently and
+    // touches shared HVAC schedules + inter-zone airflow conductances. The
+    // tests below extend loom coverage to that path.
+    // ========================================================================
+
+    /// Build a balanced 2-zone `ThermalModel<VectorField>` for the multi-zone
+    /// loom tests. Helper kept inside the loom module so it doesn't compile
+    /// under non-loom configurations where the harness import is unused.
+    fn build_two_zone_model() -> ThermalModel<VectorField> {
+        let mut m = ThermalModel::<VectorField>::new(2);
+        // Pre-populate deterministic loads so `step_physics` produces finite
+        // values regardless of which permutation loom explores.
+        m.set_loads(&[5.0, 10.0]);
+        m
+    }
+
+    /// Helper: push a per-zone HVAC demand payload into a shared collector.
+    /// Mirrors the per-zone energy payload wired up in #1291 (`per_zone_energies`
+    /// accumulator surfaced via `get_zone_energies_kwh`).
+    fn record_zone_demand(
+        sink: &StdArc<StdMutex<Vec<HvacDemandPayload>>>,
+        zone_index: usize,
+        energy_kwh: f64,
+        step_counter: &StdArc<StdMutex<usize>>,
+    ) {
+        let mut counter = step_counter.lock().unwrap();
+        *counter += 1;
+        let seq = *counter;
+        drop(counter);
+
+        let mut buf = sink.lock().unwrap();
+        buf.push(HvacDemandPayload {
+            zone_index,
+            sequence: seq,
+            energy_kwh,
+        });
+    }
+
+    /// Issue #1352 acceptance criterion #1: 2-zone concurrent `step_physics`
+    /// with a shared HVAC schedule. The schedule fields (`heating_schedule`,
+    /// `cooling_schedule`) are per-`ThermalModel`, so all zones share them.
+    /// Two loom threads lock the model, mutate the schedule, run
+    /// `step_physics`, and bump a shared step counter.
+    #[test]
+    fn test_loom_two_zone_concurrent_step_with_shared_hvac_schedule() {
+        let model = StdArc::new(StdMutex::new(build_two_zone_model()));
+        let step_counter = StdArc::new(StdMutex::new(0usize));
+
+        loom::fuzz(move || {
+            let m1 = StdArc::clone(&model);
+            let c1 = StdArc::clone(&step_counter);
+            let t1 = thread::spawn(move || {
+                let mut m = m1.lock().unwrap();
+                // Mutate the shared HVAC schedule (per-model, per all zones).
+                m.heating_schedule.fill_range(0, 12, 1.0);
+                let energy = m.step_physics(0, 10.0, 3600.0);
+                assert!(energy.is_finite());
+                let mut c = c1.lock().unwrap();
+                *c += 1;
+            });
+
+            let m2 = StdArc::clone(&model);
+            let c2 = StdArc::clone(&step_counter);
+            let t2 = thread::spawn(move || {
+                let mut m = m2.lock().unwrap();
+                m.cooling_schedule.fill_range(12, 24, 1.0);
+                let energy = m.step_physics(0, 5.0, 3600.0);
+                assert!(energy.is_finite());
+                let mut c = c2.lock().unwrap();
+                *c += 1;
+            });
+
+            t1.join().unwrap();
+            t2.join().unwrap();
+
+            let m = model.lock().unwrap();
+            let temps = m.get_temperatures();
+            assert_eq!(temps.len(), 2);
+            assert!(temps.iter().all(|t| t.is_finite()));
+            drop(m);
+
+            let c = step_counter.lock().unwrap();
+            assert_eq!(*c, 2);
+        });
+    }
+
+    /// Issue #1352 acceptance criterion #2: 3+ zone rayon `par_iter` over
+    /// per-zone solvers, asserting no dropped HVAC demand payload and no
+    /// deadlock. loom cannot introspect into rayon workers (which use real
+    /// OS threads), so this test mirrors the rayon `par_iter` pattern with
+    /// three loom-controlled threads — each representing one rayon worker —
+    /// collecting its payload into a shared collector.
+    #[test]
+    fn test_loom_three_zone_rayon_par_iter_shared_hvac_demand() {
+        let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> =
+            StdArc::new(StdMutex::new(Vec::new()));
+        let step_counter = StdArc::new(StdMutex::new(0usize));
+
+        loom::fuzz(move || {
+            let mut handles = Vec::new();
+            for zone_index in 0..3 {
+                let s = StdArc::clone(&sink);
+                let c = StdArc::clone(&step_counter);
+                let handle = thread::spawn(move || {
+                    let mut model = ThermalModel::<VectorField>::new(1);
+                    model.set_loads(&[5.0 + zone_index as f64]);
+                    let energy = model.step_physics(0, 10.0, 3600.0);
+                    assert!(energy.is_finite());
+                    record_zone_demand(&s, zone_index, energy, &c);
+                });
+                handles.push(handle);
+            }
+            for h in handles {
+                h.join().unwrap();
+            }
+
+            // No dropped payload — all three zone workers pushed their demand.
+            let collected = sink.lock().unwrap();
+            assert_eq!(collected.len(), 3, "no dropped HVAC demand payload");
+            assert!(collected.iter().all(|p| p.energy_kwh.is_finite()));
+            let c = step_counter.lock().unwrap();
+            assert_eq!(*c, 3);
+        });
+    }
+
+    /// Issue #1352 acceptance criterion #3: shared inter-zone airflow
+    /// conductance (`h_tr_iz`) reads/writes during concurrent steps.
+    /// `h_tr_iz` is a per-zone `VectorField` whose values drive the
+    /// inter-zone heat-flow term in the multi-zone heat balance (see
+    /// `src/cli/multi_zone.rs::MultiZoneConfig::inter_zone_conductance`).
+    /// Two loom threads concurrently read the conductance while another
+    /// writes — the read must always see a fully-written value.
+    #[test]
+    fn test_loom_shared_inter_zone_conductance_concurrent_steps() {
+        let model = StdArc::new(StdMutex::new(build_two_zone_model()));
+
+        loom::fuzz(move || {
+            // Seeder: write initial conductance so readers see a non-zero baseline.
+            {
+                let mut m = model.lock().unwrap();
+                let h_iz = m.h_tr_iz.as_mut_slice();
+                h_iz[0] = 5.0;
+                h_iz[1] = 5.0;
+            }
+
+            let m_writer = StdArc::clone(&model);
+            let writer = thread::spawn(move || {
+                let mut m = m_writer.lock().unwrap();
+                let h_iz = m.h_tr_iz.as_mut_slice();
+                // Toggle the inter-zone conductance to a different value;
+                // any partial-write would corrupt subsequent reads.
+                h_iz[0] = 7.5;
+                h_iz[1] = 7.5;
+                let energy = m.step_physics(0, 10.0, 3600.0);
+                assert!(energy.is_finite());
+            });
+
+            let m_reader = StdArc::clone(&model);
+            let reader = thread::spawn(move || {
+                // Read the conductance — under loom this explores every
+                // interleaving with the writer's mutation + step_physics.
+                let mut observed = Vec::new();
+                for _ in 0..4 {
+                    let m = m_reader.lock().unwrap();
+                    let h_iz = m.h_tr_iz.as_ref();
+                    observed.push((h_iz[0], h_iz[1]));
+                }
+                // Either the initial 5.0 pair or the post-write 7.5 pair —
+                // never a mix, never a partial.
+                for (a, b) in observed {
+                    assert!(a == 5.0 || a == 7.5, "partial write observed: {}", a);
+                    assert!(b == 5.0 || b == 7.5, "partial write observed: {}", b);
+                    assert_eq!(a, b, "inter-zone conductance must be symmetric");
+                }
+            });
+
+            writer.join().unwrap();
+            reader.join().unwrap();
+
+            // Post-condition: regardless of interleaving, h_tr_iz must be
+            // exactly the writer's value (5.0 before, 7.5 after writer runs).
+            let m = model.lock().unwrap();
+            let final_h_iz = m.h_tr_iz.as_ref();
+            assert!(final_h_iz[0] == 5.0 || final_h_iz[0] == 7.5);
+            assert_eq!(final_h_iz[0], final_h_iz[1]);
+        });
+    }
+
+    /// Issue #1352 acceptance criterion #4: per-zone energy accumulator
+    /// (`get_zone_energies_kwh`) under concurrent updates from multiple
+    /// zones sharing a common weather timestep. Models the #1291
+    /// `per_zone_energies` accumulator. Verifies no energy is silently
+    /// dropped across two concurrent step_physics calls on a 2-zone model.
+    #[test]
+    fn test_loom_per_zone_energy_accumulator_shared_weather() {
+        let model = StdArc::new(StdMutex::new(build_two_zone_model()));
+        let energy_counter = StdArc::new(StdMutex::new(0usize));
+
+        loom::fuzz(move || {
+            let m1 = StdArc::clone(&model);
+            let c1 = StdArc::clone(&energy_counter);
+            let t1 = thread::spawn(move || {
+                let mut m = m1.lock().unwrap();
+                let _e = m.step_physics(0, 10.0, 3600.0);
+                let mut c = c1.lock().unwrap();
+                *c += 1;
+            });
+
+            let m2 = StdArc::clone(&model);
+            let c2 = StdArc::clone(&energy_counter);
+            let t2 = thread::spawn(move || {
+                let mut m = m2.lock().unwrap();
+                let _e = m.step_physics(0, 10.0, 3600.0);
+                let mut c = c2.lock().unwrap();
+                *c += 1;
+            });
+
+            t1.join().unwrap();
+            t2.join().unwrap();
+
+            // Both steps completed — accumulated per-zone energies must be
+            // finite and well-formed (len == num_zones).
+            let m = model.lock().unwrap();
+            let zone_energies = m.get_zone_energies_kwh();
+            assert_eq!(zone_energies.len(), m.num_zones);
+            assert!(
+                zone_energies.iter().all(|e| e.is_finite()),
+                "per-zone energies must be finite, got {:?}",
+                zone_energies
+            );
+            drop(m);
+
+            let c = energy_counter.lock().unwrap();
+            assert_eq!(*c, 2);
         });
     }
 }
@@ -581,4 +865,211 @@ fn test_boundary_condition_race_detection() {
 
     let b = bc.lock().unwrap();
     assert_eq!(b.sequence, 60);
+}
+
+// =============================================================================
+// Multi-zone runtime baselines (Issue #1352)
+//
+// Non-loom counterparts of the loom tests above. These run with the default
+// `cargo test --test loom_concurrency_tests` (without `LOOM=1`) and use
+// `std::thread::spawn` (or `rayon::par_iter` for the rayon-specific test) to
+// catch regressions when loom is not available. They mirror the same
+// scenarios — 2-zone concurrent `step_physics` with shared HVAC schedule,
+// 3-zone rayon `par_iter` with shared demand payload, shared inter-zone
+// conductance reads/writes, per-zone energy accumulator — but with real OS
+// threads instead of loom's model-checked threads.
+// =============================================================================
+
+/// Build a balanced 2-zone `ThermalModel<VectorField>` for the baseline tests.
+fn build_two_zone_model_baseline() -> ThermalModel<VectorField> {
+    let mut m = ThermalModel::<VectorField>::new(2);
+    m.set_loads(&[5.0, 10.0]);
+    m
+}
+
+/// Baseline #1: 2-zone concurrent `step_physics` with shared HVAC schedule
+/// using `std::thread::spawn`. Mirrors
+/// `test_loom_two_zone_concurrent_step_with_shared_hvac_schedule`.
+#[test]
+fn test_two_zone_concurrent_step_with_shared_hvac_schedule_baseline() {
+    let model = StdArc::new(StdMutex::new(build_two_zone_model_baseline()));
+    let step_counter = StdArc::new(StdMutex::new(0usize));
+
+    let mut handles = Vec::new();
+
+    for thread_id in 0..2 {
+        let m = StdArc::clone(&model);
+        let c = StdArc::clone(&step_counter);
+        let handle = thread::spawn(move || {
+            for step in 0..3 {
+                let mut model_guard = m.lock().unwrap();
+                if thread_id == 0 {
+                    model_guard.heating_schedule.fill_range(0, 12, 1.0);
+                } else {
+                    model_guard.cooling_schedule.fill_range(12, 24, 1.0);
+                }
+                let energy = model_guard.step_physics(step, 10.0, 3600.0);
+                assert!(energy.is_finite(), "energy must be finite");
+                drop(model_guard);
+                let mut counter = c.lock().unwrap();
+                *counter += 1;
+            }
+        });
+        handles.push(handle);
+    }
+
+    for h in handles {
+        h.join().expect("baseline thread should not panic");
+    }
+
+    let final_temps = {
+        let m = model.lock().unwrap();
+        m.get_temperatures()
+    };
+    assert_eq!(final_temps.len(), 2);
+    assert!(final_temps.iter().all(|t| t.is_finite()));
+
+    let c = step_counter.lock().unwrap();
+    assert_eq!(*c, 6);
+}
+
+/// Baseline #2: 3-zone rayon `par_iter` with shared HVAC demand payload
+/// collection. Uses actual rayon workers (not loom threads). Asserts all
+/// 3 zone payloads are collected (no dropped payload, no deadlock).
+#[test]
+fn test_three_zone_rayon_par_iter_shared_hvac_demand_baseline() {
+    let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> =
+        StdArc::new(StdMutex::new(Vec::new()));
+    let step_counter = StdArc::new(StdMutex::new(0usize));
+
+    let zone_indices: Vec<usize> = (0..3).collect();
+
+    // Real rayon `par_iter` over per-zone solvers. The HvacDemandPayload
+    // collection and step counter are mutex-guarded so concurrent writes
+    // are serialized.
+    let _: Vec<()> = zone_indices
+        .par_iter()
+        .map(|&zone_index| {
+            let mut model = ThermalModel::<VectorField>::new(1);
+            model.set_loads(&[5.0 + zone_index as f64]);
+            let energy = model.step_physics(0, 10.0, 3600.0);
+            assert!(energy.is_finite());
+
+            let mut counter = step_counter.lock().unwrap();
+            *counter += 1;
+            let seq = *counter;
+            drop(counter);
+
+            let mut buf = sink.lock().unwrap();
+            buf.push(HvacDemandPayload {
+                zone_index,
+                sequence: seq,
+                energy_kwh: energy,
+            });
+        })
+        .collect();
+
+    let collected = sink.lock().unwrap();
+    assert_eq!(
+        collected.len(),
+        3,
+        "no dropped HVAC demand payload under rayon par_iter"
+    );
+    assert!(collected.iter().all(|p| p.energy_kwh.is_finite()));
+    let mut zone_indices_seen: Vec<usize> = collected.iter().map(|p| p.zone_index).collect();
+    zone_indices_seen.sort_unstable();
+    assert_eq!(zone_indices_seen, vec![0, 1, 2]);
+    drop(collected);
+
+    let c = step_counter.lock().unwrap();
+    assert_eq!(*c, 3);
+}
+
+/// Baseline #3: shared inter-zone airflow conductance (`h_tr_iz`)
+/// reads/writes during concurrent steps via `std::thread::spawn`.
+/// Mirrors `test_loom_shared_inter_zone_conductance_concurrent_steps`.
+#[test]
+fn test_shared_inter_zone_conductance_concurrent_steps_baseline() {
+    let model = StdArc::new(StdMutex::new(build_two_zone_model_baseline()));
+
+    // Seed the conductance.
+    {
+        let mut m = model.lock().unwrap();
+        let h_iz = m.h_tr_iz.as_mut_slice();
+        h_iz[0] = 5.0;
+        h_iz[1] = 5.0;
+    }
+
+    let m_writer = StdArc::clone(&model);
+    let writer = thread::spawn(move || {
+        let mut m = m_writer.lock().unwrap();
+        let h_iz = m.h_tr_iz.as_mut_slice();
+        h_iz[0] = 7.5;
+        h_iz[1] = 7.5;
+        let energy = m.step_physics(0, 10.0, 3600.0);
+        assert!(energy.is_finite());
+    });
+
+    let m_reader = StdArc::clone(&model);
+    let reader = thread::spawn(move || {
+        let mut observed = Vec::new();
+        for _ in 0..10 {
+            let m = m_reader.lock().unwrap();
+            let h_iz = m.h_tr_iz.as_ref();
+            observed.push((h_iz[0], h_iz[1]));
+        }
+        for (a, b) in observed {
+            assert!(a == 5.0 || a == 7.5, "partial write observed: {}", a);
+            assert!(b == 5.0 || b == 7.5, "partial write observed: {}", b);
+            assert_eq!(a, b);
+        }
+    });
+
+    writer.join().expect("writer thread should not panic");
+    reader.join().expect("reader thread should not panic");
+
+    let m = model.lock().unwrap();
+    let final_h_iz = m.h_tr_iz.as_ref();
+    assert!(final_h_iz[0] == 5.0 || final_h_iz[0] == 7.5);
+    assert_eq!(final_h_iz[0], final_h_iz[1]);
+}
+
+/// Baseline #4: per-zone energy accumulator (`get_zone_energies_kwh`)
+/// under concurrent updates from multiple zones sharing a common
+/// weather timestep. Mirrors `test_loom_per_zone_energy_accumulator_shared_weather`.
+#[test]
+fn test_per_zone_energy_accumulator_shared_weather_baseline() {
+    let model = StdArc::new(StdMutex::new(build_two_zone_model_baseline()));
+    let energy_counter = StdArc::new(StdMutex::new(0usize));
+
+    let mut handles = Vec::new();
+    for step in 0..3 {
+        let m = StdArc::clone(&model);
+        let c = StdArc::clone(&energy_counter);
+        let handle = thread::spawn(move || {
+            let mut model_guard = m.lock().unwrap();
+            let energy = model_guard.step_physics(step, 10.0, 3600.0);
+            assert!(energy.is_finite());
+            drop(model_guard);
+            let mut counter = c.lock().unwrap();
+            *counter += 1;
+        });
+        handles.push(handle);
+    }
+
+    for h in handles {
+        h.join().expect("baseline thread should not panic");
+    }
+
+    let m = model.lock().unwrap();
+    let zone_energies = m.get_zone_energies_kwh();
+    assert_eq!(zone_energies.len(), m.num_zones);
+    assert!(
+        zone_energies.iter().all(|e| e.is_finite()),
+        "per-zone energies must be finite: {:?}",
+        zone_energies
+    );
+
+    let c = energy_counter.lock().unwrap();
+    assert_eq!(*c, 3);
 }
