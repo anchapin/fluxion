@@ -33,6 +33,8 @@ use fluxion::sim::ventilation::{
 };
 use fluxion::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
 
+use proptest::prelude::*;
+
 // ============================================================================
 // ASHRAE 140 Case 900 spec constants
 // ============================================================================
@@ -394,4 +396,297 @@ fn test_ashrae_140_get_ach_weather_direct_matches_trait_dispatch() {
         max_abs_diff,
         worst_hour,
     );
+}
+
+// ============================================================================
+// Property-Based Tests (proptest)
+// Issue #1353 — proptest edge-case coverage for ventilation ACH formulas.
+//
+// These tests extend the deterministic CSV-based coverage above (PR #1327)
+// with 10,000 random cases per property. The bound `combined >= max(wind, stack)`
+// is derived from the fluxion source code at
+// `.agents/results/issue-1353-ventilation-monotonicity.py` (Steps 1-3).
+//
+// # Reference
+//
+// - Issue #1353 — extends proptest coverage from #1062 to ventilation
+// - Issue #1062 — original proptest pattern for solar_position, state_space_ctf,
+//   coupled_solver
+// - ARCHITECTURE.md Module 4 (Infiltration & Ventilation) — 1% tolerance target
+//
+// # Property matrix
+//
+// | Function                       | Property                                                    |
+// |--------------------------------|-------------------------------------------------------------|
+// | `calculate_wind_infiltration_ach` | finite, non-negative, monotonic non-decreasing in wind  |
+// | `calculate_stack_infiltration_ach`| finite, non-negative, zero when |ΔT|≈0, monotonic in h   |
+// | `calculate_combined_infiltration_ach`| finite, non-negative, combined ≥ max(wind, stack)       |
+// | `WeatherDependentVentilation::get_ach` | finite, non-negative, zero-wind and zero-ΔT cases     |
+//
+// All `prop_assume!` filters handle preconditions (e.g. shielding_factor ∈ [0, 1]
+// is required for the wind monotonicity property to hold) rather than failing.
+// ============================================================================
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(10_000))]
+
+    // ------------------------------------------------------------------------
+    // calculate_wind_infiltration_ach
+    // ------------------------------------------------------------------------
+
+    /// Output is finite and non-negative for any physical input
+    /// (`wind_speed ≥ 0`, `building_height ≥ 0`, `shielding_factor ∈ [0, 1]`).
+    /// For these ranges the formula `n_factor × (wind/3)` with
+    /// `n_factor = (1 − shielding) × 0.4 × √(height/3)` yields a non-negative
+    /// result.
+    #[test]
+    fn proptest_wind_infiltration_finite_and_non_negative(
+        wind_speed in 0.0_f64..30.0,
+        building_height in 0.5_f64..30.0,
+        shielding_factor in 0.0_f64..1.0,
+    ) {
+        let ach = calculate_wind_infiltration_ach(wind_speed, building_height, shielding_factor);
+        prop_assert!(ach.is_finite(),
+            "wind_infiltration_ach must be finite; got {} for wind={}, height={}, shielding={}",
+            ach, wind_speed, building_height, shielding_factor);
+        prop_assert!(ach >= 0.0,
+            "wind_infiltration_ach must be non-negative; got {} for wind={}, height={}, shielding={}",
+            ach, wind_speed, building_height, shielding_factor);
+    }
+
+    /// Monotonic non-decreasing in `wind_speed` for fixed `(height, shielding)`.
+    /// The source formula is linear in `wind_speed` with non-negative slope
+    /// `n_factor / 3 ≥ 0` when `shielding ≤ 1` and `height ≥ 0`.
+    /// Generates `wind_lo` and a non-negative `wind_extra` so `wind_hi ≥ wind_lo`
+    /// is satisfied by construction (no `prop_assume!` rejection churn).
+    #[test]
+    fn proptest_wind_infiltration_monotonic_non_decreasing_in_wind(
+        wind_lo in 0.0_f64..15.0,
+        wind_extra in 0.0_f64..15.0,   // wind_hi = wind_lo + wind_extra ≥ wind_lo by construction
+        building_height in 0.5_f64..30.0,
+        shielding_factor in 0.0_f64..1.0,
+    ) {
+        let wind_hi = wind_lo + wind_extra;
+        let ach_lo = calculate_wind_infiltration_ach(wind_lo, building_height, shielding_factor);
+        let ach_hi = calculate_wind_infiltration_ach(wind_hi, building_height, shielding_factor);
+        prop_assert!(ach_hi + 1e-12 >= ach_lo,
+            "wind_infiltration_ach must be non-decreasing in wind_speed for fixed (height, shielding); \
+             wind_lo={} → ach_lo={}, wind_hi={} → ach_hi={}, height={}, shielding={}",
+            wind_lo, ach_lo, wind_hi, ach_hi, building_height, shielding_factor);
+    }
+
+    // ------------------------------------------------------------------------
+    // calculate_stack_infiltration_ach
+    // ------------------------------------------------------------------------
+
+    /// Output is finite and non-negative for physical inputs
+    /// (`height_diff > 0`, `zone_volume > 0`, any ΔT).
+    /// The source returns 0 when any precondition fails.
+    #[test]
+    fn proptest_stack_infiltration_finite_and_non_negative(
+        t_in in -30.0_f64..45.0,
+        t_out in -30.0_f64..45.0,
+        height_diff in 0.5_f64..10.0,
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+    ) {
+        let ach = calculate_stack_infiltration_ach(t_in, t_out, height_diff, opening_area, zone_volume);
+        prop_assert!(ach.is_finite(),
+            "stack_infiltration_ach must be finite; got {} for T_in={}, T_out={}, h={}, area={}, V={}",
+            ach, t_in, t_out, height_diff, opening_area, zone_volume);
+        prop_assert!(ach >= 0.0,
+            "stack_infiltration_ach must be non-negative; got {} for T_in={}, T_out={}, h={}, area={}, V={}",
+            ach, t_in, t_out, height_diff, opening_area, zone_volume);
+    }
+
+    /// Zero output when `|T_in - T_out| < 1e-6 K` (the source code returns 0
+    /// for `|ΔT| < 0.5 K`, which is a strict superset of `|ΔT| < 1e-6 K`).
+    /// Verifies graceful zero output — no NaN, no panic.
+    #[test]
+    fn proptest_stack_infiltration_zero_when_temperatures_approx_equal(
+        t_in in -30.0_f64..45.0,
+        height_diff in 0.5_f64..10.0,
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+    ) {
+        // T_out == T_in exactly ⇒ |ΔT| = 0 < 1e-6 ⇒ source returns 0
+        let t_out: f64 = t_in;
+        let ach = calculate_stack_infiltration_ach(t_in, t_out, height_diff, opening_area, zone_volume);
+        prop_assert_eq!(ach, 0.0,
+            "stack_infiltration_ach must be 0.0 when |T_in - T_out| < 1e-6 K (T_in={}, T_out={}); got {}",
+            t_in, t_out, ach);
+    }
+
+    /// Monotonic non-increasing in `height_diff` for fixed `(T_in, T_out, area, V)`.
+    /// Source: `STACK × area × sqrt(ΔT/h) / V` decreases as `h` grows
+    /// (square-root of `1/h`). Generates `height_diff_lo` and a non-negative
+    /// `height_extra` so `height_diff_hi ≥ height_diff_lo` holds by construction.
+    #[test]
+    fn proptest_stack_infiltration_monotonic_non_increasing_in_height(
+        t_in in 5.0_f64..30.0,
+        t_out in -30.0_f64..0.0,    // ensures ΔT > 0.5 K (above stack cutoff)
+        height_diff_lo in 0.5_f64..5.0,
+        height_extra in 0.0_f64..5.0, // height_diff_hi = lo + extra ≥ lo by construction
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+    ) {
+        let height_diff_hi = height_diff_lo + height_extra;
+        let ach_lo = calculate_stack_infiltration_ach(t_in, t_out, height_diff_lo, opening_area, zone_volume);
+        let ach_hi = calculate_stack_infiltration_ach(t_in, t_out, height_diff_hi, opening_area, zone_volume);
+        prop_assert!(ach_hi + 1e-12 <= ach_lo,
+            "stack_infiltration_ach must be non-increasing in height_diff for fixed (T_in, T_out, area, V); \
+             h_lo={} → ach_lo={}, h_hi={} → ach_hi={}, T_in={}, T_out={}",
+            height_diff_lo, ach_lo, height_diff_hi, ach_hi, t_in, t_out);
+    }
+
+    // ------------------------------------------------------------------------
+    // calculate_combined_infiltration_ach
+    // ------------------------------------------------------------------------
+
+    /// Output is finite and non-negative for physical inputs.
+    /// Source: `max(wind + stack, 0)` is non-negative by construction
+    /// (clamped at 0; both wind and stack are non-negative for physical inputs).
+    #[test]
+    fn proptest_combined_infiltration_finite_and_non_negative(
+        t_out in -30.0_f64..45.0,
+        t_in in 15.0_f64..30.0,
+        wind_speed in 0.0_f64..30.0,
+        height_diff in 0.5_f64..10.0,
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+        shielding_factor in 0.0_f64..1.0,
+    ) {
+        let ach = calculate_combined_infiltration_ach(
+            t_out, t_in, wind_speed, height_diff, opening_area, zone_volume, shielding_factor,
+        );
+        prop_assert!(ach.is_finite(),
+            "combined_infiltration_ach must be finite; got {} for wind={}, T_in={}, T_out={}",
+            ach, wind_speed, t_in, t_out);
+        prop_assert!(ach >= 0.0,
+            "combined_infiltration_ach must be non-negative; got {} for wind={}, T_in={}, T_out={}",
+            ach, wind_speed, t_in, t_out);
+    }
+
+    /// ASHRAE combined-formula monotonicity bound:
+    /// `combined >= max(wind_only, stack_only)`.
+    /// Derived in `.agents/results/issue-1353-ventilation-monotonicity.py`:
+    ///   combined = max(wind + stack, 0)
+    ///            >= wind + stack             (clamp only truncates)
+    ///            >= max(wind, stack)         (both terms non-negative)
+    /// Restricting `shielding_factor ∈ [0, 1]` and `wind_speed ≥ 0` keeps
+    /// `wind ≥ 0` so the bound holds for every case proptest draws.
+    #[test]
+    fn proptest_combined_infiltration_ge_max_components(
+        t_out in -30.0_f64..45.0,
+        t_in in 15.0_f64..30.0,
+        wind_speed in 0.0_f64..30.0,
+        height_diff in 0.5_f64..10.0,
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+        shielding_factor in 0.0_f64..1.0,
+    ) {
+        let wind = calculate_wind_infiltration_ach(wind_speed, height_diff, shielding_factor);
+        let stack = calculate_stack_infiltration_ach(t_in, t_out, height_diff, opening_area, zone_volume);
+        let combined = calculate_combined_infiltration_ach(
+            t_out, t_in, wind_speed, height_diff, opening_area, zone_volume, shielding_factor,
+        );
+        let max_components = wind.max(stack);
+        prop_assert!(combined + 1e-12 >= max_components,
+            "combined_infiltration_ach must satisfy combined >= max(wind, stack) (ASHRAE combined-formula bound); \
+             combined={}, wind={}, stack={}, max={}",
+            combined, wind, stack, max_components);
+    }
+
+    // ------------------------------------------------------------------------
+    // WeatherDependentVentilation::get_ach() — zero-wind & zero-ΔT cases
+    // ------------------------------------------------------------------------
+
+    /// Explicit `wind_speed = 0.0` case as required by Issue #1353
+    /// Acceptance Criteria. Verifies graceful zero wind-component output
+    /// (no NaN, no panic, no division-by-zero).
+    /// At `wind_speed = 0`, the wind-driven term `n_factor × (0/3) = 0`, so
+    /// `combined = max(stack, 0) = stack`, and `wind_benefit = 0`.
+    #[test]
+    fn proptest_weather_dependent_ventilation_zero_wind(
+        t_out in -30.0_f64..45.0,
+        t_in in 15.0_f64..30.0,
+        height_diff in 0.5_f64..10.0,
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+        shielding_factor in 0.0_f64..1.0,
+    ) {
+        let wind_speed: f64 = 0.0;
+        // Direct call to combined formula — must not panic and must be finite.
+        let combined = calculate_combined_infiltration_ach(
+            t_out, t_in, wind_speed, height_diff, opening_area, zone_volume, shielding_factor,
+        );
+        prop_assert!(combined.is_finite(),
+            "combined_infiltration_ach must be finite at wind_speed=0; got {}", combined);
+        prop_assert!(combined >= 0.0,
+            "combined_infiltration_ach must be non-negative at wind_speed=0; got {}", combined);
+        // Wind component must be exactly 0 at wind=0 (linear formula n_factor × 0 / 3 = 0)
+        let wind_only = calculate_wind_infiltration_ach(wind_speed, height_diff, shielding_factor);
+        prop_assert_eq!(wind_only, 0.0,
+            "wind_infiltration_ach must be exactly 0.0 at wind_speed=0; got {}", wind_only);
+
+        // WeatherDependentVentilation::get_ach() must also be finite at wind=0.
+        // We construct a vent with min_ach < max_ach so the spec value isn't
+        // trivially min_ach. max_ach > 0 ensures wind_benefit's `/max_ach` is
+        // well-defined.
+        let vent = WeatherDependentVentilation::new(
+            0.5,  // base_ach
+            0.3,  // min_ach
+            2.0,  // max_ach > 0
+            18.0, // start_temp
+            26.0, // full_open_temp
+        );
+        let ach = vent.get_ach(0, t_out, t_in, wind_speed, zone_volume);
+        prop_assert!(ach.is_finite(),
+            "WeatherDependentVentilation::get_ach() must be finite at wind_speed=0; got {}", ach);
+        prop_assert!(ach >= vent.min_ach,
+            "WeatherDependentVentilation::get_ach() must be >= min_ach ({}); got {} at wind=0",
+            vent.min_ach, ach);
+    }
+
+    /// `WeatherDependentVentilation::get_ach()` with `T_in ≈ T_out` (zero ΔT).
+    /// Stack component is 0.0 because `|ΔT| < 0.5` triggers the source cutoff.
+    /// Verifies no NaN, no panic, and the result is at least `min_ach`.
+    #[test]
+    fn proptest_weather_dependent_ventilation_zero_delta_t(
+        t_in in -30.0_f64..45.0,
+        wind_speed in 0.0_f64..30.0,
+        height_diff in 0.5_f64..10.0,
+        opening_area in 0.1_f64..5.0,
+        zone_volume in 50.0_f64..500.0,
+        shielding_factor in 0.0_f64..1.0,
+    ) {
+        // T_out == T_in ⇒ ΔT = 0 ⇒ stack component returns 0 (delta_t < 0.5)
+        let t_out: f64 = t_in;
+        let stack = calculate_stack_infiltration_ach(t_in, t_out, height_diff, opening_area, zone_volume);
+        prop_assert_eq!(stack, 0.0,
+            "stack_infiltration_ach must be exactly 0.0 when T_in == T_out; got {}", stack);
+
+        let combined = calculate_combined_infiltration_ach(
+            t_out, t_in, wind_speed, height_diff, opening_area, zone_volume, shielding_factor,
+        );
+        prop_assert!(combined.is_finite(),
+            "combined_infiltration_ach must be finite when T_in == T_out; got {}", combined);
+        prop_assert!(combined >= 0.0,
+            "combined_infiltration_ach must be non-negative when T_in == T_out; got {}", combined);
+
+        // WeatherDependentVentilation::get_ach() must be finite when T_in == T_out.
+        let vent = WeatherDependentVentilation::new(
+            0.5,  // base_ach
+            0.3,  // min_ach
+            2.0,  // max_ach > 0
+            18.0, // start_temp
+            26.0, // full_open_temp
+        );
+        let ach = vent.get_ach(0, t_out, t_in, wind_speed, zone_volume);
+        prop_assert!(ach.is_finite(),
+            "WeatherDependentVentilation::get_ach() must be finite when T_in == T_out; got {}", ach);
+        prop_assert!(ach >= vent.min_ach,
+            "WeatherDependentVentilation::get_ach() must be >= min_ach ({}); got {} at ΔT=0",
+            vent.min_ach, ach);
+    }
 }
