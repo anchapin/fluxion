@@ -2468,6 +2468,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         }
 
         // Calculate HVAC demand
+        // Issue #1345: Bind the predictive controller's `modulation` factor instead of
+        // discarding it (it was previously `let (hvac_mode, _modulation) = ...`). The
+        // modulation factor is the part-load ratio the predictive controller recommends
+        // (0.0 = off, 1.0 = full capacity); it must be applied to the per-zone HVAC
+        // demand below and forwarded to `VariableCapacityEquipment::update_state` so
+        // equipment PLR tracking reflects predictive intent (and is ready to use
+        // continuous modulation once the controller's curve is softened in Plan 15-04).
         let _hour_of_day_idx = timestep % 24;
         let temp_rate = if timestep > 0 {
             (self.0.temperatures.as_ref()[0] - self.0.previous_temperatures.as_ref()[0]) / dt
@@ -2475,12 +2482,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             0.0
         };
 
-        let (hvac_mode, _modulation) = self.0.predictive_controller.calculate_modulation(
+        let (hvac_mode, modulation) = self.0.predictive_controller.calculate_modulation(
             self.0.temperatures.as_ref()[0],
             self.0.mass_temperatures.as_ref()[0],
             temp_rate,
         );
-        let _hvac_mode: EquipmentHVACMode = hvac_mode;
+        let hvac_mode: EquipmentHVACMode = hvac_mode;
 
         // (#872) Compute HVAC demand BEFORE mass update, so the mass uses CURRENT t_i_act.
         // This matches the 5R1C ordering: compute Q → compute t_act → update mass using t_act.
@@ -2652,6 +2659,90 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                 T::from(VectorField::new(t_i_act_data)),
             )
         };
+
+        // Issue #1345: forward the predictive controller's modulation factor to
+        // `VariableCapacityEquipment::update_state` so equipment PLR tracking
+        // reflects predictive intent (and so a future controller with continuous
+        // modulation propagates naturally). Also wire `EconomizerMode` (free
+        // cooling when outdoor air is cooler than zone and below the cooling
+        // setpoint) — this mirrors the 5R1C path's wiring at lines ~542–599 and
+        // is the only HVAC-mode branch in this function that touches the
+        // equipment trait at all.
+        //
+        // Note: the per-zone `hvac_data` vector above deliberately uses the
+        // un-modulated `q_clamped` so the 5R1C lumped-mass update is
+        // self-consistent with `t_i_act` (the existing mass-temperature path).
+        // The modulation is applied here, at the equipment dispatch boundary,
+        // so the equipment's PLR tracks the predictive intent without changing
+        // the established mass dynamics. This matches the issue's scope
+        // ("Bind the previously-discarded `_modulation` to
+        // `VariableCapacityEquipment::update_state`").
+        if !self.0.free_float {
+            if let Some(ref mut equipment) = self.0.hvac_equipment {
+                // Economizer is only meaningful in cooling mode; the helper is
+                // mode-agnostic so we still call it (it returns false for
+                // `EconomizerMode::Disabled` and for non-cooling cases).
+                use crate::sim::hvac::{calculate_free_cooling_capacity, is_economizer_active};
+                let hour_of_day_idx = timestep % 24;
+                let cooling_setpoint_for_econ = self.0.cooling_schedule.value(hour_of_day_idx);
+                let economizer_active = is_economizer_active(
+                    self.0.economizer_mode,
+                    outdoor_temp,
+                    None, // outdoor_enthalpy — only available in Enthalpy mode (not wired here)
+                    self.0.temperatures.as_ref()[0],
+                    None, // zone_enthalpy
+                    cooling_setpoint_for_econ,
+                );
+                // Free cooling capacity in W (the helper returns kW; convert).
+                let free_cooling_capacity_w = if economizer_active
+                    && matches!(hvac_mode, EquipmentHVACMode::Cooling)
+                {
+                    // Note: when economizer is active, the per-zone cooling demand
+                    // already absorbed the free-cooling potential above (the outdoor
+                    // air cools the zone), so we don't subtract from hvac_data again.
+                    // We DO report it to the equipment as effective capacity for
+                    // energy accounting and PLR tracking.
+                    calculate_free_cooling_capacity(
+                        outdoor_temp,
+                        self.0.temperatures.as_ref()[0],
+                        10000.0, // TODO: ventilation_airflow from building spec (m³/s)
+                    ) * 1000.0
+                } else {
+                    0.0
+                };
+
+                // Total HVAC demand across all zones (sign convention: positive =
+                // heating, negative = cooling). The modulation factor (Issue #1345)
+                // is applied here at the equipment dispatch boundary.
+                let total_demand: f64 = hvac_for_temp_calc.as_ref().iter().sum();
+
+                // Equipment `update_state` expects a positive load magnitude plus
+                // the HVAC mode. In cooling mode, add the free-cooling capacity to
+                // the magnitude (free cooling is part of the total delivered
+                // capacity even though it doesn't draw electrical power from the
+                // equipment). Apply the predictive controller's modulation factor
+                // (previously discarded at the call site above) so the equipment
+                // PLR tracks predictive intent.
+                let load_magnitude = match hvac_mode {
+                    EquipmentHVACMode::Heating => total_demand.max(0.0) * modulation,
+                    EquipmentHVACMode::Cooling => {
+                        (total_demand.abs() + free_cooling_capacity_w) * modulation
+                    }
+                    EquipmentHVACMode::Off => 0.0,
+                };
+
+                // Clamp to equipment rated capacity (matches the 5R1C path's
+                // `capacity = equipment.calculate_capacity(1.0, outdoor_temp)`
+                // followed by `modulated_load.clamp(0.0, capacity)`).
+                let rated_capacity = equipment.calculate_capacity(1.0, outdoor_temp);
+                let load_clamped = load_magnitude.clamp(0.0, rated_capacity);
+
+                // Bind the previously-discarded modulation to PLR update via the
+                // VariableCapacityEquipment::update_state Chiller/Boiler/HeatPump/
+                // CAV/VAV path (src/sim/hvac/equipment.rs:117).
+                equipment.update_state(load_clamped, outdoor_temp, hvac_mode);
+            }
+        }
 
         // (#872) Update 5R1C mass temperatures using CURRENT t_i_act.
         // For free-floating: t_i_act = t_i_free_5r1c.

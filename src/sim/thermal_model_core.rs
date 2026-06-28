@@ -2292,13 +2292,21 @@ impl ThermalModel<VectorField> {
             window_u_value = window_u_value,
             "Constraint validation decision"
         );
-        // HVAC prediction horizon is fixed at 24 h (PredictiveController default).
-        // This span is the catalogue hook; adaptive horizon selection is future work.
+        // HVAC prediction horizon is the RFC-0001 / Issue #1182 effective horizon
+        // (≈46 min, gamma_eff = 0.891). This is the dT/dt rate-prediction window
+        // that the predictive controller uses to anticipate thermal-mass response
+        // and avoid bang-bang cycling. The earlier 24 h value was a placeholder
+        // — RFC-0001 constrains the planning horizon to ~46 min because the
+        // predictive signal degrades rapidly beyond one thermal-mass time
+        // constant. Issue #1345 aligns this constant with the actual controller
+        // behaviour so the dT/dt term scales with the correct effective window.
+        const RFC0001_PREDICTION_HORIZON_S: f64 = 46.0 * 60.0; // 2760 s ≈ 46 min
         tracing::info!(
             decision_type = "hvac_horizon",
-            chosen = "24h_fixed",
+            chosen = "rfc0001_46min",
+            horizon_seconds = RFC0001_PREDICTION_HORIZON_S,
             hvac_setpoint = hvac_setpoint,
-            "HVAC horizon selection decision (fixed 24h)"
+            "HVAC horizon selection decision (RFC-0001 #1182 effective horizon, ~46 min)"
         );
 
         // Create ThermalModel if all validations pass
