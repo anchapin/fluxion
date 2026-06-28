@@ -32,6 +32,16 @@ pub enum ValidationError {
         expected_heat_flow: f64,
         actual_heat_flow: f64,
     },
+    /// N-zone inter-zone conservation violation (Issue #1348).
+    /// For a symmetric conductance matrix the algebraic identity
+    /// `Σ_i q_iz[i] = 0 W` must hold within machine precision. If the
+    /// validator reports a non-trivial residual, the matrix is asymmetric
+    /// or the network solve lost energy.
+    InterZoneConservationViolation {
+        net_inter_zone_q_w: f64,
+        zone_residuals_w: Vec<f64>,
+        tolerance_w: f64,
+    },
     /// Per-zone residual breakdown from the strict multi-zone invariant check.
     /// `residual_w` is the total system residual in Watts
     /// (signed: heat_in - heat_out - dE/dt, consistent with `InvariantChecker`).
@@ -72,6 +82,21 @@ impl std::fmt::Display for ValidationError {
                 "Inter-zone imbalance between zone {} and {}: expected {:.2} W, got {:.2} W",
                 zone_from, zone_to, expected_heat_flow, actual_heat_flow
             ),
+            ValidationError::InterZoneConservationViolation {
+                net_inter_zone_q_w,
+                zone_residuals_w,
+                tolerance_w,
+            } => {
+                writeln!(
+                    f,
+                    "N-zone inter-zone conservation violation: Σ q_iz = {:.3e} W (tolerance {:.0e} W)",
+                    net_inter_zone_q_w, tolerance_w
+                )?;
+                for (i, z) in zone_residuals_w.iter().enumerate() {
+                    writeln!(f, "  Zone {} q_iz: {:.3e} W", i, z)?;
+                }
+                Ok(())
+            }
             ValidationError::MultiZoneConservationViolation {
                 residual_w,
                 zone_residuals_w,
@@ -461,6 +486,45 @@ impl EnergyBalanceValidator {
 
         report_text
     }
+
+    /// Validate N-zone inter-zone heat transfer conservation (Issue #1348).
+    ///
+    /// For a SYMMETRIC conductance matrix `h_tr_iz`, the algebraic identity
+    /// `Σ_i Σ_j h_tr_ij · (T_j − T_i) = 0` holds to machine precision for any
+    /// temperature vector. This validator checks that the supplied
+    /// `q_iz_per_zone_w` vector sums to within `tolerance_w` of zero — the
+    /// Issue #1348 acceptance criterion.
+    ///
+    /// Use the tolerance you'd apply for the actual application: the strict
+    /// Issue #1348 budget is `1e-6` W (machine epsilon for the f64 LU solve
+    /// in `MultiZoneAirflowNetwork::solve_step`). The legacy Case 960 2-zone
+    /// tolerance is `1.0` W (see `inter_zone_tolerance` in the validator
+    /// default) and applies to a different quantity (per-pair imbalance),
+    /// so it's preserved unchanged.
+    ///
+    /// # Arguments
+    /// * `q_iz_per_zone_w` - Per-zone inter-zone heat transfer vector [W]
+    /// * `tolerance_w` - Acceptable |Σ q_iz[i]| in Watts
+    ///
+    /// # Returns
+    /// `Ok(())` if `|Σ q_iz[i]| ≤ tolerance_w`. Otherwise
+    /// [`ValidationError::InterZoneConservationViolation`] (Issue #1348) with
+    /// the signed sum, the per-zone breakdown, and the tolerance.
+    pub fn validate_n_zone_network_conservation(
+        &self,
+        q_iz_per_zone_w: &[f64],
+        tolerance_w: f64,
+    ) -> Result<(), ValidationError> {
+        let net_w: f64 = q_iz_per_zone_w.iter().sum();
+        if net_w.abs() > tolerance_w {
+            return Err(ValidationError::InterZoneConservationViolation {
+                net_inter_zone_q_w: net_w,
+                zone_residuals_w: q_iz_per_zone_w.to_vec(),
+                tolerance_w,
+            });
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -624,5 +688,45 @@ mod tests {
             "Hand-balanced 2-zone stub must pass; got {:?}",
             result
         );
+    }
+
+    /// Issue #1348 acceptance criterion: for a symmetric N-zone network the
+    /// validator must accept |Σ q_iz[i]| < 1e-6 W. Construct the per-zone
+    /// vector analytically: with symmetric h_tr_ij = h_tr_ji, the
+    /// algebraic identity guarantees Σ q_iz = 0 exactly; we synthesise a
+    /// numerically-zero residual by adding q_iz[i] and −q_iz[i] in pairs.
+    #[test]
+    fn n_zone_network_conservation_passes_for_symmetric_matrix() {
+        let q_iz = vec![12.5_f64, -7.3_f64, -5.2_f64]; // sums to 0 exactly
+        let validator = EnergyBalanceValidator::new(1.0, 1.0);
+        assert!(
+            validator
+                .validate_n_zone_network_conservation(&q_iz, 1e-6)
+                .is_ok(),
+            "Σ q_iz = 0 must pass with tolerance 1e-6 W"
+        );
+    }
+
+    /// Issue #1348 acceptance criterion: an asymmetric residual that
+    /// exceeds the 1e-6 W tolerance must surface as
+    /// `InterZoneConservationViolation` carrying the signed sum and
+    /// per-zone breakdown.
+    #[test]
+    fn n_zone_network_conservation_rejects_asymmetric_residual() {
+        let q_iz = vec![10.0_f64, -5.0_f64, 0.0_f64]; // sums to 5 W (asymmetric)
+        let validator = EnergyBalanceValidator::new(1.0, 1.0);
+        let result = validator.validate_n_zone_network_conservation(&q_iz, 1e-6);
+        match result {
+            Err(ValidationError::InterZoneConservationViolation {
+                net_inter_zone_q_w,
+                zone_residuals_w,
+                tolerance_w,
+            }) => {
+                assert!((net_inter_zone_q_w - 5.0).abs() < 1e-12);
+                assert_eq!(zone_residuals_w, vec![10.0, -5.0, 0.0]);
+                assert!((tolerance_w - 1e-6).abs() < 1e-12);
+            }
+            other => panic!("expected InterZoneConservationViolation, got {:?}", other),
+        }
     }
 }

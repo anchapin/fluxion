@@ -398,3 +398,10 @@ harness = true
 name = "case_900_determinism"
 path = "tests/case_900_determinism.rs"
 harness = true
+
+# Issue #1348 — N-zone inter-zone thermal coupling network (E5).
+# `cargo test -p fluxion multi_zone_n_zone_network` runs this target.
+[[test]]
+name = "multi_zone_n_zone_network"
+path = "tests/multi_zone_n_zone_network.rs"
+harness = true

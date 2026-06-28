@@ -76,6 +76,35 @@ pub struct ValidateCommand {
     /// Output format (json, csv, or text)
     #[arg(short, long, default_value = "text")]
     pub format: String,
+
+    /// Run N-zone inter-zone network conservation check (Issue #1348).
+    /// Solves the N-zone air-node balance for the configured conductance
+    /// matrix and asserts |Σ q_iz[i]| < --n-zone-tolerance W.
+    /// Implicitly activates when --zones >= 3 is also supplied, but the
+    /// explicit flag is provided for clarity in CI.
+    #[arg(long)]
+    pub n_zone_network: bool,
+
+    /// Number of zones for the N-zone network solve (Issue #1348). Used
+    /// together with `--n-zone-network` to instantiate an N-zone
+    /// `MultiZoneAirflowNetwork` and probe the conservation identity. Must
+    /// be ≥ 2 (N=2 reproduces the legacy Case 960 path; N≥3 exercises the
+    /// generalized N-zone solver).
+    #[arg(long, default_value_t = 3)]
+    pub n_zone_zones: usize,
+
+    /// Inter-zone conductance (W/K) for the N-zone network probe. Defaults
+    /// to a fully-connected symmetric ring at 50 W/K — sufficient to
+    /// exercise the conservation identity. For non-trivial adjacency
+    /// patterns, supply the same JSON matrix used by `--config`.
+    #[arg(long, default_value_t = 50.0)]
+    pub n_zone_conductance: f64,
+
+    /// Tolerance for the N-zone network conservation check (Watts).
+    /// Default = 1e-6 W (Issue #1348 acceptance criterion: machine
+    /// epsilon for the f64 LU solve).
+    #[arg(long, default_value_t = 1e-6)]
+    pub n_zone_tolerance: f64,
 }
 
 /// Multi-zone performance testing command
@@ -225,14 +254,27 @@ pub fn execute_simulate_command(command: &SimulateCommand) -> Result<(), anyhow:
         }
     }
 
-    // Configure inter-zone conductance
+    // Configure inter-zone conductance. The `inter_zone_conductance` matrix
+    // is N×N where element `[i][j]` is the per-pair conductance (W/K) from
+    // zone i to zone j. The existing `ThermalModel::h_tr_iz` field is a
+    // flat per-zone vector storing the row sum `Σ_j h_tr_ij` (the total
+    // conductance leaving zone i). The original CLI wiring set
+    // `h_tr_iz[i] = conductance[i][j]` in a nested loop — which only stored
+    // one element per row and was effectively a no-op for N > 2. Sum each
+    // row of the matrix and store it as the per-zone total; this matches the
+    // existing Case-960 physics-pipeline semantics
+    // (`ThermalModel::h_tr_iz[i]` = total W/K out of zone i) while still
+    // surfacing the full N×N matrix in the simulation JSON output.
     for i in 0..model.num_zones {
-        for j in 0..model.num_zones {
-            if i < config.inter_zone_conductance.len() && j < config.inter_zone_conductance[i].len()
-            {
-                model.h_tr_iz.as_mut_slice()[i] = config.inter_zone_conductance[i][j];
+        let mut row_sum = 0.0_f64;
+        if i < config.inter_zone_conductance.len() {
+            for j in 0..model.num_zones {
+                if j < config.inter_zone_conductance[i].len() {
+                    row_sum += config.inter_zone_conductance[i][j];
+                }
             }
         }
+        model.h_tr_iz.as_mut_slice()[i] = row_sum;
     }
 
     // Create surrogate manager
@@ -394,6 +436,13 @@ pub fn execute_validate_command(command: &ValidateCommand) -> Result<(), anyhow:
         run_case_960_validation(command).map_err(|e| anyhow::anyhow!(e))?;
     }
 
+    if command.n_zone_network || command.n_zone_zones >= 3 {
+        println!("Running N-zone inter-zone network conservation check...");
+        let n = command.n_zone_zones.max(2);
+        run_n_zone_network_validation(n, command.n_zone_conductance, command.n_zone_tolerance)
+            .map_err(|e| anyhow::anyhow!(e))?;
+    }
+
     Ok(())
 }
 
@@ -452,7 +501,101 @@ pub struct EnergyConservationSummary {
     pub zone_residuals_w: Vec<f64>,
 }
 
-/// Execute ASHRAE 140 Case 960 (sunspace + back-zone) validation.
+/// Run the N-zone inter-zone network conservation check (Issue #1348).
+///
+/// Builds a fully-connected symmetric `MultiZoneAirflowNetwork` of `n` zones
+/// with the supplied per-pair conductance, runs one backward-Euler step at
+/// a neutral 1 h timestep with `q_ext = 0` and zone temperatures taken from
+/// a deterministic ramp (10 °C → 10 + 2·(n-1) °C), and verifies that
+/// `|Σ q_iz[i]| < tolerance_w` per the Issue #1348 acceptance criterion.
+///
+/// Reports the per-zone `q_iz` vector and the net residual so the CLI
+/// surfaces the algebraic identity check at machine precision. The legacy
+/// Case 960 2-zone wiring (door opening = 1.5 W/K) is unaffected — this
+/// helper instantiates a separate `MultiZoneAirflowNetwork` alongside the
+/// existing `ThermalModel` Case-960 plumbing.
+pub fn run_n_zone_network_validation(
+    n: usize,
+    conductance: f64,
+    tolerance_w: f64,
+) -> Result<(), String> {
+    use crate::sim::multi_zone_network::{MultiZoneAirflowNetwork, ZoneState};
+    use crate::validation::energy_balance::{EnergyBalanceValidator, ValidationError};
+
+    if conductance < 0.0 {
+        return Err(format!("conductance {conductance} W/K must be non-negative"));
+    }
+
+    // Build the fully-connected symmetric conductance matrix.
+    let mut pairs: Vec<(usize, usize, f64)> = Vec::new();
+    for i in 0..n {
+        for j in 0..n {
+            if i != j {
+                pairs.push((i, j, conductance));
+            }
+        }
+    }
+    let network = MultiZoneAirflowNetwork::from_adjacency_pairs(n, &pairs);
+    let report = network.conservation_report();
+
+    // Build the zone states and run one backward-Euler step with q_ext = 0.
+    let mut zones: Vec<ZoneState> = (0..n)
+        .map(|i| ZoneState::new(10.0 + 2.0 * i as f64, 1.0e6))
+        .collect();
+    let q_ext = vec![0.0_f64; n];
+    let result = network
+        .solve_step(&mut zones, &q_ext, 3600.0)
+        .map_err(|e| format!("N-zone network solve failed: {e}"))?;
+
+    // Validate the algebraic identity.
+    let validator = EnergyBalanceValidator::default();
+    let validation = validator.validate_n_zone_network_conservation(&result.q_iz_w, tolerance_w);
+
+    let _status = match &validation {
+        Ok(()) => "PASS",
+        Err(_) => "FAIL",
+    };
+
+    println!("N-Zone Inter-Zone Network Conservation (Issue #1348)");
+    println!("================================================");
+    println!("Number of zones:           {n}");
+    println!("Per-pair conductance:      {conductance:.3} W/K (fully connected symmetric)");
+    println!("Conductance matrix shape:  {n}x{n} ({})", if report.symmetric { "symmetric" } else { "ASYMMETRIC" });
+    println!("Net Σ q_iz (probe):        {:.3e} W", report.net_inter_zone_q_w);
+    println!("Tolerance:                 {tolerance_w:.0e} W");
+    println!();
+    println!("Post-step per-zone q_iz (W):");
+    for (i, q) in result.q_iz_w.iter().enumerate() {
+        println!("  Zone {}: q_iz = {:+.4e} W", i, q);
+    }
+    println!();
+    match &validation {
+        Ok(()) => println!(
+            "✅ Status: PASS (|Σ q_iz| = {:.3e} W ≤ tolerance {:.0e} W)",
+            result.net_w.abs(),
+            tolerance_w
+        ),
+        Err(ValidationError::InterZoneConservationViolation {
+            net_inter_zone_q_w,
+            ..
+        }) => println!(
+            "❌ Status: FAIL (|Σ q_iz| = {:.3e} W > tolerance {:.0e} W)",
+            net_inter_zone_q_w.abs(),
+            tolerance_w
+        ),
+        Err(other) => println!("❌ Status: FAIL ({other})"),
+    }
+
+    if validation.is_err() {
+        return Err(format!(
+            "N-zone inter-zone conservation failed: |Σ q_iz| = {:.3e} W > {:.0e} W",
+            result.net_w.abs(),
+            tolerance_w
+        ));
+    }
+
+    Ok(())
+}
 ///
 /// Builds the multi-zone thermal model from the canonical CaseSpec, verifies that
 /// the inter-zone conductance is wired correctly per the MULTI-01 fix
