@@ -1,9 +1,44 @@
+# ASHRAE 140 CI Gate (Issue #1351 — cross-workflow determinism listener)
+#
+# This workflow is the canonical validation gate for PRs to main. It owns:
+#   * the in-workflow determinism matrix (`determinism-check`) and
+#     cross-platform hash comparison (`compare-hashes`),
+#   * the ASHRAE 140 blind validation (`validate`),
+#   * the module-isolation tests for Weather / Solar / Conduction /
+#     Ventilation / Zone Balance.
+#
+# PR gate wiring (Issue #1351, closes #1297 acceptance gap)
+# --------------------------------------------------------
+# GitHub branch protection requires a single canonical "Required status
+# check" name. The matrix `determinism-check` job expands into three OS-
+# specific rows (ubuntu/windows/macOS) and the `compare-hashes` job is the
+# only place that actually fails the build on hash divergence. To give
+# branch protection a single, stable, non-matrix check name, this
+# workflow also exposes a `workflow_run` listener job (`fluxion-determinism-gate`)
+# that fires after `Cross-Platform Determinism CI` completes for the same
+# SHA and fails the build if the upstream concluded `failure` or
+# `cancelled`. Add that job name to the branch-protection required list
+# (also recorded in `release_gates.yaml::ci.required_checks`).
+#
+# The in-workflow `determinism-check` + `compare-hashes` jobs are kept
+# as a fast first line of defence (they run inline with the rest of the
+# gate) — they are the actual source of truth, and the listener job is
+# the durable cross-workflow mirror that branch protection can name.
+
 name: ASHRAE 140 CI Gate
 
 on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
+  # Issue #1351: mirror the Cross-Platform Determinism CI conclusion
+  # into this workflow as a single non-matrix "Fluxion Determinism Gate"
+  # check that branch protection can reference. The listener only fires
+  # for the same SHA on the same branch, so spurious upstream runs on
+  # unrelated branches are ignored.
+  workflow_run:
+    workflows: ["Cross-Platform Determinism CI"]
+    types: [completed]
 
 concurrency:
   group: ashrae-ci-gate-${{ github.ref }}
@@ -221,6 +256,12 @@ jobs:
     name: ASHRAE 140 Blind Validation
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    # Issue #1351: the explicit `needs: compare-hashes` makes the
+    # ASHRAE 140 validate job block on cross-platform determinism
+    # (compare-hashes itself needs determinism-check, so this is a
+    # transitive gate on the entire determinism matrix). The new
+    # `fluxion-determinism-gate` workflow_run listener is the canonical
+    # non-matrix check that branch protection references.
     needs: compare-hashes
     steps:
       - name: Checkout code
@@ -420,10 +461,15 @@ jobs:
           echo "❌ ASHRAE 140 CI gate failed on ${{ github.event_name }}"
           exit 1
 
-  # Module isolation tests - each module must match EnergyPlus within 1% tolerance
+  # Module isolation tests - each module must match EnergyPlus within 1% tolerance.
+  # Issue #1351: every isolation job now explicitly `needs: compare-hashes` so the
+  # whole gate (not just the ASHRAE 140 validate job) blocks on cross-platform
+  # determinism. Without this, a determinism regression would surface only via
+  # the `validate` job, and the isolation jobs could still report PASS.
   isolation-weather:
     name: Weather Isolation
     runs-on: ubuntu-latest
+    needs: compare-hashes
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -449,6 +495,7 @@ jobs:
   isolation-solar:
     name: Solar Isolation
     runs-on: ubuntu-latest
+    needs: compare-hashes
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -474,6 +521,7 @@ jobs:
   isolation-conduction:
     name: Conduction Isolation
     runs-on: ubuntu-latest
+    needs: compare-hashes
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -499,6 +547,7 @@ jobs:
   isolation-ventilation:
     name: Ventilation Isolation
     runs-on: ubuntu-latest
+    needs: compare-hashes
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -524,6 +573,7 @@ jobs:
   isolation-zone-balance:
     name: Zone Balance Isolation
     runs-on: ubuntu-latest
+    needs: compare-hashes
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -545,3 +595,107 @@ jobs:
             ${{ runner.os }}-cargo-
       - name: Run Zone Balance Isolation Tests
         run: cargo test --test zone_balance_eplus_isolation --release
+
+  # =====================================================================
+  # Issue #1351 — Cross-workflow determinism gate listener
+  # =====================================================================
+  # This job fires after the `Cross-Platform Determinism CI` workflow
+  # completes for the same SHA. It exists so branch protection can name
+  # a single, non-matrix required check (`Fluxion Determinism Gate`) and
+  # the PR can be blocked at the gate even if the in-workflow
+  # `compare-hashes` job and the upstream `compare-hashes` job ever
+  # disagree (e.g. one runs on a stale fork SHA, the other doesn't).
+  #
+  # The listener is intentionally minimal: it does NOT re-run the
+  # determinism test — it just observes the upstream `conclusion` and
+  # surfaces a clear PR comment + branch-protection check name.
+  # =====================================================================
+  fluxion-determinism-gate:
+    name: "Fluxion Determinism Gate (Issue #1351)"
+    runs-on: ubuntu-latest
+    if: github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.conclusion != 'skipped'
+    permissions:
+      contents: read
+      checks: read
+      pull-requests: write
+      actions: read
+    steps:
+      - name: Verify upstream conclusion and post PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
+          UPSTREAM_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          UPSTREAM_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          UPSTREAM_HEAD_REF: ${{ github.event.workflow_run.head_branch }}
+          UPSTREAM_NAME: ${{ github.event.workflow_run.name }}
+        run: |
+          set -euo pipefail
+          echo "Upstream workflow: ${UPSTREAM_NAME}"
+          echo "Upstream run ID:   ${UPSTREAM_RUN_ID}"
+          echo "Upstream head SHA: ${UPSTREAM_HEAD_SHA}"
+          echo "Upstream head ref: ${UPSTREAM_HEAD_REF}"
+          echo "Upstream conclusion: ${UPSTREAM_CONCLUSION}"
+
+          # Pull-request number lookup — workflow_run events do not carry
+          # the PR number directly. We find the PR for the head SHA and
+          # use that for the failure comment.
+          PR_NUMBER="$(gh pr list --state open --head "${UPSTREAM_HEAD_REF}" --json number --jq '.[0].number // empty' || true)"
+
+          case "${UPSTREAM_CONCLUSION}" in
+            success)
+              echo "::notice::Determinism gate PASSED — upstream workflow succeeded."
+              exit 0
+              ;;
+            failure|cancelled|timed_out)
+              echo "::error::Determinism gate FAILED — upstream workflow concluded '${UPSTREAM_CONCLUSION}'."
+              echo "::error::See upstream run: ${UPSTREAM_RUN_URL}"
+              if [ -n "${PR_NUMBER:-}" ]; then
+                COMMENT_FILE="$(mktemp -t determinism-gate-comment.XXXXXX.md)"
+                UPSTREAM_CONCLUSION="${UPSTREAM_CONCLUSION}" \
+                UPSTREAM_RUN_URL="${UPSTREAM_RUN_URL}" \
+                UPSTREAM_HEAD_SHA="${UPSTREAM_HEAD_SHA}" \
+                COMMENT_FILE="${COMMENT_FILE}" \
+                python3 <<'PYEOF'
+                import os
+                lines = [
+                  "## :rotating_light: Cross-Platform Determinism Gate FAILED",
+                  "",
+                  f"The `Cross-Platform Determinism CI` workflow concluded **{os.environ['UPSTREAM_CONCLUSION']}** for commit `{os.environ['UPSTREAM_HEAD_SHA']}` on this PR. The PR cannot be merged until the determinism check passes on **all three OS matrix entries** (ubuntu-latest, windows-latest, macos-latest).",
+                  "",
+                  f"**Upstream run:** {os.environ['UPSTREAM_RUN_URL']}",
+                  "",
+                  "### Common causes",
+                  "- A new `HashMap` / `HashSet` was introduced where a deterministic `BTreeMap` is required (see #1297).",
+                  "- A non-deterministic `f32` reduction path (SIMD reordering, parallel reduction) was added.",
+                  "- A new dependency pulled in non-portable FP code (rebuild against `--release --features wiring-tracing` to reproduce).",
+                  "",
+                  "### Re-run",
+                  "Push a new commit to this branch to re-trigger the upstream `Cross-Platform Determinism CI` workflow.",
+                  "",
+                  "---",
+                  "*This comment is auto-posted by the `Fluxion Determinism Gate` listener job (issue #1351, closing #1297 acceptance gap).*",
+                ]
+                with open(os.environ["COMMENT_FILE"], "w") as f:
+                    f.write("\n".join(lines))
+                PYEOF
+                gh pr comment "${PR_NUMBER}" --body-file "${COMMENT_FILE}" \
+                  || echo "::warning::Failed to post PR comment for PR #${PR_NUMBER}"
+                rm -f "${COMMENT_FILE}"
+              else
+                echo "::warning::No open PR found for ref ${UPSTREAM_HEAD_REF}; skipping PR comment."
+              fi
+              exit 1
+              ;;
+            *)
+              # 'neutral' / 'skipped' / unknown — do not block the gate.
+              echo "::notice::Upstream determinism workflow concluded '${UPSTREAM_CONCLUSION}' — not blocking the gate."
+              exit 0
+              ;;
+          esac
+
+      - name: Hard fail on upstream non-success
+        if: github.event.workflow_run.conclusion == 'failure' || github.event.workflow_run.conclusion == 'cancelled' || github.event.workflow_run.conclusion == 'timed_out'
+        run: |
+          echo "::error::Determinism gate hard fail — see upstream run ${{ github.event.workflow_run.html_url }}"
+          exit 1

@@ -330,6 +330,55 @@ let random_value = rng.gen::<f64>();
 - Run tests multiple times to verify determinism
 - Use `--test-threads=1` to catch race conditions
 
+#### Cross-Platform Determinism CI Gate (Issue #1351)
+
+A pull-request to `main` **cannot be merged** if the cross-platform
+floating-point determinism check fails. The gate is wired in two
+places:
+
+1. `Cross-Platform Determinism CI` workflow
+   (`.github/workflows/determinism_check.yml`) — runs Case 900
+   determinism on `ubuntu-latest`, `windows-latest`, and
+   `macos-latest` and compares the SHA-256 of the extracted values
+   to confirm the simulation produces byte-identical output on all
+   three operating systems.
+2. `ASHRAE 140 CI Gate` workflow
+   (`.github/workflows/ashrae_validation.yml`) — exposes a
+   `workflow_run` listener job
+   (`Fluxion Determinism Gate (Issue #1351)`) that fails the
+   PR's checks list and posts a comment with the upstream run URL
+   if the `Cross-Platform Determinism CI` workflow concluded
+   `failure` / `cancelled` / `timed_out` for the same SHA. This
+   listener is the canonical non-matrix required check that
+   branch protection references.
+
+The required status check list lives in
+`release_gates.yaml::ci.required_checks` and is mirrored in
+[`.github/BRANCH_PROTECTION.md`](../.github/BRANCH_PROTECTION.md)
+alongside the manual admin steps to add the check to GitHub
+branch protection.
+
+**Common ways a PR can trip the gate (issue #1297 fix list):**
+
+- A new `HashMap` / `HashSet` is used where a deterministic
+  `BTreeMap` is required (non-deterministic iteration order across
+  platforms).
+- A non-deterministic `f32` reduction path (SIMD reordering,
+  parallel reduction with non-associative orderings) is added
+  without an explicit `BTreeMap`/sorted-iterator wrapper.
+- A new dependency pulls in non-portable FP code. Rebuild against
+  `--release --features wiring-tracing` to reproduce.
+
+**Local repro recipe** (matches the upstream workflow's RUSTFLAGS):
+
+```bash
+RUSTFLAGS="-C opt-level=3 -C debug-assertions=no" \
+  cargo test --test case_900_determinism --release -- --nocapture
+```
+
+The expected canonical hash for the three-OS matrix is published in
+the `Determinism Check (ubuntu-latest)` step summary on `main`.
+
 ### Coverage Measurement
 
 Fluxion uses `cargo-llvm-cov` for coverage measurement:
