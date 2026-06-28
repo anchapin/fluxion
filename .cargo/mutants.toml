@@ -19,26 +19,41 @@ minimum_test_timeout = 60
 # These modules have type hierarchies that cause cargo-mutants to OOM
 # during the discovery phase (issue #1260 re-opens #1244).
 #
-# Root cause: the crate split (#1255) only moved `weather` to fluxion-core.
-# The physics module (CTF solvers, multi-node solvers, geometry tensors with
-# heavily-parameterized generic types) stayed in the main `fluxion` crate.
-# During cargo-mutants discovery, these types expand combinatorially and
-# cause ~28 GB peak allocation — well beyond what even 32 GB CI runners can
-# sustain after accounting for OS, rustc, and other concurrent processes.
+# Issue #1349 (Phase 2 crate split) removed the broad `src/physics/**` glob:
+# `assembly`, `multi_node`, and the bulk of the simple physics types now
+# live in `fluxion-core` (the leaf crate), so cargo-mutants no longer has
+# to re-compile the heaviest domain types for every mutant.
 #
-# The long-term fix (moving physics to fluxion-core) is tracked in
-# docs/mutation_testing_crate_split.md Phase 2. Until then, we scope
-# mutation testing to the modules that fit in CI memory.
+# What stays excluded is the small set of physics files that contain the
+# truly combinatorial type machinery (CTF state-space, multi-node solver,
+# geometry tensors, FD/CTF coefficient tables). Each of these individually
+# is too large to mutate in the <16 GB peak-RSS budget from #1349.
+#
+# Peak RSS verification:
+#   /usr/bin/time -v cargo mutants --list
+# must be run on a 32 GB ubuntu-latest-8-cores runner and recorded in the
+# PR that closes #1349. The architecturally-motivated ceiling is <16 GB.
 #
 # src/ai/** is no longer excluded (issue #1294): the workflow now passes
 # --features ort so src/ai/surrogate compiles end-to-end. The ort type
 # hierarchy is still large, so peak RSS may still approach the 32 GB limit;
 # monitoring and follow-up are documented in the PR.
 exclude_globs = [
-    # FULL physics tree — the primary OOM source (complex generic types)
-    # All *.rs files under src/physics/ cause exponential type expansion.
-    # Excluding the whole tree avoids the combinatorial generic expansion.
-    "src/physics/**",
+    # Heavy physics files that remain in `fluxion` and individually cause
+    # combinatorial type expansion during cargo-mutants discovery.
+    # Order roughly by size / RSS contribution.
+    "src/physics/state_space_ctf.rs",      # 4120 lines — CTF state-space machinery
+    "src/physics/multi_node_solver.rs",    # 1744 lines — multi-node solver
+    "src/physics/ctf_coefficients.rs",     # 1776 lines — CTF coefficient tables
+    "src/physics/fd_discretization.rs",    # 739 lines  — FD wall discretization
+    "src/physics/fd_solver.rs",            # 896 lines  — FD core solver
+    "src/physics/ctf_solver.rs",           # 761 lines  — CTF core solver
+    "src/physics/geometry_tensor.rs",      # 604 lines  — geometric tensor types
+    "src/physics/nd_array.rs",             # 745 lines  — n-dimensional array types
+    "src/physics/fd_surface_balance.rs",   # 786 lines  — FD surface balance
+    "src/physics/ctf_zone_coupling.rs",    # 580 lines  — CTF zone coupling
+    "src/physics/cta.rs",                  # 854 lines  — Continuous Tensor Abstraction
+    "src/physics/thermal_mass/**",         # sub-tree of thermal mass data
 
     # Large sim files with complex generic types
     "src/sim/thermal_model_physics/**",

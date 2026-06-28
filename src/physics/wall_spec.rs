@@ -30,7 +30,8 @@
 use crate::physics::ctf_coefficients::CTFMaterial;
 use crate::physics::fd_discretization::MaterialLayer;
 use crate::physics::wall_properties::{LayerProperties, WallProperties};
-use crate::sim::assembly::BuildingAssembly;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
+use fluxion_core::assembly::BuildingAssembly;
 
 /// Minimal specification for a single wall layer.
 ///

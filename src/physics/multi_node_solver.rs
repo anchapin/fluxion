@@ -34,8 +34,9 @@
 //! Each envelope node (wall, roof, floor) has its own h_tr_em path to exterior.
 //! All envelope nodes share the same surface node T_s via their respective h_tr_ms paths.
 
-use crate::sim::multi_node_thermal::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
 use crate::sim::per_surface_conduction::{PerSurfaceConductionSolver, SurfaceKind};
+// Issue #1349 (Phase 2 crate split): multi-node thermal mass types moved to `fluxion_core::multi_node`.
+use fluxion_core::multi_node::{MassAirCouplingMode, MultiNodeThermalMass, ThermalMassNode};
 
 /// Series combination of two conductances (Issue #1281, parallel-resistance
 /// coupling network for 9R4C).
@@ -1172,7 +1173,7 @@ impl MultiNodeSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::multi_node_thermal::ThermalMassNode;
+    use fluxion_core::multi_node::ThermalMassNode;
 
     fn create_test_solver() -> MultiNodeSolver {
         let wall = ThermalMassNode::new(20.0, 5e6, 50.0, 20.0);

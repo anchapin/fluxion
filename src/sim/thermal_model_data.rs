@@ -197,7 +197,7 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     pub cm_floor: Option<T>,
     pub cm_internal: Option<T>,
     // Multi-node thermal mass state for 9R4C model
-    pub multi_node_thermal_mass: Option<crate::sim::multi_node_thermal::MultiNodeThermalMass>,
+    pub multi_node_thermal_mass: Option<fluxion_core::multi_node::MultiNodeThermalMass>,
     /// PR #821 / Issue #825 — most recent zone-0 phi_ia (W to air node) computed
     /// inside `step_physics_5r1c`. Captured for the `pr821-diag` CSV writer so
     /// the heat-balance terms can be inspected hour by hour. Always 0.0 when

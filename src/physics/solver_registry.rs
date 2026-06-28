@@ -16,7 +16,8 @@
 //! ```
 
 use crate::physics::solver_trait::HeatConductionSolver;
-use crate::sim::assembly::BuildingAssembly;
+// Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
+use fluxion_core::assembly::BuildingAssembly;
 use std::collections::HashMap;
 
 pub struct SolverRegistry {
@@ -109,7 +110,7 @@ mod tests {
     #[test]
     fn test_solver_registry_insert_and_get() {
         use crate::physics::five_r1c_solver::FiveR1CSolver;
-        use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+        use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
         let mut registry = SolverRegistry::new();
 
@@ -132,7 +133,7 @@ mod tests {
     #[test]
     fn test_solver_registry_clear() {
         use crate::physics::five_r1c_solver::FiveR1CSolver;
-        use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+        use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
         let mut registry = SolverRegistry::new();
 
@@ -155,7 +156,7 @@ mod tests {
     #[test]
     fn test_solver_registry_method_counts() {
         use crate::physics::five_r1c_solver::FiveR1CSolver;
-        use crate::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
+        use fluxion_core::assembly::{AssemblyBuilder, ConcreteMaterial};
 
         let mut registry = SolverRegistry::new();
 

@@ -12,21 +12,58 @@
 
 ---
 
-## Workspace Layout (#1255 — crate split for cargo-mutants)
+## Workspace Layout (#1255 + #1349 — crate split for cargo-mutants)
 
 The repo is a **Cargo workspace**. The main engine is the root `fluxion` package
-(`src/`); the new `fluxion-core` package holds dependency-light *leaf* modules that
+(`src/`); the `fluxion-core` package holds dependency-light *leaf* modules that
 are built once and cached while `cargo-mutants` mutates only `fluxion`:
 
 ```
-fluxion-core/src/weather/   # MOVED here (true leaf: no deps on sim/physics/ai/validation)
+fluxion-core/src/weather/    # MOVED in #1255 (true leaf: no deps on sim/physics/ai/validation)
+fluxion-core/src/assembly/   # MOVED in #1349 (BuildingAssembly, AssemblyBuilder, MaterialLayer)
+fluxion-core/src/multi_node/ # MOVED in #1349 (ThermalMassNode, MultiNodeThermalMass)
 ```
 
-`fluxion` re-exports the moved module (`pub use fluxion_core::weather;` in `lib.rs`),
-so all existing `crate::weather::…` paths are unchanged. Moving `ai`, `physics`, and
-`validation` is blocked by bidirectional cycles with `sim` and is planned in phases —
-see `docs/mutation_testing_crate_split.md`. The memory hog is `ort` (ONNX), used only
-in `src/ai/`; gating it behind a feature is the key remaining step to the <4 GB target.
+`fluxion` re-exports the moved modules (`pub use fluxion_core::{weather, assembly,
+multi_node};` in `lib.rs`) and keeps thin re-export shims at the old paths
+(`src/sim/assembly.rs`, `src/sim/multi_node_thermal.rs`) so all existing
+`crate::weather::…`, `crate::assembly::…`, `crate::sim::assembly::…`, and
+`crate::sim::multi_node_thermal::…` paths are unchanged. No call-site edits
+required for downstream consumers.
+
+### Cycle break (Phase 2 of the crate split)
+
+Issue #1349 breaks the `physics <-> sim` cycle by routing `fluxion::physics::*`'s
+domain-type imports through `fluxion_core::assembly::*` instead of
+`crate::sim::assembly::*`. Affected files:
+
+- `src/physics/wall_properties.rs` — `use fluxion_core::assembly::BuildingAssembly`
+- `src/physics/method_selector.rs` — `use fluxion_core::assembly::BuildingAssembly`
+- `src/physics/wall_spec.rs` — same
+- `src/physics/solver_manager.rs` / `solver_registry.rs` — same
+- `src/physics/multi_node_solver.rs` — `use fluxion_core::multi_node::{MultiNodeThermalMass, ...}`
+- `src/sim/multi_node_hvac_runner.rs` — `use fluxion_core::multi_node::ThermalMassNode`
+- `src/sim/thermal_model_core.rs` / `thermal_model_data.rs` — `use fluxion_core::assembly::BuildingAssembly`
+
+The ASHRAE 140 material constants that `assembly.rs` previously imported from
+`crate::physics::constants::thermal::ashrae_140::materials` (HW_CONCRETE_K,
+FOAM_BOARD_K, GYPSUM_K, EXTERIOR_SURFACE_ABSORPTANCE, …) are now inlined at the
+call sites — the values are constants and `fluxion_core` cannot depend on
+`fluxion`'s `physics::constants` module.
+
+### Remaining cycles (deferred to follow-up issues)
+
+- `fluxion::sim::construction` depends on `fluxion::physics::continuous` and
+  `fluxion::validation::ashrae_140_cases::Orientation`.
+- `fluxion::sim::per_surface_conduction` depends on
+  `fluxion::validation::ashrae_140_cases::Orientation`.
+- `fluxion::physics::{wall_spec, method_selector, wall_properties}` reference
+  `fluxion::physics::{ctf_coefficients, fd_discretization, ctf_solver}` — moving
+  these to `fluxion-core` requires moving the whole `physics` tree.
+
+These will be addressed in subsequent phases. The current change already lets
+`cargo-mutants -p fluxion` skip the bulk of the assembly / multi-node type
+machinery by mutating only `fluxion`.
 
 ---
 

@@ -26,7 +26,8 @@
 #![allow(deprecated)]
 
 use crate::physics::multi_node_solver::{MultiNodeSolver, SurfaceExteriorTemperatures};
-use crate::sim::multi_node_thermal::ThermalMassNode;
+// Issue #1349 (Phase 2 crate split): `ThermalMassNode` moved to `fluxion_core::multi_node`.
+use fluxion_core::multi_node::ThermalMassNode;
 
 /// Default number of warm-up days (14 days per ASHRAE 140 §B2 guidance).
 /// Matches [`crate::sim::warmup::DEFAULT_WARMUP_DAYS`].
@@ -600,7 +601,7 @@ impl MultiNodeHvacRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sim::multi_node_thermal::ThermalMassNode;
+    use fluxion_core::multi_node::ThermalMassNode;
 
     /// Create a test runner with warm-up disabled (0 days).
     fn create_test_runner() -> MultiNodeHvacRunner {
