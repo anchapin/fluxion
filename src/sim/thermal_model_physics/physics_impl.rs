@@ -973,11 +973,18 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     // Crank-Nicolson for 2nd-order accuracy (ISO 13790 §C.4)
                     // Issues #896 + #917 combined fix:
                     // - Pass explicit temperature driving terms to the integrator (#917)
-                    // - Use t_i (zone air) as the boundary for h_tr_3, NOT t_s (surface temp) (#896)
-                    //   because t_s includes Tm_old feedback through h_tr_ms, creating an
-                    //   artificial self-coupling loop. t_i is the correct upstream boundary.
+                    // - Use t_s (surface temperature) as the boundary for h_tr_3, NOT t_i (zone air).
+                    //   The Crank-Nicolson equation is linear in T_m_new when t_s is fixed at the
+                    //   start-of-timestep value (computed from T_m_old, t_i_act, phi_st), so the
+                    //   "self-coupling loop" concern in #896 does not apply. Using t_s instead of
+                    //   t_i is required for the zone to satisfy energy conservation: the air-node
+                    //   equation (which the model solves exactly at steady state) is derived from
+                    //   the surface equation h_tr_is*(T_s - T_air) = phi_st - h_tr_ms*(T_s - T_m),
+                    //   so the mass node must use the SAME T_s in the h_tr_3 term to balance.
+                    //   Issue #1388: substituting t_i for t_s caused systematic bias of O(h_tr_3 * delta)
+                    //   on every timestep, accumulating to 4000+ W violations over 168 hours.
                     // - t_ext = sol-air temperature (opaque envelope driving temp for h_tr_em)
-                    // - t_sup = zone air temperature (air-side network driving temp for h_tr_3)
+                    // - t_sup = surface temperature (interior network driving temp for h_tr_3)
                     crank_nicolson_iso13790(
                         tm_old,
                         dt,
@@ -985,7 +992,7 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                         *self.0.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms),
                         h_tr_em,
                         t_sol_air[i],
-                        t_i,
+                        t_s,
                         phi_m_zone,
                     )
                 }
