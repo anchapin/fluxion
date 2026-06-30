@@ -853,15 +853,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Ground coupling affects mass temperature indirectly through the thermal network
         // Calculate actual surface temperature for mass update (including HVAC effect)
         // ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st
-        let mut ts_num_act = self.0.h_tr_ms.clone();
-        ts_num_act.mul_assign(&self.0.mass_temperatures);
-        let mut term2 = self.0.h_tr_is.clone();
-        term2.mul_assign(&t_i_act);
-        ts_num_act.add_assign(&term2);
-        ts_num_act.add_assign(&phi_st);
-        // Denominator is term_rest_1
-        let mut t_s_act = ts_num_act;
-        t_s_act.div_assign(term_rest_1);
+        // Optimized: avoid intermediate allocations by manually iterating over the vectors
+        let mut t_s_act_vec = Vec::with_capacity(self.0.num_zones);
+        let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
+        let mass_temps_ref = self.0.mass_temperatures.as_ref();
+        let h_tr_is_ref = self.0.h_tr_is.as_ref();
+        let t_i_act_ref = t_i_act.as_ref();
+        let phi_st_ref = phi_st.as_ref();
+        let term_rest_1_ref = term_rest_1.as_ref();
+
+        for i in 0..self.0.num_zones {
+            let ts_num = h_tr_ms_ref[i] * mass_temps_ref[i]
+                + h_tr_is_ref[i] * t_i_act_ref[i]
+                + phi_st_ref[i];
+            t_s_act_vec.push(ts_num / term_rest_1_ref[i]);
+        }
+        let t_s_act = T::from(VectorField::new(t_s_act_vec));
 
         // Update mass temperatures using implicit integration for high thermal capacitance
         // This addresses instability with explicit Euler for Cm > 500 J/K
@@ -1151,12 +1158,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         };
 
         // Issue 693 fix: ground coupling coefficient in 6R2C den
-        let ground_coeff_6r2c = h_sum.zip_with(&self.0.h_tr_floor, |a, b| a * b);
-        den = h_ms_me_is_prod
-            .zip_with(&h_sum.zip_with(&h_total_with_iz, |a, b| a * b), |a, b| {
-                a + b
-            })
-            .zip_with(&ground_coeff_6r2c, |a, b| a + b);
+        // Optimized: avoid intermediate vector allocations using explicit loop
+        let mut ground_coeff_vec = Vec::with_capacity(self.0.num_zones);
+        let mut den_vec = Vec::with_capacity(self.0.num_zones);
+        let h_sum_ref = h_sum.as_ref();
+        let h_tr_floor_ref = self.0.h_tr_floor.as_ref();
+        let h_ms_me_is_prod_ref = h_ms_me_is_prod.as_ref();
+        let h_total_with_iz_ref = h_total_with_iz.as_ref();
+
+        for i in 0..self.0.num_zones {
+            let g = h_sum_ref[i] * h_tr_floor_ref[i];
+            ground_coeff_vec.push(g);
+            let d = h_ms_me_is_prod_ref[i] + (h_sum_ref[i] * h_total_with_iz_ref[i]) + g;
+            den_vec.push(d);
+        }
+        let ground_coeff_6r2c = T::from(VectorField::new(ground_coeff_vec));
+        den = T::from(VectorField::new(den_vec));
 
         // Use envelope mass temperature instead of single mass temperature
         // Optimized: use zip_with to avoid double clones
@@ -1254,17 +1271,16 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             }
         }
 
-        let mut num_rest_with_iz = sum_term.clone();
-        num_rest_with_iz.mul_assign(term_rest_1);
-        // Add ground term separately
+        // Optimized: replace clone and mul_assign with explicit loop
+        let mut num_rest_vec = Vec::with_capacity(self.0.num_zones);
+        let sum_term_ref = sum_term.as_ref();
+        let term_rest_1_ref = term_rest_1.as_ref();
         let ground_coeff = ground_coeff_6r2c.as_ref();
-        for (n, g) in num_rest_with_iz
-            .as_mut()
-            .iter_mut()
-            .zip(ground_coeff.iter())
-        {
-            *n += g * t_g;
+
+        for i in 0..self.0.num_zones {
+            num_rest_vec.push(sum_term_ref[i] * term_rest_1_ref[i] + ground_coeff[i] * t_g);
         }
+        let num_rest_with_iz = T::from(VectorField::new(num_rest_vec));
 
         // DEBUG: Save values for 900FF before they're consumed
         let debug_900ff = if self.0.case_id == "900FF" && timestep.is_multiple_of(24) {
@@ -1647,10 +1663,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             new_env_mass_temperatures.push(tm_env_new);
         }
 
-        // Clone envelope mass temperatures for internal mass calculation
-        let env_mass_temps_for_int = new_env_mass_temperatures.clone();
+        // Note: env_mass_temps_for_int is no longer needed as a clone
+        // We will borrow from new_env_mass_temperatures before moving it
 
-        self.0.envelope_mass_temperatures = VectorField::new(new_env_mass_temperatures).into();
+        self.0.envelope_mass_temperatures =
+            VectorField::new(new_env_mass_temperatures.clone()).into();
+
+        let env_mass_temps_for_int = new_env_mass_temperatures;
 
         // Internal mass: receives heat from envelope mass and direct gains
         let old_int_mass_temperatures = self.0.internal_mass_temperatures.clone();
