@@ -75,8 +75,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
     pub fn update_optimization_cache(&mut self) {
         // Calculate the series conductance of h_tr_is and h_tr_ms
         // This represents the thermal resistance from interior air through interior surface to mass
-        let _h_tr_is_ms_series = (self.0.h_tr_is.clone() * self.0.h_tr_ms.clone())
-            / (self.0.h_tr_is.clone() + self.0.h_tr_ms.clone());
+        let _h_tr_is_ms_series = self.0.h_tr_is.zip_with(&self.0.h_tr_ms, |is_val, ms_val| {
+            (is_val * ms_val) / (is_val + ms_val)
+        });
 
         // h_ext = h_tr_w + h_ve + non-south opaque envelope
         //
@@ -94,22 +95,30 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         //
         // The south-wall bypass (h_south_series) was already removed by Issue #715.
         // The dedicated south-wall vectors are kept for the 9R4C / CTF paths.
-        self.0.derived_h_ext = self.0.h_tr_w.clone() + self.0.h_ve.clone();
+        self.0.derived_h_ext = self.0.h_tr_w.zip_with(&self.0.h_ve, |w, v| w + v);
 
         // term_rest_1 = h_tr_ms + h_tr_is + h_tr_me
         // Note: h_tr_me is 0 for 5R1C, non-zero for 6R2C (envelope↔internal mass coupling)
-        self.0.derived_term_rest_1 =
-            self.0.h_tr_ms.clone() + self.0.h_tr_is.clone() + self.0.h_tr_me.clone();
+        self.0.derived_term_rest_1 = self
+            .0
+            .h_tr_ms
+            .zip_with(&self.0.h_tr_is, |ms, is_val| ms + is_val)
+            .zip_with(&self.0.h_tr_me, |ms_is, me| ms_is + me);
 
         // h_ms_is_prod = h_tr_ms * h_tr_is
-        self.0.derived_h_ms_is_prod = self.0.h_tr_ms.clone() * self.0.h_tr_is.clone();
+        self.0.derived_h_ms_is_prod = self
+            .0
+            .h_tr_ms
+            .zip_with(&self.0.h_tr_is, |ms, is_val| ms * is_val);
 
         // ground_coeff = term_rest_1 * h_tr_floor
         // Physics-based: No ground coupling multiplier
         // ground_coeff = term_rest_1 * h_tr_floor
         // Physics-based: No ground coupling multiplier
-        self.0.derived_ground_coeff =
-            self.0.derived_term_rest_1.clone() * self.0.h_tr_floor.clone();
+        self.0.derived_ground_coeff = self
+            .0
+            .derived_term_rest_1
+            .zip_with(&self.0.h_tr_floor, |rest, floor| rest * floor);
 
         // For multi-zone buildings, include inter-zone conductance in sensitivity calculation
         // Issue #351: Update thermal network for inter-zone coupling
@@ -133,15 +142,22 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         // ISO 13790 §C.6-C.8: Combined conductances for Crank-Nicolson mass update
         // H_tr_1 = 1 / (1/h_ve + 1/h_tr_is) = h_ve * h_tr_is / (h_ve + h_tr_is)
-        self.0.derived_h_tr_1 = (self.0.h_ve.clone() * self.0.h_tr_is.clone())
-            / (self.0.h_ve.clone() + self.0.h_tr_is.clone());
+        self.0.derived_h_tr_1 = self
+            .0
+            .h_ve
+            .zip_with(&self.0.h_tr_is, |ve, is_val| (ve * is_val) / (ve + is_val));
 
         // H_tr_2 = H_tr_1 + h_tr_w
-        self.0.derived_h_tr_2 = self.0.derived_h_tr_1.clone() + self.0.h_tr_w.clone();
+        self.0.derived_h_tr_2 = self
+            .0
+            .derived_h_tr_1
+            .zip_with(&self.0.h_tr_w, |tr1, w| tr1 + w);
 
         // H_tr_3 = 1 / (1/H_tr_2 + 1/h_tr_ms) = H_tr_2 * h_tr_ms / (H_tr_2 + h_tr_ms)
-        self.0.derived_h_tr_3 = (self.0.derived_h_tr_2.clone() * self.0.h_tr_ms.clone())
-            / (self.0.derived_h_tr_2.clone() + self.0.h_tr_ms.clone());
+        self.0.derived_h_tr_3 = self
+            .0
+            .derived_h_tr_2
+            .zip_with(&self.0.h_tr_ms, |tr2, ms| (tr2 * ms) / (tr2 + ms));
 
         // sensitivity = 1 / h_total (thermal resistance in K/W)
         // This represents the temperature change per Watt of HVAC power
