@@ -330,6 +330,53 @@ pub fn calculate_hourly_solar(
     (sun_pos, irradiance, solar_gain)
 }
 
+/// Compute surface irradiance and window solar gain from a pre-computed `SolarPosition`.
+///
+/// Use when the caller already holds `sun_pos` to avoid recomputing the ephemeris for
+/// each surface orientation. Solar position (altitude β, azimuth α) is a pure function
+/// of time + location only — the orientation-specific incidence angle is handled
+/// downstream in `calculate_surface_irradiance` and `calculate_window_solar_gain`.
+///
+/// Issue #1385: deduplicate `calculate_solar_position` calls across the per-orientation
+/// loop in `thermal_model_iterative::calculate_zone_solar_gain`. Pattern mirrors the
+/// `cached_solar_position` hoisting applied to the 9R4C path in #1212.
+#[allow(clippy::too_many_arguments)]
+pub fn calculate_hourly_solar_from_pos(
+    sun_pos: &SolarPosition,
+    year: i32,
+    month: u32,
+    day: u32,
+    dni: f64,
+    dhi: f64,
+    window: &WindowProperties,
+    geometry: Option<&WindowArea>,
+    overhang: Option<&Overhang>,
+    fins: &[ShadeFin],
+    orientation: Orientation,
+    ground_reflectance: Option<f64>,
+) -> (SurfaceIrradiance, SolarGain) {
+    let day_of_year = calculate_day_of_year(year, month, day);
+    let irradiance = calculate_surface_irradiance(
+        sun_pos,
+        dni,
+        dhi,
+        None,
+        orientation,
+        ground_reflectance.unwrap_or(0.2),
+        day_of_year,
+    );
+    let solar_gain = calculate_window_solar_gain(
+        &irradiance,
+        window,
+        geometry,
+        overhang,
+        fins,
+        sun_pos,
+        orientation,
+    );
+    (irradiance, solar_gain)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -679,6 +726,116 @@ mod tests {
         assert!(sun_pos.altitude_deg > 0.0);
         assert!(irr.total_wm2 > 0.0);
         assert!(gain.total_gain_w > 0.0);
+    }
+
+    /// Issue #1385: `calculate_hourly_solar_from_pos` must match the old
+    /// `calculate_hourly_solar` output exactly (within 1e-9) when fed the
+    /// same inputs. This guarantees the hoisted path is bit-equivalent.
+    #[test]
+    fn test_calculate_hourly_solar_from_pos_matches_old_path() {
+        const LAT: f64 = 39.7;
+        const LON: f64 = -105.0;
+        const YEAR: i32 = 2024;
+        const MONTH: u32 = 6;
+        const DAY: u32 = 21;
+        const HOUR: f64 = 12.0;
+        const DNI: f64 = 900.0;
+        const DHI: f64 = 150.0;
+        const GROUND_REFLECTANCE: Option<f64> = Some(0.2);
+        const TOL: f64 = 1e-9;
+
+        let window = WindowProperties::double_clear(6.0);
+
+        // Exercise a representative set of orientations to cover the per-orientation
+        // trig path inside `calculate_window_solar_gain`.
+        for &orientation in &[
+            Orientation::South,
+            Orientation::North,
+            Orientation::East,
+            Orientation::West,
+            Orientation::Up,
+            Orientation::Down,
+        ] {
+            // Old path: computes sun_pos internally.
+            let (old_sun_pos, old_irr, old_gain) = calculate_hourly_solar(
+                LAT,
+                LON,
+                YEAR,
+                MONTH,
+                DAY,
+                HOUR,
+                DNI,
+                DHI,
+                &window,
+                None,
+                None,
+                &[],
+                orientation,
+                GROUND_REFLECTANCE,
+            );
+
+            // New path: caller pre-computes sun_pos once and reuses it for each
+            // orientation. Same inputs otherwise.
+            let (new_irr, new_gain) = calculate_hourly_solar_from_pos(
+                &old_sun_pos,
+                YEAR,
+                MONTH,
+                DAY,
+                DNI,
+                DHI,
+                &window,
+                None,
+                None,
+                &[],
+                orientation,
+                GROUND_REFLECTANCE,
+            );
+
+            assert!(
+                (new_irr.total_wm2 - old_irr.total_wm2).abs() <= TOL,
+                "irradiance.total_wm2 differs for {:?}: new={} old={}",
+                orientation,
+                new_irr.total_wm2,
+                old_irr.total_wm2
+            );
+            assert!(
+                (new_irr.beam_wm2 - old_irr.beam_wm2).abs() <= TOL,
+                "irradiance.beam_wm2 differs for {:?}",
+                orientation
+            );
+            assert!(
+                (new_irr.diffuse_wm2 - old_irr.diffuse_wm2).abs() <= TOL,
+                "irradiance.diffuse_wm2 differs for {:?}",
+                orientation
+            );
+            assert!(
+                (new_irr.ground_reflected_wm2 - old_irr.ground_reflected_wm2).abs() <= TOL,
+                "irradiance.ground_reflected_wm2 differs for {:?}",
+                orientation
+            );
+            assert!(
+                (new_gain.total_gain_w - old_gain.total_gain_w).abs() <= TOL,
+                "gain.total_gain_w differs for {:?}: new={} old={}",
+                orientation,
+                new_gain.total_gain_w,
+                old_gain.total_gain_w
+            );
+            assert!(
+                (new_gain.beam_gain_w - old_gain.beam_gain_w).abs() <= TOL,
+                "gain.beam_gain_w differs for {:?}",
+                orientation
+            );
+            assert!(
+                (new_gain.diffuse_gain_w - old_gain.diffuse_gain_w).abs() <= TOL,
+                "gain.diffuse_gain_w differs for {:?}",
+                orientation
+            );
+            assert!(
+                (new_gain.ground_reflected_gain_w - old_gain.ground_reflected_gain_w).abs() <= TOL,
+                "gain.ground_reflected_gain_w differs for {:?}",
+                orientation
+            );
+        }
     }
 
     #[test]
