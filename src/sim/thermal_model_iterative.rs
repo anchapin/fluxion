@@ -11,7 +11,7 @@ use crate::sim::boundary::{
 };
 use crate::sim::holiday;
 use crate::sim::shading::ShadeFin;
-use crate::sim::solar::{calculate_hourly_solar, WindowProperties};
+use crate::sim::solar::{calculate_hourly_solar_from_pos, WindowProperties};
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
 use crate::validation::ashrae_140_cases::{GeometrySpec, Orientation, WindowArea};
@@ -172,16 +172,26 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         weather: &HourlyWeatherData,
         dt_seconds: f64,
     ) -> (f64, f64) {
-        // Get window properties for this zone
-        let window_props = if zone_idx < self.0.window_properties.len() {
-            &self.0.window_properties[zone_idx]
+        // Get window properties for this zone. Issue #1385: copy `window_props` out
+        // of `self` so the mutable borrow for `cached_solar_position` doesn't conflict
+        // with the immutable borrow that previously held the window pointer.
+        let window_props: WindowProperties = if zone_idx < self.0.window_properties.len() {
+            self.0.window_properties[zone_idx]
         } else {
             // Fallback to first zone if not specified
-            &self.0.window_properties[0]
+            self.0.window_properties[0]
         };
 
         // Convert timestep to date
         let (year, month, day, hour) = Self::timestep_to_date(timestep);
+
+        // Issue #1385: hoist solar position above the per-orientation loop.
+        // Solar position (β, α) depends only on time + location; recomputing once
+        // per orientation is physically redundant. Pattern matches `cached_solar_position`
+        // hoisting in the 9R4C path (Issue #1212). This is computed *before* the
+        // `if let Some(zone_surfaces)` block so the mutable borrow for the cache
+        // doesn't conflict with the immutable borrow of `self.0.surfaces` (E0502).
+        let sun_pos = self.cached_solar_position(timestep, year, month, day, hour);
 
         // Calculate solar gain for each surface in the zone
         let mut total_window_gain = 0.0;
@@ -239,10 +249,12 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
             // Now calculate solar gain once per unique orientation
             for (orientation, (total_win_area, _total_opaque_area)) in surfaces_by_orientation {
-                // Create temporary window properties with the combined window area for this orientation
+                // Create temporary window properties with the combined window area for this orientation.
+                // `window_props` is now an owned `WindowProperties` (Issue #1385) so we
+                // splat the fields directly without deref.
                 let oriented_window_props = WindowProperties {
                     area: total_win_area,
-                    ..*window_props
+                    ..window_props
                 };
 
                 // Get shading devices from surfaces with this orientation
@@ -275,14 +287,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     None
                 };
 
-                // Use solar module to calculate irradiance for this orientation
-                let (_sun_pos, irradiance, solar_gain) = calculate_hourly_solar(
-                    self.0.latitude_deg,
-                    self.0.longitude_deg,
+                // Use solar module to calculate irradiance for this orientation.
+                // Issue #1385: `sun_pos` is hoisted above the loop (pure function of
+                // time+location only), so we pass the pre-computed position directly.
+                let (irradiance, solar_gain) = calculate_hourly_solar_from_pos(
+                    &sun_pos,
                     year,
                     month,
                     day,
-                    hour,
                     weather.dni,
                     weather.dhi,
                     &oriented_window_props, // Use combined window area for this orientation
