@@ -2713,22 +2713,21 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
                     cooling_setpoint_for_econ,
                 );
                 // Free cooling capacity in W (the helper returns kW; convert).
-                let free_cooling_capacity_w = if economizer_active
-                    && matches!(hvac_mode, EquipmentHVACMode::Cooling)
-                {
-                    // Note: when economizer is active, the per-zone cooling demand
-                    // already absorbed the free-cooling potential above (the outdoor
-                    // air cools the zone), so we don't subtract from hvac_data again.
-                    // We DO report it to the equipment as effective capacity for
-                    // energy accounting and PLR tracking.
-                    calculate_free_cooling_capacity(
-                        outdoor_temp,
-                        self.0.temperatures.as_ref()[0],
-                        10000.0, // TODO: ventilation_airflow from building spec (m³/s)
-                    ) * 1000.0
-                } else {
-                    0.0
-                };
+                let free_cooling_capacity_w =
+                    if economizer_active && matches!(hvac_mode, EquipmentHVACMode::Cooling) {
+                        // Note: when economizer is active, the per-zone cooling demand
+                        // already absorbed the free-cooling potential above (the outdoor
+                        // air cools the zone), so we don't subtract from hvac_data again.
+                        // We DO report it to the equipment as effective capacity for
+                        // energy accounting and PLR tracking.
+                        calculate_free_cooling_capacity(
+                            outdoor_temp,
+                            self.0.temperatures.as_ref()[0],
+                            10000.0, // TODO: ventilation_airflow from building spec (m³/s)
+                        ) * 1000.0
+                    } else {
+                        0.0
+                    };
 
                 // Total HVAC demand across all zones (sign convention: positive =
                 // heating, negative = cooling). The modulation factor (Issue #1345)

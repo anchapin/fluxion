@@ -1061,12 +1061,8 @@ mod tests {
         );
 
         // Boiler (heating-only)
-        let mut boiler = AnyEquipment::Boiler(Boiler::new(
-            "BO-1345".to_string(),
-            10_000.0,
-            0.85,
-            -5.0,
-        ));
+        let mut boiler =
+            AnyEquipment::Boiler(Boiler::new("BO-1345".to_string(), 10_000.0, 0.85, -5.0));
         boiler.update_state(modulated_load, 0.0, HVACMode::Heating);
         let plr_b = boiler.current_plr();
         assert!(
@@ -1077,12 +1073,8 @@ mod tests {
 
         // Chiller (cooling-only) — the Chiller clamps to 0 when mode != Cooling,
         // so we exercise the cooling path here.
-        let mut chiller = AnyEquipment::Chiller(Chiller::new(
-            "CH-1345".to_string(),
-            10_000.0,
-            4.0,
-            35.0,
-        ));
+        let mut chiller =
+            AnyEquipment::Chiller(Chiller::new("CH-1345".to_string(), 10_000.0, 4.0, 35.0));
         chiller.update_state(modulated_load, 35.0, HVACMode::Cooling);
         let plr_c = chiller.current_plr();
         assert!(
@@ -1105,11 +1097,11 @@ mod tests {
 
         // Sweep conditions that exercise heating, cooling, and off modes.
         let cases: &[(f64, f64, f64)] = &[
-            (15.0, 20.0, -0.01),  // strong heating demand
-            (19.0, 19.0, 0.0),    // mild heating
-            (22.0, 22.0, 0.0),    // off (in deadband)
-            (28.0, 27.0, 0.001),  // mild cooling
-            (32.0, 30.0, 0.01),   // strong cooling
+            (15.0, 20.0, -0.01), // strong heating demand
+            (19.0, 19.0, 0.0),   // mild heating
+            (22.0, 22.0, 0.0),   // off (in deadband)
+            (28.0, 27.0, 0.001), // mild cooling
+            (32.0, 30.0, 0.01),  // strong cooling
         ];
         for &(zone_temp, mass_temp, temp_rate) in cases {
             let (_mode, modulation) =
