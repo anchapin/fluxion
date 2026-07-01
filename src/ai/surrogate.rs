@@ -459,9 +459,7 @@ pub fn validate_semver(version: &str) -> Result<(), VersionError> {
             && s.chars().all(|c| c.is_ascii_digit())
             && (s.len() == 1 || !s.starts_with('0'))
     };
-    if !(is_numeric_component(major)
-        && is_numeric_component(minor)
-        && is_numeric_component(patch))
+    if !(is_numeric_component(major) && is_numeric_component(minor) && is_numeric_component(patch))
     {
         return Err(VersionError::InvalidSemver(version.to_string()));
     }
@@ -606,8 +604,8 @@ impl ModelRegistry {
 
     /// Parse a registry from its JSON representation.
     pub fn from_json_str(s: &str) -> Result<Self, String> {
-        let value: serde_json::Value = serde_json::from_str(s)
-            .map_err(|e| format!("registry JSON parse error: {}", e))?;
+        let value: serde_json::Value =
+            serde_json::from_str(s).map_err(|e| format!("registry JSON parse error: {}", e))?;
         let arr = value
             .get("versions")
             .and_then(serde_json::Value::as_array)
@@ -1356,15 +1354,16 @@ impl SurrogateManager {
     ///   * the file is not on disk;
     ///   * the file's SHA-256 does not match the registry hash.
     #[cfg(feature = "ort")]
-    pub fn load_version(
-        version: &str,
-        registry: &ModelRegistry,
-    ) -> Result<Self, String> {
+    pub fn load_version(version: &str, registry: &ModelRegistry) -> Result<Self, String> {
         let entry = registry.lookup(version).ok_or_else(|| {
             format!(
                 "version '{}' not found in registry (have: {:?})",
                 version,
-                registry.versions.iter().map(|v| &v.version).collect::<Vec<_>>()
+                registry
+                    .versions
+                    .iter()
+                    .map(|v| &v.version)
+                    .collect::<Vec<_>>()
             )
         })?;
         let path = Path::new(&entry.model_path);
@@ -1381,15 +1380,16 @@ impl SurrogateManager {
 
     /// Stub for non-`ort` builds (mirrors [`Self::load_version`]).
     #[cfg(not(feature = "ort"))]
-    pub fn load_version(
-        version: &str,
-        registry: &ModelRegistry,
-    ) -> Result<Self, String> {
+    pub fn load_version(version: &str, registry: &ModelRegistry) -> Result<Self, String> {
         let entry = registry.lookup(version).ok_or_else(|| {
             format!(
                 "version '{}' not found in registry (have: {:?})",
                 version,
-                registry.versions.iter().map(|v| &v.version).collect::<Vec<_>>()
+                registry
+                    .versions
+                    .iter()
+                    .map(|v| &v.version)
+                    .collect::<Vec<_>>()
             )
         })?;
         let path = Path::new(&entry.model_path);
@@ -2077,7 +2077,9 @@ mod tests {
 
     #[test]
     fn test_with_semver_rejects_partial() {
-        for v in ["3.1", "3", "v3.1.0", "v3", "3.1.0.4", "", "1.0.0 ", " 1.0.0"] {
+        for v in [
+            "3.1", "3", "v3.1.0", "v3", "3.1.0.4", "", "1.0.0 ", " 1.0.0",
+        ] {
             let err = ModelMetadata::with_semver(v)
                 .err()
                 .unwrap_or_else(|| panic!("expected error for '{}'", v));
@@ -2129,7 +2131,9 @@ mod tests {
         // We don't pin the exact digest here (to avoid spurious breakage);
         // we only require determinism + 64-char lowercase hex.
         assert_eq!(a.len(), 64);
-        assert!(a.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
         let _ = expected;
     }
 
