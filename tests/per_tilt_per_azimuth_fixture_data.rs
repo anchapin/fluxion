@@ -13,6 +13,7 @@
 #![allow(dead_code)]
 
 /// Number of hours in the fixture (TMY3, hourly mean).
+#[rustfmt::skip]
 pub const HOURS: usize = 8760;
 
 /// 5 surfaces, each 8760 hours of total incident solar (W/m^2).
@@ -22,6 +23,7 @@ pub const HOURS: usize = 8760;
 /// Index 2 = east wall  (tilt=90°, az=90°).
 /// Index 3 = south wall (tilt=90°, az=180°).
 /// Index 4 = west wall  (tilt=90°, az=270°).
+#[rustfmt::skip]
 pub const EPLUS_SURFACE_TOTALS_WM2: [[f64; HOURS]; 5] = [
     // roof
     [
@@ -1875,6 +1877,7 @@ pub const EPLUS_SURFACE_TOTALS_WM2: [[f64; HOURS]; 5] = [
 ///
 /// `tilt_idx` 0=tilt 0 (horizontal), 1=tilt 30, 2=tilt 60, 3=tilt 90.
 /// `az_idx` 0=N, 1=E, 2=S, 3=W.
+#[rustfmt::skip]
 pub const TILT_AZIMUTH_MATRIX_WM2: [[[f64; HOURS]; 4]; 4] = [
     // tilt_idx=0 (tilt_off=0°)
     [
