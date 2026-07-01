@@ -21,10 +21,8 @@
 use std::path::PathBuf;
 use std::time::Instant;
 
-use fluxion::interop::ifc::{
-    import_ifc, IfcModel, IfcParser, IfcToSchema, RawEntity,
-};
 use fluxion::interop::ifc::mapping::round_trip_via_gbxml;
+use fluxion::interop::ifc::{import_ifc, IfcModel, IfcParser, IfcToSchema, RawEntity};
 
 fn fixtures_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -85,9 +83,7 @@ fn converts_sample_to_simulation_schema() {
 fn zone_count_matches_ifc_space_count_and_surfaces_match() {
     let path = fixtures_dir().join("sample.ifc");
     let model = IfcParser::from_path(&path).expect("parses");
-    let schema = IfcToSchema::new()
-        .convert(&model)
-        .expect("converts");
+    let schema = IfcToSchema::new().convert(&model).expect("converts");
     assert_eq!(
         schema.geometry.zones.len(),
         model.spaces.len(),
@@ -216,7 +212,10 @@ ENDSEC;
 END-ISO-10303-21;
 ";
     let err = IfcParser::from_str(src).expect_err("rejects IFC2X3");
-    assert!(matches!(err, fluxion::interop::ifc::IfcError::UnsupportedSchema(_)));
+    assert!(matches!(
+        err,
+        fluxion::interop::ifc::IfcError::UnsupportedSchema(_)
+    ));
 }
 
 #[test]
@@ -224,8 +223,8 @@ fn lexer_yields_entities_with_unique_ids() {
     // The lexer must not duplicate entity ids across records.
     let path = fixtures_dir().join("sample.ifc");
     let content = std::fs::read_to_string(&path).expect("read");
-    let entities: Vec<RawEntity> = fluxion::interop::ifc::step_lexer::tokenize(&content)
-        .expect("lexes");
+    let entities: Vec<RawEntity> =
+        fluxion::interop::ifc::step_lexer::tokenize(&content).expect("lexes");
     let mut ids: Vec<u64> = entities.iter().map(|e| e.id).collect();
     ids.sort_unstable();
     let original_len = ids.len();

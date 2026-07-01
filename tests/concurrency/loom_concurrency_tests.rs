@@ -41,11 +41,11 @@
 use std::sync::{Arc as StdArc, Mutex as StdMutex};
 use std::thread;
 
+use fluxion::physics::cta::VectorField;
 use fluxion::physics::method_selector::ThermalMethodSelector;
 use fluxion::physics::solver_manager::SolverManager;
 use fluxion::sim::assembly::{AssemblyBuilder, ConcreteMaterial};
 use fluxion::sim::engine::ThermalModel;
-use fluxion::physics::cta::VectorField;
 
 // Always import rayon — the baseline rayon `par_iter` test (Issue #1352
 // acceptance criterion #2) needs the trait in scope to compile under both
@@ -386,8 +386,7 @@ mod loom_tests {
     /// collecting its payload into a shared collector.
     #[test]
     fn test_loom_three_zone_rayon_par_iter_shared_hvac_demand() {
-        let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> =
-            StdArc::new(StdMutex::new(Vec::new()));
+        let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> = StdArc::new(StdMutex::new(Vec::new()));
         let step_counter = StdArc::new(StdMutex::new(0usize));
 
         loom::fuzz(move || {
@@ -938,8 +937,7 @@ fn test_two_zone_concurrent_step_with_shared_hvac_schedule_baseline() {
 /// 3 zone payloads are collected (no dropped payload, no deadlock).
 #[test]
 fn test_three_zone_rayon_par_iter_shared_hvac_demand_baseline() {
-    let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> =
-        StdArc::new(StdMutex::new(Vec::new()));
+    let sink: StdArc<StdMutex<Vec<HvacDemandPayload>>> = StdArc::new(StdMutex::new(Vec::new()));
     let step_counter = StdArc::new(StdMutex::new(0usize));
 
     let zone_indices: Vec<usize> = (0..3).collect();

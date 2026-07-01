@@ -107,14 +107,12 @@ fn test_parity_per_tilt_sweep_south_facing() {
     let az_idx = 2; // South
     let tilt_labels = ["tilt=0°", "tilt=30°", "tilt=60°", "tilt=90°"];
     for tilt_idx in 0..4 {
-        let profile = &per_tilt_per_azimuth_fixture_data::TILT_AZIMUTH_MATRIX_WM2
-            [tilt_idx][az_idx];
+        let profile = &per_tilt_per_azimuth_fixture_data::TILT_AZIMUTH_MATRIX_WM2[tilt_idx][az_idx];
         for (hour, &solar) in profile.iter().enumerate() {
             let physics = physics_for_timestep(solar);
             let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
             let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
-            let mock_flux =
-                mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
+            let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
             assert_parity(physics_flux, mock_flux, tilt_labels[tilt_idx], hour);
         }
     }
@@ -136,14 +134,12 @@ fn test_parity_per_azimuth_sweep_vertical_walls() {
     let tilt_idx = 3; // tilt=90°
     let az_labels = ["N (az=0°)", "E (az=90°)", "S (az=180°)", "W (az=270°)"];
     for az_idx in 0..4 {
-        let profile = &per_tilt_per_azimuth_fixture_data::TILT_AZIMUTH_MATRIX_WM2
-            [tilt_idx][az_idx];
+        let profile = &per_tilt_per_azimuth_fixture_data::TILT_AZIMUTH_MATRIX_WM2[tilt_idx][az_idx];
         for (hour, &solar) in profile.iter().enumerate() {
             let physics = physics_for_timestep(solar);
             let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
             let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
-            let mock_flux =
-                mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
+            let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
             assert_parity(physics_flux, mock_flux, az_labels[az_idx], hour);
         }
     }
@@ -160,16 +156,14 @@ fn test_parity_per_azimuth_sweep_vertical_walls() {
 fn test_parity_combined_tilt_azimuth_matrix() {
     for tilt_idx in 0..4 {
         for az_idx in 0..4 {
-            let profile = &per_tilt_per_azimuth_fixture_data::TILT_AZIMUTH_MATRIX_WM2
-                [tilt_idx][az_idx];
+            let profile =
+                &per_tilt_per_azimuth_fixture_data::TILT_AZIMUTH_MATRIX_WM2[tilt_idx][az_idx];
             let variant_label = format!("variant (tilt_idx={}, az_idx={})", tilt_idx, az_idx);
             for (hour, &solar) in profile.iter().enumerate() {
                 let physics = physics_for_timestep(solar);
-                let physics_flux =
-                    physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
+                let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
                 let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
-                let mock_flux =
-                    mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
+                let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
                 assert_parity(physics_flux, mock_flux, &variant_label, hour);
             }
         }
@@ -202,7 +196,12 @@ fn test_parity_roof_zero_followup_1323() {
         let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
         let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
         let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
-        assert_parity(physics_flux, mock_flux, "roof=0° (issue #1323 follow-up)", hour);
+        assert_parity(
+            physics_flux,
+            mock_flux,
+            "roof=0° (issue #1323 follow-up)",
+            hour,
+        );
     }
 }
 
@@ -224,7 +223,12 @@ fn test_parity_seed_step_roof_summer_noon() {
     let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
     let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
     let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
-    assert_parity(physics_flux, mock_flux, "roof summer noon (hour 4420)", hour);
+    assert_parity(
+        physics_flux,
+        mock_flux,
+        "roof summer noon (hour 4420)",
+        hour,
+    );
 }
 
 #[test]
@@ -235,7 +239,12 @@ fn test_parity_seed_step_south_wall_summer_noon() {
     let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
     let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
     let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
-    assert_parity(physics_flux, mock_flux, "south wall summer noon (hour 4420)", hour);
+    assert_parity(
+        physics_flux,
+        mock_flux,
+        "south wall summer noon (hour 4420)",
+        hour,
+    );
 }
 
 #[test]
@@ -247,5 +256,10 @@ fn test_parity_seed_step_north_wall_winter_noon() {
     let physics_flux = physics.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
     let mock = MockSurfaceHeatFluxProvider::new(vec![physics_flux]);
     let mock_flux = mock.surface_heat_flux(0, T_ZONE_C, T_OUTDOOR_C, DT_SECONDS);
-    assert_parity(physics_flux, mock_flux, "north wall winter noon (hour 1100)", hour);
+    assert_parity(
+        physics_flux,
+        mock_flux,
+        "north wall winter noon (hour 1100)",
+        hour,
+    );
 }

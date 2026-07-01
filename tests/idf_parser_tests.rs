@@ -140,7 +140,11 @@ fn parses_all_ten_mvp_object_types() {
     assert_eq!(idf.zones().count(), 1, "Zone");
     assert_eq!(idf.materials().count(), 2, "Material");
     assert_eq!(idf.constructions().count(), 1, "Construction");
-    assert_eq!(idf.building_surfaces().count(), 1, "BuildingSurface:Detailed");
+    assert_eq!(
+        idf.building_surfaces().count(),
+        1,
+        "BuildingSurface:Detailed"
+    );
     assert_eq!(
         idf.objects
             .iter()
@@ -149,7 +153,11 @@ fn parses_all_ten_mvp_object_types() {
         1,
         "GlobalGeometryRules"
     );
-    assert_eq!(idf.ground_temperatures().count(), 1, "Site:GroundTemperature:BuildingSurface");
+    assert_eq!(
+        idf.ground_temperatures().count(),
+        1,
+        "Site:GroundTemperature:BuildingSurface"
+    );
 }
 
 #[test]
@@ -224,11 +232,7 @@ fn io_error_when_path_missing() {
 #[test]
 fn parses_ashrae_140_case_600_with_exact_object_counts() {
     let path = reference_dir().join("ashrae_140_case_600.idf");
-    assert!(
-        path.exists(),
-        "reference IDF missing at {}",
-        path.display()
-    );
+    assert!(path.exists(), "reference IDF missing at {}", path.display());
 
     let idf = IdfParser::from_path(&path).expect("parses ASHRAE 140 Case 600 IDF");
 
