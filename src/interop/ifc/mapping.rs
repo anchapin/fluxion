@@ -32,16 +32,14 @@ use std::fs;
 use std::path::Path;
 
 use crate::api::schema::{
-    ConstructionSet, Geometry, SchemaMetadata, ScheduleSet, SimulationOutput, SimulationSchemaV1,
+    ConstructionSet, Geometry, ScheduleSet, SchemaMetadata, SimulationOutput, SimulationSchemaV1,
     SurfaceConstruction, WeatherData, ZoneGeometry,
 };
-use crate::sim::construction::ConstructionLayer;
 use crate::interop::gbxml::{export_gbxml, import_gbxml};
+use crate::sim::construction::ConstructionLayer;
 
 use super::error::IfcError;
-use super::parser::{
-    IfcModel, IfcSpace, MaterialLayerSpec,
-};
+use super::parser::{IfcModel, IfcSpace, MaterialLayerSpec};
 
 /// Default floor area for `IfcSpace` when the footprint polygon cannot
 /// be resolved. Matches the sample fixture (6 m × 4 m = 24 m²).
@@ -225,10 +223,7 @@ fn resolve_construction_for_product(
         .find(|a| a.related_object_ids.contains(&product_id))?;
     let usage_id = association.material_id;
     let layer_set_id = *model.layer_set_usage_targets.get(&usage_id)?;
-    let layer_set = model
-        .layer_sets
-        .iter()
-        .find(|ls| ls.id == layer_set_id)?;
+    let layer_set = model.layer_sets.iter().find(|ls| ls.id == layer_set_id)?;
     let layers = collect_material_layers(model, &layer_set.layer_ids);
     let name = match layers.len() {
         0 => format!("{fallback_name} (empty)"),
@@ -246,15 +241,9 @@ fn resolve_construction_for_product(
 /// ids. Layers missing from the model are silently skipped so a
 /// partially-defined material chain still produces a usable (if
 /// thinner) construction.
-fn collect_material_layers(
-    model: &IfcModel,
-    layer_ids: &[u64],
-) -> Vec<ConstructionLayer> {
-    let lookup: std::collections::HashMap<u64, &MaterialLayerSpec> = model
-        .material_layers
-        .iter()
-        .map(|l| (l.id, l))
-        .collect();
+fn collect_material_layers(model: &IfcModel, layer_ids: &[u64]) -> Vec<ConstructionLayer> {
+    let lookup: std::collections::HashMap<u64, &MaterialLayerSpec> =
+        model.material_layers.iter().map(|l| (l.id, l)).collect();
 
     layer_ids
         .iter()
@@ -311,19 +300,15 @@ fn defaults_for(material_name: &str) -> (f64, f64, f64) {
 /// This lives in `mapping.rs` (and is re-exported via `mod.rs`) so
 /// integration tests can call it without depending on the gbXML
 /// writer directly.
-pub fn round_trip_via_gbxml(
-    schema: &SimulationSchemaV1,
-) -> Result<SimulationSchemaV1, IfcError> {
+pub fn round_trip_via_gbxml(schema: &SimulationSchemaV1) -> Result<SimulationSchemaV1, IfcError> {
     // The gbXML writer is the canonical conversion from SimulationSchema
     // to a textual format. We render to a string buffer (via a temp
     // path) and re-import.
     let tmp = std::env::temp_dir().join("fluxion_ifc_roundtrip.gbxml");
-    export_gbxml(schema, &tmp).map_err(|e| {
-        IfcError::conversion_error(format!("gbXML export failed: {e}"))
-    })?;
-    let rt_schema = import_gbxml(&tmp).map_err(|e| {
-        IfcError::conversion_error(format!("gbXML re-import failed: {e}"))
-    })?;
+    export_gbxml(schema, &tmp)
+        .map_err(|e| IfcError::conversion_error(format!("gbXML export failed: {e}")))?;
+    let rt_schema = import_gbxml(&tmp)
+        .map_err(|e| IfcError::conversion_error(format!("gbXML re-import failed: {e}")))?;
     let _ = fs::remove_file(&tmp);
     Ok(rt_schema)
 }

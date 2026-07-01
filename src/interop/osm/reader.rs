@@ -455,8 +455,7 @@ impl OsmReader {
         // Sort by index so layer order is deterministic regardless of
         // HashMap iteration order (issue #1340 round-trip).
         indexed_layers.sort_by_key(|(idx, _)| *idx);
-        let mut layer_handles: Vec<String> =
-            indexed_layers.into_iter().map(|(_, v)| v).collect();
+        let mut layer_handles: Vec<String> = indexed_layers.into_iter().map(|(_, v)| v).collect();
 
         // Prepend outside_layer / append inside_layer if present (OpenStudio
         // order convention; empty if not set).
@@ -693,40 +692,40 @@ impl OsmReader {
             .unwrap_or(1) as usize;
 
         // Iterate spaces in a deterministic order so the resulting zone list
-            // preserves the original insertion order. We sort by the
-            // trailing numeric index of the handle (e.g. "{space-0}" -> 0)
-            // to match the order the writer emits zones. Issue #1340.
-            let mut ordered_spaces: Vec<&Space> = self.ctx.spaces.values().collect();
-            ordered_spaces.sort_by_key(|s| {
-                // Extract trailing integer from handle like "{space-12}" -> 12.
-                s.handle
-                    .rsplit('-')
-                    .next()
-                    .and_then(|n| n.trim_end_matches('}').parse::<usize>().ok())
-                    .unwrap_or(usize::MAX)
+        // preserves the original insertion order. We sort by the
+        // trailing numeric index of the handle (e.g. "{space-0}" -> 0)
+        // to match the order the writer emits zones. Issue #1340.
+        let mut ordered_spaces: Vec<&Space> = self.ctx.spaces.values().collect();
+        ordered_spaces.sort_by_key(|s| {
+            // Extract trailing integer from handle like "{space-12}" -> 12.
+            s.handle
+                .rsplit('-')
+                .next()
+                .and_then(|n| n.trim_end_matches('}').parse::<usize>().ok())
+                .unwrap_or(usize::MAX)
+        });
+
+        for space in ordered_spaces {
+            let zone_name = space
+                .zone_handle
+                .as_ref()
+                .and_then(|zh| self.ctx.thermal_zones.get(zh))
+                .map(|tz| tz.name.clone())
+                .unwrap_or_else(|| space.name.clone());
+
+            let area = space.area.unwrap_or(48.0);
+            let volume = space.volume.unwrap_or(area * 2.7);
+
+            total_floor_area += area;
+            total_volume += volume;
+
+            zones.push(ZoneGeometry {
+                name: zone_name,
+                floor_area: area,
+                volume,
+                height: if area > 0.0 { volume / area } else { 2.7 },
             });
-
-            for space in ordered_spaces {
-                let zone_name = space
-                    .zone_handle
-                    .as_ref()
-                    .and_then(|zh| self.ctx.thermal_zones.get(zh))
-                    .map(|tz| tz.name.clone())
-                    .unwrap_or_else(|| space.name.clone());
-
-                let area = space.area.unwrap_or(48.0);
-                let volume = space.volume.unwrap_or(area * 2.7);
-
-                total_floor_area += area;
-                total_volume += volume;
-
-                zones.push(ZoneGeometry {
-                    name: zone_name,
-                    floor_area: area,
-                    volume,
-                    height: if area > 0.0 { volume / area } else { 2.7 },
-                });
-            }
+        }
 
         if zones.is_empty() {
             zones.push(ZoneGeometry::default());

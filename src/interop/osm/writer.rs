@@ -555,10 +555,7 @@ mod tests {
     ///
     /// Returns an empty `Vec` when the two schemas match on every asserted
     /// field, or one `String` per mismatched field for use in `assert!`.
-    fn diff_schemas(
-        original: &SimulationSchemaV1,
-        re_parsed: &SimulationSchemaV1,
-    ) -> Vec<String> {
+    fn diff_schemas(original: &SimulationSchemaV1, re_parsed: &SimulationSchemaV1) -> Vec<String> {
         let mut mismatches: Vec<String> = Vec::new();
 
         // metadata.name round-trips via OS:Building.Name
@@ -951,8 +948,7 @@ mod tests {
         );
         // And the inverse: every emitted material must be referenced by some
         // OS:Construction layer (no orphans).
-        let mut referenced: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        let mut referenced: std::collections::HashSet<String> = std::collections::HashSet::new();
         let mut in_construction = false;
         for line in content.lines() {
             let trimmed = line.trim();
@@ -994,8 +990,8 @@ mod tests {
     /// of the in-tree reader.
     #[test]
     fn test_written_osm_structural_validation() {
-        use tempfile::TempDir;
         use std::collections::HashMap;
+        use tempfile::TempDir;
 
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let path = temp_dir.path().join("structural.osm");
@@ -1030,7 +1026,10 @@ mod tests {
             if trimmed.is_empty() {
                 continue;
             }
-            if let Some(rest) = trimmed.strip_prefix("OS:").or_else(|| trimmed.strip_prefix("OSM:")) {
+            if let Some(rest) = trimmed
+                .strip_prefix("OS:")
+                .or_else(|| trimmed.strip_prefix("OSM:"))
+            {
                 flush(
                     &mut objects,
                     &mut current_type,
