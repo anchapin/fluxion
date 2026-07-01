@@ -105,10 +105,7 @@ pub fn tokenize_with_schema(source: &str) -> Result<(Option<String>, Vec<RawEnti
     // silently dropped, which is acceptable because STEP itself does
     // not define any non-ASCII tokens; non-ASCII content in real IFC
     // files is restricted to comments, which the lexer skips wholesale.
-    let bytes: Vec<u8> = source
-        .bytes()
-        .filter(|b| b.is_ascii())
-        .collect();
+    let bytes: Vec<u8> = source.bytes().filter(|b| b.is_ascii()).collect();
     let source: &str = std::str::from_utf8(&bytes).expect("filtered to ASCII");
 
     let chars: Vec<char> = source.chars().collect();
@@ -272,7 +269,10 @@ pub fn tokenize_with_schema(source: &str) -> Result<(Option<String>, Vec<RawEnti
         if chars.get(i) != Some(&'=') {
             return Err(IfcError::parse_error(
                 record_start_line,
-                format!("expected '=' after entity id #{id}, found {:?}", chars.get(i)),
+                format!(
+                    "expected '=' after entity id #{id}, found {:?}",
+                    chars.get(i)
+                ),
             ));
         }
         i += 1; // consume `=`

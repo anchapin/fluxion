@@ -232,12 +232,9 @@ impl IfcParser {
         match entity.name.as_str() {
             "IFCWALL" | "IFCWALLSTANDARDCASE" => {
                 let (global_id, name) = parse_root_like(&entity)?;
-                model.walls.push(IfcWall::new(
-                    entity.id,
-                    global_id,
-                    name,
-                    entity.line,
-                ));
+                model
+                    .walls
+                    .push(IfcWall::new(entity.id, global_id, name, entity.line));
             }
             "IFCSLAB" => {
                 let (global_id, name) = parse_root_like(&entity)?;
@@ -246,8 +243,8 @@ impl IfcParser {
                 // chain `IfcRoot(GlobalId, OwnerHistory, Name, Description)
                 // → IfcObject(ObjectType) → IfcProduct(ObjectPlacement,
                 // Representation) → IfcElement(Tag) → IfcSlab(PredefinedType)`.
-                let predefined_type = extract_enum(&entity.args, 8)
-                    .unwrap_or_else(|| ".NOTDEFINED.".to_string());
+                let predefined_type =
+                    extract_enum(&entity.args, 8).unwrap_or_else(|| ".NOTDEFINED.".to_string());
                 model.slabs.push(IfcSlab {
                     id: entity.id,
                     global_id,
@@ -259,8 +256,8 @@ impl IfcParser {
             "IFCROOF" => {
                 let (global_id, name) = parse_root_like(&entity)?;
                 // Same chain as IfcSlab — see comment above.
-                let predefined_type = extract_enum(&entity.args, 8)
-                    .unwrap_or_else(|| ".NOTDEFINED.".to_string());
+                let predefined_type =
+                    extract_enum(&entity.args, 8).unwrap_or_else(|| ".NOTDEFINED.".to_string());
                 model.roofs.push(IfcRoof {
                     id: entity.id,
                     global_id,
@@ -299,10 +296,7 @@ impl IfcParser {
                     IfcError::parse_error(entity.line, "IFCMATERIALLAYER missing material ref")
                 })?;
                 let thickness = extract_nth_real(&entity.args, 1).ok_or_else(|| {
-                    IfcError::parse_error(
-                        entity.line,
-                        "IFCMATERIALLAYER missing LayerThickness",
-                    )
+                    IfcError::parse_error(entity.line, "IFCMATERIALLAYER missing LayerThickness")
                 })?;
                 let category = extract_nth_quoted(&entity.args, 5).unwrap_or_default();
                 model.material_layers.push(MaterialLayerSpec {
@@ -556,7 +550,7 @@ END-ISO-10303-21;
         assert_eq!(model.walls[0].name, "Wall-Std");
     }
 
-#[test]
+    #[test]
     fn parses_slab_with_predefined_type() {
         // IFC4 ADD2 IfcSlab inherits through IfcRoot → IfcObjectDefinition
         // → IfcObject → IfcProduct → IfcElement → IfcBuildingElement →
