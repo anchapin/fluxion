@@ -13,7 +13,6 @@ use crate::sim::hvac::{CyclingTracker, EconomizerMode, IdealLoadsSystem, Predict
 use crate::sim::hvac_controller::{HvacSystemMode, IdealHVACController};
 use crate::sim::occupancy::BuildingType as OccupancyBuildingType;
 // Issue #1349 (Phase 2 crate split): `BuildingAssembly` moved to `fluxion_core::assembly`.
-use fluxion_core::assembly::BuildingAssembly;
 use crate::sim::schedule::DailySchedule;
 use crate::sim::shading::{Overhang, ShadeFin, Side};
 use crate::sim::sky_radiation::SolAirTemperature;
@@ -24,6 +23,7 @@ use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::{CaseSpec, Orientation, ShadingType};
 use crate::validation::config::{validate_assembly, validate_constants};
 use crate::validation::diagnostics::SimulationDiagnostics;
+use fluxion_core::assembly::BuildingAssembly;
 
 type SolversAndSolAirResult = (
     Vec<f64>,

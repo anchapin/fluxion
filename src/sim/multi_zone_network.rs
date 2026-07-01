@@ -127,7 +127,10 @@ pub struct ZoneState {
 impl ZoneState {
     /// Build a zone state with the given temperature and heat capacity.
     pub fn new(temperature: f64, heat_capacity: f64) -> Self {
-        Self { temperature, heat_capacity }
+        Self {
+            temperature,
+            heat_capacity,
+        }
     }
 }
 
@@ -208,7 +211,9 @@ impl MultiZoneAirflowNetwork {
     /// rather than the full N×N matrix.
     pub fn per_zone_conductance(&self) -> Vec<f64> {
         let n = self.h_tr_iz.nrows();
-        (0..n).map(|i| (0..n).map(|j| self.h_tr_iz[(i, j)]).sum()).collect()
+        (0..n)
+            .map(|i| (0..n).map(|j| self.h_tr_iz[(i, j)]).sum())
+            .collect()
     }
 
     /// Compute the net inter-zone transfer `Σ q_iz[i]` (W) for the supplied
@@ -286,8 +291,7 @@ impl MultiZoneAirflowNetwork {
                 return Err(MultiZoneNetworkError::InvalidHeatCapacity {
                     zone: i,
                     capacity: z.heat_capacity,
-                },
-                );
+                });
             }
         }
 
@@ -308,9 +312,7 @@ impl MultiZoneAirflowNetwork {
         }
 
         let lu = m.clone().lu();
-        let t_new = lu
-            .solve(&b)
-            .ok_or(MultiZoneNetworkError::SingularSystem)?;
+        let t_new = lu.solve(&b).ok_or(MultiZoneNetworkError::SingularSystem)?;
 
         // Compute q_iz from the post-step temperatures.
         let mut q_iz = vec![0.0_f64; n];
@@ -328,7 +330,11 @@ impl MultiZoneAirflowNetwork {
         Ok(InterZoneResult {
             q_iz_w: q_iz,
             net_w: net,
-            temperatures_after: t_old.into_iter().zip(t_new.iter()).map(|(_, &tn)| tn).collect(),
+            temperatures_after: t_old
+                .into_iter()
+                .zip(t_new.iter())
+                .map(|(_, &tn)| tn)
+                .collect(),
         })
     }
 
@@ -408,8 +414,8 @@ mod tests {
     #[test]
     fn three_zone_symmetric_conductance_conserves_energy() {
         let h = ring_conductance(3, 50.0);
-        let net = MultiZoneAirflowNetwork::from_matrix(h.clone())
-            .net_inter_zone_q(&[20.0, 25.0, 15.0]);
+        let net =
+            MultiZoneAirflowNetwork::from_matrix(h.clone()).net_inter_zone_q(&[20.0, 25.0, 15.0]);
         assert!(
             net.abs() < 1e-6,
             "N=3 symmetric network must conserve energy; got |Σ q_iz| = {net:.3e} W"
@@ -463,8 +469,8 @@ mod tests {
     fn two_zone_case960_backward_compatible() {
         let h = DMatrix::from_row_slice(2, 2, &[0.0, 1.5, 1.5, 0.0]);
         let mut zones = vec![
-            ZoneState::new(20.0, 2.0e6),  // Living (back-zone)
-            ZoneState::new(8.0, 5.0e5),   // Sunspace
+            ZoneState::new(20.0, 2.0e6), // Living (back-zone)
+            ZoneState::new(8.0, 5.0e5),  // Sunspace
         ];
         let q_ext = vec![0.0, 0.0];
         let result = MultiZoneAirflowNetwork::from_matrix(h)
@@ -529,8 +535,7 @@ mod tests {
         let h = fully_connected_conductance(3, 50.0);
         let mut zones = vec![ZoneState::new(20.0, 1.0e6); 2]; // wrong length
         let q_ext = vec![0.0; 3]; // matches matrix
-        let result = MultiZoneAirflowNetwork::from_matrix(h)
-            .solve_step(&mut zones, &q_ext, 3600.0);
+        let result = MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, 3600.0);
         assert!(matches!(
             result,
             Err(MultiZoneNetworkError::ZoneCountMismatch { .. })
@@ -543,8 +548,7 @@ mod tests {
         let h = fully_connected_conductance(2, 50.0);
         let mut zones = vec![ZoneState::new(20.0, 1.0e6); 2];
         let q_ext = vec![0.0; 2];
-        let result = MultiZoneAirflowNetwork::from_matrix(h)
-            .solve_step(&mut zones, &q_ext, 0.0);
+        let result = MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, 0.0);
         assert!(matches!(
             result,
             Err(MultiZoneNetworkError::InvalidTimestep(_))
@@ -557,8 +561,7 @@ mod tests {
         let h = fully_connected_conductance(2, 50.0);
         let mut zones = vec![ZoneState::new(20.0, 0.0), ZoneState::new(20.0, 1.0)];
         let q_ext = vec![0.0; 2];
-        let result = MultiZoneAirflowNetwork::from_matrix(h)
-            .solve_step(&mut zones, &q_ext, 3600.0);
+        let result = MultiZoneAirflowNetwork::from_matrix(h).solve_step(&mut zones, &q_ext, 3600.0);
         assert!(matches!(
             result,
             Err(MultiZoneNetworkError::InvalidHeatCapacity { .. })
@@ -570,13 +573,15 @@ mod tests {
     /// symmetry, not numerical noise).
     #[test]
     fn asymmetric_conductance_breaks_conservation() {
-        let m = DMatrix::from_row_slice(3, 3, &[
-            0.0, 5.0, 1.0,
-            3.0, 0.0, 7.0, // h_10 != h_01 — asymmetric
-            2.0, 4.0, 0.0,
-        ]);
-        let net = MultiZoneAirflowNetwork::from_matrix(m)
-            .net_inter_zone_q(&[25.0, 20.0, 15.0]);
+        let m = DMatrix::from_row_slice(
+            3,
+            3,
+            &[
+                0.0, 5.0, 1.0, 3.0, 0.0, 7.0, // h_10 != h_01 — asymmetric
+                2.0, 4.0, 0.0,
+            ],
+        );
+        let net = MultiZoneAirflowNetwork::from_matrix(m).net_inter_zone_q(&[25.0, 20.0, 15.0]);
         assert!(
             net.abs() > 1e-3,
             "asymmetric network should NOT conserve energy; got |Σ q_iz| = {net:.3e} W"
@@ -589,7 +594,9 @@ mod tests {
     fn from_adjacency_pairs_matches_from_matrix() {
         let n = 4_usize;
         let pairs: Vec<(usize, usize, f64)> = (0..n)
-            .flat_map(|i| (0..n).filter_map(move |j| if i != j { Some((i, j, 12.5)) } else { None }))
+            .flat_map(|i| {
+                (0..n).filter_map(move |j| if i != j { Some((i, j, 12.5)) } else { None })
+            })
             .collect();
         let from_pairs = MultiZoneAirflowNetwork::from_adjacency_pairs(n, &pairs);
         let from_matrix =
@@ -605,11 +612,7 @@ mod tests {
     /// field used by the Case 960 physics pipeline.
     #[test]
     fn per_zone_conductance_is_row_sum_of_matrix() {
-        let m = DMatrix::from_row_slice(3, 3, &[
-            0.0, 5.0, 1.0,
-            5.0, 0.0, 7.0,
-            1.0, 7.0, 0.0,
-        ]);
+        let m = DMatrix::from_row_slice(3, 3, &[0.0, 5.0, 1.0, 5.0, 0.0, 7.0, 1.0, 7.0, 0.0]);
         let row_sums = MultiZoneAirflowNetwork::from_matrix(m).per_zone_conductance();
         assert_eq!(row_sums, vec![6.0, 12.0, 8.0]);
     }
