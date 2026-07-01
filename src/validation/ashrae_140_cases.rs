@@ -4753,10 +4753,7 @@ mod tests {
             CASE_920_PEAK_HEATING_MIN_KW,
             CASE_920_PEAK_COOLING_MIN_KW,
         );
-        assert!(
-            !r.pass_annual_heating,
-            "1e-9 below lower edge must fail"
-        );
+        assert!(!r.pass_annual_heating, "1e-9 below lower edge must fail");
     }
 
     /// Issue #1346 AC: the validator must accept a `CaseSpec` with 6 m² east
@@ -4933,10 +4930,7 @@ mod tests {
             CASE_950_PEAK_HEATING_MIN_KW,
             CASE_950_PEAK_COOLING_MIN_KW,
         );
-        assert!(
-            !r.pass_annual_cooling,
-            "1e-9 below lower edge must fail"
-        );
+        assert!(!r.pass_annual_cooling, "1e-9 below lower edge must fail");
     }
 
     /// Issue #1347 AC4: the Case 950 spec must carry a HvacSchedule with a
@@ -4970,8 +4964,8 @@ mod tests {
         let mut hours_in_setback = 0u32;
         for h in 0u8..24 {
             let (start, end) = setback_hours;
-            let in_setback = start <= end && start <= h && h < end
-                || start > end && (h >= start || h < end);
+            let in_setback =
+                start <= end && start <= h && h < end || start > end && (h >= start || h < end);
             if in_setback {
                 hours_in_setback += 1;
             }

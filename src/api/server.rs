@@ -237,12 +237,7 @@ async fn openapi_json() -> Response {
         "_fluxion_internal_note": "Hand-authored YAML at src/api/openapi.yaml; this JSON envelope mirrors the YAML for clients that prefer JSON.",
         "spec": OPENAPI_SPEC,
     })) {
-        Ok(s) => (
-            StatusCode::OK,
-            [("content-type", "application/json")],
-            s,
-        )
-            .into_response(),
+        Ok(s) => (StatusCode::OK, [("content-type", "application/json")], s).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             format!("failed to serialize OpenAPI envelope: {e}"),
