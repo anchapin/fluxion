@@ -138,9 +138,10 @@ impl IdfFile {
 
     /// All `BuildingSurface:Detailed` objects.
     pub fn building_surfaces(&self) -> impl Iterator<Item = &IdfObject> {
-        self.objects
-            .iter()
-            .filter(|o| o.object_type.eq_ignore_ascii_case("BuildingSurface:Detailed"))
+        self.objects.iter().filter(|o| {
+            o.object_type
+                .eq_ignore_ascii_case("BuildingSurface:Detailed")
+        })
     }
 
     /// All `Site:GroundTemperature:BuildingSurface` objects.
@@ -171,10 +172,7 @@ impl IdfParser {
                 // Cache the first Version object's payload — used by the
                 // SimulationSchema conversion in Phase 3.
                 if idf.version.is_none() {
-                    idf.version = obj
-                        .fields
-                        .first()
-                        .and_then(|v| v.to_display_string());
+                    idf.version = obj.fields.first().and_then(|v| v.to_display_string());
                 }
             }
             idf.objects.push(obj);

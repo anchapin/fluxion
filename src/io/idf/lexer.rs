@@ -101,9 +101,7 @@ pub fn tokenize(source: &str) -> Result<Vec<RawObject>, IdfError> {
                     // if so, this `"` is the matching half of the
                     // escape and the string stays open. Both `"`s are
                     // pushed so the parser can detect the pair later.
-                    let prev_was_unescaped_quote = current_body
-                        .ends_with('"')
-                        && prev_quote_open;
+                    let prev_was_unescaped_quote = current_body.ends_with('"') && prev_quote_open;
                     current_body.push('"');
                     if prev_was_unescaped_quote {
                         // Second half of an escape pair — keep the
