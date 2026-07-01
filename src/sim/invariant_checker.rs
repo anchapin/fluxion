@@ -149,7 +149,11 @@ impl InvariantChecker {
             let m_sol_frac = solar_beam_to_mass;
 
             // Heat flows matching step_physics_5r1c exactly
-            let phi_ia = load_w * conv_frac + sol_to_air;
+            // Note: _phi_ia is computed for documentation parallel with phi_st / phi_m but
+            // is not consumed by the invariant check's downstream formulas below (the
+            // surface temperature formula uses phi_st and the mass-node balance uses phi_m).
+            // Prefix suppresses clippy::unused_variables without losing the explanatory trio.
+            let _phi_ia = load_w * conv_frac + sol_to_air;
             let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
             let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 
@@ -254,7 +258,11 @@ impl InvariantChecker {
             let m_sol_frac = solar_beam_to_mass;
 
             // Heat flows matching step_physics_5r1c exactly
-            let phi_ia = load_w * conv_frac + sol_to_air;
+            // Note: _phi_ia is computed for documentation parallel with phi_st / phi_m but
+            // is not consumed by the invariant check's downstream formulas below (the
+            // surface temperature formula uses phi_st and the mass-node balance uses phi_m).
+            // Prefix suppresses clippy::unused_variables without losing the explanatory trio.
+            let _phi_ia = load_w * conv_frac + sol_to_air;
             let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
             let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 
@@ -341,7 +349,11 @@ impl InvariantChecker {
             let m_sol_frac = solar_beam_to_mass;
 
             // Heat flows matching step_physics_5r1c exactly
-            let phi_ia = load_w * conv_frac + sol_to_air;
+            // Note: _phi_ia is computed for documentation parallel with phi_st / phi_m but
+            // is not consumed by the invariant check's downstream formulas below (the
+            // surface temperature formula uses phi_st and the mass-node balance uses phi_m).
+            // Prefix suppresses clippy::unused_variables without losing the explanatory trio.
+            let _phi_ia = load_w * conv_frac + sol_to_air;
             let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
             let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
 

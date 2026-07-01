@@ -879,7 +879,11 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_tr_em_ref = self.0.h_tr_em.as_ref();
         let h_tr_ms_ref = self.0.h_tr_ms.as_ref();
         let t_s_act_ref = t_s_act.as_ref();
-        let t_i_act_ref = t_i_act.as_ref();
+        // Note: t_i_act_ref in the OUTER scope (above, at line ~861) feeds the surface-
+        // temperature evaluator (`ts_num = h_tr_ms * mass_temps + h_tr_is * t_i_act + phi_st`).
+        // The previous PR (#1388) swapped the crank_nicolson boundary from `t_i` to `t_s`
+        // (see match-arm comment near line 973), so the inner binding below is no longer
+        // needed — `t_s` is bound from t_s_act_ref and used directly.
         let phi_m_ref = phi_m.as_ref();
 
         // Determine HVAC mode from hvac_output_raw (Plan 03-14)
@@ -889,7 +893,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             let tm_old = mass_temps_ref[i];
             let cm = thermal_cap_ref[i];
             let t_s = t_s_act_ref[i];
-            let t_i = t_i_act_ref[i];
             let phi_m_zone = phi_m_ref[i];
 
             // Use physics-based h_tr_em and h_tr_ms (mode-specific factors removed)
