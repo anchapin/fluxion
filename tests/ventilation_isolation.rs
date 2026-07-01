@@ -27,9 +27,8 @@ use std::time::Instant;
 use uom::si::thermal_conductance::watt_per_kelvin;
 
 use fluxion::sim::ventilation::{
-    ach_to_conductance, calculate_combined_infiltration_ach,
-    calculate_stack_infiltration_ach, calculate_wind_infiltration_ach,
-    AIR_DENSITY, AIR_SPECIFIC_HEAT,
+    ach_to_conductance, calculate_combined_infiltration_ach, calculate_stack_infiltration_ach,
+    calculate_wind_infiltration_ach, AIR_DENSITY, AIR_SPECIFIC_HEAT,
 };
 use fluxion::sim::ventilation::{VentilationSchedule, WeatherDependentVentilation};
 
@@ -308,8 +307,14 @@ fn test_ashrae_140_ventilation_conductance_matches_analytical() {
     eprintln!("Analytical h_ve (ρ·cp·V·ACH/3600)    : {analytical_h_ve:.6} W/K");
     eprintln!("Fluxion ach_to_conductance(...)      : {fluxion_h_ve:.6} W/K");
     eprintln!("EnergyPlus reference h_ve            : 21.6 W/K (constant)");
-    eprintln!("Relative error vs analytical         : {:.4}%", rel_err * 100.0);
-    eprintln!("ARCHITECTURE.md tolerance            : {:.0}%", ONE_PCT_TOLERANCE * 100.0);
+    eprintln!(
+        "Relative error vs analytical         : {:.4}%",
+        rel_err * 100.0
+    );
+    eprintln!(
+        "ARCHITECTURE.md tolerance            : {:.0}%",
+        ONE_PCT_TOLERANCE * 100.0
+    );
     eprintln!("Elapsed                              : {elapsed:.2?}");
 
     assert!(

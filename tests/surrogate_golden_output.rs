@@ -119,7 +119,11 @@ fn golden_outputs_match_deterministic_analytical() {
     let raw = std::fs::read_to_string(golden_path()).expect("read golden");
     let parsed: GoldenFile = serde_json::from_str(&raw).expect("parse golden");
 
-    let inputs: Vec<SurrogateInputs> = parsed.inputs.iter().map(GoldenInput::to_surrogate_inputs).collect();
+    let inputs: Vec<SurrogateInputs> = parsed
+        .inputs
+        .iter()
+        .map(GoldenInput::to_surrogate_inputs)
+        .collect();
     let actual = SurrogateManager::deterministic_analytical_loads(&inputs);
 
     assert_close_envelope(&actual, &parsed.outputs, 1e-6);
@@ -129,7 +133,11 @@ fn golden_outputs_match_deterministic_analytical() {
 fn golden_outputs_are_deterministic_across_runs() {
     let raw = std::fs::read_to_string(golden_path()).expect("read golden");
     let parsed: GoldenFile = serde_json::from_str(&raw).expect("parse golden");
-    let inputs: Vec<SurrogateInputs> = parsed.inputs.iter().map(GoldenInput::to_surrogate_inputs).collect();
+    let inputs: Vec<SurrogateInputs> = parsed
+        .inputs
+        .iter()
+        .map(GoldenInput::to_surrogate_inputs)
+        .collect();
 
     let first = SurrogateManager::deterministic_analytical_loads(&inputs);
     let second = SurrogateManager::deterministic_analytical_loads(&inputs);
@@ -238,19 +246,17 @@ fn load_version_rejects_hash_mismatch() {
     let actual_hash = compute_bytes_sha256(b"placeholder bytes for hash mismatch test");
     // Claim the hash is all zeros.
     let wrong = "0".repeat(64);
-    let registry = ModelRegistry::from_versions(vec![
-        ModelVersion::new(
-            "9.9.9-test",
-            &wrong,
-            17,
-            &wrong,
-            "2026-06-27",
-            "synthetic",
-            1.0,
-            tmp.to_str().unwrap(),
-        )
-        .unwrap(),
-    ]);
+    let registry = ModelRegistry::from_versions(vec![ModelVersion::new(
+        "9.9.9-test",
+        &wrong,
+        17,
+        &wrong,
+        "2026-06-27",
+        "synthetic",
+        1.0,
+        tmp.to_str().unwrap(),
+    )
+    .unwrap()]);
 
     let result = SurrogateManager::load_version("9.9.9-test", &registry);
     // Without the `ort` feature we expect the trailing "requires ort" message.

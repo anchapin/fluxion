@@ -19,9 +19,7 @@ use fluxion::physics::cta::VectorField;
 use fluxion::sim::engine::ThermalModel;
 use fluxion::sim::invariant_checker::InvariantChecker;
 use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
-use fluxion::validation::energy_balance::{
-    EnergyBalanceValidator, ValidationError,
-};
+use fluxion::validation::energy_balance::{EnergyBalanceValidator, ValidationError};
 
 const ACCEPTANCE_RESIDUAL_TOLERANCE_W: f64 = 1e-3;
 

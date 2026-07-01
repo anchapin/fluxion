@@ -866,7 +866,8 @@ fn test_validator_blind_mode_dispatches_to_raw_ashrae140_reference() {
             );
         } else {
             assert!(
-                blind.annual_heating_min > 0.0 && blind.annual_heating_max > blind.annual_heating_min,
+                blind.annual_heating_min > 0.0
+                    && blind.annual_heating_max > blind.annual_heating_min,
                 "Case {case_id} blind annual_heating band malformed: [{}, {}]",
                 blind.annual_heating_min,
                 blind.annual_heating_max
@@ -1104,8 +1105,14 @@ fn test_blind_mode_case_920_infrastructure() {
     let c_width = entry.annual_cooling_max - entry.annual_cooling_min;
     assert!(h_width > 0.0, "Case 920 heating band collapsed to a point");
     assert!(c_width > 0.0, "Case 920 cooling band collapsed to a point");
-    assert!(h_width <= 1.5, "Case 920 heating band {h_width:.3} MWh too wide");
-    assert!(c_width <= 1.5, "Case 920 cooling band {c_width:.3} MWh too wide");
+    assert!(
+        h_width <= 1.5,
+        "Case 920 heating band {h_width:.3} MWh too wide"
+    );
+    assert!(
+        c_width <= 1.5,
+        "Case 920 cooling band {c_width:.3} MWh too wide"
+    );
 }
 
 #[test]
@@ -1173,20 +1180,30 @@ fn test_blind_mode_case_800_annual_energy_within_band() {
     let data = blind.get(case_id).expect("Case 800 Blind benchmark");
     println!(
         "[#1332 Case 800] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
     assert!(sim.annual_heating_mwh.is_finite());
     assert!(sim.annual_cooling_mwh.is_finite());
     assert!(
-        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        sim.annual_heating_mwh >= data.annual_heating_min
+            && sim.annual_heating_mwh <= data.annual_heating_max,
         "Case 800 heating {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
     );
     assert!(
-        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        sim.annual_cooling_mwh >= data.annual_cooling_min
+            && sim.annual_cooling_mwh <= data.annual_cooling_max,
         "Case 800 cooling {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
 }
 
@@ -1200,20 +1217,30 @@ fn test_blind_mode_case_810_annual_energy_within_band() {
     let data = blind.get(case_id).expect("Case 810 Blind benchmark");
     println!(
         "[#1332 Case 810] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
     assert!(sim.annual_heating_mwh.is_finite());
     assert!(sim.annual_cooling_mwh.is_finite());
     assert!(
-        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        sim.annual_heating_mwh >= data.annual_heating_min
+            && sim.annual_heating_mwh <= data.annual_heating_max,
         "Case 810 heating {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
     );
     assert!(
-        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        sim.annual_cooling_mwh >= data.annual_cooling_min
+            && sim.annual_cooling_mwh <= data.annual_cooling_max,
         "Case 810 cooling {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
 }
 
@@ -1227,20 +1254,30 @@ fn test_blind_mode_case_920_annual_energy_within_band() {
     let data = blind.get(case_id).expect("Case 920 Blind benchmark");
     println!(
         "[#1346 Case 920] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
     assert!(sim.annual_heating_mwh.is_finite());
     assert!(sim.annual_cooling_mwh.is_finite());
     assert!(
-        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        sim.annual_heating_mwh >= data.annual_heating_min
+            && sim.annual_heating_mwh <= data.annual_heating_max,
         "Case 920 heating {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
     );
     assert!(
-        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        sim.annual_cooling_mwh >= data.annual_cooling_min
+            && sim.annual_cooling_mwh <= data.annual_cooling_max,
         "Case 920 cooling {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
 }
 
@@ -1254,8 +1291,12 @@ fn test_blind_mode_case_950_annual_energy_within_band() {
     let data = blind.get(case_id).expect("Case 950 Blind benchmark");
     println!(
         "[#1347 Case 950] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
     // Case 950 disables heating (night-ventilation), so simulated heating
     // should be 0 and must fall inside the [0.00, 0.00] band.
@@ -1266,9 +1307,12 @@ fn test_blind_mode_case_950_annual_energy_within_band() {
     );
     assert!(sim.annual_cooling_mwh.is_finite());
     assert!(
-        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        sim.annual_cooling_mwh >= data.annual_cooling_min
+            && sim.annual_cooling_mwh <= data.annual_cooling_max,
         "Case 950 cooling {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
 }
 
@@ -1282,20 +1326,30 @@ fn test_blind_mode_case_960_annual_energy_within_band() {
     let data = blind.get(case_id).expect("Case 960 Blind benchmark");
     println!(
         "[#1332 Case 960] H={:.3} MWh (band [{:.3}, {:.3}]), C={:.3} MWh (band [{:.3}, {:.3}])",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
     assert!(sim.annual_heating_mwh.is_finite());
     assert!(sim.annual_cooling_mwh.is_finite());
     assert!(
-        sim.annual_heating_mwh >= data.annual_heating_min && sim.annual_heating_mwh <= data.annual_heating_max,
+        sim.annual_heating_mwh >= data.annual_heating_min
+            && sim.annual_heating_mwh <= data.annual_heating_max,
         "Case 960 heating {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_heating_mwh, data.annual_heating_min, data.annual_heating_max,
+        sim.annual_heating_mwh,
+        data.annual_heating_min,
+        data.annual_heating_max,
     );
     assert!(
-        sim.annual_cooling_mwh >= data.annual_cooling_min && sim.annual_cooling_mwh <= data.annual_cooling_max,
+        sim.annual_cooling_mwh >= data.annual_cooling_min
+            && sim.annual_cooling_mwh <= data.annual_cooling_max,
         "Case 960 cooling {:.3} MWh outside Blind band [{}, {}]",
-        sim.annual_cooling_mwh, data.annual_cooling_min, data.annual_cooling_max,
+        sim.annual_cooling_mwh,
+        data.annual_cooling_min,
+        data.annual_cooling_max,
     );
 }
 
@@ -1377,7 +1431,10 @@ fn test_case_920_per_orientation_solar_distribution() {
     // Diagnostic: print all surface keys with their annual kWh/m² so the
     // test output is self-explanatory if the band check fails.
     for (k, v) in incident.iter() {
-        println!("[#1346 surface] {k}: {:.3} kWh/m² (peak {:.1} W/m²)", v.annual_kwh_m2, v.peak_wm2);
+        println!(
+            "[#1346 surface] {k}: {:.3} kWh/m² (peak {:.1} W/m²)",
+            v.annual_kwh_m2, v.peak_wm2
+        );
     }
     // Use only the WINDOW surfaces — the ASHRAE 140 Case 920 spec
     // defines 6 m² east + 6 m² west windows (and 0 m² on N/S). The
@@ -1750,9 +1807,7 @@ fn test_case_950_night_ventilation_activation() {
     assert_eq!(nv.operating_hours, (18, 7));
 
     // Active hours (18-23 and 0-6 = 13 hours).
-    let active_hours: Vec<u8> = (0u8..24)
-        .filter(|&h| nv.is_active_at_hour(h))
-        .collect();
+    let active_hours: Vec<u8> = (0u8..24).filter(|&h| nv.is_active_at_hour(h)).collect();
     assert_eq!(
         active_hours.len(),
         13,
@@ -1765,9 +1820,7 @@ fn test_case_950_night_ventilation_activation() {
     );
 
     // Inactive hours (7-17 = 11 hours).
-    let inactive_hours: Vec<u8> = (0u8..24)
-        .filter(|&h| !nv.is_active_at_hour(h))
-        .collect();
+    let inactive_hours: Vec<u8> = (0u8..24).filter(|&h| !nv.is_active_at_hour(h)).collect();
     assert_eq!(
         inactive_hours,
         (7u8..18).collect::<Vec<_>>(),
@@ -1860,7 +1913,7 @@ fn test_case_950_night_flush_zone_cooling_in_july() {
     // (Jan=0..744, Feb=744..1440, Mar=1440..2184, Apr=2184..2904,
     //  May=2904..3648, Jun=3648..4368, Jul=4368..5088).
     let july_start = 24 * 181; // = 4344 (mid-July after 181 days = Jun 30)
-    // Use the conventional meteorological July: hours 24*181..24*212 = 4344..5088
+                               // Use the conventional meteorological July: hours 24*181..24*212 = 4344..5088
     let july_end = july_start + 24 * 31; // = 5088 (31 days of July)
 
     // For each July hour 22-06 (the night-flush window), collect zone T.
@@ -1915,7 +1968,10 @@ fn test_case_950_night_flush_zone_cooling_in_july() {
         .iter()
         .map(|&(_, _, t)| t)
         .fold(f64::NEG_INFINITY, f64::max);
-    let mean_t: f64 = july_night_flush_temps.iter().map(|&(_, _, t)| t).sum::<f64>()
+    let mean_t: f64 = july_night_flush_temps
+        .iter()
+        .map(|&(_, _, t)| t)
+        .sum::<f64>()
         / july_night_flush_temps.len() as f64;
     println!(
         "[#1347 Case 950 night-flush] July 22-06 zone T: min={:.2}°C max={:.2}°C mean={:.2}°C",
@@ -1974,7 +2030,12 @@ fn test_case_950_weather_dependent_ventilation_coupling() {
     );
 
     // Contract: get_ach returns a finite ACH in [min_ach, max_ach].
-    for (h, ach) in [(22u8, ach_at_22), (0, ach_at_0), (5, ach_at_5), (12, ach_at_12)] {
+    for (h, ach) in [
+        (22u8, ach_at_22),
+        (0, ach_at_0),
+        (5, ach_at_5),
+        (12, ach_at_12),
+    ] {
         assert!(
             ach.is_finite(),
             "get_ach(hour={h}) must be finite, got {ach}"

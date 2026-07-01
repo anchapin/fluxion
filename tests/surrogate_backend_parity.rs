@@ -128,12 +128,7 @@ fn parity_inputs() -> Vec<(String, Vec<SurrogateInputs>)> {
                 // 5°C zone setback swing, evenly distributed.
                 let t_zone = t_ext + 5.0 + (zone as f64) * 0.5;
                 inputs.push(SurrogateInputs::from_physics(
-                    t_ext,
-                    t_zone,
-                    200.0,
-                    50.0,
-                    0.1,
-                    "4A",
+                    t_ext, t_zone, 200.0, 50.0, 0.1, "4A",
                 ));
             }
         }
@@ -216,11 +211,8 @@ fn test_cpu_backend_wiring_for_missing_model() {
     // file is missing. This is the CPU branch of the parity wiring
     // contract — without it, a swapped file path silently produces
     // mock results instead of failing the test.
-    let result = SurrogateManager::with_gpu_backend(
-        "/nonexistent/model.onnx",
-        InferenceBackend::CPU,
-        0,
-    );
+    let result =
+        SurrogateManager::with_gpu_backend("/nonexistent/model.onnx", InferenceBackend::CPU, 0);
     let err = result.expect_err("missing CPU model file must error");
     assert!(
         err.contains("not found"),
@@ -234,7 +226,12 @@ fn test_cross_backend_input_matrix_shape() {
     // Pin the issue #1336 input matrix: NUM_CASES × TIMESTEPS_PER_CASE
     // × ZONES_PER_TIMESTEP. This guards against accidental const drift.
     let inputs = parity_inputs();
-    assert_eq!(inputs.len(), NUM_CASES, "expected {} ASHRAE 140 cases", NUM_CASES);
+    assert_eq!(
+        inputs.len(),
+        NUM_CASES,
+        "expected {} ASHRAE 140 cases",
+        NUM_CASES
+    );
     let expected_batch = TIMESTEPS_PER_CASE * ZONES_PER_TIMESTEP;
     let total: usize = inputs.iter().map(|(_, b)| b.len()).sum();
     assert_eq!(
@@ -387,9 +384,7 @@ fn cuda_execution_provider_available() -> bool {
         use ort::session::Session;
         if let Ok(builder) = Session::builder() {
             let ep = CUDAExecutionProvider::default().with_device_id(0);
-            builder
-                .with_execution_providers([ep.build()])
-                .is_ok()
+            builder.with_execution_providers([ep.build()]).is_ok()
         } else {
             false
         }

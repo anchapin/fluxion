@@ -547,17 +547,21 @@ fn test_sol_air_from_real_weather_conditions() {
 ///     cos(θ_i) = sin(α)·cos(β) + cos(α)·sin(β)·cos(φ − γ).
 /// For tilt β = 0 (horizontal) the surface normal points to zenith, so
 ///     cos(θ_i) = sin(α) = cos(zenith).
-fn analytical_beam(dni: f64, altitude_deg: f64, azimuth_deg: f64,
-                   tilt_deg: f64, surface_azimuth_deg: f64) -> f64 {
+fn analytical_beam(
+    dni: f64,
+    altitude_deg: f64,
+    azimuth_deg: f64,
+    tilt_deg: f64,
+    surface_azimuth_deg: f64,
+) -> f64 {
     if dni <= 0.0 || altitude_deg <= 0.0 {
         return 0.0;
     }
     let alpha = altitude_deg.to_radians();
-    let phi   = azimuth_deg.to_radians();
-    let beta  = tilt_deg.to_radians();
+    let phi = azimuth_deg.to_radians();
+    let beta = tilt_deg.to_radians();
     let gamma = surface_azimuth_deg.to_radians();
-    let cos_th = alpha.sin() * beta.cos()
-        + alpha.cos() * beta.sin() * (phi - gamma).cos();
+    let cos_th = alpha.sin() * beta.cos() + alpha.cos() * beta.sin() * (phi - gamma).cos();
     (dni * cos_th).max(0.0)
 }
 
@@ -577,7 +581,7 @@ fn test_horizontal_incident_solar() {
 
     let start = Instant::now();
     let mut beam_sum_calc = 0.0f64;
-    let mut beam_sum_ref  = 0.0f64;
+    let mut beam_sum_ref = 0.0f64;
     let mut max_abs_dev = 0.0f64;
     let mut hours_exceeding_1pct = 0usize;
     let mut hours_compared = 0usize;
@@ -610,11 +614,10 @@ fn test_horizontal_incident_solar() {
             0.0
         };
         // Also check the general cos(θ_i) formulation (must match for tilt=0).
-        let beam_general = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg,
-                                           0.0, 0.0);
+        let beam_general = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg, 0.0, 0.0);
 
         beam_sum_calc += irr.beam_wm2;
-        beam_sum_ref  += beam_expected;
+        beam_sum_ref += beam_expected;
 
         if sun.is_above_horizon() && row.dni > 0.0 {
             hours_with_sun += 1;
@@ -650,16 +653,18 @@ fn test_horizontal_incident_solar() {
         1.0
     };
 
-    println!(
-        "=== Issue #1325: horizontal-surface beam (tilt=0, az=0) vs analytical ==="
-    );
+    println!("=== Issue #1325: horizontal-surface beam (tilt=0, az=0) vs analytical ===");
     println!("  Elapsed:                {:?}", start.elapsed());
     println!("  Hours with sun + DNI>0: {}/8760", hours_with_sun);
     println!("  Hours compared (>1 W/m²): {}", hours_compared);
-    println!("  Analytical annual beam: {:.3} kWh/m²/year",
-             beam_sum_ref / 1000.0);
-    println!("  Fluxion annual beam:    {:.3} kWh/m²/year",
-             beam_sum_calc / 1000.0);
+    println!(
+        "  Analytical annual beam: {:.3} kWh/m²/year",
+        beam_sum_ref / 1000.0
+    );
+    println!(
+        "  Fluxion annual beam:    {:.3} kWh/m²/year",
+        beam_sum_calc / 1000.0
+    );
     println!("  Annual ratio:           {:.6}", annual_ratio);
     println!("  Annual error:           {:.4}%", annual_err_pct);
     println!("  Max absolute deviation: {:.4e} W/m²", max_abs_dev);
@@ -700,9 +705,7 @@ fn test_per_tilt_sweep() {
     let south_az = 180.0_f64;
     let tilt_set = [0.0_f64, 30.0, 60.0, 90.0, 180.0];
 
-    println!(
-        "=== Issue #1325: per-tilt sweep (azimuth=180°, south) ==="
-    );
+    println!("=== Issue #1325: per-tilt sweep (azimuth=180°, south) ===");
     println!(
         "  {:>6}  {:>12}  {:>14}  {:>13}  {:>10}",
         "tilt", "annual_calc", "max_abs_dev", "annual_err_pct", "in_band"
@@ -710,7 +713,7 @@ fn test_per_tilt_sweep() {
 
     for &tilt in &tilt_set {
         let mut sum_calc = 0.0f64;
-        let mut sum_ref  = 0.0f64;
+        let mut sum_ref = 0.0f64;
         let mut sum_abs_dev = 0.0f64;
         let mut max_abs_dev = 0.0f64;
         let mut n_compared = 0usize;
@@ -730,13 +733,23 @@ fn test_per_tilt_sweep() {
             // via the Orientation enum for clarity in the existing tests.
             let irr = if (tilt - 0.0).abs() < 1e-9 {
                 calculate_surface_irradiance(
-                    &sun, row.dni, row.dhi, Some(row.ghi),
-                    Orientation::Horizontal, 0.2, doy,
+                    &sun,
+                    row.dni,
+                    row.dhi,
+                    Some(row.ghi),
+                    Orientation::Horizontal,
+                    0.2,
+                    doy,
                 )
             } else if (tilt - 90.0).abs() < 1e-9 {
                 calculate_surface_irradiance(
-                    &sun, row.dni, row.dhi, Some(row.ghi),
-                    Orientation::South, 0.2, doy,
+                    &sun,
+                    row.dni,
+                    row.dhi,
+                    Some(row.ghi),
+                    Orientation::South,
+                    0.2,
+                    doy,
                 )
             } else {
                 // tilt ∈ {30, 60, 180} — no Orientation variant maps exactly;
@@ -754,36 +767,40 @@ fn test_per_tilt_sweep() {
                 // reduces to for beam) against the analytical reference.
                 let cos_th = sun.incidence_cosine(tilt, south_az);
                 let beam_calc = (row.dni * cos_th).max(0.0);
-                let beam_ref  = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg,
-                                                tilt, south_az);
+                let beam_ref =
+                    analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg, tilt, south_az);
                 sum_calc += beam_calc;
-                sum_ref  += beam_ref;
+                sum_ref += beam_ref;
                 let dev = (beam_calc - beam_ref).abs();
                 if beam_ref > 1.0 {
                     sum_abs_dev += dev;
-                    n_compared  += 1;
+                    n_compared += 1;
                     if dev / beam_ref * 100.0 > 1.0 {
                         hours_over_1pct += 1;
                     }
                 }
-                if dev > max_abs_dev { max_abs_dev = dev; }
+                if dev > max_abs_dev {
+                    max_abs_dev = dev;
+                }
                 continue;
             };
 
             let beam_calc = irr.beam_wm2;
-            let beam_ref  = analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg,
-                                            tilt, south_az);
+            let beam_ref =
+                analytical_beam(row.dni, sun.altitude_deg, sun.azimuth_deg, tilt, south_az);
             sum_calc += beam_calc;
-            sum_ref  += beam_ref;
+            sum_ref += beam_ref;
             let dev = (beam_calc - beam_ref).abs();
             if beam_ref > 1.0 {
                 sum_abs_dev += dev;
-                n_compared  += 1;
+                n_compared += 1;
                 if dev / beam_ref * 100.0 > 1.0 {
                     hours_over_1pct += 1;
                 }
             }
-            if dev > max_abs_dev { max_abs_dev = dev; }
+            if dev > max_abs_dev {
+                max_abs_dev = dev;
+            }
         }
 
         let ratio = if sum_ref > 0.0 {
@@ -877,20 +894,20 @@ fn test_horizontal_ground_reflected() {
     let albedo = 0.2_f64;
 
     let start = Instant::now();
-    let mut sum_calc_horiz   = 0.0f64;
-    let mut sum_ref_horiz    = 0.0f64;
-    let mut sum_calc_vert    = 0.0f64;
-    let mut sum_ref_vert     = 0.0f64;
-    let mut sum_calc_down    = 0.0f64;
+    let mut sum_calc_horiz = 0.0f64;
+    let mut sum_ref_horiz = 0.0f64;
+    let mut sum_calc_vert = 0.0f64;
+    let mut sum_ref_vert = 0.0f64;
+    let mut sum_calc_down = 0.0f64;
     let mut max_abs_dev_horiz = 0.0f64;
     let mut max_abs_dev_vert = 0.0f64;
     let mut max_abs_dev_down = 0.0f64;
     let mut hours_over_005pct_horiz = 0usize;
-    let mut hours_over_005pct_vert  = 0usize;
+    let mut hours_over_005pct_vert = 0usize;
     let mut hours_compared_horiz = 0usize;
-    let mut hours_compared_vert  = 0usize;
-    let mut hours_compared_down  = 0usize;
-    let mut hours_ghi_gt_0       = 0usize;
+    let mut hours_compared_vert = 0usize;
+    let mut hours_compared_down = 0usize;
+    let mut hours_ghi_gt_0 = 0usize;
 
     for (i, row) in weather.iter().enumerate() {
         let epw_hour = i + 1;
@@ -914,14 +931,21 @@ fn test_horizontal_ground_reflected() {
 
         // tilt = 0° (horizontal roof): Orientation::Horizontal / Orientation::Up
         let irr_h = calculate_surface_irradiance(
-            &sun, row.dni, row.dhi, Some(row.ghi),
-            Orientation::Horizontal, albedo, doy,
+            &sun,
+            row.dni,
+            row.dhi,
+            Some(row.ghi),
+            Orientation::Horizontal,
+            albedo,
+            doy,
         );
         let ref_h = analytical_ground_reflected(row.ghi, albedo, 0.0);
         sum_calc_horiz += irr_h.ground_reflected_wm2;
-        sum_ref_horiz  += ref_h;
+        sum_ref_horiz += ref_h;
         let dev_h = (irr_h.ground_reflected_wm2 - ref_h).abs();
-        if dev_h > max_abs_dev_horiz { max_abs_dev_horiz = dev_h; }
+        if dev_h > max_abs_dev_horiz {
+            max_abs_dev_horiz = dev_h;
+        }
         hours_compared_horiz += 1;
         if dev_h / (albedo * row.ghi) > 0.005 {
             hours_over_005pct_horiz += 1;
@@ -929,14 +953,21 @@ fn test_horizontal_ground_reflected() {
 
         // tilt = 90° (vertical south wall): Orientation::South
         let irr_v = calculate_surface_irradiance(
-            &sun, row.dni, row.dhi, Some(row.ghi),
-            Orientation::South, albedo, doy,
+            &sun,
+            row.dni,
+            row.dhi,
+            Some(row.ghi),
+            Orientation::South,
+            albedo,
+            doy,
         );
         let ref_v = analytical_ground_reflected(row.ghi, albedo, 90.0);
         sum_calc_vert += irr_v.ground_reflected_wm2;
-        sum_ref_vert  += ref_v;
+        sum_ref_vert += ref_v;
         let dev_v = (irr_v.ground_reflected_wm2 - ref_v).abs();
-        if dev_v > max_abs_dev_vert { max_abs_dev_vert = dev_v; }
+        if dev_v > max_abs_dev_vert {
+            max_abs_dev_vert = dev_v;
+        }
         hours_compared_vert += 1;
         if dev_v / (0.5 * albedo * row.ghi) > 0.005 {
             hours_over_005pct_vert += 1;
@@ -944,13 +975,20 @@ fn test_horizontal_ground_reflected() {
 
         // tilt = 180° (down-facing): Orientation::Down
         let irr_d = calculate_surface_irradiance(
-            &sun, row.dni, row.dhi, Some(row.ghi),
-            Orientation::Down, albedo, doy,
+            &sun,
+            row.dni,
+            row.dhi,
+            Some(row.ghi),
+            Orientation::Down,
+            albedo,
+            doy,
         );
         let ref_d = analytical_ground_reflected(row.ghi, albedo, 180.0);
         sum_calc_down += irr_d.ground_reflected_wm2;
         let dev_d = (irr_d.ground_reflected_wm2 - ref_d).abs();
-        if dev_d > max_abs_dev_down { max_abs_dev_down = dev_d; }
+        if dev_d > max_abs_dev_down {
+            max_abs_dev_down = dev_d;
+        }
         hours_compared_down += 1;
     }
 
@@ -970,32 +1008,60 @@ fn test_horizontal_ground_reflected() {
     println!("  Hours with sun + GHI > 0:        {}/8760", hours_ghi_gt_0);
     println!();
     println!("  tilt=0  (horizontal roof):");
-    println!("    Hours compared:                {}", hours_compared_horiz);
-    println!("    Analytical annual E_g:         {:.3} kWh/m²/year",
-             sum_ref_horiz / 1000.0);
-    println!("    Fluxion annual E_g:            {:.3} kWh/m²/year",
-             sum_calc_horiz / 1000.0);
+    println!(
+        "    Hours compared:                {}",
+        hours_compared_horiz
+    );
+    println!(
+        "    Analytical annual E_g:         {:.3} kWh/m²/year",
+        sum_ref_horiz / 1000.0
+    );
+    println!(
+        "    Fluxion annual E_g:            {:.3} kWh/m²/year",
+        sum_calc_horiz / 1000.0
+    );
     println!("    Annual ratio (fluxion/ref):    {:.6}", ratio_horiz);
     println!("    Annual error:                  {:.4}%", err_pct_horiz);
-    println!("    Max abs deviation:             {:.4e} W/m²", max_abs_dev_horiz);
-    println!("    Hours exceeding 0.5%:         {}", hours_over_005pct_horiz);
+    println!(
+        "    Max abs deviation:             {:.4e} W/m²",
+        max_abs_dev_horiz
+    );
+    println!(
+        "    Hours exceeding 0.5%:         {}",
+        hours_over_005pct_horiz
+    );
     println!();
     println!("  tilt=90 (vertical south wall):");
     println!("    Hours compared:                {}", hours_compared_vert);
-    println!("    Analytical annual E_g:         {:.3} kWh/m²/year",
-             sum_ref_vert / 1000.0);
-    println!("    Fluxion annual E_g:            {:.3} kWh/m²/year",
-             sum_calc_vert / 1000.0);
+    println!(
+        "    Analytical annual E_g:         {:.3} kWh/m²/year",
+        sum_ref_vert / 1000.0
+    );
+    println!(
+        "    Fluxion annual E_g:            {:.3} kWh/m²/year",
+        sum_calc_vert / 1000.0
+    );
     println!("    Annual ratio (fluxion/ref):    {:.6}", ratio_vert);
     println!("    Annual error:                  {:.4}%", err_pct_vert);
-    println!("    Max abs deviation:             {:.4e} W/m²", max_abs_dev_vert);
-    println!("    Hours exceeding 0.5%:         {}", hours_over_005pct_vert);
+    println!(
+        "    Max abs deviation:             {:.4e} W/m²",
+        max_abs_dev_vert
+    );
+    println!(
+        "    Hours exceeding 0.5%:         {}",
+        hours_over_005pct_vert
+    );
     println!();
     println!("  tilt=180 (down-facing):");
     println!("    Hours compared:                {}", hours_compared_down);
-    println!("    Fluxion annual E_g:            {:.6e} kWh/m²/year",
-             sum_calc_down / 1000.0);
-    println!("    Max abs deviation:             {:.4e} W/m²", max_abs_dev_down);
+    println!(
+        "    Fluxion annual E_g:            {:.6e} kWh/m²/year",
+        sum_calc_down / 1000.0
+    );
+    println!(
+        "    Max abs deviation:             {:.4e} W/m²",
+        max_abs_dev_down
+    );
 
     // Acceptance #1: tilt=0 ratio within ±0.005
     assert!(
@@ -1038,8 +1104,13 @@ fn test_horizontal_ground_reflected() {
         zenith_deg: 60.0,
     };
     let irr_ref = calculate_surface_irradiance(
-        &sun_above, 800.0, 100.0, Some(1000.0),
-        Orientation::Horizontal, 0.2, 172,
+        &sun_above,
+        800.0,
+        100.0,
+        Some(1000.0),
+        Orientation::Horizontal,
+        0.2,
+        172,
     );
     let expected = 0.2 * 1000.0; // 200 W/m²
     assert!(
@@ -1051,7 +1122,10 @@ fn test_horizontal_ground_reflected() {
     println!();
     println!("  Reference case (GHI=1000, albedo=0.2, tilt=0):");
     println!("    Expected:                      {:.4} W/m²", expected);
-    println!("    Got:                           {:.4} W/m²", irr_ref.ground_reflected_wm2);
+    println!(
+        "    Got:                           {:.4} W/m²",
+        irr_ref.ground_reflected_wm2
+    );
     println!();
     println!("  ✓ All Issue #1326 acceptance criteria PASS");
 }
@@ -1083,7 +1157,7 @@ fn test_per_tilt_sweep_ground_reflected() {
 
     for &tilt in &tilt_set {
         let mut sum_calc = 0.0f64;
-        let mut sum_ref  = 0.0f64;
+        let mut sum_ref = 0.0f64;
         let mut max_abs_dev = 0.0f64;
 
         for (i, row) in weather.iter().enumerate() {
@@ -1115,11 +1189,18 @@ fn test_per_tilt_sweep_ground_reflected() {
             // comparison path.
             if (tilt - 90.0).abs() < 1e-9 {
                 let irr = calculate_surface_irradiance(
-                    &sun, row.dni, row.dhi, Some(row.ghi),
-                    Orientation::South, albedo, doy,
+                    &sun,
+                    row.dni,
+                    row.dhi,
+                    Some(row.ghi),
+                    Orientation::South,
+                    albedo,
+                    doy,
                 );
                 let dev = (irr.ground_reflected_wm2 - ref_gr).abs();
-                if dev > max_abs_dev { max_abs_dev = dev; }
+                if dev > max_abs_dev {
+                    max_abs_dev = dev;
+                }
                 sum_calc += irr.ground_reflected_wm2;
             } else {
                 // For non-90° tilts, confirm the formula matches the
@@ -1135,7 +1216,10 @@ fn test_per_tilt_sweep_ground_reflected() {
         let diff = (sum_calc - sum_ref).abs();
         println!(
             "  {:6.0}  {:14.6}  {:14.6}  {:14.4e}",
-            tilt, sum_calc / 1000.0, sum_ref / 1000.0, max_abs_dev,
+            tilt,
+            sum_calc / 1000.0,
+            sum_ref / 1000.0,
+            max_abs_dev,
         );
 
         // No-regression: total annual energy from the existing formula

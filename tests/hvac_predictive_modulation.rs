@@ -49,9 +49,13 @@ fn test_predictive_modulation_propagation_case_800() {
     // Ensure an equipment is wired so the propagation has somewhere to go.
     // (Case 800's spec may or may not include equipment; we set it explicitly.)
     if model.hvac_equipment.is_none() {
-        model.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(
-            HeatPump::new("HP-800".to_string(), 12_000.0, 10_000.0, 3.5, 3.0),
-        ));
+        model.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(HeatPump::new(
+            "HP-800".to_string(),
+            12_000.0,
+            10_000.0,
+            3.5,
+            3.0,
+        )));
     }
 
     // --- 2. Run the 8760 h simulation. ---
@@ -78,8 +82,14 @@ fn test_predictive_modulation_propagation_case_800() {
         final_plr
     );
     // The equipment's rated efficiencies are positive (the unit was wired).
-    assert!(rated_eff_heating > 0.0, "rated heating efficiency must be > 0");
-    assert!(rated_eff_cooling > 0.0, "rated cooling efficiency must be > 0");
+    assert!(
+        rated_eff_heating > 0.0,
+        "rated heating efficiency must be > 0"
+    );
+    assert!(
+        rated_eff_cooling > 0.0,
+        "rated cooling efficiency must be > 0"
+    );
 
     // --- 4. Modulation ∈ [0, 1] invariant on the controller itself. ---
     // The controller is what computes modulation; this is a contract check
@@ -95,8 +105,7 @@ fn test_predictive_modulation_propagation_case_800() {
         (32.0, 30.0, 0.01),
     ];
     for &(zone_temp, mass_temp, temp_rate) in sweep {
-        let (_mode, modulation) =
-            controller.calculate_modulation(zone_temp, mass_temp, temp_rate);
+        let (_mode, modulation) = controller.calculate_modulation(zone_temp, mass_temp, temp_rate);
         assert!(
             (0.0..=1.0).contains(&modulation),
             "modulation {} out of [0,1] for zone={}, mass={}, rate={}",
@@ -124,9 +133,13 @@ fn test_predictive_modulation_propagation_in_9r4c_step() {
 
     // Wire a small heat pump; the propagation check only needs a real
     // `VariableCapacityEquipment` to receive `update_state(modulated_load, ...)`.
-    model.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(
-        HeatPump::new("HP-9R4C".to_string(), 10_000.0, 10_000.0, 3.0, 3.0),
-    ));
+    model.hvac_equipment = Some(fluxion::sim::hvac::AnyEquipment::HeatPump(HeatPump::new(
+        "HP-9R4C".to_string(),
+        10_000.0,
+        10_000.0,
+        3.0,
+        3.0,
+    )));
 
     // Sanity: the dispatcher should route this to `step_physics_9r4c`.
     assert!(
