@@ -1640,7 +1640,8 @@ mod tests {
             // 36+ fields: 3 depths × 12 monthly values + header tokens
             "GROUND TEMPERATURES,3,0.5,,,,-0.6,1.3,5.1,8.7,15.5,19.0,20.0,18.2,14.0,8.8,3.7,0.3,\
              2,2.1,2.6,4.7,7.1,12.3,15.6,17.3,16.9,14.5,10.9,6.9,3.7,\
-             4,4.8,4.5,5.5,6.8".into(),
+             4,4.8,4.5,5.5,6.8"
+                .into(),
             "HOLIDAYS/DAYLIGHT SAVINGS,No,0,0,0".into(),
             "COMMENTS 1,Test data".into(),
             "COMMENTS 2,Issue 1164 regression".into(),
@@ -1649,11 +1650,7 @@ mod tests {
     }
 
     /// Concatenate header lines and data rows using the supplied line ending.
-    fn join_epw(
-        headers: &[String],
-        rows: &[String],
-        line_ending: &str,
-    ) -> String {
+    fn join_epw(headers: &[String], rows: &[String], line_ending: &str) -> String {
         let mut s = String::new();
         for h in headers {
             s.push_str(h);

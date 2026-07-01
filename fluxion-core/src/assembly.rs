@@ -192,7 +192,7 @@ impl ConcreteMaterial {
 
     /// Create ASHRAE 140 heavyweight (medium-density) concrete per Table B1-3.
     ///
-/// **Properties per ASHRAE 140 Table B1-3:**
+    /// **Properties per ASHRAE 140 Table B1-3:**
     /// - k = 0.51 W/mK (NOT 1.4 — medium-density block, not normal-weight concrete)
     /// - ρ = 1400 kg/m³ (NOT 2300 — medium-density)
     /// - Cp = 840 J/kgK
