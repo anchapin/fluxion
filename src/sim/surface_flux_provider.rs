@@ -236,21 +236,25 @@ impl SurfaceHeatFluxProvider for PhysicsSurfaceFluxProvider {
             return 0.0;
         }
 
-        let h_int = *self.h_int.get(surface_idx).unwrap_or(&8.0);
-        let h_ext = *self.h_ext.get(surface_idx).unwrap_or(&25.0);
         let solar = *self.solar_gain_wm2.get(surface_idx).unwrap_or(&0.0);
 
-        // Compute conduction flux using the solver (via RwLock for thread-safe interior mutability)
+        // Query the solver for the steady-state conduction flux. This is a
+        // PURE QUERY — it does NOT advance the solver's mass-node state.
+        // The caller (zone solver / integrator) is responsible for calling
+        // `solver.step()` explicitly when it wants to advance the wall's
+        // thermal mass state. This preserves the trait contract that
+        // `surface_heat_flux` is a deterministic function of its inputs,
+        // matching the `MockSurfaceHeatFluxProvider` for ML-surrogate
+        // swap-point parity (Issue #1285 / #1287).
+        //
+        // `dt_seconds` is accepted for trait-API compatibility but is
+        // unused here: the steady-state flux has no time dependence.
+        let _ = dt_seconds;
+
         let conduction_flux = {
-            let mut solver = self.solvers[surface_idx].write().unwrap();
+            let solver = self.solvers[surface_idx].read().unwrap();
             solver
-                .step(
-                    FromF64::from_value(dt_seconds),
-                    FromF64::from_value(T_zone),
-                    FromF64::from_value(T_outdoor),
-                    FromF64::from_value(h_int),
-                    FromF64::from_value(h_ext),
-                )
+                .steady_state_flux(FromF64::from_value(T_zone), FromF64::from_value(T_outdoor))
                 .map(|q| q.to_value())
                 .unwrap_or(0.0)
         };

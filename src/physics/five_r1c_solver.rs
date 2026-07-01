@@ -219,6 +219,25 @@ impl HeatConductionSolver for FiveR1CSolver {
         self.energy_storage_rate
     }
 
+    fn steady_state_flux(
+        &self,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        if !self.initialized {
+            return Err(SolverError::InvalidConfig(
+                "Solver not initialized. Call initialize() first.".to_string(),
+            ));
+        }
+        if self.R_total <= 0.0 || !self.R_total.is_finite() {
+            return Err(SolverError::ConstructionError(
+                "Invalid wall resistance (must be positive and finite)".to_string(),
+            ));
+        }
+        let q_ss = (T_exterior.to_value() - T_interior.to_value()) / self.R_total;
+        Ok(HeatFlux::from_value(q_ss))
+    }
+
     fn is_valid(&self) -> bool {
         self.initialized && self.R_total > 0.0 && self.R_total.is_finite()
     }
