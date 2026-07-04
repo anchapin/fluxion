@@ -20,6 +20,7 @@ use std::path::Path;
 
 use quick_xml::events::Event;
 use quick_xml::Reader;
+use quick_xml::XmlVersion;
 
 use crate::api::schema::{
     ConstructionSet, ControlSet, Geometry, SchemaMetadata, SimulationOutput, SimulationSchemaV1,
@@ -40,7 +41,7 @@ pub fn import_gbxml(path: impl AsRef<Path>) -> Result<SimulationSchemaV1, GbXmlE
 /// Parse gbXML content into a GbXmlDocument.
 pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
     let mut reader = Reader::from_str(content);
-    reader.trim_text(true);
+    reader.config_mut().trim_text(true);
 
     let mut doc = GbXmlDocument::default();
     let mut stack: Vec<String> = Vec::new();
@@ -58,7 +59,10 @@ pub fn parse_gbxml(content: &str) -> Result<GbXmlDocument, GbXmlError> {
                 parse_start_element(&mut doc, &_current_element, &e)?;
             }
             Ok(Event::Text(e)) => {
-                text_content = e.unescape().unwrap_or_default().to_string();
+                text_content = e
+                    .xml10_content()
+                    .map(|c| c.into_owned())
+                    .unwrap_or_default();
             }
             Ok(Event::End(e)) => {
                 let end_element = String::from_utf8_lossy(e.name().as_ref()).to_string();
@@ -96,7 +100,10 @@ fn parse_start_element(
             for attr in e.attributes().flatten() {
                 let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
                 if key == "version" {
-                    doc.version = attr.unescape_value().unwrap_or_default().to_string();
+                    doc.version = attr
+                        .normalized_value(XmlVersion::Implicit1_0)
+                        .unwrap_or_default()
+                        .to_string();
                 }
             }
         }
@@ -351,7 +358,11 @@ fn parse_end_element(doc: &mut GbXmlDocument, element: &str, text: &str) -> Resu
 fn get_attribute(e: &quick_xml::events::BytesStart, key: &str) -> Option<String> {
     for attr in e.attributes().flatten() {
         if attr.key.as_ref() == key.as_bytes() {
-            return Some(attr.unescape_value().unwrap_or_default().to_string());
+            return Some(
+                attr.normalized_value(XmlVersion::Implicit1_0)
+                    .unwrap_or_default()
+                    .to_string(),
+            );
         }
     }
     None
