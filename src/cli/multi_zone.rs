@@ -523,7 +523,9 @@ pub fn run_n_zone_network_validation(
     use crate::validation::energy_balance::{EnergyBalanceValidator, ValidationError};
 
     if conductance < 0.0 {
-        return Err(format!("conductance {conductance} W/K must be non-negative"));
+        return Err(format!(
+            "conductance {conductance} W/K must be non-negative"
+        ));
     }
 
     // Build the fully-connected symmetric conductance matrix.
@@ -560,8 +562,18 @@ pub fn run_n_zone_network_validation(
     println!("================================================");
     println!("Number of zones:           {n}");
     println!("Per-pair conductance:      {conductance:.3} W/K (fully connected symmetric)");
-    println!("Conductance matrix shape:  {n}x{n} ({})", if report.symmetric { "symmetric" } else { "ASYMMETRIC" });
-    println!("Net Σ q_iz (probe):        {:.3e} W", report.net_inter_zone_q_w);
+    println!(
+        "Conductance matrix shape:  {n}x{n} ({})",
+        if report.symmetric {
+            "symmetric"
+        } else {
+            "ASYMMETRIC"
+        }
+    );
+    println!(
+        "Net Σ q_iz (probe):        {:.3e} W",
+        report.net_inter_zone_q_w
+    );
     println!("Tolerance:                 {tolerance_w:.0e} W");
     println!();
     println!("Post-step per-zone q_iz (W):");
@@ -576,8 +588,7 @@ pub fn run_n_zone_network_validation(
             tolerance_w
         ),
         Err(ValidationError::InterZoneConservationViolation {
-            net_inter_zone_q_w,
-            ..
+            net_inter_zone_q_w, ..
         }) => println!(
             "❌ Status: FAIL (|Σ q_iz| = {:.3e} W > tolerance {:.0e} W)",
             net_inter_zone_q_w.abs(),

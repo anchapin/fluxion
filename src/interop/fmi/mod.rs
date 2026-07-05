@@ -437,7 +437,9 @@ impl FmiExporter {
             .write_event(Event::Start(BytesStart::new("ModelVariables")))
             .map_err(|e| FmiError::ExportFailed(format!("ModelVariables: {e}")))?;
 
-        for (vr, (_zone_idx, _var_idx, name, template_name, causality)) in entries.iter().enumerate() {
+        for (vr, (_zone_idx, _var_idx, name, template_name, causality)) in
+            entries.iter().enumerate()
+        {
             // FMI 2.0 requires every ScalarVariable to have a valueReference;
             // we use a simple deterministic scheme (vr starts at 1 per spec).
             let (start, min, max, unit, desc) = match *causality {
@@ -603,10 +605,10 @@ impl FmiExporter {
     /// Convenience: read back the FMU's `modelDescription.xml` from
     /// an exported ZIP, useful for tests / verification scripts.
     pub fn read_model_description_from_fmu(path: &Path) -> Result<String, FmiError> {
-        let file = File::open(path)
-            .map_err(|e| FmiError::ExportFailed(format!("open FMU: {e}")))?;
-        let mut zip = zip::ZipArchive::new(file)
-            .map_err(|e| FmiError::ZipError(format!("read FMU: {e}")))?;
+        let file =
+            File::open(path).map_err(|e| FmiError::ExportFailed(format!("open FMU: {e}")))?;
+        let mut zip =
+            zip::ZipArchive::new(file).map_err(|e| FmiError::ZipError(format!("read FMU: {e}")))?;
         let mut entry = zip
             .by_name("modelDescription.xml")
             .map_err(|e| FmiError::ZipError(format!("missing modelDescription.xml: {e}")))?;
@@ -675,9 +677,13 @@ fn input_meta(name: &str) -> (f64, f64, f64, &'static str, &'static str) {
     match name {
         "outdoor_temperature" => (280.0, 200.0, 320.0, "K", "Outdoor dry bulb temperature"),
         "direct_normal_solar" => (0.0, 0.0, 1200.0, "W/m2", "Direct normal solar radiation"),
-        "diffuse_horizontal_solar" => {
-            (0.0, 0.0, 800.0, "W/m2", "Diffuse horizontal solar radiation")
-        }
+        "diffuse_horizontal_solar" => (
+            0.0,
+            0.0,
+            800.0,
+            "W/m2",
+            "Diffuse horizontal solar radiation",
+        ),
         "internal_gains" => (0.0, 0.0, 10000.0, "W", "Total internal heat gains"),
         _ => (0.0, 0.0, 0.0, "", ""),
     }
@@ -708,10 +714,7 @@ fn write_real_variable<W: Write>(
 ) -> Result<(), FmiError> {
     let mut sv = BytesStart::new("ScalarVariable");
     sv.push_attribute(("name", name));
-    sv.push_attribute((
-        "valueReference",
-        value_reference.to_string().as_str(),
-    ));
+    sv.push_attribute(("valueReference", value_reference.to_string().as_str()));
     sv.push_attribute(("description", description));
     sv.push_attribute(("causality", causality));
     sv.push_attribute(("variability", variability));
@@ -769,10 +772,7 @@ fn generation_timestamp() -> String {
         secs_of_day % 60,
     );
     let (y, mo, d) = days_to_ymd(days);
-    format!(
-        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-        y, mo, d, h, m, s
-    )
+    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", y, mo, d, h, m, s)
 }
 
 /// Convert days-since-epoch to (year, month, day).  Uses the
@@ -917,12 +917,11 @@ mod tests {
 
     #[test]
     fn test_multi_zone_xml_generation_n3() {
-        let exporter = FmiExporter::new()
-            .with_zones(vec![
-                ZoneVariables::new("zone"),
-                ZoneVariables::new("bedroom"),
-                ZoneVariables::new("kitchen"),
-            ]);
+        let exporter = FmiExporter::new().with_zones(vec![
+            ZoneVariables::new("zone"),
+            ZoneVariables::new("bedroom"),
+            ZoneVariables::new("kitchen"),
+        ]);
         let xml = exporter.generate_model_description_xml().unwrap();
 
         // FMI 2.0 root

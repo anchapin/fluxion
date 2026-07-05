@@ -84,7 +84,11 @@ fn multi_zone_n_zone_network_5_zone_round_trip() {
     let r1 = network
         .solve_step(&mut zones, &q_ext, 3600.0)
         .expect("5-zone solve #1");
-    assert!(r1.net_w.abs() < 1e-6, "5-zone round-trip #1: |Σ q_iz| = {:.3e}", r1.net_w.abs());
+    assert!(
+        r1.net_w.abs() < 1e-6,
+        "5-zone round-trip #1: |Σ q_iz| = {:.3e}",
+        r1.net_w.abs()
+    );
 
     // Reset and solve again with different initial temps.
     let mut zones2: Vec<ZoneState> = (0..n)
@@ -93,7 +97,11 @@ fn multi_zone_n_zone_network_5_zone_round_trip() {
     let r2 = network
         .solve_step(&mut zones2, &q_ext, 3600.0)
         .expect("5-zone solve #2");
-    assert!(r2.net_w.abs() < 1e-6, "5-zone round-trip #2: |Σ q_iz| = {:.3e}", r2.net_w.abs());
+    assert!(
+        r2.net_w.abs() < 1e-6,
+        "5-zone round-trip #2: |Σ q_iz| = {:.3e}",
+        r2.net_w.abs()
+    );
 
     // And the conservation report.
     let report = network.conservation_report();
@@ -235,8 +243,8 @@ fn multi_zone_n_zone_network_case_960_regression() {
     let h = nalgebra::DMatrix::from_row_slice(n, n, &[0.0, 1.5, 1.5, 0.0]);
     let network = MultiZoneAirflowNetwork::from_matrix(h);
     let mut zones = vec![
-        ZoneState::new(20.0, 2.0e6),  // Living
-        ZoneState::new(8.0, 5.0e5),   // Sunspace
+        ZoneState::new(20.0, 2.0e6), // Living
+        ZoneState::new(8.0, 5.0e5),  // Sunspace
     ];
     let q_ext = vec![0.0; n];
     let result = network
@@ -265,5 +273,8 @@ fn multi_zone_n_zone_network_case_960_regression() {
         .validate_n_zone_network_conservation(&result.q_iz_w, 1e-6)
         .is_ok();
     assert!(legacy_pass, "Case 960 must pass legacy 1.0 W tolerance");
-    assert!(strict_pass, "Case 960 must also pass strict 1e-6 W tolerance");
+    assert!(
+        strict_pass,
+        "Case 960 must also pass strict 1e-6 W tolerance"
+    );
 }

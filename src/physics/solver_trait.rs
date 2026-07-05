@@ -232,6 +232,40 @@ pub trait HeatConductionSolver: Send + Sync {
     /// negative means wall is releasing energy (cooling down).
     fn energy_storage_rate(&self) -> f64;
 
+    /// Compute the steady-state heat flux through the wall (no thermal mass effect).
+    ///
+    /// This is a **pure query**: it does NOT advance the solver's state. The
+    /// returned flux is the closed-form steady-state result
+    /// `q_ss = (T_exterior - T_interior) / R_total` (Fourier's law).
+    ///
+    /// # Contract
+    ///
+    /// For the same `(T_interior, T_exterior)` inputs, this method must
+    /// return the same value across repeated calls and must NOT depend on
+    /// any state mutated by prior `step()` invocations. This is the
+    /// deterministic, side-effect-free query that ML-surrogate swap-points
+    /// (e.g. `SurfaceHeatFluxProvider`) rely on for parity checks.
+    ///
+    /// Callers that need transient (thermal-mass) behavior should call
+    /// `step()` explicitly to advance the solver's mass-node state, then
+    /// use `step()`'s return value or `energy_storage_rate()` to query
+    /// the evolved state.
+    ///
+    /// # Default implementation
+    ///
+    /// The default returns an error. Solvers that can compute a
+    /// closed-form steady-state flux (e.g. 5R1C) should override this.
+    fn steady_state_flux(
+        &self,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        let _ = (T_interior.to_value(), T_exterior.to_value());
+        Err(SolverError::InvalidConfig(
+            "steady_state_flux is not supported by this solver implementation".to_string(),
+        ))
+    }
+
     /// Check if solver is valid (coefficients converged, etc.)
     fn is_valid(&self) -> bool;
 }

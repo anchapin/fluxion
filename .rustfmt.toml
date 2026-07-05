@@ -1,0 +1,26 @@
+# Rustfmt configuration for the fluxion workspace.
+#
+# IMPORTANT: rustfmt 1.9.0-stable (the version pinned by `rust-toolchain.toml`
+# as of 2026-06-30) does NOT support the `exclude` config option. Native path-
+# based exclusion requires rustfmt-nightly with `unstable_features = true`. We
+# stay on stable, so exclusion is implemented at the source level:
+#
+#   * Auto-generated test fixture data files mark each item with the
+#     `#[rustfmt::skip]` attribute. Adding the attribute to every `pub const`
+#     in `tests/per_tilt_per_azimuth_fixture_data.rs` is the ONLY way to
+#     keep its thousands of literal array elements on single lines (rustfmt
+#     would otherwise split them into multi-line blocks, producing a diff
+#     larger than the file itself and destroying git blame).
+#
+#   * Anything else that should not be formatted should follow the same
+#     pattern: wrap the un-formattable content in an item annotated with
+#     `#[rustfmt::skip]`.
+#
+# Style: defaults. The remainder of this file is empty so future maintainers
+# can add stable options without a separate review (e.g., `max_width`,
+# `array_width`) without fear of churn from this skill.
+
+# Match the workspace's Cargo.toml `edition` setting (rustfmt defaults to
+# 2015 if unset, which then fails to parse any async/await, ?, or 2021+ fn
+# syntax — see PR #1387 follow-up).
+edition = "2021"
