@@ -272,6 +272,19 @@ pub trait HeatConductionSolver: Send + Sync {
 }
 ```
 
+> **Trait contract — query vs state-advancing separation** (added in #1392, fix for the pre-existing bug fixed by `steady_state_flux`):
+>
+> The `HeatConductionSolver` methods have two distinct categories that must not be conflated:
+>
+> | Category | Methods | Mutates state? | Receiver |
+> |----------|---------|---------------|----------|
+> | **Query (pure of `(state, BCs)`)** | `name`, `energy_storage_rate`, `is_valid`, `steady_state_flux` (default trait method) | No | `&self` |
+> | **State-advancing** | `step` | Yes (advances `T_mass` via implicit Euler; returns the post-step flux) | `&mut self` |
+>
+> **Rule**: `PhysicsSurfaceFluxProvider::surface_heat_flux` (a query path) must NOT call `solver.step()`. It must call `solver.steady_state_flux(T_int, T_ext)` (closed-form `q_ss = (T_ext − T_int) / R_total` for `FiveR1CSolver`). Mixing them causes two consecutive `surface_heat_flux()` calls with identical args to return different values — a parity violation that breaks the `MockSurfaceFluxProvider` test contract and the ML-surrogate swap-point.
+>
+> If a caller needs state advancement, call `solver.step()` explicitly *outside* the flux-provider path. The `Energy Conservation` CI gate and the `test_swap_point_*` parity tests in `tests/surface_flux_provider_isolation.rs` enforce this contract.
+
 **Implementations**: `FiveR1CSolver` (struct, `physics/five_r1c_solver.rs`), `CTFSolverWrapper`, `FDSolverWrapper`
 **Selector**: `SolverManager` auto-selects based on thermal mass.
 **Per-surface solver**: `sim/per_surface_conduction.rs` provides independent backward-Euler per-surface solving for the multi-node thermal model (#857/#856).
