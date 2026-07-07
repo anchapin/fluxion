@@ -17,7 +17,11 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::physics::multi_node_solver::SurfaceExteriorTemperatures;
 use crate::sim::boundary::distribute_opaque_solar_gains;
 use crate::sim::hvac::{HVACMode as EquipmentHVACMode, VariableCapacityEquipment};
-use crate::sim::interzone::{calculate_stack_effect_ach, calculate_ventilation_heat_transfer};
+// #1391: stack-effect helpers removed — the 9R4C and 5R1C inter-zone paths now use
+// a single `q_iz_net[i] = h_tr_iz[i] · Σ_{j≠i} (T[j] − T[i])` conductive loop,
+// matching the iterative path's `solve_coupled_zone_temperatures`. The legacy
+// q_vent term double-counted the door-opening convective conductance that
+// `h_tr_iz` already captures for Case 960.
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::calculate_surface_irradiance;
 use crate::sim::thermal_integration::{
@@ -313,10 +317,24 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Note: t_g vector creation removed. h_tr_floor * t_g_vec replaced by h_tr_floor * t_g.
 
         // === Inter-zone heat transfer (for multi-zone buildings like Case 960) ===
-        // Three-component approach: Q_iz = Q_cond + Q_rad + Q_vent
-        // 1. Conductive: Q_cond = h_tr_iz * ΔT
-        // 2. Radiative: Q_rad = σ·ε₁·ε₂·F·A·(T₁⁴ - T₂⁴) (full nonlinear Stefan-Boltzmann)
-        // 3. Ventilation: Q_vent = ρ·Cp·ACH·V·ΔT (temperature-dependent ACH via stack effect)
+        // #1391 Bug 1 fix: per-zone NET INFLOW loop, matching
+        // `solve_coupled_zone_temperatures` (thermal_model_iterative.rs) and the
+        // 9R4C path's analogous block below.
+        //
+        // Sign convention: q_iz_net[i] = NET heat flow INTO zone i (positive =
+        // heat flowing INTO zone i). For symmetric conductance, Σ_i q_iz_net[i] = 0.
+        //
+        // Formula: q_iz_net[i] = h_tr_iz[i] · Σ_{j≠i} (T[j] − T[i])
+        //               = h_tr_iz[i] · (Σ_j T[j] − N · T[i])
+        //
+        // The previous implementation (a) inverted the signs (`slice[0] += -q_iz_total`)
+        // and (b) was hardcoded to the zone-0↔zone-1 pair — broken for N>2. The
+        // legacy q_vent stack-effect term has been removed: `h_tr_iz` already
+        // includes the door-opening convective conductance (see Case 960 test
+        // setup) and the 5R1C iterative path does not apply this term, so
+        // including it here would double-count. Mirrors the 9R4C path's #1391
+        // fix and the `MultiZoneAirflowNetwork` convention (test:
+        // `multi_zone_network.rs::two_zone_case960_backward_compatible`).
         let num_zones = self.0.num_zones;
 
         // Start with phi_ia; we will add inter-zone heat directly to its buffer if needed.
@@ -326,51 +344,15 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let mut phi_ia_with_iz = phi_ia;
 
         if num_zones > 1 {
+            let slice = phi_ia_with_iz.as_mut();
+            let n = num_zones;
             let temps = self.0.temperatures.as_ref();
             let h_iz_vec = self.0.h_tr_iz.as_ref();
-
-            // For Case 960 (2-zone building), calculate heat transfer between zone 0 (back-zone) and zone 1 (sunspace)
-            if num_zones >= 2 && h_iz_vec[0] > 0.0 {
-                let delta_t_cond = temps[1] - temps[0]; // T_sunspace - T_back
-
-                // 1. Conductive heat transfer
-                let q_cond = h_iz_vec[0] * delta_t_cond;
-
-                // 2. Radiative heat transfer - DISABLED for Case 960 (aligned windows don't exchange radiation)
-                // This was causing excessive heat loss from sunspace
-                let q_rad = 0.0; // windows face same direction - no radiative exchange
-
-                // 3. Ventilation heat transfer (temperature-dependent ACH via stack effect)
-                // Use back-zone volume for ventilation calculation
-                let zone_volume = self.0.zone_volume.as_ref();
-                let ach_iz = calculate_stack_effect_ach(
-                    temps[0], // T_back-zone
-                    temps[1], // T_sunspace
-                    self.0.door_geometry.height,
-                    self.0.door_geometry.area,
-                    zone_volume[0], // FIX: Pass actual zone volume
-                );
-                let q_vent = calculate_ventilation_heat_transfer(
-                    ach_iz,
-                    temps[1],       // Source: sunspace (warm in summer, cold in winter)
-                    temps[0],       // Target: back-zone
-                    zone_volume[0], // Target volume
-                );
-
-                // Total inter-zone heat transfer (positive = sunspace → back-zone)
-                let q_iz_total = q_cond + q_rad + q_vent;
-
-                // Apply to energy balance directly in-place
-                let slice = phi_ia_with_iz.as_mut();
-                if slice.len() >= 2 {
-                    slice[0] += -q_iz_total;
-                    slice[1] += q_iz_total;
-                } else {
-                    // Defensive: should never happen for 2-zone case
-                    eprintln!(
-                        "WARNING: phi_ia length {} < 2, cannot apply inter-zone heat",
-                        slice.len()
-                    );
+            let sum_t: f64 = temps.iter().sum();
+            for i in 0..n {
+                if h_iz_vec[i] > 0.0 {
+                    let q_iz_net = h_iz_vec[i] * (sum_t - (n as f64) * temps[i]);
+                    slice[i] += q_iz_net;
                 }
             }
         }
@@ -2052,29 +2034,31 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
 
         let mut phi_ia_with_iz = phi_ia.clone();
 
-        // Inter-zone heat transfer (if multi-zone)
+        // Inter-zone heat transfer (if multi-zone) — #1391 Bug 1 fix.
+        //
+        // Sign convention: q_iz_net[i] is the NET heat flow INTO zone i
+        // (positive = heat flowing into zone i). For a symmetric conductance
+        // matrix, Σ_i q_iz_net[i] = 0 exactly (energy conservation).
+        //
+        // Formula: q_iz_net[i] = h_tr_iz[i] · Σ_{j≠i} (T[j] − T[i])
+        //               = h_tr_iz[i] · (Σ_j T[j] − N · T[i])
+        //
+        // Replaces the previous hardcoded 2-zone slice[0]/slice[1] pair which
+        // (a) had the sign inverted (`slice[0] += -q_iz_total`) and (b) only
+        // handled the zone-0↔zone-1 pair. Now scales to N>2 zones and matches
+        // the 5R1C iterative path's `solve_coupled_zone_temperatures` formulation
+        // and the `MultiZoneAirflowNetwork` convention (test:
+        // `multi_zone_network.rs::two_zone_case960_backward_compatible`).
         if self.0.num_zones > 1 {
+            let slice = phi_ia_with_iz.as_mut();
+            let n = self.0.num_zones;
             let temps = self.0.temperatures.as_ref();
             let h_iz_vec = self.0.h_tr_iz.as_ref();
-            if self.0.num_zones >= 2 && h_iz_vec[0] > 0.0 {
-                let delta_t_cond = temps[1] - temps[0];
-                let q_cond = h_iz_vec[0] * delta_t_cond;
-                let q_rad = 0.0;
-                let zone_volume = self.0.zone_volume.as_ref();
-                let ach_iz = calculate_stack_effect_ach(
-                    temps[0],
-                    temps[1],
-                    self.0.door_geometry.height,
-                    self.0.door_geometry.area,
-                    zone_volume[0],
-                );
-                let q_vent =
-                    calculate_ventilation_heat_transfer(ach_iz, temps[1], temps[0], zone_volume[0]);
-                let q_iz_total = q_cond + q_rad + q_vent;
-                let slice = phi_ia_with_iz.as_mut();
-                if slice.len() >= 2 {
-                    slice[0] += -q_iz_total;
-                    slice[1] += q_iz_total;
+            let sum_t: f64 = temps.iter().sum();
+            for i in 0..n {
+                if h_iz_vec[i] > 0.0 {
+                    let q_iz_net = h_iz_vec[i] * (sum_t - (n as f64) * temps[i]);
+                    slice[i] += q_iz_net;
                 }
             }
         }
@@ -2129,7 +2113,9 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // Issue #863: Use sol-air temperature for wall exterior BC instead of outdoor_temp.
         // This correctly accounts for solar radiation heating the wall surface, reducing
         // the net heat loss and fixing massive heating energy overcounting.
-        let mut num_rest_with_iz = phi_ia_with_iz;
+        // #1391: clone phi_ia_with_iz — we still need to read it at line ~2394
+        // (compute_zone_air_temperature argument) for the multi-node solver.
+        let mut num_rest_with_iz = phi_ia_with_iz.clone();
         for (i, (n, h)) in num_rest_with_iz
             .as_mut()
             .iter_mut()
@@ -2389,7 +2375,13 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             if zone_idx < self.0.multi_node_solvers.len() {
                 let solver = &self.0.multi_node_solvers[zone_idx];
                 let h_ve_val = self.0.h_ve.as_ref()[zone_idx];
-                let phi_ia_val = phi_ia.as_ref()[zone_idx];
+                // #1391 Bug 2 fix: use `phi_ia_with_iz` (convective gains + net
+                // inter-zone air-flow energy) instead of the raw `phi_ia`. Without
+                // the inter-zone term, downstream HVAC demand and the free-float
+                // commit get zero inter-zone coupling and Case 900/960 violate energy
+                // conservation. Mirrors the 5R1C pattern at
+                // `thermal_model_iterative.rs:858-859` (`phi_ia + VectorField(q_iz)`).
+                let phi_ia_val = phi_ia_with_iz.as_ref()[zone_idx];
                 // h_ve_night: night ventilation fan conductance (only for zone 0, ASHRAE 140)
                 let h_ve_night_zone = if night_vent_active_now && zone_idx == 0 {
                     h_ve_night
