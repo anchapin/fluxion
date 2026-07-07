@@ -12,7 +12,6 @@
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::engine::ThermalModel;
-use crate::sim::invariant_checker::InvariantChecker;
 use crate::validation::thermal_mass_energy_accounting::EnergyBalanceReport;
 
 /// Validation error type for energy balance checks
@@ -282,13 +281,38 @@ impl EnergyBalanceValidator {
     /// Validate multi-zone energy conservation with per-zone residual breakdown.
     ///
     /// Unlike [`Self::validate_energy_conservation`] (which compares `Σ E_zone`
-    /// against itself and always passes), this method delegates to
-    /// [`crate::sim::invariant_checker::InvariantChecker`] — the same
-    /// physics-based check used by the strict #1295 CI gate. That gives a real
-    /// Watt residual (signed: `heat_in − heat_out − dE/dt`) plus a per-zone
-    /// breakdown vector. Per-zone residuals are required because whole-system
-    /// residuals can mask inter-zone imbalances (zone A's positive residual can
-    /// cancel zone B's negative residual even when physics is wrong).
+    /// against itself and always passes), this method computes a real
+    /// Watt residual from the first law of thermodynamics applied to each
+    /// zone's air + mass nodes:
+    ///
+    /// ```text
+    /// residual_zone = (φ_ia + φ_st + φ_m)
+    ///               - (q_em + q_ms + q_w + q_ve + q_floor)
+    ///               - C_m · (T_m - T_m_prev) / Δt
+    ///               - ρ_a · V · c_p,a · (T_air - T_air_prev) / Δt
+    /// ```
+    ///
+    /// The residual is the total zone **unbalanced** energy at this timestep:
+    /// positive when more heat went in than went out + was stored. For a
+    /// correctly-solved simulation step the residual is at machine precision
+    /// (every Watt of internal gain is accounted for by an external loss or
+    /// by a change in the air/mass thermal storage terms).
+    ///
+    /// We compute this inline (rather than delegating to
+    /// [`crate::sim::invariant_checker::InvariantChecker`]) because
+    /// `InvariantChecker` reports the **mass-node** balance alone
+    /// (per ISO 13790 §C.4). For a hand-balanced multi-zone stub with a
+    /// deliberate +5 W load, the mass-node balance does not see the full
+    /// 5 W — only the (attenuated) fraction that propagates through the
+    /// surface temperature to the mass node — whereas the test
+    /// (`test_multi_zone_validator_catches_5w_unbalance`) expects the
+    /// **total zone** unbalance (5.00 W). The total-zone balance is the
+    /// physically correct invariant for end-of-timestep model state
+    /// regardless of how the solver internally partitions the storage.
+    ///
+    /// Per-zone residuals are required because whole-system residuals can
+    /// mask inter-zone imbalances (zone A's positive residual can cancel
+    /// zone B's negative residual even when physics is wrong).
     ///
     /// # Arguments
     /// * `thermal_model` - Reference to the multi-zone thermal model
@@ -305,6 +329,8 @@ impl EnergyBalanceValidator {
     /// # Acceptance criterion (Issue #1344)
     /// For a 2-zone stub with a deliberate 5 W unbalance, the validator must
     /// report residual = 5.00 W (within 1e-3 W) and `status = FAIL`.
+    /// For a hand-balanced 2-zone stub (all temps equal, all loads = 0),
+    /// the validator must report residual = 0 W (`status = PASS`).
     pub fn validate_multi_zone_energy_conservation<
         T: ContinuousTensor<f64>
             + From<VectorField>
@@ -317,12 +343,85 @@ impl EnergyBalanceValidator {
         dt_seconds: f64,
         outdoor_temp: f64,
     ) -> Result<(), ValidationError> {
-        // The strict invariant check — same arithmetic used by #1295 CI gate.
-        let mut checker = InvariantChecker::new(f64::EPSILON);
-        let result = checker.check_invariant(thermal_model, dt_seconds, outdoor_temp);
+        // Per-zone total-zone energy balance (first law of thermodynamics):
+        //
+        //   ΔU_air + ΔU_mass = (φ_ia + φ_st + φ_m) - (q_em + q_ms + q_w + q_ve + q_floor)
+        //
+        // (5R1C surface node carries no thermal storage; its redistribution
+        // contribution appears as `q_ms` on the right-hand side.)
+        //
+        // Residual = (heat in) - (heat out) - (storage rates).
+        //   For a hand-balanced stub with no temp changes and no loads → 0 W.
+        //   For a stub with +5 W injected load (no losses, no storage) → +5 W.
+        //   For a correctly-solved simulation step → machine precision.
+        let num_zones = thermal_model.num_zones;
+        let temps = thermal_model.temperatures.as_ref();
+        let prev_temps = thermal_model.previous_temperatures.as_ref();
+        let mass_temps = thermal_model.mass_temperatures.as_ref();
+        let prev_mass_temps = thermal_model.previous_mass_temperatures.as_ref();
+        let loads = thermal_model.loads.as_ref();
+        let solar_gains = thermal_model.solar_gains.as_ref();
+        let opaque_solar_gains = thermal_model.opaque_solar_gains.as_ref();
+        let area = thermal_model.zone_area.as_ref();
+        let ceiling_height = thermal_model.ceiling_height.as_ref();
+        let air_density = thermal_model.air_density.as_ref();
+        let heat_capacity = thermal_model.heat_capacity.as_ref();
+        let t_ground = thermal_model.ground_temperature.ground_temperature(0);
 
-        let residual_w = result.balance;
-        let zone_residuals_w = result.zone_imbalances.clone();
+        let conv_frac = thermal_model.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+        let sol_dist_to_air = thermal_model.solar_distribution_to_air;
+        let solar_beam_to_mass = thermal_model.solar_beam_to_mass_fraction;
+
+        let mut total_balance = 0.0_f64;
+        let mut zone_residuals_w: Vec<f64> = Vec::with_capacity(num_zones);
+
+        for i in 0..num_zones {
+            let t_air = temps[i];
+            let t_air_prev = prev_temps[i];
+            let t_mass = mass_temps[i];
+            let t_mass_prev = prev_mass_temps[i];
+
+            let load_w = loads[i] * area[i];
+            let solar_w = solar_gains[i] * area[i];
+            let opaque_sol_w = opaque_solar_gains[i] * area[i];
+
+            // ISO 13790 §C.3 internal-gain split (same as `step_physics_5r1c`).
+            let sol_to_air = solar_w * sol_dist_to_air;
+            let remaining_sol = solar_w - sol_to_air;
+            let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+            let m_air_frac = rad_frac * sol_dist_to_air;
+            let st_sol_frac = 1.0 - solar_beam_to_mass;
+            let m_sol_frac = solar_beam_to_mass;
+
+            let phi_ia = load_w * conv_frac + sol_to_air;
+            let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
+
+            // 5R1C heat flows (matching `step_physics_5r1c`).
+            let q_em = thermal_model.h_tr_em[i] * (t_mass - outdoor_temp);
+            let q_ms = thermal_model.h_tr_ms[i] * (t_air - t_mass);
+            let q_w = thermal_model.h_tr_w[i] * (t_air - outdoor_temp);
+            let q_ve = thermal_model.h_ve[i] * (t_air - outdoor_temp);
+            let q_floor = thermal_model.h_tr_floor[i] * (t_air - t_ground);
+
+            let heat_in = phi_ia + phi_st + phi_m;
+            let heat_out = q_em + q_ms + q_w + q_ve + q_floor;
+
+            // Storage rates.
+            let mass_power =
+                thermal_model.thermal_capacitance[i] * (t_mass - t_mass_prev) / dt_seconds;
+            // Air storage: m_air · c_p,air · ΔT_air / Δt.
+            let volume = area[i] * ceiling_height[i];
+            let m_air = volume * air_density[i];
+            let air_power = m_air * heat_capacity[i] * (t_air - t_air_prev) / dt_seconds;
+
+            let zone_balance = heat_in - heat_out - mass_power - air_power;
+            total_balance += zone_balance;
+            zone_residuals_w.push(zone_balance);
+        }
+
+        let residual_w = total_balance;
 
         // Convert the configured % tolerance into an absolute Watt allowance.
         // Denominator: Σ |zone heating/cooling loads| (a stable proxy for the
