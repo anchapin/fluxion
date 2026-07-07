@@ -50,6 +50,27 @@ Use conventional commits:
 - Add tests for new functionality
 - Update tests when changing behavior
 
+## Code Style
+
+### Rust formatting
+
+- `cargo fmt -- --check` is a required CI check.
+- The workspace has a `.rustfmt.toml` that pins `edition = "2021"` (rustfmt 1.9-stable defaults to 2015 which fails on async/await and `?` syntax).
+- **rustfmt 1.9-stable does not support the `exclude` config option** (that requires rustfmt-nightly with `unstable_features = true`). When you have auto-generated data files containing thousands of literal array elements that you do NOT want rustfmt to reformat, mark each item with `#[rustfmt::skip]`. Example:
+  ```rust
+  #[rustfmt::skip]
+  pub const FIXTURE_DATA: [f64; 1000] = [/* ... */];
+  ```
+  See `tests/per_tilt_per_azimuth_fixture_data.rs` for a working example.
+- If `cargo fmt --check` fails on your PR with many unrelated drift items, the drift is pre-existing on `main`. Rebase onto `main` first; if the drift persists after rebase, file a follow-up issue — do NOT auto-fix 200 files of mechanical drift as part of a feature PR.
+
+### Avoid scope creep on CI failures
+
+If your PR's CI fails on a check that is not in scope for your change (e.g., `ASHRAE 140 Strict Energy Gate`, `MultiZoneValidator` lib tests, `Cargo Audit` advisories in dependencies you didn't touch):
+1. **First** verify the failure is pre-existing on `main` HEAD without your changes (`git stash && cargo ...` or check out `main` and reproduce).
+2. **If pre-existing**: file a separate follow-up issue (label `bug`, link your PR in the body). Do NOT bloat your PR diff with the unrelated fix.
+3. **If introduced by your PR**: fix it in scope or STOP and report.
+
 ## Questions?
 
 Open an issue or ask in the PR review.
