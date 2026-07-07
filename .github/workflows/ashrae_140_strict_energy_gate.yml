@@ -185,7 +185,7 @@ jobs:
             test_case_900_annual_energy_ashrae140_tolerance \
             test_blind_mode_case_600_infrastructure \
             test_blind_mode_case_900_infrastructure ; do
-            if grep -qE "\\.\\.\\. $t \\.\\.\\. (ok|ignored|FAILED)" /tmp/strict_gate_output.txt; then
+            if grep -qE "^test $t \\.\\.\\. (ok|ignored|FAILED)" /tmp/strict_gate_output.txt; then
               echo "  COVERED: $t"
             else
               echo "  DROPPED FROM GATE: $t"

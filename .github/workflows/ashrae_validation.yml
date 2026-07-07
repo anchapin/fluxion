@@ -652,33 +652,16 @@ jobs:
               echo "::error::See upstream run: ${UPSTREAM_RUN_URL}"
               if [ -n "${PR_NUMBER:-}" ]; then
                 COMMENT_FILE="$(mktemp -t determinism-gate-comment.XXXXXX.md)"
+                # Issue #1397 — the previous python heredoc (<<'PYEOF' inside
+                # nested `case`/`if`) failed to parse on every workflow run:
+                # bash's quoted heredoc terminator must be at column 0, but the
+                # YAML multi-line string preserves indentation. Move the
+                # Python code to a dedicated script file under `scripts/`.
                 UPSTREAM_CONCLUSION="${UPSTREAM_CONCLUSION}" \
                 UPSTREAM_RUN_URL="${UPSTREAM_RUN_URL}" \
                 UPSTREAM_HEAD_SHA="${UPSTREAM_HEAD_SHA}" \
                 COMMENT_FILE="${COMMENT_FILE}" \
-                python3 <<'PYEOF'
-                import os
-                lines = [
-                  "## :rotating_light: Cross-Platform Determinism Gate FAILED",
-                  "",
-                  f"The `Cross-Platform Determinism CI` workflow concluded **{os.environ['UPSTREAM_CONCLUSION']}** for commit `{os.environ['UPSTREAM_HEAD_SHA']}` on this PR. The PR cannot be merged until the determinism check passes on **all three OS matrix entries** (ubuntu-latest, windows-latest, macos-latest).",
-                  "",
-                  f"**Upstream run:** {os.environ['UPSTREAM_RUN_URL']}",
-                  "",
-                  "### Common causes",
-                  "- A new `HashMap` / `HashSet` was introduced where a deterministic `BTreeMap` is required (see #1297).",
-                  "- A non-deterministic `f32` reduction path (SIMD reordering, parallel reduction) was added.",
-                  "- A new dependency pulled in non-portable FP code (rebuild against `--release --features wiring-tracing` to reproduce).",
-                  "",
-                  "### Re-run",
-                  "Push a new commit to this branch to re-trigger the upstream `Cross-Platform Determinism CI` workflow.",
-                  "",
-                  "---",
-                  "*This comment is auto-posted by the `Fluxion Determinism Gate` listener job (issue #1351, closing #1297 acceptance gap).*",
-                ]
-                with open(os.environ["COMMENT_FILE"], "w") as f:
-                    f.write("\n".join(lines))
-                PYEOF
+                python3 "${GITHUB_WORKSPACE}/.github/workflows/scripts/post_determinism_gate_comment.py"
                 gh pr comment "${PR_NUMBER}" --body-file "${COMMENT_FILE}" \
                   || echo "::warning::Failed to post PR comment for PR #${PR_NUMBER}"
                 rm -f "${COMMENT_FILE}"
