@@ -217,9 +217,11 @@ pub struct ThermalModelData<T: ContinuousTensor<f64> + Clone> {
     /// Key: surface identifier (e.g., "wall_N", "window_S", "roof").
     /// BTreeMap for deterministic iteration order across platforms (Issue #1297)
     pub incident_solar_per_surface: BTreeMap<String, IncidentSolarAccumulator>,
-    /// Issue #1212 — solar position cache indexed by hour_of_year (0-8759).
-    /// Eliminates 5x redundancy: 5 surfaces × 8760 timesteps → 8760 unique computations.
-    pub sun_pos_cache: Vec<Option<SolarPosition>>,
+    /// Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
+    /// 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C) prevent
+    /// the 5R1C caller from overwriting the 9R4C caller's value (see
+    /// `cached_solar_position` in `thermal_model_core.rs`).
+    pub sun_pos_cache: std::collections::HashMap<(usize, i32), SolarPosition>,
 }
 
 impl<T: ContinuousTensor<f64> + Clone> Clone for ThermalModelData<T> {

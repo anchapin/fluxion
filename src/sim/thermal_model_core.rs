@@ -300,7 +300,7 @@ where
 
     /// Get or compute solar position for a given hour of year.
     ///
-    /// Issue #1212: Caches solar position by `(year, month, day, hour)` to eliminate
+    /// Issue #1212: Caches solar position by `(timestep, hour_idx)` to eliminate
     /// 5x redundant computation (5 surfaces × 8760 timesteps → 8760 unique values).
     ///
     /// # Arguments
@@ -308,7 +308,13 @@ where
     /// * `year` - Calendar year
     /// * `month` - Month (1-12)
     /// * `day` - Day of month
-    /// * `hour` - Hour of day (0-23)
+    /// * `hour` - Hour of day. The cache is keyed by `hour * 2` rounded, so the
+    ///   5R1C path (which passes integer hours) and the 9R4C path (which passes
+    ///   `hour + 0.5` for the timestep center) each get their own slot.
+    ///   Previously the cache was keyed only by `timestep`, which caused the
+    ///   second caller to silently read the first caller's value — a 0.5-hour
+    ///   solar-position offset that produced ~7 W imbalance in the 9R4C
+    ///   BE-implicit mass update (see #1391 follow-up).
     ///
     /// # Returns
     /// `SolarPosition` for the given datetime
@@ -320,8 +326,9 @@ where
         day: u32,
         hour: f64,
     ) -> SolarPosition {
-        let hour_idx = timestep.min(8759);
-        if let Some(Some(cached)) = self.0.sun_pos_cache.get(hour_idx).copied() {
+        let hour_slot = (hour * 2.0).round() as i32;
+        let key = (timestep, hour_slot);
+        if let Some(cached) = self.0.sun_pos_cache.get(&key).copied() {
             return cached;
         }
 
@@ -333,7 +340,7 @@ where
             day,
             hour,
         );
-        self.0.sun_pos_cache[hour_idx] = Some(sun_pos);
+        self.0.sun_pos_cache.insert(key, sun_pos);
         sun_pos
     }
 
@@ -2634,8 +2641,9 @@ impl ThermalModel<VectorField> {
             // BTreeMap for deterministic iteration order across platforms (Issue #1297)
             incident_solar_per_surface: std::collections::BTreeMap::new(),
 
-            // Issue #1212 — solar position cache (8760 hours × 1 computation = 5x speedup)
-            sun_pos_cache: vec![None; 8760],
+            // Issue #1212 — solar position cache keyed by `(timestep, hour_slot)`.
+            // 2 slots per timestep (integer-hour for 5R1C, mid-hour for 9R4C).
+            sun_pos_cache: std::collections::HashMap::new(),
         });
 
         model.update_derived_parameters();
