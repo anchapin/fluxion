@@ -3,7 +3,10 @@
 //! Module doc.
 
 use crate::physics::cta::{ContinuousTensor, VectorField};
+use crate::sim::sky_radiation::SolAirTemperature;
+use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
+use crate::validation::ashrae_140_cases::Orientation;
 use std::ops::Index;
 
 pub const DEFAULT_TOLERANCE: f64 = 1e-7;
@@ -87,27 +90,40 @@ impl InvariantChecker {
 
     /// Compute per-zone mass-node energy balance matching the actual physics model.
     ///
-    /// The model integrates the mass node with two distinct formulas (see
-    /// `physics_impl.rs::step_physics_5r1c`, `step_physics_9r4c`, and
-    /// `thermal_integration.rs`):
+    /// The model integrates the lumped mass node (`self.0.mass_temperatures` per zone)
+    /// with two distinct formulas (see `physics_impl.rs::step_physics_5r1c`,
+    /// `step_physics_9r4c`, and `thermal_integration.rs`):
     ///
-    /// * **5R1C Crank-Nicolson** (low-mass / Case 600 / Case 960): the
+    /// * **5R1C Crank-Nicolson** (low-mass / Case 600): the
     ///   `crank_nicolson_iso13790` integrator with `t_sup = T_i` (zone air)
-    ///   and `t_ext = t_sol_air`:
+    ///   and `t_ext = outdoor_temp` (the 5R1C step sets
+    ///   `t_sol_air = VectorField::from_scalar(outdoor_temp, n)`):
     ///   ```text
-    ///   storage = phi_m + h_tr_3 · (T_i − T_m_avg) + h_tr_em · (t_ext − T_m_avg)
+    ///   storage = phi_m + h_tr_3 · (T_i − T_m_avg) + h_tr_em · (T_out − T_m_avg)
     ///   ```
     ///   where `T_m_avg = (T_m_new + T_m_prev) / 2`.
     ///
-    /// * **9R4C backward-Euler** (high-mass / Case 900): the
-    ///   `backward_euler_update_2cond_h_tr3` integrator with `t_zone = T_i`
-    ///   (zone air) — no `h_tr_em` term:
+    /// * **9R4C backward-Euler** (high-mass / Case 900): the BE-implicit lumped
+    ///   update at `step_physics_9r4c` (physics_impl.rs:2757-2829):
     ///   ```text
-    ///   storage = phi_m + h_tr_3 · (T_i − T_m)
+    ///   (Cm/dt + h_tr_em + h_tr_3) · T_m_new =
+    ///     Cm/dt · T_m_old + h_tr_em · t_sol_air + h_tr_3 · T_s + phi_m
     ///   ```
+    ///   with `t_sol_air = t_sol_air_data[i]` (per-zone South-wall sol-air
+    ///   computed from weather + solar position) and
+    ///   `T_s = (h_ms · T_m_old + h_is · T_i + phi_st) / (h_ms + h_is + h_me)`.
+    ///
+    ///   Issue #1402 — the previous 9R4C branch was a 5R1C-style placeholder
+    ///   `storage − phi_m − h_tr_3·(T_i − T_m_new)` that omitted the
+    ///   `h_tr_em·(t_sol_air − T_m_new)` term and used `T_i` instead of `T_s`
+    ///   as the air-side boundary for `h_tr_3`. That produced ~160 W and
+    ///   ~259 W residual imbalance for Cases 900 and 960. The fixed branch
+    ///   reproduces the integrator's BE algebra exactly
+    ///   (`denom · T_m_new − numer ≈ 0`).
     ///
     /// Returns `(total_balance, per_zone_imbalances)`. Both are zero at the
-    /// machine-epsilon level when the integrator is conserving energy.
+    /// floating-point-ulp level when the integrator is conserving energy and
+    /// the per-zone sol-air reconstruction matches.
     ///
     /// **Issue #1388 / #1397 fix**: the previous formula was a heterogeneous
     /// mix of air-side paths (`q_w`, `q_ve`, `q_floor`) and mass-side paths
@@ -136,52 +152,211 @@ impl InvariantChecker {
         let opaque_solar_gains = model.opaque_solar_gains.as_ref();
         let area = model.zone_area.as_ref();
 
+        // Per-zone sol-air temperature (uniform across zones for the 9R4C path
+        // because `step_physics_9r4c` builds a single South-wall value per
+        // timestep — physics_impl.rs:1977-2020). Computed once here and passed
+        // to `zone_balance_for` to mirror the integrator's `t_sol_air_data`
+        // exactly.
+        let t_sol_air_data = self.compute_9r4c_t_sol_air(model, outdoor_temp);
+
         let mut total_balance = 0.0;
         let mut imbalances = Vec::with_capacity(num_zones);
 
         for i in 0..num_zones {
-            let t_air = temps[i];
-            let t_mass = mass_temps[i];
-            let t_mass_prev = prev_mass_temps[i];
-            let load_w = loads[i] * area[i];
-            let solar_w = solar_gains[i] * area[i];
-            let opaque_sol_w = opaque_solar_gains[i] * area[i];
-
-            let h_tr_em = model.h_tr_em[i];
-            let h_tr_3 = model.derived_h_tr_3[i];
-            let cm = model.thermal_capacitance[i];
-
-            let conv_frac = model.convective_fraction;
-            let rad_frac = 1.0 - conv_frac;
-            let sol_dist_to_air = model.solar_distribution_to_air;
-            let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
-
-            let _st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
-            let _st_sol_frac = 1.0 - solar_beam_to_mass;
-            let m_air_frac = rad_frac * sol_dist_to_air;
-            let m_sol_frac = solar_beam_to_mass;
-
-            let sol_to_air = solar_w * sol_dist_to_air;
-            let remaining_sol = solar_w - sol_to_air;
-
-            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
-
-            let storage = cm * (t_mass - t_mass_prev) / dt_seconds;
-
-            let zone_balance = match model.thermal_model_type {
-                ThermalModelType::NineRFourC => storage - (phi_m + h_tr_3 * (t_air - t_mass)),
-                _ => {
-                    let t_m_avg = 0.5 * (t_mass + t_mass_prev);
-                    storage
-                        - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (outdoor_temp - t_m_avg))
-                }
-            };
+            let zone_balance = self.zone_balance_for(
+                model,
+                i,
+                dt_seconds,
+                outdoor_temp,
+                temps[i],
+                mass_temps[i],
+                prev_mass_temps[i],
+                loads[i] * area[i],
+                solar_gains[i] * area[i],
+                opaque_solar_gains[i] * area[i],
+                t_sol_air_data[i],
+            );
 
             total_balance += zone_balance;
             imbalances.push(zone_balance);
         }
 
         (total_balance, imbalances)
+    }
+
+    /// Per-zone mass-node energy balance for one zone, matching the active
+    /// network's integrator exactly.
+    ///
+    /// Issue #1402 — for the 9R4C path we use the BE-implicit algebraic
+    /// form `denom · T_m_new − numer` (zero by construction of the integrator
+    /// step) rather than the explicit first-law form, because the latter
+    /// would lose ~ulp accuracy in the cancellation
+    /// `(h_tr_em + h_tr_3) · T_m_new`.
+    #[allow(clippy::too_many_arguments)]
+    fn zone_balance_for<T>(
+        &self,
+        model: &ThermalModel<T>,
+        i: usize,
+        dt_seconds: f64,
+        outdoor_temp: f64,
+        t_air: f64,
+        t_mass: f64,
+        t_mass_prev: f64,
+        load_w: f64,
+        solar_w: f64,
+        opaque_sol_w: f64,
+        t_sol_air_zone: f64,
+    ) -> f64
+    where
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + AsRef<[f64]>
+            + AsMut<[f64]>
+            + Index<usize, Output = f64>,
+    {
+        let h_tr_em = model.h_tr_em[i];
+        let h_tr_ms = model.h_tr_ms[i];
+        let h_tr_3 = *model.derived_h_tr_3.as_ref().get(i).unwrap_or(&h_tr_ms);
+        let cm = model.thermal_capacitance[i];
+
+        let conv_frac = model.convective_fraction;
+        let rad_frac = 1.0 - conv_frac;
+        let sol_dist_to_air = model.solar_distribution_to_air;
+        let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
+
+        let m_air_frac = rad_frac * sol_dist_to_air;
+        let m_sol_frac = solar_beam_to_mass;
+
+        let sol_to_air = solar_w * sol_dist_to_air;
+        let remaining_sol = solar_w - sol_to_air;
+        let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
+
+        let storage = cm * (t_mass - t_mass_prev) / dt_seconds;
+
+        match model.thermal_model_type {
+            ThermalModelType::NineRFourC => {
+                // BE-implicit lumped update at
+                // physics_impl.rs::step_physics_9r4c:2757-2829.
+                //
+                // Surface temperature T_s mirrors the integrator's local
+                // computation at line 2791-2796:
+                //   T_s = (h_ms·T_m_old + h_is·T_i + phi_st) / (h_ms + h_is + h_me)
+                // phi_st is rebuilt from the same scalars the integrator used.
+                let h_tr_is = model.h_tr_is[i];
+                let h_tr_me = model.h_tr_me[i];
+                let st_int_frac = rad_frac * (1.0 - sol_dist_to_air);
+                let st_sol_frac = 1.0 - solar_beam_to_mass;
+                let phi_st = load_w * st_int_frac + remaining_sol * st_sol_frac;
+
+                let ts_den = h_tr_ms + h_tr_is + h_tr_me;
+                let t_s = if ts_den > 1e-12 {
+                    (h_tr_ms * t_mass_prev + h_tr_is * t_air + phi_st) / ts_den
+                } else {
+                    t_air
+                };
+
+                // Algebraic first-law balance for the BE step:
+                //   denom · T_m_new − numer = 0
+                let cm_dt = cm / dt_seconds;
+                let denom = cm_dt + h_tr_em + h_tr_3;
+                let numer = cm_dt * t_mass_prev + h_tr_em * t_sol_air_zone + h_tr_3 * t_s + phi_m;
+
+                denom * t_mass - numer
+            }
+            _ => {
+                // 5R1C Crank-Nicolson: matches `crank_nicolson_iso13790`
+                // (physics_impl.rs:963-973) used by step_physics_5r1c with
+                // t_sol_air = uniform outdoor_temp (physics_impl.rs:165).
+                let t_m_avg = 0.5 * (t_mass + t_mass_prev);
+                storage - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (outdoor_temp - t_m_avg))
+            }
+        }
+    }
+
+    /// Compute the South-wall sol-air temperature for the 9R4C path, matching
+    /// `step_physics_9r4c` lines 1977-2020 of `physics_impl.rs`.
+    ///
+    /// Issue #1402 — the 9R4C integrator builds
+    /// `t_sol_air_data[i] = sol_air.for_wall(outdoor_temp, wall_irr.total_wm2,
+    /// wall_irr.ground_reflected_wm2)` per zone from the South-orientation
+    /// surface irradiance, computed from `model.weather.{hour_of_year, dni,
+    /// dhi, ghi}` and `model.{latitude_deg, longitude_deg}`. Reading the
+    /// integrator's value verbatim requires re-running the solar-position /
+    /// surface-irradiance / sol-air chain, which is what this helper does.
+    ///
+    /// Falls back to `outdoor_temp` (uniform across zones) when any of
+    /// `weather`, `latitude_deg`, or `longitude_deg` are unavailable, so the
+    /// invariant check remains well-defined for callers that don't drive
+    /// per-timestep weather (e.g. unit tests with synthetic temperature).
+    ///
+    /// Returns a `Vec<f64>` of length `model.num_zones` to match the
+    /// integrator's uniform-value-per-zone layout.
+    fn compute_9r4c_t_sol_air<T>(&self, model: &ThermalModel<T>, outdoor_temp: f64) -> Vec<f64>
+    where
+        T: ContinuousTensor<f64>
+            + From<VectorField>
+            + AsRef<[f64]>
+            + AsMut<[f64]>
+            + Index<usize, Output = f64>,
+    {
+        let n = model.num_zones;
+        let fallback = vec![outdoor_temp; n];
+
+        let weather = match model.weather.as_ref() {
+            Some(w) => w,
+            None => return fallback,
+        };
+
+        // Without a configured site, fall back to outdoor_temp. (lat == 0 &&
+        // lon == 0 means the model was never bound to a real location, even
+        // if weather is present.)
+        if model.latitude_deg == 0.0 && model.longitude_deg == 0.0 {
+            return fallback;
+        }
+
+        // Replicate step_physics_9r4c:1978-1988 (month/day/hour derivation
+        // from the hour-of-year, ignoring leap year).
+        let hour_of_year = weather.hour_of_year;
+        let month_days: [usize; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+        let day_of_year = hour_of_year / 24;
+        let hour = (hour_of_year % 24) as f64 + 0.5;
+        let month = month_days
+            .iter()
+            .position(|&d| d > day_of_year)
+            .unwrap_or(12)
+            .saturating_sub(1) as u32;
+        let day = (day_of_year - month_days.get(month as usize).copied().unwrap_or(0)) as u32 + 1;
+
+        // Solar position — note `day.min(28)` matches the integrator's guard
+        // against month-days indices that would otherwise exceed month length.
+        let sun_pos = calculate_solar_position(
+            model.latitude_deg,
+            model.longitude_deg,
+            2024,
+            month,
+            day.min(28),
+            hour,
+        );
+
+        let ground_reflectance = 0.2;
+        let wall_irr = calculate_surface_irradiance(
+            &sun_pos,
+            weather.dni,
+            weather.dhi,
+            Some(weather.ghi),
+            Orientation::South,
+            ground_reflectance,
+            day_of_year + 1,
+        );
+
+        let sol_air = SolAirTemperature::ashrae_140_default();
+        let t_sol_air_zone = sol_air.for_wall(
+            outdoor_temp,
+            wall_irr.total_wm2,
+            wall_irr.ground_reflected_wm2,
+        );
+
+        vec![t_sol_air_zone; n]
     }
 
     fn calculate_energy_imbalance<T>(
@@ -249,43 +424,27 @@ impl InvariantChecker {
         let solar_gains = model.solar_gains.as_ref();
         let opaque_solar_gains = model.opaque_solar_gains.as_ref();
 
+        // Sol-air per zone (Issue #1402 — 9R4C needs the integrator's
+        // South-wall sol-air value, not raw outdoor_temp).
+        let t_sol_air_data = self.compute_9r4c_t_sol_air(model, outdoor_temp);
+
         let mut total_balance = 0.0;
         let mut zone_imbalances = Vec::with_capacity(num_zones);
 
         for i in 0..num_zones {
-            let t_air = temps[i];
-            let t_mass = mass_temps[i];
-            let t_mass_prev = prev_mass_temps[i];
-            let load_w = modified_loads[i] * area[i];
-            let solar_w = solar_gains[i] * area[i];
-            let opaque_sol_w = opaque_solar_gains[i] * area[i];
-
-            let h_tr_em = model.h_tr_em[i];
-            let h_tr_3 = model.derived_h_tr_3[i];
-            let cm = model.thermal_capacitance[i];
-
-            let conv_frac = model.convective_fraction;
-            let rad_frac = 1.0 - conv_frac;
-            let sol_dist_to_air = model.solar_distribution_to_air;
-            let solar_beam_to_mass = model.solar_beam_to_mass_fraction;
-
-            let sol_to_air = solar_w * sol_dist_to_air;
-            let remaining_sol = solar_w - sol_to_air;
-            let m_air_frac = rad_frac * sol_dist_to_air;
-            let m_sol_frac = solar_beam_to_mass;
-
-            let phi_m = load_w * m_air_frac + remaining_sol * m_sol_frac + opaque_sol_w;
-
-            let storage = cm * (t_mass - t_mass_prev) / dt_seconds;
-
-            let zone_balance = match model.thermal_model_type {
-                ThermalModelType::NineRFourC => storage - (phi_m + h_tr_3 * (t_air - t_mass)),
-                _ => {
-                    let t_m_avg = 0.5 * (t_mass + t_mass_prev);
-                    storage
-                        - (phi_m + h_tr_3 * (t_air - t_m_avg) + h_tr_em * (outdoor_temp - t_m_avg))
-                }
-            };
+            let zone_balance = self.zone_balance_for(
+                model,
+                i,
+                dt_seconds,
+                outdoor_temp,
+                temps[i],
+                mass_temps[i],
+                prev_mass_temps[i],
+                modified_loads[i] * area[i],
+                solar_gains[i] * area[i],
+                opaque_solar_gains[i] * area[i],
+                t_sol_air_data[i],
+            );
 
             total_balance += zone_balance;
             zone_imbalances.push(zone_balance);
