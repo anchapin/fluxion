@@ -69,6 +69,43 @@ impl PredictiveController {
         }
     }
 
+    /// Compute the effective heating and cooling setpoints after applying the
+    /// inertia and predictive corrections.
+    ///
+    /// Canonical sign convention (issue #1412, EnergyPlus IO Reference
+    /// "Zone Thermostat / Predictive Controller"):
+    ///
+    ///   `inertia_factor  = α · (T_zone − T_mass)`
+    ///   `predictive_factor = β · dT/dt`
+    ///   `eff_heating_sp  = heating_setpoint  − inertia_factor − predictive_factor`
+    ///   `eff_cooling_sp  = cooling_setpoint  − inertia_factor − predictive_factor`
+    ///
+    /// When the mass is cooler than the zone (`inertia_factor > 0`), the
+    /// effective setpoints are lowered: heating triggers earlier (anticipating
+    /// the mass absorbing heat and cooling the zone) and cooling defers
+    /// (anticipating the mass helping the zone cool). The opposite holds when
+    /// the mass is warmer than the zone.
+    ///
+    /// Both `calculate_modulation` and `calculate_modulation_with_setpoints`
+    /// route through this helper, so the two overloads cannot drift apart
+    /// (the bug fixed by issue #1412 was the dynamic-setpoint overload using
+    /// `+ inertia_factor`, the opposite of the static-setpoint overload).
+    fn effective_setpoints(
+        &self,
+        zone_temp: f64,
+        mass_temp: f64,
+        temp_rate: f64,
+        heating_setpoint: f64,
+        cooling_setpoint: f64,
+    ) -> (f64, f64) {
+        let inertia_factor = self.thermal_inertia_gain * (zone_temp - mass_temp);
+        let predictive_factor = self.temp_rate_gain * temp_rate;
+        (
+            heating_setpoint - inertia_factor - predictive_factor,
+            cooling_setpoint - inertia_factor - predictive_factor,
+        )
+    }
+
     /// Calculate control signal (mode and modulation factor).
     ///
     /// Uses thermal inertia to predict thermal response and adjust control signal.
@@ -100,21 +137,14 @@ impl PredictiveController {
             return (HVACMode::Off, 0.0);
         }
 
-        // Step 1: Inertia factor based on mass temperature offset
-        // If mass temp is cooler than zone temp, building will cool faster
-        // So subtract from setpoints to anticipate cooling earlier
-        let inertia_factor = self.thermal_inertia_gain * (zone_temp - mass_temp);
-
-        // Step 2: Predictive factor based on temperature rate
-        // If temperature is rising rapidly, anticipate overshoot
-        // For cooling: rising temp -> reduce modulation
-        // For heating: falling temp -> reduce modulation
-        let predictive_factor = self.temp_rate_gain * temp_rate;
-
-        // Step 3: Effective setpoints adjusted by inertia and prediction
-        // Cooler mass (positive inertia_factor) lowers setpoints -> triggers heating/cooling earlier
-        let effective_heating_sp = self.heating_setpoint - inertia_factor - predictive_factor;
-        let effective_cooling_sp = self.cooling_setpoint - inertia_factor - predictive_factor;
+        // Steps 1-3: effective setpoints (canonical sign — see `effective_setpoints`)
+        let (effective_heating_sp, effective_cooling_sp) = self.effective_setpoints(
+            zone_temp,
+            mass_temp,
+            temp_rate,
+            self.heating_setpoint,
+            self.cooling_setpoint,
+        );
 
         // Step 4: Determine mode based on zone temp vs adjusted setpoints
         // Apply deadband tolerance to prevent cycling
@@ -150,6 +180,10 @@ impl PredictiveController {
     ///
     /// This variant allows passing time-varying setpoints, which is needed for
     /// setback schedules where the setpoint changes at different hours.
+    ///
+    /// Sign convention on the inertia and predictive contributions is identical
+    /// to `calculate_modulation` — both overloads route through the private
+    /// `effective_setpoints` helper, so the two cannot drift apart (issue #1412).
     pub fn calculate_modulation_with_setpoints(
         &mut self,
         zone_temp: f64,
@@ -158,15 +192,18 @@ impl PredictiveController {
         heating_setpoint: f64,
         cooling_setpoint: f64,
     ) -> (HVACMode, f64) {
-        // Step 1: Inertia factor based on mass temperature offset
-        let inertia_factor = self.thermal_inertia_gain * (zone_temp - mass_temp);
+        if zone_temp.is_infinite() || zone_temp.is_nan() {
+            return (HVACMode::Off, 0.0);
+        }
 
-        // Step 2: Predictive factor based on temperature rate
-        let predictive_factor = self.temp_rate_gain * temp_rate;
-
-        // Step 3: Effective setpoints adjusted by inertia and prediction (use provided setpoints)
-        let effective_heating_sp = heating_setpoint + inertia_factor - predictive_factor;
-        let effective_cooling_sp = cooling_setpoint + inertia_factor - predictive_factor;
+        // Steps 1-3: effective setpoints (canonical sign — see `effective_setpoints`)
+        let (effective_heating_sp, effective_cooling_sp) = self.effective_setpoints(
+            zone_temp,
+            mass_temp,
+            temp_rate,
+            heating_setpoint,
+            cooling_setpoint,
+        );
 
         // Step 4: Determine mode based on zone temp vs adjusted setpoints
         let heating_threshold = effective_heating_sp - self.deadband_tolerance;

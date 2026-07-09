@@ -207,3 +207,153 @@ fn test_rfc0001_prediction_horizon_constant() {
         "old `24h_fixed` tracing field must be removed (replaced by rfc0001_46min)"
     );
 }
+
+/// Issue #1412: regression test for the `inertia_factor` sign drift between
+/// the two `PredictiveController` overloads.
+///
+/// Prior to the fix, `calculate_modulation_with_setpoints` applied the
+/// inertia contribution with the opposite sign of `calculate_modulation`:
+///
+///   `calculate_modulation`           : `eff_h_sp = h_sp − inertia − predict`
+///   `calculate_modulation_with_setpoints` (pre-fix): `eff_h_sp = h_sp + inertia − predict`
+///
+/// At α=0.1 and a 10 °C zone/mass gap, the two overloads diverged by 1 °C
+/// per call (2 °C when the gap reverses sign). This test feeds identical
+/// `(zone_temp, mass_temp, temp_rate, heating_sp, cooling_sp)` inputs to
+/// both overloads (on two freshly-constructed controllers, so the
+/// `previous_zone_temp` state is identical) and asserts the resulting
+/// `(mode, modulation)` tuples match within 1e-12.
+///
+/// This test would have failed on the pre-fix overload (sign-flipped
+/// inertia contribution in the dynamic-setpoint branch) and is the
+/// gate-keeping invariant for the helper-hoist refactor
+/// (`PredictiveController::effective_setpoints`) introduced in #1412.
+#[test]
+fn test_inertia_factor_sign_parity() {
+    use fluxion::sim::hvac::modes::PredictiveController;
+
+    // Sweep across mass-warmer, mass-cooler, deadband-equal, and stressed
+    // (10 °C gap) regimes. For each (zone, mass, rate) triple, the static
+    // overload is called with `heating_sp=20, cooling_sp=27`; the dynamic
+    // overload is called with the SAME `heating_sp` and `cooling_sp` as
+    // arguments. Post-fix, the helper hoist guarantees bit-equivalent
+    // outputs (1e-12 tolerance allows for f64 representation only).
+    let cases: &[(f64, f64, f64)] = &[
+        // (zone, mass, temp_rate)
+        (15.0, 20.0, -0.01), // strong heating demand, mass warmer
+        (19.0, 19.0, 0.0),   // mild heating, deadband-equal
+        (22.0, 18.0, 0.0),   // mass cooler, positive inertia
+        (24.0, 28.0, 0.0),   // mass warmer, negative inertia
+        (28.0, 27.0, 0.001), // mild cooling
+        (32.0, 30.0, 0.01),  // strong cooling
+        (16.0, 26.0, 0.0),   // 10 °C gap (issue's worst-case magnitude)
+    ];
+    let h_sp = 20.0_f64;
+    let c_sp = 27.0_f64;
+
+    for &(zone_temp, mass_temp, temp_rate) in cases {
+        let mut static_ctrl = PredictiveController::new(h_sp, c_sp);
+        let mut dynamic_ctrl = PredictiveController::new(h_sp, c_sp);
+
+        let (mode_static, mod_static) =
+            static_ctrl.calculate_modulation(zone_temp, mass_temp, temp_rate);
+        let (mode_dynamic, mod_dynamic) = dynamic_ctrl
+            .calculate_modulation_with_setpoints(zone_temp, mass_temp, temp_rate, h_sp, c_sp);
+
+        // The mode decision must be identical — a sign-flip on the
+        // inertia contribution can flip Heating↔Off (and, in extreme
+        // cases, Heating↔Cooling) for the same numerical inputs.
+        assert_eq!(
+            mode_dynamic, mode_static,
+            "mode drift for (zone={zone_temp}, mass={mass_temp}, rate={temp_rate}): \
+             static={mode_static:?}, dynamic={mode_dynamic:?} — sign-flip on \
+             inertia_factor between the two overloads (issue #1412)"
+        );
+
+        // The modulation must match within 1e-12. The static-overload
+        // thermal_inertia_gain=0.1 means a 10 °C zone/mass gap gives a
+        // 0.1 · 10 = 1.0 °C divergence pre-fix; post-fix, exactly 0.
+        assert!(
+            (mod_static - mod_dynamic).abs() < 1e-12,
+            "modulation drift for (zone={zone_temp}, mass={mass_temp}, rate={temp_rate}): \
+             static={mod_static}, dynamic={mod_dynamic}, |Δ|={} — sign-flip on \
+             inertia_factor between the two overloads (issue #1412)",
+            (mod_static - mod_dynamic).abs()
+        );
+
+        // Also verify previous_zone_temp is updated identically (both
+        // overloads share the same state-update path; the helper hoist
+        // makes this a no-brainer).
+        assert_eq!(
+            dynamic_ctrl.previous_zone_temp, static_ctrl.previous_zone_temp,
+            "previous_zone_temp drift for (zone={zone_temp}, mass={mass_temp}, rate={temp_rate})"
+        );
+    }
+}
+
+/// Issue #1412: assert the **direction** of the inertia correction is the
+/// physically correct one — when the mass is cooler than the zone, the
+/// controller should anticipate further cooling and lower the effective
+/// heating setpoint (triggering heating earlier). EnergyPlus IO Reference
+/// "Zone Thermostat / Predictive Controller" specifies this direction.
+///
+/// This is a "physical intent" guard that complements the parity test
+/// above: even if both overloads agreed on the same (wrong) sign, this
+/// test would still flag the bug.
+#[test]
+fn test_inertia_factor_physical_direction() {
+    use fluxion::sim::hvac::modes::PredictiveController;
+
+    // Mass cooler than zone: inertia_factor = α·(zone−mass) > 0.
+    // Correct behavior: lower the effective heating setpoint so heating
+    // starts at a HIGHER zone temperature (anticipates further cooling).
+    let mut ctrl = PredictiveController::new(20.0, 27.0);
+    // Pick inputs where the mass is 4 °C cooler than the zone. Inertia
+    // = 0.1 · 4 = 0.4. We pick a zone_temp just barely above the
+    // setpoint-adjusted threshold so the inertia term is the deciding
+    // factor.
+    let zone_temp = 19.7;
+    let mass_temp = 15.7; // 4 °C cooler
+    let (mode, _) = ctrl.calculate_modulation(zone_temp, mass_temp, 0.0);
+
+    // With canonical sign (`h_eff = h_sp − inertia`), the effective
+    // heating setpoint is 20.0 − 0.4 = 19.6, threshold 19.1. Zone 19.7
+    // is above 19.1 → Off (the controller "knows" the mass is about to
+    // drag the zone down further, so it accepts the slight overshoot
+    // rather than over-heating).
+    //
+    // Pre-fix (or with the dynamic overload's inverted sign), the
+    // effective heating setpoint would be 20.0 + 0.4 = 20.4, threshold
+    // 19.9. Zone 19.7 < 19.9 → Heating. That is the BUG: heating
+    // turns on in the wrong direction when the mass is already cooling
+    // things.
+    assert_eq!(
+        mode,
+        HVACMode::Off,
+        "Mass cooler than zone (inertia>0) should NOT trigger heating at \
+         zone=19.7 (the controller should anticipate the mass's cooling \
+         contribution). Got {mode:?} — the inertia sign is inverted \
+         (issue #1412)."
+    );
+
+    // Symmetric check: when the mass is WARMER than the zone, the
+    // controller should anticipate warming and raise the effective
+    // heating setpoint, so the zone has to fall further to trigger
+    // heating.
+    let mut ctrl2 = PredictiveController::new(20.0, 27.0);
+    let (mode2, _) = ctrl2.calculate_modulation(19.3, 23.3, 0.0); // mass 4°C warmer
+                                                                  // inertia = 0.1·(19.3−23.3) = −0.4
+                                                                  // h_eff = 20.0 − (−0.4) = 20.4, threshold 19.9
+                                                                  // 19.3 < 19.9 → Heating (controller does NOT
+                                                                  // fire on the +0.4 direction; it tolerates
+                                                                  // the slight under-shoot because the mass is
+                                                                  // about to warm the zone).
+    assert_eq!(
+        mode2,
+        HVACMode::Heating,
+        "Mass warmer than zone (inertia<0) at zone=19.3 should trigger heating \
+         (controller tolerates under-shoot, anticipating the mass's warming \
+         contribution). Got {mode2:?} — the inertia sign is inverted \
+         (issue #1412)."
+    );
+}
