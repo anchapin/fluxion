@@ -182,6 +182,10 @@ fn test_cli_validate_command_returns_ok() {
         case_960: false,
         detailed_errors: false,
         format: "text".to_string(),
+        n_zone_network: false,
+        n_zone_zones: 3,
+        n_zone_conductance: 50.0,
+        n_zone_tolerance: 1e-6,
     };
     let result = execute_validate_command(&cmd);
     assert!(
@@ -202,6 +206,10 @@ fn test_cli_validate_command_custom_tolerance() {
         case_960: false,
         detailed_errors: false,
         format: "json".to_string(),
+        n_zone_network: false,
+        n_zone_zones: 3,
+        n_zone_conductance: 50.0,
+        n_zone_tolerance: 1e-6,
     };
     let result = execute_validate_command(&cmd);
     assert!(

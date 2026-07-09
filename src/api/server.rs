@@ -312,14 +312,17 @@ pub fn run_simulation(
     let floor_area = schema.geometry.total_floor_area.max(1.0);
     let eui = total_energy / floor_area;
 
+    let peak_heating_load = model.get_peak_heating_power_kw() * 1000.0;
+    let peak_cooling_load = model.get_peak_cooling_power_kw() * 1000.0;
+
     let hourly_zone_temperatures = model.get_hourly_temperatures();
     let zone_temperatures = model.get_temperatures();
 
     Ok(SimulationOutput {
         eui,
         total_energy,
-        peak_heating_load: 0.0,
-        peak_cooling_load: 0.0,
+        peak_heating_load,
+        peak_cooling_load,
         heating_energy,
         cooling_energy,
         zone_temperatures: Some(zone_temperatures),

@@ -170,6 +170,15 @@ async fn simulate_returns_heating_and_cooling_energy() {
     assert!(output["cooling_energy"].is_number());
     assert!(output["total_energy"].is_number());
     assert!(output["eui"].is_number());
+
+    let peak_heating = output["peak_heating_load"].as_f64().unwrap();
+    let peak_cooling = output["peak_cooling_load"].as_f64().unwrap();
+    assert!(peak_heating >= 0.0, "peak_heating_load was {peak_heating}");
+    assert!(peak_cooling >= 0.0, "peak_cooling_load was {peak_cooling}");
+    assert!(
+        peak_heating > 0.0 || peak_cooling > 0.0,
+        "expected at least one non-zero peak load, got heating={peak_heating}, cooling={peak_cooling}"
+    );
 }
 
 #[tokio::test]
@@ -279,6 +288,43 @@ async fn simulate_matches_in_process_within_tolerance() {
     let remote_cooling = v["output"]["cooling_energy"].as_f64().unwrap();
     assert_relative_eq(remote_heating, direct.heating_energy, 0.001);
     assert_relative_eq(remote_cooling, direct.cooling_energy, 0.001);
+}
+
+#[tokio::test]
+async fn simulate_peak_loads_match_in_process() {
+    let schema = default_schema_v1();
+
+    let direct = run_simulation(&schema, 1, false).expect("in-process sim");
+    let (base, _state, _shutdown) = start_server().await;
+
+    let body = json!({
+        "version": "V1",
+        "metadata": SchemaMetadata::default(),
+        "geometry": Geometry::default(),
+        "constructions": ConstructionSet::default(),
+        "schedules": ScheduleSet::default(),
+        "weather": WeatherData::default(),
+        "controls": ControlSet::default(),
+        "output": SimulationOutput::default(),
+        "options": { "years": 1, "use_surrogates": false }
+    });
+    let resp = http_client()
+        .post(format!("{base}/v1/simulate"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+
+    let remote_peak_heating = v["output"]["peak_heating_load"].as_f64().unwrap();
+    let remote_peak_cooling = v["output"]["peak_cooling_load"].as_f64().unwrap();
+    assert_relative_eq(remote_peak_heating, direct.peak_heating_load, 0.001);
+    assert_relative_eq(remote_peak_cooling, direct.peak_cooling_load, 0.001);
+    assert!(
+        remote_peak_heating > 0.0 || remote_peak_cooling > 0.0,
+        "expected at least one non-zero peak load, got heating={remote_peak_heating}, cooling={remote_peak_cooling}"
+    );
 }
 
 #[tokio::test]

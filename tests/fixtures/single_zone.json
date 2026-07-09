@@ -1,10 +1,10 @@
 {
   "version": "V1",
   "metadata": {
-    "name": "single-zone-demo",
-    "description": "Single-zone reference fixture for docs and smoke tests (Issue #1411).",
-    "author": "Fluxion Team",
-    "created_at": "2026-07-09",
+    "name": "single-zone-api-fixture",
+    "description": "Single-zone REST API fixture for /v1/simulate smoke tests",
+    "author": null,
+    "created_at": null,
     "schema_version": "V1"
   },
   "geometry": {
@@ -25,9 +25,33 @@
     "wall": {
       "name": "Default Wall",
       "layers": [
-        {"name": "Plasterboard", "conductivity": 0.16, "density": 950.0, "specific_heat": 840.0, "thickness": 0.012, "emissivity": 0.9, "absorptance": 0.7},
-        {"name": "Fiberglass", "conductivity": 0.04, "density": 12.0, "specific_heat": 840.0, "thickness": 0.066, "emissivity": 0.9, "absorptance": 0.7},
-        {"name": "Wood siding", "conductivity": 0.14, "density": 500.0, "specific_heat": 1300.0, "thickness": 0.009, "emissivity": 0.9, "absorptance": 0.7}
+        {
+          "name": "Plasterboard",
+          "conductivity": 0.16,
+          "density": 950.0,
+          "specific_heat": 840.0,
+          "thickness": 0.012,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        },
+        {
+          "name": "Fiberglass",
+          "conductivity": 0.04,
+          "density": 12.0,
+          "specific_heat": 840.0,
+          "thickness": 0.066,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        },
+        {
+          "name": "Wood siding",
+          "conductivity": 0.14,
+          "density": 500.0,
+          "specific_heat": 1300.0,
+          "thickness": 0.009,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        }
       ],
       "window": {
         "window_area": 12.0,
@@ -38,60 +62,108 @@
     "roof": {
       "name": "Default Roof",
       "layers": [
-        {"name": "Plasterboard", "conductivity": 0.16, "density": 950.0, "specific_heat": 840.0, "thickness": 0.012, "emissivity": 0.9, "absorptance": 0.7}
+        {
+          "name": "Plasterboard",
+          "conductivity": 0.16,
+          "density": 950.0,
+          "specific_heat": 840.0,
+          "thickness": 0.012,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        },
+        {
+          "name": "Fiberglass",
+          "conductivity": 0.04,
+          "density": 12.0,
+          "specific_heat": 840.0,
+          "thickness": 0.066,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        },
+        {
+          "name": "Wood siding",
+          "conductivity": 0.14,
+          "density": 500.0,
+          "specific_heat": 1300.0,
+          "thickness": 0.009,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        }
       ],
-      "window": null
+      "window": {
+        "window_area": 12.0,
+        "window_u_value": 1.5,
+        "window_shgc": 0.3
+      }
     },
     "floor": {
       "name": "Default Floor",
       "layers": [
-        {"name": "Wood siding", "conductivity": 0.14, "density": 500.0, "specific_heat": 1300.0, "thickness": 0.009, "emissivity": 0.9, "absorptance": 0.7}
+        {
+          "name": "Plasterboard",
+          "conductivity": 0.16,
+          "density": 950.0,
+          "specific_heat": 840.0,
+          "thickness": 0.012,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        },
+        {
+          "name": "Fiberglass",
+          "conductivity": 0.04,
+          "density": 12.0,
+          "specific_heat": 840.0,
+          "thickness": 0.066,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        },
+        {
+          "name": "Wood siding",
+          "conductivity": 0.14,
+          "density": 500.0,
+          "specific_heat": 1300.0,
+          "thickness": 0.009,
+          "emissivity": 0.9,
+          "absorptance": 0.7
+        }
       ],
-      "window": null
+      "window": {
+        "window_area": 12.0,
+        "window_u_value": 1.5,
+        "window_shgc": 0.3
+      }
     },
     "interzone": null
   },
   "schedules": {
     "occupancy": {
       "name": "Occupancy",
-      "schedule_type": "Weekly",
+      "schedule_type": "Constant",
       "values": {
-        "Weekly": [
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        ]
+        "Daily": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       }
     },
     "lighting": {
       "name": "Lighting",
-      "schedule_type": "Weekly",
+      "schedule_type": "Constant",
       "values": {
-        "Weekly": [
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
-          [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-        ]
+        "Daily": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
       }
     },
     "hvac": {
       "heating": {
-        "name": "HVAC",
+        "name": "Heating Setpoint",
         "schedule_type": "Constant",
-        "values": {"Daily": [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0]}
+        "values": {
+          "Daily": [20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0, 20.0]
+        }
       },
       "cooling": {
-        "name": "HVAC",
+        "name": "Cooling Setpoint",
         "schedule_type": "Constant",
-        "values": {"Daily": [24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0]}
+        "values": {
+          "Daily": [24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0, 24.0]
+        }
       }
     },
     "infiltration": null
