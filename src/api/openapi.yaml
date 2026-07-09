@@ -193,8 +193,8 @@ paths:
                   output:
                     eui: 0.0
                     total_energy: 0.0
-                    peak_heating_load: 0.0
-                    peak_cooling_load: 0.0
+                    peak_heating_load: 3500.0
+                    peak_cooling_load: 1200.0
                     heating_energy: 0.0
                     cooling_energy: 0.0
                     zone_temperatures: null
@@ -664,9 +664,13 @@ components:
         peak_heating_load:
           type: number
           format: double
+          minimum: 0
+          description: Peak heating demand observed during the run, in Watts. Defaults to 0.0 when no heating demand occurs.
         peak_cooling_load:
           type: number
           format: double
+          minimum: 0
+          description: Peak cooling demand observed during the run, in Watts. Defaults to 0.0 when no cooling demand occurs.
         heating_energy:
           type: number
           format: double

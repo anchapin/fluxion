@@ -274,7 +274,9 @@ impl Default for ControlSet {
 pub struct SimulationOutput {
     pub eui: f64,
     pub total_energy: f64,
+    /// Peak heating demand observed during the run, in Watts.
     pub peak_heating_load: f64,
+    /// Peak cooling demand observed during the run, in Watts.
     pub peak_cooling_load: f64,
     pub heating_energy: f64,
     pub cooling_energy: f64,
