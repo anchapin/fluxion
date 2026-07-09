@@ -1,25 +1,33 @@
 version: '3.8'
 
 services:
-  fluxion-api:
+  fluxion-rest:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./models:/home/fluxion/models
-      - ./data:/home/fluxion/data
-    environment:
-      - RUST_LOG=info
-      - PYTHONUNBUFFERED=1
+    image: fluxion-rest:latest
+    container_name: fluxion-rest
     restart: unless-stopped
+    ports:
+      # Port 8080 — matches FLUXION_REST_PORT in the Dockerfile and
+      # src/bin/fluxion_rest.rs. The legacy `fluxion-api` (port 8000)
+      # referenced in older revisions of this file no longer exists;
+      # the Rust binary is the only deployment surface (Issue #1411).
+      - "8080:8080"
+    environment:
+      - FLUXION_REST_BIND=0.0.0.0
+      - FLUXION_REST_PORT=8080
+      - RUST_LOG=info
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8000/health')"]
+      # /v1/healthz — matches src/api/server.rs. The legacy `/health`
+      # endpoint (referenced in older revisions) was a Python API
+      # route that no longer ships; the Rust binary only serves
+      # `/v1/healthz`.
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v1/healthz"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 5s
 
   # Optional: Redis for caching (future enhancement)
   # redis:
