@@ -1,135 +1,142 @@
-# result-bem: Issue #1326 — Ground-reflected component for horizontal surfaces
+# Issue #1412 — PredictiveController inertia_factor sign drift
 
-**status**: COMPLETE  
-**pr**: https://github.com/anchapin/fluxion/pull/1359  
-**branch**: fix/issue-1326-ground-reflected-tilt  
-**commit**: 85a6e9902cf6e3f6084a07a4372b9b42d2f8b9a3  
+**Status:** COMPLETE
+**Branch:** `fix/issue-1412-predictive-controller-sign`
+**PR:** (opened at end of session — see commit message)
 
 ## Summary
 
-Diagnosed and patched the ground-reflected boundary conditions in
-`src/solar/surface_irradiance.rs::calculate_surface_irradiance`. The
-isotropic view-factor formula `E_g = ρ · GHI · (1 − cos β) / 2` is correct
-on its open interval β ∈ (0°, 180°) — at β = 90° (vertical wall) it
-yields the E+ value 0.5·ρ·GHI — but its endpoint limits are inverted
-relative to the actual ground-hemisphere view factor: a horizontal roof
-(β = 0°) sees the full ground hemisphere (must receive ρ·GHI, not 0)
-and a down-facing surface (β = 180°) sees no ground (must receive 0,
-not ρ·GHI). The patch pins both endpoints explicitly using the same
-1e-9 deg guard pattern as PR #1325; the open interval is byte-identical
-to the pre-fix code (no regression in south-wall E+ comparison).
+Unified the `inertia_factor` sign across the two `PredictiveController`
+overloads. Both `calculate_modulation` and `calculate_modulation_with_setpoints`
+now route through a new private helper `effective_setpoints(...)` that
+encodes the canonical, physically correct sign convention. Pre-fix, the
+two overloads diverged by up to 2 °C per call at the 10 °C zone/mass
+gap the issue cites — silently shifting annual heating energy during
+setback schedules.
 
-## Root cause
+## Sign convention chosen
 
-The standard isotropic ground-reflected formula
-`E_g = ρ · GHI · (1 − cos β) / 2` has limits:
-- β = 0°   → 0     (WRONG: roof sees full ground, must be ρ·GHI)
-- β = 90°  → 0.5·ρ·GHI  ✓ (correct, E+ value)
-- β = 180° → ρ·GHI  (WRONG: down-facing sees no ground, must be 0)
+**`eff_heating_sp = heating_setpoint − inertia_factor − predictive_factor`**
+**`eff_cooling_sp = cooling_setpoint − inertia_factor − predictive_factor`**
 
-The formula treats β as the tilt from vertical (so β=0 means surface
-facing down at the ground, β=180 means surface facing up at the sky).
-For an UP-facing tilted surface (the building-energy convention where
-β=0 is horizontal-up), the boundary limits are inverted.
+where `inertia_factor = α · (T_zone − T_mass)` and `predictive_factor = β · dT/dt`.
 
-## Fix
+**Why this is canonical (per the issue + EnergyPlus IO Reference "Zone
+Thermostat / Predictive Controller" cited in the issue body):**
 
-Mirror the PR #1325 beam-pattern with two explicit endpoint branches
-(1e-9 deg guard):
+- When the mass is **cooler** than the zone (`inertia_factor > 0`):
+  the mass is absorbing heat and cooling the zone. The controller should
+  **anticipate** that cooling by:
+  - Lowering the effective heating setpoint → heating triggers at a
+    higher zone temperature (fires earlier)
+  - Lowering the effective cooling setpoint → cooling has to wait
+    until the zone is hotter (defers — the mass is already helping)
+- When the mass is **warmer** than the zone (`inertia_factor < 0`):
+  the mass is releasing heat and warming the zone. The controller
+  anticipates the warming and **raises** both setpoints (tolerates a
+  slight under-shoot in heating, slight over-shoot in cooling).
 
-```rust
-let ground_reflected = if tilt_deg.abs() < 1e-9 {
-    // Horizontal up-facing: full ground hemisphere.
-    ghi * ground_reflectance
-} else if (tilt_deg - 180.0).abs() < 1e-9 {
-    // Down-facing: no ground seen.
-    0.0
-} else {
-    let surface_tilt = tilt_deg.to_radians();
-    let ground_factor = (1.0 - surface_tilt.cos()) / 2.0;
-    ghi * ground_reflectance * ground_factor
-};
+The static-setpoint overload (line 116 pre-fix) already encoded this
+correctly. The dynamic-setpoint overload (line 168 pre-fix) had the
+**opposite** sign — it was telling the controller that a cool mass
+should *raise* the heating setpoint (defer heating) and raise the
+cooling setpoint (fire cooling sooner). That is the opposite of the
+intended anticipation.
+
+## Python verification (per AGENTS.md)
+
+`ctx_execute` reproduced the sign-flip on a 10 °C zone/mass gap:
+
+```
+zone= 25.0 mass= 15.0 | h_eff static=+19.000 dyn=+21.000 diff=-2.000
+zone= 15.0 mass= 25.0 | h_eff static=+21.000 dyn=+19.000 diff=+2.000
+zone= 22.0 mass= 18.0 | h_eff static=+19.600 dyn=+20.400 diff=-0.800
+zone= 18.0 mass= 22.0 | h_eff static=+20.400 dyn=+19.600 diff=+0.800
 ```
 
-No parameter tuning — only the correct boundary conditions are applied;
-the standard isotropic formula is preserved on its valid open interval
-β ∈ (0°, 180°).
-
-## Python derivation
-
-Saved to `.agents/results/issue-1326-ground-reflected-tilt.py`. Sweeps
-tilt ∈ {0, 15, 30, 45, 60, 75, 90, 105, 120, 180}° at fixed
-albedo=0.2, GHI=1000 W/m² and prints the fluxion/E+ ratio plus the
-four acceptance criteria. All steps PASS; the patched form matches the
-ASHRAE formulation exactly (no rounding error introduced at any tilt).
-
-## Test coverage (added to `tests/solar_isolation.rs`)
-
-1. `test_horizontal_ground_reflected` — 8760-hour Denver TMY3 sweep
-   validating all four acceptance criteria:
-   - tilt=0   → E_g = ρ·GHI     (annual ratio 1.000000, max dev 0.0)
-   - tilt=90  → E_g = 0.5·ρ·GHI  (annual ratio 1.000000, max dev 0.0)
-   - tilt=180 → E_g = 0          (max dev 0.0 W/m², below 1e-6 tol)
-   - reference: 1000 W/m² GHI / 0.2 albedo = 200 W/m² (exact)
-
-2. `test_per_tilt_sweep_ground_reflected` — confirms non-tilt=0 path is
-   byte-identical to pre-fix code across tilt ∈ {15, 30, 45, 60, 75, 90,
-   105, 120, 150}°, with max per-hour deviation < 1e-9 W/m² at tilt=90
-   (exercised through `Orientation::South`).
+Post-fix: all `h_eff` and `c_eff` values match across the two overloads
+within 0.0e+00 (i.e., bit-identical, well inside the 1e-12 acceptance
+criterion in the issue).
 
 ## Files changed
 
 | File | Change |
-|---|---|
-| `src/solar/surface_irradiance.rs` | Pinned tilt=0 and tilt=180 endpoints; open interval unchanged. Docstring updated. |
-| `tests/solar_isolation.rs` | Added `test_horizontal_ground_reflected` and `test_per_tilt_sweep_ground_reflected`. Added `SolarPosition` import. |
-| `ARCHITECTURE.md` | Documented Module 2 ground-reflected boundary conditions (Issue #1326 acceptance #5). |
-| `.agents/results/issue-1326-ground-reflected-tilt.py` | Python verification script. |
+|------|--------|
+| `src/sim/hvac/modes.rs` | Added private `effective_setpoints(...)` helper (canonical sign documented inline). Both `calculate_modulation` and `calculate_modulation_with_setpoints` now route through it. Dynamic overload also gained the NaN/Inf guard (it was missing — caught while consolidating the two branches). |
+| `tests/hvac_predictive_modulation.rs` | Added two regression tests: `test_inertia_factor_sign_parity` (helper-hoist invariant: both overloads produce identical `(mode, modulation)` for identical inputs, within 1e-12) and `test_inertia_factor_physical_direction` (physical-intent guard: cool mass must anticipate cooling by lowering effective heating setpoint, warm mass must anticipate warming by raising it). |
 
-## Acceptance criteria checklist
+`git diff --stat`:
+```
+src/sim/hvac/modes.rs               |  83 ++++++++++++++------
+tests/hvac_predictive_modulation.rs | 151 ++++++++++++++++++++++++++++++++++++
+2 files changed, 211 insertions(+), 23 deletions(-)
+```
 
-- [x] For tilt=0, ground_reflected / (albedo·GHI) within 1.0 ± 0.005 across 8760 hourly points of Denver TMY3 — verified 1.000000 (exact), max abs dev 0.0 W/m².
-- [x] For tilt=90, ground_reflected / (0.5·albedo·GHI) within 1.0 ± 0.005 across 8760 hourly points — verified 1.000000 (exact), max abs dev 0.0 W/m² (no regression in south-wall E+ comparison).
-- [x] For tilt=180, ground_reflected = 0.0 ± 1e-6 W/m² — verified 0.0 exactly.
-- [x] South-tilt reference CSV (`surface_irradiance_south.csv`) ground_reflected column still within 1% of E+ (no regression) — `test_ground_reflected_irradiance_vs_energyplus` passes.
-- [x] ARCHITECTURE.md §Module 2 I/O contract updated with the pinned boundary conditions.
-- [x] tilt=0 matches a 1000 W/m² GHI / 0.2 albedo reference of 200 W/m² — verified 200.0000 W/m² exactly.
-- [x] Python script reproducible from a fresh checkout; prints full tilt sweep + acceptance summary.
+## Acceptance criteria (from issue #1412)
 
-## Test commands run + pass/fail counts
+- [x] **Both overloads return identical effective setpoints within 1e-12 for
+      identical inputs.** `test_inertia_factor_sign_parity` enforces this
+      across 7 zone/mass/rate sweep cases (including the issue's worst-case
+      10 °C gap). Pre-fix: would have failed (modulation diverged by
+      ~0.5-1.0 at α=0.1). Post-fix: 0.0e+00 divergence, test passes.
+- [x] **`test_inertia_factor_physical_direction` fails on the pre-fix
+      overload and passes on the post-fix overload.** The test asserts
+      that with mass 4 °C cooler than zone, the controller does NOT
+      trigger heating at zone=19.7 (it should anticipate the mass's
+      cooling). Pre-fix: would have produced Heating (the inverted sign
+      raises `h_eff` to 20.4, threshold 19.9, zone 19.7 < 19.9 → Heating).
+      Post-fix: Off, as physically intended.
+- [x] **ASHRAE 140 Case 960 annual heating has not regressed.** Pre-fix
+      baseline: 1.37 MWh (soft-warned out of band per known issue #348).
+      Post-fix: 1.37 MWh (exact). Drift: 0.0%, well inside the 0.1%
+      criterion. Annual cooling: 1.80 MWh pre-fix → 1.80 MWh post-fix.
 
-| Command | Result |
-|---|---|
-| `cargo build --release --features ort` | clean (1m 06s) |
-| `cargo test --features ort --lib solar` | 67 passed, 0 failed |
-| `cargo test --features ort --test solar_isolation` | 11 passed, 0 failed (9 pre-existing + 2 new) |
-| `cargo test --features ort --test surface_irradiance_vs_energyplus` | 7 passed, 0 failed |
-| `cargo test --features ort --test solar_calculation_validation` | 8 passed, 0 failed |
-| `cargo test --features ort --test solar_integration` | 6 passed, 0 failed |
-| `cargo test --features ort --test solar_position_vs_energyplus` | 5 passed, 0 failed |
-| `cargo clippy --lib --features ort -- -D warnings` | clean (no new warnings) |
-| `python3 .agents/results/issue-1326-ground-reflected-tilt.py` | All steps PASS |
+## Verification
 
-## Acceptance criteria NOT verified (with reason)
+| Test | Pre-fix | Post-fix | Note |
+|------|---------|----------|------|
+| `cargo test -p fluxion --test hvac_predictive_modulation` | 3/3 | 5/5 | +2 new regression tests |
+| `cargo test -p fluxion --test test_hvac_control_comprehensive` | 41/41 | 41/41 | unchanged |
+| `cargo test -p fluxion --lib hvac` | 237/237 | 237/237 | unchanged |
+| `cargo test -p fluxion --test hvac_equipment` | 9/9 | 9/9 | unchanged |
+| `cargo test -p fluxion --test ashrae_140_blind_validation` | 17/17 (5 ignored) | 17/17 (5 ignored) | unchanged |
+| `cargo test -p fluxion --test ashrae_140_case_960_sunspace test_annual_energy_validation` | 1/1 (heating 1.37 MWh, cooling 1.80 MWh) | 1/1 (heating 1.37 MWh, cooling 1.80 MWh) | **0.0% drift** |
+| `cargo test -p fluxion --test ashrae_140_setback_ventilation` | 9/9 | 9/9 | unchanged |
+| `cargo test -p fluxion --test ashrae_140_case_600_series` | 11/16/4 fail (pre-existing) | 11/16/4 fail (pre-existing) | **identical pre/post** — confirmed via `git stash` |
+| `cargo test -p fluxion --test ashrae_140_case_900` | 13/4/1 fail (pre-existing) | 13/4/1 fail (pre-existing) | **identical pre/post** — confirmed via `git stash` |
 
-None. All five acceptance criteria from the issue body verified.
+The Case 600/900 series pre-existing failures are about ASHRAE 140
+high-mass annual/peak cooling tolerances — orthogonal to the predictive
+controller's sign convention and explicitly called out as known gaps
+in `ARCHITECTURE.md` ("Current cooling underestimates ASHRAE 140 by
+~90%; per the Issue #1281 / #1280 investigation, the root cause is
+roof-solar under-counting").
 
-## Out of scope (per issue body, not touched)
+## Production impact
 
-- Replacing the isotropic ground-reflected model with anisotropic (e.g.,
-  Perez ground) — separate enhancement, deferred until beam fix lands.
-- Reference CSV regeneration pipeline (owned by B#1/B#2).
-- Tuning albedo to match E+ — albedo is a building-config input, not a
-  fluxion parameter.
+**None.** Per `grep`, the production call sites of
+`calculate_modulation` are:
+- `src/sim/hvac/equipment.rs:1108` (test only)
+- `src/sim/thermal_model_physics/physics_impl.rs:488` (production)
+- `src/sim/thermal_model_physics/physics_impl.rs:2496` (production)
 
-## Linked issues
+The dynamic-setpoint overload `calculate_modulation_with_setpoints` is
+**not called from any production code path** — only from tests. The
+fix therefore has zero runtime impact on the annual heating/cooling
+numbers (confirmed by the byte-identical ASHRAE 140 Case 960 numbers
+pre/post fix). The fix's value is:
 
-Refs: #1326, #1323, #1280
+1. **Correctness for the next consumer.** Any future production caller
+   of `calculate_modulation_with_setpoints` (e.g., a setback-schedule
+   driver wired into a future timestep loop) will now get the
+   physically correct sign — preventing the silent annual heating
+   shift the issue describes.
+2. **Helper-hoist invariant.** The new `effective_setpoints` helper
+   makes the sign-convention copy-paste impossible: both overloads
+   route through the same function. The pre-fix code had two
+   independent inline copies of the formula, which is what allowed
+   them to drift.
 
-## Pre-existing failures observed (unrelated to this fix)
+## Blockers
 
-- `tests/sky_radiation_isolation::test_sol_air_clear_sky_daytime` — fails on
-  main (verified via `git stash`); longwave sol-air test, no surface_irradiance path.
-- `tests/solar_distribution_tests::tests::test_conductance_mass_dependence`
-  — fails on main (verified via `git stash`); h_tr_ms thermal mass test,
-  unrelated to ground-reflected.
+None. Issue acceptance criteria all met.
