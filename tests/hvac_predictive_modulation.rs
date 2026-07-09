@@ -240,13 +240,13 @@ fn test_inertia_factor_sign_parity() {
     // outputs (1e-12 tolerance allows for f64 representation only).
     let cases: &[(f64, f64, f64)] = &[
         // (zone, mass, temp_rate)
-        (15.0, 20.0, -0.01),  // strong heating demand, mass warmer
-        (19.0, 19.0, 0.0),    // mild heating, deadband-equal
-        (22.0, 18.0, 0.0),    // mass cooler, positive inertia
-        (24.0, 28.0, 0.0),    // mass warmer, negative inertia
-        (28.0, 27.0, 0.001),  // mild cooling
-        (32.0, 30.0, 0.01),   // strong cooling
-        (16.0, 26.0, 0.0),    // 10 °C gap (issue's worst-case magnitude)
+        (15.0, 20.0, -0.01), // strong heating demand, mass warmer
+        (19.0, 19.0, 0.0),   // mild heating, deadband-equal
+        (22.0, 18.0, 0.0),   // mass cooler, positive inertia
+        (24.0, 28.0, 0.0),   // mass warmer, negative inertia
+        (28.0, 27.0, 0.001), // mild cooling
+        (32.0, 30.0, 0.01),  // strong cooling
+        (16.0, 26.0, 0.0),   // 10 °C gap (issue's worst-case magnitude)
     ];
     let h_sp = 20.0_f64;
     let c_sp = 27.0_f64;
@@ -257,9 +257,8 @@ fn test_inertia_factor_sign_parity() {
 
         let (mode_static, mod_static) =
             static_ctrl.calculate_modulation(zone_temp, mass_temp, temp_rate);
-        let (mode_dynamic, mod_dynamic) = dynamic_ctrl.calculate_modulation_with_setpoints(
-            zone_temp, mass_temp, temp_rate, h_sp, c_sp,
-        );
+        let (mode_dynamic, mod_dynamic) = dynamic_ctrl
+            .calculate_modulation_with_setpoints(zone_temp, mass_temp, temp_rate, h_sp, c_sp);
 
         // The mode decision must be identical — a sign-flip on the
         // inertia contribution can flip Heating↔Off (and, in extreme
@@ -343,12 +342,12 @@ fn test_inertia_factor_physical_direction() {
     // heating.
     let mut ctrl2 = PredictiveController::new(20.0, 27.0);
     let (mode2, _) = ctrl2.calculate_modulation(19.3, 23.3, 0.0); // mass 4°C warmer
-                                                                       // inertia = 0.1·(19.3−23.3) = −0.4
-                                                                       // h_eff = 20.0 − (−0.4) = 20.4, threshold 19.9
-                                                                       // 19.3 < 19.9 → Heating (controller does NOT
-                                                                       // fire on the +0.4 direction; it tolerates
-                                                                       // the slight under-shoot because the mass is
-                                                                       // about to warm the zone).
+                                                                  // inertia = 0.1·(19.3−23.3) = −0.4
+                                                                  // h_eff = 20.0 − (−0.4) = 20.4, threshold 19.9
+                                                                  // 19.3 < 19.9 → Heating (controller does NOT
+                                                                  // fire on the +0.4 direction; it tolerates
+                                                                  // the slight under-shoot because the mass is
+                                                                  // about to warm the zone).
     assert_eq!(
         mode2,
         HVACMode::Heating,
