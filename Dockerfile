@@ -1,53 +1,62 @@
 # Fluxion Docker Image
-# Multi-stage build for minimal image size
+#
+# Multi-stage build that produces a self-contained `fluxion-rest`
+# binary (the only Fluxion deployment surface tracked under issue
+# #1411). The runtime image exposes port 8080 and healthchecks
+# `/v1/healthz`, matching the defaults in `src/bin/fluxion_rest.rs`
+# and `docs/REST_API.md`.
+#
+# Build:  docker build -t fluxion-rest .
+# Run:    docker run --rm -p 8080:8080 fluxion-rest
+# Smoke:  curl -s http://localhost:8080/v1/healthz
+#
+# Notes:
+#   * Bind address / port are overridable at runtime:
+#       docker run -e FLUXION_REST_BIND=0.0.0.0 -e FLUXION_REST_PORT=8080 \
+#              -p 8080:8080 fluxion-rest
+#   * The old `fluxion-api` image (port 8000, `python -m api.main`,
+#     healthcheck on `/health`) no longer exists. Any reference to it
+#     in the wild is a stale doc that should be redirected to the
+#     Rust binary.
 
 # ============================================
-# Stage 1: Build Python bindings
+# Stage 1: Build the `fluxion-rest` binary
 # ============================================
-FROM python:3.11-slim AS builder
+FROM rust:1.87-bookworm AS builder
 
-# Install system and Rust build dependencies
 RUN apt-get update && apt-get install -y \
-    build-essential \
-    libssl-dev \
     pkg-config \
-    python3-dev \
-    libfontconfig1-dev \
-    curl \
+    libssl-dev \
+    ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
 
 WORKDIR /build
 
-# Copy project files
-COPY Cargo.toml .
-COPY Cargo.lock .
-COPY pyproject.toml .
-COPY requirements-dev.txt .
-COPY src/ ./src/
+# Copy only the manifests first so Docker can cache the dependency
+# layer when only the source changes.
+COPY Cargo.toml Cargo.lock ./
 COPY fluxion-core/ ./fluxion-core/
+COPY src/ ./src/
+# `Cargo.toml` references a few bench harnesses; copy them so the
+# manifest parses even when we are only building the `fluxion-rest`
+# binary. The runtime image never executes these.
 COPY benches/ ./benches/
-COPY README.md .
-COPY api/ ./api/
 
-# Install Python build dependencies
-RUN pip install --no-cache-dir maturin pytest
-
-# Build Python bindings
-RUN maturin build --release --strip
+# Build the REST binary. We deliberately skip the python-bindings
+# and napi features so we do not pull in PyO3 / NAPI headers and
+# linker deps — the runtime stage is a plain Debian image.
+RUN cargo build --release --bin fluxion-rest --no-default-features
 
 # ============================================
 # Stage 2: Production runtime
 # ============================================
-FROM python:3.11-slim AS runtime
+FROM debian:bookworm-slim AS runtime
 
-# Install runtime dependencies
 RUN apt-get update && apt-get install -y \
-    libgomp1 \
+    ca-certificates \
     libssl3 \
+    libgomp1 \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
@@ -55,34 +64,28 @@ RUN useradd -m -u 1000 fluxion
 
 WORKDIR /home/fluxion
 
-# Copy built wheel from builder
-COPY --from=builder /build/target/wheels/*.whl .
+# Copy the built binary from the builder stage
+COPY --from=builder /build/target/release/fluxion-rest /usr/local/bin/fluxion-rest
 
-# Install the wheel
-RUN pip install --no-cache-dir *.whl && rm *.whl
-
-# Copy API server files
-COPY --from=builder /build/api ./api
-
-# Create data and model directories
-RUN mkdir -p /home/fluxion/data /home/fluxion/models
-
-# Set ownership
-RUN chown -R fluxion:fluxion /home/fluxion
+# Create data directory
+RUN mkdir -p /home/fluxion/data && chown -R fluxion:fluxion /home/fluxion
 
 # Switch to non-root user
 USER fluxion
 
-# Environment variables
-ENV PYTHONUNBUFFERED=1
-ENV RUST_LOG=info
+# Environment variables (override with `-e KEY=VALUE` at run time)
+ENV FLUXION_REST_BIND=0.0.0.0 \
+    FLUXION_REST_PORT=8080 \
+    RUST_LOG=info
 
-# Expose API port
-EXPOSE 8000
+# Expose REST port — must match FLUXION_REST_PORT above
+EXPOSE 8080
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health')"
+# Health check — must hit `/v1/healthz` (returns 200 + JSON),
+# not the legacy `/health` (which the binary does not serve).
+# Uses shell form so curl can resolve the localhost loopback.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+    CMD curl -fsS http://localhost:8080/v1/healthz || exit 1
 
-# Default command
-CMD ["python", "-m", "api.main"]
+# Default command — runs the REST server
+CMD ["/usr/local/bin/fluxion-rest"]
