@@ -12,6 +12,144 @@
 use fluxion::validation::report::{MetricType, ValidationStatus};
 use fluxion::validation::ASHRAE140Validator;
 
+/// Issue #1457 tracking: the 14 Case 600-series metrics still out-of-band after
+/// PR #1460 (which closed 6 of the original 16 via the ISO 13790 `h_coeff` fix).
+///
+/// These are NOT independent per-case bugs: grouped by metric they form a single
+/// systematic signature — peak_cooling OVER (5/5), peak_heating UNDER (3/3),
+/// annual_cooling UNDER (3/3), free-float min-temp too warm (2/2). That is the
+/// discrete-node / 1-hour-timestep solar-injection limitation routed to the
+/// GaugeSolver (#1465 / #1462) per the maintainer's #1457 direction update.
+///
+/// The test reproduces the exact metrics via the same `from_spec` + `step_physics`
+/// path as `tests/ashrae_140_case_600_series.rs`, and is `#[ignore]`-quarantined.
+/// It flips green when #1465 brings the 14 metrics into band, giving CI a concrete
+/// close-out signal for #1457. Per the maintainer, forcing these into band with an
+/// HVAC clamp / per-timestep bound is an anti-pattern and must NOT be used here.
+mod issue_1457_case_600_series_tracking {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::validation::ashrae_140_cases::ASHRAE140Case;
+    use fluxion::weather::WeatherSource;
+
+    const J_TO_MWH: f64 = 1.0 / 3.6e9;
+
+    fn run_annual(case: ASHRAE140Case) -> (f64, f64, f64, f64) {
+        let spec = case.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let weather =
+            fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+                .expect("Failed to load EPW weather data");
+        let (mut th, mut tc, mut ph, mut pc) = (0.0_f64, 0.0_f64, 0.0_f64, 0.0_f64);
+        for step in 0..8760 {
+            let w = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(w.clone());
+            let e_kwh = model.step_physics(step, w.dry_bulb_temp, 3600.0);
+            let e_j = e_kwh * 3.6e6;
+            if e_kwh > 0.0 {
+                th += e_j;
+                ph = ph.max(e_j / 3600.0);
+            } else if e_kwh < 0.0 {
+                tc += -e_j;
+                pc = pc.max(-e_j / 3600.0);
+            }
+        }
+        (th * J_TO_MWH, tc * J_TO_MWH, ph / 1000.0, pc / 1000.0)
+    }
+
+    fn run_min_temp(case: ASHRAE140Case) -> f64 {
+        let spec = case.spec();
+        let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+        let weather =
+            fluxion::weather::epw::EpwWeatherSource::from_file("assets/weather/WD600.epw")
+                .expect("Failed to load EPW weather data");
+        let mut min_temp = f64::MAX;
+        for step in 0..8760 {
+            let w = weather.get_hourly_data(step).unwrap();
+            model.weather = Some(w.clone());
+            model.step_physics(step, w.dry_bulb_temp, 3600.0);
+            if let Some(&t) = model.temperatures.as_slice().first() {
+                min_temp = min_temp.min(t);
+            }
+        }
+        min_temp
+    }
+
+    /// One quarantined guard covering all 14 currently-failing #1457 metrics.
+    /// Assert-in-band on purpose: when #1465 lands, un-ignoring this proves closure.
+    #[test]
+    #[ignore = "#1457: 14 Case 600-series metrics await GaugeSolver #1465 (discrete-node solar injection)"]
+    fn test_issue1457_remaining_600_series_metrics() {
+        // (case, metric, band_lo, band_hi)
+        let mut failures: Vec<String> = Vec::new();
+
+        // (case, selector, lo, hi) for annual/peak metrics.
+        // selector: 0=annual_heating 1=annual_cooling 2=peak_heating 3=peak_cooling
+        let energy_metrics: [(ASHRAE140Case, &str, usize, f64, f64); 12] = [
+            (ASHRAE140Case::Case610, "peak_heating", 2, 4.30, 5.70),
+            (ASHRAE140Case::Case610, "peak_cooling", 3, 2.20, 2.90),
+            (ASHRAE140Case::Case620, "annual_cooling", 1, 3.20, 5.00),
+            (ASHRAE140Case::Case620, "peak_cooling", 3, 2.50, 3.50),
+            (ASHRAE140Case::Case630, "peak_heating", 2, 4.70, 6.10),
+            (ASHRAE140Case::Case630, "peak_cooling", 3, 1.80, 2.40),
+            (ASHRAE140Case::Case640, "annual_heating", 0, 2.75, 3.80),
+            (ASHRAE140Case::Case640, "annual_cooling", 1, 5.95, 8.10),
+            (ASHRAE140Case::Case640, "peak_heating", 2, 4.30, 5.70),
+            (ASHRAE140Case::Case640, "peak_cooling", 3, 2.80, 3.70),
+            (ASHRAE140Case::Case650, "annual_cooling", 1, 4.82, 7.06),
+            (ASHRAE140Case::Case650, "peak_cooling", 3, 1.90, 2.50),
+        ];
+
+        for (case, metric, sel, lo, hi) in energy_metrics {
+            let (th, tc, ph, pc) = run_annual(case);
+            let v = [th, tc, ph, pc][sel];
+            let unit = if sel < 2 { "MWh" } else { "kW" };
+            let ok = v >= lo && v <= hi;
+            println!(
+                "{:?} {}: {:.2} {} [ref {:.2}-{:.2}] {}",
+                case,
+                metric,
+                v,
+                unit,
+                lo,
+                hi,
+                if ok { "PASS" } else { "FAIL" }
+            );
+            if !ok {
+                failures.push(format!("{case:?}/{metric}={v:.2}{unit}"));
+            }
+        }
+
+        // Free-float minimum temperatures (too warm — FREE-01/FREE-03 family).
+        let ff_min: [(ASHRAE140Case, f64, f64); 2] = [
+            (ASHRAE140Case::Case600FF, -18.80, -15.60),
+            (ASHRAE140Case::Case650FF, -23.00, -21.00),
+        ];
+        for (case, lo, hi) in ff_min {
+            let v = run_min_temp(case);
+            let ok = v >= lo && v <= hi;
+            println!(
+                "{:?} min_free_float: {:.2}C [ref {:.2}..{:.2}] {}",
+                case,
+                v,
+                lo,
+                hi,
+                if ok { "PASS" } else { "FAIL" }
+            );
+            if !ok {
+                failures.push(format!("{case:?}/min_free_float={v:.2}C"));
+            }
+        }
+
+        assert!(
+            failures.is_empty(),
+            "#1457: {} Case 600-series metrics still out-of-band pending GaugeSolver #1465: {:?}",
+            failures.len(),
+            failures
+        );
+    }
+}
+
 mod solar_issues {
     use super::*;
 

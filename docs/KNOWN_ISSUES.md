@@ -503,15 +503,23 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
 
 **Architectural improvement (shipped):** `MassAirCouplingMode::ParallelResistance` is now available as the physically-correct alternative to `MassAirCouplingMode::AdditiveSum`. Default remains `AdditiveSum` for backward compatibility. The new mode is verified by 10 unit tests in `src/physics/multi_node_solver.rs::tests::test_issue_1281_*`. ARCHITECTURE.md documents both modes and the residual coupling-formulation effect. **Follow-up issue** filed to track the roof-solar root cause and the cooling-gap closure.
 
-### LIMIT-05 UPDATE (post-#1457 / #1460, 2026-07-10): Case 600 series fixed; cooling-gap is now isolated to high-mass
+### LIMIT-05 UPDATE (post-#1457 / #1460, 2026-07-10): Case 600 series PARTIALLY fixed (6/16); 14 metrics remain
 
-- **Status:** Case 600 series (16 of 27 previously-failed metrics) closed by
-  `fix(physics): resolve ASHRAE 140 Case 600 series failures` (#1457, merged
-  via #1460). The Case 600 cooling/peak-load regressions that previously
-  appeared under LIMIT-05 are now resolved in the engine path; the remaining
-  Case 600 metrics live under #1421 (`Case 600 ref-range diverges between
-  validator, CSV, doc, and KNOWN_ISSUES; report table is stale`), which is a
-  documentation-drift issue rather than a physics gap.
+> ⚠️ **CORRECTION (2026-07-10 revisit, #1457 follow-up):** An earlier draft of
+> this entry claimed "Case 600 series (16 of 27 previously-failed metrics)
+> closed." That is **inaccurate**. PR #1460 closed **6** of the 16 originally
+> failing metrics (via the ISO 13790 §12.2.1 `h_coeff` fix in `hvac.rs`).
+> A direct re-run of `cargo test -p fluxion --test ashrae_140_case_600_series`
+> on `main` @ 6386544 reports **13 passed / 14 failed / 0 ignored**. The 14
+> remaining failures are catalogued with fresh numbers under
+> "§LIMIT-05 UPDATE (#1457 revisit)" immediately below. The physics gap is
+> NOT closed and is NOT merely doc-drift (#1421).
+
+- **Status:** Case 600 series **partially** fixed. PR #1460 (ISO 13790 `h_coeff`)
+  closed 6 metrics; **14 metrics still fail** on `main`. The remaining gap is a
+  genuine engine/solver limitation (see below), tracked to GaugeSolver #1465.
+  Doc-drift issue #1421 remains a *separate* concern for reference-range
+  reconciliation but does not explain the 14 out-of-band engine outputs.
 - **Implication for LIMIT-05:** The architectural cooling-gap root cause is
   now *unambiguously* isolated to **high-mass** Cases 900/910/920/930/940/950/
   960 and the **upstream thermal-mass / roof-solar follow-up chain**:
@@ -551,6 +559,83 @@ The fundamental issue is that h_ms_total is computed as an additive sum of wall/
   Numbers from `docs/ASHRAE140_RESULTS.md` (2026-06-24 snapshot, Phase 7B
   reference frame) and `docs/ASHRAE140_MULTI_ZONE_RESULTS.md` (post-#1407
   real-physics Case 960).
+
+### LIMIT-05 UPDATE (#1457 revisit, 2026-07-10): the 14 remaining Case 600 metrics — fresh baseline & tracking
+
+- **Source of truth:** direct run of
+  `cargo test -p fluxion --test ashrae_140_case_600_series` on `main` @ 6386544.
+  Result: **13 passed / 14 failed**. The 14 failing metrics, with the exact
+  engine value, the ASHRAE 140 reference band, and the signed deviation from the
+  nearest band edge, are:
+
+  | Case  | Metric          | Engine  | Ref band          | Deviation | Direction |
+  |-------|-----------------|---------|-------------------|-----------|-----------|
+  | 610   | peak_heating    | 3.26 kW | 4.30 – 5.70 kW    | −24.2 %   | UNDER     |
+  | 610   | peak_cooling    | 4.30 kW | 2.20 – 2.90 kW    | +48.3 %   | OVER      |
+  | 620   | annual_cooling  | 3.18 MWh| 3.20 – 5.00 MWh   | −0.6 %    | UNDER     |
+  | 620   | peak_cooling    | 3.90 kW | 2.50 – 3.50 kW    | +11.4 %   | OVER      |
+  | 630   | peak_heating    | 3.16 kW | 4.70 – 6.10 kW    | −32.8 %   | UNDER     |
+  | 630   | peak_cooling    | 3.34 kW | 1.80 – 2.40 kW    | +39.2 %   | OVER      |
+  | 640   | annual_heating  | 4.60 MWh| 2.75 – 3.80 MWh   | +21.1 %   | OVER      |
+  | 640   | annual_cooling  | 4.78 MWh| 5.95 – 8.10 MWh   | −19.7 %   | UNDER     |
+  | 640   | peak_heating    | 3.13 kW | 4.30 – 5.70 kW    | −27.2 %   | UNDER     |
+  | 640   | peak_cooling    | 5.03 kW | 2.80 – 3.70 kW    | +35.9 %   | OVER      |
+  | 650   | annual_cooling  | 4.34 MWh| 4.82 – 7.06 MWh   | −10.0 %   | UNDER     |
+  | 650   | peak_cooling    | 4.81 kW | 1.90 – 2.50 kW    | +92.4 %   | OVER      |
+  | 600FF | min_free_float  | −11.51 °C | −18.80 … −15.60 °C | too warm | OVER    |
+  | 650FF | min_free_float  | −17.80 °C | −23.00 … −21.00 °C | too warm | OVER    |
+
+- **Systematic signature (not per-case geometry):** grouping by metric shows a
+  single coherent pattern rather than independent case bugs:
+  - **peak_cooling: 5/5 OVER** (+11 % … +92 %)
+  - **peak_heating: 3/3 UNDER** (−24 % … −33 %)
+  - **annual_cooling: 3/3 UNDER** (−0.6 % … −20 %)
+  - **annual_heating: 1/1 OVER** (Case 640 setback recovery, +21 %)
+  - **free-float min temp: 2/2 too warm**
+
+  Simultaneous peak-cooling OVER + peak-heating UNDER is the textbook signature
+  of a single lumped thermal node integrated on a 1-hour timestep: the diurnal
+  peak cannot be resolved, so per-step solar energy is over-injected into the
+  cooling peak while the winter-night heating peak is smeared/under-captured.
+  This is the same **discrete-node solar-injection pathology** the maintainer
+  identified in the #1457 direction update, and the reason the remaining gap is
+  routed to the **GaugeSolver (#1465 / #1462)**, which treats solar as geometric
+  curvature rather than per-timestep energy injection. Per that direction,
+  re-introducing an HVAC clamp or per-timestep bound to force these into band is
+  an **anti-pattern** and is explicitly out of scope for #1457.
+
+- **Why these are NOT addressable in the #1457 follow-up PR:**
+  1. Closing them by adjusting thermal-mass / solar-distribution constants would
+     be **parameter tuning to pass system tests** — forbidden by `AGENTS.md`
+     ("fix the underlying math," "no parameter tuning").
+  2. The correct fix is the GaugeSolver rework tracked in **#1465 / #1462**,
+     which is a separate deliverable.
+  3. The free-float min-temp warmth (600FF/650FF) is the FREE-01/FREE-03
+     thermal-mass amplitude family (damped diurnal swing), also a solver-topology
+     limitation of the 5R1C path.
+
+- **Machine-traceable guard:** `tests/known_issues_regression.rs::
+  issue_1457_case_600_series_tracking::test_issue1457_remaining_600_series_metrics`
+  reproduces all 14 metrics via the same `from_spec` + `step_physics` path used
+  by the failing suite and is `#[ignore]`-quarantined. It flips green when the
+  GaugeSolver (#1465) brings the 14 metrics into band, giving CI a concrete
+  close-out signal for #1457.
+
+- **Incidental finding — Case 610 spurious west window (SPEC discrepancy, NOT a
+  fix for the above):** `CaseBuilder::case_610_south_shading()` adds
+  `.with_window(3.0, Orientation::West)`, giving Case 610 a 15 m² glazing area.
+  Per ASHRAE 140 (and `docs/ASHRAE140_VALIDATION.md`), Case 610 is Case 600 (12 m²
+  south glazing) **plus a 1 m south overhang only — no west window**. The west
+  window was introduced in PR #808 (commit 3326cb4) and is now **baked into the
+  merged #1460 regression test** `issue_1457_hvac_coefficient.rs::
+  test_iso_hvac_coefficient_case_610_in_band` ("Case 610 has 15 m² windows").
+  Removing it is a legitimate geometry correction but is deliberately deferred to
+  a **focused follow-up** because: (a) it also requires updating the merged
+  #1460 test band and the `solar_gain_distribution.csv` Case-610 fixture
+  (out-of-scope reference-data churn), and (b) it does **not** fix Case 610's
+  failing metrics — removing glazing *reduces* conductive loss and would push the
+  already-UNDER peak_heating (3.26 kW) even further below the 4.30 kW floor.
+  Tracked here so a later PR can address it with full regression coverage.
 
 ## Reporting Issues (REPORT)
 
