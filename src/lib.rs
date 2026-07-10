@@ -73,6 +73,7 @@ pub mod napi;
 pub mod orchestration;
 pub mod performance;
 pub mod physics;
+pub mod quantum;
 #[cfg(feature = "python-bindings")]
 pub mod python;
 pub mod sim;

@@ -118,6 +118,11 @@ graph TD
         GS["GaugeSolver *planned* (Phase 1b — #1462)"]
     end
 
+    subgraph Quantum ["Quantum Annealing Bridge (Phase 2b — #1464)"]
+        QUBO["QuboMapping<br/>(quantum/qubo_mapping.rs)"]
+        ISING["IsingProblem<br/>(quantum/qubo_mapping.rs)"]
+    end
+
     subgraph SurfaceFlux ["Surface Heat Flux"]
         SFP["SurfaceHeatFluxProvider<br/>(sim/surface_flux_provider.rs)"]
         PSFP["PhysicsSurfaceFluxProvider<br/>(combines HeatConductionSolver + solar)"]
@@ -166,6 +171,8 @@ graph TD
     NAPI -.-> CORE
     TM -.-> GS
     GS -. ZB
+    TM -.-> QUBO
+    QUBO --> ISING
 ```
 
 **Notes on interop edges**: Dashed lines (`-.->`) indicate optional import/export bridges. OSM, gbXML, and FMI are implemented; IDF import scaffold landed in `src/io/idf/` (#1341) covering the 10 MVP objects from `docs/idf-import-design.md` §4.1 — `TryFrom<IdfFile> for SimulationSchema` (design §4.3) and epJSON parsing (design §4.2) are still follow-up issues.
@@ -431,7 +438,7 @@ The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) sep
 
 | Output | Type | Consumer |
 |--------|------|----------|
-| `ThermalManifold` | struct { `metric_tensor`, `scalar_field`, `gauge_connection`, `dt_seconds` } | `GaugeSolver` (#1462, planned), surrogate training (#1463, planned), QUBO mapping (#1464, planned), Case 900 validation (#1465, planned) |
+| `ThermalManifold` | struct { `metric_tensor`, `scalar_field`, `gauge_connection`, `dt_seconds` } | `GaugeSolver` (#1462), surrogate training (#1463, planned), QUBO mapping (#1464), Case 900 validation (#1465, planned) |
 
 **Key struct**: `ThermalManifold` in `physics/geometry_tensor.rs`
 
@@ -511,6 +518,89 @@ pub enum ManifoldIndex { Air = 0, Wall = 1, Roof = 2, Floor = 3 }
 **Phase 1a scope (this issue)**: scaffold only — `compute_parallel_transport` is a deliberate forward-Euler stub that returns the post-transport state. No production solver replacement. Phase 1b (#1462) replaces the stub with the full Christoffel-symbol transport; Phase 3 (#1465) is the ASHRAE 140 Case 900 validation.
 
 **Validation target**: Phase 1a — algebraic invariants (matrix dimensions, finiteness, no-clamp behavior, `T → T + dt(M·T + A)` equivalence). Phase 3 — Case 900 diurnal swing recovery + phase lag match (not over-damped throttling).
+
+---
+
+### Module 7: Quantum Annealing Bridge (Phase 2b — #1464)
+
+**Source**: `src/quantum/qubo_mapping.rs` (new top-level `src/quantum/` module, registered in `src/lib.rs`).
+**Purpose**: Map the continuous `ThermalManifold` tensors into a Quadratic Unconstrained Binary Optimization (QUBO) matrix `Q` suitable for submission to a quantum annealer (D-Wave Advantage and successors). No production annealer SDK is wired up — this is the **mathematical scaffolding** for Phase 2c; the actual annealer call is the planned follow-up.
+
+| Input | Type | Source |
+|-------|------|--------|
+| `ThermalManifold` | struct { `metric_tensor`, `scalar_field`, `gauge_connection`, `dt_seconds` } | `physics::geometry_tensor::ThermalManifold` (#1461) |
+| `QuboConfig` | `{ bits_per_node, scale_max_celsius, include_gauge_bias, coeff_gauge }` | Caller |
+
+| Output | Type | Consumer |
+|--------|------|----------|
+| `QuboProblem` | struct { `q_matrix: Vec<f64>`, `num_variables`, `config`, cached manifold } | Quantum annealer SDK (Phase 2c), `IsingProblem::to_ising()` |
+| `IsingProblem` | struct { `h: Vec<f64>`, `j: Vec<f64>`, `c: f64`, `num_variables` } | D-Wave Ocean SDK (planned Phase 2c) |
+| `Vec<u8>` canonical solution | length `N = MANIFOLD_DIM * K` | Round-trip verification (tests only) |
+| `Vector4<f64>` decoded temperatures | continuous values | Diagnostic / display |
+
+**Key API** (all in `crate::quantum::qubo_mapping`):
+
+```rust
+/// Build a QUBO problem from a `ThermalManifold`.
+pub fn manifold_to_qubo(manifold: &ThermalManifold, config: QuboConfig)
+    -> Result<QuboProblem, QuboError>;
+
+/// Encode `scalar_field` as a binary solution vector (canonical encoding).
+pub fn encode_temperatures(scalar_field: &Vector4<f64>, config: &QuboConfig)
+    -> Vec<u8>;
+
+/// Decode a binary solution back to a temperature vector.
+pub fn decode_temperatures(solution: &[u8], config: &QuboConfig)
+    -> Vector4<f64>;
+
+/// Per-LSB resolution in °C for the given config.
+pub fn lsb_resolution_celsius(config: &QuboConfig) -> f64;
+```
+
+`QuboProblem` and `IsingProblem` both expose `.evaluate(...)` for direct energy computation without an annealer, plus `.to_dwave_normalized()` for normalizing the matrix to `max(|Q|) == 1` (D-Wave hardware convention).
+
+**Encoding math** (the only place to change when extending the encoding):
+
+```text
+T[i] = (Σ_k 2^k x[(i,k)]) / scale_factor           (decode)
+T[i] * scale_factor ≈ Σ_k 2^k x[(i,k)]              (encode, clamped to [0, 2^K-1])
+
+Quadratic part: Q[(i,k), (j,l)] = metric_tensor[i,j] * 2^k * 2^l / scale_factor^2
+Linear bias:    Q[(i,k), (i,k)] -= coeff_gauge * gauge_connection[i] * 2^k / scale_factor
+
+=>  x^T Q x  =  T_recon^T · metric_tensor · T_recon
+             +  coeff_gauge · (−gauge_connection^T · T_recon)
+```
+
+with `scale_factor = (2^K − 1) / scale_max_celsius`. Default config: `K = 8` bits/node ⇒ 32 qubits total, LSB ≈ 0.196 °C, `max|Q|` in `O(1)` (directly D-Wave-submittable after `to_dwave_normalized()`).
+
+**Ising conversion** (exact, no approximation):
+
+```text
+J[i,j] = (1/4) Q[i,j]            for i ≠ j   (off-diagonal coupling)
+h[i]   = (1/2) Σ_j Q[i,j]                     (linear field per qubit)
+c      = (1/4) trace(Q) + (1/4) 1^T Q 1       (constant offset)
+s = 2x − 1                                     (QUBO-to-Ising spin substitution)
+```
+
+**QuboConfig** — the precision / scale dial:
+
+```rust
+pub struct QuboConfig {
+    pub bits_per_node: usize,       // K — precision (default 8)
+    pub scale_max_celsius: f64,     // max temperature (default 50.0)
+    pub include_gauge_bias: bool,   // fold gauge_connection into Q? (default true)
+    pub coeff_gauge: f64,           // weight on gauge_connection term (default 1.0)
+}
+```
+
+`bits_per_node` ceiling is 16 (64 qubits total) — current annealers top out around 5000 qubits but practical embedding efficiency drops sharply past a few hundred. The default `K=8` keeps the problem trivially embeddable for debugging while still hitting ASHRAE-relevant precision.
+
+**Scope and non-goals** (this issue): *no* actual D-Wave Ocean SDK wiring (Phase 2c); *no* auto-embedding into the annealer's Chimera/Pegasus/Zephyr graph (Phase 2c); *no* solver loop (the `GaugeSolver` from #1462 owns the timestep loop and would call `manifold_to_qubo` if/when a sub-problem is offloaded). The Round-Trip assertion in the test suite is the **acceptance criterion** for this phase: any continuous `ThermalManifold` round-trips through `encode → decode` within ±0.5 LSB, and `x^T Q x == T_recon^T M T_recon` exactly when `include_gauge_bias = false`.
+
+**Validation target (this phase)**: mathematical equivalence of the QUBO ↔ continuous-tensor round-trip across 5R1C, 9R4C, and flat manifold scenes; Ising conversion accuracy across random solutions. Production annealer integration is deferred to Phase 2c.
+
+**Reference**: `.agents/results/issue-1464-qubo-verification.py` reproduces the same math and asserts `E_QUBO == E_recon` for all four canonical scenes (5R1C cold, 5R1C warm, 9R4C mid, flat) and 16 random Ising trials.
 
 ---
 
@@ -756,6 +846,7 @@ Surrogates must match physics within 2% on held-out data. v3.0 surrogate trainin
 | Ventilation | Yes | Yes (`VentilationSchedule`) | Yes | Yes |
 | Zone Balance | Yes | Yes (`ThermalModelTrait`) | Yes | Yes |
 | Gauge-Theory Foundation (#1461 — Phase 1a) | **Yes** (data structures only — no production solver wiring) | N/A — gauge transport is a stub method on `ThermalManifold`; Phase 1b (#1462) wires the production `GaugeSolver` | N/A — Phase 3 (#1465) is the ASHRAE 140 Case 900 validation gate | **Yes** — 27 unit tests in `src/physics/geometry_tensor.rs` (`test_manifold_*`, `test_from_5r1c_*`, `test_from_9r4c_*`, `test_parallel_transport_*`, `test_validate_*`); matrix-form tracks the 5R1C discrete ODE to 7.1e-15 (Python verification at `.agents/results/issue-1461-python-verification.py`) |
+| Quantum Annealing Bridge (#1464 — Phase 2b) | **Yes** (mathematical mapping only — no annealer SDK wiring, deferred to Phase 2c) | N/A — QUBO / Ising are concrete structs in `src/quantum/qubo_mapping.rs`, not a runtime-polymorphic trait | N/A — energy equivalence is proven algebraically and verified by unit tests, not by annealer output | **Yes** — 18 unit tests in `src/quantum/qubo_mapping.rs` (`test_config_*`, `test_encode_decode_round_trip_default`, `test_qubo_size_scales_with_k`, `test_round_trip_5r1c_energy_matches`, `test_round_trip_9r4c_with_gauge`, `test_qubo_is_symmetric_for_random_manifold`, `test_qubo_rejects_nan_manifold`, `test_qubo_to_ising_matches_qubo_energy`, `test_qubo_max_abs_and_normalize`, `test_num_variables_is_manifold_dim_times_bits`); QUBO energy `x^T Q x` matches the continuous `T^T M T` to floating-point precision across 5R1C, 9R4C, and flat manifold scenes; QUBO ↔ Ising round-trip verified across 16 random binary solutions (Python verification at `.agents/results/issue-1464-qubo-verification.py`) |
 
 **Zone Balance detail**: Multi-node 9R4C model and Case 900 multi-node HVAC validation are complete. Free-floating calibration and annual re-validation CI gate landed (#1154, #1137, #669). Issue #1147 extended the zone balance isolation tests to cover metered energy load validation against ASHRAE 140 reference CSVs (`tests/reference_data/zone_balance/case_600_energy_reference.csv`, `case_900_energy_reference.csv`). Tests use true blind execution (spec-only, no case ID to the engine). The strict ±15% annual energy tolerance tests are `#[ignore]` until the cooling-load physics gap is closed (current cooling underestimates ASHRAE 140 by ~90%; per the Issue #1281 / #1280 investigation, the root cause is roof-solar under-counting — see `docs/investigations/issue-1280-ctf-peak-load.md` §4 — NOT the 5R1C solver nor the `h_ms_total` additive formulation; per AGENTS.md "no parameter tuning, fix the math", no corrections are applied). The Issue #1281 architectural fix adds the `MassAirCouplingMode::ParallelResistance` formulation to `MultiNodeSolver` as a more physically correct alternative to the additive coupling; it does NOT by itself close the ASHRAE 140 cooling gap (Python verification at `.agents/results/issue-1281-python-verification.py`). Hourly E+ regeneration is available via `generate_case_600_900_energy.py`. Marked "Isolated=Yes" because the bottom-up module isolation required by Phase 1 is complete for Weather, Solar, Conduction, and Ventilation, and the Zone Balance test infrastructure now covers both free-floating temperature and metered energy loads.
 
