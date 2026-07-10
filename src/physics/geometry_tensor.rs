@@ -338,8 +338,7 @@ impl ManifoldIndex {
 
     /// All indices in declaration order. Useful for safe iteration in the
     /// GaugeSolver (#1462) when it walks the field / connection slots.
-    pub const ALL: [ManifoldIndex; MANIFOLD_DIM] =
-        [Self::Air, Self::Wall, Self::Roof, Self::Floor];
+    pub const ALL: [ManifoldIndex; MANIFOLD_DIM] = [Self::Air, Self::Wall, Self::Roof, Self::Floor];
 }
 
 /// Geometric validation failures for [`ThermalManifold::validate`]. Kept narrow
@@ -540,16 +539,10 @@ impl ThermalManifold {
         r_cross: Option<[f64; 3]>,
     ) -> Self {
         for (label, &c) in capacitances.iter().enumerate() {
-            assert!(
-                c > 0.0,
-                "capacitances[{label}] must be > 0 (got {c})"
-            );
+            assert!(c > 0.0, "capacitances[{label}] must be > 0 (got {c})");
         }
         for (label, &g) in r_tr_surface.iter().enumerate() {
-            assert!(
-                g > 0.0,
-                "r_tr_surface[{label}] must be > 0 (got {g})"
-            );
+            assert!(g > 0.0, "r_tr_surface[{label}] must be > 0 (got {g})");
         }
         if let Some(rc) = r_cross {
             for (label, &g) in rc.iter().enumerate() {
@@ -629,8 +622,7 @@ impl ThermalManifold {
     /// returned field and explicitly assigns it via
     /// `manifold.scalar_field = manifold.compute_parallel_transport(dt);`.
     pub fn compute_parallel_transport(&self, dt: f64) -> Vector4<f64> {
-        let covariant_derivative =
-            self.metric_tensor * self.scalar_field + self.gauge_connection;
+        let covariant_derivative = self.metric_tensor * self.scalar_field + self.gauge_connection;
         self.scalar_field + covariant_derivative * dt
     }
 
@@ -1146,13 +1138,8 @@ mod tests {
         let dt = 60.0;
 
         // Build the geometric manifold (active 2×2 + inert roof/floor).
-        let mut manifold = ThermalManifold::from_5r1c_parameters(
-            t_air_0,
-            t_mass_0,
-            r_eq,
-            c_air,
-            c_mass,
-        );
+        let mut manifold =
+            ThermalManifold::from_5r1c_parameters(t_air_0, t_mass_0, r_eq, c_air, c_mass);
         // Inject the BC terms (internal gains → air; solar → mass) per the
         // simplified 5R1C ODE above.
         manifold.gauge_connection[ManifoldIndex::Air as usize] = q_int / c_air;
@@ -1192,14 +1179,8 @@ mod tests {
                 (matrix_mass - legacy_mass).abs()
             );
             // Roof/floor slots must remain at 0 (the 5R1C scene is 2-D).
-            assert_eq!(
-                manifold.scalar_field[ManifoldIndex::Roof as usize],
-                0.0
-            );
-            assert_eq!(
-                manifold.scalar_field[ManifoldIndex::Floor as usize],
-                0.0
-            );
+            assert_eq!(manifold.scalar_field[ManifoldIndex::Roof as usize], 0.0);
+            assert_eq!(manifold.scalar_field[ManifoldIndex::Floor as usize], 0.0);
         }
     }
 
@@ -1211,12 +1192,7 @@ mod tests {
         let capacitances = [10_000.0, 50_000.0, 30_000.0, 80_000.0];
         let r_tr = [120.0, 80.0, 200.0]; // g_tr per surface
 
-        let m = ThermalManifold::from_9r4c_parameters(
-            temperatures,
-            capacitances,
-            r_tr,
-            None,
-        );
+        let m = ThermalManifold::from_9r4c_parameters(temperatures, capacitances, r_tr, None);
 
         // Field slots.
         assert_eq!(m.scalar_field[ManifoldIndex::Air as usize], 21.0);
@@ -1253,8 +1229,14 @@ mod tests {
 
         let _transported: Vector4<f64> = m.compute_parallel_transport(60.0);
 
-        assert_eq!(m.scalar_field, snapshot_field, "parallel_transport must not mutate scalar_field");
-        assert_eq!(m.gauge_connection, snapshot_conn, "parallel_transport must not mutate gauge_connection");
+        assert_eq!(
+            m.scalar_field, snapshot_field,
+            "parallel_transport must not mutate scalar_field"
+        );
+        assert_eq!(
+            m.gauge_connection, snapshot_conn,
+            "parallel_transport must not mutate gauge_connection"
+        );
     }
 
     /// The zero source / zero field manifold is a fixed point of parallel
@@ -1280,10 +1262,13 @@ mod tests {
         // dT/dt = 1·0 + 1 = 1 (air slot); T_new = 0 + 2·1 = 2.
         assert_eq!(t_new[ManifoldIndex::Air as usize], 2.0);
         // Other slots: no source, no field, no transport.
-        for axis in [ManifoldIndex::Wall, ManifoldIndex::Roof, ManifoldIndex::Floor] {
+        for axis in [
+            ManifoldIndex::Wall,
+            ManifoldIndex::Roof,
+            ManifoldIndex::Floor,
+        ] {
             assert_eq!(
-                t_new[axis as usize],
-                0.0,
+                t_new[axis as usize], 0.0,
                 "{:?} should remain 0 under isolated air-slot source",
                 axis
             );

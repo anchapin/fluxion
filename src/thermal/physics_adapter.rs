@@ -1,0 +1,218 @@
+use crate::physics::five_r1c_solver::FiveR1CSolver;
+use crate::physics::gauge_solver::{GaugeBoundaryConditions, GaugeSolver};
+use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
+use crate::physics::units::{HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
+use crate::physics::wall_spec::WallSpec;
+pub use crate::thermal::thermal_model::ThermalModel;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct PhysicsAdapterConfig {
+    pub gauge_shadow_mode: bool,
+}
+
+impl PhysicsAdapterConfig {
+    pub fn gauge_shadow() -> Self {
+        Self {
+            gauge_shadow_mode: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GaugeShadowRecord {
+    pub baseline_flux_wm2: f64,
+    pub gauge_flux_wm2: Option<f64>,
+    pub delta_wm2: Option<f64>,
+    pub gauge_connection: Vec<f64>,
+    pub error: Option<String>,
+}
+
+pub struct PhysicsAdapter {
+    baseline_solver: Box<dyn HeatConductionSolver>,
+    gauge_solver: Option<GaugeSolver>,
+    shadow_records: Vec<GaugeShadowRecord>,
+}
+
+impl PhysicsAdapter {
+    pub fn new(config: PhysicsAdapterConfig) -> Self {
+        Self::with_baseline(Box::new(FiveR1CSolver::new()), config)
+    }
+
+    pub fn with_baseline(
+        baseline_solver: Box<dyn HeatConductionSolver>,
+        config: PhysicsAdapterConfig,
+    ) -> Self {
+        let gauge_solver = if config.gauge_shadow_mode {
+            Some(GaugeSolver::default())
+        } else {
+            None
+        };
+
+        Self {
+            baseline_solver,
+            gauge_solver,
+            shadow_records: Vec::new(),
+        }
+    }
+
+    pub fn initialize(&mut self, wall: &WallSpec) -> Result<(), SolverError> {
+        self.baseline_solver.initialize(wall)?;
+        if let Some(gauge_solver) = &mut self.gauge_solver {
+            gauge_solver.initialize(wall)?;
+        }
+        Ok(())
+    }
+
+    pub fn step(
+        &mut self,
+        timestep: Time,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+        h_interior: HeatTransferCoefficient,
+        h_exterior: HeatTransferCoefficient,
+        solar_irradiance_wm2: f64,
+    ) -> Result<HeatFlux, SolverError> {
+        let baseline_flux = self
+            .baseline_solver
+            .step(timestep, T_interior, T_exterior, h_interior, h_exterior)?;
+
+        if let Some(gauge_solver) = &mut self.gauge_solver {
+            let boundary =
+                GaugeBoundaryConditions::new(solar_irradiance_wm2, T_exterior.to_value());
+            let gauge_connection = GaugeSolver::translate_boundary_conditions(boundary)
+                .as_slice()
+                .to_vec();
+            let gauge_result = gauge_solver
+                .step_with_boundary_conditions(timestep, T_interior, h_exterior, boundary);
+            let baseline_flux_wm2 = baseline_flux.to_value();
+            let record = match gauge_result {
+                Ok(gauge_flux) => {
+                    let gauge_flux_wm2 = gauge_flux.to_value();
+                    GaugeShadowRecord {
+                        baseline_flux_wm2,
+                        gauge_flux_wm2: Some(gauge_flux_wm2),
+                        delta_wm2: Some(gauge_flux_wm2 - baseline_flux_wm2),
+                        gauge_connection,
+                        error: None,
+                    }
+                }
+                Err(error) => GaugeShadowRecord {
+                    baseline_flux_wm2,
+                    gauge_flux_wm2: None,
+                    delta_wm2: None,
+                    gauge_connection,
+                    error: Some(error.to_string()),
+                },
+            };
+            self.shadow_records.push(record);
+        }
+
+        Ok(baseline_flux)
+    }
+
+    pub fn shadow_records(&self) -> &[GaugeShadowRecord] {
+        &self.shadow_records
+    }
+
+    pub fn last_shadow_record(&self) -> Option<&GaugeShadowRecord> {
+        self.shadow_records.last()
+    }
+
+    pub fn gauge_shadow_enabled(&self) -> bool {
+        self.gauge_solver.is_some()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::physics::units::{FromF64, ToF64};
+
+    fn test_wall() -> WallSpec {
+        WallSpec::single_layer("Test", 0.2, 1.0, 1000.0, 1000.0)
+    }
+
+    #[test]
+    fn test_shadow_mode_does_not_change_primary_flux() {
+        let wall = test_wall();
+        let mut direct = FiveR1CSolver::new();
+        direct.initialize(&wall).unwrap();
+        let direct_flux = direct
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+            )
+            .unwrap();
+
+        let mut adapter = PhysicsAdapter::new(PhysicsAdapterConfig::gauge_shadow());
+        adapter.initialize(&wall).unwrap();
+        let adapter_flux = adapter
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+                800.0,
+            )
+            .unwrap();
+
+        assert_eq!(adapter_flux.to_value(), direct_flux.to_value());
+        assert_eq!(adapter.shadow_records().len(), 1);
+        let record = adapter.last_shadow_record().unwrap();
+        assert_eq!(record.baseline_flux_wm2, direct_flux.to_value());
+        assert_eq!(record.gauge_flux_wm2, Some(160.0));
+        assert_eq!(record.delta_wm2, Some(160.0));
+        assert_eq!(record.gauge_connection, vec![800.0, 20.0]);
+    }
+
+    #[test]
+    fn test_shadow_mode_disabled_records_nothing() {
+        let wall = test_wall();
+        let mut adapter = PhysicsAdapter::new(PhysicsAdapterConfig::default());
+        adapter.initialize(&wall).unwrap();
+
+        let flux = adapter
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(5.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(25.0),
+                800.0,
+            )
+            .unwrap();
+
+        assert_eq!(flux.to_value(), -75.0);
+        assert!(!adapter.gauge_shadow_enabled());
+        assert!(adapter.shadow_records().is_empty());
+    }
+
+    #[test]
+    fn test_shadow_mode_gauge_error_is_nonfatal() {
+        let wall = test_wall();
+        let mut adapter = PhysicsAdapter::new(PhysicsAdapterConfig::gauge_shadow());
+        adapter.initialize(&wall).unwrap();
+
+        let flux = adapter
+            .step(
+                Time::from_value(3600.0),
+                Temperature::from_value(20.0),
+                Temperature::from_value(20.0),
+                HeatTransferCoefficient::from_value(8.0),
+                HeatTransferCoefficient::from_value(0.0),
+                800.0,
+            )
+            .unwrap();
+
+        assert_eq!(flux.to_value(), 0.0);
+        let record = adapter.last_shadow_record().unwrap();
+        assert_eq!(record.baseline_flux_wm2, 0.0);
+        assert_eq!(record.gauge_flux_wm2, None);
+        assert_eq!(record.delta_wm2, None);
+        assert!(record.error.as_ref().unwrap().contains("h_exterior"));
+    }
+}
