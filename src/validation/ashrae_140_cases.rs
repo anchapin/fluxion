@@ -41,7 +41,8 @@
 // paths resolve unchanged.
 pub use fluxion_core::ashrae_cases::{
     BuildingType, ConductanceReferences, ConstructionType, GeometrySpec, GlassType, HvacSchedule,
-    InternalLoads, NightVentilation, Orientation, ShadingDevice, ShadingType, WindowArea, WindowSpec,
+    InternalLoads, NightVentilation, Orientation, ShadingDevice, ShadingType, WindowArea,
+    WindowSpec,
 };
 
 use crate::sim::construction::{Assemblies, Construction, Materials};

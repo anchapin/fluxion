@@ -21,9 +21,9 @@ use crate::sim::thermal_model::ThermalModelType as RoutingThermalModelType;
 use crate::sim::thermal_model_data::{IncidentSolarAccumulator, ThermalModelData};
 use crate::sim::view_factors;
 use crate::validation::ashrae_140_cases::CaseSpec;
-use fluxion_core::ashrae_cases::{Orientation, ShadingType};
 use crate::validation::config::{validate_assembly, validate_constants};
 use crate::validation::diagnostics::SimulationDiagnostics;
+use fluxion_core::ashrae_cases::{Orientation, ShadingType};
 use fluxion_core::assembly::BuildingAssembly;
 
 type SolversAndSolAirResult = (

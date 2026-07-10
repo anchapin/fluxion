@@ -14,8 +14,8 @@ use crate::sim::shading::ShadeFin;
 use crate::sim::solar::{calculate_hourly_solar_from_pos, WindowProperties};
 use crate::sim::thermal_model_core::{get_daily_cycle, ThermalModel};
 use crate::sim::timestep_solver::StepParameters;
-use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea};
 use crate::weather::HourlyWeatherData;
+use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea};
 
 impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>> ThermalModel<T> {
     /// Solves a single timestep of the thermal simulation.
