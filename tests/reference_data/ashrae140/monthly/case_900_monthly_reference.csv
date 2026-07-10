@@ -12,12 +12,13 @@
 #
 # METHODOLOGY (interim, fully reproducible):
 #   monthly_mid = ANNUAL_AUTHORITY_MID × MONTHLY_FRACTION
-#   where ANNUAL_AUTHORITY_MID = midpoint of the ASHRAE 140-2023 Annex B
-#   reference band across BEM programs (same source as the annual band in
+#   where ANNUAL_AUTHORITY_MID = midpoint of the NREL/TP-472-6231 (1995 BESTEST)
+#   Table 3-2 reference band (the same source used by
 #   tests/reference_data/zone_balance/case_900_energy_reference.csv and
-#   src/validation/benchmark.rs Case 900):
+#   src/validation/benchmark.rs Case 900 — see PROVENANCE.md for the citation
+#   chain and issue #1408 reconciliation history):
 #       annual_heating 1.17..2.04 MWh -> mid 1.605 MWh
-#       annual_cooling 8.00..10.50 MWh -> mid 9.250 MWh
+#       annual_cooling 2.13..3.67 MWh -> mid 2.900 MWh
 #   and MONTHLY_FRACTION is the heating/cooling degree-day share computed from
 #   the repository's own hourly weather file
 #   tests/reference_data/weather/denver_tmy3_reference.csv (balance point 18.3°C,
@@ -45,13 +46,13 @@
 month,heating_mid_mwh,heating_accept_min_mwh,heating_accept_max_mwh,cooling_mid_mwh,cooling_accept_min_mwh,cooling_accept_max_mwh
 Jan,0.2401,0.2161,0.2641,0.0000,0.0000,0.0000
 Feb,0.2475,0.2227,0.2722,0.0000,0.0000,0.0000
-Mar,0.2131,0.1918,0.2345,0.0601,0.0541,0.0661
-Apr,0.1380,0.1242,0.1518,0.1850,0.1665,0.2035
-May,0.0888,0.0799,0.0976,0.7520,0.6768,0.8272
-Jun,0.0302,0.0272,0.0332,1.7371,1.5634,1.9109
-Jul,0.0177,0.0159,0.0194,2.4438,2.1995,2.6882
-Aug,0.0109,0.0098,0.0120,2.5983,2.3385,2.8582
-Sep,0.0446,0.0402,0.0491,1.2552,1.1297,1.3807
-Oct,0.1294,0.1164,0.1423,0.1998,0.1798,0.2198
-Nov,0.2133,0.1920,0.2346,0.0176,0.0158,0.0193
-Dec,0.2314,0.2083,0.2546,0.0009,0.0008,0.0010
+Mar,0.2131,0.1918,0.2345,0.0188,0.0170,0.0207
+Apr,0.1380,0.1242,0.1518,0.0580,0.0522,0.0638
+May,0.0888,0.0799,0.0976,0.2358,0.2122,0.2593
+Jun,0.0302,0.0272,0.0332,0.5446,0.4902,0.5991
+Jul,0.0177,0.0159,0.0194,0.7662,0.6896,0.8428
+Aug,0.0109,0.0098,0.0120,0.8146,0.7331,0.8961
+Sep,0.0446,0.0402,0.0491,0.3935,0.3542,0.4329
+Oct,0.1294,0.1164,0.1423,0.0626,0.0564,0.0689
+Nov,0.2133,0.1920,0.2346,0.0055,0.0050,0.0061
+Dec,0.2314,0.2083,0.2546,0.0003,0.0003,0.0003

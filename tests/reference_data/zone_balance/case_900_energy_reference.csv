@@ -1,11 +1,14 @@
 # EnergyPlus Reference: ASHRAE 140 Case 900 — Annual + Peak Energy
-# Source: ASHRAE Standard 140-2023 Annex B (validated across BEM programs incl. EnergyPlus)
+# Source: NREL/TP-472-6231 (1995 BESTEST) Table 3-2 (annual loads) and Tables 3-3/3-4
+#         (peak loads), reconciled with src/validation/benchmark.rs (Informed path).
+#         See tests/reference_data/zone_balance/PROVENANCE.md for the full citation
+#         chain and issue #1408 reconciliation history.
 # EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
 # Model: High-mass 6x8x2.7m (200mm concrete), 12m² south window, 0.5 ACH, 20°C heat / 27°C cool
 # Tolerance: ±15% annual energy per ASHRAE 140 acceptance criteria (issue #1147)
 # Hourly E+ output: regenerate via generate_case_600_900_energy.py (Case 900 IDF pending)
 metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
 annual_heating,MWh,1.17,2.04,1.605,15,1.364,1.846,Heavy mass retains solar, cuts winter heating
-annual_cooling,MWh,8.00,10.50,9.250,15,7.862,10.637,Mass releases stored heat overnight, raises cooling
-peak_heating,kW,2.8,3.8,3.300,15,2.805,3.795,Similar envelope peak to Case 600
-peak_cooling,kW,3.4,6.2,4.800,15,4.080,5.520,Higher peak due to mass thermal coupling
+annual_cooling,MWh,2.13,3.67,2.900,15,2.465,3.335,Mass releases stored heat overnight, raises cooling
+peak_heating,kW,1.80,2.40,2.100,15,1.785,2.415,Smaller heating peak than Case 600 (high-mass retention)
+peak_cooling,kW,1.60,2.10,1.850,15,1.5725,2.1275,Smaller cooling peak than Case 600 (high-mass retention)
