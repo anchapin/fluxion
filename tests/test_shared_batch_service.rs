@@ -118,10 +118,7 @@ const THROUGHPUT_N: usize = 512;
 /// wall-clock duration. Returns a `Duration` to allow callers to scale the
 /// throughput against a per-test soft deadline rather than a hard-coded number
 /// (avoids flake on slow CI runners).
-fn drive_workload_measure(
-    service: &SharedBatchInferenceService,
-    n_requests: usize,
-) -> Duration {
+fn drive_workload_measure(service: &SharedBatchInferenceService, n_requests: usize) -> Duration {
     let n_producers = 8;
     let chunk = n_requests.div_ceil(n_producers);
     let start = Instant::now();
@@ -270,7 +267,9 @@ fn test_adaptive_wait_ms_keeps_latency_bounded_under_bursty_load() {
     }
 
     // Read P95 (sorted 95th percentile of the 32 measurements).
-    let mut samples: Vec<u64> = (0..N_BURST).map(|i| latency_ns[i].load(Ordering::Relaxed)).collect();
+    let mut samples: Vec<u64> = (0..N_BURST)
+        .map(|i| latency_ns[i].load(Ordering::Relaxed))
+        .collect();
     samples.sort_unstable();
     let p95_ns = samples[(N_BURST * 95 / 100).saturating_sub(1).min(N_BURST - 1)];
     let p95_ms = p95_ns as f64 / 1_000_000.0;

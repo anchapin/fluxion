@@ -104,14 +104,16 @@ fn bench_single_worker_fixed_wait(c: &mut Criterion) {
     };
     let workload = generate_workload();
 
-    let svc =
-        SharedBatchInferenceService::new(surrogate, config, N_PRODUCERS * 4);
+    let svc = SharedBatchInferenceService::new(surrogate, config, N_PRODUCERS * 4);
 
     let mut group = c.benchmark_group("shared_batch_throughput");
     group.throughput(Throughput::Elements(N_REQUESTS as u64));
-    group.bench_function(BenchmarkId::from_parameter("legacy_single_worker_wait_10ms"), |b| {
-        b.iter(|| drive_workload(&svc, &workload));
-    });
+    group.bench_function(
+        BenchmarkId::from_parameter("legacy_single_worker_wait_10ms"),
+        |b| {
+            b.iter(|| drive_workload(&svc, &workload));
+        },
+    );
     group.finish();
 }
 

@@ -244,7 +244,7 @@ impl SharedBatchInferenceService {
         // Keep one sender inside `Inner`; the workers only need the receiver.
         let sender = tx.clone();
         drop(tx); // close the locals-only handle so workers see Disconnected
-                   // only when all clones (incl. the `Inner` one) are dropped.
+                  // only when all clones (incl. the `Inner` one) are dropped.
 
         let mut workers = Vec::with_capacity(num_workers);
         for worker_idx in 0..num_workers {
@@ -349,7 +349,14 @@ impl SharedBatchInferenceService {
                     Err(RecvTimeoutError::Timeout) => break,
                     Err(RecvTimeoutError::Disconnected) => {
                         // Channel closed. Process what we have and exit.
-                        Self::process_batch(batch, &surrogate, &metrics, &mut ema_ms, &mut wait_ms, &sched);
+                        Self::process_batch(
+                            batch,
+                            &surrogate,
+                            &metrics,
+                            &mut ema_ms,
+                            &mut wait_ms,
+                            &sched,
+                        );
                         return;
                     }
                 }
@@ -377,8 +384,10 @@ impl SharedBatchInferenceService {
         wait_ms: &mut u64,
         sched: &SchedulerConfig,
     ) {
-        let (inputs, senders): (Vec<Vec<f64>>, Vec<Sender<Vec<f64>>>) =
-            batch.into_iter().map(|req| (req.temps, req.response_tx)).unzip();
+        let (inputs, senders): (Vec<Vec<f64>>, Vec<Sender<Vec<f64>>>) = batch
+            .into_iter()
+            .map(|req| (req.temps, req.response_tx))
+            .unzip();
 
         let start = Instant::now();
         let outputs = surrogate.predict_loads_batched(&inputs);
@@ -547,8 +556,14 @@ mod tests {
     fn test_scheduler_config_default_resolves_workers() {
         let cfg = SchedulerConfig::default();
         let resolved = cfg.resolve_num_workers();
-        assert!(resolved >= 1, "resolved workers must be >= 1, got {resolved}");
-        assert!(resolved <= 8, "resolved workers must be <= 8, got {resolved}");
+        assert!(
+            resolved >= 1,
+            "resolved workers must be >= 1, got {resolved}"
+        );
+        assert!(
+            resolved <= 8,
+            "resolved workers must be <= 8, got {resolved}"
+        );
         assert!(cfg.target_latency_ms >= cfg.min_wait_ms);
         assert!(cfg.target_latency_ms <= cfg.max_wait_ms);
     }
@@ -563,7 +578,10 @@ mod tests {
         assert_eq!(sched.max_batch_size, dyn_cfg.max_batch_size);
         assert_eq!(sched.target_latency_ms, dyn_cfg.wait_ms);
         assert_eq!(sched.max_wait_ms, dyn_cfg.wait_ms);
-        assert_eq!(sched.num_workers, 1, "back-compat translation pins single worker");
+        assert_eq!(
+            sched.num_workers, 1,
+            "back-compat translation pins single worker"
+        );
     }
 
     #[test]
@@ -599,7 +617,11 @@ mod tests {
         }
 
         let snap = service.metrics();
-        assert!(snap.batches_processed >= 1, "expected at least 1 batch, got {}", snap.batches_processed);
+        assert!(
+            snap.batches_processed >= 1,
+            "expected at least 1 batch, got {}",
+            snap.batches_processed
+        );
         assert_eq!(snap.requests_processed, n as u64);
         assert!(snap.ema_inference_ms >= 0.0, "EMA must be non-negative");
     }
