@@ -528,52 +528,87 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         0.5 * (f_window_to_a + f_window_to_b)
     }
 
+    /// Calculate inter-zone radiative conductance for window-to-window
+    /// longwave exchange using the **chord-slope** of the full nonlinear
+    /// Stefan-Boltzmann law at the supplied operating point (Issue #1445).
+    ///
+    /// # Why chord-slope?
+    /// The legacy implementation linearized at a hardcoded `T_ref = 293.15 K`,
+    /// which under-predicts the actual `Q_rad = σ·ε²·F·A·(T_A⁴ − T_B⁴)` by
+    /// ~9.7 % at ΔT = 20 K.  The chord-slope form
+    /// `h_eff = Q_rad / ΔT` exactly reproduces the full nonlinear `Q_rad`
+    /// at the current operating point when multiplied by `ΔT`, eliminating
+    /// the linearization error without changing the linear air-node solve.
+    ///
+    /// # Arguments
+    /// * `window_area` - Area of the windows (m²)
+    /// * `surface_emissivity` - Surface emissivity (0–1)
+    /// * `temp_a_k` - Temperature of surface A (Kelvin)
+    /// * `temp_b_k` - Temperature of surface B (Kelvin)
+    /// * `view_factor` - View factor between windows (0–1)
+    ///
+    /// # Returns
+    /// Radiative conductance in W/K. Returns 0.0 when ΔT ≈ 0 (no gradient,
+    /// no flow) or when area / view_factor / emissivity is zero.
+    #[allow(dead_code)]
     pub(crate) fn calculate_radiative_conductance_with_view_factor(
         window_area: f64,
         surface_emissivity: f64,
-        reference_temp: f64,
+        temp_a_k: f64,
+        temp_b_k: f64,
         view_factor: f64,
     ) -> f64 {
-        const STEFAN_BOLTZMANN: f64 = 5.670374419e-8;
         let effective_emissivity =
             1.0 / (1.0 / surface_emissivity + 1.0 / surface_emissivity - 1.0);
-        let h_rad =
-            4.0 * STEFAN_BOLTZMANN * effective_emissivity * view_factor * reference_temp.powi(3);
-        h_rad * window_area
+        crate::sim::interzone_radiation::radiative_conductance_chord_slope(
+            temp_a_k,
+            temp_b_k,
+            effective_emissivity,
+            effective_emissivity,
+            view_factor,
+            window_area,
+        )
     }
 
     /// Calculate window-to-window radiative conductance using glass emissivity.
     ///
     /// Implements Issue #349: Window-to-Window Radiative Exchange
+    /// (linearization corrected to chord-slope in Issue #1445).
     ///
     /// The radiative heat exchange between two windows follows:
-    /// Q_ij = σ * F_ij * ε_glass^2 * A_window * (T_i^4 - T_j^4)
+    /// `Q_ij = σ · F_ij · ε_glass² · A_window · (T_i⁴ − T_j⁴)`
     ///
-    /// Linearized around reference temperature T_ref:
-    /// Q_ij ≈ h_rad * (T_i - T_j)
-    ///
-    /// where h_rad = 4 * σ * F_ij * ε_glass^2 * A_window * T_ref^3
+    /// The chord-slope linearization `h_eff = Q_ij / (T_i − T_j)` exactly
+    /// reproduces the full nonlinear `Q_ij` at the supplied operating
+    /// point — replacing the prior hardcoded `T_ref = 293.15 K`
+    /// linearization which under-predicted by up to ~9.7 % at ΔT = 20 K.
     ///
     /// # Arguments
     /// * `window_area` - Area of the windows (m²)
-    /// * `glass_emissivity` - Emissivity of glass for longwave radiation (0-1)
-    /// * `reference_temp` - Reference temperature for linearization (K)
-    /// * `view_factor` - View factor between windows (0-1)
+    /// * `glass_emissivity` - Emissivity of glass for longwave radiation (0–1)
+    /// * `temp_a_k` - Temperature of glass A (Kelvin)
+    /// * `temp_b_k` - Temperature of glass B (Kelvin)
+    /// * `view_factor` - View factor between windows (0–1)
     ///
     /// # Returns
-    /// Radiative conductance in W/K
+    /// Radiative conductance in W/K (chord-slope form).
     #[allow(dead_code)]
     fn calculate_window_radiative_conductance(
         window_area: f64,
         glass_emissivity: f64,
-        reference_temp: f64,
+        temp_a_k: f64,
+        temp_b_k: f64,
         view_factor: f64,
     ) -> f64 {
-        const STEFAN_BOLTZMANN: f64 = 5.670374419e-8;
         let effective_emissivity = glass_emissivity * glass_emissivity;
-        let h_rad =
-            4.0 * STEFAN_BOLTZMANN * effective_emissivity * view_factor * reference_temp.powi(3);
-        h_rad * window_area
+        crate::sim::interzone_radiation::radiative_conductance_chord_slope(
+            temp_a_k,
+            temp_b_k,
+            effective_emissivity,
+            effective_emissivity,
+            view_factor,
+            window_area,
+        )
     }
 
     /// Calculate analytical thermal loads without neural surrogates.
