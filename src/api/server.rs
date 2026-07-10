@@ -546,20 +546,122 @@ mod tests {
 
     #[tokio::test]
     async fn router_has_all_endpoints() {
-        let router = router(AppState::default());
-        // We can't directly introspect axum::Router without depending on
-        // tower's ServiceExt internals, so we exercise it via a round-trip
-        // request. Healthz must respond.
+        // Issue #1442: every route declared in `Router::new()` (line 476)
+        // must be reachable via HTTP. A path that returns 404 from axum's
+        // *automatic* fallback (rather than the handler's typed
+        // `SchemaNotFound`) means the route was removed from the router
+        // without removing it from `src/api/openapi.yaml` or the docs —
+        // both the in-process server probe here and the doc gate
+        // (`openapi_yaml_paths_match_router` below) catch the drift on
+        // either side.
+        let state = AppState::default();
+        // Pre-store a schema so `GET /v1/schema/{id}` returns 200 (a
+        // missing id would legitimately 404 from the handler and would
+        // be indistinguishable over HTTP from an unrouted path).
+        let stored_id = state.store(default_schema_v1()).await;
+
+        let router = router(state.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let handle = tokio::spawn(async move {
             axum::serve(listener, router).await.unwrap();
         });
 
-        let url = format!("http://{addr}/v1/healthz");
-        let resp = reqwest::get(&url).await.unwrap();
-        assert!(resp.status().is_success());
+        let client = reqwest::Client::new();
+
+        // (HTTP method, path). Body is intentionally empty/allowed-missing
+        // because the contract under test is "the route exists" (2xx/4xx
+        // with a typed envelope), not "the body is well-formed" — a
+        // probe that returns a typed 4xx proves the handler ran. The
+        // only probe whose success depends on a pre-populated store is
+        // `/v1/schema/{id}` (above).
+        let probes: &[(&str, &str)] = &[
+            ("GET", "/v1/healthz"),
+            ("GET", "/v1/metrics"),
+            ("GET", "/v1/openapi.json"),
+            ("GET", "/v1/openapi.yaml"),
+            ("POST", "/v1/simulate"),
+            ("POST", "/v1/import/osm"),
+        ];
+        for (method, path) in probes {
+            let url = format!("http://{addr}{path}");
+            let resp = match *method {
+                "GET" => client.get(&url).send().await.unwrap(),
+                "POST" => client.post(&url).send().await.unwrap(),
+                other => panic!("unsupported probe method in test: {other}"),
+            };
+            assert_ne!(
+                resp.status().as_u16(),
+                404,
+                "route {method} {path} returned 404 — declared in Router::new() but not actually mounted"
+            );
+        }
+
+        // Schema lookup with a known id — must return 200.
+        let url = format!("http://{addr}/v1/schema/{stored_id}");
+        let resp = client.get(&url).send().await.unwrap();
+        assert_eq!(
+            resp.status().as_u16(),
+            200,
+            "GET /v1/schema/{{id}} (known id) returned {}",
+            resp.status()
+        );
         handle.abort();
+    }
+
+    /// Issue #1442 (cross-check): `src/api/openapi.yaml`'s `paths:` keys
+    /// (OpenAPI-style `{id}`, `{fmt}`) must match the routes declared in
+    /// `Router::new()` (axum-style `:id`, `:fmt`), one-to-one, modulo the
+    /// brace/colon difference. Adding a route on either side without the
+    /// matching entry on the other side turns this test red.
+    #[test]
+    fn openapi_yaml_paths_match_router() {
+        // Routes declared in `Router::new()` (axum-style). Keep this list
+        // in sync with `src/api/server.rs:476` — it is the canonical
+        // source-of-truth used by this drift gate.
+        const AXUM_ROUTES: &[&str] = &[
+            "/v1/healthz",
+            "/v1/metrics",
+            "/v1/openapi.json",
+            "/v1/openapi.yaml",
+            "/v1/simulate",
+            "/v1/schema/:id",
+            "/v1/import/:fmt",
+        ];
+
+        let yaml = include_str!("openapi.yaml");
+        let parsed: serde_yaml::Value =
+            serde_yaml::from_str(yaml).expect("src/api/openapi.yaml must be a valid YAML document");
+        let paths = parsed
+            .get("paths")
+            .and_then(|v| v.as_mapping())
+            .expect("src/api/openapi.yaml must have a top-level `paths:` map");
+
+        let openapi_paths: std::collections::BTreeSet<String> = paths
+            .iter()
+            .map(|(k, _)| k.as_str().expect("path keys must be strings").to_string())
+            .collect();
+
+        // Normalize OpenAPI-style `{x}` → axum-style `:x`.
+        let normalized: std::collections::BTreeSet<String> = openapi_paths
+            .iter()
+            .map(|p| p.replace("{id}", ":id").replace("{fmt}", ":fmt"))
+            .collect();
+
+        let axum_routes: std::collections::BTreeSet<String> =
+            AXUM_ROUTES.iter().map(|s| s.to_string()).collect();
+
+        let only_in_router: Vec<&String> = axum_routes.difference(&normalized).collect();
+        let only_in_yaml: Vec<&String> = normalized.difference(&axum_routes).collect();
+
+        assert!(
+            only_in_router.is_empty() && only_in_yaml.is_empty(),
+            "OpenAPI ↔ Router drift detected.\n\
+             Routes in `Router::new()` but missing from openapi.yaml: {only_in_router:#?}\n\
+             Routes in openapi.yaml but missing from `Router::new()`: {only_in_yaml:#?}\n\
+             Update both sides (axum uses `:id`/`:fmt`, OpenAPI uses `{{id}}`/`{{fmt}}`) \
+             and keep this test passing.",
+        );
     }
 
     #[test]
