@@ -489,8 +489,11 @@ impl EpwWeatherSource {
                 dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
                 // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared:
-                    parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
+                horizontal_infrared: parse_field_coercing_sentinel(
+                    fields[12],
+                    EPW_SOLAR_SENTINEL,
+                    0.0,
+                ),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -552,8 +555,11 @@ impl EpwWeatherSource {
                 dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
                 // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared:
-                    parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
+                horizontal_infrared: parse_field_coercing_sentinel(
+                    fields[12],
+                    EPW_SOLAR_SENTINEL,
+                    0.0,
+                ),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -617,8 +623,11 @@ impl EpwWeatherSource {
                 dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
                 // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared:
-                    parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
+                horizontal_infrared: parse_field_coercing_sentinel(
+                    fields[12],
+                    EPW_SOLAR_SENTINEL,
+                    0.0,
+                ),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -1003,7 +1012,11 @@ mod tests {
             DEFAULT_ATMOSPHERIC_PRESSURE
         );
         assert_eq!(
-            parse_field_coercing_sentinel("101325", EPW_PRESSURE_SENTINEL, DEFAULT_ATMOSPHERIC_PRESSURE),
+            parse_field_coercing_sentinel(
+                "101325",
+                EPW_PRESSURE_SENTINEL,
+                DEFAULT_ATMOSPHERIC_PRESSURE
+            ),
             101325.0
         );
     }
