@@ -15,8 +15,8 @@ use fluxion::sim::interzone::{
     calculate_zone_to_zone_view_factor, AIR_DENSITY, AIR_SPECIFIC_HEAT, STACK_COEFFICIENT,
 };
 use fluxion::sim::view_factors::{
-    build_zone_view_factors, hottels_rectangular_view_factor,
-    hottels_rectangular_view_factor_pair, reciprocal_view_factor, CommonWallGeometry,
+    build_zone_view_factors, hottels_rectangular_view_factor, hottels_rectangular_view_factor_pair,
+    reciprocal_view_factor, CommonWallGeometry,
 };
 
 // ============================================================================
@@ -703,7 +703,7 @@ fn test_issue_1444_hottel_reciprocity_8x3_vs_8x2() {
 #[test]
 fn test_issue_1444_reciprocity_random_rectangles() {
     let configs: &[(f64, f64, f64, f64, f64)] = &[
-        (8.0, 3.0, 8.0, 2.0, 0.1),    // issue #1444 example
+        (8.0, 3.0, 8.0, 2.0, 0.1), // issue #1444 example
         (8.0, 3.0, 8.0, 2.9, 0.1),
         (8.0, 3.0, 8.0, 3.0, 0.0),
         (10.0, 4.0, 6.0, 2.0, 0.2),

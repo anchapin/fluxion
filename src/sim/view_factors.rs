@@ -82,9 +82,7 @@ pub fn hottels_rectangular_view_factor(
 
     // Special case: equal-sized aligned rectangles on a common (or near-common)
     // wall.  F_AB = 1.0 because every ray from A reaches B and vice versa.
-    if separation < COMMON_WALL_SEP
-        && approx_eq(a_length, b_length)
-        && approx_eq(a_width, b_width)
+    if separation < COMMON_WALL_SEP && approx_eq(a_length, b_length) && approx_eq(a_width, b_width)
     {
         return 1.0;
     }
@@ -133,9 +131,7 @@ pub fn hottels_rectangular_view_factor_pair(
     b_width: f64,
     separation: f64,
 ) -> (f64, f64) {
-    let f_ab = hottels_rectangular_view_factor(
-        a_length, a_width, b_length, b_width, separation,
-    );
+    let f_ab = hottels_rectangular_view_factor(a_length, a_width, b_length, b_width, separation);
     let area_a = a_length * a_width;
     let area_b = b_length * b_width;
     let f_ba = reciprocal_view_factor(f_ab, area_a, area_b);
@@ -321,7 +317,9 @@ mod tests {
         assert!(
             residual < RECIPROCITY_TOL,
             "reciprocity violated: F_AB*A_A={:.6e} F_BA*A_B={:.6e} residual={:.3e}",
-            f_ab * a_a, f_ba * a_b, residual
+            f_ab * a_a,
+            f_ba * a_b,
+            residual
         );
         // For aligned 8x3 vs 8x2 with 8x2 fully contained, common-wall limit
         // says F_AB → 16/24 ≈ 0.667 and F_BA → 1.0.
@@ -348,7 +346,7 @@ mod tests {
     fn test_reciprocity_random_configurations() {
         let configs: &[(f64, f64, f64, f64, f64)] = &[
             // (aL, aW, bL, bW, sep)
-            (8.0, 3.0, 8.0, 2.0, 0.1),   // issue #1444 example
+            (8.0, 3.0, 8.0, 2.0, 0.1), // issue #1444 example
             (8.0, 3.0, 8.0, 2.9, 0.1),
             (8.0, 3.0, 8.0, 3.0, 0.0),
             (8.0, 3.0, 8.0, 3.0, 0.001),
@@ -357,10 +355,10 @@ mod tests {
             (2.0, 1.5, 4.0, 1.0, 0.5),
             (1.0, 1.0, 3.0, 3.0, 0.0),
             (12.0, 2.0, 4.0, 2.0, 0.05),
-            (8.0, 3.0, 8.0, 2.0, 2.0),  // large separation
+            (8.0, 3.0, 8.0, 2.0, 2.0), // large separation
             (1.5, 1.0, 4.0, 2.5, 0.3),
             (6.0, 4.0, 2.0, 1.0, 0.0),
-            (8.0, 3.0, 8.0, 2.0, 0.0),  // perfect common wall
+            (8.0, 3.0, 8.0, 2.0, 0.0), // perfect common wall
             (8.0, 3.0, 8.0, 2.0, 0.005),
             (20.0, 5.0, 4.0, 1.0, 0.1),
             (3.0, 2.0, 6.0, 4.0, 0.1),
@@ -457,8 +455,7 @@ mod tests {
         assert_eq!(m[(1, 1)], 0.0);
 
         // Reciprocity using the wall's own areas (A_0 = 24, A_1 = 16).
-        let residual =
-            (m[(1, 0)] * 24.0 - m[(0, 1)] * 16.0).abs();
+        let residual = (m[(1, 0)] * 24.0 - m[(0, 1)] * 16.0).abs();
         assert!(residual < RECIPROCITY_TOL);
     }
 
