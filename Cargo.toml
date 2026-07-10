@@ -250,6 +250,11 @@ name = "surrogate_vs_physics"
 path = "benches/surrogate_vs_physics_bench.rs"
 harness = false
 
+[[bench]]
+name = "shared_batch_service"
+path = "benches/shared_batch_service_bench.rs"
+harness = false
+
 [[bin]]
 name = "fluxion-delta"
 path = "tools/fluxion_delta.rs"
