@@ -15,7 +15,15 @@
 use crate::solar::solar_position::SolarPosition;
 
 /// Solar constant at the top of atmosphere (W/m²).
-const SOLAR_CONSTANT: f64 = 1367.0;
+///
+/// Canonical total solar irradiance (TSI) at mean Earth-Sun distance.
+/// **Value:** 1361.0 W/m² (ASHRAE 140-2022 Appendix C; Kopp & Lean 2011 / TSIS).
+///
+/// Previously this module used the older 1367 W/m² approximation, which caused
+/// a 0.44% drift in `dni_extra` and propagated into every Perez diffuse
+/// calculation through the `delta` parameter (Issue #1413). All other call sites
+/// (sky_radiation.rs, ashrae_140.rs, engine.rs) already use 1361.0.
+pub const SOLAR_CONSTANT: f64 = 1361.0;
 
 /// Surface orientation for irradiance calculations.
 ///
@@ -485,12 +493,39 @@ mod tests {
 
     #[test]
     fn test_extraterrestrial_irradiance() {
-        // At perihelion (DOY ~3): I₀ should be ~1422 W/m²
+        // At perihelion (DOY ~3): I₀ should be ~1406 W/m²
         let e_peri = extraterrestrial_irradiance(3);
         assert!(e_peri > 1400.0 && e_peri < 1440.0);
 
-        // At aphelion (DOY ~186): I₀ should be ~1315 W/m²
+        // At aphelion (DOY ~186): I₀ should be ~1316 W/m²
         let e_aph = extraterrestrial_irradiance(186);
         assert!(e_aph > 1300.0 && e_aph < 1340.0);
+    }
+
+    #[test]
+    fn test_solar_constant_matches_canonical() {
+        // Issue #1413: the leaf solar module's solar constant must equal the
+        // canonical ASHRAE 140-2022 value used everywhere else in the codebase.
+        assert_eq!(
+            SOLAR_CONSTANT,
+            crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT,
+            "SOLAR_CONSTANT in surface_irradiance ({}) must match \
+             ashrae_140::SOLAR_CONSTANT ({})",
+            SOLAR_CONSTANT,
+            crate::physics::constants::solar::ashrae_140::SOLAR_CONSTANT,
+        );
+    }
+
+    #[test]
+    fn test_extraterrestrial_irradiance_doy172() {
+        // Issue #1413 acceptance: dni_extra(DOY 172) must match the canonical
+        // formula 1361 × (1 + 0.033 × cos(2π·169/365)) to within 1e-9.
+        let expected =
+            1361.0 * (1.0 + 0.033 * (2.0 * std::f64::consts::PI * 169.0 / 365.0).cos());
+        let actual = extraterrestrial_irradiance(172);
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "dni_extra(DOY 172): expected {expected:.6}, got {actual:.6}"
+        );
     }
 }
