@@ -1,14 +1,28 @@
 # ASHRAE 140 Multi-Zone Validation Results
 
-> **DRAFT — pending Wave 6 / issue #1446** (multi-zone inter-zone coupling).
-> Numbers below are the engine's *current* output through the rewritten,
-> real physics validator (issue #1407). The strict ±15% CI gate (#1368)
-> is now wired to actual engine results instead of the previous
-> 12.4-vs-12.5 MWh self-referential placeholder comparison.
+> **Authoritative** for Cases 960 and 970 (per issue #1443). The previous
+> `MultiZoneValidator::validate_case_960` stub (which fabricated PASS by
+> comparing two hardcoded numbers against themselves) was removed in #1407,
+> and Case 970 (5-zone cross-coupling) was integrated via #1446 (merge #1467,
+> 2026-07-09). The strict ±15% CI gate (#1368) is now wired to actual engine
+> results. The Phase 7B snapshot at `docs/ASHRAE140_RESULTS.md` (2026-06-24,
+> 18.8% pass rate) **pre-dates** the validator rewrite and Case 970 landing;
+> do not cite it for Case 960 or Case 970 numbers.
 >
 > The previous version of this document recorded fabricated PASS
 > verdicts from a stub that compared two hardcoded numbers against
-> themselves — see the "Removed stub" section below.
+> themselves — see the "Removed stub (issue #1407)" section below.
+
+*Generated: 2026-07-10 (post-#1407, post-#1446 / merge #1467, post-#1456)*
+
+*Snapshot provenance (see "Snapshot Provenance" appendix at the bottom for full
+detail):* fluxion commit `dad85ec` (Case 970 reference + MultiZoneNetwork e2e
+validation, #1446/#1467), with prior `4fb03a4` (Case 960 sunspace coupling fix,
+#1456/#1466) and `84c7c58` (real-physics Case 960 validator, #1407); ASHRAE
+140 reference set post-#1407 (1.65-2.45 MWh Case 960, 10.54-14.26 MWh Case 970);
+Case 960 / Case 970 reference CSVs at
+`tests/reference_data/zone_balance/case_960_energy_reference.csv` and
+`tests/reference_data/zone_balance/case_970_energy_reference.csv`.
 
 ## Overview
 
@@ -360,6 +374,39 @@ cargo run -p fluxion --bin run_multi_zone_validation -- case960
   numbers.
 - Documented as "✅ PASSED" but the verdict was not connected to any
   real engine output.
+
+## Snapshot Provenance
+
+This section resolves the "18.8 % pass vs 92 % Case 960 compliance" contradiction
+flagged in issue #1443.
+
+| Field | Value |
+|-------|-------|
+| Snapshot date | 2026-07-10 |
+| Fluxion commit (short SHA) | `dad85ec` (Case 970 + MultiZoneNetwork e2e, #1446 / #1467) atop `4fb03a4` (Case 960 sunspace coupling, #1456 / #1466) and `84c7c58` (real-physics Case 960 validator, #1407) |
+| Case 960 reference source | `tests/reference_data/zone_balance/case_960_energy_reference.csv` (1.65-2.45 MWh heating, 1.55-2.78 MWh cooling, 2.0-8.0 kW peak heating, 0.0-4.0 kW peak cooling); ±15% / ±10% accept bands applied per #1368 |
+| Case 970 reference source | `tests/reference_data/zone_balance/case_970_energy_reference.csv` (10.54-14.26 MWh heating, 7.39-10.00 MWh cooling, 4.0-8.0 kW peak heating, 2.5-5.5 kW peak cooling); ±15% / ±10% accept bands applied per #1368 |
+| Validator path | `MultiZoneValidator::validate_case_960` rewritten in #1407 to delegate to `ASHRAE140Validator::validate_case_960` (real 8760-step physics); Case 970 via `tests/ashrae_140_case_970_validation.rs` (7 tests pass) |
+| Reference data version | ASHRAE 140-2017 §6.4 / §B6.7 / ASHRAE 140-2023 Annex B8 / B8-3 inter-program envelope, validated across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE, DeST |
+| IDF / E+ version | EnergyPlus 25.2.0 (per `tests/reference_data/zone_balance/PROVENANCE.md`) |
+| Weather file | `assets/weather/USA_CO_Denver-Stapleton.Intl.AP.724690_TMY.epw` |
+
+**Why this contradicts `ASHRAE140_RESULTS.md` (18.8 % pass rate):** the Phase 7B
+snapshot in `ASHRAE140_RESULTS.md` (2026-06-24) was generated *before* the
+`MultiZoneValidator::validate_case_960` stub was rewritten in #1407 (commit
+`84c7c58`, 2026-07-09) and *before* Case 970 was integrated in #1446 (commit
+`dad85ec`, 2026-07-09). The 18.8 % pass rate includes the Case 960 stub
+fabricating PASS from two hardcoded placeholders (12.4 vs 12.5 MWh — within
+±15 %, but neither number came from the engine). Once the stub was removed
+and the Case 960/970 real-physics validators landed, the Case 960 results
+showed ~1.6 MWh annual heating (within ±15% of the 1.65-2.45 MWh band) and
+~1.4 kW peak cooling (within the 0-4 kW band), and Case 970 showed the
+canonical 10.54-14.26 MWh heating / 7.39-10.00 MWh cooling reference bands
+emitted into the per-case reference CSV and asserted by
+`test_case_970_annual_energy_band`. The 18.8% pass rate is therefore
+**stale** with respect to Cases 960 and 970.
+
+**How to reproduce:** see the "Validation Command Reference" section above.
 
 ## License
 
