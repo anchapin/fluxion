@@ -25,6 +25,8 @@ servers:
 tags:
   - name: health
     description: Liveness probe
+  - name: observability
+    description: Operational telemetry (Issue #1447) — Prometheus metrics
   - name: spec
     description: OpenAPI metadata
   - name: simulate
@@ -86,6 +88,46 @@ paths:
             application/yaml:
               schema:
                 type: string
+
+  /v1/metrics:
+    get:
+      tags: [observability]
+      summary: Prometheus exposition for `/v1/metrics` scraping
+      description: |
+        Returns the in-process Prometheus metrics counter and histogram
+        snapshots in text exposition format. Designed to be scraped on a
+        regular interval by Prometheus or a drop-in scraper.
+
+        Records per Issue #1447:
+
+        - `fluxion_rest_requests_total{route,method,status}` (counter)
+        - `fluxion_rest_request_duration_seconds{route,method}` (histogram)
+        - `fluxion_rest_errors_total{route,method,status}` (counter,
+          emitted when the response status is 4xx or 5xx)
+
+        The `route` label is the matched route pattern (for example
+        `/v1/simulate` or `/v1/schema/:id`), not the literal request path,
+        so traffic is not fragmented across label values.
+
+        This endpoint is exempt from `x-request-id` propagation (it is the
+        scraper itself and there is no client to correlate). It still emits
+        the request-id header for symmetric downstream tooling.
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Prometheus text exposition format
+          content:
+            text/plain:
+              schema:
+                type: string
+                examples:
+                  - |
+                    # HELP fluxion_rest_requests_total Total number of HTTP requests handled by the Fluxion REST API.
+                    # TYPE fluxion_rest_requests_total counter
+                    fluxion_rest_requests_total{method="GET",route="/v1/healthz",status="200"} 42
+                    # HELP fluxion_rest_request_duration_seconds Wall-clock duration of HTTP requests served by the Fluxion REST API.
+                    # TYPE fluxion_rest_request_duration_seconds histogram
+                    fluxion_rest_request_duration_seconds_bucket{method="GET",route="/v1/healthz",le="0.005"} 42
 
   /v1/simulate:
     post:

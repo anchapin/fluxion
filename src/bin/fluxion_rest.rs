@@ -9,6 +9,8 @@
 //!
 //! - `FLUXION_REST_BIND`  — default `0.0.0.0`
 //! - `FLUXION_REST_PORT`  — default `8080`
+//! - `RUST_LOG`           — `tracing-subscriber` filter (forwarded into the
+//!                          layer set up below).
 //!
 //! Graceful shutdown is wired to `SIGINT` (Ctrl-C) via `tokio::signal`.
 
@@ -17,6 +19,7 @@ use std::str::FromStr;
 
 use fluxion::api::server::{router, AppState};
 use tokio::net::TcpListener;
+use tracing_subscriber::{fmt, prelude::*, EnvFilter};
 
 const DEFAULT_BIND: &str = "0.0.0.0";
 const DEFAULT_PORT: &str = "8080";
@@ -58,12 +61,30 @@ fn resolve_addr() -> SocketAddr {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize logging; respect RUST_LOG if the operator set it, otherwise
-    // default to `info`. We use env_logger because it is already in our
-    // dependency tree.
+    // default to `info`. We use *both* `env_logger` (for any `log::info!`
+    // lines emitted by dependencies that bypass `tracing`) and a
+    // `tracing_subscriber::fmt` layer so `TraceLayer`-emitted per-request
+    // log lines (Issue #1447) make it to stdout.
     if std::env::var_os("RUST_LOG").is_none() {
         std::env::set_var("RUST_LOG", "fluxion=info,fluxion_rest=info,info");
     }
     let _ = env_logger::try_init();
+
+    // Build a `tracing-subscriber` registry that respects `RUST_LOG` and
+    // writes structured human-readable lines. `try_init` makes the call
+    // idempotent so running tests under `--nocapture` does not panic when
+    // a second binary in the same process tries to install a subscriber.
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("fluxion=info,fluxion_rest=info,info"));
+    let fmt_layer = fmt::layer()
+        .with_target(true)
+        .with_level(true)
+        .with_thread_ids(false)
+        .compact();
+    let _ = tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer)
+        .try_init();
 
     let addr = resolve_addr();
     let listener = TcpListener::bind(addr).await?;
@@ -87,6 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// binary imports `env_logger` directly; this lets us pick either one
 /// depending on which subscribers the operator initialized.
 fn tracing_or_log_info(msg: &str) {
+    tracing::info!("{msg}");
     log::info!("{msg}");
 }
 
@@ -112,4 +134,5 @@ async fn shutdown_signal() {
         _ = terminate => {}
     }
     log::info!("fluxion-rest: shutdown signal received");
+    tracing::info!("fluxion-rest: shutdown signal received");
 }

@@ -12,6 +12,8 @@
 //!   a `SimulationSchemaV1` and store it
 //! - `GET /v1/healthz` — liveness probe
 //! - `GET /v1/openapi.json` — embedded OpenAPI 3.1 document
+//! - `GET /v1/metrics` — Prometheus exposition for `/v1/metrics` scrapers
+//!   (Issue #1447)
 //!
 //! The implementation deliberately reuses [`crate::api::schema`] for the wire
 //! format (no modifications to the canonical schema) and the existing
@@ -22,6 +24,14 @@
 //!
 //! See `src/api/openapi.yaml` for the OpenAPI 3.1 contract and
 //! `tests/api_integration_tests.rs` for end-to-end coverage.
+//!
+//! Observability (Issue #1447):
+//! - Every response carries an `x-request-id` header (generated as a v4 UUID
+//!   via `tower-http::request_id::MakeRequestUuid`).
+//! - `tower_http::trace::TraceLayer` emits one structured log line per
+//!   request, including method, path, status, and the request-id header.
+//! - `crate::api::metrics::record` middleware maintains the Prometheus
+//!   counters and histograms that `/v1/metrics` renders.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -31,6 +41,7 @@ use std::sync::Arc;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
+    middleware,
     response::{IntoResponse, Response},
     routing::{get, post},
     Json, Router,
@@ -38,8 +49,15 @@ use axum::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tokio::sync::Mutex;
+use tower::ServiceBuilder;
+use tower_http::{
+    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
+    trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer},
+};
+use tracing::Level;
 
 use crate::ai::surrogate::SurrogateManager;
+use crate::api::metrics::{self, metrics_handler};
 use crate::api::schema::{SimulationOutput, SimulationSchema, SimulationSchemaV1};
 use crate::interop::{gbxml, osm};
 use crate::physics::cta::VectorField;
@@ -407,17 +425,64 @@ fn tempfile_for_bytes(bytes: &[u8], ext: &str) -> Result<PathBuf, ApiError> {
     Ok(dir)
 }
 
+/// Header name carrying the per-request UUID (Issue #1447). Lowercase to
+/// match the HTTP/2 wire spelling; the AXUM/Tower layers normalize to that.
+const X_REQUEST_ID: &str = "x-request-id";
+
 /// Construct the application's router. Exposed so integration tests can
 /// mount it without going through the binary's env-var resolution path.
+///
+/// Layer order matters (Issue #1447). `tower::ServiceBuilder` applies
+/// layers so that the **first** `.layer()` call sits as the **outermost**
+/// middleware (the request hits it first, the response leaves it last).
+/// We arrange them top-to-bottom here so that SetRequestIdLayer runs
+/// first on the request and PropagateRequestIdLayer runs last on the
+/// response:
+///
+///   1. `SetRequestIdLayer` — assigns a UUID *before* anything else sees
+///      the request, so `TraceLayer`'s span and the metrics middleware
+///      can include it.
+///   2. `TraceLayer` — emits one structured log line per request, with
+///      the `x-request-id` header in scope.
+///   3. `PropagateRequestIdLayer` — copies the captured `x-request-id`
+///      onto the outbound response.
+///   4. `metrics::record` — innermost. Wraps the handler so it can
+///      observe the final response status and elapsed time.
 pub fn router(state: AppState) -> Router {
+    // Touch the recorder so it is installed at server start-up rather than
+    // on the first request (matters for `/v1/metrics` smoke checks).
+    let _ = metrics::init_recorder();
+
+    let middleware_stack = ServiceBuilder::new()
+        .layer(SetRequestIdLayer::new(
+            axum::http::HeaderName::from_static(X_REQUEST_ID),
+            MakeRequestUuid,
+        ))
+        .layer(
+            TraceLayer::new_for_http()
+                .make_span_with(
+                    DefaultMakeSpan::new()
+                        .level(Level::INFO)
+                        .include_headers(true),
+                )
+                .on_response(DefaultOnResponse::new().level(Level::INFO)),
+        )
+        .layer(PropagateRequestIdLayer::new(
+            axum::http::HeaderName::from_static(X_REQUEST_ID),
+        ))
+        .layer(middleware::from_fn(metrics::record))
+        .into_inner();
+
     Router::new()
         .route("/v1/healthz", get(healthz))
+        .route("/v1/metrics", get(metrics_handler))
         .route("/v1/openapi.json", get(openapi_json))
         .route("/v1/openapi.yaml", get(openapi_yaml))
         .route("/v1/simulate", post(simulate))
         .route("/v1/schema/:id", get(get_schema))
         .route("/v1/import/:fmt", post(import_format))
         .with_state(state)
+        .layer(middleware_stack)
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@
 //! simulation schema.
 
 pub mod error;
+pub mod metrics;
 pub mod parameters;
 pub mod schema;
 pub mod server;
