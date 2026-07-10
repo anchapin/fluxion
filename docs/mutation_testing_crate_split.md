@@ -153,9 +153,11 @@ cargo build                                  # builds fluxion (+ cached fluxion-
 # fluxion-core compiles standalone:
 cargo build -p fluxion-core
 
-# Mutation testing targets only fluxion (fluxion-core is a cached dep):
-cargo mutants -p fluxion --list
-cargo mutants -p fluxion --baseline skip
+# Mutation testing targets only fluxion (fluxion-core is a cached dep).
+# Always pass --config .cargo/mutants.toml so the canonical config is loaded
+# explicitly (issue #1440 — the root-level mutants.toml has been removed):
+cargo mutants --config .cargo/mutants.toml -p fluxion --list
+cargo mutants --config .cargo/mutants.toml -p fluxion --baseline skip
 ```
 
 ## Summary

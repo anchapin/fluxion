@@ -1,23 +1,35 @@
 name: Mutation Testing
 
-# Mutation testing (issue #1255, #1260).
+# Mutation testing (issues #1255, #1260, #1440).
 #
 # The workspace was split into `fluxion` + `fluxion-core` so that cargo-mutants can
 # target only the main `fluxion` crate while `fluxion-core` is built once and cached.
 #
 # IMPORTANT: src/physics/**, src/ai/**, and src/validation/** are EXCLUDED from
-# mutation analysis in .cargo/mutants.toml because those modules have complex generic
+# mutation analysis in .cargo/mutants.toml (the CANONICAL config — there is no
+# longer a root-level mutants.toml) because those modules have complex generic
 # types (CTF solvers, multi-node solvers, ONNX type hierarchies) that cause OOM
 # during cargo-mutants discovery even on 32 GB runners. The long-term fix (moving
 # physics to fluxion-core) is in docs/mutation_testing_crate_split.md Phase 2.
 #
-# Run manually (requires 32 GB+ machine):
+# Run locally (requires 32 GB+ machine):
 #   cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 --baseline skip
 #
 # See docs/mutation_testing_crate_split.md for the phased plan to reach the <4GB
 # target (Phase 3 gates `ort`/ONNX behind a feature flag).
 
 on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.cargo/mutants.toml'
+      - '.cargo/config.toml'
+      - '.github/workflows/mutation-testing.yml'
   workflow_dispatch:
     inputs:
       toolchain:
@@ -25,6 +37,10 @@ on:
         required: false
         default: 'stable'
         type: string
+
+concurrency:
+  group: mutation-testing-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -57,11 +73,11 @@ jobs:
         run: cargo install cargo-mutants --locked
 
       - name: Run mutation testing
+        id: mutants
         env:
           CARGO_INCREMENTAL: "0"
         run: |
-          # --config: explicitly load .cargo/mutants.toml (not auto-discovered in CI
-          #           when running via `cargo mutants`; this ensures exclude_globs apply).
+          # --config: explicitly load .cargo/mutants.toml (the canonical config).
           # --jobs 2: cap parallelism to bound peak RSS to what the 32 GB runner allows.
           # -p fluxion: mutate only the main crate; fluxion-core is a cached dep.
           # --baseline skip: skip the no-mutant baseline run to save time + memory.
@@ -71,8 +87,63 @@ jobs:
           #           excludes `ort` entirely (issue #1294) and src/ai/surrogate
           #           would fail to compile. The default feature set remains []
           #           so non-AI builds stay slim — see Cargo.toml.
+          # -o mutation_testing_results: write outcomes to the artifact directory.
+          #
+          # NOTE: cargo-mutants returns non-zero exit when any mutant is missed.
+          # We capture the result so the comment + artifact steps always run.
+          set +e
           cargo mutants --config .cargo/mutants.toml -p fluxion --jobs 2 \
-            --baseline skip --features ort -- --test-threads=2
+            --baseline skip --features ort \
+            -o mutation_testing_results \
+            -- --test-threads=2
+          MUTANTS_EXIT=$?
+          echo "mutants_exit=$MUTANTS_EXIT" >> $GITHUB_OUTPUT
+          exit 0
+
+      - name: Parse mutation results
+        id: results
+        if: always()
+        run: |
+          OUTCOMES="mutation_testing_results/outcomes.json"
+          if [ ! -f "$OUTCOMES" ]; then
+            echo "caught=0" >> $GITHUB_OUTPUT
+            echo "missed=0" >> $GITHUB_OUTPUT
+            echo "timeout=0" >> $GITHUB_OUTPUT
+            echo "unviable=0" >> $GITHUB_OUTPUT
+            echo "total=0" >> $GITHUB_OUTPUT
+            echo "has_results=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          python3 << 'PYEOF'
+          import json, os
+
+          with open("mutation_testing_results/outcomes.json") as f:
+            outcomes = json.load(f)
+
+          caught = missed = timeout = unviable = 0
+          for item in outcomes:
+              outcome = item.get("outcome", "")
+              # cargo-mutants uses string outcome values: "caught", "missed",
+              # "timeout", "unviable", "no-test", "skipped"
+              if outcome == "caught":
+                  caught += 1
+              elif outcome == "missed":
+                  missed += 1
+              elif outcome == "timeout":
+                  timeout += 1
+              elif outcome == "unviable":
+                  unviable += 1
+
+          total = caught + missed
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"caught={caught}\n")
+              f.write(f"missed={missed}\n")
+              f.write(f"timeout={timeout}\n")
+              f.write(f"unviable={unviable}\n")
+              f.write(f"total={total}\n")
+              f.write("has_results=true\n")
+          PYEOF
 
       - name: Generate HTML report
         if: always()
@@ -90,3 +161,66 @@ jobs:
           path: |
             mutation_testing_results/
           retention-days: 30
+
+      - name: Post PR comment with mutation summary
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          MUTANTS_EXIT: ${{ steps.mutants.outputs.mutants_exit }}
+          CAUGHT: ${{ steps.results.outputs.caught }}
+          MISSED: ${{ steps.results.outputs.missed }}
+          TIMEOUT: ${{ steps.results.outputs.timeout }}
+          UNVIABLE: ${{ steps.results.outputs.unviable }}
+          TOTAL: ${{ steps.results.outputs.total }}
+          HAS_RESULTS: ${{ steps.results.outputs.has_results }}
+        with:
+          script: |
+            const caught   = parseInt(process.env.CAUGHT   || '0', 10);
+            const missed   = parseInt(process.env.MISSED   || '0', 10);
+            const timeout  = parseInt(process.env.TIMEOUT  || '0', 10);
+            const unviable = parseInt(process.env.UNVIABLE || '0', 10);
+            const total    = parseInt(process.env.TOTAL    || '0', 10);
+            const hasResults = process.env.HAS_RESULTS === 'true';
+            const mutantsExit = parseInt(process.env.MUTANTS_EXIT || '1', 10);
+
+            const allPassing = mutantsExit === 0 && missed === 0;
+
+            let body = '## Mutation Testing Results\n\n';
+
+            if (!hasResults) {
+              body += 'No mutation results were produced (the run may have failed before analysis).\n\n';
+              body += '**Artifact**: `mutation-results` (30-day retention)';
+            } else {
+              const emoji = allPassing ? 'PASS' : 'FAIL';
+              body += `| Metric | Value |\n`;
+              body += `|--------|-------|\n`;
+              body += `| Caught (killed) | ${caught} |\n`;
+              body += `| Missed (survived) | ${missed} |\n`;
+              body += `| Timeout | ${timeout} |\n`;
+              body += `| Unviable | ${unviable} |\n`;
+              body += `| Mutation score | ${total > 0 ? Math.round((caught / total) * 100) : 0}% |\n`;
+              body += `| Status | ${emoji} |\n\n`;
+
+              if (missed > 0) {
+                body += `**${missed} mutant(s) survived testing.** Review the artifact for details.\n\n`;
+              } else if (allPassing) {
+                body += 'All mutants were caught. ';
+              }
+              if (timeout > 0) {
+                body += `**${timeout} mutant(s) timed out.** These may indicate slow tests or infinite loops.\n\n`;
+              }
+              body += `**Artifact**: \`mutation-results\` (30-day retention)`;
+            }
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body
+            });
+
+      - name: Fail job on missed mutants
+        if: always() && steps.mutants.outputs.mutants_exit != '0'
+        run: |
+          echo "::error::cargo-mutants exited with ${{ steps.mutants.outputs.mutants_exit }} (missed or timed-out mutants detected)"
+          exit 1
