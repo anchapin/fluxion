@@ -520,8 +520,7 @@ mod tests {
     fn test_extraterrestrial_irradiance_doy172() {
         // Issue #1413 acceptance: dni_extra(DOY 172) must match the canonical
         // formula 1361 × (1 + 0.033 × cos(2π·169/365)) to within 1e-9.
-        let expected =
-            1361.0 * (1.0 + 0.033 * (2.0 * std::f64::consts::PI * 169.0 / 365.0).cos());
+        let expected = 1361.0 * (1.0 + 0.033 * (2.0 * std::f64::consts::PI * 169.0 / 365.0).cos());
         let actual = extraterrestrial_irradiance(172);
         assert!(
             (actual - expected).abs() < 1e-9,
