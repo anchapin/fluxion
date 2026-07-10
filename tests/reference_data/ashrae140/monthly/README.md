@@ -64,7 +64,7 @@ Midpoint of the **ASHRAE 140-2023 Annex B** reference band across BEM programs
 | Case | Annual heating (MWh) | Annual cooling (MWh) |
 |------|----------------------|----------------------|
 | 600  | 4.36 .. 5.79 → 5.075 | 3.92 .. 6.14 → 5.030 |
-| 900  | 1.17 .. 2.04 → 1.605 | 8.00 .. 10.50 → 9.250 |
+| 900  | 1.17 .. 2.04 → 1.605 | 2.13 .. 3.67 → 2.900 |
 
 ### `MONTHLY_FRACTION`
 Heating/cooling degree-day share of each month, computed from the repository's
@@ -78,7 +78,7 @@ drives the simulation: `USA_CO_Golden-NREL.724666_TMY3.epw`):
 - Cooling degree-hours per month: `Σ max(0, T_hour − 18.3)`
 - Fraction = `month_degree_hours / annual_degree_hours`. Fractions sum to 1.0, so
   monthly values sum back to the authoritative annual midpoint (verified:
-  Case 600 → 5.075 / 5.030 MWh; Case 900 → 1.605 / 9.250 MWh).
+  Case 600 → 5.075 / 5.030 MWh; Case 900 → 1.605 / 2.900 MWh).
 
 Computed with hourly data and Python (no mental arithmetic). The degree-day
 fractions for Denver are:

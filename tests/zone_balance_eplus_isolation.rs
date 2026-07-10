@@ -724,12 +724,12 @@ const CASE_900_REF: EnergyReference = EnergyReference {
     case_id: "900",
     annual_heating_min_mwh: 1.17,
     annual_heating_max_mwh: 2.04,
-    annual_cooling_min_mwh: 8.00,
-    annual_cooling_max_mwh: 10.50,
-    peak_heating_min_kw: 2.8,
-    peak_heating_max_kw: 3.8,
-    peak_cooling_min_kw: 3.4,
-    peak_cooling_max_kw: 6.2,
+    annual_cooling_min_mwh: 2.13,
+    annual_cooling_max_mwh: 3.67,
+    peak_heating_min_kw: 1.80,
+    peak_heating_max_kw: 2.40,
+    peak_cooling_min_kw: 1.60,
+    peak_cooling_max_kw: 2.10,
 };
 
 /// Blind annual simulation — only the CaseSpec (no case ID) is passed to
@@ -925,7 +925,12 @@ fn test_case_900_blind_energy_infrastructure() {
 /// run with `cargo test --release --features ort
 /// -- --include-ignored test_case_900_annual_energy`):
 ///   H=1.626 MWh within band [1.364, 1.846]   PASS
-///   C=1.203 MWh outside band [7.862, 10.637] FAIL (~85% below)
+///   C=1.203 MWh outside band [2.465, 3.335] FAIL (~51% below)
+///
+/// (Band [2.465, 3.335] is the ±15% window around the
+/// NREL/TP-472-6231 Table 3-2 midpoint 2.900 MWh — pre-#1408 the band was
+/// [7.862, 10.637] from a stale 8.00-10.50 MWh copy-paste in the
+/// zone-balance CSV; see issue #1408 and PROVENANCE.md.)
 ///
 /// Per AGENTS.md ("no parameter tuning, fix the math"), the residual
 /// cooling gap is owned by the physics layer (CTF transient wall modeling
@@ -959,8 +964,8 @@ fn test_case_900_annual_energy_ashrae140_tolerance() {
 }
 
 /// Verify the reference CSV files are present and parseable (acceptance
-/// criterion: "tests/reference_data/zone_balance/ contains E+ reference CSV
-/// for Case 600 (and Case 900 if available)").
+/// criterion: "tests/reference_data/zone_balance/ contains E+ reference CSV for
+/// Case 600 (and Case 900 if available)").
 #[test]
 fn test_reference_csv_files_present_and_parseable() {
     let cases = [
@@ -982,6 +987,96 @@ fn test_reference_csv_files_present_and_parseable() {
         assert!(c_lo > 0.0 && c_hi > c_lo, "{csv} cooling band malformed");
         println!("[#1147 {csv}] H=[{h_lo}, {h_hi}] MWh, C=[{c_lo}, {c_hi}] MWh");
     }
+}
+
+// ===========================================================================
+// Section 5b: Reference-Consistency Guard (Issue #1408)
+// ===========================================================================
+//
+// Issue #1408: the zone-balance CSV `case_900_energy_reference.csv` and the
+// Rust `CASE_900_REF` const diverged from `src/validation/benchmark.rs` Case
+// 900 by ~4× for `annual_cooling` (CSV 8.00-10.50 MWh vs benchmark.rs
+// 2.13-3.67 MWh). The CSV had been a copy-paste of the OLD Case 600
+// 5R1C-calibrated cooling range (see `benchmark.rs:120` comment
+// "Previously calibrated for 5R1C model (5.5-7.5 heating, 8.0-10.5 cooling)").
+// This silently determined whether the strict ±15% CI gate (#1368) PASSed
+// or FAILed Case 900 depending on which path (Informed vs Blind) was used.
+//
+// This test pins the consistency invariant: the two sources MUST report
+// the same annual_cooling MWh range within 1e-6, and the same for the
+// three other shared metrics. If either source drifts, this test fails
+// the build before the gate runs.
+//
+// See: tests/reference_data/zone_balance/PROVENANCE.md for the full
+// citation chain and reconciliation history.
+
+/// Issue #1408 regression guard. Asserts that the single-zone reference
+/// (`src/validation/benchmark.rs::get_benchmark_data("900")`) and the
+/// blind-validation reference (the CSV) report the same Case 900 ranges
+/// for all four shared metrics within 1e-6 MWh / kW.
+#[test]
+fn test_benchmark_csv_consistent_for_case_900() {
+    use fluxion::validation::get_benchmark_data;
+
+    // 1. Read single-zone / Informed reference from src/validation/benchmark.rs.
+    let bench = get_benchmark_data("900")
+        .expect("Case 900 must exist in benchmark.rs (regression: removed?)");
+    let bench_h = (bench.annual_heating_min, bench.annual_heating_max);
+    let bench_c = (bench.annual_cooling_min, bench.annual_cooling_max);
+    let bench_ph = (bench.peak_heating_min, bench.peak_heating_max);
+    let bench_pc = (bench.peak_cooling_min, bench.peak_cooling_max);
+
+    // 2. Read blind-validation reference from the zone-balance CSV.
+    let (csv_h_lo, csv_h_hi) =
+        read_reference_band("case_900_energy_reference.csv", "annual_heating");
+    let (csv_c_lo, csv_c_hi) =
+        read_reference_band("case_900_energy_reference.csv", "annual_cooling");
+    let (csv_ph_lo, csv_ph_hi) =
+        read_reference_band("case_900_energy_reference.csv", "peak_heating");
+    let (csv_pc_lo, csv_pc_hi) =
+        read_reference_band("case_900_energy_reference.csv", "peak_cooling");
+
+    // 3. Print both for the CI log (helps the next person who debugs this).
+    println!(
+        "[#1408 Case 900 benchmark.rs]  H={:?} C={:?} PH={:?} PC={:?}",
+        bench_h, bench_c, bench_ph, bench_pc
+    );
+    println!(
+        "[#1408 Case 900 CSV]            H=({}, {}) C=({}, {}) PH=({}, {}) PC=({}, {})",
+        csv_h_lo, csv_h_hi, csv_c_lo, csv_c_hi, csv_ph_lo, csv_ph_hi, csv_pc_lo, csv_pc_hi
+    );
+
+    // 4. Assert exact agreement within 1e-6 on all four metrics.
+    let tol = 1e-6;
+    let close = |a: f64, b: f64| (a - b).abs() < tol;
+    assert!(
+        close(bench_h.0, csv_h_lo) && close(bench_h.1, csv_h_hi),
+        "Case 900 annual_heating drift: benchmark.rs {:?} vs CSV ({}, {})",
+        bench_h,
+        csv_h_lo,
+        csv_h_hi
+    );
+    assert!(
+        close(bench_c.0, csv_c_lo) && close(bench_c.1, csv_c_hi),
+        "Case 900 annual_cooling drift: benchmark.rs {:?} vs CSV ({}, {}) — issue #1408",
+        bench_c,
+        csv_c_lo,
+        csv_c_hi
+    );
+    assert!(
+        close(bench_ph.0, csv_ph_lo) && close(bench_ph.1, csv_ph_hi),
+        "Case 900 peak_heating drift: benchmark.rs {:?} vs CSV ({}, {})",
+        bench_ph,
+        csv_ph_lo,
+        csv_ph_hi
+    );
+    assert!(
+        close(bench_pc.0, csv_pc_lo) && close(bench_pc.1, csv_pc_hi),
+        "Case 900 peak_cooling drift: benchmark.rs {:?} vs CSV ({}, {})",
+        bench_pc,
+        csv_pc_lo,
+        csv_pc_hi
+    );
 }
 
 // ===========================================================================
