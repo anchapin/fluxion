@@ -1517,24 +1517,6 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             T::from(VectorField::new(t_s_data))
         };
 
-        // === FIX D1: Calculate sol-air temperature for exterior surface ===
-        // Per ISO 13790, exterior surface temperature is affected by solar radiation
-        // T_sol-air = T_outdoor + (α × I_sol / h_se)
-        // where α = solar absorptance (0.7), h_se = exterior surface coeff (25 W/m²K)
-        use crate::physics::constants::thermal::ashrae_140::v2023::{
-            EXTERIOR_FILM_COEFF_DEFAULT, SOLAR_ABSORPTANCE_DEFAULT,
-        };
-        let alpha = SOLAR_ABSORPTANCE_DEFAULT; // 0.7
-        let h_se = EXTERIOR_FILM_COEFF_DEFAULT; // 25.0 W/m²K
-        let mut t_sol_air_data = Vec::with_capacity(self.0.num_zones);
-        for &i_sol in solar_ref.iter().take(self.0.num_zones) {
-            let t_sol_air_zone = outdoor_temp + (alpha * i_sol / h_se);
-            t_sol_air_data.push(t_sol_air_zone);
-        }
-        // Note: t_sol_air is used by the 5R1C model path (for mass temperature update)
-        // It is NOT used by the 6R2C envelope mass path (which uses t_s instead)
-        let _t_sol_air = VectorField::new(t_sol_air_data);
-
         // === 6R2C: Update two mass nodes with implicit integration ===
         // Envelope mass: receives heat from exterior (sol-air), surface, and internal mass
         let old_env_mass_temperatures = self.0.envelope_mass_temperatures.clone();
