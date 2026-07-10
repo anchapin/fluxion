@@ -44,8 +44,8 @@ fn expected_iso_hvac_coefficient(spec: &fluxion::validation::ashrae_140_cases::C
     // comparison against the engine-internal value.
 
     let h_tr_ms: f64 = 9.1 * 2.5 * floor_area; // ISO 13790 simple method
-    // The above is a placeholder. The real test below uses the engine's actual
-    // stored h_tr_ms, so we don't need a closed-form approximation here.
+                                               // The above is a placeholder. The real test below uses the engine's actual
+                                               // stored h_tr_ms, so we don't need a closed-form approximation here.
     let _ = h_tr_ms;
 
     // Direct window conductance: sum over all zones × windows.
@@ -169,8 +169,7 @@ fn test_iso_hvac_formula_does_not_regress_to_norton() {
 
         let h_ms_em_series = h_tr_ms * h_tr_em / (h_tr_ms + h_tr_em);
         let surface_to_boundary = h_tr_w + h_ms_em_series + h_tr_floor;
-        let h_is_to_boundary =
-            h_tr_is * surface_to_boundary / (h_tr_is + surface_to_boundary);
+        let h_is_to_boundary = h_tr_is * surface_to_boundary / (h_tr_is + surface_to_boundary);
         let norton = h_is_to_boundary + h_ve;
 
         assert!(
