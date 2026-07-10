@@ -2005,7 +2005,59 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         let h_ext_base = &self.0.derived_h_ext;
         let term_rest_1 = &self.0.derived_term_rest_1;
 
-        let den = self.0.derived_den.clone();
+        // Issue #1422 (Case 950 night ventilation): the cached `derived_h_ext`
+        // and `derived_den` are computed at build time from the static
+        // infiltration `h_ve` only — they do NOT include `h_ve_night` (the
+        // night-fan supply conductance). During night-ventilation hours, the
+        // 5R1C free-floating temperature is used as `t_i_act` whenever the
+        // zone is below the cooling setpoint (HVAC off, mass integrator
+        // below line ~2762 sees `t_i = t_i_free_5r1c`). If we use the static
+        // cached `h_ext` / `den`, `t_i_free_5r1c` is far too warm, the
+        // surface-temperature calculation `t_s = (h_tr_ms * T_mass + h_tr_is
+        // * t_i + phi_st) / (h_tr_ms + h_tr_is + h_tr_me)` is biased warm,
+        // and the mass integrator (which already uses the deliberate h_tr_3
+        // ≈ 40 W/K bottleneck to give the right ~6-day time constant) drives
+        // the mass back UP instead of letting the night fan pre-cool it. The
+        // ASHRAE 140 §7.3 Case 950 result of that is 92-352% over-cooling
+        // relative to reference.
+        //
+        // Fix: when night-ventilation is active, rebuild `h_ext` and `den`
+        // exactly the same way `step_physics_5r1c` does (lines ~240-289).
+        // This is a STRUCTURAL code-path fix that wires the night-vent
+        // override through the high-mass free-float calculation per the
+        // issue body's step 3 ("route the night-ventilation override
+        // through the existing high-mass FreeFloat path instead of being
+        // silently absorbed by the 5R1C coupling block, per ADR-002").
+        // It is NOT a damping clamp or empirical HVAC limiter.
+        let h_ext_for_free_float: T = if night_vent_active_now {
+            let base = h_ext_base.as_ref();
+            let mut v = Vec::with_capacity(base.len());
+            for (i, &b) in base.iter().enumerate() {
+                v.push(b + if i == 0 { h_ve_night } else { 0.0 });
+            }
+            T::from(VectorField::new(v))
+        } else {
+            self.0.derived_h_ext.clone()
+        };
+        let den: T = if night_vent_active_now {
+            let h_ms_is_prod = self.0.derived_h_ms_is_prod.as_ref();
+            let ground_coeff = self.0.derived_ground_coeff.as_ref();
+            let h_iz = self.0.h_tr_iz.as_ref();
+            let h_iz_rad = self.0.h_tr_iz_rad.as_ref();
+            let h_ext_slice = h_ext_for_free_float.as_ref();
+            let mut v = Vec::with_capacity(h_ext_slice.len());
+            for i in 0..h_ext_slice.len() {
+                let h_total = if self.0.num_zones > 1 {
+                    h_ext_slice[i] + h_iz[i] + h_iz_rad[i]
+                } else {
+                    h_ext_slice[i]
+                };
+                v.push(h_ms_is_prod[i] + term_rest_1.as_ref()[i] * h_total + ground_coeff[i]);
+            }
+            T::from(VectorField::new(v))
+        } else {
+            self.0.derived_den.clone()
+        };
         // (#872: sensitivity variable removed — HVAC demand now uses h_loss × ΔT formula)
 
         let num_tm = self
@@ -2097,11 +2149,14 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
         // the net heat loss and fixing massive heating energy overcounting.
         // #1391: clone phi_ia_with_iz — we still need to read it at line ~2394
         // (compute_zone_air_temperature argument) for the multi-node solver.
+        // Issue #1422: use the night-vent-aware `h_ext_for_free_float` (not the cached
+        // `h_ext_base`) so the free-float numerator sees the same h_ve_total as the
+        // denominator — otherwise the cooling effect of `h_ve_night` is cancelled.
         let mut num_rest_with_iz = phi_ia_with_iz.clone();
         for (i, (n, h)) in num_rest_with_iz
             .as_mut()
             .iter_mut()
-            .zip(h_ext_base.as_ref().iter())
+            .zip(h_ext_for_free_float.as_ref().iter())
             .enumerate()
         {
             let t_sol_air_i = t_sol_air_data.get(i).copied().unwrap_or(outdoor_temp);
