@@ -9,13 +9,15 @@ pub use crate::solar::solar_position::{
 };
 pub use crate::solar::surface_irradiance::{orientation_to_angles, SurfaceIrradiance};
 
-// Re-export Orientation for backward compatibility with existing code
-pub use crate::validation::ashrae_140_cases::Orientation;
+// Issue #1441: Orientation lives in `fluxion_core::ashrae_cases` (was
+// `crate::validation::ashrae_140_cases`). The legacy re-export at this path is
+// removed; callers use the new path or the validation re-export shim.
+use fluxion_core::ashrae_cases::Orientation;
 
 use crate::solar::surface_irradiance::Orientation as SolarOrientation;
 
 use crate::sim::shading::{calculate_shaded_fraction, LocalSolarPosition, Overhang, ShadeFin};
-use crate::validation::ashrae_140_cases::WindowArea;
+use fluxion_core::ashrae_cases::WindowArea;
 use serde::{Deserialize, Serialize};
 
 /// Wrapper around `solar::calculate_surface_irradiance` that accepts the validation module's

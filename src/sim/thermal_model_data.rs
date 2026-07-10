@@ -22,9 +22,9 @@ use crate::sim::schedule::DailySchedule;
 use crate::sim::solar::{SolarPosition, WindowProperties};
 use crate::sim::thermal_model_core::DoorGeometry;
 use crate::testing::integration::wiring::WiringTracer;
-use crate::validation::ashrae_140_cases::{NightVentilation, Orientation};
 use crate::validation::diagnostics::SimulationDiagnostics;
 use crate::weather::HourlyWeatherData;
+use fluxion_core::ashrae_cases::{NightVentilation, Orientation};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
