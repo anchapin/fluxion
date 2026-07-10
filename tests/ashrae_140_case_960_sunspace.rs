@@ -633,19 +633,19 @@ fn test_peak_load_validation() {
     // Peak heating: 5R1C/9R4C Norton-equivalent `h_coeff` (≈ 76 W/K for Case 960
     // back-zone) under-predicts peak heating at the coldest hour because the
     // single lumped-mass node buffers the air-side free-floating temperature.
-// Reference peak is 2-8 kW (EnergyPlus reports ~3.9 kW at hour 8000) but our
+    // Reference peak is 2-8 kW (EnergyPlus reports ~3.9 kW at hour 8000) but our
     // 5R1C gives ~0.9 kW at the coldest step (T_out = -12°C, t_free ≈ 8°C).
-// Architectural fix is the 9R4C multi-surface time-constant integration
-// (already wired for high-mass per ADR-002) — until then, allow the test to
-// pass when peak heating is non-zero and within the reference range, OR
-// within a documented 5R1C under-prediction tolerance (< 85%).
-let heating_ok = heating_pass || heating_error < 85.0;
-assert!(
-    heating_ok,
-    "Peak heating should be non-zero (got peak={:.3} kW, {:.1}% error). \
+    // Architectural fix is the 9R4C multi-surface time-constant integration
+    // (already wired for high-mass per ADR-002) — until then, allow the test to
+    // pass when peak heating is non-zero and within the reference range, OR
+    // within a documented 5R1C under-prediction tolerance (< 85%).
+    let heating_ok = heating_pass || heating_error < 85.0;
+    assert!(
+        heating_ok,
+        "Peak heating should be non-zero (got peak={:.3} kW, {:.1}% error). \
      5R1C/9R4C architectural limit — see Issue #1456 follow-up.",
-    peak_h, heating_error
-);
+        peak_h, heating_error
+    );
 }
 
 /// Test energy conservation between zones
@@ -805,10 +805,22 @@ fn test_case_960_validator_no_longer_6r2c_override_issue_1456() {
     let report = validator.validate_case_960();
 
     println!("\n=== Issue #1456 regression probe ===");
-    println!("Annual Heating: {:.2} MWh (ref: 1.65-2.45 MWh)", report.annual_heating_mwh);
-    println!("Annual Cooling: {:.2} MWh (ref: 1.55-2.78 MWh)", report.annual_cooling_mwh);
-    println!("Peak Heating: {:.2} kW (ref: 2.00-8.00 kW)", report.peak_heating_kw);
-    println!("Peak Cooling: {:.2} kW (ref: 0.00-4.00 kW)", report.peak_cooling_kw);
+    println!(
+        "Annual Heating: {:.2} MWh (ref: 1.65-2.45 MWh)",
+        report.annual_heating_mwh
+    );
+    println!(
+        "Annual Cooling: {:.2} MWh (ref: 1.55-2.78 MWh)",
+        report.annual_cooling_mwh
+    );
+    println!(
+        "Peak Heating: {:.2} kW (ref: 2.00-8.00 kW)",
+        report.peak_heating_kw
+    );
+    println!(
+        "Peak Cooling: {:.2} kW (ref: 0.00-4.00 kW)",
+        report.peak_cooling_kw
+    );
 
     // Pre-fix: 7.47 MWh (264.5% over) — fail with error > 100%.
     // Post-fix: 1.6 MWh (≈ 22% below midpoint) — passes the 25% tolerance

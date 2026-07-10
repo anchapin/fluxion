@@ -1453,14 +1453,14 @@ impl ASHRAE140Validator {
     /// Phase 29: This is the key integration for CTF/FD solvers into the validation path.
     ///
     /// Issue #1268: Case-ID-derived corrections are applied only in `Informed` mode.
-/// In `Blind` mode the solver is selected purely from `construction_type`, with
-/// no case-specific tuning.
-///
-/// Issue #1456: Removed the `configure_6r2c_model` override for Case 960.
-/// The SESSION 23/32 override forced the 6R2C model on top of the default 5R1C/9R4C
-/// selection from `from_spec`, pushing the back-zone to ~16°C (below setpoint) and
-/// producing 264.5% annual heating over-prediction. The default 5R1C/9R4C path now
-/// yields results within the ASHRAE 140 ±15% energy band for Case 960.
+    /// In `Blind` mode the solver is selected purely from `construction_type`, with
+    /// no case-specific tuning.
+    ///
+    /// Issue #1456: Removed the `configure_6r2c_model` override for Case 960.
+    /// The SESSION 23/32 override forced the 6R2C model on top of the default 5R1C/9R4C
+    /// selection from `from_spec`, pushing the back-zone to ~16°C (below setpoint) and
+    /// producing 264.5% annual heating over-prediction. The default 5R1C/9R4C path now
+    /// yields results within the ASHRAE 140 ±15% energy band for Case 960.
     fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
         // Only enable advanced solver for high-mass construction cases
         if spec.construction_type == ConstructionType::HighMass {
