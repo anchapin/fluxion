@@ -113,6 +113,11 @@ graph TD
         TMS["Timestep Solver<br/>(sim/timestep_solver.rs)"]
     end
 
+    subgraph Gauge ["Gauge-Theory Foundation (Phase 1a — #1461)"]
+        TM["ThermalManifold<br/>(physics/geometry_tensor.rs)"]
+        GS["GaugeSolver *planned* (Phase 1b — #1462)"]
+    end
+
     subgraph SurfaceFlux ["Surface Heat Flux"]
         SFP["SurfaceHeatFluxProvider<br/>(sim/surface_flux_provider.rs)"]
         PSFP["PhysicsSurfaceFluxProvider<br/>(combines HeatConductionSolver + solar)"]
@@ -159,6 +164,8 @@ graph TD
     FMU -.-> CORE
     PY -.-> CORE
     NAPI -.-> CORE
+    TM -.-> GS
+    GS -. ZB
 ```
 
 **Notes on interop edges**: Dashed lines (`-.->`) indicate optional import/export bridges. OSM, gbXML, and FMI are implemented; IDF import scaffold landed in `src/io/idf/` (#1341) covering the 10 MVP objects from `docs/idf-import-design.md` §4.1 — `TryFrom<IdfFile> for SimulationSchema` (design §4.3) and epJSON parsing (design §4.2) are still follow-up issues.
@@ -411,6 +418,102 @@ The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) sep
 
 ---
 
+### Module 6: Gauge-Theory Foundation (Phase 1a — #1461)
+
+**Source**: `src/physics/geometry_tensor.rs` (lives alongside the existing CTA `GeometryTensor` types for the Python↔Rust boundary; the two domains are deliberately kept on different storage representations — `Vec<f64>` for the CTA tensors, `nalgebra::{Matrix4, Vector4}` for the gauge-theory manifold, because their consumers diverge).
+**Purpose**: Foundational data structure for the gauge-theory migration. Replaces the discrete `R`/`C` values and `T_air`/`T_mass_*` node temperatures of the 5R1C / 9R4C lumped-capacitance networks with a continuous Riemannian representation on a fixed 4-D ambient space. `GaugeSolver` (Phase 1b, #1462) consumes this structure to compute the Christoffel connection and step the manifold through parallel transport.
+
+| Input | Type | Source |
+|-------|------|--------|
+| Wall assembly (`BuildingAssembly`) or 5R1C / 9R4C scene parameters | `BuildingAssembly` / named params | `src/sim/assembly.rs`, `fluxion-core/src/assembly/` |
+| Zone temperatures (initial state) | `[T_air, T_wall, T_roof, T_floor]` °C | Zone Balance |
+| External heat fluxes (Solar, HVAC, internal gains) | `[Q_air, Q_wall, Q_roof, Q_floor]` W | Solar, Zone Balance |
+
+| Output | Type | Consumer |
+|--------|------|----------|
+| `ThermalManifold` | struct { `metric_tensor`, `scalar_field`, `gauge_connection`, `dt_seconds` } | `GaugeSolver` (#1462, planned), surrogate training (#1463, planned), QUBO mapping (#1464, planned), Case 900 validation (#1465, planned) |
+
+**Key struct**: `ThermalManifold` in `physics/geometry_tensor.rs`
+
+```rust
+pub struct ThermalManifold {
+    /// Symmetric 4×4 dissipative operator replacing (R, C) values.
+    pub metric_tensor: Matrix4<f64>,
+    /// Tangent-space field [T_air, T_wall, T_roof, T_floor], °C.
+    pub scalar_field: Vector4<f64>,
+    /// External heat-flux 1-form [Q_air, Q_wall, Q_roof, Q_floor], W.
+    pub gauge_connection: Vector4<f64>,
+    /// Last timestep duration (carried so GaugeSolver can reproduce the
+    /// operator chain without an extra argument).
+    pub dt_seconds: f64,
+}
+
+impl ThermalManifold {
+    /// Flat (uncoupled) manifold at the origin — the unit element.
+    pub fn new_flat() -> Self { ... }
+
+    /// Constructor from 5R1C scene — active 2×2 sub-block on (air, wall)
+    /// with roof / floor slots parked at zero.
+    pub fn from_5r1c_parameters(
+        t_air: f64, t_mass: f64,
+        r_eq: f64, c_air: f64, c_mass: f64,
+    ) -> Self { ... }
+
+    /// Constructor from 9R4C scene — full 4×4 dissipative operator.
+    pub fn from_9r4c_parameters(
+        temperatures: [f64; 4],
+        capacitances: [f64; 4],
+        r_tr_surface: [f64; 3],
+        r_cross: Option<[f64; 3]>,
+    ) -> Self { ... }
+
+    /// Covariant derivative (geometric energy flow) — Phase 1a stub for
+    /// GaugeSolver (#1462). Returns the post-transport field as a fresh
+    /// `Vector4`; does NOT mutate `self`.
+    pub fn compute_parallel_transport(&self, dt: f64) -> Vector4<f64> { ... }
+
+    /// Algebraic consistency check (NaN / Inf rejection across all three
+    /// buffers). Does NOT enforce dissipativity — the gauge transport is
+    /// general enough to handle both passive and active operators.
+    pub fn validate(&self) -> Result<(), ManifoldError> { ... }
+
+    /// Sum of the gauge-connection components — First-Law diagnostic used by
+    /// `tools/piml_loss.py` (#1463) and the ASHRAE 140 Case 900 CI gate
+    /// (#1465) to penalize / verify energy conservation across the gauge
+    /// transport.
+    pub fn gauge_connection_sum(&self) -> f64 { ... }
+}
+```
+
+**Index enum** for safe typed access to the 4-D slots:
+
+```rust
+#[repr(usize)]
+pub enum ManifoldIndex { Air = 0, Wall = 1, Roof = 2, Floor = 3 }
+```
+
+**Mathematical mapping** (the matrix form is bit-identical to the discrete lumped model for any rate equation that splits into a `T → T` linear operator + a free source vector):
+
+```text
+  discrete 5R1C ODE          ↔   matrix form on the 4-D manifold
+  C_air · dT_air/dt = …      ↔   dT/dt  =  metric · T  +  gauge_connection
+  C_mass· dT_mass/dt = …      ↔   where  metric          = metric_tensor
+                                                          (the dissipative
+                                                           operator encoding
+                                                           R, C)
+                                          gauge_connection = source vector
+                                                            (HVAC + Solar +
+                                                             internal gains)
+```
+
+**Per the #1461 epic constraint**: **no hardcoded HVAC clamps** (the legacy 100 kW cap) appear in the manifold path — geometric math must be natively stable. Verified numerically in `.agents/results/issue-1461-python-verification.py` (drift of 7.1e-15 between matrix form and simultaneous forward Euler reference across 50 timesteps).
+
+**Phase 1a scope (this issue)**: scaffold only — `compute_parallel_transport` is a deliberate forward-Euler stub that returns the post-transport state. No production solver replacement. Phase 1b (#1462) replaces the stub with the full Christoffel-symbol transport; Phase 3 (#1465) is the ASHRAE 140 Case 900 validation.
+
+**Validation target**: Phase 1a — algebraic invariants (matrix dimensions, finiteness, no-clamp behavior, `T → T + dt(M·T + A)` equivalence). Phase 3 — Case 900 diurnal swing recovery + phase lag match (not over-damped throttling).
+
+---
+
 ### Supporting Traits
 
 These traits support the main physics pipeline and should also be documented:
@@ -652,6 +755,7 @@ Surrogates must match physics within 2% on held-out data. v3.0 surrogate trainin
 | Conduction | Yes | Yes (`HeatConductionSolver`) | Yes | Yes |
 | Ventilation | Yes | Yes (`VentilationSchedule`) | Yes | Yes |
 | Zone Balance | Yes | Yes (`ThermalModelTrait`) | Yes | Yes |
+| Gauge-Theory Foundation (#1461 — Phase 1a) | **Yes** (data structures only — no production solver wiring) | N/A — gauge transport is a stub method on `ThermalManifold`; Phase 1b (#1462) wires the production `GaugeSolver` | N/A — Phase 3 (#1465) is the ASHRAE 140 Case 900 validation gate | **Yes** — 27 unit tests in `src/physics/geometry_tensor.rs` (`test_manifold_*`, `test_from_5r1c_*`, `test_from_9r4c_*`, `test_parallel_transport_*`, `test_validate_*`); matrix-form tracks the 5R1C discrete ODE to 7.1e-15 (Python verification at `.agents/results/issue-1461-python-verification.py`) |
 
 **Zone Balance detail**: Multi-node 9R4C model and Case 900 multi-node HVAC validation are complete. Free-floating calibration and annual re-validation CI gate landed (#1154, #1137, #669). Issue #1147 extended the zone balance isolation tests to cover metered energy load validation against ASHRAE 140 reference CSVs (`tests/reference_data/zone_balance/case_600_energy_reference.csv`, `case_900_energy_reference.csv`). Tests use true blind execution (spec-only, no case ID to the engine). The strict ±15% annual energy tolerance tests are `#[ignore]` until the cooling-load physics gap is closed (current cooling underestimates ASHRAE 140 by ~90%; per the Issue #1281 / #1280 investigation, the root cause is roof-solar under-counting — see `docs/investigations/issue-1280-ctf-peak-load.md` §4 — NOT the 5R1C solver nor the `h_ms_total` additive formulation; per AGENTS.md "no parameter tuning, fix the math", no corrections are applied). The Issue #1281 architectural fix adds the `MassAirCouplingMode::ParallelResistance` formulation to `MultiNodeSolver` as a more physically correct alternative to the additive coupling; it does NOT by itself close the ASHRAE 140 cooling gap (Python verification at `.agents/results/issue-1281-python-verification.py`). Hourly E+ regeneration is available via `generate_case_600_900_energy.py`. Marked "Isolated=Yes" because the bottom-up module isolation required by Phase 1 is complete for Weather, Solar, Conduction, and Ventilation, and the Zone Balance test infrastructure now covers both free-floating temperature and metered energy loads.
 

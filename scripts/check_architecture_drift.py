@@ -140,6 +140,13 @@ def check_drift() -> list[str]:
         "MultiNodeSolver",  # struct in physics/multi_node_solver.rs
     }
 
+    # Traits documented as planned-but-not-yet-implemented in the multi-phase
+    # gauge-theory migration (#1461, #1462). Remove an entry here once its
+    # code lands so the drift check re-asserts documentation/code agreement.
+    planned_traits = {
+        "GaugeSolver",  # Phase 1b (#1462) — added to ARCHITECTURE.md in #1474
+    }
+
     for trait_name, source_file in sorted(code_traits.items()):
         if trait_name in skip_traits:
             continue
@@ -160,6 +167,8 @@ def check_drift() -> list[str]:
     # --- Check 3: Documented traits that no longer exist in code ---
     for trait_name in sorted(documented_traits):
         if trait_name in documented_but_not_traits:
+            continue
+        if trait_name in planned_traits:
             continue
         if trait_name not in code_traits:
             findings.append(
