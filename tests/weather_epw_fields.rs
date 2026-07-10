@@ -201,6 +201,62 @@ fn test_missing_data_code_handling() {
         hour0.present_weather_code.is_none() || hour0.present_weather_code.unwrap() < 9999,
         "present_weather_code should handle missing data codes"
     );
+
+    // Issue #1415: EPW files use 9999 as the missing-data sentinel for solar
+    // irradiance (GHI/DNI/DHI). The parser must coerce these to 0.0, not pass
+    // 9999 W/m² downstream into the Perez / sol-air temperature models.
+    // Verify that NO parsed hour in the real Denver file contains a sentinel.
+    for hour in 0..source.record_count() {
+        let data = source.get_hourly_data(hour).expect("Failed to get hour");
+        assert!(
+            data.ghi < 9999.0,
+            "Hour {}: GHI={} should have been coerced from 9999 sentinel to 0.0",
+            hour,
+            data.ghi
+        );
+        assert!(
+            data.dni < 9999.0,
+            "Hour {}: DNI={} should have been coerced from 9999 sentinel to 0.0",
+            hour,
+            data.dni
+        );
+        assert!(
+            data.dhi < 9999.0,
+            "Hour {}: DHI={} should have been coerced from 9999 sentinel to 0.0",
+            hour,
+            data.dhi
+        );
+        assert!(
+            data.horizontal_infrared < 9999.0,
+            "Hour {}: HIR={} should have been coerced from 9999 sentinel to 0.0",
+            hour,
+            data.horizontal_infrared
+        );
+    }
+}
+
+#[test]
+fn test_sentinel_9999_coerced_to_zero() {
+    // Issue #1415: A row with GHI=9999, DNI=9999, DHI=9999, HIR=9999 must
+    // produce 0.0 for all four fields, not 9999.0.
+    let source = EpwWeatherSource::from_file("tests/test_data/test_sentinel_9999.epw")
+        .expect("Failed to load sentinel test EPW");
+
+    let hour0 = source.get_hourly_data(0).expect("Failed to get hour 0");
+    assert_eq!(hour0.ghi, 0.0, "GHI=9999 sentinel must coerce to 0.0");
+    assert_eq!(hour0.dni, 0.0, "DNI=9999 sentinel must coerce to 0.0");
+    assert_eq!(hour0.dhi, 0.0, "DHI=9999 sentinel must coerce to 0.0");
+    assert_eq!(
+        hour0.horizontal_infrared, 0.0,
+        "HIR=9999 sentinel must coerce to 0.0"
+    );
+
+    // Second row has valid values — ensure they are NOT zeroed.
+    let hour1 = source.get_hourly_data(1).expect("Failed to get hour 1");
+    assert_eq!(hour1.ghi, 970.0);
+    assert_eq!(hour1.dni, 850.0);
+    assert_eq!(hour1.dhi, 120.0);
+    assert_eq!(hour1.horizontal_infrared, 300.0);
 }
 
 #[test]
