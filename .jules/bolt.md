@@ -36,3 +36,6 @@
 ## 2026-06-25 - Avoid vector `clone` and chained math assignments inside physics hot loops
 **Learning:** Found that using chained VectorField calculations (`clone()`, `mul_assign()`, `add_assign()`, `zip_with()`) for mathematical formulas like `ts_num_act = h_tr_ms * mass_temp + h_tr_is * t_i_act + phi_st` produces significant memory allocation overhead inside highly iterated loop blocks like `physics_impl.rs`.
 **Action:** Replace `VectorField` chain arithmetic directly with a single pass scalar loop that pre-allocates an empty target vector using `Vec::with_capacity(num_zones)` and handles the computation directly for the buffer creation. This resulted in up to ~6.4% performance improvement in throughput.
+## 2026-07-09 - Removed dead t_sol_air allocation in step_physics_6r2c
+**Learning:** In hot loops like `step_physics_6r2c`, carefully audit for and remove dead code blocks calculating values only used by other model paths (e.g., `t_sol_air_data` intended for 5R1C) to eliminate unnecessary `Vec::with_capacity` heap allocations and floating-point operations.
+**Action:** Audit variables prefixed with underscores (`_`) inside hot loops that are artifacts from code reuse and clean them up.
