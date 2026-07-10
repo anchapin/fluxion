@@ -61,9 +61,7 @@
 //! the QUBO entries land in `O(1)` magnitude — directly submittable without
 //! rescaling. See `to_dwave_normalized` for the explicit normalization.
 
-use crate::physics::geometry_tensor::{
-    ThermalManifold, MANIFOLD_DIM,
-};
+use crate::physics::geometry_tensor::{ThermalManifold, MANIFOLD_DIM};
 use nalgebra::{Matrix4, Vector4};
 
 /// Configuration for the QUBO encoding. The defaults match typical ASHRAE 140
@@ -105,7 +103,10 @@ impl QuboConfig {
 
     /// Scale factor: `T[i] * scale_factor ≈ Σ_k 2^k x[(i,k)]` (integer value).
     pub fn scale_factor(&self) -> f64 {
-        assert!(self.scale_max_celsius > 0.0, "scale_max_celsius must be > 0");
+        assert!(
+            self.scale_max_celsius > 0.0,
+            "scale_max_celsius must be > 0"
+        );
         let k = self.bits_per_node;
         ((1u64 << k) as f64 - 1.0) / self.scale_max_celsius
     }
@@ -122,7 +123,7 @@ impl QuboConfig {
                 max: 16,
             });
         }
-        if !(self.scale_max_celsius > 0.0) {
+        if self.scale_max_celsius <= 0.0 {
             return Err(QuboError::NonPositiveScale {
                 value: self.scale_max_celsius,
             });
@@ -253,12 +254,13 @@ impl QuboProblem {
         let n = self.num_variables;
         let mut acc = 0.0_f64;
         for i in 0..n {
-            let xi = if x[i] == 0 { 0.0 } else { 1.0 };
+            let xi = f64::from(x[i]);
             if xi == 0.0 {
                 continue;
             }
-            for j in i..n {
-                let xj = if x[j] == 0 { 0.0 } else { 1.0 };
+            for (offset, &xj_byte) in x[i..].iter().enumerate() {
+                let j = i + offset;
+                let xj = f64::from(xj_byte);
                 if xj == 0.0 {
                     continue;
                 }
@@ -343,10 +345,11 @@ impl IsingProblem {
         let n = self.num_variables;
         let mut acc = self.c;
         for i in 0..n {
-            let si = s[i] as i64 as f64;
+            let si = f64::from(s[i]);
             acc += self.h[i] * si;
-            for j in (i + 1)..n {
-                let sj = s[j] as i64 as f64;
+            for (offset, &sj_byte) in s[i + 1..].iter().enumerate() {
+                let j = i + 1 + offset;
+                let sj = f64::from(sj_byte);
                 acc += 2.0 * self.j[i * n + j] * si * sj;
             }
         }
