@@ -69,7 +69,7 @@ impl ThermalManifold {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)] 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct GaugeBoundaryConditions {
     pub solar_irradiance_wm2: f64,
     pub outside_air_temp_c: f64,
