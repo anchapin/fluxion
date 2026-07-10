@@ -13,13 +13,16 @@
 //! multi-zone thermal network validation.
 
 use crate::sim::engine::ThermalModel;
-use crate::validation::ashrae_140_validator::ASHRAE140Validator;
-use crate::validation::ashrae_140_validator::ValidationResult;
+use crate::validation::ashrae_140_cases::ASHRAE140Case;
+use crate::validation::ashrae_140_validator::{
+    ASHRAE140Validator, ValidationReport, ValidationResult,
+};
 use crate::validation::report::{BenchmarkReport, MetricType, ValidationStatus};
 use csv::Writer;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::Instant;
 
 /// ASHRAE 140 multi-zone validator
 ///
@@ -112,125 +115,242 @@ impl ASHRAE140MultiZoneValidator {
     /// This method loads the expected values for ASHRAE 140 Case 960,
     /// which represents a two-zone sunspace building.
     ///
+    /// Reference values are sourced from the canonical benchmark module
+    /// (`crate::validation::benchmark::CASE_960_*`), which derives the
+    /// ASHRAE 140-2023 inter-program envelope (EnergyPlus, ESP-r, TRNSYS,
+    /// DOE2, BSIMAC, CSE, DeST). The strict ±15% annual energy / ±10% peak
+    /// tolerance from issue #1368 applies at the validator level; this
+    /// struct exposes the same 15%/10% tolerances for downstream consumers.
+    ///
+    /// Prior to issue #1407 this struct hardcoded 12.4 MWh heating /
+    /// 8.7 MWh cooling placeholders that did not match any reference
+    /// program — the validator at the time fabricated PASS by comparing
+    /// two hardcoded numbers (12.4 vs 12.5). See #1407 for details.
+    ///
     /// # Returns
     /// Case960Reference struct with expected values
     pub fn load_case_960_reference_data() -> Case960Reference {
-        // ASHRAE 140-2017 Case 960 reference values
-        // Two-zone sunspace building with specific geometry and construction
+        use super::benchmark::{
+            CASE_960_ANNUAL_COOLING_REF, CASE_960_ANNUAL_HEATING_REF, CASE_960_ENERGY_TOLERANCE,
+            CASE_960_PEAK_COOLING_REF, CASE_960_PEAK_HEATING_REF, CASE_960_PEAK_TOLERANCE,
+        };
+
         Case960Reference {
-            // Zone temperatures at key timesteps (°C)
+            // Zone temperatures at key timesteps (°C).
+            // These are still placeholder sentinel values for the
+            // `Case960Validator::validate_hourly_temperature_profiles`
+            // consumer — the *energy* reference data, which is what the
+            // strict ±15% CI gate consumes (#1368), now comes from the
+            // benchmark module above.
             zone_temperatures: HashMap::from([
                 // Winter design day (hour 4380 - Jan 21, 6:00 AM)
                 (4380, vec![15.2, 8.1]), // Zone 1 (living), Zone 2 (sunspace)
                 // Summer design day (hour 5000 - Jul 21, 4:40 PM)
                 (5000, vec![26.8, 38.4]),
                 // Annual average
-                (8760, vec![20.1, 18.7]), // Should be close to setpoints
+                (8760, vec![20.1, 18.7]),
             ]),
 
-            // Annual energy consumption (MWh)
-            annual_heating: 12.4,
-            annual_cooling: 8.7,
+            // Annual energy consumption (MWh) — midpoints of the ASHRAE 140
+            // inter-program range. Bounds (min/max) come from the same module.
+            annual_heating: CASE_960_ANNUAL_HEATING_REF,
+            annual_cooling: CASE_960_ANNUAL_COOLING_REF,
 
-            // Peak loads (kW)
-            peak_heating: 5.2,
-            peak_cooling: 4.8,
+            // Peak loads (kW) — midpoints of the ASHRAE 140 inter-program range.
+            peak_heating: CASE_960_PEAK_HEATING_REF,
+            peak_cooling: CASE_960_PEAK_COOLING_REF,
 
-            // Temperature ranges for validation
-            min_temperature: 5.0,  // Minimum expected temperature (°C)
-            max_temperature: 45.0, // Maximum expected temperature (°C)
+            // Temperature bounds — used by zone-temperature consumers, not
+            // by the strict energy gate.
+            min_temperature: 5.0,
+            max_temperature: 45.0,
 
-            // Tolerances for validation
-            temperature_tolerance: 1.0, // °C
-            energy_tolerance: 0.15,     // 15% tolerance
-            load_tolerance: 0.10,       // 10% tolerance
+            // Tolerances — sourced from the same module so consumers reading
+            // this struct see the same ±15% / ±10% the benchmark module enforces.
+            temperature_tolerance: 1.0,
+            energy_tolerance: CASE_960_ENERGY_TOLERANCE,
+            load_tolerance: CASE_960_PEAK_TOLERANCE,
         }
     }
 
-    /// Validate Case 960 against reference data
+    /// Return the ASHRAE 140 inter-program bounds (heating/cooling/peak)
+    /// for Case 960 in MWh / kW. Re-exported from `benchmark.rs` so
+    /// downstream consumers (CLI, docs) can read the canonical envelope
+    /// without re-importing the benchmark module. Issue #1407.
+    pub fn case_960_inter_program_bounds() -> Case960InterProgramBounds {
+        use super::benchmark::{
+            CASE_960_ANNUAL_COOLING_MAX, CASE_960_ANNUAL_COOLING_MIN, CASE_960_ANNUAL_HEATING_MAX,
+            CASE_960_ANNUAL_HEATING_MIN, CASE_960_PEAK_COOLING_MAX, CASE_960_PEAK_COOLING_MIN,
+            CASE_960_PEAK_HEATING_MAX, CASE_960_PEAK_HEATING_MIN,
+        };
+        Case960InterProgramBounds {
+            annual_heating_min: CASE_960_ANNUAL_HEATING_MIN,
+            annual_heating_max: CASE_960_ANNUAL_HEATING_MAX,
+            annual_cooling_min: CASE_960_ANNUAL_COOLING_MIN,
+            annual_cooling_max: CASE_960_ANNUAL_COOLING_MAX,
+            peak_heating_min: CASE_960_PEAK_HEATING_MIN,
+            peak_heating_max: CASE_960_PEAK_HEATING_MAX,
+            peak_cooling_min: CASE_960_PEAK_COOLING_MIN,
+            peak_cooling_max: CASE_960_PEAK_COOLING_MAX,
+        }
+    }
+
+    /// Validate Case 960 against reference data by **running the real
+    /// physics simulation** and comparing against the canonical ASHRAE
+    /// 140 inter-program envelope (EnergyPlus, ESP-r, TRNSYS, DOE2,
+    /// BSIMAC, CSE, DeST) sourced from `validation::benchmark`.
     ///
-    /// This method compares simulation results from a thermal model against
-    /// the ASHRAE 140 Case 960 reference values.
+    /// Prior to issue #1407 this method fabricated PASS by comparing two
+    /// hardcoded placeholders (`actual = 12.5 / 8.5 / 5.1 / 4.9` against
+    /// `reference = 12.4 / 8.7 / 5.2 / 4.8`). It never called
+    /// `ThermalModel::step_physics`, so the strict ±15% CI gate (#1368)
+    /// could never produce a meaningful FAIL for Case 960.
+    ///
+    /// The implementation now mirrors `ASHRAE140Validator::validate_case_960`
+    /// (which already runs the real 8760-step simulation), wraps it in the
+    /// `MultiZoneValidator` API surface (returning the lightweight
+    /// `ValidationResult` that downstream `run_multi_zone_validation`
+    /// / `run_comprehensive_validation` consumers expect), and applies the
+    /// same ±15% / ±10% tolerances.
+    ///
+    /// The `_thermal_model` and `_reference` arguments are accepted for
+    /// API back-compat with the prior stub but are **not** consulted for
+    /// the verdict — the real validator builds its own model from
+    /// `ASHRAE140Case::Case960.spec()` and reads reference bounds from
+    /// `validation::benchmark`. This guarantees one source of truth.
     ///
     /// # Arguments
-    /// * `thermal_model` - Reference to the thermal model containing simulation results
-    /// * `reference` - Case 960 reference data
+    /// * `_thermal_model` - Kept for API back-compat; not consulted.
+    /// * `_reference` - Kept for API back-compat; not consulted.
     ///
     /// # Returns
-    /// ValidationResult indicating pass/fail status
+    /// `ValidationResult { in_range, error_pct }`. `in_range` is `true`
+    /// only when **all four** ASHRAE 140 metrics (annual heating,
+    /// annual cooling, peak heating, peak cooling) sit within their
+    /// respective inter-program envelopes.
     pub fn validate_case_960<T: crate::physics::cta::ContinuousTensor<f64>>(
         &self,
         _thermal_model: &ThermalModel<T>,
-        reference: &Case960Reference,
+        _reference: &Case960Reference,
     ) -> ValidationResult {
-        let mut report = BenchmarkReport::new();
-        let mut overall_status = ValidationStatus::Pass;
+        let started = Instant::now();
+        let report = self.run_real_case_960_report();
+        let _elapsed = started.elapsed();
 
-        // Validate zone temperatures at key timesteps
-        for expected_temps in reference.zone_temperatures.values() {
-            // In a real implementation, we would extract temperatures from the model
-            // For now, we'll use placeholder values that should pass validation
-            let actual_temps = vec![20.0, 18.5]; // Placeholder - would come from model
-
-            for (&expected_temp, &actual_temp) in expected_temps.iter().zip(actual_temps.iter()) {
-                let error = (actual_temp - expected_temp).abs();
-                let _error_pct = (error / expected_temp) * 100.0;
-
-                if error > reference.temperature_tolerance {
-                    overall_status = ValidationStatus::Fail;
-                    report.add_result_simple(
-                        "960",
-                        MetricType::MinFreeFloat, // Reusing metric type for temperature validation
-                        actual_temp,
-                        expected_temp - reference.temperature_tolerance,
-                        expected_temp + reference.temperature_tolerance,
-                    );
-                }
-            }
-        }
-
-        // Validate annual energy consumption
-        // Placeholder values - would come from actual simulation
-        let actual_heating = 12.5; // MWh
-        let actual_cooling = 8.5; // MWh
-
-        let heating_error =
-            ((actual_heating - reference.annual_heating) / reference.annual_heating).abs();
-        let cooling_error =
-            ((actual_cooling - reference.annual_cooling) / reference.annual_cooling).abs();
-
-        if heating_error > reference.energy_tolerance {
-            overall_status = ValidationStatus::Fail;
-        }
-
-        if cooling_error > reference.energy_tolerance {
-            overall_status = ValidationStatus::Fail;
-        }
-
-        // Validate peak loads
-        let actual_peak_heating = 5.1; // kW
-        let actual_peak_cooling = 4.9; // kW
-
-        let peak_heating_error =
-            ((actual_peak_heating - reference.peak_heating) / reference.peak_heating).abs();
-        let peak_cooling_error =
-            ((actual_peak_cooling - reference.peak_cooling) / reference.peak_cooling).abs();
-
-        if peak_heating_error > reference.load_tolerance {
-            overall_status = ValidationStatus::Fail;
-        }
-
-        if peak_cooling_error > reference.load_tolerance {
-            overall_status = ValidationStatus::Fail;
-        }
-
-        // Calculate overall error percentage
-        let avg_error =
-            (heating_error + cooling_error + peak_heating_error + peak_cooling_error) / 4.0;
+        let metrics = [
+            report.heating_result.in_range,
+            report.cooling_result.in_range,
+            report.peak_heating_result.in_range,
+            report.peak_cooling_result.in_range,
+        ];
+        let in_range = metrics.iter().all(|v| *v);
+        let avg_error_pct = (report.heating_result.error_pct
+            + report.cooling_result.error_pct
+            + report.peak_heating_result.error_pct
+            + report.peak_cooling_result.error_pct)
+            / 4.0;
 
         ValidationResult {
-            in_range: overall_status == ValidationStatus::Pass,
-            error_pct: avg_error * 100.0,
+            in_range,
+            error_pct: avg_error_pct,
+        }
+    }
+
+    /// Internal helper: build the spec from the canonical
+    /// `ASHRAE140Case::Case960`, run the real `ASHRAE140Validator` for
+    /// 8760 hourly steps, and return the full `ValidationReport`.
+    ///
+    /// Centralised so all three public entry points
+    /// (`validate_case_960`, `run_multi_zone_validation`,
+    /// `run_comprehensive_validation`) step the same physics and read the
+    /// same benchmark bounds — issue #1407.
+    fn run_real_case_960_report(&self) -> ValidationReport {
+        let base_validator = ASHRAE140Validator::new();
+        base_validator.validate_case_960()
+    }
+
+    /// Run Case 960 using only **synthetic actual values** (e.g. user-
+    /// supplied pre-computed metrics) and compare them against the
+    /// canonical inter-program envelope. Does not run any simulation;
+    /// use [`Self::validate_case_960`] for the end-to-end path.
+    ///
+    /// Provided for downstream consumers (e.g. the CLI's `--format json`
+    /// path in `src/cli/multi_zone.rs`, and `validate_case_960_with_validator`)
+    /// that already have `actual` numbers in hand and need a uniform
+    /// comparator. Issue #1407.
+    pub fn compare_against_reference(
+        &self,
+        actual_heating_mwh: f64,
+        actual_cooling_mwh: f64,
+        actual_peak_heating_kw: f64,
+        actual_peak_cooling_kw: f64,
+    ) -> Case960CompareOutcome {
+        use super::benchmark::{
+            CASE_960_ANNUAL_COOLING_MAX, CASE_960_ANNUAL_COOLING_MIN, CASE_960_ANNUAL_HEATING_MAX,
+            CASE_960_ANNUAL_HEATING_MIN, CASE_960_ENERGY_TOLERANCE, CASE_960_PEAK_COOLING_MAX,
+            CASE_960_PEAK_COOLING_MIN, CASE_960_PEAK_HEATING_MAX, CASE_960_PEAK_HEATING_MIN,
+            CASE_960_PEAK_TOLERANCE,
+        };
+
+        let h_in_range = actual_heating_mwh >= CASE_960_ANNUAL_HEATING_MIN
+            && actual_heating_mwh <= CASE_960_ANNUAL_HEATING_MAX;
+        let c_in_range = actual_cooling_mwh >= CASE_960_ANNUAL_COOLING_MIN
+            && actual_cooling_mwh <= CASE_960_ANNUAL_COOLING_MAX;
+        let ph_in_range = actual_peak_heating_kw >= CASE_960_PEAK_HEATING_MIN
+            && actual_peak_heating_kw <= CASE_960_PEAK_HEATING_MAX;
+        let pc_in_range = actual_peak_cooling_kw >= CASE_960_PEAK_COOLING_MIN
+            && actual_peak_cooling_kw <= CASE_960_PEAK_COOLING_MAX;
+
+        let mid_h = (CASE_960_ANNUAL_HEATING_MIN + CASE_960_ANNUAL_HEATING_MAX) / 2.0;
+        let mid_c = (CASE_960_ANNUAL_COOLING_MIN + CASE_960_ANNUAL_COOLING_MAX) / 2.0;
+        let mid_ph = (CASE_960_PEAK_HEATING_MIN + CASE_960_PEAK_HEATING_MAX) / 2.0;
+        let mid_pc = (CASE_960_PEAK_COOLING_MIN + CASE_960_PEAK_COOLING_MAX) / 2.0;
+
+        let h_err = if mid_h > 0.0 {
+            ((actual_heating_mwh - mid_h).abs() / mid_h) * 100.0
+        } else {
+            0.0
+        };
+        let c_err = if mid_c > 0.0 {
+            ((actual_cooling_mwh - mid_c).abs() / mid_c) * 100.0
+        } else {
+            0.0
+        };
+        let ph_err = if mid_ph > 0.0 {
+            ((actual_peak_heating_kw - mid_ph).abs() / mid_ph) * 100.0
+        } else {
+            0.0
+        };
+        let pc_err = if mid_pc > 0.0 {
+            ((actual_peak_cooling_kw - mid_pc).abs() / mid_pc) * 100.0
+        } else {
+            0.0
+        };
+
+        Case960CompareOutcome {
+            annual_heating_mwh: actual_heating_mwh,
+            annual_cooling_mwh: actual_cooling_mwh,
+            peak_heating_kw: actual_peak_heating_kw,
+            peak_cooling_kw: actual_peak_cooling_kw,
+            annual_heating_in_range: h_in_range,
+            annual_cooling_in_range: c_in_range,
+            peak_heating_in_range: ph_in_range,
+            peak_cooling_in_range: pc_in_range,
+            annual_heating_error_pct: h_err,
+            annual_cooling_error_pct: c_err,
+            peak_heating_error_pct: ph_err,
+            peak_cooling_error_pct: pc_err,
+            energy_tolerance: CASE_960_ENERGY_TOLERANCE,
+            peak_tolerance: CASE_960_PEAK_TOLERANCE,
+            annual_heating_min: CASE_960_ANNUAL_HEATING_MIN,
+            annual_heating_max: CASE_960_ANNUAL_HEATING_MAX,
+            annual_cooling_min: CASE_960_ANNUAL_COOLING_MIN,
+            annual_cooling_max: CASE_960_ANNUAL_COOLING_MAX,
+            peak_heating_min: CASE_960_PEAK_HEATING_MIN,
+            peak_heating_max: CASE_960_PEAK_HEATING_MAX,
+            peak_cooling_min: CASE_960_PEAK_COOLING_MIN,
+            peak_cooling_max: CASE_960_PEAK_COOLING_MAX,
+            all_in_range: h_in_range && c_in_range && ph_in_range && pc_in_range,
         }
     }
 
@@ -243,25 +363,30 @@ impl ASHRAE140MultiZoneValidator {
     pub fn run_multi_zone_validation(&mut self) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
 
-        // Load reference data
+        // Issue #1407: previously this method ran the stub validator and
+        // emitted zero/zero actuals whenever the in-memory comparison
+        // failed, which silently fabricated PASS for the strict ±15%
+        // CI gate (#1368). It now runs the real 8760-step physics
+        // simulation via `validate_case_960` and reports the **actual
+        // model outputs** into the `BenchmarkReport` so downstream
+        // consumers can see whether the engine produced numbers in
+        // band.
+        let started = Instant::now();
         let case_960_ref = Self::load_case_960_reference_data();
-
-        // Create a placeholder thermal model for Case 960
-        // In a real implementation, this would be created from the actual Case 960 specification
-        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
+        let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec(&spec);
-
-        // Validate Case 960
         let case_960_result = self.validate_case_960(&model, &case_960_ref);
+        let _elapsed = started.elapsed();
+
+        // Reconstruct the underlying ValidationReport so we can emit the
+        // **actual** (post-simulation) values into the BenchmarkReport
+        // rather than the bogus "0.0 on FAIL" the stub used to write.
+        let vrep = self.run_real_case_960_report();
 
         report.add_result_simple(
             "960",
             MetricType::AnnualHeating,
-            if case_960_result.in_range {
-                case_960_ref.annual_heating
-            } else {
-                0.0
-            },
+            vrep.annual_heating_mwh,
             case_960_ref.annual_heating * (1.0 - case_960_ref.energy_tolerance),
             case_960_ref.annual_heating * (1.0 + case_960_ref.energy_tolerance),
         );
@@ -269,14 +394,39 @@ impl ASHRAE140MultiZoneValidator {
         report.add_result_simple(
             "960",
             MetricType::AnnualCooling,
-            if case_960_result.in_range {
-                case_960_ref.annual_cooling
-            } else {
-                0.0
-            },
+            vrep.annual_cooling_mwh,
             case_960_ref.annual_cooling * (1.0 - case_960_ref.energy_tolerance),
             case_960_ref.annual_cooling * (1.0 + case_960_ref.energy_tolerance),
         );
+
+        report.add_result_simple(
+            "960",
+            MetricType::PeakHeating,
+            vrep.peak_heating_kw,
+            case_960_ref.peak_heating * (1.0 - case_960_ref.load_tolerance),
+            case_960_ref.peak_heating * (1.0 + case_960_ref.load_tolerance),
+        );
+
+        report.add_result_simple(
+            "960",
+            MetricType::PeakCooling,
+            vrep.peak_cooling_kw,
+            case_960_ref.peak_cooling * (1.0 - case_960_ref.load_tolerance),
+            case_960_ref.peak_cooling * (1.0 + case_960_ref.load_tolerance),
+        );
+
+        // `add_result_simple` automatically sets the per-result
+        // `ValidationStatus` from `fluxion_value` vs `[ref_min, ref_max]`
+        // (`report::ValidationResult::new`). Each row now reports the
+        // *real* engine output instead of the bogus 0.0-on-FAIL the
+        // prior stub wrote (issue #1407), so the strict ±15% CI gate
+        // (#1368) can produce a meaningful verdict for Case 960.
+
+        // Touch the lightweight validator result so the compiler
+        // doesn't warn, and so callers can introspect the unified
+        // verdict via `report.all_passed()` (used by the bin entry
+        // point and the CLI's text-mode renderer).
+        let _ = case_960_result.in_range;
 
         // Add stubs for Case 970 and 980 (future implementation)
         report.add_result_simple("970", MetricType::AnnualHeating, 0.0, 0.0, 0.0);
@@ -369,6 +519,33 @@ pub struct Case960Reference {
     pub load_tolerance: f64,
 }
 
+/// ASHRAE 140 inter-program envelope for Case 960 (heating/cooling/peak).
+///
+/// This struct exposes the canonical min/max bounds across EnergyPlus,
+/// ESP-r, TRNSYS, DOE2, BSIMAC, CSE, and DeST as derived from
+/// `crate::validation::benchmark::CASE_960_*`. Issue #1407 makes this
+/// the single source of truth so the multi-zone validator, the strict
+/// ±15% CI gate (#1368), and the CLI cannot diverge.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Case960InterProgramBounds {
+    /// Lower bound of annual heating energy (MWh).
+    pub annual_heating_min: f64,
+    /// Upper bound of annual heating energy (MWh).
+    pub annual_heating_max: f64,
+    /// Lower bound of annual cooling energy (MWh).
+    pub annual_cooling_min: f64,
+    /// Upper bound of annual cooling energy (MWh).
+    pub annual_cooling_max: f64,
+    /// Lower bound of peak heating load (kW).
+    pub peak_heating_min: f64,
+    /// Upper bound of peak heating load (kW).
+    pub peak_heating_max: f64,
+    /// Lower bound of peak cooling load (kW).
+    pub peak_cooling_min: f64,
+    /// Upper bound of peak cooling load (kW).
+    pub peak_cooling_max: f64,
+}
+
 /// Reference data for ASHRAE 140 Case 970
 ///
 /// Case 970 represents a more complex multi-zone building configuration
@@ -409,6 +586,75 @@ pub struct Case970Reference {
 impl Default for Case960Reference {
     fn default() -> Self {
         Self::load_case_960_reference_data()
+    }
+}
+
+/// Outcome of [`ASHRAE140MultiZoneValidator::compare_against_reference`].
+///
+/// Holds the four actual metrics plus their `in_range` flags, signed
+/// error percentages, the strict ±15% / ±10% tolerances, and the
+/// canonical ASHRAE 140 inter-program envelope. JSON-serialisable so the
+/// CLI (`src/cli/multi_zone.rs`) can emit it under `--format json`
+/// without re-loading the benchmark module. Issue #1407.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Case960CompareOutcome {
+    /// Actual annual heating energy (MWh) — caller-supplied.
+    pub annual_heating_mwh: f64,
+    /// Actual annual cooling energy (MWh) — caller-supplied.
+    pub annual_cooling_mwh: f64,
+    /// Actual peak heating load (kW) — caller-supplied.
+    pub peak_heating_kw: f64,
+    /// Actual peak cooling load (kW) — caller-supplied.
+    pub peak_cooling_kw: f64,
+
+    /// `true` iff `annual_heating_mwh ∈ [ref_min, ref_max]`.
+    pub annual_heating_in_range: bool,
+    /// `true` iff `annual_cooling_mwh ∈ [ref_min, ref_max]`.
+    pub annual_cooling_in_range: bool,
+    /// `true` iff `peak_heating_kw ∈ [ref_min, ref_max]`.
+    pub peak_heating_in_range: bool,
+    /// `true` iff `peak_cooling_kw ∈ [ref_min, ref_max]`.
+    pub peak_cooling_in_range: bool,
+
+    /// |actual - mid| / mid for annual heating, percent.
+    pub annual_heating_error_pct: f64,
+    /// |actual - mid| / mid for annual cooling, percent.
+    pub annual_cooling_error_pct: f64,
+    /// |actual - mid| / mid for peak heating, percent.
+    pub peak_heating_error_pct: f64,
+    /// |actual - mid| / mid for peak cooling, percent.
+    pub peak_cooling_error_pct: f64,
+
+    /// Energy tolerance (fraction, e.g. 0.15) — issue #1368.
+    pub energy_tolerance: f64,
+    /// Peak-load tolerance (fraction, e.g. 0.10) — issue #1368.
+    pub peak_tolerance: f64,
+
+    /// Canonical annual heating lower bound (MWh).
+    pub annual_heating_min: f64,
+    /// Canonical annual heating upper bound (MWh).
+    pub annual_heating_max: f64,
+    /// Canonical annual cooling lower bound (MWh).
+    pub annual_cooling_min: f64,
+    /// Canonical annual cooling upper bound (MWh).
+    pub annual_cooling_max: f64,
+    /// Canonical peak heating lower bound (kW).
+    pub peak_heating_min: f64,
+    /// Canonical peak heating upper bound (kW).
+    pub peak_heating_max: f64,
+    /// Canonical peak cooling lower bound (kW).
+    pub peak_cooling_min: f64,
+    /// Canonical peak cooling upper bound (kW).
+    pub peak_cooling_max: f64,
+
+    /// `true` iff **all four** metrics are within tolerance.
+    pub all_in_range: bool,
+}
+
+impl Case960CompareOutcome {
+    /// `true` when at least one metric is **outside** tolerance.
+    pub fn any_failed(&self) -> bool {
+        !self.all_in_range
     }
 }
 
@@ -463,20 +709,53 @@ mod tests {
     fn test_case_960_reference_loading() {
         let reference = Case960Reference::load_case_960_reference_data();
 
-        // Verify reference values are loaded correctly
-        assert_eq!(reference.annual_heating, 12.4);
-        assert_eq!(reference.annual_cooling, 8.7);
-        assert_eq!(reference.peak_heating, 5.2);
-        assert_eq!(reference.peak_cooling, 4.8);
+        // Issue #1407: previously asserted the hardcoded stub values
+        // 12.4 / 8.7 / 5.2 / 4.8 — those were placeholders that did
+        // not match any reference program and produced fabricated PASS.
+        // Now asserts the canonical ASHRAE 140-2023 inter-program
+        // midpoints sourced from `validation::benchmark`.
+        assert!(
+            (reference.annual_heating - 2.05).abs() < 1e-9,
+            "annual_heating should equal benchmark midpoint 2.05 MWh, got {}",
+            reference.annual_heating
+        );
+        assert!(
+            (reference.annual_cooling - 2.165).abs() < 1e-9,
+            "annual_cooling should equal benchmark midpoint 2.165 MWh, got {}",
+            reference.annual_cooling
+        );
+        assert!(
+            (reference.peak_heating - 5.0).abs() < 1e-9,
+            "peak_heating should equal benchmark midpoint 5.0 kW, got {}",
+            reference.peak_heating
+        );
+        assert!(
+            (reference.peak_cooling - 2.0).abs() < 1e-9,
+            "peak_cooling should equal benchmark midpoint 2.0 kW, got {}",
+            reference.peak_cooling
+        );
 
         // Verify temperature ranges
         assert!(reference.min_temperature > 0.0);
         assert!(reference.max_temperature < 50.0);
 
-        // Verify tolerances are reasonable
+        // Verify tolerances are reasonable (sourced from `benchmark::CASE_960_*`)
+        assert!((reference.energy_tolerance - 0.15).abs() < 1e-9);
+        assert!((reference.load_tolerance - 0.10).abs() < 1e-9);
         assert!(reference.temperature_tolerance > 0.0);
-        assert!(reference.energy_tolerance > 0.0);
-        assert!(reference.load_tolerance > 0.0);
+
+        // And the canonical inter-program envelope must agree with
+        // benchmark — this is what prevents the validator from drifting
+        // from the strict ±15% CI gate (#1368).
+        let bounds = ASHRAE140MultiZoneValidator::case_960_inter_program_bounds();
+        assert!((bounds.annual_heating_min - 1.65).abs() < 1e-9);
+        assert!((bounds.annual_heating_max - 2.45).abs() < 1e-9);
+        assert!((bounds.annual_cooling_min - 1.55).abs() < 1e-9);
+        assert!((bounds.annual_cooling_max - 2.78).abs() < 1e-9);
+        assert!((bounds.peak_heating_min - 2.0).abs() < 1e-9);
+        assert!((bounds.peak_heating_max - 8.0).abs() < 1e-9);
+        assert!((bounds.peak_cooling_min - 0.0).abs() < 1e-9);
+        assert!((bounds.peak_cooling_max - 4.0).abs() < 1e-9);
     }
 
     #[test]
@@ -488,12 +767,18 @@ mod tests {
         let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<VectorField>::from_spec(&spec);
 
-        // Run validation
+        // Run validation. With the real path the validator now actually
+        // steps the physics — depending on the model's current accuracy
+        // (Wave 6 / #1446 still has work to do on multi-zone coupling),
+        // this may PASS or FAIL, but the assertion is only that the
+        // validator completes and returns a sensible error percentage.
         let result = validator.validate_case_960(&model, &reference);
 
-        // Validation should complete (may pass or fail depending on model accuracy)
         assert!(result.error_pct >= 0.0);
-        assert!(result.error_pct <= 100.0);
+        // Cap at a generous upper bound — the model currently produces
+        // 200%+ heating errors (well above the ±15% gate), so the cap
+        // here is "not 1e9" rather than "not 100%".
+        assert!(result.error_pct.is_finite());
     }
 
     #[test]
@@ -513,11 +798,134 @@ mod tests {
         let mut validator = ASHRAE140MultiZoneValidator::new();
         let report = validator.run_multi_zone_validation();
 
-        // Should have results for Case 960 and stubs for 970/980
-        assert_eq!(report.results.len(), 4); // 960 heating, 960 cooling, 970, 980
+        // Issue #1407: the suite now emits 4 metrics for Case 960
+        // (annual heating, annual cooling, peak heating, peak cooling)
+        // plus 2 stubs for Case 970 and 980 — total 6 results.
+        assert_eq!(
+            report.results.len(),
+            6,
+            "Expected 4 Case-960 metrics + 2 stubs (970/980); got {}",
+            report.results.len()
+        );
 
-        // Check that Case 960 results exist
-        assert!(report.results.iter().any(|r| r.case_id == "960"));
+        // Check that Case 960 metrics exist (all four)
+        let case_960_metrics: Vec<_> = report
+            .results
+            .iter()
+            .filter(|r| r.case_id == "960")
+            .collect();
+        assert_eq!(
+            case_960_metrics.len(),
+            4,
+            "Expected 4 Case-960 metric rows, got {}",
+            case_960_metrics.len()
+        );
+    }
+
+    /// Regression test for issue #1407: the validator must run a real
+    /// simulation, must NOT fabricate PASS for an obviously broken
+    /// config, and must return PASS for a known-good config.
+    ///
+    /// Before this fix, the validator returned PASS in <1ms by comparing
+    /// two hardcoded placeholders (12.4 vs 12.5 MWh). This test would
+    /// have failed for two reasons:
+    ///   1. `validate_case_960` completed in microseconds (no physics).
+    ///   2. It returned `in_range = true` even when the underlying
+    ///      engine output was nowhere near the canonical envelope.
+    ///
+    /// After this fix:
+    ///   1. `validate_case_960` takes ≫ 100ms because it steps 8760
+    ///      physics hours through `ASHRAE140Validator::validate_case_960`.
+    ///   2. The current engine output (7.47 MWh heating vs canonical
+    ///      1.65-2.45 MWh) is far outside ±15%, so the validator
+    ///      correctly returns `in_range = false` — proving PASS is no
+    ///      longer fabricated.
+    ///   3. `compare_against_reference` with a synthetic known-good
+    ///      input (the canonical midpoint of every metric) returns
+    ///      `all_in_range = true` — proving the comparison logic itself
+    ///      is correct (independent of the engine's current accuracy).
+    #[test]
+    fn test_case_960_validator_runs_real_model_not_stub() {
+        use std::time::Instant;
+
+        let validator = ASHRAE140MultiZoneValidator::new();
+        let spec = ASHRAE140Case::Case960.spec();
+        let model = ThermalModel::<VectorField>::from_spec(&spec);
+        let reference = Case960Reference::load_case_960_reference_data();
+
+        // (1) The validator must take substantially longer than the
+        //     <1ms the stub took. A 8760-step physics simulation takes
+        //     many milliseconds even on a fast machine, so 100ms is a
+        //     very conservative floor that the stub would never reach.
+        let started = Instant::now();
+        let result = validator.validate_case_960(&model, &reference);
+        let elapsed_ms = started.elapsed().as_secs_f64() * 1000.0;
+
+        assert!(
+            elapsed_ms > 100.0,
+            "Validator should take > 100ms (real physics); took {:.1}ms — \
+             likely still the stub.",
+            elapsed_ms
+        );
+
+        // (2) The validator must NOT fabricate PASS for the current
+        //     engine output. The current model produces ~7.47 MWh
+        //     heating (verified by `cargo test -p fluxion --test
+        //     ashrae_140_case_960_sunspace test_case_960_comprehensive_energy_validation`),
+        //     which is ~265% above the canonical midpoint 2.05 MWh —
+        //     far outside ±15%. The validator must therefore return
+        //     `in_range = false`.
+        //
+        //     Note: when Wave 6 / #1446 lands and the multi-zone model
+        //     produces results inside ±15%, this assertion will need
+        //     to be re-evaluated. Until then, this is the regression
+        //     guard that ensures the validator stops fabricating PASS.
+        assert!(
+            !result.in_range,
+            "Validator must NOT fabricate PASS for the current engine output \
+             (heating ~7.47 MWh is far outside the 1.65-2.45 MWh canonical band). \
+             Got in_range = true — likely the stub is still installed. \
+             error_pct = {:.1}%",
+            result.error_pct
+        );
+
+        // (3) The comparator logic itself must be sound — when given
+        //     synthetic known-good values (the canonical midpoints) it
+        //     must report `all_in_range = true`. This proves the
+        //     validator's *comparison* code is correct independent of
+        //     the engine's current accuracy.
+        let outcome = validator.compare_against_reference(
+            2.05,  // canonical annual heating midpoint
+            2.165, // canonical annual cooling midpoint
+            5.0,   // canonical peak heating midpoint
+            2.0,   // canonical peak cooling midpoint
+        );
+        assert!(
+            outcome.all_in_range,
+            "Comparator must return all_in_range = true for the canonical \
+             midpoints. Got: h_in={}, c_in={}, ph_in={}, pc_in={}",
+            outcome.annual_heating_in_range,
+            outcome.annual_cooling_in_range,
+            outcome.peak_heating_in_range,
+            outcome.peak_cooling_in_range
+        );
+
+        // (4) The comparator must NOT pass obviously broken values —
+        //     this is the symmetric guard to (3).
+        let broken = validator.compare_against_reference(
+            12.4,  // pre-#1407 hardcoded placeholder (4-7× too high)
+            8.7,   // pre-#1407 hardcoded placeholder (3-4× too high)
+            100.0, // wildly above the 2.0-8.0 kW band
+            100.0, // wildly above the 0.0-4.0 kW band
+        );
+        assert!(
+            !broken.all_in_range,
+            "Comparator must NOT pass obviously broken values (12.4 / 8.7 / 100 / 100)."
+        );
+        assert!(
+            broken.any_failed(),
+            "Comparator must report any_failed() for broken values."
+        );
     }
 }
 
@@ -965,49 +1373,33 @@ impl ASHRAE140MultiZoneValidator {
         &self,
         _thermal_model: &ThermalModel<impl crate::physics::cta::ContinuousTensor<f64>>,
     ) -> ValidationResult {
-        let mut case_validator = Case960Validator::new();
-        let reference = &case_validator.reference;
+        // Issue #1407: the prior implementation compared
+        // `actual = 12.5/8.5/5.1/4.9` against a hardcoded reference and
+        // unconditionally emitted PASS. Replaced with the same end-to-end
+        // physics path as [`Self::validate_case_960`] — runs
+        // `ASHRAE140Validator::validate_case_960` which performs the full
+        // 8760-step simulation and applies the strict ±15% / ±10%
+        // tolerances against the canonical inter-program envelope.
+        let started = Instant::now();
+        let vrep = self.run_real_case_960_report();
+        let _elapsed = started.elapsed();
 
-        // Extract actual values from thermal model (placeholder - would be real extraction)
-        let actual_heating = 12.5; // MWh - would come from model
-        let actual_cooling = 8.5; // MWh - would come from model
-        let actual_peak_heating = 5.1; // kW - would come from model
-        let actual_peak_cooling = 4.9; // kW - would come from model
-
-        // Create placeholder temperature profiles
-        let mut actual_temperatures = HashMap::new();
-        for timestep in reference.zone_temperatures.keys() {
-            actual_temperatures.insert(*timestep, vec![20.0, 18.5]); // Placeholder values
-        }
-
-        // Get temperature tolerance before mutable borrows
-        let temp_tolerance = reference.temperature_tolerance;
-
-        // Run validations
-        let (heating_pass, heating_pct) = case_validator.validate_annual_heating(actual_heating);
-        let (cooling_pass, cooling_pct) = case_validator.validate_annual_cooling(actual_cooling);
-        let (peak_heating_pass, peak_heating_pct) =
-            case_validator.validate_peak_heating(actual_peak_heating);
-        let (peak_cooling_pass, peak_cooling_pct) =
-            case_validator.validate_peak_cooling(actual_peak_cooling);
-        let (rmse, _max_temp_diff) =
-            case_validator.validate_hourly_temperature_profiles(&actual_temperatures);
-        let _overall_score = case_validator.calculate_overall_score();
-
-        // Generate report
-        let report_text = case_validator.generate_report();
-        println!("{}", report_text);
-
-        // Determine overall pass/fail
-        let overall_pass = heating_pass
-            && cooling_pass
-            && peak_heating_pass
-            && peak_cooling_pass
-            && rmse <= temp_tolerance;
+        let metrics = [
+            vrep.heating_result.in_range,
+            vrep.cooling_result.in_range,
+            vrep.peak_heating_result.in_range,
+            vrep.peak_cooling_result.in_range,
+        ];
+        let in_range = metrics.iter().all(|v| *v);
+        let avg_error_pct = (vrep.heating_result.error_pct
+            + vrep.cooling_result.error_pct
+            + vrep.peak_heating_result.error_pct
+            + vrep.peak_cooling_result.error_pct)
+            / 4.0;
 
         ValidationResult {
-            in_range: overall_pass,
-            error_pct: (heating_pct + cooling_pct + peak_heating_pct + peak_cooling_pct) / 4.0,
+            in_range,
+            error_pct: avg_error_pct,
         }
     }
 
@@ -1041,6 +1433,12 @@ impl ASHRAE140MultiZoneValidator {
 
     /// Export validation results to CSV for analysis
     ///
+    /// Issue #1407: this previously emitted the hardcoded stub rows
+    /// `12.5/12.4`, `8.5/8.7`, `5.1/5.2`, `4.9/4.8` (all "true"). It
+    /// now runs the real 8760-step physics simulation and emits the
+    /// engine's actual outputs, with `Pass` derived from the canonical
+    /// inter-program envelope.
+    ///
     /// # Arguments
     /// * `path` - File path to save CSV
     ///
@@ -1060,11 +1458,76 @@ impl ASHRAE140MultiZoneValidator {
             "Pass",
         ])?;
 
-        // Case 960 data (placeholder - would be real data in full implementation)
-        writer.write_record(["960", "Annual Heating", "12.5", "12.4", "0.1", "true"])?;
-        writer.write_record(["960", "Annual Cooling", "8.5", "8.7", "-0.2", "true"])?;
-        writer.write_record(["960", "Peak Heating", "5.1", "5.2", "-0.1", "true"])?;
-        writer.write_record(["960", "Peak Cooling", "4.9", "4.8", "0.1", "true"])?;
+        // Issue #1407: run the real 8760-step physics simulation and
+        // emit the engine's actual outputs.
+        let vrep = self.run_real_case_960_report();
+        let outcome = self.compare_against_reference(
+            vrep.annual_heating_mwh,
+            vrep.annual_cooling_mwh,
+            vrep.peak_heating_kw,
+            vrep.peak_cooling_kw,
+        );
+
+        writer.write_record([
+            "960",
+            "Annual Heating",
+            &format!("{:.3}", vrep.annual_heating_mwh),
+            &format!(
+                "{:.3}",
+                (outcome.annual_heating_min + outcome.annual_heating_max) / 2.0
+            ),
+            &format!("{:.3}", outcome.annual_heating_error_pct),
+            if outcome.annual_heating_in_range {
+                "true"
+            } else {
+                "false"
+            },
+        ])?;
+        writer.write_record([
+            "960",
+            "Annual Cooling",
+            &format!("{:.3}", vrep.annual_cooling_mwh),
+            &format!(
+                "{:.3}",
+                (outcome.annual_cooling_min + outcome.annual_cooling_max) / 2.0
+            ),
+            &format!("{:.3}", outcome.annual_cooling_error_pct),
+            if outcome.annual_cooling_in_range {
+                "true"
+            } else {
+                "false"
+            },
+        ])?;
+        writer.write_record([
+            "960",
+            "Peak Heating",
+            &format!("{:.3}", vrep.peak_heating_kw),
+            &format!(
+                "{:.3}",
+                (outcome.peak_heating_min + outcome.peak_heating_max) / 2.0
+            ),
+            &format!("{:.3}", outcome.peak_heating_error_pct),
+            if outcome.peak_heating_in_range {
+                "true"
+            } else {
+                "false"
+            },
+        ])?;
+        writer.write_record([
+            "960",
+            "Peak Cooling",
+            &format!("{:.3}", vrep.peak_cooling_kw),
+            &format!(
+                "{:.3}",
+                (outcome.peak_cooling_min + outcome.peak_cooling_max) / 2.0
+            ),
+            &format!("{:.3}", outcome.peak_cooling_error_pct),
+            if outcome.peak_cooling_in_range {
+                "true"
+            } else {
+                "false"
+            },
+        ])?;
 
         // Case 970 data (stub)
         writer.write_record(["970", "Annual Heating", "N/A", "N/A", "N/A", "N/A"])?;
@@ -1078,29 +1541,33 @@ impl ASHRAE140MultiZoneValidator {
     pub fn run_comprehensive_validation(&mut self) -> BenchmarkReport {
         let mut report = BenchmarkReport::new();
 
-        // Load reference data
+        // Issue #1407: previously this emitted zero/zero actuals whenever
+        // the in-memory comparison failed, fabricating PASS. It now runs
+        // the real 8760-step physics simulation through
+        // `validate_case_960_with_validator` and reports the actual model
+        // outputs into the `BenchmarkReport`.
         let case_960_ref = Case960Reference::load_case_960_reference_data();
         let _case_970_ref = Case970Reference::load_case_970_reference_data();
 
-        // Create a placeholder thermal model for Case 960
-        let spec = crate::validation::ashrae_140_cases::ASHRAE140Case::Case960.spec();
+        // Build the real model from the canonical spec.
+        let spec = ASHRAE140Case::Case960.spec();
         let model = ThermalModel::<crate::physics::cta::VectorField>::from_spec(&spec);
 
-        // Validate Case 960 with dedicated validator
+        // Validate Case 960 with dedicated validator (now real).
+        let started = Instant::now();
         let case_960_result = self.validate_case_960_with_validator(&model);
+        let _elapsed = started.elapsed();
+        let vrep = self.run_real_case_960_report();
 
-        // Validate Case 970 with dedicated validator
+        // Validate Case 970 with dedicated validator (still a stub;
+        // Case 970 is tracked separately).
         let _case_970_result = self.validate_case_970_with_validator(&model);
 
-        // Add results to report
+        // Add results to report — actual model output, not 0.0-on-FAIL.
         report.add_result_simple(
             "960",
             MetricType::AnnualHeating,
-            if case_960_result.in_range {
-                case_960_ref.annual_heating
-            } else {
-                0.0
-            },
+            vrep.annual_heating_mwh,
             case_960_ref.annual_heating * (1.0 - case_960_ref.energy_tolerance),
             case_960_ref.annual_heating * (1.0 + case_960_ref.energy_tolerance),
         );
@@ -1108,14 +1575,28 @@ impl ASHRAE140MultiZoneValidator {
         report.add_result_simple(
             "960",
             MetricType::AnnualCooling,
-            if case_960_result.in_range {
-                case_960_ref.annual_cooling
-            } else {
-                0.0
-            },
+            vrep.annual_cooling_mwh,
             case_960_ref.annual_cooling * (1.0 - case_960_ref.energy_tolerance),
             case_960_ref.annual_cooling * (1.0 + case_960_ref.energy_tolerance),
         );
+
+        report.add_result_simple(
+            "960",
+            MetricType::PeakHeating,
+            vrep.peak_heating_kw,
+            case_960_ref.peak_heating * (1.0 - case_960_ref.load_tolerance),
+            case_960_ref.peak_heating * (1.0 + case_960_ref.load_tolerance),
+        );
+
+        report.add_result_simple(
+            "960",
+            MetricType::PeakCooling,
+            vrep.peak_cooling_kw,
+            case_960_ref.peak_cooling * (1.0 - case_960_ref.load_tolerance),
+            case_960_ref.peak_cooling * (1.0 + case_960_ref.load_tolerance),
+        );
+
+        let _ = case_960_result.in_range;
 
         // Add stub results for Case 970
         report.add_result_simple("970", MetricType::AnnualHeating, 0.0, 0.0, 0.0);
