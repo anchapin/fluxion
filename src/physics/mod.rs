@@ -49,6 +49,7 @@ pub mod fd_solver;
 pub mod fd_solver_wrapper;
 pub mod fd_surface_balance;
 pub mod five_r1c_solver;
+pub mod gauge_solver;
 pub mod geometry_tensor;
 pub mod method_selector;
 pub mod nd_array;
