@@ -108,6 +108,24 @@ pub enum EpwVersion {
     IWEC,
 }
 
+/// EPW missing-data sentinel for solar irradiance and horizontal infrared fields.
+///
+/// Per the EnergyPlus Auxiliary Programs reference (§ EPW Data Fields), any
+/// source value of 9999 in these columns means "missing measurement".
+const EPW_SOLAR_SENTINEL: f64 = 9999.0;
+
+/// EPW missing-data sentinel for atmospheric pressure (Pa).
+#[allow(dead_code)] // used in tests; will be needed when HourlyWeatherData gains a pressure field
+const EPW_PRESSURE_SENTINEL: f64 = 999900.0;
+
+/// Default sea-level atmospheric pressure used when the sentinel is encountered.
+#[allow(dead_code)] // used in tests; will be needed when HourlyWeatherData gains a pressure field
+const DEFAULT_ATMOSPHERIC_PRESSURE: f64 = 101325.0;
+
+/// EPW missing-data sentinel for liquid precipitation depth (mm).
+#[allow(dead_code)] // used in tests; will be needed when HourlyWeatherData gains a precipitation field
+const EPW_PRECIPITATION_SENTINEL: f64 = 999.0;
+
 /// Helper function to parse fields that may have missing data.
 ///
 /// Returns the parsed value or the default if the field is empty or invalid.
@@ -117,6 +135,42 @@ fn parse_optional_field(field: &str, default: f64) -> f64 {
         return default;
     }
     trimmed.parse::<f64>().unwrap_or(default)
+}
+
+/// Returns `true` if `value` is at or above the EPW missing-data sentinel.
+///
+/// EPW files use field-specific sentinel values to mark missing source data.
+/// Any value greater than or equal to the sentinel should be treated as
+/// "missing", matching the EnergyPlus Weather Converter behavior.
+///
+/// # Arguments
+///
+/// * `value` - The parsed numeric value
+/// * `sentinel` - The sentinel threshold for this field (e.g. 9999.0 for solar)
+fn is_epw_sentinel(value: f64, sentinel: f64) -> bool {
+    value >= sentinel
+}
+
+/// Parse an EPW field, coercing missing-data sentinels to a safe replacement.
+///
+/// This wraps [`parse_optional_field`] with an additional sentinel check:
+/// if the parsed value is at or above `sentinel` it is replaced with
+/// `replacement`. This matches the EnergyPlus Weather Converter, which
+/// replaces 9999-type sentinels with 0.0 (or a field-appropriate default)
+/// rather than passing them downstream as real measurements.
+///
+/// # Arguments
+///
+/// * `field` - Raw field string from the EPW line
+/// * `sentinel` - Missing-data sentinel for this field (e.g. 9999.0)
+/// * `replacement` - Value to use when the field is missing or sentinel
+fn parse_field_coercing_sentinel(field: &str, sentinel: f64, replacement: f64) -> f64 {
+    let val = parse_optional_field(field, replacement);
+    if is_epw_sentinel(val, sentinel) {
+        replacement
+    } else {
+        val
+    }
 }
 
 /// Returns `true` if the given line is an EPW header line that must be skipped
@@ -429,12 +483,14 @@ impl EpwWeatherSource {
                 dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
                 humidity: fields[8].parse::<f64>().unwrap_or(50.0),
                 // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
-                ghi: fields[13].parse::<f64>().unwrap_or(0.0),
-                dni: fields[14].parse::<f64>().unwrap_or(0.0),
-                dhi: fields[15].parse::<f64>().unwrap_or(0.0),
+                // Issue #1415: coerce 9999 missing-data sentinels to 0.0.
+                ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
+                dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
+                dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
                 // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared: parse_optional_field(fields[12], 0.0),
+                horizontal_infrared:
+                    parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -490,12 +546,14 @@ impl EpwWeatherSource {
                 dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
                 humidity: fields[8].parse::<f64>().unwrap_or(50.0),
                 // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
-                ghi: fields[13].parse::<f64>().unwrap_or(0.0),
-                dni: fields[14].parse::<f64>().unwrap_or(0.0),
-                dhi: fields[15].parse::<f64>().unwrap_or(0.0),
+                // Issue #1415: coerce 9999 missing-data sentinels to 0.0.
+                ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
+                dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
+                dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
                 // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared: parse_optional_field(fields[12], 0.0),
+                horizontal_infrared:
+                    parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -553,12 +611,14 @@ impl EpwWeatherSource {
                 dry_bulb_temp: fields[6].parse::<f64>().unwrap_or(0.0),
                 humidity: fields[8].parse::<f64>().unwrap_or(50.0),
                 // Issue #829 fix: standard EPW v3 columns are GHI=14, DNI=15, DHI=16.
-                ghi: fields[13].parse::<f64>().unwrap_or(0.0),
-                dni: fields[14].parse::<f64>().unwrap_or(0.0),
-                dhi: fields[15].parse::<f64>().unwrap_or(0.0),
+                // Issue #1415: coerce 9999 missing-data sentinels to 0.0.
+                ghi: parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0),
+                dni: parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0),
+                dhi: parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0),
                 wind_speed: fields[21].parse::<f64>().unwrap_or(0.0),
                 // Issue #829 fix: HIR is column 13 (fields[12]); previously read DHI (fields[15]).
-                horizontal_infrared: parse_optional_field(fields[12], 0.0),
+                horizontal_infrared:
+                    parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0),
                 ground_temperature: None,
                 horizontal_illuminance: None,
                 diffuse_illuminance: None,
@@ -642,11 +702,16 @@ impl EpwWeatherSource {
         // term then amplified to ~286 kW/m² on horizontal roof surfaces.
         let dry_bulb_temp = parse_field(fields[6], "dry bulb temperature")?;
         let humidity = parse_field(fields[8], "relative humidity")?;
-        let ghi = parse_optional_field(fields[13], 0.0);
-        let dni = parse_optional_field(fields[14], 0.0);
-        let dhi = parse_optional_field(fields[15], 0.0);
+        // Issue #1415: coerce EPW missing-data sentinels (9999) to 0.0 for
+        // GHI/DNI/DHI and horizontal infrared, matching the EnergyPlus Weather
+        // Converter. Without this, 9999 W/m² propagates into the Perez model
+        // and produces nonsensical sol-air temperatures.
+        let ghi = parse_field_coercing_sentinel(fields[13], EPW_SOLAR_SENTINEL, 0.0);
+        let dni = parse_field_coercing_sentinel(fields[14], EPW_SOLAR_SENTINEL, 0.0);
+        let dhi = parse_field_coercing_sentinel(fields[15], EPW_SOLAR_SENTINEL, 0.0);
         let wind_speed = parse_field(fields[21], "wind speed")?;
-        let horizontal_infrared = parse_optional_field(fields[12], 0.0);
+        let horizontal_infrared =
+            parse_field_coercing_sentinel(fields[12], EPW_SOLAR_SENTINEL, 0.0);
 
         // Parse optional fields (may be missing in some EPW files)
         // Ground temperature (field 23 in 0-indexed array, if available)
@@ -897,6 +962,130 @@ mod tests {
             _ => panic!("Expected ParseError"),
         }
     }
+
+    // ── Issue #1415: EPW missing-data sentinel (9999) handling ───────────────
+
+    #[test]
+    fn test_is_epw_sentinel() {
+        assert!(is_epw_sentinel(9999.0, EPW_SOLAR_SENTINEL));
+        assert!(is_epw_sentinel(9999.5, EPW_SOLAR_SENTINEL)); // >= check
+        assert!(!is_epw_sentinel(9998.9, EPW_SOLAR_SENTINEL));
+        assert!(!is_epw_sentinel(0.0, EPW_SOLAR_SENTINEL));
+
+        assert!(is_epw_sentinel(999900.0, EPW_PRESSURE_SENTINEL));
+        assert!(is_epw_sentinel(999.0, EPW_PRECIPITATION_SENTINEL));
+    }
+
+    #[test]
+    fn test_parse_field_coercing_sentinel_solar() {
+        assert_eq!(
+            parse_field_coercing_sentinel("9999", EPW_SOLAR_SENTINEL, 0.0),
+            0.0
+        );
+        assert_eq!(
+            parse_field_coercing_sentinel("850", EPW_SOLAR_SENTINEL, 0.0),
+            850.0
+        );
+        assert_eq!(
+            parse_field_coercing_sentinel("", EPW_SOLAR_SENTINEL, 0.0),
+            0.0
+        );
+    }
+
+    #[test]
+    fn test_parse_field_coercing_sentinel_pressure() {
+        assert_eq!(
+            parse_field_coercing_sentinel(
+                "999900",
+                EPW_PRESSURE_SENTINEL,
+                DEFAULT_ATMOSPHERIC_PRESSURE
+            ),
+            DEFAULT_ATMOSPHERIC_PRESSURE
+        );
+        assert_eq!(
+            parse_field_coercing_sentinel("101325", EPW_PRESSURE_SENTINEL, DEFAULT_ATMOSPHERIC_PRESSURE),
+            101325.0
+        );
+    }
+
+    #[test]
+    fn test_parse_field_coercing_sentinel_precipitation() {
+        assert_eq!(
+            parse_field_coercing_sentinel("999", EPW_PRECIPITATION_SENTINEL, 0.0),
+            0.0
+        );
+        assert_eq!(
+            parse_field_coercing_sentinel("2.5", EPW_PRECIPITATION_SENTINEL, 0.0),
+            2.5
+        );
+    }
+
+    /// Builds a 36-field EPW data line with the given GHI/DNI/DHI/HIR values.
+    fn make_data_line(ghi: &str, dni: &str, dhi: &str, hir: &str) -> String {
+        format!(
+            "1991,1,1,1,0,0,0.0,-5.0,50,101325,0,0,{hir},{ghi},{dni},{dhi},0,0,0,0,0,3.5,180,0,0,0,0,0,0,0,0,0,0,0,0"
+        )
+    }
+
+    #[test]
+    fn test_parse_data_line_9999_ghi_becomes_zero() {
+        let line = make_data_line("9999", "800", "100", "300");
+        let result = EpwWeatherSource::parse_data_line(&line, 0).unwrap();
+        assert_eq!(result.ghi, 0.0, "GHI=9999 sentinel must coerce to 0.0");
+        assert_eq!(result.dni, 800.0, "DNI should be unaffected");
+        assert_eq!(result.dhi, 100.0, "DHI should be unaffected");
+    }
+
+    #[test]
+    fn test_parse_data_line_9999_dni_becomes_zero() {
+        let line = make_data_line("900", "9999", "100", "300");
+        let result = EpwWeatherSource::parse_data_line(&line, 0).unwrap();
+        assert_eq!(result.dni, 0.0, "DNI=9999 sentinel must coerce to 0.0");
+        assert_eq!(result.ghi, 900.0, "GHI should be unaffected");
+        assert_eq!(result.dhi, 100.0, "DHI should be unaffected");
+    }
+
+    #[test]
+    fn test_parse_data_line_9999_dhi_becomes_zero() {
+        let line = make_data_line("900", "800", "9999", "300");
+        let result = EpwWeatherSource::parse_data_line(&line, 0).unwrap();
+        assert_eq!(result.dhi, 0.0, "DHI=9999 sentinel must coerce to 0.0");
+        assert_eq!(result.ghi, 900.0, "GHI should be unaffected");
+        assert_eq!(result.dni, 800.0, "DNI should be unaffected");
+    }
+
+    #[test]
+    fn test_parse_data_line_9999_all_solar_become_zero() {
+        let line = make_data_line("9999", "9999", "9999", "9999");
+        let result = EpwWeatherSource::parse_data_line(&line, 0).unwrap();
+        assert_eq!(result.ghi, 0.0);
+        assert_eq!(result.dni, 0.0);
+        assert_eq!(result.dhi, 0.0);
+        assert_eq!(
+            result.horizontal_infrared, 0.0,
+            "HIR=9999 sentinel must also coerce to 0.0"
+        );
+    }
+
+    #[test]
+    fn test_parse_data_line_9999_horizontal_infrared_becomes_zero() {
+        let line = make_data_line("900", "800", "100", "9999");
+        let result = EpwWeatherSource::parse_data_line(&line, 0).unwrap();
+        assert_eq!(result.horizontal_infrared, 0.0);
+        assert_eq!(result.ghi, 900.0);
+    }
+
+    #[test]
+    fn test_parse_data_line_valid_solar_not_affected() {
+        let line = make_data_line("900", "800", "100", "300");
+        let result = EpwWeatherSource::parse_data_line(&line, 0).unwrap();
+        assert_eq!(result.ghi, 900.0);
+        assert_eq!(result.dni, 800.0);
+        assert_eq!(result.dhi, 100.0);
+        assert_eq!(result.horizontal_infrared, 300.0);
+    }
+
+    // ── End Issue #1415 tests ────────────────────────────────────────────────
 
     #[test]
     fn test_parse_complete_epw() {
