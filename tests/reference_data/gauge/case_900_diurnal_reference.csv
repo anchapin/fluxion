@@ -1,0 +1,72 @@
+# Synthetic Reference: ASHRAE 140 Case 900 — Synthetic 24-hour Diurnal Forcing
+#
+# !!! STATUS: SYNTHETIC / ANALYTICAL FIXTURE — NOT a real EnergyPlus run !!!
+#
+# This file is consumed by tests/gauge_validation_case_900.rs as the
+# documented forcing for the diurnal step-response validation. The values
+# below are computed from the EXACT GaugeSolver formula (per
+# src/physics/gauge_solver.rs::GaugeSolver::step_with_boundary_conditions):
+#
+#   T_outdoor(h)    = 15 + 10·cos((h - 15)/24·2π)              # sinusoidal 5-25 °C
+#   Solar(h)        = 800·sin((h - 6)/12·π) for h ∈ [6, 18], else 0  # W/m²
+#   T_sol_air(h)    = T_outdoor(h) + Solar(h) / h_ext          # h_ext = 18.3
+#   q_gauge(h)      = (T_sol_air(h) - T_int) / R_wall          # R_wall = 0.392
+#   q_baseline(h)   = (T_outdoor(h) - T_int) / R_total         # R_total = 0.572
+#
+# Wall geometry (Case 900 envelope): 200 mm HW concrete, k=0.51 W/mK,
+# ρ=1400 kg/m³, Cp=840 J/kgK, R_wall=0.392 m²K/W. Interior film h_int=8 W/m²K,
+# interior setpoint T_int=20 °C. No HVAC, no internal gains, free-floating
+# solar-only forcing. This is the **shadow-mode** validation cycle for
+# Phase 3 of the gauge-theory research program (issue #1465).
+#
+# Why q_gauge uses R_wall (not R_total): the current GaugeSolver computes
+# the surface heat flux THROUGH THE WALL (not the full air-to-air flux).
+# The exterior-film effect is captured in T_sol_air; the interior-film
+# effect is omitted (T_int is used directly). This is the documented
+# boundary-condition-translation contract from #1462; a future revision
+# may include the interior film in R_total — when that happens, regenerate
+# this CSV (or replace it with a real EnergyPlus hourly Case 900 output).
+#
+# Why synthetic (not from EnergyPlus): the existing Case 900 reference
+# CSV (tests/reference_data/zone_balance/case_900_energy_reference.csv) is
+# annual aggregates only (PROVENANCE.md). When an hourly EnergyPlus output
+# CSV becomes available, replace this fixture in a follow-up issue.
+#
+# Tolerance: ±1% for algebraic parity (test asserts GaugeSolver reproduces
+# the q_gauge column to within 1% on every hour). ±5% for diurnal amplitude
+# diagnostics (the gauge transport's parallel-transport stub does not
+# evolve the mass node — flux values are the *instantaneous* steady-state
+# response to the boundary conditions; this is by design for Phase 1b).
+#
+# Columns:
+#   hour                  0..23 (TMY non-leap day)
+#   t_outdoor_c           outdoor air temperature (°C)
+#   solar_w_m2            incident solar irradiance on south wall (W/m²)
+#   t_sol_air_c           sol-air temperature (°C)  = t_outdoor + solar/h_ext
+#   q_baseline_w_m2       baseline flux without solar, full R_total (W/m²)
+#   q_gauge_w_m2          expected GaugeSolver shadow flux, R_wall only (W/m²)
+hour,t_outdoor_c,solar_w_m2,t_sol_air_c,q_baseline_w_m2,q_gauge_w_m2
+0,7.9289,0.0000,7.9289,-21.1106,-30.7812
+1,6.3397,0.0000,6.3397,-23.8898,-34.8336
+2,5.3407,0.0000,5.3407,-25.6370,-37.3811
+3,5.0000,0.0000,5.0000,-26.2329,-38.2500
+4,5.3407,0.0000,5.3407,-25.6370,-37.3811
+5,6.3397,0.0000,6.3397,-23.8898,-34.8336
+6,7.9289,0.0000,7.9289,-21.1106,-30.7812
+7,10.0000,207.0552,21.3145,-17.4886,3.3520
+8,12.4118,400.0000,34.2697,-13.2707,36.3878
+9,15.0000,565.6854,45.9118,-8.7443,66.0750
+10,17.5882,692.8203,55.4472,-4.2179,90.3904
+11,20.0000,772.7407,62.2263,0.0000,107.6770
+12,22.0711,800.0000,65.7869,3.6220,116.7566
+13,23.6603,772.7407,65.8865,6.4013,117.0106
+14,24.6593,692.8203,62.5183,8.1484,108.4216
+15,25.0000,565.6854,55.9118,8.7443,91.5750
+16,24.6593,400.0000,46.5172,8.1484,67.6188
+17,23.6603,207.0552,34.9747,6.4013,38.1856
+18,22.0711,0.0000,22.0711,3.6220,5.2812
+19,20.0000,0.0000,20.0000,0.0000,0.0000
+20,17.5882,0.0000,17.5882,-4.2179,-6.1501
+21,15.0000,0.0000,15.0000,-8.7443,-12.7500
+22,12.4118,0.0000,12.4118,-13.2707,-19.3499
+23,10.0000,0.0000,10.0000,-17.4886,-25.5000
