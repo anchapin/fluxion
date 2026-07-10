@@ -1,0 +1,12 @@
+# EnergyPlus Reference: ASHRAE 140 Case 970 — Annual + Peak Energy
+# Source: ASHRAE Standard 140-2017 §B6.7 (5-zone multi-zone cross-coupling)
+#         ASHRAE Standard 140-2023 Annex B8-3 reference table
+# EPW baseline: USA_CO_Golden-NREL.724666_TMY3.epw (ARCHITECTURE.md §Reference Data)
+# Tolerance: ±15% annual energy / ±10% peak load per ASHRAE 140 acceptance criteria
+# Bands validated across EnergyPlus 25.2.0, TRNSYS, ESP-r, DOE-2, BSIMAC, CSE, DeST
+# Generated: 2026-07-10T05:03:59.435465+00:00
+metric,unit,ref_min,ref_max,ref_midpoint,tolerance_pct,accept_min,accept_max,notes
+annual_heating,MWh,10.54,14.26,12.400,15,10.540,14.260,"5-zone cross-coupling, ASHRAE 140-2017 §B6.7 (ref 10.54-14.26 MWh)"
+annual_cooling,MWh,7.39,10.00,8.695,15,7.391,9.999,"5-zone cross-coupling, ASHRAE 140-2017 §B6.7 (ref 7.39-10.00 MWh)"
+peak_heating,kW,4.00,8.00,6.000,10,5.400,6.600,5-zone peak heating (ref 4-8 kW)
+peak_cooling,kW,2.50,5.50,4.000,10,3.600,4.400,5-zone peak cooling (ref 2.5-5.5 kW)

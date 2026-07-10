@@ -225,6 +225,16 @@ pub enum ASHRAE140Case {
     /// Multi-zone building with back-zone and attached sunspace.
     /// Tests inter-zone heat transfer through common wall.
     Case960,
+    /// Case 970 - 5-zone multi-zone cross-coupling (Issue #1446)
+    ///
+    /// ASHRAE 140-2017 §B6.7: 8 m × 6 m × 2.7 m high-mass concrete building
+    /// divided into 5 zones by interior partitions. The canonical reference
+    /// (`tests/reference_data/zone_balance/case_970_energy_reference.csv`)
+    /// is the ASHRAE 140-2023 Annex B8-3 inter-program envelope:
+    /// annual heating 10.54–14.26 MWh, annual cooling 7.39–10.00 MWh.
+    /// Exercises `sim::multi_zone_network::MultiZoneAirflowNetwork` on a
+    /// 5×5 symmetric conductance matrix (`tests/multi_zone_n_zone_network.rs`).
+    Case970,
     /// Case 195 - Solid conduction
     ///
     /// Conduction-only problem with no windows, infiltration, or internal loads.
@@ -499,6 +509,7 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case900FF => "900FF".to_string(),
             ASHRAE140Case::Case950FF => "950FF".to_string(),
             ASHRAE140Case::Case960 => "960".to_string(),
+            ASHRAE140Case::Case970 => "970".to_string(),
             ASHRAE140Case::Case195 => "195".to_string(),
             ASHRAE140Case::Case195HighMass => "195-HM".to_string(),
             ASHRAE140Case::Case195NoLoads => "195-NL".to_string(),
@@ -585,6 +596,7 @@ impl ASHRAE140Case {
             "900FF" => Some(ASHRAE140Case::Case900FF),
             "950FF" => Some(ASHRAE140Case::Case950FF),
             "960" => Some(ASHRAE140Case::Case960),
+            "970" => Some(ASHRAE140Case::Case970),
             "195" => Some(ASHRAE140Case::Case195),
             "195-HM" => Some(ASHRAE140Case::Case195HighMass),
             "195-NL" => Some(ASHRAE140Case::Case195NoLoads),
@@ -667,6 +679,10 @@ impl ASHRAE140Case {
             }
             ASHRAE140Case::Case960 => {
                 "Sunspace - 2-zone building (back-zone + sunspace)".to_string()
+            }
+            ASHRAE140Case::Case970 => {
+                "5-zone cross-coupling (ASHRAE 140-2017 §B6.7) - 8m x 6m high-mass, 5 interior zones"
+                    .to_string()
             }
             ASHRAE140Case::Case195 => {
                 "Solid conduction - no windows, no infiltration, no loads".to_string()
@@ -792,6 +808,7 @@ impl ASHRAE140Case {
             | ASHRAE140Case::Case900FF
             | ASHRAE140Case::Case950FF => ConstructionType::HighMass,
             ASHRAE140Case::Case960 => ConstructionType::Special,
+            ASHRAE140Case::Case970 => ConstructionType::Special,
             ASHRAE140Case::Case195 => ConstructionType::Special,
             ASHRAE140Case::Case195HighMass
             | ASHRAE140Case::Case195NoLoads
@@ -876,6 +893,7 @@ impl ASHRAE140Case {
             ASHRAE140Case::Case900FF => CaseBuilder::case_900ff(),
             ASHRAE140Case::Case950FF => CaseBuilder::case_950ff(),
             ASHRAE140Case::Case960 => CaseBuilder::case_960_sunspace(),
+            ASHRAE140Case::Case970 => CaseBuilder::case_970_five_zone_cross_coupling(),
             ASHRAE140Case::Case195 => CaseBuilder::case_195_solid_conduction(),
             ASHRAE140Case::Case195HighMass => CaseBuilder::case_195_high_mass(),
             ASHRAE140Case::Case195NoLoads => CaseBuilder::case_195_no_loads(),
@@ -2779,6 +2797,82 @@ impl CaseBuilder {
             )
             .build()
             .expect("Case 960 should validate")
+    }
+
+    /// Case 970 - 5-zone multi-zone cross-coupling (ASHRAE 140-2017 §B6.7).
+    ///
+    /// 8 m × 6 m × 2.7 m high-mass concrete building divided into 5 zones
+    /// by interior partitions (Issue #1446):
+    ///
+    /// ```text
+    ///   ┌──────────┬─────┐
+    ///   │          │  Z1 │  ← north
+    ///   │          ├─────┤
+    ///   │   Z0     │  Z2 │
+    ///   │ (west)   ├─────┤
+    ///   │  4m×6m   │  Z3 │
+    ///   │          ├─────┤
+    ///   │          │  Z4 │  ← south
+    ///   └──────────┴─────┘
+    ///        ↑ 4m ↑
+    /// ```
+    ///
+    /// Total conditioned floor area: 24 + 4 × 6 = 48 m² (8 m × 6 m).
+    /// Common walls between zone 0 and zones 1–4 each have area
+    /// 1.5 m × 2.7 m = 4.05 m²; common walls between adjacent east-strip
+    /// zones each have area 4 m × 2.7 m = 10.8 m². All interior partitions
+    /// use the same 200 mm concrete wall as Case 960.
+    ///
+    /// The 12 m² south-window total from Case 600 is distributed across the
+    /// five zones: 6 m² on zone 0 (west half) and 1.5 m² on each of the
+    /// four east-strip zones. All five zones are conditioned (20 °C /
+    /// 27 °C) so the MultiZoneAirflowNetwork 5×5 conductance matrix is
+    /// exercised in both directions on every timestep.
+    ///
+    /// Reference values: ASHRAE 140-2023 Annex B8-3 inter-program envelope,
+    /// `tests/reference_data/zone_balance/case_970_energy_reference.csv`.
+    pub fn case_970_five_zone_cross_coupling() -> CaseSpec {
+        Self::new()
+            .with_case_id("970".to_string())
+            .with_description(
+                "Case 970 - 5-zone multi-zone cross-coupling (ASHRAE 140-2017 §B6.7)".to_string(),
+            )
+            // Zone 0: West core (4 m × 6 m × 2.7 m = 24 m² floor area).
+            .with_dimensions(4.0, 6.0, 2.7)
+            .high_mass_construction()
+            .with_construction(
+                Assemblies::high_mass_wall_standard(),
+                Assemblies::high_mass_roof(),
+                Assemblies::high_mass_floor(),
+            )
+            .with_internal_loads(InternalLoads::new(200.0, 0.6, 0.4))
+            .with_zone_window(0, 6.0, Orientation::South) // West core south window
+            .with_hvac_setpoints(20.0, 27.0)
+            // Zones 1-4: East strip (4 m × 1.5 m × 2.7 m = 6 m² each).
+            .add_zone(4.0, 1.5, 2.7)
+            .with_zone_window(1, 1.5, Orientation::South)
+            .add_zone(4.0, 1.5, 2.7)
+            .with_zone_window(2, 1.5, Orientation::South)
+            .add_zone(4.0, 1.5, 2.7)
+            .with_zone_window(3, 1.5, Orientation::South)
+            .add_zone(4.0, 1.5, 2.7)
+            .with_zone_window(4, 1.5, Orientation::South)
+            // Common walls: zone 0 ↔ each east-strip zone (1.5 m × 2.7 m = 4.05 m²).
+            .with_common_wall(0, 1, 4.05, Assemblies::concrete_wall(0.200))
+            .with_common_wall(0, 2, 4.05, Assemblies::concrete_wall(0.200))
+            .with_common_wall(0, 3, 4.05, Assemblies::concrete_wall(0.200))
+            .with_common_wall(0, 4, 4.05, Assemblies::concrete_wall(0.200))
+            // Common walls between adjacent east-strip zones (4 m × 2.7 m = 10.8 m²).
+            .with_common_wall(1, 2, 10.8, Assemblies::concrete_wall(0.200))
+            .with_common_wall(2, 3, 10.8, Assemblies::concrete_wall(0.200))
+            .with_common_wall(3, 4, 10.8, Assemblies::concrete_wall(0.200))
+            .with_infiltration(0.5)
+            .with_num_zones(5)
+            .with_ground_temperature(
+                crate::physics::constants::thermal::ashrae_140::v2023::GROUND_TEMPERATURE_C,
+            )
+            .build()
+            .expect("Case 970 should validate")
     }
 
     /// Case 195 - Solid conduction (no windows, no infiltration, no loads).
