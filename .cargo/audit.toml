@@ -13,4 +13,14 @@ ignore = [
     # Transitive dependency through reqwest - update reqwest to fix
     "RUSTSEC-2026-0098",
     "RUSTSEC-2026-0099",
+    # ttf-parser is unmaintained but still functional — see docs/SECURITY.md.
+    # Depth=2 transitive through plotters (used for chart caption rendering
+    # in src/validation/report.rs). No security vulnerability: rustsec type is
+    # `unmaintained`. The advisory explicitly states "no patched versions";
+    # the latest release (v0.25.1, Nov 2024) is also unmaintained. The
+    # recommended successor `skrifa` is not yet adopted upstream by plotters
+    # 0.3.7. Removing ttf-parser from the dependency graph would require
+    # switching plotters to its `ab_glyph` font feature and bundling a font
+    # at build time, which exceeds the S/<=4h/low-risk scope of #1458.
+    "RUSTSEC-2026-0192"
 ]
