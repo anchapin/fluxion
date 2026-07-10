@@ -92,7 +92,7 @@ impl Default for SchedulerConfig {
             target_latency_ms: 20,
             min_wait_ms: 1,
             max_wait_ms: 50,
-            num_workers: (cpus / 4).max(1).min(8),
+            num_workers: (cpus / 4).clamp(1, 8),
             channel_capacity: 4096,
         }
     }
@@ -104,7 +104,7 @@ impl SchedulerConfig {
     pub fn resolve_num_workers(&self) -> usize {
         if self.num_workers == 0 {
             let cpus = num_cpus::get().max(2);
-            (cpus / 4).max(1).min(8)
+            (cpus / 4).clamp(1, 8)
         } else {
             self.num_workers
         }
