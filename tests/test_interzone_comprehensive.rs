@@ -14,6 +14,10 @@ use fluxion::sim::interzone::{
     calculate_ventilation_heat_transfer, calculate_window_radiative_conductance,
     calculate_zone_to_zone_view_factor, AIR_DENSITY, AIR_SPECIFIC_HEAT, STACK_COEFFICIENT,
 };
+use fluxion::sim::view_factors::{
+    build_zone_view_factors, hottels_rectangular_view_factor, hottels_rectangular_view_factor_pair,
+    reciprocal_view_factor, CommonWallGeometry,
+};
 
 // ============================================================================
 // Interzone Conductance Tests
@@ -650,4 +654,156 @@ fn test_radiative_conductance_zero_view_factor() {
     let h_r = calculate_radiative_conductance(area, emissivity, mean_temp_k, view_factor);
 
     assert!(h_r.abs() < 1e-10);
+}
+
+// ============================================================================
+// Issue #1444 — Hottel view factor reciprocity under asymmetric geometry
+// ============================================================================
+//
+// The previous implementation of `hottels_rectangular_view_factor` returned
+// `(common / A_a) * min(common / A_b, 1)`, which is symmetric in A and B and
+// violates the reciprocity identity `F_AB * A_A = F_BA * A_B` whenever the two
+// surfaces have different areas.  For the case `8m × 3m` vs `8m × 2m` at
+// separation 0.1 m the residual was 5.33 m² — radiative energy was not
+// conserved across the common wall.  These tests guard against regressions.
+
+const RECIPROCITY_TOL_1444: f64 = 1e-9;
+
+/// Issue #1444 example: 8 × 3 vs 8 × 2, common-wall geometry.
+/// Old code returned 0.667 for both directions ⇒ `F_AB*A_A = 16`,
+/// `F_BA*A_B = 10.67`, residual 5.33.  New code returns F_AB = 16/24 and
+/// F_BA = 1.0 ⇒ both products equal 16.
+#[test]
+fn test_issue_1444_hottel_reciprocity_8x3_vs_8x2() {
+    let a_a = 8.0 * 3.0;
+    let a_b = 8.0 * 2.0;
+
+    let f_ab = hottels_rectangular_view_factor(8.0, 3.0, 8.0, 2.0, 0.1);
+    let f_ba_direct = hottels_rectangular_view_factor(8.0, 2.0, 8.0, 3.0, 0.1);
+    let f_ba_reciprocal = reciprocal_view_factor(f_ab, a_a, a_b);
+
+    // Directional — F_AB ≠ F_BA in general.
+    assert!((f_ab - 16.0 / 24.0).abs() < 1e-9, "F_AB = {f_ab:.6}");
+    assert!((f_ba_direct - 1.0).abs() < 1e-6, "F_BA = {f_ba_direct:.6}");
+
+    // Reciprocity: both A-weighted products must equal 16 m².
+    let residual = (f_ab * a_a - f_ba_reciprocal * a_b).abs();
+    assert!(
+        residual < RECIPROCITY_TOL_1444,
+        "reciprocity violated: F_AB*A_A={:.6e} F_BA*A_B={:.6e} residual={:.3e}",
+        f_ab * a_a,
+        f_ba_reciprocal * a_b,
+        residual
+    );
+}
+
+/// Reciprocity across 15 random rectangular configurations spanning
+/// the common cases (aligned equal, aligned asymmetric, slight offset, large
+/// separation, partial overlap).
+#[test]
+fn test_issue_1444_reciprocity_random_rectangles() {
+    let configs: &[(f64, f64, f64, f64, f64)] = &[
+        (8.0, 3.0, 8.0, 2.0, 0.1), // issue #1444 example
+        (8.0, 3.0, 8.0, 2.9, 0.1),
+        (8.0, 3.0, 8.0, 3.0, 0.0),
+        (10.0, 4.0, 6.0, 2.0, 0.2),
+        (5.0, 5.0, 5.0, 5.0, 0.1),
+        (2.0, 1.5, 4.0, 1.0, 0.5),
+        (1.0, 1.0, 3.0, 3.0, 0.0),
+        (12.0, 2.0, 4.0, 2.0, 0.05),
+        (8.0, 3.0, 8.0, 2.0, 2.0),
+        (1.5, 1.0, 4.0, 2.5, 0.3),
+        (6.0, 4.0, 2.0, 1.0, 0.0),
+        (20.0, 5.0, 4.0, 1.0, 0.1),
+        (3.0, 2.0, 6.0, 4.0, 0.1),
+        (8.0, 3.0, 4.0, 1.0, 0.0),
+        (8.0, 3.0, 8.0, 1.0, 0.05),
+    ];
+    for &(aL, aW, bL, bW, sep) in configs {
+        let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(aL, aW, bL, bW, sep);
+        let a_a = aL * aW;
+        let a_b = bL * bW;
+        let residual = (f_ab * a_a - f_ba * a_b).abs();
+        assert!(
+            residual < RECIPROCITY_TOL_1444,
+            "reciprocity violated for ({aL}x{aW}, {bL}x{bW}, sep={sep}): \
+             F_AB={f_ab:.9e} F_BA={f_ba:.9e} residual={residual:.3e}"
+        );
+        // F_AB must be ≤ 1 (it's a directional view factor).
+        assert!(f_ab >= 0.0 && f_ab <= 1.0, "F_AB out of [0, 1]: {f_ab}");
+        // F_BA is allowed to exceed 1 only when the receiving zone is smaller
+        // (every ray from the small zone hits the larger zone).
+        assert!(f_ba >= 0.0, "F_BA negative: {f_ba}");
+    }
+}
+
+/// Perpendicular orientations do not exchange radiation across a common wall
+/// (orthogonal surfaces).  For two zero-area or zero-overlap configurations
+/// the reciprocity residual is trivially zero.
+#[test]
+fn test_issue_1444_zero_overlap_reciprocity() {
+    // B entirely disjoint from A's footprint ⇒ F_AB = F_BA = 0.
+    let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(8.0, 3.0, 0.0, 2.0, 0.1);
+    assert_eq!(f_ab, 0.0);
+    assert_eq!(f_ba, 0.0);
+
+    // Zero area on either side: reciprocity holds trivially.
+    let (f_ab, f_ba) = hottels_rectangular_view_factor_pair(0.0, 3.0, 8.0, 2.0, 0.1);
+    assert_eq!(f_ab, 0.0);
+    assert_eq!(f_ba, 0.0);
+}
+
+/// `build_zone_view_factors` must satisfy per-wall reciprocity for any
+/// rectangular configuration.
+#[test]
+fn test_issue_1444_matrix_builder_reciprocity() {
+    let walls = vec![
+        CommonWallGeometry {
+            zone_a: 0,
+            zone_b: 1,
+            a_length: 8.0,
+            a_width: 3.0,
+            b_length: 8.0,
+            b_width: 2.0,
+            separation: 0.1,
+        },
+        CommonWallGeometry {
+            zone_a: 0,
+            zone_b: 2,
+            a_length: 8.0,
+            a_width: 3.0,
+            b_length: 4.0,
+            b_width: 1.0,
+            separation: 0.2,
+        },
+        CommonWallGeometry {
+            zone_a: 1,
+            zone_b: 2,
+            a_length: 8.0,
+            a_width: 2.0,
+            b_length: 8.0,
+            b_width: 2.5,
+            separation: 0.05,
+        },
+    ];
+    // Building the matrix triggers a `debug_assert!` per wall that checks
+    // `F_AB * A_A == F_BA * A_B`.  Re-run here as a release-mode test too.
+    let m = build_zone_view_factors(3, &walls);
+
+    for w in &walls {
+        let (i, j) = (w.zone_a, w.zone_b);
+        let f_ab = m[(j, i)]; // F[j, i] = view factor from i to j
+        let f_ba = m[(i, j)]; // F[i, j] = view factor from j to i
+        let a_a = w.a_length * w.a_width;
+        let a_b = w.b_length * w.b_width;
+        let residual = (f_ab * a_a - f_ba * a_b).abs();
+        assert!(
+            residual < RECIPROCITY_TOL_1444,
+            "matrix reciprocity violated for wall {w:?}: \
+             F_AB*A_A={:.6e} F_BA*A_B={:.6e} residual={:.3e}",
+            f_ab * a_a,
+            f_ba * a_b,
+            residual
+        );
+    }
 }

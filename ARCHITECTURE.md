@@ -425,6 +425,18 @@ The 9R4C model (`sim/multi_node_thermal.rs`, `physics/multi_node_solver.rs`) sep
 
 **Validation target**: Zone temperature within 0.5C of E+ when all sub-modules are verified.
 
+**View-factor module — reciprocity contract (issue #1444)**:
+
+`src/sim/view_factors.rs` provides geometric view factors for inter-zone radiative exchange. All view factors obey the reciprocity identity `F_AB * A_A = F_BA * A_B` and the enclosure identity `Σ_j F_ij * A_j = A_i`. Functions are **directional**:
+
+- `hottels_rectangular_view_factor(a_length, a_width, b_length, b_width, separation) -> f64` returns `F_AB` (the fraction of A's emission reaching B). It is **not symmetric** — swapping arguments changes the result for asymmetric geometries. The previous implementation `(common / A_a) * min(common / A_b, 1)` was symmetric in A and B and violated reciprocity (residual 5.33 m² for 8 m × 3 m vs 8 m × 2 m).
+- `reciprocal_view_factor(f_ab, area_a, area_b) -> f64` derives `F_BA = F_AB * A_A / A_B`.
+- `hottels_rectangular_view_factor_pair(...) -> (f64, f64)` returns `(F_AB, F_BA)` enforcing reciprocity by construction.
+- `build_zone_view_factors(n_zones, common_walls) -> DMatrix<f64>` assembles the inter-zone view-factor matrix following the convention `F[i, j]` = view factor **from** zone `j` to zone `i`. Diagonal is zero; per-wall reciprocity is enforced via a `debug_assert!`.
+- `CommonWallGeometry` carries each wall's `(zone_a, zone_b, a_length, a_width, b_length, b_width, separation)`; `area_a()` / `area_b()` return the per-side surface areas used in the reciprocity check.
+
+The common-wall limit (separation `< 0.01 m`) is the analytical limit `F_AB = A_overlap / A_A`; for larger separations the same expression is used as a conservative approximation until the full Hottel crossed-string formula lands (future work, tracked outside #1444).
+
 ---
 
 ### Module 6: Gauge-Theory Foundation (Phase 1a — #1461)
