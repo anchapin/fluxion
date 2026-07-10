@@ -22,8 +22,6 @@
 //! contiguous slices, while the geometric solver needs typed linear-algebra
 //! operators with `try_inverse`.
 
-use crate::physics::cta::VectorField;
-
 /// Maximum number of thermal zones supported
 pub const MAX_ZONES: usize = 100;
 /// Maximum number of walls supported

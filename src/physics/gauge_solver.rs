@@ -19,7 +19,6 @@ const GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX: usize = 1;
 
 #[derive(Debug, Clone)]
 struct ThermalManifold {
-    geometry: crate::physics::geometry_tensor::GeometryTensor,
     gauge_connection: Vec<VectorField>,
 }
 
@@ -29,16 +28,11 @@ impl ThermalManifold {
             num_zones <= crate::physics::geometry_tensor::MAX_ZONES,
             "ThermalManifold zone count exceeds MAX_ZONES"
         );
-        let mut geometry = crate::physics::geometry_tensor::GeometryTensor::new();
-        geometry.summary[0] = num_zones as f64;
         let gauge_connection = (0..num_zones)
             .map(|_| VectorField::from_scalar(0.0, GAUGE_CONNECTION_COMPONENTS))
             .collect();
 
-        Self {
-            geometry,
-            gauge_connection,
-        }
+        Self { gauge_connection }
     }
 
     fn num_zones(&self) -> usize {
@@ -64,6 +58,7 @@ impl ThermalManifold {
         Ok(())
     }
 
+    #[cfg(test)]
     fn gauge_connection(&self, zone_index: usize) -> Option<&VectorField> {
         self.gauge_connection.get(zone_index)
     }
@@ -95,7 +90,7 @@ pub struct GaugeSolver {
 }
 
 impl GaugeSolver {
-    pub(crate) fn new(manifold: ThermalManifold) -> Self {
+    fn new(manifold: ThermalManifold) -> Self {
         Self {
             manifold,
             zone_index: 0,
@@ -111,7 +106,8 @@ impl GaugeSolver {
         self
     }
 
-    pub(crate) fn manifold(&self) -> &ThermalManifold {
+    #[cfg(test)]
+    fn manifold(&self) -> &ThermalManifold {
         &self.manifold
     }
 
