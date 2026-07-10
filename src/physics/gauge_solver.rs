@@ -1,13 +1,75 @@
 use crate::physics::cta::VectorField;
-use crate::physics::geometry_tensor::{
-    ThermalManifold, GAUGE_CONNECTION_COMPONENTS, GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX,
-    GAUGE_CONNECTION_SOLAR_INDEX,
-};
 use crate::physics::solver_trait::{HeatConductionSolver, SolverError};
 use crate::physics::units::{FromF64, HeatFlux, HeatTransferCoefficient, Temperature, Time, ToF64};
 use crate::physics::wall_spec::WallSpec;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+/// Per-zone gauge-connection bookkeeping for shadow mode.
+///
+/// This is a private shadow-mode buffer held inside [`GaugeSolver`]. It is
+/// intentionally **not** aliased with the public `ThermalManifold` from
+/// `geometry_tensor` (Phase 1a, #1461): that structure is the real continuous
+/// Riemannian manifold carrying `metric_tensor` + `scalar_field` + a 4-D
+/// [`nalgebra::Vector4`] `gauge_connection`. Shadow mode needs only an
+/// ordered pair `[solar_irradiance, outside_air_temp]` per zone, so we keep a
+/// minimal per-zone `Vec<VectorField>` here and resolve the name collision by
+/// keeping both as private module items.
+const GAUGE_CONNECTION_COMPONENTS: usize = 2;
+const GAUGE_CONNECTION_SOLAR_INDEX: usize = 0;
+const GAUGE_CONNECTION_OUTDOOR_TEMP_INDEX: usize = 1;
+
+#[derive(Debug, Clone)]
+struct ThermalManifold {
+    geometry: crate::physics::geometry_tensor::GeometryTensor,
+    gauge_connection: Vec<VectorField>,
+}
+
+impl ThermalManifold {
+    fn new(num_zones: usize) -> Self {
+        assert!(
+            num_zones <= crate::physics::geometry_tensor::MAX_ZONES,
+            "ThermalManifold zone count exceeds MAX_ZONES"
+        );
+        let mut geometry = crate::physics::geometry_tensor::GeometryTensor::new();
+        geometry.summary[0] = num_zones as f64;
+        let gauge_connection = (0..num_zones)
+            .map(|_| VectorField::from_scalar(0.0, GAUGE_CONNECTION_COMPONENTS))
+            .collect();
+
+        Self {
+            geometry,
+            gauge_connection,
+        }
+    }
+
+    fn num_zones(&self) -> usize {
+        self.gauge_connection.len()
+    }
+
+    fn set_gauge_connection(
+        &mut self,
+        zone_index: usize,
+        solar_irradiance_wm2: f64,
+        outside_air_temp_c: f64,
+    ) -> Result<(), String> {
+        if zone_index >= self.gauge_connection.len() {
+            return Err(format!(
+                "zone_index {} out of bounds for {} zones",
+                zone_index,
+                self.gauge_connection.len()
+            ));
+        }
+
+        self.gauge_connection[zone_index] =
+            VectorField::new(vec![solar_irradiance_wm2, outside_air_temp_c]);
+        Ok(())
+    }
+
+    fn gauge_connection(&self, zone_index: usize) -> Option<&VectorField> {
+        self.gauge_connection.get(zone_index)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)] 
 pub struct GaugeBoundaryConditions {
     pub solar_irradiance_wm2: f64,
     pub outside_air_temp_c: f64,
@@ -33,7 +95,7 @@ pub struct GaugeSolver {
 }
 
 impl GaugeSolver {
-    pub fn new(manifold: ThermalManifold) -> Self {
+    pub(crate) fn new(manifold: ThermalManifold) -> Self {
         Self {
             manifold,
             zone_index: 0,
@@ -49,7 +111,7 @@ impl GaugeSolver {
         self
     }
 
-    pub fn manifold(&self) -> &ThermalManifold {
+    pub(crate) fn manifold(&self) -> &ThermalManifold {
         &self.manifold
     }
 
