@@ -93,6 +93,17 @@ pub use fluxion_core::weather;
 // here make `crate::assembly::*` and `crate::multi_node::*` work too.
 pub use fluxion_core::{assembly, multi_node};
 
+// #1441 (Phase 2 cycle break, continued): ASHRAE-140 leaf data types
+// (Orientation, WindowArea, ConstructionType, ShadingType, ShadingDevice,
+// GlassType, WindowSpec, InternalLoads, HvacSchedule, NightVentilation,
+// BuildingType, GeometrySpec, ConductanceReferences) were moved from
+// `src/validation/ashrae_140_cases.rs` into `fluxion_core::ashrae_cases` to
+// break the `sim ↔ validation` cycle. The validation module re-exports each
+// type at its original path, so `fluxion::validation::ashrae_140_cases::*`
+// paths still resolve unchanged. This top-level re-export makes
+// `fluxion::ashrae_cases::Orientation` work too.
+pub use fluxion_core::ashrae_cases;
+
 // Re-export thermal model traits for public API
 pub use sim::surface_flux_provider::{
     MockSurfaceHeatFluxProvider, PhysicsSurfaceFluxProvider, SurfaceHeatFluxProvider,

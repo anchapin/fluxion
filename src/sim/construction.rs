@@ -20,7 +20,7 @@
 
 use crate::physics::continuous::ContinuousField;
 use crate::sim::shading::{Overhang, ShadeFin};
-use crate::validation::ashrae_140_cases::Orientation;
+use fluxion_core::ashrae_cases::Orientation;
 use num_traits::Zero;
 use serde::{Deserialize, Serialize};
 use std::ops::{Add, AddAssign, Mul};

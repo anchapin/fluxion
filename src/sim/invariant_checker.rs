@@ -6,7 +6,7 @@ use crate::physics::cta::{ContinuousTensor, VectorField};
 use crate::sim::sky_radiation::SolAirTemperature;
 use crate::sim::solar::{calculate_solar_position, calculate_surface_irradiance};
 use crate::sim::thermal_model_core::{ThermalModel, ThermalModelType};
-use crate::validation::ashrae_140_cases::Orientation;
+use fluxion_core::ashrae_cases::Orientation;
 use std::ops::Index;
 
 pub const DEFAULT_TOLERANCE: f64 = 1e-7;

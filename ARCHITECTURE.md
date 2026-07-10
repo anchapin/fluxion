@@ -12,24 +12,30 @@
 
 ---
 
-## Workspace Layout (#1255 + #1349 — crate split for cargo-mutants)
+## Workspace Layout (#1255 + #1349 + #1441 — crate split for cargo-mutants)
 
 The repo is a **Cargo workspace**. The main engine is the root `fluxion` package
 (`src/`); the `fluxion-core` package holds dependency-light *leaf* modules that
 are built once and cached while `cargo-mutants` mutates only `fluxion`:
 
 ```
-fluxion-core/src/weather/    # MOVED in #1255 (true leaf: no deps on sim/physics/ai/validation)
-fluxion-core/src/assembly/   # MOVED in #1349 (BuildingAssembly, AssemblyBuilder, MaterialLayer)
-fluxion-core/src/multi_node/ # MOVED in #1349 (ThermalMassNode, MultiNodeThermalMass)
+fluxion-core/src/weather/      # MOVED in #1255 (true leaf: no deps on sim/physics/ai/validation)
+fluxion-core/src/assembly/     # MOVED in #1349 (BuildingAssembly, AssemblyBuilder, MaterialLayer)
+fluxion-core/src/multi_node/   # MOVED in #1349 (ThermalMassNode, MultiNodeThermalMass)
+fluxion-core/src/ashrae_cases/ # MOVED in #1441 (Orientation, WindowArea, ConstructionType,
+                               #   ShadingType, ShadingDevice, GlassType, WindowSpec,
+                               #   InternalLoads, HvacSchedule, NightVentilation,
+                               #   BuildingType, GeometrySpec, ConductanceReferences)
 ```
 
 `fluxion` re-exports the moved modules (`pub use fluxion_core::{weather, assembly,
-multi_node};` in `lib.rs`) and keeps thin re-export shims at the old paths
-(`src/sim/assembly.rs`, `src/sim/multi_node_thermal.rs`) so all existing
-`crate::weather::…`, `crate::assembly::…`, `crate::sim::assembly::…`, and
-`crate::sim::multi_node_thermal::…` paths are unchanged. No call-site edits
-required for downstream consumers.
+multi_node, ashrae_cases};` in `lib.rs`) and keeps thin re-export shims at the old
+paths (`src/sim/assembly.rs`, `src/sim/multi_node_thermal.rs`,
+`src/validation/ashrae_140_cases.rs` re-exports the leaf types from
+`fluxion_core::ashrae_cases`) so all existing `crate::weather::…`,
+`crate::assembly::…`, `crate::sim::assembly::…`, `crate::sim::multi_node_thermal::…`,
+and `crate::validation::ashrae_140_cases::Orientation` paths are unchanged.
+No call-site edits required for downstream consumers.
 
 ### Cycle break (Phase 2 of the crate split)
 
@@ -51,19 +57,72 @@ FOAM_BOARD_K, GYPSUM_K, EXTERIOR_SURFACE_ABSORPTANCE, …) are now inlined at th
 call sites — the values are constants and `fluxion_core` cannot depend on
 `fluxion`'s `physics::constants` module.
 
+### Cycle break (#1441 — ASHRAE-140 leaf types → `fluxion-core`)
+
+Issue #1441 broke the `sim ↔ validation` cycle documented in the previous
+"Remaining cycles" section. The ASHRAE-140 leaf data types (Orientation,
+WindowArea, ConstructionType, ShadingType, ShadingDevice, GlassType, WindowSpec,
+InternalLoads, HvacSchedule, NightVentilation, BuildingType, GeometrySpec,
+ConductanceReferences) were pure-data structs/enums with **no upward
+dependencies** on `sim`, `physics`, `ai`, or any other non-leaf module. They
+were hoisted into `fluxion_core::ashrae_cases` so `cargo-mutants -p fluxion`
+no longer recompiles the 208 KB `validation::ashrae_140_cases` per mutant.
+
+**Cycle markers closed** (5 direct + 3 indirect sim callers):
+
+| File (before) | After |
+|---|---|
+| `src/sim/solar.rs:13` (was `pub use crate::validation::ashrae_140_cases::Orientation`) | `use fluxion_core::ashrae_cases::Orientation` (re-export deleted) |
+| `src/sim/solar.rs:18` (was `WindowArea`) | `use fluxion_core::ashrae_cases::WindowArea` |
+| `src/sim/construction.rs:23` | `use fluxion_core::ashrae_cases::Orientation` |
+| `src/sim/per_surface_conduction.rs:59` | `use fluxion_core::ashrae_cases::Orientation` |
+| `src/sim/invariant_checker.rs:9` | `use fluxion_core::ashrae_cases::Orientation` |
+| `src/sim/shading.rs:6,178` | `use fluxion_core::ashrae_cases::WindowArea, Orientation` |
+| `src/sim/thermal_model_core.rs:23` | split: `CaseSpec` stays in validation; `Orientation, ShadingType` move to `fluxion_core::ashrae_cases` |
+| `src/sim/thermal_model_data.rs:25` | `use fluxion_core::ashrae_cases::{NightVentilation, Orientation}` |
+| `src/sim/thermal_model_iterative.rs:17` | `use fluxion_core::ashrae_cases::{GeometrySpec, Orientation, WindowArea}` |
+
+**Re-export shim**: `src/validation/ashrae_140_cases.rs` keeps its old shape —
+the leaf types are now defined in `fluxion_core::ashrae_cases` and re-exported
+at the original path:
+
+```rust
+// src/validation/ashrae_140_cases.rs
+pub use fluxion_core::ashrae_cases::{
+    BuildingType, ConductanceReferences, ConstructionType, GeometrySpec, GlassType, HvacSchedule,
+    InternalLoads, NightVentilation, Orientation, ShadingDevice, ShadingType, WindowArea, WindowSpec,
+};
+```
+
+The big non-leaf types in the same file (`ASHRAE140Case` — 800+ lines,
+`CaseSpec`, `CaseBuilder`, `CommonWall`, `ConstructionSpec`) stay put because
+they carry upward deps to `crate::sim::construction`, `crate::sim::hvac`,
+`crate::physics::constants::thermal::ashrae_140::*`, etc. — they cannot move
+into `fluxion-core`.
+
+**Regression guard**: `scripts/check_ashrae_cases_cycle.py` enforces three
+invariants and is wired into CI (run from repo root):
+
+1. `fluxion-core/src/**/*.rs` has no `crate::sim::*` / `crate::physics::*` /
+   `crate::ai::*` / `crate::validation::*` / `crate::interop::*` /
+   `crate::python::*` / etc. references — keeps `fluxion-core` acyclic w.r.t.
+   `fluxion`.
+2. `src/sim/**` has no `use crate::validation::ashrae_140_cases::Orientation`
+   — keeps the `sim ↔ validation` cycle closed.
+3. `fluxion_core::ashrae_cases` contains all 13 moved leaf types.
+
 ### Remaining cycles (deferred to follow-up issues)
 
-- `fluxion::sim::construction` depends on `fluxion::physics::continuous` and
-  `fluxion::validation::ashrae_140_cases::Orientation`.
-- `fluxion::sim::per_surface_conduction` depends on
-  `fluxion::validation::ashrae_140_cases::Orientation`.
+- `fluxion::sim::construction` still depends on `fluxion::physics::continuous`.
+  This is the next cycle-break target (see `docs/mutation_testing_crate_split.md`
+  §"Phase 2 — break the `physics ↔ sim` cycle"). Tracked as a follow-up issue.
 - `fluxion::physics::{wall_spec, method_selector, wall_properties}` reference
   `fluxion::physics::{ctf_coefficients, fd_discretization, ctf_solver}` — moving
   these to `fluxion-core` requires moving the whole `physics` tree.
 
-These will be addressed in subsequent phases. The current change already lets
-`cargo-mutants -p fluxion` skip the bulk of the assembly / multi-node type
-machinery by mutating only `fluxion`.
+These will be addressed in subsequent phases. The current change lets
+`cargo-mutants -p fluxion` skip the bulk of the assembly / multi-node /
+ashrae-cases type machinery by mutating only `fluxion`.
 
 ---
 

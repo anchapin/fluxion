@@ -56,7 +56,7 @@
 //! based only on its own thermal mass, area, U-value, and the surrounding
 //! mass node temperature. There is no cross-coupling between surfaces.
 
-use crate::validation::ashrae_140_cases::Orientation;
+use fluxion_core::ashrae_cases::Orientation;
 
 /// Surface type distinguishing walls, roofs, and floors.
 ///

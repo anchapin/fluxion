@@ -29,11 +29,12 @@
 //!
 //! ## Current contents
 //!
-//! | Module      | Status | Notes |
-//! |-------------|--------|-------|
-//! | `weather`   | Moved (#1255, true leaf) | EPW/TMY3 parsing, psychrometrics, design-day, interpolation |
-//! | `assembly`  | Moved (#1349) | `BuildingAssembly`, `AssemblyBuilder`, `MaterialLayer` trait, ASHRAE 140 material constants (inlined) |
-//! | `multi_node`| Moved (#1349) | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (pure data, zero deps) |
+//! | Module        | Status | Notes |
+//! |---------------|--------|-------|
+//! | `weather`     | Moved (#1255, true leaf) | EPW/TMY3 parsing, psychrometrics, design-day, interpolation |
+//! | `assembly`    | Moved (#1349) | `BuildingAssembly`, `AssemblyBuilder`, `MaterialLayer` trait, ASHRAE 140 material constants (inlined) |
+//! | `multi_node`  | Moved (#1349) | `ThermalMassNode`, `MultiNodeThermalMass`, `MultiNodeModelType`, `MassAirCouplingMode` (pure data, zero deps) |
+//! | `ashrae_cases`| Moved (#1441) | `Orientation`, `WindowArea`, `ConstructionType`, `ShadingType`, `ShadingDevice`, `GlassType`, `WindowSpec`, `InternalLoads`, `HvacSchedule`, `NightVentilation`, `BuildingType`, `GeometrySpec`, `ConductanceReferences` — pure-data leaf types from `validation::ashrae_140_cases`. Breaks the `sim ↔ validation` cycle (5 sim callers + 3 indirect sim callers). |
 //!
 //! ## Cycle break (#1349)
 //!
@@ -51,21 +52,21 @@
 //!
 //! ## Not yet moved (blocked by remaining dependency edges)
 //!
-//! - `fluxion::sim::construction` — depends on `fluxion::physics::continuous` and
-//!   `fluxion::validation::ashrae_140_cases::Orientation`
-//! - `fluxion::sim::per_surface_conduction` — depends on
-//!   `fluxion::validation::ashrae_140_cases::Orientation`
 //! - `fluxion::physics::{wall_spec, wall_properties, method_selector}` reference
-//!   `fluxion::physics::{ctf_coefficients, fd_discretization}` (heavy solver types)
+//!   `fluxion::physics::{ctf_coefficients, fd_discretization}` (heavy solver types).
+//!   Moving the whole physics tree requires breaking these intra-crate edges first.
 //!
-//! Moving these requires breaking their remaining cross-crate edges and is
-//! tracked in follow-up issues.
+//! The `sim::construction ↔ validation::ashrae_140_cases::Orientation` cycle was
+//! closed in #1441 by moving the leaf types into `fluxion_core::ashrae_cases`.
+//! The `sim::construction ↔ physics::continuous` cycle remains and is the next
+//! cycle-break target (see `docs/mutation_testing_crate_split.md` §"Phase 2").
 
 // Match the main `fluxion` crate's relaxed lint posture so leaf modules compile
 // without the historical style warnings they carried before the split.
 #![allow(nonstandard_style)]
 #![allow(clippy::all)]
 
+pub mod ashrae_cases;
 pub mod assembly;
 pub mod multi_node;
 pub mod weather;
