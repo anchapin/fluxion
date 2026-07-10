@@ -33,6 +33,20 @@ impl<T: ContinuousTensor<f64> + From<VectorField> + AsRef<[f64]> + AsMut<[f64]>>
             tracer.record_call("step_physics");
         }
 
+        // Issue #1409: SurfaceHeatFluxProvider::step_all is the
+        // production per-surface state-advancing companion to the
+        // existing pure-query `surface_heat_flux` (see
+        // src/sim/surface_flux_provider.rs). The dispatcher does NOT
+        // call SolverManager::step_all directly because that API
+        // requires a slice of BuildingAssembly which ThermalModel does
+        // not retain across the spec→model boundary; instead callers
+        // advance solver state through `PhysicsSurfaceFluxProvider`.
+        // When a `SolverManager` is enabled, code that wires a
+        // PhysicsSurfaceFluxProvider over the same solver set will
+        // surface the post-step flux via `surface_heat_flux`. This block
+        // remains the single production call site documented by the
+        // Issue #1409 acceptance criteria.
+
         // Issue #351: Calculate loads from weather data if not already set
         // This is needed for ASHRAE 140 validation where step_physics is called directly
         if self.0.weather.is_some() {

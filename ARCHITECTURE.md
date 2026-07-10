@@ -284,6 +284,14 @@ pub trait HeatConductionSolver: Send + Sync {
 > **Rule**: `PhysicsSurfaceFluxProvider::surface_heat_flux` (a query path) must NOT call `solver.step()`. It must call `solver.steady_state_flux(T_int, T_ext)` (closed-form `q_ss = (T_ext − T_int) / R_total` for `FiveR1CSolver`). Mixing them causes two consecutive `surface_heat_flux()` calls with identical args to return different values — a parity violation that breaks the `MockSurfaceFluxProvider` test contract and the ML-surrogate swap-point.
 >
 > If a caller needs state advancement, call `solver.step()` explicitly *outside* the flux-provider path. The `Energy Conservation` CI gate and the `test_swap_point_*` parity tests in `tests/surface_flux_provider_isolation.rs` enforce this contract.
+>
+> > **Production wiring for state advancement** (Issue #1409):
+> >
+> > `PhysicsSurfaceFluxProvider::step_all(dt, T_zone, T_outdoor)` is the production state-advancing companion to `surface_heat_flux`. It walks every per-surface solver registered on the provider, invokes `solver.step()`, and persists each returned flux. Subsequent `surface_heat_flux` calls read the persisted flux (after `step_all` has run at least once) and fall back to `steady_state_flux` (preserving the parity contract) when no `step_all` has been called.
+> >
+> > `SolverManager::step_all(surfaces, dt, T_int, T_ext)` (`src/physics/solver_manager.rs:340`) is the batch-stepping entry point used by the per-(wall_index, assembly) registry. The provider-level `step_all` and the manager-level `step_all` share the same `HeatConductionSolver::step()` semantics — Issue #1409 makes the provider the wiring surface for production code paths so the existing per-zone `ctf_solvers`/`fd_solvers` field-driven conduction (per `physics_impl.rs::prepare_solvers_and_sol_air`) is joined by an opt-in manager-driven path that does not silently zero high-mass flux.
+> >
+> > Regression: `tests/conduction_solver_manager_production_wiring.rs`.
 
 **Implementations**: `FiveR1CSolver` (struct, `physics/five_r1c_solver.rs`), `CTFSolverWrapper`, `FDSolverWrapper`
 **Selector**: `SolverManager` auto-selects based on thermal mass.

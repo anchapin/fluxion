@@ -16,7 +16,8 @@
 //! - Combined physics providers that aggregate conduction + solar internally
 
 use crate::physics::solver_trait::HeatConductionSolver;
-use crate::physics::units::{FromF64, ToF64};
+use crate::physics::solver_trait::SolverError;
+use crate::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use std::sync::{Arc, RwLock};
 
 /// Trait for providing surface heat flux from any source (conduction, solar, or combined).
@@ -149,6 +150,11 @@ pub struct PhysicsSurfaceFluxProvider {
     h_int: Vec<f64>,
     /// Exterior film coefficients [W/m²·K]
     h_ext: Vec<f64>,
+    /// Issue #1409: Most recent per-surface flux returned by `step_all`
+    /// (post-`solver.step` value). `None` until the first `step_all` call.
+    /// `surface_heat_flux` returns this when set; otherwise it falls back
+    /// to the deterministic `steady_state_flux` query (the original contract).
+    stepped_fluxes: Vec<Option<f64>>,
 }
 
 impl PhysicsSurfaceFluxProvider {
@@ -160,6 +166,7 @@ impl PhysicsSurfaceFluxProvider {
             solar_gain_wm2: Vec::new(),
             h_int: Vec::new(),
             h_ext: Vec::new(),
+            stepped_fluxes: Vec::new(),
         }
     }
 
@@ -180,6 +187,7 @@ impl PhysicsSurfaceFluxProvider {
         self.solar_gain_wm2.push(solar_gain_wm2);
         self.h_int.push(8.0); // Default interior h
         self.h_ext.push(25.0); // Default exterior h
+        self.stepped_fluxes.push(None);
         self
     }
 
@@ -197,6 +205,7 @@ impl PhysicsSurfaceFluxProvider {
         self.solar_gain_wm2.push(solar_gain_wm2);
         self.h_int.push(h_int);
         self.h_ext.push(h_ext);
+        self.stepped_fluxes.push(None);
         self
     }
 
@@ -215,6 +224,77 @@ impl PhysicsSurfaceFluxProvider {
     /// Get surface area.
     pub fn get_area(&self, surface_idx: usize) -> f64 {
         self.areas.get(surface_idx).copied().unwrap_or(0.0)
+    }
+
+    /// Issue #1409 — Advance every per-surface solver by `dt` (state-advancing
+    /// companion to `surface_heat_flux`).
+    ///
+    /// This walks `self.solvers` and calls `solver.step(dt, T_zone, T_outdoor,
+    /// h_int[i], h_ext[i])` for each surface, persisting the returned flux so
+    /// the next `surface_heat_flux()` call returns the post-step value (not
+    /// the closed-form steady-state seed). This is the production wiring for
+    /// `SolverManager::step_all`, implemented at the provider level so the
+    /// ARC-RwLock solver storage used by `ThermalModel` can participate.
+    ///
+    /// # Arguments
+    /// * `dt` - Timestep duration [s]
+    /// * `t_zone` - Zone air temperature [°C]
+    /// * `t_outdoor` - Exterior air temperature [°C]
+    ///
+    /// # Returns
+    /// Vector of heat fluxes [W/m²] (positive = into zone), one per surface,
+    /// in the same order as `num_surfaces()`. Conduction-only (solar is added
+    /// at read time by `surface_heat_flux`).
+    ///
+    /// # Errors
+    /// Returns `SolverError` if any underlying solver fails. Any errors that
+    /// occur for a surface are propagated; previously stored fluxes are
+    /// preserved (this method is not transactional).
+    pub fn step_all(
+        &mut self,
+        dt: f64,
+        t_zone: f64,
+        t_outdoor: f64,
+    ) -> Result<Vec<f64>, SolverError> {
+        let n = self.solvers.len();
+        let mut fluxes = Vec::with_capacity(n);
+        let dt_ty = Time::from_value(dt);
+        let t_int_ty = Temperature::from_value(t_zone);
+        let t_ext_ty = Temperature::from_value(t_outdoor);
+
+        for i in 0..n {
+            let h_int_val = *self.h_int.get(i).unwrap_or(&8.0);
+            let h_ext_val = *self.h_ext.get(i).unwrap_or(&25.0);
+            let solver_arc = self.solvers[i].clone();
+            let flux = {
+                let mut guard = solver_arc.write().unwrap();
+                guard.step(
+                    dt_ty,
+                    t_int_ty,
+                    t_ext_ty,
+                    HeatTransferCoefficient::from_value(h_int_val),
+                    HeatTransferCoefficient::from_value(h_ext_val),
+                )?
+            };
+            let flux_val = flux.to_value();
+            fluxes.push(flux_val);
+            // Persist so subsequent surface_heat_flux() calls observe the
+            // post-step value, not the steady-state seed.
+            if i < self.stepped_fluxes.len() {
+                self.stepped_fluxes[i] = Some(flux_val);
+            }
+        }
+        Ok(fluxes)
+    }
+
+    /// Returns true if `step_all` has been called at least once for this
+    /// surface. Used by the production wiring test (#1409) to verify state
+    /// advancement without depending on numerical thresholds.
+    pub fn has_stepped(&self, surface_idx: usize) -> bool {
+        self.stepped_fluxes
+            .get(surface_idx)
+            .and_then(|f| *f)
+            .is_some()
     }
 }
 
@@ -251,13 +331,23 @@ impl SurfaceHeatFluxProvider for PhysicsSurfaceFluxProvider {
         // unused here: the steady-state flux has no time dependence.
         let _ = dt_seconds;
 
-        let conduction_flux = {
-            let solver = self.solvers[surface_idx].read().unwrap();
-            solver
-                .steady_state_flux(FromF64::from_value(T_zone), FromF64::from_value(T_outdoor))
-                .map(|q| q.to_value())
-                .unwrap_or(0.0)
-        };
+        let conduction_flux =
+            if let Some(Some(stored)) = self.stepped_fluxes.get(surface_idx).copied() {
+                // Issue #1409: after step_all() has advanced state, return the
+                // persisted post-step flux instead of re-querying steady-state.
+                // This is the path that delivers dynamic conduction (5R1C first
+                // step is a steady-state seed; CTF/FD return transient values).
+                stored
+            } else {
+                // No prior step_all → fall back to deterministic steady-state
+                // query (preserves the original contract for callers that never
+                // advance state).
+                let solver = self.solvers[surface_idx].read().unwrap();
+                solver
+                    .steady_state_flux(FromF64::from_value(T_zone), FromF64::from_value(T_outdoor))
+                    .map(|q| q.to_value())
+                    .unwrap_or(0.0)
+            };
 
         // Total flux = conduction + solar
         // Positive = heat into zone
