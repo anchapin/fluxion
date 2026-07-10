@@ -84,9 +84,7 @@
 
 use fluxion::physics::five_r1c_solver::FiveR1CSolver;
 use fluxion::physics::gauge_solver::{GaugeBoundaryConditions, GaugeSolver};
-use fluxion::physics::geometry_tensor::{
-    ManifoldIndex, ThermalManifold, MAX_ZONES,
-};
+use fluxion::physics::geometry_tensor::{ManifoldIndex, ThermalManifold, MAX_ZONES};
 use fluxion::physics::solver_trait::HeatConductionSolver;
 use fluxion::physics::units::{FromF64, HeatTransferCoefficient, Temperature, Time, ToF64};
 use fluxion::physics::wall_spec::WallSpec;
@@ -240,9 +238,18 @@ fn test_case_900_thermal_manifold_layout() {
         manifold.metric_tensor[(0, 0)],
         expected_self_air
     );
-    assert!(diff(manifold.metric_tensor[(0, 1)], g_tr_surface_w_k[0] / c_air));
-    assert!(diff(manifold.metric_tensor[(0, 2)], g_tr_surface_w_k[1] / c_air));
-    assert!(diff(manifold.metric_tensor[(0, 3)], g_tr_surface_w_k[2] / c_air));
+    assert!(diff(
+        manifold.metric_tensor[(0, 1)],
+        g_tr_surface_w_k[0] / c_air
+    ));
+    assert!(diff(
+        manifold.metric_tensor[(0, 2)],
+        g_tr_surface_w_k[1] / c_air
+    ));
+    assert!(diff(
+        manifold.metric_tensor[(0, 3)],
+        g_tr_surface_w_k[2] / c_air
+    ));
 
     // 4) No inter-mass coupling when `r_cross = None` — the legacy 9R4C limit.
     assert_eq!(manifold.metric_tensor[(1, 2)], 0.0);
@@ -282,10 +289,9 @@ fn test_case_900_thermal_capacity_metric_matches_reference() {
     let expected_cm_per_layer_j_m2k = CASE_900_HW_CONCRETE_RHO_KG_M3
         * CASE_900_HW_CONCRETE_CP_J_KGK
         * CASE_900_HW_CONCRETE_THICKNESS_M;
-    let cm_drift_pct = ((cm_per_layer_j_m2k - expected_cm_per_layer_j_m2k)
-        / expected_cm_per_layer_j_m2k
-        * 100.0)
-        .abs();
+    let cm_drift_pct =
+        ((cm_per_layer_j_m2k - expected_cm_per_layer_j_m2k) / expected_cm_per_layer_j_m2k * 100.0)
+            .abs();
     assert!(
         cm_drift_pct < 1e-6,
         "Cm per-layer first-principles drift: {cm_drift_pct:.3e}% \
@@ -294,10 +300,10 @@ fn test_case_900_thermal_capacity_metric_matches_reference() {
 
     // Stacked (2 × 200 mm) Cm — the canonical Case 900 envelope metric.
     let cm_stacked_kj_m2k = 2.0 * cm_per_layer_kj_m2k;
-    let cm_drift_pct_stacked =
-        ((cm_stacked_kj_m2k - CASE_900_CM_KJ_M2K_DOCUMENTED) / CASE_900_CM_KJ_M2K_DOCUMENTED
-            * 100.0)
-            .abs();
+    let cm_drift_pct_stacked = ((cm_stacked_kj_m2k - CASE_900_CM_KJ_M2K_DOCUMENTED)
+        / CASE_900_CM_KJ_M2K_DOCUMENTED
+        * 100.0)
+        .abs();
     assert!(
         cm_drift_pct_stacked < CASE_900_CM_TOLERANCE_PCT,
         "Cm stacked vs documented drift: {cm_drift_pct_stacked:.3}% \
@@ -340,10 +346,7 @@ fn test_case_900_gauge_solver_shadow_diurnal_response() {
         );
     }
 
-    let max_flux = fluxes
-        .iter()
-        .copied()
-        .fold(f64::NEG_INFINITY, f64::max);
+    let max_flux = fluxes.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let min_flux = fluxes.iter().copied().fold(f64::INFINITY, f64::min);
     let amplitude = max_flux - min_flux;
 
@@ -515,9 +518,7 @@ fn test_case_900_gauge_shadow_matches_baseline_in_steady_state() {
         "Expected no shadow error in steady state, got: {:?}",
         record.error
     );
-    let gauge_flux = record
-        .gauge_flux_wm2
-        .expect("shadow flux recorded");
+    let gauge_flux = record.gauge_flux_wm2.expect("shadow flux recorded");
     let parity_drift = (gauge_flux - baseline_flux).abs();
     assert!(
         parity_drift < 1e-9,
@@ -618,10 +619,7 @@ fn test_case_900_gauge_shadow_records_translated_boundary_correctly() {
         let q = record
             .gauge_flux_wm2
             .expect("gauge flux recorded at hour {hour}");
-        assert!(
-            q.is_finite(),
-            "Hour {hour}: gauge flux is not finite: {q}"
-        );
+        assert!(q.is_finite(), "Hour {hour}: gauge flux is not finite: {q}");
     }
 
     // Conservation: gauge_connection_sum (solar only in shadow-mode) tracks the
