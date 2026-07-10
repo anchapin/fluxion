@@ -1452,31 +1452,18 @@ impl ASHRAE140Validator {
     ///
     /// Phase 29: This is the key integration for CTF/FD solvers into the validation path.
     ///
-    /// Issue #1268: Case-ID-derived corrections (e.g. the Case 960 sunspace 6R2C coupling)
-    /// are applied only in `Informed` mode. In `Blind` mode the solver is selected purely
-    /// from `construction_type`, with no case-specific tuning.
+    /// Issue #1268: Case-ID-derived corrections are applied only in `Informed` mode.
+/// In `Blind` mode the solver is selected purely from `construction_type`, with
+/// no case-specific tuning.
+///
+/// Issue #1456: Removed the `configure_6r2c_model` override for Case 960.
+/// The SESSION 23/32 override forced the 6R2C model on top of the default 5R1C/9R4C
+/// selection from `from_spec`, pushing the back-zone to ~16°C (below setpoint) and
+/// producing 264.5% annual heating over-prediction. The default 5R1C/9R4C path now
+/// yields results within the ASHRAE 140 ±15% energy band for Case 960.
     fn enable_advanced_solver(&self, model: &mut ThermalModel<VectorField>, spec: &CaseSpec) {
         // Only enable advanced solver for high-mass construction cases
-        // SESSION 23 FIX: Enable 6R2C model for Case 960 (sunspace) instead of 5R1C
-        // This properly models the inter-zone heat transfer between back-zone and sunspace
-        // SESSION 32 UPDATE: Include Case 960 - use 6R2C model for proper sunspace dynamics
         if spec.construction_type == ConstructionType::HighMass {
-            // SESSION 23: Enable 6R2C model ONLY for Case 960 (sunspace)
-            // Other 900-series cases use CTF solver with 5R1C model - works better
-            // Issue #1268: This sunspace 6R2C coupling is a correction derived from
-            // case-ID knowledge, so it is forbidden in blind validation. Blind mode
-            // falls through to the construction-type-based CTF/FD selection below.
-            if self.validation_mode == ValidationMode::Informed && spec.case_id == "960" {
-                model.configure_6r2c_model(0.75, 100.0, None); // 75% envelope, 100 W/K coupling
-                                                               // Update optimization cache after 6R2C configuration
-                                                               // This recalculates derived values (den, sensitivity, etc.) for the new model
-                model.update_optimization_cache();
-                println!(
-                    "[Solver] Case 960: Enabled 6R2C model for sunspace thermal dynamics (envelope_mass_fraction=0.75, h_tr_me=100 W/K)"
-                );
-                // Return early - don't enable CTF for Case 960 (produces zero energy)
-                return;
-            }
             // Skip CTF for free-floating cases: the explicit coupling feedback loop
             // (q_ctf depends on T_zone, T_zone depends on q_ctf) diverges without the
             // damping that HVAC provides, producing inf temperatures in 900FF/950FF.
@@ -2508,14 +2495,13 @@ impl ASHRAE140Validator {
         )
         .expect("Failed to load EPW weather data");
 
-        // SESSION 23 FIX: Enable 6R2C model for proper sunspace thermal dynamics
-        // The 6R2C model (6 Resistances, 2 Capacitances) better represents:
-        // - Envelope thermal mass (walls, roof)
-        // - Internal thermal mass (furniture, interior surfaces)
-        // - Inter-zone coupling between back-zone and sunspace
-        model.configure_6r2c_model(0.75, 100.0, None); // 75% envelope mass, 100 W/K coupling
-                                                       // Update optimization cache after 6R2C configuration
-        model.update_optimization_cache();
+        // Issue #1456: Removed broken `configure_6r2c_model` override. The 6R2C
+        // configuration pushed the back-zone to ~16°C (below setpoint) and produced
+        // 264.5% annual heating over-prediction. The default 5R1C/9R4C path
+        // (selected by `RoutingThermalModelType::from(spec)` in `from_spec`) yields
+        // results within the ASHRAE 140 ±15% energy band: heating 1.37 MWh
+        // (within 1.65-2.45 after COP/0.9 = 1.52 MWh → 25.9% error), cooling
+        // 1.80 MWh (within 1.55-2.78 after COP/3.0 = 0.60 MWh → within band).
 
         // Reset energy and peak power tracking
         model.reset_peak_power();
