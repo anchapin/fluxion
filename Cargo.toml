@@ -97,6 +97,7 @@ csv = "1.3"
 log = "0.4"
 tracing = "0.1"  # TDQS decision hooks (Issue #708)
 env_logger = "0.11"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 
 # Date/time handling for reports
 chrono = { version = "0.4", features = ["serde"] }
@@ -162,9 +163,23 @@ quick-xml = "0.41"
 
 # REST API server (Issue #1342). Async HTTP server with typed extractors
 # and ergonomic routing. Stays on tokio 1.x — already in our dep tree above.
-axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query"] }
+axum = { version = "0.7", default-features = false, features = ["http1", "json", "tokio", "query", "matched-path"] }
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"
+
+# Observability for fluxion-rest (Issue #1447):
+#   - `tower-http` brings `TraceLayer` and `RequestId`/`PropagateRequestId`
+#     middleware so every response carries an `x-request-id` header and every
+#     request emits a structured log line via `tracing`.
+#   - `metrics` is the facade; counters and histograms go through the macros
+#     and the global recorder (set up in `src/api/server.rs`).
+#   - `metrics-exporter-prometheus` with `default-features = false` keeps the
+#     dependency surface narrow — we only need the encoder and the in-process
+#     `PrometheusHandle` (no HTTP listener, no push-gateway, no protobuf), and
+#     we serve `/v1/metrics` from the axum router using `handle.render()`.
+tower-http = { version = "0.6", features = ["trace", "request-id", "util"] }
+metrics = "0.24"
+metrics-exporter-prometheus = { version = "0.18", default-features = false }
 
 # ZIP archive writer for FMI 2.0 FMU packaging (#1339)
 zip = { version = "0.6", default-features = false, features = ["deflate"] }

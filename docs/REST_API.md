@@ -56,9 +56,37 @@ the REST server re-uses that schema for both request and response payloads
 Liveness probe. Always returns 200 with a static JSON payload. Does **not**
 ping downstream services so a slow disk does not flap the load balancer.
 
+Every response (including this one) carries an `x-request-id` header
+(Issue #1447) so operators can correlate a 5xx with the structured log line
+emitted by the server. To propagate an inbound id, send an `x-request-id`
+header on the request — the server reuses it rather than generating a new one.
+
 ```bash
 curl -s http://localhost:8080/v1/healthz
 # => {"status":"ok","version":"1.0.0"}
+```
+
+### `GET /v1/metrics`
+
+Prometheus exposition endpoint (Issue #1447). Returns the in-process metrics
+counters and histograms as `text/plain; version=0.0.4` so a Prometheus scraper
+(or `curl`/Grafana Agent) can ingest them directly.
+
+| Metric                                       | Type      | Labels                          | Purpose                                          |
+|----------------------------------------------|-----------|---------------------------------|--------------------------------------------------|
+| `fluxion_rest_requests_total`                | counter   | `route,method,status`           | Per-endpoint request count by HTTP status.       |
+| `fluxion_rest_request_duration_seconds`      | histogram | `route,method`                  | Wall-clock latency in seconds.                   |
+| `fluxion_rest_errors_total`                  | counter   | `route,method,status`           | Increments when `status` is 4xx or 5xx.          |
+
+The `route` label is the *matched pattern* (e.g. `/v1/simulate`,
+`/v1/schema/:id`) so traffic is not fragmented into one label set per
+schema id.
+
+```bash
+curl -s http://localhost:8080/v1/metrics | head -3
+# => # HELP fluxion_rest_requests_total Total number of HTTP requests ...
+# => # TYPE fluxion_rest_requests_total counter
+# => fluxion_rest_requests_total{method="GET",route="/v1/healthz",status="200"} 3
 ```
 
 ### `GET /v1/openapi.yaml`
@@ -141,15 +169,28 @@ curl -s -X POST http://localhost:8080/v1/import/osm \
 
 From #1342:
 
-- ✅ 5 endpoints reachable on the bound port
+- ✅ 6 endpoints reachable on the bound port (5 + `/v1/metrics` from #1447)
 - ✅ OpenAPI 3.1 spec at `src/api/openapi.yaml` validates against the
   OpenAPI 3.1 meta-schema (`npx @apidevtools/swagger-cli validate`)
 - ✅ `POST /v1/simulate` with a 1-zone schema matches an in-process Rust call
   within 0.1% (verified by `simulate_matches_in_process_within_tolerance` in
   `tests/api_integration_tests.rs`)
 - ✅ p50 latency for `/v1/healthz` < 5ms in the local test harness
-- ✅ This document covers install, env vars, all 5 endpoints with curl examples,
+- ✅ This document covers install, env vars, all 6 endpoints with curl examples,
   and a link to the OpenAPI reference (`src/api/openapi.yaml`)
+
+From #1447:
+
+- ✅ `GET /v1/metrics` returns 200 with Prometheus exposition format
+- ✅ Every response carries an `x-request-id` header (UUIDv4)
+- ✅ `tower_http::TraceLayer` emits one structured log line per request
+  (driven by `tracing_subscriber::fmt::layer` initialized in
+  `src/bin/fluxion_rest.rs`)
+- ✅ Counters `fluxion_rest_requests_total` and
+  `fluxion_rest_errors_total` plus histogram
+  `fluxion_rest_request_duration_seconds` increment on test traffic
+- ✅ New test target `tests/api_observability_tests.rs` covers
+  `/v1/metrics` shape, `x-request-id` propagation, and counter increment
 
 ## Out of scope (explicitly deferred)
 
