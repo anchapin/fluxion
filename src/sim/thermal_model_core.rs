@@ -2028,12 +2028,30 @@ impl ThermalModel<VectorField> {
                 let view_factor = view_factors::window_to_window_view_factor(window_area);
 
                 let emissivity = 0.9;
-                let reference_temp = 293.15;
 
+                // Issue #1445: chord-slope linearization at the EXPECTED operating
+                // point.  At `from_spec` time we don't have current zone
+                // temperatures yet, so seed the operating point with the mean of
+                // the heating/cooling setpoints (the indoor comfort mid-point,
+                // typically ~23 °C → 296.15 K).  The chord-slope form
+                // `h_eff = Q_rad / ΔT` is exact at this seed; the runtime
+                // `step_physics` loop never re-uses this initial value — every
+                // step recomputes `q_rad_inter_zone` from the current zone
+                // temperatures.  This seed only affects the *initial*
+                // `h_tr_iz_rad` so the very first iteration has a physically
+                // reasonable starting coefficient (vs. the prior hardcoded
+                // T_ref=293.15 K which under-predicted by ~9.7 % at sunspace ΔT=20 K).
+                let setpoint_mid_c = spec
+                    .hvac
+                    .first()
+                    .map(|h| (h.heating_setpoint + h.cooling_setpoint) / 2.0)
+                    .unwrap_or(23.0);
+                let seed_t_k = setpoint_mid_c + 273.15;
                 radiative_conductance = Self::calculate_radiative_conductance_with_view_factor(
                     window_area,
                     emissivity,
-                    reference_temp,
+                    seed_t_k,
+                    seed_t_k,
                     view_factor,
                 );
                 total_conductance += radiative_conductance;

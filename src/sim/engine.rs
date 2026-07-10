@@ -731,15 +731,27 @@ mod inter_zone_tests {
     fn test_radiative_conductance_with_view_factor() {
         let window_area = 10.8;
         let emissivity = 0.9;
-        let reference_temp = 293.15;
         let view_factor = 0.1;
+        // Issue #1445: chord-slope signature takes (T_a, T_b) in Kelvin.
         let h_rad = ThermalModel::<VectorField>::calculate_radiative_conductance_with_view_factor(
             window_area,
             emissivity,
-            reference_temp,
+            293.15,
+            293.15,
             view_factor,
         );
-        assert!(h_rad > 0.0);
+        assert_eq!(h_rad, 0.0, "ΔT=0 → no flow → h_rad=0");
+
+        // Non-zero ΔT produces positive chord-slope matching the full nonlinear
+        // Q_rad exactly at the supplied operating point:
+        let h_rad2 = ThermalModel::<VectorField>::calculate_radiative_conductance_with_view_factor(
+            window_area,
+            emissivity,
+            313.15, // 40 °C
+            293.15, // 20 °C
+            view_factor,
+        );
+        assert!(h_rad2 > 0.0);
     }
 
     #[test]
