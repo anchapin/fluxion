@@ -2081,3 +2081,197 @@ fn test_case_950_weather_dependent_ventilation_coupling() {
         "get_ach at full_open_temp with hot indoor must be ≥ midpoint of [min_ach, max_ach] = 2.75, got {ach_at_full_open:.3}",
     );
 }
+
+// =============================================================================
+// Issue #1422 — Case 950 night ventilation over-cooling diagnostic + structural
+// fix coverage
+//
+// The issue body (#1422) reports Case 950 producing 92-352% more cooling than
+// the ASHRAE 140 §7.3 reference. Step 2 of the issue body asks for a
+// diagnostic test that asserts the night flush actually pre-cools the mass:
+// `T_mass(06:00 AM Jul 5) < T_mass(06:00 PM Jul 4) - 2.0°C`.
+//
+// Step 3 of the issue body asks to route the night-ventilation override
+// through the existing high-mass FreeFloat path. The structural fix is in
+// `src/sim/thermal_model_physics/physics_impl.rs::step_physics_9r4c` —
+// rebuilding `h_ext` and `den` from the cached `derived_h_ext` /
+// `derived_den` plus `h_ve_night` when night vent is active. That fix does
+// NOT directly reduce HVAC cooling demand for Case 950 (which uses the
+// multi-node air temperature `t_i_free_mn` as its HVAC-driving signal, and
+// `t_i_free_mn` already includes `h_ve_night` via
+// `MultiNodeSolver::compute_zone_air_temperature`). It DOES affect the
+// 5R1C `t_i_free_5r1c` used by the lumped-mass update and by
+// Case 950FF's committed zone temperature.
+//
+// The companion test
+// `test_case_950_5r1c_free_float_uses_night_vent_overrides` below pins
+// the structural fix at the integration level.
+// =============================================================================
+
+/// Issue #1422 step 2: mass pre-cooling diagnostic.
+///
+/// Drives Case 950 (HVAC mode) over the full year and reads the lumped
+/// mass temperature at 06:00 (end of night flush) and 18:00 (end of
+/// cooling day) for 5 July days, asserting the night flush actually
+/// cools the mass by at least 2 °C overnight.
+///
+/// The ASHRAE 140 §7.3 Case 950 spec is *high-mass* (200 mm HW concrete,
+/// Cm ≈ 468.7 kJ/m²K) with a 1703.16 m³/h night-fan running 18:00-07:00.
+/// The fan supply conductance is
+///   h_ve_night = 1703.16 m³/h × 1.2 kg/m³ × 1005 J/(kg·K) / 3600 ≈ 570.6 W/K
+/// which, combined with the 0.5 ACH infiltration h_ve ≈ 21.7 W/K, should
+/// drop the mass by several °C during the overnight window. If this
+/// assertion fails, the night flush is not reaching the mass-side
+/// coupling and the issue body step 3 (route night-vent through the
+/// high-mass FreeFloat path) needs to be revisited.
+///
+/// NOTE: This test does NOT assert the Case 950 annual-cooling acceptance
+/// band (0.39-0.92 MWh). The over-cooling root cause is upstream of the
+/// 5R1C coupling block (multi-node mass coupling under forced convection
+/// — issue body context); the structural fix in
+/// `step_physics_9r4c` wires the night-vent override correctly through
+/// the 5R1C t_free path, but Case 950's HVAC demand is driven by the
+/// 9R4C multi-node air temperature (`t_i_free_mn`), which already sees
+/// `h_ve_night`. Closing the ASHRAE 140 cooling band requires the
+/// gauge-solver path described in the issue's direction-update comment
+/// (anchapin, 2026-07-10) rather than local coupling-block plumbing.
+#[test]
+fn test_case_950_mass_temperature_precooled_issue_1422() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::weather::denver::DenverTmyWeather;
+    use fluxion::weather::WeatherSource;
+
+    let spec = ASHRAE140Case::Case950.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = DenverTmyWeather::new();
+
+    // Drive a full year, recording per-hour lumped-mass temperature.
+    let mut mass_t_per_hour: Vec<f64> = Vec::with_capacity(8760);
+    for step in 0..8760 {
+        let w = weather
+            .get_hourly_data(step)
+            .expect("TMY weather must cover all 8760 hours");
+        model.weather = Some(w.clone());
+        if let Some(hvac) = spec.hvac.first() {
+            let hour = (step % 24) as u8;
+            model.heating_setpoint = hvac
+                .heating_setpoint_at_hour(hour)
+                .unwrap_or(hvac.heating_setpoint);
+            model.cooling_setpoint = model.cooling_schedule.value(step % 24);
+        }
+        model.step_physics(step, w.dry_bulb_temp, 3600.0);
+        // Case 950 is single-zone — index [0] is the conditioned zone.
+        let mass_temps = model.mass_temperatures.as_ref();
+        mass_t_per_hour.push(mass_temps[0]);
+    }
+
+    // July spans hours 24 * 181 .. 24 * 212 (Jun 30 23:00 .. Jul 31 23:00).
+    // Sample at 06:00 and 18:00 for 5 consecutive July days (Jul 1-5).
+    let july_start = 24 * 181;
+    let mut deltas: Vec<f64> = Vec::with_capacity(5);
+    for day in 0..5 {
+        let step_18 = july_start + 24 * day + 18; // 18:00
+        let step_06_next = july_start + 24 * (day + 1) + 6; // 06:00 next day
+        let t_18 = mass_t_per_hour[step_18];
+        let t_06 = mass_t_per_hour[step_06_next];
+        let delta = t_18 - t_06;
+        deltas.push(delta);
+        println!(
+            "[#1422 Case 950 mass-precooled] day={} T_mass(18:00)={:.2}°C  T_mass(06:00+1)={:.2}°C  ΔT={:+.2}°C",
+            day + 1,
+            t_18,
+            t_06,
+            delta
+        );
+    }
+
+    // Assertion: average overnight ΔT > 2°C across the 5 July days.
+    let avg_delta: f64 = deltas.iter().sum::<f64>() / deltas.len() as f64;
+    println!(
+        "[#1422 Case 950 mass-precooled] 5-day July average overnight ΔT = {:+.2}°C",
+        avg_delta
+    );
+    assert!(
+        avg_delta > 2.0,
+        "Case 950 night flush must pre-cool the mass by > 2°C overnight (5-day July average), got {avg_delta:+.2}°C",
+    );
+}
+
+/// Issue #1422 structural-fix integration test.
+///
+/// Pins the structural code-path fix in `step_physics_9r4c` that rebuilds
+/// `h_ext` and `den` with the night-vent contribution when the night-fan
+/// is active. The fix is exposed through the 5R1C free-floating
+/// temperature (`t_i_free_5r1c`), which the issue body step 3 calls the
+/// "high-mass FreeFloat path".
+///
+/// Test strategy:
+/// 1. Construct a Case 950FF model (free-float mode). In free-float mode
+///    the COMMITTED zone temperature is the 9R4C multi-node value, but
+///    the lumped-mass update uses `t_i_free_5r1c` as `t_i` (line ~2762).
+/// 2. Drive one year and verify the free-floating zone temperature at
+///    07:00 (night vent turns off, sun starts heating) is meaningfully
+///    higher than the temperature at 06:00 (end of night flush).
+///    If the structural fix is reverted, the 5R1C path uses the cached
+///    `derived_h_ext` / `derived_den` (which exclude `h_ve_night`) and
+///    `t_i_free_5r1c` is biased warm — the 06:00 → 07:00 ΔT collapses.
+#[test]
+fn test_case_950_5r1c_free_float_uses_night_vent_overrides_issue_1422() {
+    use fluxion::physics::cta::VectorField;
+    use fluxion::sim::engine::ThermalModel;
+    use fluxion::weather::denver::DenverTmyWeather;
+    use fluxion::weather::WeatherSource;
+
+    // Case 950FF: same envelope + night-vent as Case 950, but no HVAC.
+    let spec = ASHRAE140Case::Case950FF.spec();
+    let mut model = ThermalModel::<VectorField>::from_spec(&spec);
+    let weather = DenverTmyWeather::new();
+
+    // Drive a full year, recording per-hour free-floating zone temperature.
+    let mut zone_t_per_hour: Vec<f64> = Vec::with_capacity(8760);
+    for step in 0..8760 {
+        let w = weather
+            .get_hourly_data(step)
+            .expect("TMY weather must cover all 8760 hours");
+        model.weather = Some(w.clone());
+        model.step_physics(step, w.dry_bulb_temp, 3600.0);
+        let temps = model.get_temperatures();
+        zone_t_per_hour.push(temps[0]);
+    }
+
+    // Sample free-floating zone T at 06:00 (end of night flush) and
+    // 07:00 (night vent turns off) for 5 consecutive July days.
+    let july_start = 24 * 181;
+    let mut deltas: Vec<f64> = Vec::with_capacity(5);
+    for day in 0..5 {
+        let step_06 = july_start + 24 * day + 6;
+        let step_07 = july_start + 24 * day + 7;
+        let t_06 = zone_t_per_hour[step_06];
+        let t_07 = zone_t_per_hour[step_07];
+        let delta = t_07 - t_06;
+        deltas.push(delta);
+        println!(
+            "[#1422 Case 950FF free-float] day={} T_zone(06:00)={:.2}°C  T_zone(07:00)={:.2}°C  ΔT(07-06)={:+.2}°C",
+            day + 1,
+            t_06,
+            t_07,
+            delta
+        );
+    }
+
+    // Assertion: turning the night vent OFF (06:00 → 07:00) must warm
+    // the zone by at least 1.0°C on average across the 5 July days.
+    // If the structural fix in `step_physics_9r4c` is reverted, the
+    // 5R1C t_free path loses its night-vent contribution and the
+    // 06:00 → 07:00 ΔT collapses to ≈ 0.
+    let avg_delta: f64 = deltas.iter().sum::<f64>() / deltas.len() as f64;
+    println!(
+        "[#1422 Case 950FF free-float] 5-day July average ΔT(07-06) = {:+.2}°C",
+        avg_delta
+    );
+    assert!(
+        avg_delta > 1.0,
+        "Case 950FF free-float zone T must rise > 1.0°C from 06:00 to 07:00 (night vent turns off) on average over 5 July days, got {avg_delta:+.2}°C — structural fix to step_physics_9r4c may be reverted",
+    );
+}
