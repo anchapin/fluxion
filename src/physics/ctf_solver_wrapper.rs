@@ -216,6 +216,30 @@ impl HeatConductionSolver for CTFSolverWrapper {
         Ok(HeatFlux::from_value(q_flux))
     }
 
+    /// Issue #1418: Pure-query steady-state flux from cached CTF coefficients.
+    ///
+    /// Returns `ΣX_n × (T_ext − T_int)` — the steady-state limit of the CTF
+    /// transfer function. For a well-formed CTF, `ΣX_n` equals the overall
+    /// U-value (including film resistances already baked into the coefficients),
+    /// so this is equivalent to `U × ΔT` (Fourier's law in steady state).
+    ///
+    /// This does NOT advance solver state — it reads only the cached
+    /// `coefficients` field populated during `initialize()`.
+    fn steady_state_flux(
+        &self,
+        T_interior: Temperature,
+        T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        let coeffs = self.coefficients.as_ref().ok_or_else(|| {
+            SolverError::InvalidConfig(
+                "CTF solver not initialized — no cached coefficients".to_string(),
+            )
+        })?;
+        let sum_x: f64 = coeffs.x.iter().copied().sum();
+        let q = sum_x * (T_exterior.to_value() - T_interior.to_value());
+        Ok(HeatFlux::from_value(q))
+    }
+
     fn energy_storage_rate(&self) -> f64 {
         // CTF doesn't explicitly track energy storage rate
         // Could estimate from flux difference between interior and exterior

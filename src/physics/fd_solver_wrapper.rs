@@ -206,6 +206,26 @@ impl HeatConductionSolver for FDSolverWrapper {
         Ok(HeatFlux::from_value(self.q_flux))
     }
 
+    /// Issue #1418: Pure-query steady-state flux returning the last-computed
+    /// `q_flux` field (populated during `step()`).
+    ///
+    /// Before the first `step()` call, `q_flux` is `0.0` (set in `initialize()`).
+    /// After `step()`, it holds the interior surface heat flux from the most
+    /// recent FD solve. This is a pure read on existing solver state — it does
+    /// NOT advance the FD grid.
+    fn steady_state_flux(
+        &self,
+        _T_interior: Temperature,
+        _T_exterior: Temperature,
+    ) -> Result<HeatFlux, SolverError> {
+        if !self.initialized {
+            return Err(SolverError::InvalidConfig(
+                "FD solver not initialized".to_string(),
+            ));
+        }
+        Ok(HeatFlux::from_value(self.q_flux))
+    }
+
     fn energy_storage_rate(&self) -> f64 {
         // FD tracks energy storage implicitly in the temperature profile
         // Could estimate from temperature change rate
